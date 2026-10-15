@@ -21,21 +21,17 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.validation.agent_rbac import Permission, Rbac, uncovered
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
     check_external_credential_ownership,
     check_forgejo_image_namespace_reflection,
-    check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
-    check_policy_bindings_resolve_sets,
     check_sops_decryption_blocks,
     find_orphaned_files,
 )
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
-from cluster.validation.flux import parse_flux_kustomizations
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.image_automation import (
@@ -86,18 +82,6 @@ def test_no_dependency_errors(cluster: ParsedCluster, repo_root: Path) -> None:
     """Operator prerequisites are dependencies; every sourceRef resolves."""
     errors = validate_dependencies(cluster, repo_root)
     assert not errors, "\n".join(errors)
-
-
-def test_plaid_mcp_is_not_gated_by_unrelated_authentik_terraform(cluster: ParsedCluster) -> None:
-    """App infrastructure is a prerequisite; unrelated SSO apps are not."""
-    spec = cluster.flux_kustomizations["plaid-mcp"]
-    assert {dependency.name for dependency in spec.depends_on} == {
-        "cnpg",
-        "external-secrets-operator",
-        "authentik",
-        "seaweedfs-operator",
-    }
-    assert spec.wait
 
 
 def test_controller_resources_have_health_checks(cluster: ParsedCluster, repo_root: Path) -> None:
@@ -347,34 +331,9 @@ def test_no_orphaned_files(cluster: ParsedCluster, repo_root: Path) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_flux_kustomizations_under_parked_path_are_annotated(k8s_dir: Path) -> None:
-    """A Flux Kustomization whose path is under the parked tree must carry the parked annotation."""
-    errors = []
-    chart = k8s_dir / "flux/kustomizations.k8s.yaml"
-    for name, spec in parse_flux_kustomizations(chart).items():
-        if Path(spec.path.removeprefix("./")).is_relative_to(PARKED_ROOT) and not spec.parked:
-            errors.append(
-                f"{name} ({spec.path}): ducktape.org/parked annotation={spec.parked}, "
-                f"but its source path is under {PARKED_ROOT}/"
-            )
-    assert not errors, "\n".join(errors)
-
-
 def test_goldilocks_namespace_labels(cluster: ParsedCluster) -> None:
     """A namespace with a goldilocks vpa-update-mode is not opted out of goldilocks."""
     errors = check_goldilocks_namespace_labels(cluster)
-    assert not errors, "\n".join(errors)
-
-
-def test_goldilocks_explicit_decision(cluster: ParsedCluster, repo_root: Path) -> None:
-    """Every generated Namespace labels its goldilocks decision."""
-    errors = check_goldilocks_explicit_decision(cluster, repo_root)
-    assert not errors, "\n".join(errors)
-
-
-def test_policy_bindings_resolve_sets(cluster: ParsedCluster) -> None:
-    """Every PolicyBinding's sets are PolicySets rendered in its namespace."""
-    errors = check_policy_bindings_resolve_sets(cluster)
     assert not errors, "\n".join(errors)
 
 
@@ -598,24 +557,6 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
     )
     assert not uncovered(actual, expected)
     assert not uncovered(expected, actual)
-
-
-def test_cluster_diagnostics_kustomizations_are_read_only(
-    agent_permissions: tuple[Rbac, dict, dict[str, list[dict]], list[dict]],
-) -> None:
-    rbac, _, _, _ = agent_permissions
-    rules = rbac.rules(
-        RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name="cluster-diagnostics-reader"), None
-    )
-    reads = {
-        Permission(None, "kustomize.toolkit.fluxcd.io", "kustomizations", verb) for verb in ("get", "list", "watch")
-    }
-    writes = {
-        Permission("flux-system", "kustomize.toolkit.fluxcd.io", "kustomizations", verb)
-        for verb in ("create", "update", "patch", "delete", "deletecollection")
-    }
-    assert not uncovered(reads, rules)
-    assert uncovered(writes, rules) == writes
 
 
 def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict, dict[str, list[dict]], list[dict]]) -> None:

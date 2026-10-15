@@ -235,7 +235,7 @@ tool, as opposed to `<project>/deploy/`-pattern code like `props/deploy/`,
 layout it already had (flat, or `namespace/`/`db/`/`app/`/etc.). By default, its Flux
 Kustomization remains in the central chart with `spec.suspend: true` and
 `metadata.annotations.ducktape.org/parked: "true"`; the suspended object does not apply
-the parked workload manifests. `cluster/validation/test_cluster_integration.py`'s
+the parked workload manifests. `cluster/cdk8s/test_generate_manifests.py`'s
 `test_flux_kustomizations_under_parked_path_are_annotated` requires paths under
 `cluster/parked/` to carry the annotation. A parked ducktape-owned project may keep its
 manifests in its own `deploy/` directory instead.

@@ -16,7 +16,7 @@ import pytest_bazel
 import yaml
 
 from cluster.cdk8s.generate_manifests import generate_manifests
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -52,6 +52,20 @@ def generated(tmp_path_factory: pytest.TempPathFactory, checkout: Path) -> Path:
 def parsed_yaml_documents(generated: Path) -> dict[Path, tuple[Any, ...]]:
     """Cache parsed documents for read-only inspection by manifest assertions."""
     return {path: tuple(yaml.safe_load_all(path.read_text())) for path in generated.rglob("*.yaml")}
+
+
+def _generated_documents(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> list[dict[str, Any]]:
+    """Objects written by cdk8s, including generated files beside hand-written inputs."""
+    generated_root = generated / GENERATED_ROOT
+    hand_written_root = generated / HAND_WRITTEN_ROOT
+    return [
+        doc
+        for path, documents in parsed_yaml_documents.items()
+        if path.is_relative_to(generated_root)
+        or (path.is_relative_to(hand_written_root) and path.name.endswith(".k8s.yaml"))
+        for doc in documents
+        if isinstance(doc, dict)
+    ]
 
 
 @pytest.fixture(scope="module")
@@ -143,6 +157,99 @@ def test_no_image_automation_markers(generated: Path) -> None:
     # file (cluster/docs/cdk8s.md).
     marked = sorted(relative for relative in _files(generated) if "$imagepolicy" in (generated / relative).read_text())
     assert not marked, "Generated files must not carry a Flux image-automation marker:\n" + "\n".join(marked)
+
+
+def test_plaid_mcp_is_not_gated_by_unrelated_authentik_terraform(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    plaid_mcp = next(
+        doc
+        for doc in _generated_documents(generated, parsed_yaml_documents)
+        if doc.get("kind") == "Kustomization" and doc["metadata"]["name"] == "plaid-mcp"
+    )
+    spec = plaid_mcp["spec"]
+    assert {dependency["name"] for dependency in spec["dependsOn"]} == {
+        "cnpg",
+        "external-secrets-operator",
+        "authentik",
+        "seaweedfs-operator",
+    }
+    assert spec["wait"]
+
+
+def test_flux_kustomizations_under_parked_path_are_annotated(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    flux_chart = generated / HAND_WRITTEN_ROOT / "flux/kustomizations.k8s.yaml"
+    missing = sorted(
+        doc["metadata"]["name"]
+        for doc in parsed_yaml_documents[flux_chart]
+        if isinstance(doc, dict)
+        and doc.get("kind") == "Kustomization"
+        and Path(doc["spec"]["path"].removeprefix("./")).is_relative_to(PARKED_ROOT)
+        and doc["metadata"].get("annotations", {}).get("ducktape.org/parked") != "true"
+    )
+    assert not missing, f"Kustomizations under {PARKED_ROOT}/ lack the parked annotation: {missing}"
+
+
+def test_goldilocks_explicit_decision(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:
+    update_mode = "goldilocks.fairwinds.com/vpa-update-mode"
+    enabled = "goldilocks.fairwinds.com/enabled"
+    missing = sorted(
+        f"{path.relative_to(generated)}: Namespace '{doc['metadata']['name']}'"
+        for path, documents in parsed_yaml_documents.items()
+        if path.is_relative_to(generated / GENERATED_ROOT)
+        or (path.is_relative_to(generated / HAND_WRITTEN_ROOT) and path.name.endswith(".k8s.yaml"))
+        for doc in documents
+        if isinstance(doc, dict)
+        and doc.get("kind") == "Namespace"
+        and update_mode not in (labels := (doc["metadata"].get("labels") or {}))
+        and labels.get(enabled) != "false"
+    )
+    assert not missing, "Generated Namespaces must label their Goldilocks decision:\n" + "\n".join(missing)
+
+
+def test_policy_bindings_resolve_sets(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    policy_sets = {
+        (doc["metadata"].get("namespace", ""), doc["metadata"]["name"])
+        for doc in documents
+        if doc.get("kind") == "PolicySet"
+    }
+    missing = [
+        f"PolicyBinding '{namespace}/{doc['metadata']['name']}' names PolicySet '{policy_set}', which is not rendered in {namespace}"
+        for doc in documents
+        if doc.get("kind") == "PolicyBinding"
+        for namespace in [doc["metadata"].get("namespace", "")]
+        for policy_set in doc["spec"].get("policySets", [])
+        if (namespace, policy_set) not in policy_sets
+    ]
+    assert not missing, "\n".join(missing)
+
+
+def test_cluster_diagnostics_kustomizations_are_read_only(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    role = next(
+        doc
+        for doc in _generated_documents(generated, parsed_yaml_documents)
+        if doc.get("kind") == "ClusterRole" and doc["metadata"]["name"] == "cluster-diagnostics-reader"
+    )
+    assert "aggregationRule" not in role
+
+    def grants(group: str, resource: str, verb: str) -> bool:
+        return any(
+            not rule.get("resourceNames")
+            and (group in rule.get("apiGroups", []) or "*" in rule.get("apiGroups", []))
+            and (resource in rule.get("resources", []) or "*" in rule.get("resources", []))
+            and (verb in rule.get("verbs", []) or "*" in rule.get("verbs", []))
+            for rule in role["rules"]
+        )
+
+    reads = ("get", "list", "watch")
+    writes = ("create", "update", "patch", "delete", "deletecollection")
+    assert all(grants("kustomize.toolkit.fluxcd.io", "kustomizations", verb) for verb in reads)
+    assert not any(grants("kustomize.toolkit.fluxcd.io", "kustomizations", verb) for verb in writes)
 
 
 def test_haku_spike_stays_unwired(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:

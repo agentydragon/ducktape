@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cluster.cdk8s.cilium_rule_sections import enforces_nothing
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import (
     CiliumPolicyResource,
@@ -13,7 +12,6 @@ from cluster.validation.k8s import (
     ExternalSecretResource,
     K8sResource,
     PodTemplateWorkloadResource,
-    PolicyBindingResource,
     SandboxTemplateResource,
     SecretResource,
     SecretStoreResource,
@@ -140,30 +138,6 @@ def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str
     return errors
 
 
-def _generated(path: Path) -> bool:
-    """Generator output (`cluster/AGENTS.md` § Generated manifests): every file under
-    `GENERATED_ROOT`, every `*.k8s.yaml` under `HAND_WRITTEN_ROOT`."""
-    return path.is_relative_to(GENERATED_ROOT) or (
-        path.is_relative_to(HAND_WRITTEN_ROOT) and path.name.endswith(".k8s.yaml")
-    )
-
-
-def check_goldilocks_explicit_decision(cluster: ParsedCluster, repo_root: Path) -> list[str]:
-    """Every Namespace the generator writes labels its Goldilocks decision: an update mode, or
-    `enabled: "false"`. Goldilocks runs on by default, so a Namespace saying neither gets Off-mode
-    VPAs nobody chose."""
-    return [
-        f"{path.relative_to(repo_root)}: Namespace '{resource.name}' labels no Goldilocks decision "
-        f'({_VPA_UPDATE_MODE_LABEL}, or {_GOLDILOCKS_ENABLED_LABEL}: "false")'
-        for path, resources in cluster.source_resources.items()
-        if _generated(path.relative_to(repo_root))
-        for resource in resources
-        if resource.kind == "Namespace"
-        and _VPA_UPDATE_MODE_LABEL not in resource.metadata.labels
-        and resource.metadata.labels.get(_GOLDILOCKS_ENABLED_LABEL) != "false"
-    ]
-
-
 def check_sops_decryption_blocks(cluster: ParsedCluster, repo_root: Path) -> list[str]:
     """Active Flux Kustomizations that render a SOPS-encrypted Secret must declare
     spec.decryption with provider: sops AND a secretRef.name — otherwise Flux applies
@@ -210,26 +184,3 @@ def check_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> list[str]:
                     f"`ingress: [{{}}]`, never an empty list."
                 )
     return errors
-
-
-def check_policy_bindings_resolve_sets(cluster: ParsedCluster) -> list[str]:
-    """Every PolicyBinding names PolicySets rendered in its own namespace.
-
-    Every reader fails closed: a set that is missing grants nothing and only says so in status,
-    so a typo in a binding silently leaves its subject without that access.
-    """
-    sets = {
-        (resource.namespace, resource.name)
-        for result in cluster.build_results
-        for resource in result.resources
-        if resource.kind == "PolicySet"
-    }
-    return [
-        f"PolicyBinding '{binding.namespace}/{binding.name}' names PolicySet '{policy_set}', "
-        f"which is not rendered in {binding.namespace}"
-        for result in cluster.build_results
-        for binding in result.resources
-        if isinstance(binding, PolicyBindingResource)
-        for policy_set in binding.spec.policy_sets
-        if (binding.namespace, policy_set) not in sets
-    ]
