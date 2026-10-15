@@ -146,8 +146,9 @@ History Service has projected a Thread yet. `session_dispatcher_open_sessions` r
 app settings for rollout compatibility, but it is ignored: opening always uses the Dispatcher. Remove
 that key from generated ConfigMaps only after the unconditional app image is pinned in both
 environments; remove the accepted setting field only after both ConfigMaps reconcile without it.
-Queued-opening activation remains gated on the corrected app image and bounded testing acceptance
-before staging activation.
+Both testing and staging activate queued openings when Flux pins this app image. The operator
+approved this combined rollout; bounded queued-opening and Thread-projection acceptance follow
+the image rollout in each environment.
 
 The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
 History Service's ingress, and the History Service folds them under per-Session leases

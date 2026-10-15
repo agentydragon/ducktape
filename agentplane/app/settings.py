@@ -42,8 +42,8 @@ class AppSettingsConfig(YamlFileSettings):
         description="PolicySets every new Sandbox is bound to. The app creates, suspends, resumes and deletes "
         "Sandboxes through Kubernetes itself."
     )
-    # CLEANUP(added 2026-10-15): Remove after APP_OPEN_FLAG_REMOVE drops this ConfigMap key and both
-    #   environments have reconciled the omission.
+    # CLEANUP(added 2026-10-15): Remove after both environments' ConfigMaps omit this key
+    #   and have reconciled the omission.
     session_dispatcher_open_sessions: bool = Field(
         default=False, description="Accepted for rollout compatibility; new Session openings always use the Dispatcher."
     )

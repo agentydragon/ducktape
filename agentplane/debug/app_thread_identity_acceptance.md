@@ -10,10 +10,12 @@ holds the writer-bound Sandbox identity. Thread views and list filtering should 
 from History, with an explicit error when an authored History row has no Sandbox identity.
 
 The failed fixture was cleaned; an API read found no testing Sandboxes and quota at 5Gi/80Gi.
-App OpenSession/History acceptance and staging activation remain gated on a corrected app image
-and a fresh bounded live pass. No repeated live test was used to diagnose the 500.
+No repeated live test was used to diagnose the 500. On 2026-10-15 UTC, Rai approved #10569's combined
+History identity correction and unconditional Dispatcher openings to activate in both testing and
+staging when their app images are pinned. Fresh bounded OpenSession/History and VM storage checks
+remain outstanding after that rollout; the historical failure above is not acceptance evidence.
 
-The reader must preserve an active direct-open lifecycle before Dispatcher activation: a direct
+During the rolling cutover the reader preserves the direct-open lifecycle: an older app's direct
 CreateSession inserts an app Thread immediately so commands and native resume work even while
 History ingress has not caught up. In that interval a missing History row means the HTTP Thread
 view is pending (404 and omitted from list pages, whose cursor still advances). A committed History

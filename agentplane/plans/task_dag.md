@@ -16,14 +16,12 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
-Dispatch assignments (Rai authorized, Codex reported, 2026-10-14):
+Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 
-| Worker            | Assigned work and remaining gates                                                                                                                                   |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `vm_connection`   | VM fresh-format/retained-remount acceptance after the corrected guest image is pinned; testing wake-on-send and queued-opening acceptance, then staging activation. |
-| `image_inventory` | Publish the image inventory and prepare stacked app Dispatcher-only command/opening cleanup PRs; queued-opening acceptance and activation remain gated.             |
-| `dag_burndown`    | Measure shared Python interpreter layers using existing Bazel packaging rules; compare k3s lifecycle performance at matching source revisions.                      |
-| Coordinator       | Verify live rollout gates and burn down completed DAG nodes.                                                                                                        |
+| Worker          | Assigned work and remaining gates                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------- |
+| `vm_connection` | VM fresh-format/retained-remount and queued-opening acceptance after the corrected app image is pinned.       |
+| Coordinator     | Consolidate compatible cleanup PRs in #10569, shepherd its CI, and verify image rollout in both environments. |
 
 These are assignments, not claims that gated work has started. Independent config changes can
 proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
@@ -543,9 +541,10 @@ is not part of this workflow.
 **Performance TODO:** keep automatic triggers disabled until the suite is cheap enough for a
 separately reviewed change. The four-test OCI-layout run took 704.32 seconds versus 869.98 seconds for
 the earlier archive-import baseline; cProfile attributed 444.97 seconds of the current run to
-image import. These were individual shared-RBE runs, not a controlled benchmark. The bounded next
-step is a shared Python interpreter-layer prototype across the current 18 Python image targets,
-followed by representative multi-image startup and a matched isolated-RBE import/readiness profile.
+image import. These were individual shared-RBE runs, not a controlled benchmark. Shared Python
+interpreter layers across the 18 Python images and a matched four-test lifecycle comparison are
+complete in #10569: image import fell from 578.430 s to 220.195 s in one baseline/prototype pair.
+That measurement is not a steady-state performance guarantee.
 Investigate containerd import/unpack and deployment readiness before considering any broader CI
 use; preserve assertions and current timeout settings. See [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
 
@@ -702,8 +701,7 @@ flowchart TD
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
     VM_GUEST_DECLARATIVE_STORAGE[In flight: declarative guest disk initialization]
-    APP_THREAD_HISTORY_IDENTITY[In flight: app reads Thread Sandbox identity from History]
-    APP_THREAD_HISTORY_IDENTITY --> VM_GUEST_DECLARATIVE_STORAGE
+    APP_SESSION_OPEN_ACTIVATION -. corrected testing app image pin only .-> VM_GUEST_DECLARATIVE_STORAGE
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
@@ -731,18 +729,15 @@ flowchart TD
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     DISPATCHER_WAKE_ACTIVATION --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
-    APP_SESSION_OPEN_ACTIVATION[In flight: accept testing queued opens, then activate staging]
-    APP_THREAD_HISTORY_IDENTITY --> APP_SESSION_OPEN_ACTIVATION
+    APP_SESSION_OPEN_ACTIVATION[In flight: verify both app image rollouts and queued opens]
     APP_SESSION_DEFAULTS_LEGACY_REMOVE[Candidate: retire unused defaults after caller audit]
-    APP_GATEWAY_SEND_REMOVE[In flight: require Dispatcher for app commands and Session openings]
-    APP_GATEWAY_SEND_REMOVE --> APP_OPEN_FLAG_REMOVE[Blocked: remove accepted opening flag after config rollout]
+    APP_SESSION_OPEN_ACTIVATION -. both app image pins .-> APP_OPEN_FLAG_REMOVE[Blocked: remove accepted opening flag after config rollout]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
-    APP_SESSION_OPEN_ACTIVATION --> APP_GATEWAY_SEND_REMOVE
     APP_NATIVE_RESUME_SURFACE[Decision: explicit native-resume UI] --> APP_NATIVE_RESUME_CUTOVER[Blocked: remove direct native resume]
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
-    APP_GATEWAY_SEND_REMOVE --> PROXY_START_METHODS_DISPATCHER_ONLY
+    APP_SESSION_OPEN_ACTIVATION -. app caller image pins .-> PROXY_START_METHODS_DISPATCHER_ONLY
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
     INCARNATION_UID_REQUIRED --> JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE
     K3S_LIFECYCLE_SUITE[Candidate: k3s lifecycle integration suite]
@@ -801,9 +796,10 @@ device argument in the generated systemd unit: disk preparation exited before th
 `cc32a7c` guest image was published and pinned in testing; a bounded VM check confirmed the guest
 runner connected and bootstrap completed. Its first app event-stream probe then failed with the
 same app Thread identity HTTP 500 as the app OpenSession acceptance, before storage assertions.
-Wait for the testing app image containing `APP_THREAD_HISTORY_IDENTITY`, then run the bounded
-fresh-format/retained-remount check. Staging app activation is a separate gate.
-A successful Nix build or template reconciliation is not workload acceptance. No staging workload write is authorized by this assignment. Preserve the explicit layout contract and refusal of
+Wait for the testing app image containing #10569's History identity correction, then run the bounded
+fresh-format/retained-remount check. This depends only on that testing image pin, not completion of
+the separate queued-opening acceptance cases. A successful Nix build or template reconciliation
+is not workload acceptance. Preserve the explicit layout contract and refusal of
 incompatible existing data. `autoFormat`'s recognizable-filesystem check is not equivalent to the
 zero-content scan. Runner changes additionally wait on the embedded wheel pin. The inline helper
 has the operator-requested TODO to package a proper Bazel-built executable rather than embedding
@@ -1021,53 +1017,29 @@ agent senders wait for the reviewed multiagent authority contract. Do not confus
 with wake permission or silently expand the caller allowlist during a cutover. Add the bounded
 implementation node once policy is reviewed; existing caller cutovers do not silently select policy.
 
-### `APP_THREAD_HISTORY_IDENTITY` — read Thread Sandbox identity from History
-
-**In flight; `vm_connection`, 2026-10-14 PDT.** The testing app's Thread view reads the Runner
-Gateway's SessionRegistry, but Dispatcher opens a Session through the runner proxy without adding
-that legacy row. Testing app OpenSession and VM storage probes both reached runner admission, then
-received HTTP 500 from Thread reads. #10547 changes Thread identity and filters to the writer-bound
-History record, distinguishes a direct-open Session whose History row is still pending, and keeps a
-committed row with missing Sandbox identity as an explicit error. Validate the newest correction,
-publish and pin its app image in testing, then repeat the bounded dependent acceptance cases.
-This node gates testing app reads, not staging activation or VM disk formatting itself.
-
 ### `APP_SESSION_OPEN_ACTIVATION` — activate queued app Session openings
 
-**In flight; `vm_connection`, 2026-10-14 PDT.** #10517 implemented queued openings and app-owned
-Session defaults; both environments run an accepting app image. #10533 enables
-`session_dispatcher_open_sessions` on testing and its ConfigMap is reconciled. The bounded testing
-probe admitted the opening and accepted a same-ID retry, but the Thread read returned HTTP 500
-because it required a Gateway registry row that Dispatcher openings do not create. #10547 moves the
-read to authoritative History identity while preserving pending-History behavior; it remains open.
-Merge and pin that correction, then repeat bounded queued-open and eventual Thread-projection
-acceptance in testing. Activate staging only after that acceptance, in a separate generated-config
-change, then complete the same bounded acceptance in staging. Direct-open removal remains gated on
-that corrected image and successful queued-open activation in both environments.
+**Rollout and acceptance remain; coordinator and `vm_connection`, 2026-10-15 UTC.** #10569 combines
+the History-backed Thread identity correction with Dispatcher-only app commands and Session openings.
+Rai explicitly approved activating queued openings in **both testing and staging** with this image;
+both environments follow the same app ImagePolicy. No separate staging configuration activation or
+pre-merge live acceptance hold remains. Verify both app pins/readiness after publication, then run
+bounded queued-open, same-ID retry and eventual Thread-projection acceptance in testing followed by
+staging. These checks remain unfinished; the earlier probe admitted a Session but its Thread read
+failed before the identity correction. Evidence: [History identity acceptance](../debug/app_thread_identity_acceptance.md).
 
-### `APP_GATEWAY_SEND_REMOVE` — require Dispatcher for app commands and new Session openings
-
-**Drafts prepared by `image_inventory`; direct-open removal remains merge-gated.** #10548 removes
-the app's direct command-send branch and requires its Dispatcher client. This stacked draft removes
-the app's direct `CreateSession` branch so every new Session opening uses Dispatcher `OpenSession`.
-Merge this draft only after #10547's corrected app image is pinned, bounded queued-open acceptance
-passes in testing, and queued-open activation plus bounded acceptance complete in both testing and
-staging. Do not activate staging as part of this code change. Retain Runner Gateway Session reads and
-native resume, plus Gateway CreateSession receivers and other non-app callers until their own
-caller-image gates.
-
-Keep accepting `session_dispatcher_open_sessions` as an ignored setting during the reverse rollout:
-pin the unconditional-open app image first; then remove the key from generated ConfigMaps; after both
-ConfigMaps reconcile without it, remove the settings field and its compatibility test under
-`APP_OPEN_FLAG_REMOVE`.
+The removed app command/opening branches and History identity implementation are complete in this
+PR. Retain Runner Gateway Session reads and native resume, plus its receivers and other callers
+until their own caller-image gates. The accepted-but-ignored opening setting has its removal below.
 
 ### `APP_OPEN_FLAG_REMOVE` — retire the queued-opening rollout flag
 
-**Blocked on unconditional app queued openings being accepted and pinned in both environments.**
+**Blocked on the unconditional-open app image being pinned in both environments.**
 After the unconditional-open app image is pinned, remove `session_dispatcher_open_sessions` from
 generated ConfigMaps. Once both environments have reconciled the omission, delete the
 accepted-but-unused app settings field and its tests. Do not delete the field while deployed config
-still sends it. No staging setting changes precede testing acceptance.
+still sends it. Staging already omits the key; verify both reconciled configurations before deleting
+the settings field.
 
 ### `APP_NATIVE_RESUME_SURFACE` — decide the explicit native-resume UI
 
@@ -1243,7 +1215,7 @@ flowchart TD
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
-    APP_GATEWAY_SEND_REMOVE --> GATEWAY_WRAPPER_RETIRE
+    APP_SESSION_OPEN_ACTIVATION -. app caller image pins .-> GATEWAY_WRAPPER_RETIRE
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
@@ -1264,7 +1236,7 @@ values require separate disposition; this node authorizes no data drop.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
-**Blocked on `APP_GATEWAY_SEND_REMOVE`, `APP_NATIVE_RESUME_CUTOVER`,
+**Blocked on the Dispatcher-only app image rollout, `APP_NATIVE_RESUME_CUTOVER`,
 `GATEWAY_WRAPPER_RETIRE`,
 with their caller images pinned in both environments.** Today
 the gateway's runner proxy (`runner_gateway/runner_proxy.py`) lets every configured caller account call
@@ -1291,7 +1263,7 @@ migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
 
-**Blocked on `APP_GATEWAY_SEND_REMOVE` and `APP_NATIVE_RESUME_CUTOVER`.**
+**Blocked on the Dispatcher-only app image rollout and `APP_NATIVE_RESUME_CUTOVER`.**
 Audit and migrate every remaining wrapper read caller (including notification `ListSessions`) to
 History Service or the runner proxy, then pin those caller images before deleting the RPC receiver.
 App and notification command sends go through Dispatcher; read-only calls may use the proxy. Delete the
