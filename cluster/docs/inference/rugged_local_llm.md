@@ -617,6 +617,11 @@ tokens, versus the GPU's 32,768 total allocation.
 
 ### Published quality results (not reproduced locally)
 
+The [Artificial Analysis comparison](../../../docs/artificial_analysis/README.md#rugged-candidates-among-the-comparison-models)
+includes all installed rugged base models, Qwen3.5 4B, and the Colibri candidate
+alongside the larger comparison models. Its October 14 snapshot distinguishes
+estimated indices and reasoning modes and records missing NPU-model coverage.
+
 For further candidates, the agreed validation scope is local inference, actual
 context/truncation checks, tiny-N needle-in-haystack retrieval, and applicable
 tool-use smokes. Needle probes check end-to-end context integrity, not model

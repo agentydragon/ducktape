@@ -4,7 +4,63 @@ Source and attribution: [Artificial Analysis](https://artificialanalysis.ai/).
 These are selected comparison rows, not a mirror of AA's full dataset. Retain that
 scope when refreshing; API access does not itself grant redistribution rights.
 
-## Current snapshot: 2026-09-24
+## Current snapshot: 2026-10-14
+
+<cited_models_2026_10_14.csv> contains the previous 57 comparison rows refreshed
+from the [leaderboard](https://artificialanalysis.ai/leaderboards/models), plus
+13 rugged candidate/effort rows (70 total). Historical CSVs remain unchanged.
+The [methodology page](https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index)
+identifies the index as **v4.3.2** on this retrieval date.
+
+Unlike September, this snapshot retains **estimated indices** so small local
+candidates are represented. Filter `intelligence_index_is_estimated == false`
+for measured-index comparisons. An estimated index does not make every component
+score estimated. Missing fields stay blank; neither blanks nor absent models mean
+zero. Where the public response omits `intelligenceIndexCostPerTask`, costs/task are
+blank rather than carried forward.
+
+### Rugged candidates among the comparison models
+
+Scores below are AA's external results, not measurements of our quantized weights,
+KV caches, harness, or available context. Reasoning variants are separate rows;
+our current router profiles disable reasoning. Gemma QAT and the two E2B context
+profiles map to the same named base model, not separately evaluated AA models.
+Context in the CSV is AA's advertised context, not a successful rugged input size.
+
+| AA model / setting                                                                                | Index | Estimated index? | GPQA Diamond | AA-LCR |
+| ------------------------------------------------------------------------------------------------- | ----: | ---------------- | -----------: | -----: |
+| [Qwen3 4B 2507 Instruct](https://artificialanalysis.ai/models/qwen3-4b-2507-instruct)             |  6.74 | yes              |       51.72% | 11.33% |
+| [Gemma 4 E2B (Non-reasoning)](https://artificialanalysis.ai/models/gemma-4-e2b-non-reasoning)     |  6.48 | yes              |       40.51% | 16.33% |
+| [Gemma 4 E2B (Reasoning)](https://artificialanalysis.ai/models/gemma-4-e2b)                       |  7.77 | yes              |       43.33% | 16.33% |
+| [Gemma 4 E4B (Non-reasoning)](https://artificialanalysis.ai/models/gemma-4-e4b-non-reasoning)     |  7.46 | yes              |       54.95% | 24.00% |
+| [Gemma 4 E4B (Reasoning)](https://artificialanalysis.ai/models/gemma-4-e4b)                       |  8.91 | no               |       57.58% | 32.00% |
+| [Qwen2.5 Coder Instruct 7B](https://artificialanalysis.ai/models/qwen2-5-coder-7b-instruct)       |  5.79 | yes              |       33.94% |      — |
+| [Qwen3 8B (Non-reasoning)](https://artificialanalysis.ai/models/qwen3-8b-instruct)                |  5.99 | yes              |       45.15% |  0.00% |
+| [Qwen3 8B (Reasoning)](https://artificialanalysis.ai/models/qwen3-8b-instruct-reasoning)          |  5.16 | no               |       58.89% |  0.00% |
+| [Qwen3.5 0.8B (Non-reasoning)](https://artificialanalysis.ai/models/qwen3-5-0-8b-non-reasoning)   |  5.40 | yes              |       23.64% |  8.00% |
+| [Qwen3.5 0.8B (Reasoning)](https://artificialanalysis.ai/models/qwen3-5-0-8b)                     |  6.13 | yes              |       11.11% |  9.00% |
+| [Qwen3.5 4B (Non-reasoning)](https://artificialanalysis.ai/models/qwen3-5-4b-non-reasoning)       | 10.81 | yes              |       71.21% | 34.67% |
+| [Qwen3.5 4B (Reasoning)](https://artificialanalysis.ai/models/qwen3-5-4b)                         | 13.12 | yes              |       77.07% | 63.00% |
+| [Qwen3 Coder 30B A3B Instruct](https://artificialanalysis.ai/models/qwen3-coder-30b-a3b-instruct) |  9.59 | yes              |       51.62% | 32.67% |
+
+Coverage gaps: **TinyLlama 1.1B Chat** and **Qwen2.5-Coder 1.5B Instruct** (NPU
+experiments) have no matching row in this retrieved leaderboard; no substitute
+model score is assigned. Qwen3.5 4B is included as a tested long-context candidate,
+and Qwen3-Coder 30B-A3B as the Colibri candidate. All six distinct installed local
+models are represented; seven picker profiles do not imply seven base models.
+
+The new CSV retains September's columns and adds the estimated flag, GPQA Diamond,
+`terminalbench_hard` (raw AA field, **not** Terminal-Bench 4.0), source URL, retrieval
+date, and index version. Evaluation fractions use 0–1, except the 0–100 index and
+AA-Omniscience. Numeric zero remains zero. Use the same Flight decoding recipe
+below; select September's 57 slugs plus the 13 linked rows above, without filtering
+estimated indices. Only this selected cohort is redistributed.
+
+For actual runtime, retrieval, and quantization observations, see
+[the rugged inference report](../../cluster/docs/inference/rugged_local_llm.md).
+Do not infer local serving cost or latency from AA's API price columns.
+
+## Historical snapshot: 2026-09-24
 
 <cited_models_2026_09_24.csv> refreshes the model/effort slugs cited in
 <../ai_subscription_comparison.md> and adds all published GPT-6 Luna, Sol, and Astra
