@@ -238,6 +238,8 @@ flowchart TD
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
     NATIVE_SUBAGENT_EXPOSURE[Explore: expose native harness children as Sessions]
+    RUNNER_HARNESS_OBJECTS_DESIGN[Decision: explicit running harness objects]
+    NATIVE_SUBAGENT_EXPOSURE -. if multiple Sessions share a harness .-> RUNNER_HARNESS_OBJECTS_DESIGN
     NATIVE_SUBAGENT_EXPOSURE -. the native-child boundary it informs .-> MULTIAGENT_MODEL
     GATEWAY_SESSION_REGISTRY_RETIRE[Blocked: retire the registry, section 12] -. related .-> NATIVE_SUBAGENT_EXPOSURE
 ```
@@ -346,6 +348,21 @@ operation also opens a session; if so, depend on `THREAD_CREATE_AUTHORIZATION` f
 effective spec and delegation server-side. Test allowed and forbidden launch parameters and
 concurrent retries. Reuse the app's create path (the shared Sandbox inventory), not harness-native agent tools. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
+
+### `RUNNER_HARNESS_OBJECTS_DESIGN` — expose running harnesses separately from Sessions
+
+**Conditional design decision; operator, 2026-10-15 PDT.** If a harness can own multiple
+Sessions, for example through harness-native subagents, evaluate exposing running harnesses
+as explicit runner objects with Session-to-harness associations. Use the characterization from
+`NATIVE_SUBAGENT_EXPOSURE`; do not assume one Session is one running harness or that every
+discovered child is independently controllable.
+
+Compare explicit harness identity/lifecycle with retaining Session-only projections. Specify
+which operations and status belong to the harness versus a Session, how restart/exit affects
+associations and retained history, and the authorization boundary for observing or controlling
+a shared harness. Deliver a recommendation and proposed API shape for review; implementation
+and migration/retirement nodes follow only if selected. This does not unfreeze the broader
+runner durability redesign or authorize native-subagent implementation.
 
 ### `NATIVE_SUBAGENT_EXPOSURE` — evaluate native harness children as Agentplane Sessions
 
