@@ -206,17 +206,6 @@ fence a Session within a store, but its wire representation and validation depen
 `HARNESS_IDENTITY_DESIGN` decision. This lane does not choose one versus several harnesses or stores
 per runner.
 
-The preferred submission address is the caller-provided Sandbox UID, optional persisted harness/store
-ID and Session ID. The exact Kubernetes locator is still open: namespace/name plus UID or UID-based
-resolution may locate the object, but the UID must fence identity. Persist the destination tuple
-through queued wake and delivery, then send only to that exact Sandbox. Name-only lookup remains a
-separate discovery/selection operation; it must not silently become an execution address. UID is an
-identity fence, not authorization: authenticate and authorize the sender before wake, and separately
-enforce any owner, grant and send permissions at the reviewed authority. The runner rejects an
-unknown Session/store when reachable; do not search/reroute, implicitly create it, or substitute a
-same-name Sandbox. Offline queue admission cannot prove live Session membership. Review which
-boundary revalidates identity and permission and how it reports terminal unknown-target outcomes.
-
 The decision must separately state: source/subscription authorization; destination namespace, name, UID
 and owner validation; current Session membership; permission to send; and the execution-time fence.
 Cover replacement under the same name, owner or grant revocation, a vanished runner, suspended
