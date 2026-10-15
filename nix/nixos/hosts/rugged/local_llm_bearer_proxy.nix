@@ -88,9 +88,9 @@ in
 
     services.nginx = {
       enable = true;
+      # Set before NixOS's built-in websocket map initializes hash defaults.
+      mapHashBucketSize = 128;
       appendHttpConfig = ''
-        # The SOPS-backed bearer map key exceeds nginx's default bucket size.
-        map_hash_bucket_size 128;
         include ${config.sops.templates."rugged-local-llm-nginx.conf".path};
       '';
     };
