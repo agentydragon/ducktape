@@ -156,6 +156,32 @@ py_test(
     ],
 )
 
+# Live, one testing VM Sandbox and two model-free Codex setup Sessions. The second opens a fresh
+# workspace, then Git init/rev-parse verifies the normal runner path used the harness UID/GID.
+py_test(
+    name = "test_vm_workspace_ownership",
+    timeout = "eternal",
+    srcs = ["test_vm_workspace_ownership.py"],
+    env_inherit = [
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:harness",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # Live end-to-end resume: two Threads, one per harness, share a fixture Sandbox so a single Pod
 # replacement exercises both native stores. This uses real model turns and waits for the old Pod to
 # disappear before resuming the same Sandbox.

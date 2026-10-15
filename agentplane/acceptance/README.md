@@ -29,6 +29,22 @@ thread, per stage, cold and warm, against regression ceilings; its module docstr
 interval. Each run writes its timings to
 `bazel-testlogs/agentplane/acceptance/test_thread_latency/test.outputs/`.
 
+## VM workspace ownership
+
+`//agentplane/acceptance:test_vm_workspace_ownership` creates one uniquely named testing VM
+Sandbox and opens two Codex Sessions without sending a model turn. The first setup checks that the
+second Session's workspace path is absent; the second exercises normal runner setup, checks UID/GID
+107 ownership, then runs `git init` and `git rev-parse` with global and system Git config disabled.
+Fixture teardown suspends and deletes only the Sandbox created by that invocation. Run it after the
+testing `runner-vm` template points at an image built with the pinned ownership-fix wheel:
+
+```bash
+bazelisk test //agentplane/acceptance:test_vm_workspace_ownership --test_output=streamed
+```
+
+The result is written to
+`bazel-testlogs/agentplane/acceptance/test_vm_workspace_ownership/test.outputs/vm-workspace-ownership.json`.
+
 ## Suspend and resume
 
 `//agentplane/acceptance:test_suspend_resume` tests two Threads (Claude and Codex) in one Pod Sandbox,
