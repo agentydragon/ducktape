@@ -45,7 +45,7 @@ _PICKER_PROVIDER_NAMES = {Provider.CHATGPT: "ChatGPT", Provider.OLLAMA: "cluster
 
 def _picker_model_name(route: Route) -> str:
     """Append the serving provider to every Agentplane picker entry."""
-    provider = _PICKER_PROVIDER_NAMES.get(route.upstream.provider, route.upstream.provider.value)
+    provider = _PICKER_PROVIDER_NAMES[route.upstream.provider]
     return f"{route.display_name} — {provider}"
 
 
