@@ -6,6 +6,18 @@ Ollama speed table contains single-run sanity checks; repeated measurements belo
 their sample counts and limitations. Host config lives in `nix/nixos/hosts/rugged/` and
 `nix/home/hosts/rugged-opencode.nix`; hardware debugging in `nix/debug/rugged/hw/`.
 
+## Current scope: local inference only
+
+Cluster inference is parked at the user's request. The supported path is
+`rugged-opencode-offline` → `127.0.0.1:11436` → llama.cpp on the iGPU. Background
+model provisioning and all seven local picker profiles remain enabled. The
+NixOS bearer proxy is disabled, removing its Nebula listener and firewall opening
+on port 18080 after activation. LiteLLM's rugged routes are being withdrawn in a
+separate cluster change; further Nebula connectivity investigation is paused.
+The proxy module, encrypted credentials, and prior measurements are retained for
+possible future re-enablement. Historical cluster checks below do not imply that
+cluster serving is currently supported.
+
 ## Backends
 
 This table preserves the initial October 13 checks. For measured long-context
@@ -23,9 +35,10 @@ and latency, see [Completed coding cohorts](#completed-coding-cohorts).
 
 ## Running the models
 
-### Ollama (always on)
+### Ollama (previous backend)
 
-The NixOS service (`local_llm_arc.nix`) binds loopback only. A live check on
+Ollama is now disabled in favor of the llama.cpp router. Its NixOS module
+(`local_llm_arc.nix`) is retained for fallback. A historical live check on
 October 14 at 19:48 UTC found `OLLAMA_IGPU_ENABLE=1`, `OLLAMA_NO_CLOUD=1`, and
 `OLLAMA_CONTEXT_LENGTH=32768`; the experimental Flash-Attention-off settings were
 not yet active in that service.

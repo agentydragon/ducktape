@@ -99,7 +99,8 @@ in
     numBatch = 128;
   };
   ducktape.localLlm.llamaRouter.enable = true;
-  ducktape.localLlm.bearerProxy.enable = true;
+  # Cluster inference is parked; OpenCode uses the loopback router directly.
+  ducktape.localLlm.bearerProxy.enable = false;
 
   # Keep the llama.cpp service disabled until its own GGUF models and bounded
   # context are verified. The stock driver does execute NPU work with the
