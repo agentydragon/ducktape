@@ -7,7 +7,7 @@ import mimetypes
 import os
 import socket
 from collections.abc import MutableMapping
-from contextlib import AsyncExitStack, nullcontext
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, cast
 
@@ -118,11 +118,7 @@ async def async_main(settings: Settings) -> None:
         httpx.AsyncClient(base_url=str(settings.egress_admin_url), timeout=settings.egress_admin_timeout) as admin_http,
         httpx.AsyncClient(base_url=str(settings.electric_url), timeout=httpx.Timeout(65, connect=5)) as electric_http,
         dial(settings.runner_gateway_target) as gateway_channel,
-        (
-            dial(settings.session_dispatcher_target)
-            if settings.session_dispatcher_target is not None
-            else nullcontext()
-        ) as dispatcher_channel,
+        dial(settings.session_dispatcher_target) as dispatcher_channel,
         dial(settings.history_service_target) as history_health_channel,
         HistoryServiceClient(
             settings.history_service_target,
@@ -143,7 +139,6 @@ async def async_main(settings: Settings) -> None:
         gateway = RunnerGatewayClient(
             gateway_channel,
             token_file=settings.runner_gateway_token_file,
-            command_admission_timeout_s=settings.runner_gateway_command_admission_timeout_s,
             request_timeout_s=settings.runner_gateway_request_timeout_s,
             control=SandboxControlClient(
                 control_target=settings.runner_gateway_control_target,
@@ -152,14 +147,10 @@ async def async_main(settings: Settings) -> None:
                 lifecycle_timeout_s=settings.runner_gateway_lifecycle_timeout_s,
             ),
         )
-        dispatcher = (
-            SessionDispatcherClient(
-                dispatcher_channel,
-                token_file=settings.session_dispatcher_token_file,
-                request_timeout_s=settings.session_dispatcher_request_timeout_s,
-            )
-            if settings.session_dispatcher_target is not None
-            else None
+        dispatcher = SessionDispatcherClient(
+            dispatcher_channel,
+            token_file=settings.session_dispatcher_token_file,
+            request_timeout_s=settings.session_dispatcher_request_timeout_s,
         )
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
         # binding to the authenticated Sandbox, and where the owner reference cascades.

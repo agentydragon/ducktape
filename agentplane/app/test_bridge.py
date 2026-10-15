@@ -37,15 +37,11 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
+from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
 from agentplane.app.testing.history import SeededEventLogStore, register_gateway_session
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
-from agentplane.app.threads.bridge import (
-    DispatcherNotConfiguredError,
-    DispatchNotFoundError,
-    RunnerAdmissionTimeoutError,
-    RunnerBridge,
-)
+from agentplane.app.threads.bridge import DispatcherRequestTimeoutError, DispatchNotFoundError, RunnerBridge
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.history_watch import SessionOpenings
@@ -270,7 +266,9 @@ async def app_url(
     """The app served by uvicorn, with the one test sandbox resolving to the local runner. The
     server is real because SSE needs a response that streams, which an in-process ASGI transport
     would buffer."""
-    bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content)
+    bridge = RunnerBridge(
+        runners=local_runners, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(local_runners)
+    )
     app = create_app(
         inventory,
         bridge,
@@ -325,7 +323,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
                 json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: BRIDGE_OK"}},
             )
             assert accepted.status_code == 200, accepted.text
-            assert accepted.json()["event"]["commandAdmitted"]["command"] == {
+            assert accepted.json()["admission"]["event"]["commandAdmitted"]["command"] == {
                 "commandId": "input-1",
                 "submitInput": {"text": "Reply with exactly: BRIDGE_OK"},
             }
@@ -360,7 +358,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
                     json={"commandId": "input-2", "submitInput": {"text": "Reply with exactly: BRIDGE_TWO"}},
                 )
                 assert accepted.status_code == 200, accepted.text
-                assert accepted.json()["event"]["commandAdmitted"]["command"] == {
+                assert accepted.json()["admission"]["event"]["commandAdmitted"]["command"] == {
                     "commandId": "input-2",
                     "submitInput": {"text": "Reply with exactly: BRIDGE_TWO"},
                 }
@@ -390,7 +388,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
 
         stopped = await http.post(_commands(thread_id), json={"commandId": "stop-bridge", "stopRunnerSession": {}})
         assert stopped.status_code == 200, stopped.text
-        assert stopped.json()["event"]["commandAdmitted"]["command"] == {
+        assert stopped.json()["admission"]["event"]["commandAdmitted"]["command"] == {
             "commandId": "stop-bridge",
             "stopRunnerSession": {},
         }
@@ -1053,7 +1051,7 @@ async def test_stop_command_returns_after_admission_before_native_shutdown_effec
             async with asyncio.timeout(10):
                 accepted = await asyncio.shield(response)
             assert accepted.status_code == 200, accepted.text
-            assert accepted.json()["event"]["commandAdmitted"]["command"] == {
+            assert accepted.json()["admission"]["event"]["commandAdmitted"]["command"] == {
                 "commandId": "stop-gated",
                 "stopRunnerSession": {},
             }
@@ -1063,7 +1061,7 @@ async def test_stop_command_returns_after_admission_before_native_shutdown_effec
             await asyncio.shield(response)
 
 
-async def test_command_admission_timeout_is_not_an_internal_server_error(
+async def test_dispatcher_timeout_is_not_an_internal_server_error(
     app_url: str, spec: runner_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch, failed_bridge_state: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
@@ -1071,8 +1069,8 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
 
         async def timed_out(
             _bridge: RunnerBridge, _thread_id: UUID, _command: command_pb2.Command, **_kwargs: object
-        ) -> event_log_pb2.EventEntry:
-            raise RunnerAdmissionTimeoutError("timed-out-command")
+        ) -> session_dispatcher_pb2.Dispatch:
+            raise DispatcherRequestTimeoutError("timed-out-command")
 
         monkeypatch.setattr(RunnerBridge, "command", timed_out)
         response = await http.post(
@@ -1082,7 +1080,7 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
         assert "uncertain" in response.json()["detail"]
 
 
-async def test_command_returns_runner_receipt_before_app_archive_catches_up(
+async def test_command_returns_dispatch_receipt_before_app_archive_catches_up(
     bridge: RunnerBridge,
     event_logs: SeededEventLogStore,
     content: ContentStore,
@@ -1119,7 +1117,10 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
         return receipt
 
     monkeypatch.setattr(bridge._runners.gateway, "command", submit)
-    assert await bridge.command(thread, command) == receipt
+    dispatch = await bridge.command(thread, command)
+    assert isinstance(dispatch, session_dispatcher_pb2.Dispatch)
+    assert dispatch.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
+    assert dispatch.admission == receipt
     assert await content.admitted_command(thread, command) is None
     assert await event_logs.events(thread, limit=10) == []
 
@@ -1185,10 +1186,6 @@ async def test_dispatch_status_cannot_be_read_through_another_thread(
     with pytest.raises(DispatchNotFoundError):
         await bridge.dispatch(thread, leaked.command_id)
 
-    legacy = RunnerBridge(runners=runners, event_logs=event_logs, content=content)
-    with pytest.raises(DispatcherNotConfiguredError):
-        await legacy.dispatch(thread, leaked.command_id)
-
 
 @dataclass
 class Replicas:
@@ -1223,7 +1220,9 @@ async def replicas(
         history_reader=history_client,
         summaries=Summaries(history_client),
     )
-    owner = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content)
+    owner = RunnerBridge(
+        runners=local_runners, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(local_runners)
+    )
     try:
         async with (
             # The survivor replica's own channel to the gateway.
@@ -1232,10 +1231,12 @@ async def replicas(
             history_client.new_client() as owner_openings_client,
             history_client.new_client() as survivor_openings_client,
         ):
+            survivor_runners = RunnerDirectory(live_index, gateway_endpoint.gateway(survivor_channel))
             survivor = RunnerBridge(
-                runners=RunnerDirectory(live_index, gateway_endpoint.gateway(survivor_channel)),
+                runners=survivor_runners,
                 event_logs=survivor_event_logs,
                 content=ContentStore(replica_engine, history_reader=history_client),
+                dispatcher=GatewayBackedDispatcher(survivor_runners),
             )
             owner_openings = asyncio.create_task(
                 SessionOpenings(owner_openings_client, event_logs, retry_interval_s=0.05).run()
@@ -1424,11 +1425,14 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
             assert (await next_message(lines)).event == "end"
 
     del live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX]
-    offline = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content)
+    offline = RunnerBridge(
+        runners=local_runners, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(local_runners)
+    )
     # A lost HTTP response is retryable from the committed Thread prefix even after the
     # sandbox disappears: this answer must not attempt a new runner attachment, which with the
     # sandbox gone from the index would raise.
-    assert await offline.command(thread, stop) == admitted
+    assert isinstance(admitted, session_dispatcher_pb2.Dispatch)
+    assert await offline.command(thread, stop) == admitted.admission
     async with (
         asyncio.timeout(10),
         aclosing(follow(event_logs, database_updates.changes[Channel.THREADS], thread, after_cursor=0)) as frames,
@@ -1451,7 +1455,9 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     """Runner receipts and direct commands work while the Thread's History projection is pending."""
     # Stall the runner's push to the History Service's ingress without delaying the runner itself.
     monkeypatch.setattr("agentplane.runner.ingress.IngressPusher.push", AsyncMock())
-    bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content)
+    bridge = RunnerBridge(
+        runners=local_runners, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(local_runners)
+    )
     opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), spec), timeout=10)
     thread_id = UUID(opened.session_id)
     assert opened.attached.last_cursor > 0
@@ -1466,14 +1472,15 @@ async def test_open_and_resume_reply_before_archive_catches_up(
         thread_id,
         command_pb2.Command(command_id="seed-before-archive", submit_input=command_pb2.SubmitInput(text="SEED")),
     )
-    assert isinstance(seed, event_log_pb2.EventEntry)
+    assert isinstance(seed, session_dispatcher_pb2.Dispatch)
+    assert seed.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
     await model.reply(await model.request(), Text("SEED_REPLY"))
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
             (summary,) = await local_runners.client(SANDBOX).list_sessions()
-            assert summary.last_cursor > seed.cursor
+            assert summary.last_cursor > seed.admission.cursor
             assert not summary.active_turn_id
     assert await event_logs.last_cursor(thread_id) == 0
 

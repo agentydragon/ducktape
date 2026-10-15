@@ -101,8 +101,9 @@ kebab-case CLI flags (`AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` for its YAML file)
 
 `port` defaults to 8080 for gRPC, which also serves the unauthenticated `grpc.health.v1.Health`.
 `SubmitCommand` waits up to `runner_admission_ack_timeout_s` (default 15) for runner journal
-admission. Configure the app client's `runner_gateway_command_admission_timeout_s` (default 20)
-above that server budget. Management uses `lifecycle_timeout_s` (default 300).
+admission. Clients that call it should set their `command_admission_timeout_s` above that server
+budget (default 20). The Agentplane app sends Thread commands through Session Dispatcher.
+Management uses `lifecycle_timeout_s` (default 300).
 
 `runner_control_port` (default 8082) is a separate gRPC listener serving only the
 [runner control stream](../docs/runner_control.md), so the gateway's network policy can admit the

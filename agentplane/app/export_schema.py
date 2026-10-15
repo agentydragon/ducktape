@@ -30,6 +30,7 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.system_status import SystemStatusChecker
 from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
@@ -60,6 +61,7 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
             lifecycle_timeout_s=1,
         ),
     )
+    dispatcher = SessionDispatcherClient(channel, token_file=Path("/schema-unused-token"), request_timeout_s=1)
     history = HistoryServiceClient("schema.invalid:8080", token_file=Path("/schema-unused-token"), request_timeout_s=1)
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
@@ -73,7 +75,9 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
     action_policy = ActionPolicyInventory(namespace="schema", custom_objects=cast(Any, None))
     document: dict[str, Any] = create_app(
         inventory,
-        RunnerBridge(runners=RunnerDirectory(live, gateway), event_logs=event_logs, content=content),
+        RunnerBridge(
+            runners=RunnerDirectory(live, gateway), event_logs=event_logs, content=content, dispatcher=dispatcher
+        ),
         ThreadStore(engine, summaries),
         ModelCatalog(
             models=[

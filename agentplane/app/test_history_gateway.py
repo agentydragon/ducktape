@@ -10,6 +10,7 @@ from kubernetes_asyncio import client as k8s_client
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.live import LiveIndex
+from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.runner_directory import RunnerDirectory
@@ -17,7 +18,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc_calls import ServiceError
 from agentplane.history_service.testing.backend import ingest
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import command_pb2, runner_pb2
+from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.runner.runner import Runner
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
@@ -68,27 +69,31 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
         ingest(service_history_db_url, runner),
     ):
         directory = RunnerDirectory(live_index, remote)
-        bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content)
+        bridge = RunnerBridge(
+            runners=directory, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(directory)
+        )
         opened = await bridge.create_session(SANDBOX, uuid4(), spec)
         assert launches.PLATFORM_INSTRUCTIONS in opened.attached.spec.instructions
         thread = UUID(opened.session_id)
         first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
         receipt = await bridge.command(thread, first)
-        assert receipt.event.command_admitted.command == first
+        assert isinstance(receipt, session_dispatcher_pb2.Dispatch)
+        assert receipt.admission.event.command_admitted.command == first
         # The runner receipt can arrive before the independent app archive copy.
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                assert receipt in await event_logs.events(thread, limit=1000)
+                assert receipt.admission in await event_logs.events(thread, limit=1000)
         await model.reply(await model.request(), Text("FIRST"))
         snapshot = await event_logs.feed_state(thread)
         assert snapshot is not None
         assert snapshot.end is None
         second = command_pb2.Command(command_id="remote-second", submit_input=command_pb2.SubmitInput(text="second"))
         next_receipt = await bridge.command(thread, second)
-        assert next_receipt.cursor > receipt.cursor
-        assert next_receipt.origin.source_id == receipt.origin.source_id
+        assert isinstance(next_receipt, session_dispatcher_pb2.Dispatch)
+        assert next_receipt.admission.cursor > receipt.admission.cursor
+        assert next_receipt.admission.origin.source_id == receipt.admission.origin.source_id
         await model.reply(await model.request(), Text("SECOND"))
         await bridge.command(
             thread, command_pb2.Command(command_id="remote-stop", stop_runner_session=command_pb2.StopRunnerSession())

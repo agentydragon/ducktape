@@ -70,10 +70,8 @@ class Settings(AppSettingsConfig):
     runner_gateway_target: str = Field(
         min_length=1, description="The Runner Gateway's gRPC host:port, serving Sessions."
     )
-    session_dispatcher_target: str | None = Field(
-        default=None,
-        min_length=1,
-        description="Optional Session Dispatcher gRPC host:port for Thread commands. Leave unset until the app image is pinned.",
+    session_dispatcher_target: str = Field(
+        min_length=1, description="Required Session Dispatcher gRPC host:port for Thread commands."
     )
     runner_gateway_control_target: str = Field(
         min_length=1,
@@ -97,13 +95,6 @@ class Settings(AppSettingsConfig):
     runner_gateway_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     runner_gateway_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
 
-    runner_gateway_command_admission_timeout_s: float = Field(
-        default=20,
-        gt=0,
-        allow_inf_nan=False,
-        description="Seconds the app waits for the Runner Gateway to return the runner's durable "
-        "command admission receipt. Keep above its runner_admission_ack_timeout_s setting.",
-    )
     log_levels: LogLevels
     host: str = Field(default="127.0.0.1", description="Bind address.")
     port: int = Field(default=8080, description="Bind port.")

@@ -16,6 +16,19 @@ py_library(
 )
 
 py_library(
+    name = "dispatcher",
+    srcs = ["dispatcher.py"],
+    visibility = ["//agentplane/app:__pkg__"],
+    deps = [
+        "//agentplane/app/threads:dispatcher_client",
+        "//agentplane/app/threads:runner_directory",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
+    ],
+)
+
+py_library(
     name = "thread_test_support",
     srcs = ["thread_test_support.py"],
     visibility = ["//agentplane/app:__subpackages__"],
@@ -40,6 +53,7 @@ py_library(
     name = "replication_process",
     srcs = ["replication_process.py"],
     deps = [
+        ":dispatcher",
         ":model_test_data",
         ":replication_source",
         ":system_status",

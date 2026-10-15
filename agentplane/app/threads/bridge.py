@@ -1,4 +1,4 @@
-"""Runner-first sessions and commands; commands answer from the durable runner receipt."""
+"""Runner sessions and Dispatcher-backed commands."""
 
 from __future__ import annotations
 
@@ -32,10 +32,6 @@ class MalformedMessageError(Exception):
     """A request body is not the proto-JSON of the message the route takes."""
 
 
-class DispatcherNotConfiguredError(Exception):
-    """The dispatch-status read is unavailable while the legacy command path is active."""
-
-
 class DispatchNotFoundError(Exception):
     """The dispatch does not belong to the requested Thread."""
 
@@ -44,11 +40,11 @@ class SessionOpeningNotFoundError(Exception):
     """The opening is not for the requested Sandbox."""
 
 
-class RunnerAdmissionTimeoutError(Exception):
-    """Command admission was not confirmed before the deadline; its outcome is uncertain."""
+class DispatcherRequestTimeoutError(Exception):
+    """The Dispatcher did not confirm a durable result before the deadline; retry the same ID."""
 
     def __init__(self, command_id: str) -> None:
-        super().__init__(f"runner admission of command {command_id!r} was not confirmed; outcome uncertain")
+        super().__init__(f"Dispatcher result for command {command_id!r} was not confirmed; outcome uncertain")
 
 
 class NewSession(BaseModel):
@@ -69,7 +65,7 @@ class RunnerBridge:
         runners: RunnerDirectory,
         event_logs: EventLogStore,
         content: ContentStore,
-        dispatcher: SessionDispatcherClient | None = None,
+        dispatcher: SessionDispatcherClient,
         open_sessions_via_dispatcher: bool = False,
     ) -> None:
         self._runners = runners
@@ -77,8 +73,6 @@ class RunnerBridge:
         self._content = content
         self._dispatcher = dispatcher
         self._open_sessions_via_dispatcher = open_sessions_via_dispatcher
-        if open_sessions_via_dispatcher and dispatcher is None:
-            raise ValueError("Dispatcher OpenSession is enabled without a Session Dispatcher client")
 
     async def list_sessions(self, sandbox: str) -> list[runner_pb2.SessionSummary]:
         return await self._runners.client(sandbox).list_sessions()
@@ -88,7 +82,6 @@ class RunnerBridge:
     ) -> session_dispatcher_pb2.SessionOpening:
         """Open a complete Session spec, through Dispatcher when its caller setting is enabled."""
         if self._open_sessions_via_dispatcher:
-            assert self._dispatcher is not None
             return await self._dispatcher.open_session(
                 sandbox=sandbox, session_id=str(session_id), spec=spec, setup_script=setup_script
             )
@@ -111,8 +104,6 @@ class RunnerBridge:
         )
 
     async def session_opening(self, sandbox: str, session_id: UUID) -> session_dispatcher_pb2.SessionOpening:
-        if self._dispatcher is None:
-            raise DispatcherNotConfiguredError("Session Dispatcher is not configured")
         opening = await self._dispatcher.get_session_opening(str(session_id))
         if opening.sandbox != sandbox:
             raise SessionOpeningNotFoundError(str(session_id))
@@ -154,11 +145,11 @@ class RunnerBridge:
     async def command(
         self, thread_id: UUID, command: command_pb2.Command, *, sandbox: str | None = None
     ) -> event_log_pb2.EventEntry | session_dispatcher_pb2.Dispatch:
-        """Return a Dispatcher receipt or, before cutover, the runner's durable receipt.
+        """Return a Dispatcher receipt, or an archived admission for an exact retry.
 
         An exact retry already in the archive needs no runner, including when the Sandbox is
-        gone. Otherwise the Dispatcher stores a durable queue entry; without its optional
-        configuration the runner deduplicates the unchanged id/payload in its journal.
+        gone. Otherwise the Dispatcher stores a durable queue entry or immediately delivers an
+        interrupt. A retry keeps the same immutable command ID and payload if the response is lost.
         """
         if admitted := await self._content.admitted_command(thread_id, command):
             return admitted
@@ -167,21 +158,16 @@ class RunnerBridge:
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise ThreadStateError(f"runner history is rejected: {snapshot.end.message}")
-        if self._dispatcher is not None:
-            target_sandbox = sandbox if sandbox is not None else await self._runners.sandbox_of(thread_id)
-            return await self._dispatcher.command(sandbox=target_sandbox, session_id=str(thread_id), command=command)
-        runner = self._runners.client(sandbox or await self._runners.sandbox_of(thread_id))
+        target_sandbox = sandbox if sandbox is not None else await self._runners.sandbox_of(thread_id)
         try:
-            return await self._runners.gateway.command(runner.destination, str(thread_id), command)
+            return await self._dispatcher.command(sandbox=target_sandbox, session_id=str(thread_id), command=command)
         except TimeoutError as error:
-            raise RunnerAdmissionTimeoutError(command.command_id) from error
+            raise DispatcherRequestTimeoutError(command.command_id) from error
 
     async def dispatch(self, thread_id: UUID, command_id: str) -> session_dispatcher_pb2.Dispatch:
         """Read only this Thread's dispatch; a guessed ID for another Session stays hidden."""
         if not await self._event_logs.exists(thread_id):
             raise ThreadNotFoundError(thread_id)
-        if self._dispatcher is None:
-            raise DispatcherNotConfiguredError("Session Dispatcher is not configured")
         dispatch = await self._dispatcher.get_dispatch(command_id)
         if dispatch.session_id != str(thread_id):
             raise DispatchNotFoundError(command_id)
