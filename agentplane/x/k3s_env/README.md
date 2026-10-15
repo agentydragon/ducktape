@@ -101,3 +101,6 @@ already in the cache), with the changes below. Breaks found on the way, in order
 Not yet reached: Service port≠targetPort under headless Services (egress is 80→8082; only the agent-facing
 rules URL uses it) and Dex/OIDC public hostnames. The k3s lifecycle tests use stub KubeVirt CRDs and no
 Cilium, so they do not validate those integrations or real external identity.
+
+The [historical image inventory](k3s_image_inventory_2026_10_14.md) records the layer and unpacked-file
+breakdown for the 21-image snapshot before Sandbox Service image retirement.

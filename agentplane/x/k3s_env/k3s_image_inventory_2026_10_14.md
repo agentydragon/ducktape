@@ -192,7 +192,7 @@ direnv exec . bbr build \
   //agentplane/sandbox_service:image \
   //agentplane/session_dispatcher:image \
   //agentplane/session_dispatcher:migration_image
-direnv exec . python agentplane/debug/inventory_k3s_images.py --bazel-bin bb-out/bazel-out/k8-fastbuild/bin
+direnv exec . python agentplane/x/k3s_env/inventory_k3s_images.py --bazel-bin bb-out/bazel-out/k8-fastbuild/bin
 ```
 
-The successful all-image BBR build was invocation `23745169-079f-468d-aded-2d7861d2aea8`; it materialized the OCI layout blobs in the `bb-out` tree. The script uses only the Python standard library and verifies compressed layer SHA-256 before reading tar members. The accepted lifecycle profiles are documented in [the k3s spike README](../x/k3s_env/README.md): baseline profile run `75cf36f3-50c9-423c-bc24-522e00782390` at `4fcc98579e` plus instrumentation, OCI stream run `3b656910-9b6f-4b6c-8a7a-e7129375a1fd` at `ff38137b3f` plus instrumentation. Inventory source revision and profiled source revisions are stated separately.
+The successful all-image BBR build was invocation `23745169-079f-468d-aded-2d7861d2aea8`; it materialized the OCI layout blobs in the `bb-out` tree. The script uses only the Python standard library and verifies compressed layer SHA-256 before reading tar members. The accepted lifecycle profiles are documented in [the k3s spike README](README.md): baseline profile run `75cf36f3-50c9-423c-bc24-522e00782390` at `4fcc98579e` plus instrumentation, OCI stream run `3b656910-9b6f-4b6c-8a7a-e7129375a1fd` at `ff38137b3f` plus instrumentation. Inventory source revision and profiled source revisions are stated separately.

@@ -114,6 +114,11 @@ py_library(
 )
 
 py_library(
+    name = "inventory_k3s_images",
+    srcs = ["inventory_k3s_images.py"],
+)
+
+py_library(
     name = "stack",
     testonly = True,
     srcs = ["stack.py"],
