@@ -146,10 +146,12 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         ).attached.spec == opened.spec
         assert (await destination.list_sessions())[0].spec == opened.spec
         # The runner refuses a retry whose spec differs from the one it recorded.
-        with pytest.raises(RefusedError):
+        with pytest.raises(ServiceError) as refused:
             await destination.create(
                 session_id=requested, spec=launch_spec | {"instructions": "Different task"}, setup_script=setup_script
             )
+        assert refused.value.code == grpc.StatusCode.ALREADY_EXISTS
+        assert str(refused.value) == f"ALREADY_EXISTS: session {session} exists with a different spec"
         assert bootstrap_marker.read_text() == "B"
         assert setup_marker.read_text() == "S"
         entries = await complete_turn(remote, runner, model, session, "grpc-notice")

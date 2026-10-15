@@ -181,7 +181,7 @@ async def test_runner_status_and_detail_are_preserved(
     request = runner_gateway_pb2.ResumeSessionRequest(
         destination=sandboxes_pb2.SessionDestination(sandbox=DESTINATION, session_id=str(session_id))
     )
-    call = asyncio.create_task(remote.stub.ResumeSession(request, metadata=await remote.metadata(), timeout=5))
+    call = asyncio.ensure_future(remote.stub.ResumeSession(request, metadata=await remote.metadata(), timeout=5))
     runner_call = await peer.next(runner_control_pb2.ResumeSessionRequest)
     runner_call.outcome.set_result(status)
 
