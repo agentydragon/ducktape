@@ -329,6 +329,9 @@ async def test_unavailable_destination_does_not_contact_runner(
             cluster.fake.pods[SANDBOX]["spec"]["serviceAccountName"] = "test-other"
         case "suspended":
             stored["spec"]["running"] = False
+            # The desired stop is not effective until the controller reports it and clears its incarnation.
+            stored["status"]["operatingMode"] = "Suspended"
+            stored["status"].pop("incarnation", None)
         case "sealed-and-deleting":
             stored["metadata"]["deletionTimestamp"] = "2026-09-01T12:00:00Z"
             stored["status"]["conditions"] = [

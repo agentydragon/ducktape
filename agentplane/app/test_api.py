@@ -227,8 +227,8 @@ async def test_list_reports_separate_resource_statuses(client: httpx.AsyncClient
 async def test_get_returns_the_row_or_404(client: httpx.AsyncClient) -> None:
     row = (await client.get("/sandboxes/live")).json()
 
-    assert row["operating_mode"] is None
-    assert row["phase"] == "Unspecified"
+    assert row["operating_mode"] == "Running"
+    assert row["phase"] == "Running"
     assert row["pod"]["name"] == "live"
     assert row["pod"]["status"]["podIP"] == "10.0.0.7"
     assert row["pod"]["status"]["containerStatuses"][0]["state"] == {"running": {}}
@@ -389,6 +389,10 @@ async def test_delete_starts_teardown_once_the_sandbox_is_suspended(
     assert (await client.get("/sandboxes/live")).json()["phase"] == "Running"
 
     assert (await client.post("/sandboxes/live/suspend")).status_code == 204
+    # Only a controller report, not the app's desired-state patch, proves it is suspended.
+    stored = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
+    stored["status"]["operatingMode"] = "Suspended"
+    stored["status"].pop("incarnation", None)
     assert (await client.delete("/sandboxes/live")).status_code == 204
     # The Sandbox Controller's finalizer holds it until its Sessions are sealed.
     assert (await client.get("/sandboxes/live")).json()["phase"] == "Quiescing"

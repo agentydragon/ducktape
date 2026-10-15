@@ -76,6 +76,7 @@ async def test_list_keeps_each_resource_status_separate(
     assert MessageToDict(live.status) == {
         "conditions": [_READY],
         "incarnation": {"name": "live", "uid": "test-pod-live"},
+        "operatingMode": "Running",
     }
     pod_status = MessageToDict(live.pod.status)
     assert (pod_status["phase"], pod_status["podIP"]) == ("Running", "10.0.0.7")
@@ -412,10 +413,16 @@ async def test_concurrent_creates_share_one_sandbox(
     assert len([key for key in custom_objects.objects if key[0] == SANDBOXES_PLURAL]) == 1
 
 
-async def test_deleted_name_is_reusable_but_not_the_old_uid(inventory: SandboxInventory) -> None:
+async def test_deleted_name_is_reusable_but_not_the_old_uid(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
     spec = CreateSandboxRequest(name="reused", template=TEMPLATE)
     previous = await inventory.create(spec, policy_sets=set(), caller=CALLER)
     await inventory.suspend(previous.name, uid=previous.uid)
+    # Only a controller report, not the app's desired-state patch, proves it is suspended.
+    stored = custom_objects.objects[(SANDBOXES_PLURAL, previous.name)]
+    stored["status"]["operatingMode"] = "Suspended"
+    stored["status"].pop("incarnation", None)
     await inventory.begin_teardown(previous.name, uid=previous.uid)
     assert await inventory.retry(spec, caller=CALLER) is None
     following = await inventory.create(spec, policy_sets=set(), caller=CALLER)

@@ -45,6 +45,7 @@ def run_in_a_vm(cluster: SandboxCluster) -> None:
     Sandbox and running as its ServiceAccount, and `RUNNER_TOKEN` is that Pod's runner's."""
     del cluster.fake.pods[SANDBOX]
     cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]["status"] = {
+        "operatingMode": sandbox_resource.OperatingMode.RUNNING.value,
         "incarnation": {"name": LAUNCHER_POD, "uid": LAUNCHER_POD_UID},
         "conditions": [READY_CONDITION],
     }
