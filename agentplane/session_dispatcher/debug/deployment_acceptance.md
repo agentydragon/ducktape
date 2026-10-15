@@ -1,5 +1,16 @@
 # Dispatcher testing deployment acceptance
 
+## Testing send-triggered wake
+
+On 2026-10-14, the targeted `opted_in` deployed case passed in
+[invocation 83f8cb30-f05a-4745-8714-3e8150d3653f](https://app.buildbuddy.io/invocation/83f8cb30-f05a-4745-8714-3e8150d3653f).
+The test read the actual Dispatcher wake caller allowlist and app default policies, then created
+`accept-wake-6d4808f3` (UID `c3044162-a645-4038-b5f1-8ec7b0facddc`) stopped with wake-on-send.
+Concurrent app `OpenSession` and notifications `SubmitInput` produced one wake generation; both
+reached runner admission in the new incarnation. `dispatcher-wake.json` records `passed: true` and
+`cleanup_complete: true`. Subsequent reads found no testing Sandboxes and quota at 5Gi/80Gi.
+The case did not exercise app HTTP or History projection; that is a separate acceptance gate.
+
 The deployment from PR #10449 is merged and reconciled in `agentplane-testing`. Initial inspection
 found one active replica with `Recreate`, an applied independent CNPG `session_dispatcher` database
 owned by `session_dispatcher`, successful migration image `devel-20261014050240-98c04c8`, and

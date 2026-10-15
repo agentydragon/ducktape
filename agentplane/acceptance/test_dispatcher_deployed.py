@@ -495,7 +495,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
     assert dispatcher_config["caller_accounts"] == expected_wake_callers
     assert dispatcher_config["wake_caller_accounts"] == expected_wake_callers
 
-    service_config = json.loads(await _kubectl("get", "configmap", "agentplane-sandbox-service-config", "-o", "json"))
+    service_config = json.loads(await _kubectl("get", "configmap", "agentplane-app-config", "-o", "json"))
     policies = yaml.safe_load(service_config["data"]["config.yaml"])["default_policy_sets"]
     assert isinstance(policies, list)
     assert policies
@@ -558,7 +558,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
         }
         path.write_text(json.dumps(evidence, indent=2) + "\n")
         async with _forward() as target:
-            channel = await dial(target)
+            channel = dial(target)
             try:
                 stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
                 opened, queued = await asyncio.gather(
