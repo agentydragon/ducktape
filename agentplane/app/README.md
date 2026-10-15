@@ -143,10 +143,8 @@ explicitly resumes retained Sessions through the Gateway's Session API. Every ne
 submitted to the Dispatcher with the complete Session spec. A `SessionOpening` reports queued,
 delivering, runner-admitted, or failed state, and
 `GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
-History Service has projected a Thread yet. `session_dispatcher_open_sessions` remains accepted in
-app settings for rollout compatibility, but it is ignored: opening always uses the Dispatcher. The
-generated ConfigMaps no longer set the key; remove the accepted setting field only after both
-environments reconcile that omission.
+History Service has projected a Thread yet. Opening always uses the Dispatcher; generated ConfigMaps
+omit the retired rollout flag.
 Both testing and staging activate queued openings when Flux pins this app image. The operator
 approved this combined rollout; bounded queued-opening and Thread-projection acceptance follow
 the image rollout in each environment.
