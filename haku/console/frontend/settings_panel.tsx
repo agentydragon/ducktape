@@ -278,10 +278,12 @@ export function SettingsPanel(): JSX.Element {
   const agentsResource = useAsyncResource(listAgents, resourceOptions("agents", POLL_REFRESH_INTERVAL_MS));
   const deploymentResource = useAsyncResource(fetchDeploymentInfo, resourceOptions("system", POLL_REFRESH_INTERVAL_MS));
   const agentAccessProfiles = agentsResource.data?.access_profiles ?? [];
+  const refreshAgents = agentsResource.refresh;
+  const refreshDeployment = deploymentResource.refresh;
   const refreshActiveTab = useCallback(() => {
-    if (activeTab === "agents") return agentsResource.refresh();
-    if (activeTab === "system") return deploymentResource.refresh();
-  }, [activeTab, agentsResource.refresh, deploymentResource.refresh]);
+    if (activeTab === "agents") return refreshAgents();
+    if (activeTab === "system") return refreshDeployment();
+  }, [activeTab, refreshAgents, refreshDeployment]);
   useEffect(() => {
     const restoreTab = () => setActiveTab(settingsTabFromLocation());
     window.addEventListener("popstate", restoreTab);
