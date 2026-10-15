@@ -35,6 +35,14 @@ const READY_SANDBOX: SandboxView = {
   },
 };
 
+const SUSPENDED_SANDBOX: SandboxView = {
+  ...READY_SANDBOX,
+  operating_mode: "Suspended",
+  status: null,
+  phase: "Suspended",
+  pod: null,
+};
+
 function thread(overrides: Partial<ThreadView> = {}): ThreadView {
   return {
     id: "10000000-0000-4000-8000-000000000001",
@@ -123,5 +131,13 @@ describe("a failed last turn colors only an otherwise idle thread", () => {
     expect(threadStatusFromSnapshot(thread(failed), undefined, true).kind).toBe("inactive");
     expect(threadStatusFromSnapshot(thread(failed), READY_SANDBOX, false).kind).toBe("inactive");
     expect(threadStatusFromSnapshot(undefined, READY_SANDBOX, true).kind).toBe("inactive");
+  });
+
+  it("shows a suspended Sandbox as a distinct thread status", () => {
+    expect(threadStatusFromSnapshot(thread(failed), SUSPENDED_SANDBOX, true)).toEqual({
+      kind: "suspended",
+      label: "Sandbox suspended",
+      tabLabel: "Suspended",
+    });
   });
 });

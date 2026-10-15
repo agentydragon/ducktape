@@ -83,6 +83,7 @@ class SilentEventSource extends EventTarget {
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
+let rerender: () => Promise<void> = async () => {};
 const DEFAULT_PRESET_DEFAULTS = {
   harness: "HARNESS_CLAUDE",
   model: "test-model",
@@ -95,6 +96,7 @@ afterEach(async () => {
   vi.useRealTimers();
   live.snapshot.threads = [];
   sessionStorage.clear();
+  rerender = async () => {};
   (live.snapshot.sandbox as SandboxView).binding = null;
   presetDefaults = { ...DEFAULT_PRESET_DEFAULTS };
 });
@@ -164,24 +166,24 @@ async function render(
   document.body.append(container);
   root = createRoot(container);
   const onOpenThread = vi.fn();
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <MemoryRouter initialEntries={routeNavigation ? ["/sandboxes/startup-test"] : undefined}>
-          {routeNavigation ? (
-            <>
-              <Link to="/sandboxes/other-test">Other sandbox</Link>
-              <Routes>
-                <Route path="/sandboxes/:name" element={<SandboxRoute />} />
-              </Routes>
-            </>
-          ) : (
-            <SandboxPage name="startup-test" onBack={vi.fn()} onOpenThread={onOpenThread} />
-          )}
-        </MemoryRouter>
-      </MantineProvider>
-    )
+  const app = () => (
+    <MantineProvider env="test">
+      <MemoryRouter initialEntries={routeNavigation ? ["/sandboxes/startup-test"] : undefined}>
+        {routeNavigation ? (
+          <>
+            <Link to="/sandboxes/other-test">Other sandbox</Link>
+            <Routes>
+              <Route path="/sandboxes/:name" element={<SandboxRoute />} />
+            </Routes>
+          </>
+        ) : (
+          <SandboxPage name="startup-test" onBack={vi.fn()} onOpenThread={onOpenThread} />
+        )}
+      </MemoryRouter>
+    </MantineProvider>
   );
+  await act(async () => root.render(app()));
+  rerender = async () => act(async () => root.render(app()));
   return onOpenThread;
 }
 
@@ -391,6 +393,71 @@ it("recovers a lost Open from its Thread without sending a second Open", async (
   expect(onOpenThread).toHaveBeenCalledWith(first.session_id);
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
+});
+
+it("resolves a queued Open from the live matching Thread projection exactly once", async () => {
+  const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) => {
+    if (request.method === "GET") return Response.json([]);
+    const { session_id: sessionId } = await request.clone().json();
+    return Response.json({
+      sessionId,
+      sandbox: "startup-test",
+      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+      reason: "waiting for runner",
+    });
+  });
+  const onOpenThread = await render(sessions);
+  await act(async () => newSession().click());
+  const sessionId = (await postedBody(sessions)).session_id as string;
+  expect(container.textContent).toContain("Queued in Dispatcher");
+  expect(onOpenThread).not.toHaveBeenCalled();
+
+  live.snapshot.threads = [thread({ id: sessionId })];
+  await rerender();
+  expect(onOpenThread).toHaveBeenCalledTimes(1);
+  expect(onOpenThread).toHaveBeenCalledWith(sessionId);
+  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
+  expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
+
+  await rerender();
+  expect(onOpenThread).toHaveBeenCalledTimes(1);
+});
+
+it("resumes a persisted pending Open when its matching Thread is already projected after remount", async () => {
+  const sessionId = "recovered-open-session";
+  sessionStorage.setItem("agentplane:pending-open:startup-test", sessionId);
+  live.snapshot.threads = [thread({ id: sessionId })];
+  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
+    Promise.resolve(
+      request.method === "GET" ? Response.json([]) : Response.json({ detail: "unexpected POST" }, { status: 500 })
+    )
+  );
+
+  const onOpenThread = await render(sessions);
+  await vi.waitFor(() => expect(onOpenThread).toHaveBeenCalledWith(sessionId));
+  expect(onOpenThread).toHaveBeenCalledTimes(1);
+  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
+  expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(0);
+});
+
+it("does not resolve a pending Open from an unrelated Thread or clear it on manual navigation", async () => {
+  const sessionId = "pending-session";
+  const otherSessionId = "other-session";
+  sessionStorage.setItem("agentplane:pending-open:startup-test", sessionId);
+  live.snapshot.threads = [thread({ id: otherSessionId })];
+  const onOpenThread = await render(async (request) =>
+    Response.json(request.method === "GET" ? [{ sessionId: otherSessionId }] : { detail: "unexpected POST" })
+  );
+
+  expect(onOpenThread).not.toHaveBeenCalled();
+  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(sessionId);
+  await act(async () => {
+    const row = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent === otherSessionId);
+    if (!(row instanceof HTMLButtonElement)) throw new Error("Missing unrelated Session row");
+    row.click();
+  });
+  expect(onOpenThread).toHaveBeenCalledWith(otherSessionId);
+  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(sessionId);
 });
 
 it("reload retains only the Session ID, never the Open spec or bootstrap", async () => {

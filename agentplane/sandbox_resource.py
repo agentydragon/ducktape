@@ -64,15 +64,6 @@ class ObjectMeta(_Wire):
     labels: dict[str, str] = Field(default_factory=dict)
 
 
-class SessionDefaults(_Wire):
-    harness: str | None = None
-    model: str | None = None
-    cwd: str | None = None
-    reasoning_effort: str | None = None
-    instructions: str | None = None
-    setup_script: str | None = None
-
-
 class Spec(_Wire):
     template: str
     running: bool = False
@@ -80,7 +71,6 @@ class Spec(_Wire):
     wake_on_send: bool = False
     wake_generation: int = 0
     policy_sets: Set[str] = frozenset()
-    session_defaults: SessionDefaults | None = None
     bootstrap: str | None = None
 
 

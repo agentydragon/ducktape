@@ -123,7 +123,7 @@ carry no create/delete/grant/session authority. Gateway and History protobuf/cli
 service-owned APIs; there is no Sandbox Service API or client.
 
 Thread launch defaults live in the app's configured preset catalog and are selected by the preset
-label on a Sandbox. The shared Sandbox creation request has no per-Sandbox Session defaults. The existing
-`SandboxBinding.session_defaults` field remains in the shared read model while its old producers and
-consumers are retired; removing that field is a later rollout step. No database schema, identities,
-or retained logs change with package renames.
+label on a Sandbox. The shared Sandbox creation request has no per-Sandbox Session defaults. The
+shared Sandbox read model carries the Sandbox's bootstrap script but no launch defaults. The app
+resolves a complete Session spec from the preset before sending its opening to the Dispatcher. No
+database schema, identities, or retained logs change with package renames.

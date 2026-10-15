@@ -16,7 +16,8 @@ import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 import { RunningChevrons, StatusDot } from "./custom_mark_icons";
 
 /** Each kind's meaning is on its row of `THREAD_STATUS_MARKS`. */
-export type ThreadStatusKind = "running" | "idle" | "turn_error" | "stopped" | "failed" | "archived" | "inactive";
+export type ThreadStatusKind =
+  "running" | "idle" | "turn_error" | "stopped" | "suspended" | "failed" | "archived" | "inactive";
 
 /** Each kind's meaning is on its row of `SANDBOX_STATUS_MARKS`. */
 export type SandboxStatusKind = "ready" | "pending" | "suspended" | "failed" | "gone";
@@ -30,7 +31,7 @@ export interface StatusMark {
 }
 
 /** What the favicon hand-draws for a thread's status; thread_favicon.ts owns the art. */
-export type FaviconShape = "dot" | "chevrons" | "alert" | "power" | "archive";
+export type FaviconShape = "dot" | "chevrons" | "alert" | "power" | "pause" | "archive";
 
 // Mantine default-palette shades. Blue means live and waiting, for a thread and a Sandbox alike, and
 // reads apart from both green (a turn running) and gray (switched off or gone).
@@ -62,12 +63,14 @@ export const THREAD_STATUS_MARKS: Record<ThreadStatusKind, ThreadStatusMark> = {
   turn_error: { icon: IconAlertTriangle, color: RED, favicon: "alert", glyph: "!" },
   // The harness is down (shut down or lost), whether its runner feed is still attached or has ended.
   stopped: { icon: IconPower, color: GRAY, favicon: "power", glyph: "⏻" },
+  // The owning Sandbox is suspended; the native Session and its history remain available.
+  suspended: { icon: IconPlayerPause, color: GRAY, favicon: "pause", glyph: "Ⅱ" },
   // The runner feed failed.
   failed: { icon: StatusDot, color: RED, favicon: "dot", glyph: "×" },
   // Archived, whatever its retained history says. An arrow onto a bar reads as filing away at tab-title size; box shapes read as a missing-glyph box
   // there.
   archived: { icon: IconArchive, color: GRAY, favicon: "archive", glyph: "↧" },
-  // Nothing else live to show: Sandbox suspended or gone, setup or the harness's first launch still
+  // Nothing else live to show: the Sandbox is gone, setup or the harness's first launch is still
   // running, or the feed ended with the harness not known to be down, or not confirmed.
   inactive: { icon: StatusDot, color: GRAY, favicon: "dot", glyph: "○" },
 };

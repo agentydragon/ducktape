@@ -239,6 +239,7 @@ async def test_session_deleted_sandbox(view: VisualPage, app: AgentplaneFixture)
 @DESKTOP_AND_MOBILE
 async def test_session_suspended_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(SUSPENDED_THREAD)
+    await view.page.wait_for_selector('[aria-label="Sandbox suspended"]', state="attached")
     await view.page.wait_for_selector(':text("Last observed Sandbox and Pod")', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
     await view.check(context="fixture ready")

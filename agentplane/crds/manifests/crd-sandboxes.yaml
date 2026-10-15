@@ -83,27 +83,6 @@ spec:
                     type: string
                     minLength: 1
                   x-kubernetes-list-type: set
-                sessionDefaults:
-                  description: >-
-                    What a new Session in the Sandbox starts with unless its request says otherwise.
-                    The Runner Gateway reads them; the controller does not.
-                  type: object
-                  properties:
-                    harness:
-                      type: string
-                      enum: [HARNESS_CLAUDE, HARNESS_CODEX]
-                    model:
-                      type: string
-                    cwd:
-                      type: string
-                    reasoningEffort:
-                      type: string
-                    instructions:
-                      type: string
-                    setupScript:
-                      description: Run in the Session's directory before its harness starts.
-                      type: string
-                      maxLength: 65536
                 bootstrap:
                   description: >-
                     A script the runner runs once before the Sandbox's first Session. The Runner
@@ -193,6 +172,18 @@ spec:
                     stops. A runner that connected and is not this one has Sessions still to seal
                     before the Sandbox stops or is deleted.
                   type: string
+                quiesceAttempt:
+                  description: >-
+                    The controller's latest Quiesce request time for a runner incarnation. It bounds
+                    retries across reconciles and controller restarts.
+                  type: object
+                  required: [runnerPodUid, attemptedAt]
+                  properties:
+                    runnerPodUid:
+                      type: string
+                    attemptedAt:
+                      type: string
+                      format: date-time
                 operatingMode:
                   description: >-
                     Whether the controller runs the Sandbox: `spec.running` unless the controller suspended

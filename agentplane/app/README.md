@@ -75,9 +75,9 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   (`ThreadStore`) composes the app database and the History Service; runners push their events to
   the History Service.
 - `threads/bridge.py`: browser-facing composition of session operations with archive synchronization.
-  `threads/runner_directory.py` selects ready Sandboxes from the app's live index and addresses the
-  Runner Gateway with their ServiceAccount and UID. Neither opens direct runner connections or owns
-  lifecycle implementation.
+  `threads/runner_directory.py` selects ready Sandboxes from the app's live index and asks the Runner
+  Gateway for their UID-fenced live runner inventory, so Dispatcher-opened Sessions remain visible
+  even when they were not created through the Gateway's legacy Session registry.
 - `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits for the frontend's
   generated client.
 - `threads/events/`: a Thread's archived events, read through the History Service. `event_log.py`
@@ -138,14 +138,15 @@ until History projects its admission or command row; the app adds no command que
 Dispatcher and authorize the app ServiceAccount before rolling out an app image that requires this
 setting.
 
-The app continues to list Sessions and explicitly resume retained native Sessions through the
-Runner Gateway. Every new Session opening is submitted to the Dispatcher with the complete Session
-spec. A `SessionOpening` reports queued, delivering, runner-admitted, or failed state, and
+The app lists Sessions through the Runner Gateway's authenticated, UID-fenced `ListSessions` RPC and
+explicitly resumes retained Sessions through the Gateway's Session API. Every new Session opening is
+submitted to the Dispatcher with the complete Session spec. A `SessionOpening` reports queued,
+delivering, runner-admitted, or failed state, and
 `GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
 History Service has projected a Thread yet. `session_dispatcher_open_sessions` remains accepted in
-app settings for rollout compatibility, but it is ignored: opening always uses the Dispatcher. Remove
-that key from generated ConfigMaps only after the unconditional app image is pinned in both
-environments; remove the accepted setting field only after both ConfigMaps reconcile without it.
+app settings for rollout compatibility, but it is ignored: opening always uses the Dispatcher. The
+generated ConfigMaps no longer set the key; remove the accepted setting field only after both
+environments reconcile that omission.
 Both testing and staging activate queued openings when Flux pins this app image. The operator
 approved this combined rollout; bounded queued-opening and Thread-projection acceptance follow
 the image rollout in each environment.
@@ -340,9 +341,10 @@ the rest of the Deployments' 60-second grace period is for. No preStop delay con
 browser (OIDC session)  /  agent (Kubernetes token)
    |  REST + Electric sync + inventory SSE, through the cluster gateway
 integration app (Deployment, namespace agentplane-staging)
-   |  Kubernetes API              |  runner protocol (gRPC, in-cluster)
-Sandbox -> Pod, PVC               |
-                  runner container <-+
+   |  Kubernetes API              |  gRPC Session API
+Sandbox -> Pod, PVC               v
+                         Runner Gateway
+                            |  RunnerControl stream
                     runner process, state dir on the PVC
                     claude / codex child per session
                     model traffic to LiteLLM through the egress proxy, which holds the key

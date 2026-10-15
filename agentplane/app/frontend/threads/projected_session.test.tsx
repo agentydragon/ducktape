@@ -527,6 +527,16 @@ it("shows a stopped harness as an icon in the status indicator and the favicon, 
   expect(document.title).toBe(`${THREAD_STATUS_MARKS.stopped.glyph} Test thread · Stopped — Agentplane`);
 });
 
+it("shows a suspended Sandbox as paused in the status indicator, favicon and thread title", async () => {
+  sandboxes = [inventorySandbox("Suspended")];
+  const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
+  expect(indicator?.getAttribute("aria-label")).toBe("Sandbox suspended");
+  expect(indicator?.getAttribute("data-status")).toBe("suspended");
+  expect(indicator?.querySelector("svg")).not.toBeNull();
+  expect(faviconSvg()).toContain(`fill="${THREAD_STATUS_MARKS.suspended.color}"`);
+  expect(document.title).toBe(`${THREAD_STATUS_MARKS.suspended.glyph} Test thread · Suspended — Agentplane`);
+});
+
 it("does not show active-turn status when the runner is not active", async () => {
   sharedFeed = "ended";
   sharedThread = { active_turn_id: "turn-1" };
@@ -552,19 +562,19 @@ it("shows an archived thread as the archive icon, in the favicon and with its ow
   expect(document.title).toBe(`${THREAD_STATUS_MARKS.archived.glyph} Test thread · Archived — Agentplane`);
 });
 
-it.each([
-  [{ archived: false }, [], "Sandbox unavailable"],
-  [{ archived: false }, [inventorySandbox("Suspended")], "Sandbox unavailable"],
-])("shows an inactive dot for thread %o with sandboxes %o: %s", async (overrides, inventory, label) => {
-  vi.mocked(getThread).mockResolvedValue({ ...THREAD, ...overrides });
-  sharedThread = overrides;
-  sandboxes = inventory;
-  const indicator = (await render(threadState({ rows: [viewState({ status: "failed" })] }))).querySelector(
-    ".agentplane-thread-status-indicator"
-  );
-  expect(indicator?.getAttribute("aria-label")).toBe(label);
-  expect(indicator?.getAttribute("data-status")).toBe("inactive");
-});
+it.each([[{ archived: false }, [], "Sandbox unavailable", "inactive"]])(
+  "shows unavailable inventory state for thread %o with sandboxes %o: %s",
+  async (overrides, inventory, label, kind) => {
+    vi.mocked(getThread).mockResolvedValue({ ...THREAD, ...overrides });
+    sharedThread = overrides;
+    sandboxes = inventory;
+    const indicator = (await render(threadState({ rows: [viewState({ status: "failed" })] }))).querySelector(
+      ".agentplane-thread-status-indicator"
+    );
+    expect(indicator?.getAttribute("aria-label")).toBe(label);
+    expect(indicator?.getAttribute("data-status")).toBe(kind);
+  }
+);
 
 const RUNNING = inventorySandbox();
 const SUSPENDED = inventorySandbox("Suspended");

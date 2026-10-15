@@ -76,20 +76,8 @@ type SandboxSpec struct {
 	WakeGeneration int64 `json:"wakeGeneration,omitempty"`
 	// PolicySets names the PolicySets in the Sandbox's namespace its ServiceAccount is bound to.
 	PolicySets []string `json:"policySets,omitempty"`
-	// SessionDefaults are the Runner Gateway's; the controller keeps them only so its updates
-	// round-trip them.
-	SessionDefaults *SessionDefaults `json:"sessionDefaults,omitempty"`
 	// Bootstrap is the shell source the Sandbox's runner runs once, before its first Session.
 	Bootstrap string `json:"bootstrap,omitempty"`
-}
-
-type SessionDefaults struct {
-	Harness         *string `json:"harness,omitempty"`
-	Model           *string `json:"model,omitempty"`
-	Cwd             *string `json:"cwd,omitempty"`
-	ReasoningEffort *string `json:"reasoningEffort,omitempty"`
-	Instructions    *string `json:"instructions,omitempty"`
-	SetupScript     *string `json:"setupScript,omitempty"`
 }
 
 // Incarnation is the Pod the Sandbox's runner currently runs in: its own Pod, or its VM's
@@ -99,11 +87,20 @@ type Incarnation struct {
 	UID  string `json:"uid"`
 }
 
+// QuiesceAttempt records when the controller last asked this runner incarnation to quiesce.
+// It lets the controller persist its retry deadline across reconciles and restarts.
+type QuiesceAttempt struct {
+	RunnerPodUID string      `json:"runnerPodUid"`
+	AttemptedAt  metav1.Time `json:"attemptedAt"`
+}
+
 type SandboxStatus struct {
 	Volumes     *SandboxVolumes `json:"volumes,omitempty"`
 	Incarnation *Incarnation    `json:"incarnation,omitempty"`
 	// The UID of the last incarnation whose runner sealed every Session, kept after it stops.
 	QuiescedIncarnation *string `json:"quiescedIncarnation,omitempty"`
+	// The latest Quiesce request, scoped to its runner incarnation, for the controller's retry deadline.
+	QuiesceAttempt *QuiesceAttempt `json:"quiesceAttempt,omitempty"`
 	// OperatingMode is whether the controller runs the Sandbox: the one derivation every reader of
 	// `spec.running` reads instead.
 	OperatingMode OperatingMode `json:"operatingMode,omitempty"`

@@ -18,6 +18,9 @@ const ALERT_PATH = "M24.5 19.4L30 28.8H19Z";
 // outline merge into the ring's ends.
 const POWER_PATH = "M28.5 21.6A5.4 5.4 0 1 1 20.5 21.6M24.5 19.3V24.4";
 
+// Two pause bars in the same corner as the other status marks.
+const PAUSE_PATH = "M20 19.8H23.5V29.2H20ZM25.5 19.8H29V29.2H25.5Z";
+
 // A lidded box with a handle slot, in the same corner: the archive box.
 const ARCHIVE_PATH = "M19.5 20H29.5V22.8H19.5ZM20.4 22.8V29.4H28.6V22.8M23 25.6H26";
 
@@ -55,6 +58,13 @@ function statusPower(color: string): string {
   return outlinedStroke(POWER_PATH, color, 3.6, 2.2);
 }
 
+function statusPause(color: string): string {
+  return (
+    `<path d="${PAUSE_PATH}" fill="${OUTLINE}" stroke="${OUTLINE}" stroke-width="3.6" stroke-linejoin="round"/>` +
+    `<path d="${PAUSE_PATH}" fill="${color}" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/>`
+  );
+}
+
 function statusArchive(color: string): string {
   return outlinedStroke(ARCHIVE_PATH, color, 3.6, 2);
 }
@@ -69,6 +79,8 @@ function statusGlyph(mark: ThreadStatusMark): string {
       return statusAlert(mark.color);
     case "power":
       return statusPower(mark.color);
+    case "pause":
+      return statusPause(mark.color);
     case "archive":
       return statusArchive(mark.color);
   }

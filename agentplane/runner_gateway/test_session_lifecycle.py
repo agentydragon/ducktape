@@ -1,23 +1,16 @@
+import pytest
 import pytest_bazel
 
 from agentplane.proto import runner_pb2
-from agentplane.proto.sandboxes_pb2 import SandboxBinding, SessionDefaults
-from agentplane.runner_gateway.session_lifecycle import launch_spec
+from agentplane.runner_gateway.session_lifecycle import validate_spec
 
 # gazelle:include_dep @pypi//protobuf
 
 
-def test_binding_default_cwd_names_the_session() -> None:
-    spec = launch_spec(
-        "test-session",
-        {},
-        binding=SandboxBinding(
-            session_defaults=SessionDefaults(
-                harness=runner_pb2.HARNESS_CODEX, model="test-model", cwd="/state/{session_id}"
-            )
-        ),
-    )
-    assert spec.cwd == "/state/test-session"
+def test_launch_spec_requires_an_absolute_cwd() -> None:
+    spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, model="test-model", cwd="relative")
+    with pytest.raises(ValueError, match="cwd must be absolute"):
+        validate_spec(spec)
 
 
 if __name__ == "__main__":

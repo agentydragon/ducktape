@@ -5,11 +5,10 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import cast
 
-from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
-from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
+from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, fake_apiserver, pod_for
@@ -34,13 +33,6 @@ class SandboxCluster:
     fake: FakeApiServer
     api: k8s_client.ApiClient
     inventory: SandboxInventory
-
-    def set_binding(self, binding: SandboxBinding) -> None:
-        spec = self.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]["spec"]
-        if binding.HasField("session_defaults"):
-            spec["sessionDefaults"] = MessageToDict(binding.session_defaults)
-        if binding.bootstrap:
-            spec["bootstrap"] = binding.bootstrap
 
     def build_principal_resolver(self, audience: str) -> WorkloadPrincipalResolver:
         """Callers authenticate to this audience with tokens the fake TokenReview trusts."""

@@ -299,9 +299,11 @@ can replay a token the ingress saw, and an ingress token opens no control connec
 **Sealing.** `Quiesce` on the control stream seals every journal and returns each Session's seal cursor
 with `flushed`, which is true once the ingress has acknowledged that seal. The runner answers from
 its recorded acknowledgements, so the report survives a runner restart. Sealing again returns the
-same cursors and the current `flushed`, so teardown repeats `Quiesce` every 10 s until every Session
-is flushed, and only then may the Sandbox's volume go. A runner that cannot report leaves the
-Sandbox in sealing for the operator.
+same cursors and the current `flushed`. The Sandbox Controller retries an unfinished request at its
+one-minute deadline; Lease stage changes enqueue it sooner, and the persisted request time prevents
+other watch events or a controller restart from bypassing that deadline. Only after every Session is
+flushed may the Sandbox's volume go. A runner that cannot report leaves the Sandbox in sealing for
+the operator.
 
 ## Connection records in Kubernetes
 

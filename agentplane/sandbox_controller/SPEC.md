@@ -33,7 +33,10 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 - Clearing `spec.running` deletes the Pod, once the runner that connected from it has sealed every
   Session (`status.quiescedIncarnation` names the sealed Pod). A Pod whose runner never connected has
   nothing to seal. The Sandbox stays held, with `Running` reason `Quiescing`, while the quiesce fails or
-  the ingress has not acknowledged it. Applies only to a controller configured to seal.
+  the ingress has not acknowledged it. The controller persists the last request time and runner Pod
+  UID in `status.quiesceAttempt`, so watch events and controller restarts cannot bypass its one-minute
+  retry deadline; Lease facts can complete the seal sooner. Applies only to a controller configured
+  to seal.
 - A resumed Sandbox whose Pod is already sealed gets a new incarnation, as a sealed runner takes no
   new Sessions.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing

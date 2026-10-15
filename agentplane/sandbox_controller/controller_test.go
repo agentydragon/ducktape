@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	runtimeschema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -206,15 +207,16 @@ func TestSandboxIsReadyWhileItsPodIsReadyAndItsRunnerConnected(t *testing.T) {
 
 func TestReadyWaitsForTheBootstrapAndStopsOnItsFailure(t *testing.T) {
 	for _, tc := range []struct {
-		name, fact, reason  string
-		bootstrapped, ready bool
+		name, fact, reason string
+		bootstrapped       bool
+		ready              metav1.ConditionStatus
 	}{
-		{"none reported", "", "BootstrapNotReported", false, true},
-		{"running", "running", "BootstrapRunning", false, false},
-		{"succeeded", "succeeded", "BootstrapSucceeded", true, true},
-		{"failed", "failed", "BootstrapFailed", false, false},
-		{"interrupted", "interrupted", "BootstrapFailed", false, false},
-		{"unknown state", "test-future-state", "BootstrapStateUnrecognised", false, false},
+		{"none reported", "", "BootstrapNotReported", false, metav1.ConditionUnknown},
+		{"running", "running", "BootstrapRunning", false, metav1.ConditionFalse},
+		{"succeeded", "succeeded", "BootstrapSucceeded", true, metav1.ConditionTrue},
+		{"failed", "failed", "BootstrapFailed", false, metav1.ConditionFalse},
+		{"interrupted", "interrupted", "BootstrapFailed", false, metav1.ConditionFalse},
+		{"unknown state", "test-future-state", "BootstrapStateUnrecognised", false, metav1.ConditionFalse},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r, c := newReconciler(t, true, testTemplate("test-image:v1"))
@@ -242,8 +244,8 @@ func TestReadyWaitsForTheBootstrapAndStopsOnItsFailure(t *testing.T) {
 			if bootstrapped.Reason != tc.reason || (bootstrapped.Status == metav1.ConditionTrue) != tc.bootstrapped {
 				t.Errorf("Bootstrapped = %s/%s, want %v/%s", bootstrapped.Status, bootstrapped.Reason, tc.bootstrapped, tc.reason)
 			}
-			if (ready.Status == metav1.ConditionTrue) != tc.ready || (!tc.ready && ready.Reason != tc.reason) {
-				t.Errorf("Ready = %s/%s, want ready=%v with the bootstrap's reason", ready.Status, ready.Reason, tc.ready)
+			if ready.Status != tc.ready || (tc.ready != metav1.ConditionTrue && ready.Reason != tc.reason) {
+				t.Errorf("Ready = %s/%s, want %s with the bootstrap's reason", ready.Status, ready.Reason, tc.ready)
 			}
 		})
 	}
@@ -549,18 +551,21 @@ type fakeQuiescer struct {
 	result QuiesceResult
 	err    error
 	calls  int
+	before func()
 }
 
 func (f *fakeQuiescer) Quiesce(context.Context, *Sandbox) (QuiesceResult, error) {
 	f.calls++
+	if f.before != nil {
+		f.before()
+	}
 	return f.result, f.err
 }
 
-// quiesceSessions is the runner of a connected Sandbox sealing every Session, asked by one reconcile.
+// quiesceSessions is the runner publishing its completed stage after a connected Sandbox was asked to seal.
 func quiesceSessions(t *testing.T, r *Reconciler) {
 	t.Helper()
-	quiescer := r.Quiescer.(*fakeQuiescer)
-	quiescer.result, quiescer.err = QuiesceResult{Sessions: 2}, nil
+	publishQuiesceStage(t, r.Client, "quiesced")
 	reconcileOnce(t, r)
 }
 
@@ -599,27 +604,25 @@ func TestDeletionWaitsForTheRunnerToSealAndFlush(t *testing.T) {
 	connect(t, c, "uid-runner")
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	deleteSandbox(t, c)
-	for _, answer := range []struct {
-		result QuiesceResult
-		err    error
-	}{
-		{err: errors.New("runner unreachable")},
-		{result: QuiesceResult{Sessions: 1, Unflushed: []string{"s-1"}}},
-	} {
-		quiescer.result, quiescer.err = answer.result, answer.err
-		result, err := r.Reconcile(context.Background(), request)
-		if err != nil || result.RequeueAfter == 0 {
-			t.Fatalf("a failed or unflushed seal is asked again: %v, %v", result, err)
-		}
-		if getPod(t, c) == nil || meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, Quiesced) {
-			t.Fatal("the Sandbox counted as sealed before the runner said so")
-		}
+	quiescer.err = errors.New("runner unreachable")
+	result, err := r.Reconcile(context.Background(), request)
+	if err != nil || result.RequeueAfter != quiesceDeadline || quiescer.calls != 1 {
+		t.Fatalf("a failed quiesce schedules one bounded retry: calls=%d, %v, %v", quiescer.calls, result, err)
 	}
-	quiescer.result, quiescer.err = QuiesceResult{Sessions: 1}, nil
-	reconcileOnce(t, r)
+	if getPod(t, c) == nil || meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, Quiesced) {
+		t.Fatal("the Sandbox counted as sealed before the runner said so")
+	}
+	quiescer.err = nil
+	quiescer.result = QuiesceResult{Sessions: 1, Unflushed: []string{"s-1"}}
+	result, err = r.Reconcile(context.Background(), request)
+	if err != nil || result.RequeueAfter != quiesceDeadline || quiescer.calls != 1 {
+		t.Fatalf("a repeated reconcile is held to the saved deadline: calls=%d, %v, %v", quiescer.calls, result, err)
+	}
+	// The Lease fact completes promptly without another Quiesce call.
+	quiesceSessions(t, r)
 	reconcileOnce(t, r)
 	if getPod(t, c) != nil {
-		t.Fatal("the Pod outlived a flushed seal")
+		t.Fatal("the Pod outlived a quiesced runner")
 	}
 }
 
@@ -725,7 +728,7 @@ func TestSuspensionWaitsForTheRunnerToQuiesce(t *testing.T) {
 	}
 
 	quiescer.err = nil
-	reconcileOnce(t, r)
+	quiesceSessions(t, r)
 	if sealed := getSandbox(t, c).Status.QuiescedIncarnation; sealed == nil || *sealed != "uid-pod" {
 		t.Fatalf("sealed incarnation = %v, want uid-pod", sealed)
 	}
@@ -835,14 +838,17 @@ func TestAQuiescedStageSealsTheSandboxWithoutAskingTheRunner(t *testing.T) {
 
 func TestAQuiescingRunnerIsAskedAgainOnlyAtTheDeadline(t *testing.T) {
 	r, c := runningWithRunner(t)
-	// The Running condition's transition time comes from the wall clock.
-	r.Now = time.Now
+	now := testNow
+	r.Now = func() time.Time { return now }
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	quiescer.result = QuiesceResult{Quiescing: true}
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
 	if quiescer.calls != 1 {
 		t.Fatalf("asked %d times before the runner reported a stage, want 1", quiescer.calls)
+	}
+	if attempt := getSandbox(t, c).Status.QuiesceAttempt; attempt == nil || attempt.RunnerPodUID != "uid-pod" || !attempt.AttemptedAt.Time.Equal(now) {
+		t.Fatalf("persisted quiesce attempt = %v, want uid-pod at %s", attempt, now)
 	}
 
 	publishQuiesceStage(t, c, "flushing")
@@ -851,10 +857,160 @@ func TestAQuiescingRunnerIsAskedAgainOnlyAtTheDeadline(t *testing.T) {
 		t.Fatalf("a runner reporting a stage is left alone until the deadline: calls=%d, %v, %v", quiescer.calls, result, err)
 	}
 
-	r.Now = func() time.Time { return time.Now().Add(2 * quiesceDeadline) }
+	now = now.Add(quiesceDeadline)
 	reconcileOnce(t, r)
 	if quiescer.calls != 2 {
 		t.Errorf("asked %d times after the deadline, want 2", quiescer.calls)
+	}
+}
+
+func TestFailedQuiesceWaitsAcrossNoStageEventsAndControllerRestart(t *testing.T) {
+	r, c := runningWithRunner(t)
+	now := testNow
+	r.Now = func() time.Time { return now }
+	oldTransition := metav1.NewTime(now.Add(-5 * quiesceDeadline))
+	sandbox := getSandbox(t, c)
+	running := meta.FindStatusCondition(sandbox.Status.Conditions, Running)
+	if running == nil || running.Status != metav1.ConditionFalse {
+		t.Fatalf("Running before quiesce = %v, want an existing False condition", running)
+	}
+	running.LastTransitionTime = oldTransition
+	if err := c.Status().Update(context.Background(), sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if got := meta.FindStatusCondition(getSandbox(t, c).Status.Conditions, Running).LastTransitionTime; !got.Equal(&oldTransition) {
+		t.Fatalf("test setup kept LastTransitionTime %s, want %s", got, oldTransition)
+	}
+	setRunning(t, c, false)
+
+	first := r.Quiescer.(*fakeQuiescer)
+	first.err = errors.New("ingress unavailable")
+	first.before = func() {
+		attempt := getSandbox(t, c).Status.QuiesceAttempt
+		if attempt == nil || attempt.RunnerPodUID != "uid-pod" || !attempt.AttemptedAt.Time.Equal(now) {
+			t.Fatalf("Quiesce ran before its attempt was persisted: %v", attempt)
+		}
+	}
+	result, err := r.Reconcile(context.Background(), request)
+	if err != nil || first.calls != 1 || result.RequeueAfter != quiesceDeadline {
+		t.Fatalf("the unavailable ingress gets one bounded attempt: calls=%d, %v, %v", first.calls, result, err)
+	}
+	if got := meta.FindStatusCondition(getSandbox(t, c).Status.Conditions, Running).LastTransitionTime; !got.Equal(&oldTransition) {
+		t.Fatalf("a False-to-False reason change reset Running.LastTransitionTime: got %s, want %s", got, oldTransition)
+	}
+
+	// A controller restart and the status event from the attempt write both see the persisted deadline.
+	afterRestart := &fakeQuiescer{result: QuiesceResult{Unflushed: []string{"session-1"}}}
+	restarted := &Reconciler{Client: c, KubeVirt: true, Quiescer: afterRestart, Leases: c, Now: func() time.Time { return now }}
+	// A resume followed by another suspend continues this same runner's quiesce operation; it does not
+	// make a new request intent that reopens the per-incarnation retry budget.
+	setRunning(t, c, true)
+	result, err = restarted.Reconcile(context.Background(), request)
+	if err != nil || afterRestart.calls != 0 || result.RequeueAfter != quiesceDeadline {
+		t.Fatalf("resume bypassed the runner's saved deadline: calls=%d, %v, %v", afterRestart.calls, result, err)
+	}
+	setRunning(t, c, false)
+	result, err = restarted.Reconcile(context.Background(), request)
+	if err != nil || afterRestart.calls != 0 || result.RequeueAfter != quiesceDeadline {
+		t.Fatalf("a repeated suspend reopened the runner's retry budget: calls=%d, %v, %v", afterRestart.calls, result, err)
+	}
+	for _, event := range []string{"status update", "controller restart"} {
+		result, err = restarted.Reconcile(context.Background(), request)
+		if err != nil || afterRestart.calls != 0 || result.RequeueAfter != quiesceDeadline {
+			t.Fatalf("%s bypassed the saved deadline: calls=%d, %v, %v", event, afterRestart.calls, result, err)
+		}
+	}
+
+	// Even a Lease stage event cannot turn the retry into a per-event RPC loop.
+	publishQuiesceStage(t, c, "flushing")
+	result, err = restarted.Reconcile(context.Background(), request)
+	if err != nil || afterRestart.calls != 0 || result.RequeueAfter != quiesceDeadline {
+		t.Fatalf("the flushing event bypassed the saved deadline: calls=%d, %v, %v", afterRestart.calls, result, err)
+	}
+
+	// The existing deadline recovers a lost stage event without a periodic poll.
+	now = now.Add(quiesceDeadline)
+	result, err = restarted.Reconcile(context.Background(), request)
+	if err != nil || afterRestart.calls != 1 || result.RequeueAfter != quiesceDeadline {
+		t.Fatalf("the deadline did not recover the unfinished seal: calls=%d, %v, %v", afterRestart.calls, result, err)
+	}
+
+	// A final Lease fact completes the suspend immediately, despite the newly recorded retry time.
+	publishQuiesceStage(t, c, "quiesced")
+	reconcileOnce(t, restarted)
+	if attempt := getSandbox(t, c).Status.QuiesceAttempt; attempt != nil {
+		t.Fatalf("completed quiesce retained retry state: %v", attempt)
+	}
+	if sealed := getSandbox(t, c).Status.QuiescedIncarnation; sealed == nil || *sealed != "uid-pod" {
+		t.Fatalf("sealed incarnation = %v, want uid-pod", sealed)
+	}
+	reconcileOnce(t, restarted)
+	if getPod(t, c) != nil {
+		t.Fatal("the suspended Pod was removed before its runner reported quiesced")
+	}
+}
+
+func TestFailedQuiesceAttemptStatusWriteDoesNotCallRunner(t *testing.T) {
+	r, c := runningWithRunner(t)
+	setRunning(t, c, false)
+	conflict := apierrors.NewConflict(runtimeschema.GroupResource{Group: "agentplane.allegedly.works", Resource: "sandboxes"}, sandboxName, errors.New("stale resource version"))
+	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+		SubResourceUpdate: func(ctx context.Context, c client.Client, name string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+			if sandbox, ok := obj.(*Sandbox); ok && sandbox.Status.QuiesceAttempt != nil {
+				return conflict
+			}
+			return c.SubResource(name).Update(ctx, obj, opts...)
+		},
+	})
+
+	_, err := r.Reconcile(context.Background(), request)
+	if !apierrors.IsConflict(err) {
+		t.Fatalf("attempt status write error = %v, want conflict", err)
+	}
+	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 {
+		t.Fatalf("called runner %d times without a persisted attempt", calls)
+	}
+	if getSandbox(t, c).Status.QuiesceAttempt != nil || getPod(t, c) == nil || getPVC(t, c) == nil {
+		t.Fatal("failed status write changed retry state or released deletion-protected state")
+	}
+}
+
+func TestQuiesceAttemptDoesNotThrottleANewRunnerIncarnationDuringDeletion(t *testing.T) {
+	r, c := runningWithRunner(t)
+	now := testNow
+	r.Now = func() time.Time { return now }
+	quiescer := r.Quiescer.(*fakeQuiescer)
+	quiescer.err = errors.New("gateway unavailable")
+	deleteSandbox(t, c)
+	reconcileOnce(t, r)
+	if quiescer.calls != 1 || getPod(t, c) == nil || getPVC(t, c) == nil {
+		t.Fatal("deletion did not keep the Pod and state PVC behind the failed quiesce")
+	}
+
+	// A restarted runner gets a new Pod UID and must be asked immediately, even within the old deadline.
+	pod := getPod(t, c)
+	pod.UID = "uid-next"
+	if err := c.Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+	var lease coordinationv1.Lease
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + "-runner"}, &lease); err != nil {
+		t.Fatal(err)
+	}
+	lease.Annotations[PodUIDAnnotation] = "uid-next"
+	delete(lease.Annotations, QuiesceStageAnnotation)
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if quiescer.calls != 2 {
+		t.Fatalf("new runner was held to the old incarnation's deadline: calls=%d", quiescer.calls)
+	}
+	if attempt := getSandbox(t, c).Status.QuiesceAttempt; attempt == nil || attempt.RunnerPodUID != "uid-next" {
+		t.Fatalf("new runner attempt = %v, want uid-next", attempt)
+	}
+	if getPod(t, c) == nil || getPVC(t, c) == nil {
+		t.Fatal("deletion removed state before the new runner completed quiesce")
 	}
 }
 
@@ -899,7 +1055,7 @@ func TestResumingWhileTheRunnerQuiescesFinishesTheQuiesceFirst(t *testing.T) {
 	}
 
 	quiescer.result = QuiesceResult{Sessions: 1}
-	reconcileOnce(t, r)
+	quiesceSessions(t, r)
 	reconcileOnce(t, r)
 	if pod := getPod(t, c); pod != nil && string(pod.UID) == "uid-pod" {
 		t.Fatal("the resumed Sandbox kept the incarnation whose runner quiesced")

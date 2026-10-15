@@ -229,6 +229,8 @@ async def _probe(client: Client, name: str, cwd: str, workspace_dir: str, marker
         },
         setup_script=source,
     )
+    # Runner admission precedes History's Thread projection, which owns the event stream.
+    await client.wait_for_thread_projection(session, timeout_s=BOUND_SECONDS)
     stdout, stderr = bytearray(), bytearray()
     async with asyncio.timeout(BOUND_SECONDS):
         async for entry in client.events(session, after=0, read_seconds=BOUND_SECONDS):

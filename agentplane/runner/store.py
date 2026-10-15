@@ -159,28 +159,26 @@ class SessionStore:
     def incarnation_uid(self) -> str | None:
         return self._incarnation_uid
 
-    def adopt_incarnation(self, incarnation_uid: str | None) -> None:
+    def adopt_incarnation(self, incarnation_uid: str) -> None:
         """Learn which incarnation of its Sandbox this runner is, from the gateway's `Welcome`, before
         any call is served. The state volume outlives incarnations, so a lameduck recorded by an earlier
-        one is dropped; one recorded by this one, such as before a runner restart, stands. `None`,
-        from a gateway that does not name the incarnation, keeps every marker.
-
-        CLEANUP(added 2026-10-13): require the UID, and drop `None`, once the gateway image that sends
-        `Welcome.incarnation_uid` is pinned in every environment and in the VM guest's runner wheel.
+        one is dropped; one recorded by this one, such as before a runner restart, stands.
         """
         self._incarnation_uid = incarnation_uid
         marker = self.root / "sealed"
-        if incarnation_uid is not None and marker.is_file() and marker.read_text() != incarnation_uid:
+        if marker.is_file() and marker.read_text() != incarnation_uid:
             marker.unlink()
             sync_directory(self.root)
 
     def enter_lameduck(self) -> None:
         """Durably refuse new and resumed sessions in this incarnation, across runner restarts."""
+        if self._incarnation_uid is None:
+            raise RuntimeError("the runner cannot quiesce before the gateway names its incarnation UID")
         marker = self.root / "sealed"
         if not marker.is_file():
             staged = self.root / "sealed.tmp"
             with staged.open("w") as file:
-                file.write(self._incarnation_uid or "")
+                file.write(self._incarnation_uid)
                 file.flush()
                 os.fsync(file.fileno())
             staged.replace(marker)

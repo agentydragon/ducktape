@@ -2433,6 +2433,22 @@ routes.push(
   ],
   ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))],
   [
+    "POST",
+    /^\/sandboxes\/([^/]+)\/sessions$/,
+    (match, _query, _signal, body) => {
+      if (!queueOpenResponses || body === undefined) throw new Error("No queued Session Open fixture is configured");
+      const request = JSON.parse(body) as { session_id?: string };
+      if (!request.session_id) throw new Error("Open request has no Session ID");
+      queuedOpenSessionId = request.session_id;
+      return {
+        sessionId: request.session_id,
+        sandbox: match[1],
+        state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+        reason: "waiting for runner admission",
+      };
+    },
+  ],
+  [
     "GET",
     /^\/threads$/,
     (_match, query) => ({
@@ -2845,6 +2861,10 @@ class HarnessEventSource extends EventTarget {
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       return;
     }
+    if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
+      this.dispatchEvent(new MessageEvent("output", { data: JSON.stringify(btoa("guest console output\r\n")) }));
+      return;
+    }
     if (url.pathname === "/push/subscriptions/stream") {
       const browsers = flags.has("pushBrowserAdded")
         ? [{ endpoint: "https://push.example/browser", user_agent: "Second browser", created_at: ago(0) }]
@@ -2932,6 +2952,37 @@ window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 
 // Mutable mock service state; Python fixture methods change it before mounting React.
 let previewAction: ActionRequestView | null = null;
+let queueOpenResponses = false;
+let queuedOpenSessionId: string | null = null;
+
+function projectQueuedSession(): void {
+  if (!queuedOpenSessionId) throw new Error("No queued Session Open to project");
+  const sessionId = queuedOpenSessionId;
+  const source = THREADS[0];
+  if (!source) throw new Error("No Session fixture to copy");
+  const projected: ThreadView = {
+    ...source,
+    id: sessionId,
+    name: "Queued opening session",
+    created_at: ago(0),
+    last_cursor: 0,
+    last_event_at: ago(0),
+    harness_state: "HARNESS_STATE_STOPPED",
+    feed_status: "active",
+  };
+  SESSIONS.push(
+    create(SessionSummarySchema, {
+      sessionId,
+      spec: SPEC,
+      lastCursor: 0n,
+      harnessState: HarnessState.STOPPED,
+    })
+  );
+  THREADS.push(projected);
+  THREADS_WITH_SANDBOXES.push(projected);
+  HarnessEventSource.publish("/live/sandboxes/ready-sandbox");
+  HarnessEventSource.publish("/live/threads");
+}
 
 function mount(element: ReactNode): void {
   const container = document.getElementById("app");
@@ -2949,6 +3000,10 @@ const visualHarness = {
     mount(<DisclosureVisual {...props} />);
   },
   addProvisioningSandbox,
+  queueOpenResponse(): void {
+    queueOpenResponses = true;
+  },
+  projectQueuedSession,
   set(flag: Flag, on = true): void {
     if (on) flags.add(flag);
     else flags.delete(flag);

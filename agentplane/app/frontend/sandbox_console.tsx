@@ -29,7 +29,9 @@ export function SandboxConsole({ sandbox }: { sandbox: string }): JSX.Element {
     });
     return stop;
   }, [sandbox]);
-  useEffect(() => bottom.current?.scrollIntoView?.({ block: "end" }), [text]);
+  useEffect(() => {
+    bottom.current?.scrollIntoView?.({ block: "end" });
+  }, [text]);
   return (
     <Stack gap="xs">
       <Text size="sm" c="dimmed">

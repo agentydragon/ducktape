@@ -2,7 +2,6 @@
 authority."""
 
 import asyncio
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -16,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from agentplane.grpc_servicer import Abort, ServicerResources, Status, status_mapping
 from agentplane.proto import runner_control_pb2, runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2, sandboxes_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxDestination
-from agentplane.runner_gateway import session_lifecycle, wire
+from agentplane.runner_gateway import session_lifecycle
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
 from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
@@ -24,8 +23,6 @@ from agentplane.sandboxes.errors import InventoryError, SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -107,20 +104,9 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         self, request: runner_gateway_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_gateway_pb2.ListSessionsResponse:
         async with self.request(context):
-            sessions = []
-            for summary in await self.list_runner_sessions(request.destination):
-                public_id = await self.resources.sessions.public_id(
-                    summary.session_id,
-                    sandbox_namespace=self.resources.destinations.sandboxes.namespace,
-                    sandbox_name=request.destination.sandbox,
-                    sandbox_uid=UUID(request.destination.sandbox_uid),
-                )
-                if public_id is None:
-                    logger.warning("runner Session %s has no registered Session; not listed", summary.session_id)
-                    continue
-                summary.session_id = str(public_id)
-                sessions.append(summary)
-            return runner_gateway_pb2.ListSessionsResponse(sessions=sessions)
+            return runner_gateway_pb2.ListSessionsResponse(
+                sessions=await self.list_runner_sessions(request.destination)
+            )
 
     async def runner_session_id(self, destination: sandboxes_pb2.SessionDestination) -> str:
         """The runner's ID for a Session registered in the destination's Sandbox incarnation."""
@@ -144,11 +130,8 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             if not request.session_id:
                 raise ValueError("session ID is required")
             session_id = parse_session_id(request.session_id)
-            complete = wire.is_complete_spec(request)
-            if complete:
-                session_lifecycle.validate_spec(request.spec)
-            overrides = {} if complete else wire.launch_overrides(request)
-            binding = await self.held(request.sandbox, writes=True)
+            session_lifecycle.validate_spec(request.spec)
+            await self.held(request.sandbox, writes=True)
             sandbox_uid = UUID(request.sandbox.sandbox_uid)
             await self.resources.sessions.register(
                 session_id,
@@ -156,19 +139,8 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 sandbox_name=request.sandbox.sandbox,
                 sandbox_uid=sandbox_uid,
             )
-            if complete:
-                spec = request.spec
-                setup_script = request.setup_script if request.HasField("setup_script") else None
-            else:
-                spec = session_lifecycle.launch_spec(str(session_id), overrides, binding=binding)
-                setup_script = (
-                    request.setup_script
-                    if request.HasField("setup_script")
-                    else binding.session_defaults.setup_script
-                    if binding is not None and binding.session_defaults.HasField("setup_script")
-                    else None
-                )
-            opening = runner_control_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec)
+            setup_script = request.setup_script if request.HasField("setup_script") else None
+            opening = runner_control_pb2.OpenSessionRequest(session_id=str(session_id), spec=request.spec)
             if setup_script is not None:
                 opening.setup_script = setup_script
             # A retry recomputes the spec; the runner confirms it against the one it recorded.

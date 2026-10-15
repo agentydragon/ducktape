@@ -2,7 +2,7 @@
 import type { SandboxView, ThreadView } from "./client";
 import type { Live, ThreadsSnapshot } from "./live";
 import type { ThreadTabStatus } from "./tab_metadata";
-import { sandboxReady } from "./sandbox_status";
+import { sandboxReady, sandboxSummary } from "./sandbox_status";
 import { turnErrorLabel } from "./threads/history_rows";
 
 export function snapshotFresh(live: Live<ThreadsSnapshot>): boolean {
@@ -16,6 +16,8 @@ export function threadStatusFromSnapshot(
 ): ThreadTabStatus {
   if (!thread || !fresh) return { kind: "inactive", label: "No live harness confirmed", tabLabel: "Unknown" };
   if (thread.archived) return { kind: "archived", label: "Thread archived", tabLabel: "Archived" };
+  if (sandbox && sandboxSummary(sandbox).kind === "suspended")
+    return { kind: "suspended", label: "Sandbox suspended", tabLabel: "Suspended" };
   if (!sandboxReady(sandbox)) return { kind: "inactive", label: "Sandbox unavailable", tabLabel: "Unavailable" };
   if (thread.feed_status === "failed")
     return { kind: "failed", label: "Runner feed failed", tabLabel: "Runner failed" };

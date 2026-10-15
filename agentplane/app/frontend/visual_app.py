@@ -144,6 +144,12 @@ class AgentplaneFixture:
             "([flag, suffix]) => window.agentplaneVisual.publish(flag, suffix)", [flag, path_suffix]
         )
 
+    async def queue_open_response(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.queueOpenResponse()")
+
+    async def project_queued_session(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.projectQueuedSession()")
+
     async def build(self, scene: Scene) -> None:
         await self.page.evaluate("scene => window.agentplaneVisual[scene]()", scene)
 

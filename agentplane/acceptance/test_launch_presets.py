@@ -42,7 +42,6 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     )
     assert view.preset == PUBLIC_CODER
     assert view.binding is not None
-    assert view.binding.session_defaults is None
 
     first_id = uuid4()
     opening = await client.open_session(view.name, first_id, overrides={"instructions": INSTRUCTIONS})
