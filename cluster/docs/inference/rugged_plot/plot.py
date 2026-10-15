@@ -56,9 +56,11 @@ REFERENCES = (
     ("gpt-4o-2024-05-13", "#24735a"),
     ("gpt-4-1-mini", "#125640"),
     ("o3-mini-high", "#073b2b"),
+    ("gpt-5-1-non-reasoning", "#005c46"),
     ("claude-3-haiku", "#e4a08a"),
     ("claude-3-sonnet", "#c56d52"),
     ("claude-35-sonnet-june-24", "#923e2e"),
+    ("claude-3-7-sonnet", "#702b20"),
 )
 
 
@@ -212,7 +214,7 @@ def main() -> None:
     ax.set(
         xlabel="Artificial Analysis Intelligence Index v4.3.2 (rugged models: non-reasoning; references: as labeled)",
         ylabel="Measured decode tokens/second on rugged",
-        xlim=(4.8, 15.5),
+        xlim=(4.8, 16.0),
         ylim=(0, 60),
     )
     ax.set_title("Rugged: intelligence × decode speed, with demonstrated context", fontsize=15, pad=18)
@@ -257,7 +259,7 @@ def main() -> None:
             ),
         ],
         loc="upper left",
-        bbox_to_anchor=(1.02, 0.48),
+        bbox_to_anchor=(1.02, 0.40),
         fontsize=9,
     )
     fig.text(
