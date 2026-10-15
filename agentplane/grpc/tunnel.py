@@ -124,7 +124,7 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
             except grpc.aio.AioRpcError as error:
                 raise _status(error.code(), error.details() or "") from error
             except (grpc.RpcError, asyncio.InvalidStateError) as error:
-                logger.warning("Runner control tunnel send failed without an async gRPC status", exc_info=error)
+                logger.warning("Runner control tunnel send failed", exc_info=error)
                 raise _status(
                     grpc.StatusCode.UNAVAILABLE,
                     "the tunnel failed while sending the call; the callee outcome is unknown",
