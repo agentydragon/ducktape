@@ -224,29 +224,7 @@ data:
               },
               {
                 "contextWindow": 1048576,
-                "id": "antigravity/ant-messages/gemini-3.6-flash-high",
-                "input": [
-                  "text",
-                  "image"
-                ],
-                "maxTokens": 65536,
-                "name": "Gemini 3.6 Flash (Google Antigravity via LiteLLM)",
-                "reasoning": true
-              },
-              {
-                "contextWindow": 1048576,
-                "id": "antigravity/ant-messages/gemini-3.7-flash-high",
-                "input": [
-                  "text",
-                  "image"
-                ],
-                "maxTokens": 65536,
-                "name": "Gemini 3.7 Flash (Google Antigravity via LiteLLM)",
-                "reasoning": true
-              },
-              {
-                "contextWindow": 1048576,
-                "id": "antigravity/ant-messages/gemini-3.8-flash-high",
+                "id": "antigravity/ant-messages/gemini-3.8-flash-tiered",
                 "input": [
                   "text",
                   "image"
@@ -254,17 +232,6 @@ data:
                 "maxTokens": 65536,
                 "name": "Gemini 3.8 Flash (Google Antigravity via LiteLLM)",
                 "reasoning": true
-              },
-              {
-                "contextWindow": 1048576,
-                "id": "antigravity/ant-messages/gemini-3-flash",
-                "input": [
-                  "text",
-                  "image"
-                ],
-                "maxTokens": 65536,
-                "name": "Gemini 3 Flash (Google Antigravity via LiteLLM)",
-                "reasoning": false
               },
               {
                 "contextWindow": 1048576,
@@ -298,17 +265,6 @@ data:
                 "maxTokens": 32768,
                 "name": "GPT-OSS 120B (Medium) (Google Antigravity via LiteLLM)",
                 "reasoning": true
-              },
-              {
-                "contextWindow": 1048576,
-                "id": "antigravity/ant-messages/gemini-3.1-flash-lite",
-                "input": [
-                  "text",
-                  "image"
-                ],
-                "maxTokens": 65535,
-                "name": "Gemini 3.1 Flash Lite (Google Antigravity via LiteLLM)",
-                "reasoning": false
               }
             ],
             "request": {

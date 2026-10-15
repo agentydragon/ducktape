@@ -194,7 +194,7 @@ resource "kubernetes_secret" "codex_pod" {
 resource "litellm_key" "public_coder_agent" {
   key_alias = "public-coder-agent"
   # GPT-6 Codex subscription models on both wire surfaces, the Gemini chat lineup,
-  # the full Antigravity lineup, plus embeddings. Both subscription wire surfaces
+  # the current Antigravity route lineup, plus embeddings. Both subscription wire surfaces
   # remain allowlisted because this shared key serves Responses-lane
   # OpenClaw/Console consumers and clients that still use the Anthropic Messages lane.
   # Embeddings ride along because OpenClaw's memory index needs a backend and

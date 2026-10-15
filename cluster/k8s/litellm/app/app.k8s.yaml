@@ -390,42 +390,9 @@ data:
           max_input_tokens: 250000
           max_output_tokens: 64000
           max_tokens: 64000
-      - model_name: antigravity/ant-messages/gemini-3.6-flash-high
+      - model_name: antigravity/ant-messages/gemini-3.8-flash-tiered
         litellm_params:
-          model: anthropic/gemini-3.6-flash-high
-          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
-          api_key: os.environ/CLIPROXY_CLIENT_KEY
-        model_info:
-          mode: chat
-          supports_function_calling: true
-          max_input_tokens: 1048576
-          max_output_tokens: 65536
-          max_tokens: 65536
-      - model_name: antigravity/ant-messages/gemini-3.7-flash-high
-        litellm_params:
-          model: anthropic/gemini-3.7-flash-high
-          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
-          api_key: os.environ/CLIPROXY_CLIENT_KEY
-        model_info:
-          mode: chat
-          supports_function_calling: true
-          max_input_tokens: 1048576
-          max_output_tokens: 65536
-          max_tokens: 65536
-      - model_name: antigravity/ant-messages/gemini-3.8-flash-high
-        litellm_params:
-          model: anthropic/gemini-3.8-flash-high
-          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
-          api_key: os.environ/CLIPROXY_CLIENT_KEY
-        model_info:
-          mode: chat
-          supports_function_calling: true
-          max_input_tokens: 1048576
-          max_output_tokens: 65536
-          max_tokens: 65536
-      - model_name: antigravity/ant-messages/gemini-3-flash
-        litellm_params:
-          model: anthropic/gemini-3-flash
+          model: anthropic/gemini-3.8-flash-tiered
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
           api_key: os.environ/CLIPROXY_CLIENT_KEY
         model_info:
@@ -475,17 +442,6 @@ data:
           max_input_tokens: 131072
           max_output_tokens: 32768
           max_tokens: 32768
-      - model_name: antigravity/ant-messages/gemini-3.1-flash-lite
-        litellm_params:
-          model: anthropic/gemini-3.1-flash-lite
-          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
-          api_key: os.environ/CLIPROXY_CLIENT_KEY
-        model_info:
-          mode: chat
-          supports_function_calling: true
-          max_input_tokens: 1048576
-          max_output_tokens: 65535
-          max_tokens: 65535
       - model_name: antigravity/ant-messages/gemini-3.5-flash-lite
         litellm_params:
           model: anthropic/gemini-3.5-flash-lite

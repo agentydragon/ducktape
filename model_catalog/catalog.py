@@ -345,9 +345,11 @@ _SUBSCRIPTION_HAIKU = Model(
 # non-current-generation Claude, Google's own Gemini lineup under Antigravity-specific
 # slugs that don't match the public API names (reasoning-tier suffixes baked into the
 # slug: -high/-low/-lite/-agent), and the open-weight (Apache-2.0) gpt-oss-120b, which
-# Google can self-host like anyone else. Full catalog exposed as discovered; unlike
-# the Anthropic and Gemini API rosters, there is no "current generation only" curation
-# here yet.
+# Google can self-host like anyone else. The 2026-10-15 CLIProxyAPI list still included
+# gemini-3.6-flash-high, gemini-3-flash, and gemini-3.1-flash-lite; an earlier listing also
+# included gemini-3.7-flash-high. Their dated availability evidence is in antigravity_limits.md.
+# Only the newest Gemini Flash and Flash Lite versions are served; Pro tiers, image,
+# Claude and GPT-OSS remain distinct routes.
 #
 # `reasoning` mirrors the slug's own baked-in effort tier (-high/-agent/-medium as
 # True, -low/-lite/plain/-image as False). OpenClaw consumes this capability flag;
@@ -379,12 +381,6 @@ _ANTIGRAVITY_SONNET = Model(
     display_name="Claude Sonnet 4.6 (Thinking)",
     reasoning=True,
     limits=TokenLimits(max_input_tokens=250_000, max_output_tokens=64_000),
-)
-_ANTIGRAVITY_FLASH_LITE_31 = Model(
-    id="gemini-3.1-flash-lite",
-    display_name="Gemini 3.1 Flash Lite",
-    reasoning=False,
-    limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
 )
 _ANTIGRAVITY_FLASH_LITE_35 = Model(
     id="gemini-3.5-flash-lite",
@@ -678,43 +674,12 @@ ANTIGRAVITY_SONNET = Route(
     _ANTIGRAVITY_SONNET, ANTIGRAVITY_MESSAGES, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
 )
 ANTIGRAVITY_PRO = Route(_ANTIGRAVITY_PRO, ANTIGRAVITY_MESSAGES, publish_limits=True)
-ANTIGRAVITY_FLASH_LITE_31 = Route(_ANTIGRAVITY_FLASH_LITE_31, ANTIGRAVITY_MESSAGES, publish_limits=True)
 ANTIGRAVITY_FLASH_LITE = Route(_ANTIGRAVITY_FLASH_LITE_35, ANTIGRAVITY_MESSAGES, publish_limits=True)
-ANTIGRAVITY_FLASH_36 = Route(
-    Model(
-        id="gemini-3.6-flash-high",
-        display_name="Gemini 3.6 Flash",
-        reasoning=True,
-        limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
-    ),
-    ANTIGRAVITY_MESSAGES,
-    publish_limits=True,
-)
-ANTIGRAVITY_FLASH_37 = Route(
-    Model(
-        id="gemini-3.7-flash-high",
-        display_name="Gemini 3.7 Flash",
-        reasoning=True,
-        limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
-    ),
-    ANTIGRAVITY_MESSAGES,
-    publish_limits=True,
-)
 ANTIGRAVITY_FLASH_38 = Route(
     Model(
-        id="gemini-3.8-flash-high",
+        id="gemini-3.8-flash-tiered",
         display_name="Gemini 3.8 Flash",
         reasoning=True,
-        limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
-    ),
-    ANTIGRAVITY_MESSAGES,
-    publish_limits=True,
-)
-ANTIGRAVITY_FLASH_3 = Route(
-    Model(
-        id="gemini-3-flash",
-        display_name="Gemini 3 Flash",
-        reasoning=False,
         limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
     ),
     ANTIGRAVITY_MESSAGES,
@@ -746,18 +711,14 @@ ANTIGRAVITY_GPT_OSS_120B_MEDIUM = Route(
 ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
-    ANTIGRAVITY_FLASH_36,
-    ANTIGRAVITY_FLASH_37,
     ANTIGRAVITY_FLASH_38,
-    ANTIGRAVITY_FLASH_3,
     ANTIGRAVITY_FLASH_IMAGE,
     ANTIGRAVITY_PRO,
     ANTIGRAVITY_PRO_LOW,
     ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
-    ANTIGRAVITY_FLASH_LITE_31,
     ANTIGRAVITY_FLASH_LITE,
 )
-ANTIGRAVITY_FLASH_LITE_ROUTES = (ANTIGRAVITY_FLASH_LITE_31, ANTIGRAVITY_FLASH_LITE)
+ANTIGRAVITY_FLASH_LITE_ROUTES = (ANTIGRAVITY_FLASH_LITE,)
 GROQ_CHAT = Upstream(Provider.GROQ, "groq", "chat", supports_function_calling=True)
 # Exact `groq/<id>` input/output entries from our pinned LiteLLM 1.100.1 backup:
 # https://github.com/BerriAI/litellm/blob/1dba17b10ded12ad0021edb453ba2c54e4637928/litellm/model_prices_and_context_window_backup.json

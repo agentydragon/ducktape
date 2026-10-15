@@ -64,17 +64,17 @@ reserve the full `model.maxTokens`. `maxTokens` is separate output/request metad
 
 The public-coder projection currently preserves:
 
-| Selection                                  | `contextWindow` | `maxTokens` |
-| ------------------------------------------ | --------------: | ----------: |
-| GPT-6 Astra                                |          872000 |      128000 |
-| GPT-6 Sol / Luna                           |          372000 |      128000 |
-| Direct Google Gemini routes                |         1048576 |       65536 |
-| Antigravity Claude Opus / Sonnet           |          200000 |       64000 |
-| Antigravity Flash group                    |         1048576 |       65536 |
-| Antigravity Pro / Pro Low / Flash Lite 3.1 |         1048576 |       65535 |
-| Antigravity GPT-OSS 120B Medium            |          114000 |       32768 |
+| Selection                                       | `contextWindow` | `maxTokens` |
+| ----------------------------------------------- | --------------: | ----------: |
+| GPT-6 Astra                                     |          872000 |      128000 |
+| GPT-6 Sol / Luna                                |          372000 |      128000 |
+| Direct Google Gemini routes                     |         1048576 |       65536 |
+| Antigravity Claude Opus / Sonnet                |          200000 |       64000 |
+| Antigravity Gemini 3.8 Flash                    |         1048576 |       65536 |
+| Antigravity Pro High / Pro Low / Flash Lite 3.5 |         1048576 |       65535 |
+| Antigravity GPT-OSS 120B Medium                 |          114000 |       32768 |
 
-These remain preserved client choices. Google's fresh metadata also distinguishes
+These are the preserved client choices. Google's fresh metadata also distinguishes
 65535/65536 output values, while now reporting 131072 rather than 114000 for GPT-OSS
 ([fresh Google metadata](antigravity_limits.md#fresh-google-metadata-2026-10-05-1201-utc)). The old 114000 came from the upstream snapshot and is preserved here
 as an OpenClaw budget; neither use establishes both a provider input ceiling and a

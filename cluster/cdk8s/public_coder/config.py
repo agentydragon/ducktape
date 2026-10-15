@@ -5,11 +5,7 @@ from __future__ import annotations
 from cluster.cdk8s.openclaw_gateway import disabled_commands, session_memory_hook, trusted_proxy_gateway
 from cluster.cdk8s.public_coder.egress_proxy_url import PROXY_URL as _EGRESS_PROXY
 from model_catalog.catalog import (
-    ANTIGRAVITY_FLASH_3,
-    ANTIGRAVITY_FLASH_36,
-    ANTIGRAVITY_FLASH_37,
     ANTIGRAVITY_FLASH_38,
-    ANTIGRAVITY_FLASH_LITE_31,
     ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_PRO,
@@ -159,19 +155,13 @@ def config() -> dict:
                         ),
                         *(
                             _model_entry(route, context_budget=1_048_576, output_budget=65_536)
-                            for route in (
-                                ANTIGRAVITY_FLASH_36,
-                                ANTIGRAVITY_FLASH_37,
-                                ANTIGRAVITY_FLASH_38,
-                                ANTIGRAVITY_FLASH_3,
-                            )
+                            for route in (ANTIGRAVITY_FLASH_38,)
                         ),
                         *(
                             _model_entry(route, context_budget=1_048_576, output_budget=65_535)
                             for route in (ANTIGRAVITY_PRO, ANTIGRAVITY_PRO_LOW)
                         ),
                         _model_entry(ANTIGRAVITY_GPT_OSS_120B_MEDIUM, context_budget=114_000, output_budget=32_768),
-                        _model_entry(ANTIGRAVITY_FLASH_LITE_31, context_budget=1_048_576, output_budget=65_535),
                     ],
                     "request": {"allowPrivateNetwork": True},
                 }

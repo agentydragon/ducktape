@@ -61,17 +61,18 @@ The Flash Lite probe below supplies separate evidence about Gemini semantics.
 Do not change consumer budgets, authorize new models, or expose internal entries
 merely because they appear in this response.
 
-## Adopted publication and remaining scope
+## Adopted publication, 2026-10-05
 
-The eight retained Gemini text routes now publish this response's pairs through
-ordinary LiteLLM configuration: `max_input_tokens`, `max_output_tokens`, and legacy
-`max_tokens` derived from that same output declaration. Flash Lite 3.5 gains its
-previously missing pair. The 65535/65536 distinction is preserved, including where
-an Antigravity slug matches a direct-Gemini API slug with a different allowance.
+At the 2026-10-05 roster update, eight Gemini text routes published this response's
+pairs through ordinary LiteLLM configuration: `max_input_tokens`, `max_output_tokens`,
+and legacy `max_tokens` derived from that same output declaration. Flash Lite 3.5
+gained its previously missing pair. The 65535/65536 distinction was preserved,
+including where an Antigravity slug matched a direct-Gemini API slug with a different
+allowance.
 
-This adopts provider-reported metadata using the Gemini interpretation above; it
-is not eight new capacity measurements. Routes, authorization, request caps, client
-budgets, defaults, pricing, and paused integrations are unchanged.
+That adopted provider metadata uses the Gemini interpretation above; it was not eight
+new capacity measurements. These are historical roster and policy notes; current route
+configuration is described by the recheck below.
 
 Claude Opus/Sonnet now publish **250000 / 64000**, and GPT-OSS **131072 / 32768**,
 from the recorded response, following [CLIProxyAPI's declared mapping](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974/internal/registry/model_registry.go#L1451-L1476)
@@ -129,3 +130,17 @@ The investigation stopped after five successful generations (**2078373 input /
 The key's published zero prices do not establish free upstream usage; shared
 subscription quota and any billing of rejected requests were not measured.
 No configuration, authorization, client budget or paused integration was changed.
+
+## Live model-availability recheck, 2026-10-15
+
+The deployed CLIProxyAPI pod returned one Antigravity auth record. Through its
+read-only management `api-call`, `POST /v1internal:fetchAvailableModels` on
+`cloudcode-pa.googleapis.com` returned **25 model entries**. The response included
+`gemini-3.8-flash-tiered` (1048576 / 65536), `gemini-3.5-flash-lite`,
+`gemini-3.6-flash-high`, `gemini-3-flash`, and `gemini-3.1-flash-lite`; it did not
+include the configured `gemini-3.8-flash-high` or `gemini-3.7-flash-high` IDs.
+`gemini-3.1-flash-lite` remains upstream-listed but is superseded in this roster by
+3.5 Flash Lite. The 2026-10-05 discovery above records 3.7 Flash and 3.1 Flash Lite
+as existing then, so their prior presence remains documented even though those
+older routes are no longer published. This is model-list evidence only, not a
+generation test or proof of future availability.
