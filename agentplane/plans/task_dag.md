@@ -721,6 +721,7 @@ flowchart TD
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     DISPATCHER_WAKE_ACTIVATION --> SUSPENDED_COMPOSER
+    APP_SANDBOX_WAKE_POLICY[In flight: wake-on-message checkbox for new and existing Sandboxes] --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
@@ -1032,7 +1033,7 @@ for a reviewed contract that the code does not already satisfy; do not add an im
 
 ### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
 
-**Blocked on `DISPATCHER_WAKE_ACTIVATION`; follow-up owned by
+**Blocked on `DISPATCHER_WAKE_ACTIVATION` and `APP_SANDBOX_WAKE_POLICY`; follow-up owned by
 `suspended_session_ui`.** Once wake-on-send works in the target environment, a suspended Session's
 composer remains usable while its Sandbox still exists; suspension alone must not disable it.
 Sending queues the message and shows the Sandbox starting while the message waits. Keep normal
@@ -1040,6 +1041,19 @@ access checks and deleted-Sandbox refusal. Until wake-on-send is verified, ship 
 visibility independently and leave composer activation sequenced afterward (operator, 2026-10-15 UTC).
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
+### `APP_SANDBOX_WAKE_POLICY` — configure wake-on-message for new and existing Sandboxes
+
+**In flight; `quiesce_progress`, operator decision 2026-10-15 UTC.** Add a creation-form checkbox
+and an existing-Sandbox checkbox that reads and updates `spec.wakeOnSend` through the app's
+authorized Kubernetes spec mutation path. Preserve the default-off policy, explicit false opt-out,
+identity/concurrency checks and no implicit wake when toggling it. The current creation path never
+writes the field, so caller allowlist activation alone does not opt app-created Sandboxes in.
+Test new creation, existing update and refused writes; capture the UI through the standard visual
+fixture. Existing Sandboxes are changed only through an explicit user action.
+
+`wakeOnSend` is permanent user policy, not a rollout shim. Rai explicitly chose to retain this
+configuration indefinitely; it has no removal node. The obsolete Session-opening flag is separate.
 
 ## 8. Ownership and naming cleanup
 
