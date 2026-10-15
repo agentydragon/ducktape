@@ -1507,6 +1507,7 @@ flowchart LR
     HTTP_JSON_FACADE_TOOLING_SPIKE[Candidate: choose and prove generated HTTP/JSON facade tooling]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
+    RUNNER_DELIVERY_INGRESS_ACCEPTANCE[Candidate: test queued delivery and flush with real ingress, without History]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a narrow CNPG-free K3s integration tier]
     K3S_VM_IMAGE[Blocked: build a real VM fixture, section 10]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_GATEWAY_TOPOLOGY_DESIGN
@@ -1564,6 +1565,17 @@ suite are not VM execution coverage. Keep this test target separate from runtime
 scope its included flows, omitted services and remaining state owners explicitly. A direct-admission
 contract, if selected, remains online-only and does not wake suspended Sandboxes; the durable-queue
 mode remains the owner of wake-to-deliver.
+
+### `RUNNER_DELIVERY_INGRESS_ACCEPTANCE` — test queued delivery and flush without History
+
+**Candidate.** Add a focused integration target that retains PostgreSQL for the Session Dispatcher
+queue but omits the History Service. The test owns a small real `RunnerIngress` endpoint, drives the
+Session Dispatcher API, and waits for the runner's journal receipt at that endpoint. Correlate the
+command by Session ID and command ID, exercise ingress cursor acknowledgements, and assert Quiesce
+reports `QUIESCED` only after the exact sealed cursor is acknowledged. Do not replace the real runner
+ingress protocol with a direct runner-control stub or require History folds, archive reads or Electric
+projection. This no-History scenario is independent of the fully CNPG-free tier below: it still uses
+the PostgreSQL-backed queue and does not imply that the Dispatcher database can be omitted.
 
 ### `DISPATCHER_GATEWAY_TOPOLOGY_DESIGN` — decide where delivery and runner connection roles live
 

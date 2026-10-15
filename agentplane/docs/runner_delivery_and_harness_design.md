@@ -335,6 +335,18 @@ must state which lifecycle and capabilities belong to a process, persisted store
 Session, including whether one harness object may own multiple Sessions. No characterization,
 identity decision or design node authorizes runtime changes by itself.
 
+## Runner delivery acceptance without History
+
+A focused delivery integration target can omit the History Service while retaining PostgreSQL for
+the Session Dispatcher queue. The test owns a small real `RunnerIngress` endpoint implementing the
+runner's journal push and acknowledgement protocol, drives the Session Dispatcher API, and waits
+for the runner's journal receipt to arrive at that endpoint. Correlate the delivered command by
+Session ID and command ID; verify ingress cursor acknowledgements and that Quiesce reaches
+`QUIESCED` only after the exact sealed cursor is acknowledged. This exercises queued delivery,
+runner journaling and the ingress flush contract without a History fold, archive read or Electric
+projection. It is a no-History test tier, not a CNPG-free tier: the Dispatcher still uses its
+PostgreSQL queue.
+
 ## CNPG-free K3s integration tier
 
 The proposed CNPG-free K3s tier is a deliberately narrow integration environment for independently
@@ -344,6 +356,8 @@ dependencies, the tier should exercise only flows that can run without those dep
 omit Notifications, History, Electric, the CNPG operator and PostgreSQL; it does not need parity from
 services it omits. Keep other stateful services and their data owners explicit rather than implying
 that removing one Dispatcher database removes every database dependency.
+This is separate from the no-History delivery test above: a flow that still uses the PostgreSQL-backed
+Dispatcher queue is not part of a tier that omits PostgreSQL.
 
 Cover both Pod and VM runner paths, with test ingress where a tested flow needs it. VM coverage must
 boot a real supported VM fixture: the existing k3s suite's schemaless VirtualMachine stubs only make
