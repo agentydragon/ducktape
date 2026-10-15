@@ -384,7 +384,14 @@ it.each([true, false])(
   "queues a message through the Dispatcher for a fresh suspended Sandbox with wake-on-message %s",
   async (wakeOnSend) => {
     sandboxes = [inventorySandbox("Suspended", wakeOnSend)];
-    const container = await render();
+    sharedThread = {
+      harness_state: "HARNESS_STATE_STOPPED",
+      feed_status: "ended",
+      setup_state: "SETUP_STATE_SUCCEEDED",
+      launch_outcome: "LAUNCH_OUTCOME_STARTED",
+    };
+    const sealedThread = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+    const container = await render(sealedThread);
     const field = composer(container);
     expect(field.disabled).toBe(false);
     expect(button(container, "Send").disabled).toBe(true);
@@ -401,6 +408,25 @@ it.each([true, false])(
     expect(vi.mocked(command).mock.calls).toHaveLength(1);
     expect(vi.mocked(command).mock.calls[0]?.[0]).toBe(THREAD.id);
     expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "Continue after resume" } }]);
+  }
+);
+
+it.each(["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED", "SETUP_STATE_RUNNING"])(
+  "does not queue messages for a suspended Session whose setup is %s",
+  async (setupState) => {
+    sandboxes = [inventorySandbox("Suspended", true)];
+    sharedThread = {
+      harness_state: "HARNESS_STATE_STOPPED",
+      feed_status: "ended",
+      setup_state: setupState,
+      launch_outcome: "LAUNCH_OUTCOME_STARTED",
+    };
+    const sealedThread = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+    const container = await render(sealedThread);
+    expect(composer(container).disabled).toBe(true);
+    await type(composer(container), "Do not send");
+    await press(composer(container), {});
+    expect(command).not.toHaveBeenCalled();
   }
 );
 

@@ -1071,18 +1071,14 @@ function ProjectedSessionBody({
   const operational = view && "controls" in view.state ? view.state.operational : null;
   const running =
     available && !thread.archived && operational?.status === "active" && controls?.harness_state === "running";
-  const canSend =
-    !thread.archived &&
-    operational?.status === "active" &&
-    controls?.harness_state === "running" &&
-    (available || canSendWhileSuspended);
-  const canResume =
-    available &&
+  const resumableSession =
     !thread.archived &&
     !["SETUP_STATE_RUNNING", "SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"].includes(thread.setup_state ?? "") &&
     thread.launch_outcome !== "LAUNCH_OUTCOME_PENDING" &&
-    operational?.status !== "failed" &&
-    (operational?.status !== "active" || controls?.harness_state !== "running");
+    operational?.status !== "failed";
+  const canSend = running || (canSendWhileSuspended && resumableSession);
+  const canResume =
+    available && resumableSession && (operational?.status !== "active" || controls?.harness_state !== "running");
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const activeTurn = controls?.active_turn_id ?? null;

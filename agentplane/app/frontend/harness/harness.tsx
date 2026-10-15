@@ -585,6 +585,8 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     last_cursor: 9,
     last_event_at: ago(46 * HOUR),
     harness_state: "HARNESS_STATE_STOPPED",
+    setup_state: "SETUP_STATE_SUCCEEDED",
+    launch_outcome: "LAUNCH_OUTCOME_STARTED",
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000005",
@@ -1129,8 +1131,9 @@ function standardRows(
   longReasoningPreview: boolean,
   longReasoningBody: boolean
 ): Record<string, unknown>[] {
+  const suspended = threadId === SUSPENDED_THREAD;
   const rows = [
-    viewState(34, "turn-visual"),
+    viewState(34, suspended ? null : "turn-visual", suspended ? { status: "ended" } : {}),
     entity(
       "confirmed_input",
       "user-1",
@@ -1320,8 +1323,9 @@ function pendingInputEchoRows(threadId: string): Record<string, unknown>[] {
  * capture is where every state here is visible.
  */
 function statesRows(threadId: string, outcomes = false): Record<string, unknown>[] {
+  const suspended = threadId === SUSPENDED_THREAD;
   const rows = [
-    viewState(28, "t2"),
+    viewState(28, suspended ? null : "t2", suspended ? { status: "ended" } : {}),
     item(7, "tool-0", ItemKind.TOOL_CALL, null, {
       threadId,
       tool: "Bash",
