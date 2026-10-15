@@ -18,12 +18,12 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 
-| Worker                     | Assigned work and remaining gates                                                                                                        |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `suspended_session_ui`     | Show suspended Session state; enable its composer only after wake-on-send works in that environment.                                     |
-| `quiesce_progress`         | Close stalled-ingress/seal recovery gaps without polling or longer timeouts.                                                             |
-| `session_defaults_cleanup` | Remove unused defaults fields after caller audit; retain receiver-image and authored-data gates.                                         |
-| Coordinator                | Prioritize usable VMs: testing fresh-format/remount, then staging Session/turn acceptance; retire obsolete paths after verified rollout. |
+| Worker                     | Assigned work and remaining gates                                                                  |
+| -------------------------- | -------------------------------------------------------------------------------------------------- |
+| `suspended_session_ui`     | Queued-open navigation; then suspended-state visibility. Composer still waits for wake-on-send.    |
+| `quiesce_progress`         | Missing Sandbox session-table inventory; quiesce writer #10580 waits for schema #10583 applied.    |
+| `session_defaults_cleanup` | VM workspace ownership; defaults cleanup #10582 is in review with caller/data gates.               |
+| Coordinator                | Review and CI; record passed VM storage acceptance; verify rollout before retiring obsolete paths. |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
@@ -35,6 +35,43 @@ with remaining gates in the body; Rai merges each PR by hand.
 
 Completed rollout evidence: [retirement and activation inventory](../sandboxes/debug/rollout_retirement.md);
 bounded [resume coverage audit](../sandboxes/debug/resume_coverage.md).
+
+## Reported VM and Session usability bugs
+
+Rai reported these against staging on 2026-10-15 UTC. Each is independently reviewable; none
+requires increasing timeouts, bypassing Git ownership checks, or creating duplicate Sessions.
+
+```mermaid
+flowchart TD
+    VM_WORKSPACE_OWNERSHIP[In flight: create workspaces with harness ownership]
+    SESSION_OPEN_NAVIGATION[In flight: follow queued opening into its Thread]
+    SANDBOX_SESSION_INVENTORY[In flight: show opened Sessions in Sandbox inventory]
+```
+
+### `VM_WORKSPACE_OWNERSHIP` — create workspaces with the harness identity
+
+**In flight; `session_defaults_cleanup`.** The root runner creates a directory on the guest's
+ext4 workspace, then setup runs as UID 107 and creates its checkout. ACL write access does not make
+the parent directory owned by that identity, so Git refuses it as dubious ownership. Correct fresh
+workspace creation for setup and harness launch; preserve existing authored data and Pod behavior.
+No recursive ownership rewrite or `safe.directory` exception. Test distinct-user Git operations;
+live VM acceptance waits for the corrected embedded runner wheel and guest image pins.
+
+### `SESSION_OPEN_NAVIGATION` — follow the queued opening into its Thread
+
+**In flight; `suspended_session_ui`.** The current POST receipt stays queued even after the live
+Sandbox stream contains the projected Thread. Consume that existing event path to navigate once
+to the matching pending Session, clear the pending record, and recover correctly after remount.
+Never retry the opening POST automatically. Cover delayed projection and return navigation.
+
+### `SANDBOX_SESSION_INVENTORY` — the Sandbox table includes its opened Sessions
+
+**In flight; `quiesce_progress`.** Gateway logs confirm runner inventory contains the answering
+Session, but the legacy Gateway registry filter omits it. Dispatcher opens through the runner proxy
+and does not populate that obsolete registry. Move the app inventory read to the existing
+authenticated runner proxy, preserving Sandbox UID fencing and authorization. Do not mirror registry
+state or fabricate projected-only rows. Cover Dispatcher opening followed by listing and returning
+to the Sandbox; retire the unused wrapper with `GATEWAY_WRAPPER_RETIRE`.
 
 ## 1. Session schema and identity follow-up
 
@@ -686,8 +723,6 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 flowchart TD
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
-    VM_GUEST_DECLARATIVE_STORAGE[In flight: declarative guest disk initialization]
-    APP_SESSION_OPEN_ACTIVATION -. corrected testing app image pin only .-> VM_GUEST_DECLARATIVE_STORAGE
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
@@ -703,7 +738,6 @@ flowchart TD
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
     SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
-    THREAD_SUCCESSOR_DELIVERY[In flight: admission deduplication across incarnations]
     HOSTED_THREAD_SURFACES[In flight: show suspended Sessions and retain history]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
@@ -769,24 +803,6 @@ or the explicit layout contract for workspace PVCs.
 virtiofs mounts, guest ownership/UID workarounds used only by them, old template paths and tests/docs.
 Keep unrelated virtiofs uses where live callers still need them. Verify Pod/VM state persistence on
 the selected explicit layouts before retiring the path; data drops stay in a separate cutoff PR.
-
-### `VM_GUEST_DECLARATIVE_STORAGE` — declarative guest disk initialization
-
-**Acceptance remaining; coordinator, 2026-10-15 UTC.** #10513 merged the guest shell inventory,
-workspace disk preparation helper and declarative tmpfiles ownership. Testing exposed a missing
-device argument in the generated systemd unit: disk preparation exited before the runner started.
-#10537 supplies that argument; #10538 corrects the image workflow path filter. The corrected
-`cc32a7c` guest image was published and pinned in testing; a bounded VM check confirmed the guest
-runner connected and bootstrap completed. Its first app event-stream probe then failed with the
-same app Thread identity HTTP 500 as the app OpenSession acceptance, before storage assertions.
-Wait for the testing app image containing #10569's History identity correction, then run the bounded
-fresh-format/retained-remount check. This depends only on that testing image pin, not completion of
-the separate queued-opening acceptance cases. A successful Nix build or template reconciliation
-is not workload acceptance. Preserve the explicit layout contract and refusal of
-incompatible existing data. `autoFormat`'s recognizable-filesystem check is not equivalent to the
-zero-content scan. Runner changes additionally wait on the embedded wheel pin. The inline helper
-has the operator-requested TODO to package a proper Bazel-built executable rather than embedding
-raw script text; that packaging follow-up does not gate this rollout.
 
 ### `VOLUME_LAYOUT_CONVERSION` — explicit offline volume conversion
 
@@ -948,12 +964,16 @@ included.** Deletes the controller's legacy-shape read and the tombstone marking
 
 ### `QUIESCE_WITHOUT_POLLING` — a runner that never progresses is backed off, not hammered
 
-**In flight; `quiesce_progress`, 2026-10-15 UTC.** The Lease-facts images are pinned in testing and staging. The
-controller already calls once and reacts to the Lease stage events, re-issuing the idempotent call
-only at a one-minute deadline. What is left: while the ingress is down the controller backs off
-instead of retrying per Sandbox, and a live test (a Sandbox with a Session whose flush is held
-back) covers a gateway rollout mid-seal, a runner restart mid-seal and a lost event. Neither could
-be exercised on `agentplane-testing` without a held-back flush.
+**In review: writer #10580 waits for optional schema #10583 to be applied and served.** Plain Flux
+`dependsOn` is not an exact-revision barrier. The persisted per-incarnation attempt prevents watch
+events from bypassing the existing one-minute retry deadline, including absent/stalled stage reports
+and false-to-false condition updates. Focused controller tests cover status conflicts, completion,
+restarts and incarnation changes. Runner stage events still advance quiesce immediately.
+
+This change does not establish ingress-wide backoff. Audit the remaining outage behavior before
+closing this node; preserve a bounded held-flush integration check only for an identified gap that
+focused tests do not cover. Keep the separate legacy-response removal gated on every runner image
+and the VM wheel pin. Do not turn missed-event recovery into periodic polling or extend timeouts.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
@@ -1061,16 +1081,6 @@ composer remains usable while its Sandbox still exists; suspension alone must no
 Sending queues the message and shows the Sandbox starting while the message waits. Keep normal
 access checks and deleted-Sandbox refusal. Until wake-on-send is verified, ship suspended-state
 visibility independently and leave composer activation sequenced afterward (operator, 2026-10-15 UTC).
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
-### `THREAD_SUCCESSOR_DELIVERY` — commands unsettled across incarnations
-
-**In review: #10574; joined targeted test passed, awaiting merge.** Join the real Dispatcher retry and runner
-journal paths in a lost-admission-reply test across incarnation replacement. Preserve the command
-ID/payload and original durable admission cursor; no second admission is written. Deletion remains
-the terminal `unknown` case. This is admission deduplication, not a promise of exactly-once native
-effects: recovery can replay an input whose native acceptance was never confirmed.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -1217,7 +1227,7 @@ flowchart TD
 
 ### `APP_SESSION_DEFAULTS_LEGACY_REMOVE` — delete legacy per-Sandbox defaults fields
 
-**In flight; `session_defaults_cleanup`, 2026-10-15 UTC.** Receiver removals retain caller-image gates. Audit remaining
+**In review: #10582, `session_defaults_cleanup`, 2026-10-15 UTC.** Receiver removals retain caller-image gates. Audit remaining
 CreateSession callers before removing their field mask; that part waits for the direct-open caller
 removal and its image rollout. Other unused defaults fields can be reviewed independently.
 Once every writer has stopped sending them, delete `SandboxBinding.session_defaults`, the Sandbox

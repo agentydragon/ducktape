@@ -294,3 +294,22 @@ requests them, using new Sessions rather than claiming deleted native Sessions r
 
 Reverting activation cannot reinterpret already provisioned new workspaces: the durable layout
 and identity guard must reject incompatible declarations until an explicit future conversion exists.
+
+## Declarative guest storage acceptance
+
+On 2026-10-15, the corrected VM storage case passed in 363.6 seconds in
+[invocation 0d926436-be24-4825-88ec-de0e7561c778](https://app.buildbuddy.io/invocation/0d926436-be24-4825-88ec-de0e7561c778),
+with the two-line History-projection wait published in #10579 (source `7f6279ff06`). The preceding
+run reached Ready/Bootstrapped but requested the Thread stream before projection and received 404;
+the test now waits for the existing admission-to-projection boundary, as launch-preset acceptance does.
+
+The raw ext4 VM case verified fresh setup, matching state/workspace marker bytes, stable PVC identities
+through suspend/resume and explicit VM-object replacement, and refusal of an incompatible claim
+without replacing the retained volumes. Fixture cleanup completed normally. No model turn or
+staging mutation was performed, and the already accepted Pod case was not repeated.
+
+This closes the newer declarative guest disk preparation's fresh-format/remount gate. It does not
+cover Git ownership in newly created per-Session directories: the probe uses the pre-created
+`.home` directory. That separately reported ownership bug must be fixed and validated with distinct
+runner/harness identities. The existing TODO to package the embedded workspace helper as a Bazel
+binary remains; this acceptance does not claim that packaging cleanup is complete.

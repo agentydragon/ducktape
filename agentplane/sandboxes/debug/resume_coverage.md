@@ -24,3 +24,9 @@ continuation and native recall were already accepted in
 [storage acceptance](../../acceptance/debug/storage_acceptance.md). The later guest disk-preparation
 change has its own fresh-format/remount acceptance. Long-stop credentials, app presentation,
 ambiguous delivery across incarnations, and Dispatcher activation remain separate DAG outcomes.
+
+Merged #10574 adds `session_dispatcher/test_delivery.py` coverage joining the real Dispatcher,
+PostgreSQL, and two runner incarnations across a lost admission reply. The original command ID,
+payload and durable admission cursor survive; only one `CommandAdmitted` is journaled. This is
+admission deduplication, not exactly-once external effects: an input whose native acceptance was
+never confirmed can replay after replacement.

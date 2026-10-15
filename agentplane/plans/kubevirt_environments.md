@@ -8,16 +8,16 @@ The design and its constraints are in [VM Sandboxes](../docs/vm_sandboxes.md). S
 name. Warm pools, memory snapshots, live migration and arbitrary user-supplied VM specifications
 stay out of scope.
 
-## Remaining storage acceptance
+## Storage acceptance
 
 The declared [storage layouts](../docs/sandbox_storage.md), template activation, incompatible
 cutoff and obsolete production DataVolume workspace retirement are complete; evidence is in
 [storage acceptance](../acceptance/debug/storage_acceptance.md). Generic DataVolume disks in custom
-VM templates remain supported. `VM_GUEST_DECLARATIVE_STORAGE` retains only fresh-format and
-retained-remount acceptance for the newer guest implementation after the corrected testing app
-image pin. Conversion remains `VOLUME_LAYOUT_CONVERSION`, much later, and does not gate that
-acceptance. A filesystem-backed raw `disk.img` and an ordinary Pod directory remain explicitly
-incompatible without conversion.
+VM templates remain supported. Fresh-format and retained-remount acceptance for the newer guest
+implementation passed on 2026-10-15; see [the recorded run](../acceptance/debug/storage_acceptance.md#declarative-guest-storage-acceptance).
+The separate workspace-user ownership bug remains in the task DAG. Conversion remains
+`VOLUME_LAYOUT_CONVERSION`, much later. A filesystem-backed raw `disk.img` and an ordinary Pod
+directory remain explicitly incompatible without conversion.
 
 ## Open gates
 
