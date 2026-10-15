@@ -344,6 +344,9 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
   expect(container.textContent).toContain("1 thread");
   expect(container.textContent).toContain("List the repository files");
   expect(container.textContent).toContain("Investigate flaky CI");
+  expect(
+    row("Investigate flaky CI").querySelector(".agentplane-thread-status-indicator")?.getAttribute("aria-label")
+  ).toBe("Sandbox suspended");
 });
 
 it("opens retained Thread history even when its Sandbox is gone", async () => {
