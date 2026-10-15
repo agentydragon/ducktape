@@ -18,10 +18,10 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Codex reported, 2026-10-15 UTC):
 
-| Worker                                | Assigned work and remaining gates                                                                                                |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `suspended_session_ui`                | Verify the published runner-ducktape image reaches Flux pins, then retire the legacy Quiesce reader once all runner gates clear. |
-| Coordinator and documentation workers | Remove completed DAG work and resolved investigation logs; preserve durable guidance and unresolved decisions.                   |
+| Worker                                | Assigned work and remaining gates                                                                                        |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `suspended_session_ui`                | Remove the legacy Quiesce response reader; published Pod/VM images, embedded wheel and live incarnation gates are clear. |
+| Coordinator and documentation workers | Remove completed DAG work and resolved investigation logs; preserve durable guidance and unresolved decisions.           |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
@@ -389,8 +389,9 @@ completed prototype matrix or require simultaneous cluster-wide disasters.
 
 ### `VM_PROCESS_ISOLATION` — protect control from harness processes
 
-**Candidate.** Enforce aggregate memory/process/disk budgets and process-control
-boundaries. Test representative tool/harness termination and bounded exhaustion to establish which
+**Candidate.** The guest already configures runner and harness cgroup budgets
+(`runner/vm.nix`, `runner/cgroups.py`). Finish the process-visibility and control boundaries below,
+and verify the existing limits before adding more mechanisms. Test representative tool/harness termination and bounded exhaustion to establish which
 runner/control state survives and what needs durable recovery. This directly addresses agents
 accidentally killing their own harness; guest or container packaging alone is not that guarantee.
 
@@ -663,19 +664,17 @@ flowchart TD
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
-    SANDBOX_IDLE_EXPIRY -. related .-> AGENT_RESUME_NOTICE
+    SANDBOX_IDLE_EXPIRY[Candidate: suspend idle Sandboxes] -. related .-> AGENT_RESUME_NOTICE
+    QUIESCE_LEGACY_SHAPE_REMOVAL[In flight: remove the legacy Quiesce response reader]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
-    RUNNER_QUIESCE_ROLLOUT[In flight: roll out nonblocking Quiesce implementation #10609]
     JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE[Blocked: writer rollout and retained-journal cutoff]
-    RUNNER_QUIESCE_ROLLOUT --> QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: remove old response shape after runner rollout]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
-    RUNNER_QUIESCE_ROLLOUT --> SANDBOX_IDLE_EXPIRY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
@@ -788,7 +787,8 @@ Firecracker with the runner as init.
 
 ### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
 
-**Blocked on `RUNNER_QUIESCE_ROLLOUT`; operator, 2026-10-11 and 2026-10-13 PDT.** The app's effective-mode reader is deployed. Controller retry and runner outage coverage are complete; the nonblocking writer still needs its rollout verification. An idle runner
+**Candidate; later than cleanup in the operator priority.** The effective-mode reader and
+nonblocking Quiesce writer are deployed. Controller retry and runner outage coverage are complete. An idle runner
 Sandbox suspends: it is sealed, then the Pod or VM goes, freeing memory and compute, and the Sandbox, its
 ServiceAccount, bindings and state PVC stay, so a later resume uses the same PVC. Nothing deletes a
 Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
@@ -845,23 +845,13 @@ does not supervise these, so who would report them (the harness adapters, the VM
 Test an attached terminal that detaches, a background process that outlives a turn, and a runner
 restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
-### `RUNNER_QUIESCE_ROLLOUT` — deploy nonblocking Quiesce; gate legacy-reader removal
-
-**Implementation complete in #10609; rollout remains in flight.** The runner returns the current
-stage immediately while one supervised drain continues per incarnation. The drain preserves
-conditional idle refusal, admission/setup ordering, and Lease-driven completion; deterministic tests
-cover repeated calls, cancellation/reconnect, delayed ingress acknowledgement, and admissions paused
-before durable Session creation. Track rollout until every live and selectable Pod runner image and
-the embedded VM wheel include the compatible writer, and verify that no old runner incarnations
-remain. Require testing/staging acceptance before retiring the controller's legacy response reader.
-
 ### `QUIESCE_LEGACY_SHAPE_REMOVAL` — the controller stops reading the blocking `Quiesce` shape
 
-**Blocked on `RUNNER_QUIESCE_ROLLOUT`.** The 2026-10-15 audit found the then-live VM wheel
-`a13d9a7d58ff` and template wheel `0a0e1373f9c2` omitted the response stage; those are historical
-snapshot pins, not a current inventory. Refresh the audit against every live/selectable Pod runner
-image, embedded VM wheel, and old incarnation. Delete the controller's legacy-shape read only after
-the compatible writer is deployed everywhere and testing/staging acceptance passes.
+**In flight; `suspended_session_ui`, 2026-10-15 UTC.** All live and selectable Pod/VM images now
+include the nonblocking writer from #10609, including runner-ducktape and the embedded VM wheel.
+Remove the controller's legacy response reader and obsolete fixtures; preserve conditional idle
+refusal, admission/setup ordering and Lease-driven completion. Use focused deterministic tests for
+the reader contract; a further live run needs a specific deployment uncertainty.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
@@ -932,7 +922,7 @@ flowchart TD
     SANDBOX_DATABASE_RENAME[Unscheduled: name the sandbox_commands database for the Runner Gateway]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
-    SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes suspend, section 7] -. same idleness question .-> ACTION_BOX_IDLE_REAPER
+    SANDBOX_IDLE_EXPIRY[Candidate: idle runner Sandboxes suspend, section 7] -. same idleness question .-> ACTION_BOX_IDLE_REAPER
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] -. makes moot .-> SANDBOX_DATABASE_RENAME
 ```
 
@@ -1048,7 +1038,7 @@ flowchart TD
     CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_LIST_SESSIONS_RETIRE[Blocked: resolve remaining live-inventory semantics, then remove ListSessions]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
-    APP_SESSION_LIST_ROUTE_RETIRE[Blocked: app image rollout before table route removal] --> GATEWAY_WRAPPER_RETIRE
+    APP_SESSION_LIST_ROUTE_RETIRE[Candidate: remove the unused runner-backed table route] --> GATEWAY_WRAPPER_RETIRE
     APP_SESSION_DESTINATION_HISTORY[Candidate: resolve Session destinations from History] --> GATEWAY_WRAPPER_RETIRE
     APP_ARCHIVE_RUNNER_READ_MIGRATION[Candidate: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
     NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION[Candidate: retire notification wrapper membership reads] --> GATEWAY_WRAPPER_RETIRE
@@ -1144,11 +1134,10 @@ and runner proxy. This makes `SANDBOX_DATABASE_RENAME` moot; delete that deferre
 
 ### `APP_SESSION_LIST_ROUTE_RETIRE` — remove the runner-backed Sandbox table read
 
-**Blocked only on the app image rollout containing merged #10612.** The table now uses retained
-History rows. Its former browser path was
+**Candidate.** The app image containing #10612 is Ready in both environments, with no old app
+Pods remaining. The table now uses retained History rows. Its former browser path was
 `client.listSessions` → `GET /sandboxes/{name}/sessions` → `RunnerBridge.list_sessions` →
-`RunnerGateway.ListSessions` → tunneled `Runner.ListSessions`. Once the new caller image is deployed,
-delete the unused HTTP GET route and its
+`RunnerGateway.ListSessions` → tunneled `Runner.ListSessions`. Delete the unused HTTP GET route and its
 schema/client/test surface. Preserve the POST opening route and opening-status read. Generate
 OpenAPI/clients through `localgen/run.sh`; do not hand-edit generated files. The bridge method stays
 only until the separate archive and native-resume migrations remove its final callers.
