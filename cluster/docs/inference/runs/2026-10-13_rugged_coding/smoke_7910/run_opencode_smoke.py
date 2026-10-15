@@ -65,7 +65,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--backend-port", type=int, default=11500)
-    parser.add_argument("--launcher", type=Path, required=True, help="built rugged-opencode-offline executable")
+    parser.add_argument("--launcher", type=Path, required=True, help="built rugged-opencode-eval executable")
     parser.add_argument("--model", default=MODEL_ID, help="recording only; the launcher profile selects the model")
     args = parser.parse_args()
     args.result_dir = RUN_DIR / "results" / args.run_id

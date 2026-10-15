@@ -73,10 +73,21 @@ let
       };
       options = lib.mkOption {
         type = lib.types.submodule {
-          options.baseURL = lib.mkOption {
-            type = lib.types.str;
-            description = "OpenAI-compatible base URL for this provider's server.";
-          };
+          options =
+            (lib.genAttrs [ "timeout" "headerTimeout" "chunkTimeout" ] (
+              name:
+              lib.mkOption {
+                type = lib.types.nullOr (lib.types.either lib.types.bool lib.types.ints.positive);
+                default = null;
+                description = "Optional AI SDK ${name} in milliseconds; false disables the timeout.";
+              }
+            ))
+            // {
+              baseURL = lib.mkOption {
+                type = lib.types.str;
+                description = "OpenAI-compatible base URL for this provider's server.";
+              };
+            };
         };
         description = "Provider-level options passed to the AI SDK adapter.";
       };

@@ -7,7 +7,7 @@ a full HumanEval+ leaderboard result or a Terminal-Bench score.
 ## Local OpenCode profile
 
 The Home Manager host module `nix/home/hosts/rugged-opencode.nix` adds the
-`rugged-opencode-offline` command. It copies a minimal OpenCode config into a
+`rugged-opencode-eval` command. It copies a minimal OpenCode config into a
 fresh writable home, disables plugins and MCP, disables delegation, and permits
 only local file and shell tools. It connects directly to host-loopback Ollama;
 `RUGGED_OPENCODE_BACKEND_PORT` selects the port and defaults to `11436`. Local

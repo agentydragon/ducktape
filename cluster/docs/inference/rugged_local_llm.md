@@ -86,19 +86,27 @@ for other experiments; it supplies no throughput result. Nix/build preparation
 overlapped parts of these initial probes. Do not use that interruption to infer a
 model limit or compare the short-prompt mean as a controlled backend benchmark.
 
-### Local coding harness
+### Daily OpenCode and evaluation harness
 
-The dedicated `rugged-opencode-offline` Home Manager command introduced by
-[PR #10458](https://github.com/agentydragon/ducktape/pull/10458) uses a fresh
-home directory, a minimal OpenCode configuration, and only local file and shell
-tools.
-The launcher preserves the original absolute working-directory path inside its
-sandbox. The repository remains writable; Git metadata is read-only. The current launcher
-connects directly to host-loopback Ollama (default port `11436`, overridable with
-`RUGGED_OPENCODE_BACKEND_PORT`) and keeps host network access. A cached local model
-can still be used when the host is offline, but the interactive agent itself is
-not network-isolated. The separate `offline_exec` helper retains its network
-namespace. Ordinary OpenCode profiles keep their existing configuration.
+`rugged-opencode-offline` launches normal OpenCode with a local model selected.
+It preserves the working directory, HOME, XDG directories, environment, persistent
+history, credentials, Git access, plugins, MCP servers, skills, permissions, and
+normal agent settings. The name means local inference is available offline; it
+neither restricts tools nor isolates networking. The same roster is available
+under the `rugged` provider in ordinary `opencode`. Provider timeouts are disabled
+for long prefill. `RUGGED_OPENCODE_MODEL` chooses the starting model (default
+`qwen3-4b`); `acp` and `models` pass through without a model CLI flag.
+
+`rugged-opencode-eval` is the separate evaluation launcher. It uses a disposable
+HOME and state, cleared environment, writable project bind at its original
+absolute path, and read-only Git metadata mounts. Its `local-build` agent permits
+file/shell tools, disables delegation, configures no plugins or MCP servers, and
+limits execution to 20 steps with temperature 0.2, top-p 0.95, and reasoning off.
+It connects directly to port `11436`, overridable for mock/temporary servers via
+`RUGGED_OPENCODE_BACKEND_PORT`. That override applies only to the evaluation
+command; the daily provider endpoint is owned by Home Manager. The evaluation
+launcher retains host network access; `offline_exec` provides separate network
+isolation for fully offline experiments.
 
 With the default Ollama backend, every offline-profile config exposes six
 models in OpenCode's picker: five base models and the experimental 131,072-context
@@ -197,7 +205,7 @@ RUGGED_OPENCODE_MODEL=qwen3.5-0.8b-long-256k-experimental \
 ```
 
 List the local choices and context/output limits with
-`rugged-opencode-offline models rugged-offline --verbose`.
+`rugged-opencode-offline models rugged --verbose`.
 
 Its configured alias is `qwen3.5:0.8b-long-256k-b256`, with 262,144 allocated
 context and a 4,096-token output budget. This is not the model's 163,840-context,

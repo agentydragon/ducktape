@@ -117,7 +117,7 @@ class MockHandler(BaseHTTPRequestHandler):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--launcher", type=Path, help="exercise a built rugged-opencode-offline launcher")
+    parser.add_argument("--launcher", type=Path, help="exercise a built rugged-opencode-eval launcher")
     parser.add_argument("--workspace", type=Path, help="writable workspace for the built launcher")
     parser.add_argument("--profile-config", type=Path, help="generated OpenCode JSON for the selected profile")
     parser.add_argument("--attachment", type=Path, help="attach this file to the OpenCode run")

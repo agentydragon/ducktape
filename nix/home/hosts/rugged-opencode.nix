@@ -1,8 +1,6 @@
 # OpenCode local-LLM provider wiring for rugged's on-device inference.
-#
-# TODO: activate the authenticated in-cluster serving route from PR #10452
-# after its deployment is validated.
 {
+  lib,
   pkgs,
   pkgsUnstable,
   osConfig ? null,
@@ -71,18 +69,78 @@ let
       toolCall = false;
     };
   };
+  modelsForPicker =
+    if routerEnabled then
+      offlineModels
+    else
+      builtins.removeAttrs offlineModels [
+        "qwen35_0_8b_long_256k_experimental"
+        "qwen35_9b_128k"
+      ];
+  providerModels = builtins.listToAttrs (
+    map (model: {
+      name = model.id;
+      value = {
+        inherit (model) name;
+        reasoning = false;
+        tool_call = model.toolCall;
+        limit = { inherit (model) context output; };
+      };
+    }) (builtins.attrValues modelsForPicker)
+  );
+  selectors = {
+    qwen3-4b = "qwen3_4b";
+    gemma4-e2b = "gemma4_e2b";
+    gemma4-e2b-long-128k-experimental = "gemma4_e2b_long_128k_experimental";
+    "qwen3.5-0.8b-long-256k-experimental" = "qwen35_0_8b_long_256k_experimental";
+    "qwen3.5-9b-128k" = "qwen35_9b_128k";
+    gemma4-e4b = "gemma4_e4b";
+    "qwen2.5-coder-7b" = "qwen2_5_coder_7b";
+    qwen3-8b = "qwen3_8b";
+  };
+  selectModel = forEvaluation: ''
+    case "''${RUGGED_OPENCODE_MODEL:-qwen3-4b}" in
+      ${lib.concatStringsSep "\n" (
+        lib.mapAttrsToList (
+          selector: key:
+          if builtins.hasAttr key modelsForPicker then
+            ''
+                ${selector})
+                  selected_model="${offlineModels.${key}.id}"
+              ${lib.optionalString forEvaluation ''selected_config="${offlineConfigs.${key}}"''}
+                  ;;
+            ''
+          else
+            ''
+              ${selector})
+                echo "This model requires the rugged llama.cpp router" >&2
+                exit 2
+                ;;
+            ''
+        ) selectors
+      )}
+      *)
+        echo "unsupported local model selector: $RUGGED_OPENCODE_MODEL" >&2
+        exit 2
+        ;;
+    esac
+  '';
+  dailyLauncher = pkgs.writeShellApplication {
+    name = "rugged-opencode-offline";
+    text = ''
+      ${selectModel false}
+      case "''${1:-}" in
+        acp|models)
+          exec ${pkgsUnstable.opencode}/bin/opencode "$@"
+          ;;
+        *)
+          exec ${pkgsUnstable.opencode}/bin/opencode --model "rugged/$selected_model" "$@"
+          ;;
+      esac
+    '';
+  };
   offlineConfigFor =
     key: model:
-    let
-      modelsForPicker =
-        if routerEnabled then
-          offlineModels
-        else
-          builtins.removeAttrs offlineModels [
-            "qwen35_0_8b_long_256k_experimental"
-            "qwen35_9b_128k"
-          ];
-    in
     builtins.toFile "rugged-opencode-offline-${key}.json" (
       builtins.toJSON {
         "$schema" = "https://opencode.ai/config.json";
@@ -134,65 +192,15 @@ let
       }
     );
   offlineConfigs = builtins.mapAttrs offlineConfigFor offlineModels;
-  qwen35SelectorCase =
-    if routerEnabled then
-      ''
-        qwen3.5-9b-128k)
-          selected_model="${offlineModels.qwen35_9b_128k.id}"
-          selected_config="${offlineConfigs.qwen35_9b_128k}"
-          ;;
-        qwen3.5-0.8b-long-256k-experimental)
-          selected_model="${offlineModels.qwen35_0_8b_long_256k_experimental.id}"
-          selected_config="${offlineConfigs.qwen35_0_8b_long_256k_experimental}"
-          ;;
-      ''
-    else
-      ''
-        qwen3.5-0.8b-long-256k-experimental|qwen3.5-9b-128k)
-          echo "Qwen3.5 profiles require the rugged llama.cpp router backend to be enabled" >&2
-          exit 2
-          ;;
-      '';
-
   offlineCommand = pkgs.writeShellApplication {
-    name = "rugged-opencode-offline-inner";
+    name = "rugged-opencode-eval-inner";
     runtimeInputs = [
       pkgs.coreutils
       pkgs.gnused
       pkgsUnstable.opencode
     ];
     text = ''
-      case "''${RUGGED_OPENCODE_MODEL:-qwen3-4b}" in
-        qwen3-4b)
-          selected_model="${offlineModels.qwen3_4b.id}"
-          selected_config="${offlineConfigs.qwen3_4b}"
-          ;;
-        gemma4-e2b)
-          selected_model="${offlineModels.gemma4_e2b.id}"
-          selected_config="${offlineConfigs.gemma4_e2b}"
-          ;;
-        gemma4-e2b-long-128k-experimental)
-          selected_model="${offlineModels.gemma4_e2b_long_128k_experimental.id}"
-          selected_config="${offlineConfigs.gemma4_e2b_long_128k_experimental}"
-          ;;
-        ${qwen35SelectorCase}
-        gemma4-e4b)
-          selected_model="${offlineModels.gemma4_e4b.id}"
-          selected_config="${offlineConfigs.gemma4_e4b}"
-          ;;
-        qwen2.5-coder-7b)
-          selected_model="${offlineModels.qwen2_5_coder_7b.id}"
-          selected_config="${offlineConfigs.qwen2_5_coder_7b}"
-          ;;
-        qwen3-8b)
-          selected_model="${offlineModels.qwen3_8b.id}"
-          selected_config="${offlineConfigs.qwen3_8b}"
-          ;;
-        *)
-          echo "unsupported local model selector: $RUGGED_OPENCODE_MODEL" >&2
-          exit 2
-          ;;
-      esac
+      ${selectModel true}
       selected_route="${offlineProvider}/$selected_model"
       backend_port="''${RUGGED_OPENCODE_BACKEND_PORT:-11436}"
       if [[ ! "$backend_port" =~ ^[0-9]+$ ]] || (( backend_port < 1 || backend_port > 65535 )); then
@@ -219,7 +227,7 @@ let
   };
 
   offlineLauncher = pkgs.writeShellApplication {
-    name = "rugged-opencode-offline";
+    name = "rugged-opencode-eval";
     runtimeInputs = [
       pkgs.bubblewrap
       pkgs.coreutils
@@ -288,7 +296,7 @@ let
       bwrap_args+=(
         --chdir "$workspace"
         --
-        ${offlineCommand}/bin/rugged-opencode-offline-inner
+        ${offlineCommand}/bin/rugged-opencode-eval-inner
         "$@"
       )
       # TODO: Consider optional network isolation that still permits the selected local backend.
@@ -306,21 +314,14 @@ in
     # On-device model endpoint; the router is mutually exclusive with Ollama.
     rugged = {
       npm = "@ai-sdk/openai-compatible";
-      name = if routerEnabled then "Rugged local llama.cpp router" else "Rugged local Ollama";
-      options.baseURL = "http://127.0.0.1:11436/v1";
-      models."gemma4:e2b-it-qat" = {
-        name = "Gemma 4 E2B QAT (32k context; rugged iGPU)";
-        reasoning = false;
-        # Tool calls work (cluster/docs/inference/rugged_local_llm.md), but with
-        # a real $HOME OpenCode's ~16k-token first prompt needs ~50 s of prefill
-        # and once produced no output in 10 min. Stays off until OpenCode runs
-        # with a minimal environment by default.
-        tool_call = false;
-        limit = {
-          context = 32768;
-          output = 8192;
-        };
+      name = "Rugged local ${backendLabel}";
+      options = {
+        baseURL = "http://127.0.0.1:11436/v1";
+        timeout = false;
+        headerTimeout = false;
+        chunkTimeout = false;
       };
+      models = providerModels;
     };
 
     # Gemma 4 on local Intel iGPU via Google LiteRT-LM. Start separately:
@@ -347,8 +348,8 @@ in
     };
   };
 
-  # This dedicated command has its own minimal OpenCode config and a fresh HOME,
-  # while connecting directly to host-loopback Ollama. Shared OpenCode providers,
-  # skills, and MCP servers remain owned by the normal profile.
-  home.packages = [ offlineLauncher ];
+  home.packages = [
+    dailyLauncher
+    offlineLauncher
+  ];
 }
