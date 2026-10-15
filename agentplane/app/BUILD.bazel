@@ -354,6 +354,11 @@ py_test(
     name = "test_bridge",
     size = "large",
     srcs = ["test_bridge.py"],
+    args = [
+        "-p",
+        "util.testing.pytest_logfile",
+        "--log-file-level=DEBUG",
+    ],
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
@@ -417,6 +422,7 @@ py_test(
         "//agentplane/sandboxes/testing:fake_inventory",
         "//util:net",
         "//util/testing:asgi",
+        "//util/testing:pytest_logfile",
         "@pypi//grpcio",
         "@pypi//httpx",
         "@pypi//protobuf",
