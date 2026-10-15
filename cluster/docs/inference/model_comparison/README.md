@@ -72,6 +72,11 @@ zero. Error bars are observed ranges, not confidence intervals. Long-context
 labels describe separate tests, not a claim that the short-prompt decode rate
 holds over that full window. Estimated AA indices use hollow markers.
 
+The llama.cpp squares show single short tool-result responses; purple diamonds
+show completed long-input retrieval requests, each labelled with its actual input
+length, recall, and prefill time. Their 17–27-token outputs are smoke measurements,
+not stable throughput estimates. Allocation is 139,264 tokens with q4_0 K/V cache.
+
 ![Rugged intelligence versus decode speed](../rugged_plot/intelligence_speed.svg)
 
 Vertical reference lines use the same dated CSV: green dashed lines for OpenAI

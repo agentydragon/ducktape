@@ -950,6 +950,13 @@ tool smoke, not an OpenCode run or a scored coding benchmark. Short tool-respons
 decode rates were approximately 25–26 tok/s for 4B and 15–16 tok/s for 9B; those
 17–44-token generations are not stable throughput estimates.
 
+The intelligence/speed plot uses the first completed short tool-result response
+for each size: 4B processed 337 input tokens and generated 17 tokens at
+25.75565 tok/s; 9B processed 337 input tokens and generated 25 tokens at
+15.66047 tok/s. These are individual observations, not repeated-run medians.
+Both allocated 139,264 tokens; that allocation alone does not establish completed
+long-input support.
+
 The initial 4B long request was censored at 28,416 processed tokens by the old
 25%-PSI guard after about five minutes. Minimum sampled available RAM was
 11.22 GiB; full PSI peaked at 34.57%. No answer was produced, so it has no

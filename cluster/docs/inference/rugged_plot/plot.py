@@ -62,6 +62,54 @@ REFERENCES = (
 )
 
 
+@dataclass(frozen=True)
+class LlamaMeasurement:
+    name: str
+    slug: str
+    speed: float
+    context: str
+    offset: tuple[int, int]
+    long_input: bool
+
+
+# Direct-chat smoke requests, one observation each, q4_0 KV, 139,264 allocation.
+# Short points use the tool-result response, not an average of different tasks.
+LLAMA = (
+    LlamaMeasurement(
+        "Qwen3.5 4B Q4_K_M",
+        "qwen3-5-4b-non-reasoning",
+        25.755646523068208,
+        "337 input; long-context check pending",
+        (15, 12),
+        False,
+    ),
+    LlamaMeasurement(
+        "Qwen3.5 9B Q4_K_M",
+        "qwen3-5-9b-non-reasoning",
+        15.66047055798909,
+        "337 input; short tool response",
+        (-145, 22),
+        False,
+    ),
+    LlamaMeasurement(
+        "Qwen3.5 9B Q4_K_M",
+        "qwen3-5-9b-non-reasoning",
+        9.111569415265034,
+        "63,907 input; recall 3/3; prefill 19.02 min",
+        (-210, 3),
+        True,
+    ),
+    LlamaMeasurement(
+        "Qwen3.5 9B Q4_K_M",
+        "qwen3-5-9b-non-reasoning",
+        6.203453223815344,
+        "131,907 input; recall 3/3; prefill 66.54 min",
+        (-160, -32),
+        True,
+    ),
+)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scores", type=Path, required=True, help="AA 2026-10-14 CSV")
@@ -136,15 +184,35 @@ def main() -> None:
     ax.annotate(
         "Qwen3.5 0.8B Q8 (single long-input run)\n134,993 input / 163,840 allocation; recall 3/3",
         (x, speed),
-        xytext=(-60, 48),
+        xytext=(0, 80),
         textcoords="offset points",
         fontsize=9,
         arrowprops={"arrowstyle": "-", "color": "#999999"},
     )
+    for observation in LLAMA:
+        row = scores[observation.slug]
+        x = float(row["intelligence_index"])
+        color = "#8a3994" if observation.long_input else "#167b80"
+        ax.scatter(
+            [x],
+            [observation.speed],
+            marker="D" if observation.long_input else "s",
+            facecolors="white" if row["intelligence_index_is_estimated"] == "true" else color,
+            edgecolors=color,
+            s=65,
+        )
+        ax.annotate(
+            f"{observation.name}\n{observation.context}",
+            (x, observation.speed),
+            xytext=observation.offset,
+            textcoords="offset points",
+            fontsize=9,
+            arrowprops={"arrowstyle": "-", "color": "#999999"},
+        )
     ax.set(
         xlabel="Artificial Analysis Intelligence Index v4.3.2 (rugged models: non-reasoning; references: as labeled)",
         ylabel="Measured decode tokens/second on rugged",
-        xlim=(4.8, 11.4),
+        xlim=(4.8, 15.5),
         ylim=(0, 60),
     )
     ax.set_title("Rugged: intelligence × decode speed, with demonstrated context", fontsize=15, pad=18)
@@ -169,6 +237,24 @@ def main() -> None:
                 linestyle="none",
                 label="Ollama Vulkan, one long prompt\n34.2 minutes prefill, AC, n=1",
             ),
+            Line2D(
+                [],
+                [],
+                marker="s",
+                markerfacecolor="white",
+                color="#167b80",
+                linestyle="none",
+                label="llama.cpp Vulkan, short tool response\n17-25 output tokens, AC, n=1 each",
+            ),
+            Line2D(
+                [],
+                [],
+                marker="D",
+                markerfacecolor="white",
+                color="#8a3994",
+                linestyle="none",
+                label="llama.cpp Vulkan, long retrieval\n27 output tokens, AC, n=1 each",
+            ),
         ],
         loc="upper left",
         bbox_to_anchor=(1.02, 0.48),
@@ -179,8 +265,8 @@ def main() -> None:
         0.18,
         "Vertical lines show external intelligence only, not local throughput or equivalent coding capability.\n"
         "Hollow markers: AA index is estimated. Scores were not reproduced locally or matched to our quantization.\n"
-        "Context labels show separate completed-input tests, not the speed-test prompt sizes. 256k completion is unverified.\n"
-        "These are historical Ollama measurements, not current llama.cpp-router speed tests. AC sweep had contention/thermal variation.\n"
+        "Ollama context labels describe separate tests; llama.cpp labels give the actual prompt sizes (139,264 allocation).\n"
+        "llama.cpp uses Q4_K_M weights / q4_0 KV; tiny output samples are smoke checks, not stable throughput estimates.\n"
         "No Pareto frontier: power, prompt length, cache settings and workload conditions are not controlled across all points.",
         fontsize=9,
         va="top",
@@ -189,7 +275,7 @@ def main() -> None:
         0.08,
         0.07,
         "Not plotted: NPU TinyLlama ~38.65 tok/s and Qwen2.5-Coder 1.5B 45.76 tok/s lack matching AA rows.\n"
-        "Colibri Qwen3-Coder 30B-A3B lacks decode-phase timing; Qwen3.5 4B lacks a completed long-input result.\n"
+        "Colibri Qwen3-Coder 30B-A3B lacks decode-phase timing. Qwen3.5 35B-A3B has no completed measurement yet.\n"
         "Sources: rugged_local_llm.md (2026-10-13/14 runs); docs/artificial_analysis/cited_models_2026_10_14.csv.",
         fontsize=9,
         va="top",
