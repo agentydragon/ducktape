@@ -37,7 +37,6 @@ _SHORT_LINKS = {
     "/nfc": (_CANONICAL_HOSTNAME, "/nfc.html"),
     "/furry-rationalists-telegram": ("furryrationalists.proofgrid.tech", "/"),
     "/effective-anthropomorphism-discord": ("discord.com", "/invite/Mcdsh757Ht"),
-    "/l": ("llm.agentydragon.com", "/"),
 }
 _SERVICE = ServiceRef(
     name=_NAME,

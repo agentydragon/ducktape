@@ -31,10 +31,6 @@ server {
         return 302 https://discord.com/invite/Mcdsh757Ht;
     }
 
-    location /l {
-        return 302 https://llm.agentydragon.com/;
-    }
-
     # /llm/<FOO> → GitLab raw …/llm/<FOO>.txt
     location ~ ^/llm/(.+)$ {
         return 302 https://gitlab.com/agentydragon/ducktape/-/raw/devel/llm/$1.txt;

@@ -206,16 +206,3 @@ spec:
         - path:
             type: PathPrefix
             value: /effective-anthropomorphism-discord
-    - filters:
-        - requestRedirect:
-            hostname: llm.agentydragon.com
-            path:
-              replaceFullPath: /
-              type: ReplaceFullPath
-            scheme: https
-            statusCode: 302
-          type: RequestRedirect
-      matches:
-        - path:
-            type: PathPrefix
-            value: /l
