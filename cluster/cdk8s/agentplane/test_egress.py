@@ -38,6 +38,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     PLAID_PGWEB_CREDENTIAL,
 )
 from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.model_selections import STAGING_APP_MODELS
 from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_128K, OLLAMA_QWEN_IQ4XS_256K
 
 # What a workload token may reach on the Actions service: the MCP endpoint, its schema and
@@ -222,25 +223,33 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_claude_pause_omits_launch_offerings_but_keeps_ingress(
+def test_claude_picker_offers_environment_models_and_keeps_ingress(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     docs = agentplane_manifests[namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    # Testing alone offers the Claude harness a local model.
-    assert config["models"]["harnesses"]["HARNESS_CLAUDE"] == (
-        [OLLAMA_QWEN_IQ4XS_128K.native.id] if namespace == testing.ENV.namespace else []
+    expected_claude_models = (
+        [route.id for route in STAGING_APP_MODELS.claude]
+        if namespace == staging.ENV.namespace
+        else [OLLAMA_QWEN_IQ4XS_128K.native.id]
     )
+    assert config["models"]["harnesses"]["HARNESS_CLAUDE"] == expected_claude_models
     assert config["models"]["harnesses"]["HARNESS_CODEX"]
+    if namespace == staging.ENV.namespace:
+        assert all(route.id in config["models"]["harnesses"]["HARNESS_CODEX"] for route in STAGING_APP_MODELS.claude)
+        options = {model["model"]: model for model in config["models"]["models"]}
+        assert all(
+            options[route.id]["display_name"].endswith(" — Google Antigravity") for route in STAGING_APP_MODELS.claude
+        )
     assert all(preset["harness"] == "HARNESS_CODEX" for preset in config["thread_presets"].values())
-    # Existing sessions retain the Anthropic ingress endpoint and proxy policy.
+    # The Anthropic Messages endpoint remains available to Claude sessions.
     assert any(doc["kind"] == "Service" and doc["metadata"]["name"] == "agentplane-llm-ingress" for doc in docs)
 
 
 def test_haku_launches_on_codex_with_the_wider_qwen_context_window(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    """Haku's preset follows the paused Claude offerings onto the local Qwen route.
+    """Haku's preset remains on the local Qwen route until its Claude path is validated.
 
     The preset is the only reason a launch form picks a model, so it must name a route the
     harness accepts and an effort that route declares; agentplane-testing offers no Haku preset

@@ -4,6 +4,12 @@ from dataclasses import dataclass
 
 from agentplane.llm_ingress.models import ModelConfig
 from model_catalog.catalog import (
+    ANTIGRAVITY_FLASH_38,
+    ANTIGRAVITY_FLASH_LITE,
+    ANTIGRAVITY_OPUS,
+    ANTIGRAVITY_PRO,
+    ANTIGRAVITY_PRO_LOW,
+    ANTIGRAVITY_SONNET,
     GPT6_LUNA_RESPONSES,
     GPT6_RESPONSES_ROUTES,
     OLLAMA_OPENAI_ROUTES,
@@ -25,16 +31,28 @@ class HarnessRoutes:
         return tuple(dict.fromkeys((*self.claude, *self.codex)))
 
 
-# Claude offerings are temporarily paused (#9121). Keep runner support, credentials,
-# and served routes for existing sessions; re-enable these selections after validation.
-# Testing alone offers the Claude harness a local model, so its acceptance cases run there.
+# Agentplane's hosted Claude and Codex pickers share these six Antigravity routes. The
+# Claude API adapter is Anthropic Messages; Codex reaches the same upstream through
+# LiteLLM's Responses-to-Messages bridge. Testing offers Claude only its local smoke model.
+_AGENTPLANE_ANTIGRAVITY_ROUTES = (
+    ANTIGRAVITY_OPUS,
+    ANTIGRAVITY_SONNET,
+    ANTIGRAVITY_FLASH_38,
+    ANTIGRAVITY_PRO,
+    ANTIGRAVITY_PRO_LOW,
+    ANTIGRAVITY_FLASH_LITE,
+)
+
 # The Agentplane Codex picker offers Qwen at 256K only; the 128K native route remains
 # available in testing for the live Claude smoke flow.
 _AGENTPLANE_OLLAMA_OPENAI_ROUTES = tuple(
     route for route in OLLAMA_OPENAI_ROUTES if route != OLLAMA_QWEN_IQ4XS_128K.openai
 )
 
-STAGING_APP_MODELS = HarnessRoutes(claude=(), codex=(*GPT6_RESPONSES_ROUTES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES))
+STAGING_APP_MODELS = HarnessRoutes(
+    claude=_AGENTPLANE_ANTIGRAVITY_ROUTES,
+    codex=(*GPT6_RESPONSES_ROUTES, *_AGENTPLANE_ANTIGRAVITY_ROUTES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES),
+)
 TESTING_APP_MODELS = HarnessRoutes(
     claude=(OLLAMA_QWEN_IQ4XS_128K.native,), codex=(GPT6_LUNA_RESPONSES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES)
 )

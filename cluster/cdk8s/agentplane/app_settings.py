@@ -40,7 +40,11 @@ _PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(
     ]
 )
 
-_PICKER_PROVIDER_NAMES = {Provider.CHATGPT: "ChatGPT", Provider.OLLAMA: "cluster Ollama"}
+_PICKER_PROVIDER_NAMES = {
+    Provider.CHATGPT: "ChatGPT",
+    Provider.ANTIGRAVITY: "Google Antigravity",
+    Provider.OLLAMA: "cluster Ollama",
+}
 
 
 def _picker_model_name(route: Route) -> str:

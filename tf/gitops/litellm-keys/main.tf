@@ -118,7 +118,7 @@ resource "kubernetes_secret" "disposable_env" {
 # Deliberately has no key-level max_budget; testing retains its own budgeted key.
 resource "litellm_key" "agentplane_staging" {
   key_alias = "agentplane-staging"
-  # Staging Codex and key access both use the GPT-6 subscription routes.
+  # Agentplane staging offers GPT-6, Antigravity, Claude subscription, and local Ollama routes.
   models = concat(
     var.model_lanes.gpt6_oai_lane_models.allowed_models,
     var.model_lanes.claude_client_models.allowed_models,
@@ -136,7 +136,7 @@ resource "kubernetes_secret" "agentplane_staging" {
     name      = "litellm-key-agentplane-staging"
     namespace = "agentplane-staging"
     annotations = {
-      description = "Server-held key for OpenAI/Claude subscription and local Ollama chat routes in Agentplane staging; never mounted into runner Pods"
+      description = "Server-held key for GPT-6, Antigravity, Claude subscription, and local Ollama routes in Agentplane staging; never mounted into runner Pods"
     }
   }
 
