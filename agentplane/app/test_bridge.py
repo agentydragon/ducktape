@@ -436,8 +436,8 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         ):
             with attempt:
                 assert (await http.get(f"/threads/{thread['id']}")).json()["last_cursor"] == len(stored)
-        (summary,) = (await http.get(SESSIONS)).json()
-        assert summary["harnessState"] == "HARNESS_STATE_STOPPED"
+        summary = (await http.get(f"/threads/{thread_id}")).json()
+        assert summary["harness_state"] == "HARNESS_STATE_STOPPED"
 
         resumed = await http.post(f"/threads/{thread_id}/resume")
         assert resumed.status_code == 200, resumed.text
