@@ -28,12 +28,30 @@ The Gateway owns the runner's long-lived control connection and routes calls to 
 that connection. It does not persist Dispatcher commands. Its separate `sandbox_commands` database
 stores the legacy public Session registry, written only by Gateway `CreateSession`; it is not the
 Dispatcher queue. The runner journals admitted commands on its state volume. The History Service
-receives runner journals and serves retained events and folded Thread views; the app uses it for
-Threads, while Notifications uses it to reconcile command receipts and confirmation. Notification's
-history reads are an outcome dependency, not a delivery-routing dependency. In particular,
-`RUNNER_ADMITTED` from Dispatcher does not prove that a harness consumed an input. The existing
-[`NOTIFICATION_COMMAND_OUTCOME_DESIGN`](../plans/task_dag.md#notification_command_outcome_design--notice-delivery-without-reading-conversation-history)
-remains an independent decision.
+receives runner journals and serves retained events and folded Thread views, but these are separate
+service boundaries rather than a Dispatcher dependency:
+
+- **Dispatcher has no direct History dependency to remove.** Its current routing, queue recovery,
+  admission and delivery result paths use the requested Sandbox, Kubernetes state, leases and Runner
+  RPCs. No Dispatcher History client or call exists in the audited implementation.
+- **The app uses History for retained Thread data.** `EventLogStore` reads archived events and
+  observations and validates the History Service's committed prefix; summaries come from the History
+  fold. Opening a Thread does not wait for History to observe the Session because the runner pushes
+  its journal asynchronously. App resume separately checks the app's Thread/feed state and live
+  `Runner.ListSessions` for the current runner's retained Session and spec.
+- **Notifications uses History to reconcile command outcomes.** It reads the Session journal's
+  committed watermark and entries to checkpoint receipts and confirm whether a command reached the
+  runner journal. This is an outcome dependency of Notification, not Dispatcher routing. A
+  Dispatcher admission or queued receipt does not prove that the runner admitted a command or that a
+  harness consumed it. Keep the
+  [`NOTIFICATION_COMMAND_OUTCOME_DESIGN`](../plans/task_dag.md#notification_command_outcome_design--notice-delivery-without-reading-conversation-history)
+  as a separate decision.
+- **Runner ingress acknowledgements connect Runner to History.** Runner pushes each Session journal
+  to the History ingress and persists the acknowledged cursor and seal state on its own state volume.
+  During Quiesce, the Runner first drains admissions and seals the journals; its reported stage remains
+  `FLUSHING` until ingress acknowledges the exact sealed cursor, then becomes `QUIESCED`. This
+  Runner-to-ingress contract is not mediated by Dispatcher and does not make Dispatcher depend on
+  History.
 
 There are two different Session inventories:
 

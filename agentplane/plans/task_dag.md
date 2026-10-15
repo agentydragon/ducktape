@@ -1497,7 +1497,6 @@ items below; this direction does not authorize runtime changes.
 
 ```mermaid
 flowchart LR
-    DISPATCHER_HISTORY_BOUNDARY_DESIGN[Decision: Dispatcher and History boundary]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: durable queue or direct admission]
     DISPATCHER_GATEWAY_TOPOLOGY_DESIGN[Decision: Dispatcher and Gateway topology]
     RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
@@ -1522,22 +1521,6 @@ flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
     K3S_VM_IMAGE -. real VM path prerequisite .-> CNPG_FREE_K3S_INTEGRATION_TIER
 ```
-
-### `DISPATCHER_HISTORY_BOUNDARY_DESIGN` — verify Dispatcher independence from retained History
-
-**Candidate decision.** Trace Dispatcher routing, recovery, admission and outcomes against actual
-service callers. Decide whether Dispatcher should remain independent of History; distinguish routing
-and runner state from retained Session/Thread inventory, and command outcome evidence from durable
-delivery admission. Current Dispatcher code has no History client; the app and Notifications use
-History for retained views and command outcomes. Keep
-[`NOTIFICATION_COMMAND_OUTCOME_DESIGN`](#notification_command_outcome_design--notice-delivery-without-reading-conversation-history) independent: a
-Dispatcher admission receipt is not evidence that a command reached the harness. Record the caller
-and data contract for every dependency before proposing a new edge.
-
-**Recommendation for review:** retain the current separation unless traced behavior identifies a
-required History contract that cannot be represented at the actual owner. Question: is there any
-current or approved Dispatcher operation whose correctness requires History, and which service owns
-that fact? No dependency or extraction is authorized by this audit.
 
 ### `DISPATCHER_PERSISTENCE_MODEL_DESIGN` — choose durable queue or direct runner admission contract
 
