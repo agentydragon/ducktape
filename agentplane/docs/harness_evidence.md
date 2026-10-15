@@ -53,21 +53,22 @@ loads and interrupts that thread. `thread/resume` by ID reloads a stopped thread
 already running one, as specified in
 [`ThreadResumeParams`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L335-L353).
 
-`test_independent_threads_share_a_process_and_resume_by_thread_id` drives two separately started,
-persisted threads through one `CodexRun` and one stdio process. It holds both model requests open,
-checks each request's thread ID, model and developer instruction, runs `pwd` in the second thread's
-workspace, interrupts the first thread, and completes the second. It then starts a fresh process with
-the same `CODEX_HOME`, resumes both thread IDs over its one connection, and completes a follow-up
-turn on each. Turn start/completion notifications and the interrupt request are checked against
-their thread and turn IDs. These are independent root threads created with `thread/start`, not
-native child tasks or read-only projections.
+`test_independent_threads_share_a_process_and_resume_by_thread_id` is the real-binary scenario for
+two separately started, persisted threads through one `CodexRun` and one stdio process. It holds
+both model requests open, checks each request's thread ID, model and developer instruction, runs
+`pwd` in the second thread's workspace, interrupts the first thread, and completes the second. It
+then starts a fresh process with the same `CODEX_HOME`, resumes both thread IDs over its one
+connection, and completes a follow-up turn on each. Turn start/completion notifications and the
+interrupt request are checked against their thread and turn IDs. These are independent root threads
+created with `thread/start`, not native child tasks or read-only projections. The focused Bazel target
+is the runtime gate for these assertions.
 
-This proves concurrent turn routing and thread-scoped cancellation for the pinned binary. The
-tested options are model, reasoning effort, developer instructions and working directory; it does
-not establish isolation for every thread option. Both threads share the process's `CODEX_HOME`,
-environment, configured provider and API key. The protocol has no per-thread credential field, and
-this test does not compare authentication identities. A process is their shared failure domain;
-the app-server shuts down its managed threads together in
+On a passing target, this scenario demonstrates concurrent turn routing and thread-scoped
+cancellation for the pinned binary. The selected per-thread options are model, reasoning effort,
+developer instructions and working directory; this does not establish isolation for every thread
+option. Both threads share the process's `CODEX_HOME`, environment, configured provider and API key.
+The protocol has no per-thread credential field, and this test does not compare authentication
+identities. The app-server shuts down its managed threads together in
 [`ThreadProcessor::shutdown_threads`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/request_processors/thread_processor.rs#L1281-L1291),
 while the test's cross-process resume is a graceful restart after both turns settle. Active
 multi-thread crash recovery is not measured here.
