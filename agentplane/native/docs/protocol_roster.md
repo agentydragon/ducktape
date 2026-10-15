@@ -245,10 +245,10 @@ the scenario under test; a bridge that turns any of these on must widen the rost
   rosters must stay the fixed lists the tests assert (`Bash,Edit,Read`; `exec_command`, `write_stdin`,
   `request_user_input`, `get_goal`, `create_goal`, `update_goal`).
 - **Multi-agent / subagents**: Default scenarios omit Claude `Agent`/`Task` and set Codex
-  `features.multi_agent = false`. The opt-in cases in each harness's `test_tools.py` exercise one
-  child tool round trip, and Codex `test_v2_discovery.py` exercises `multi_agent_v2`
-  `subAgentActivity`; [harness evidence](../../docs/harness_evidence.md#native-subagents) records
-  what they establish.
+  `features.multi_agent = false`. The opt-in cases in [Claude tools](../../harness_tests/claude/test_tools.py)
+  and [Codex v1 tools](../../harness_tests/codex/test_tools.py) exercise child round trips;
+  [Codex v2 discovery](../../harness_tests/codex/test_v2_discovery.py) exercises
+  `subAgentActivity` and persisted child reads. These tests document their own assertions and limits.
 - **Web search and image viewing**: Codex `web_search = "disabled"`, `features.view_image = false`;
   Claude `--tools` omits `WebSearch`, `WebFetch`.
 - **Code mode**: avoided by using a model id outside Codex's catalog (`MODEL = "agentplane-test-model"`);

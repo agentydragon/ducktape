@@ -112,4 +112,5 @@ for snapshots.
    cgroup. For Codex, the exec-server sidecar gets kernel enforcement without any runtime change.
 
 Any of these still needs an acceptance test that forces a tool OOM and shows the harness and runner
-journal survive, per [harness evidence](harness_evidence.md).
+journal survive, using the scripted scenarios and teardown rules in the
+[harness test suite](../harness_tests/README.md).

@@ -1,4 +1,10 @@
-"""Tool round trips: what the harness runs, what it reports back upstream, and workspace effects."""
+"""Tool round trips, including Claude's asynchronous `Agent`/`Task` child lifecycle.
+
+Child tool frames correlate to the parent Agent call, while child completion is a separate native
+notification. The `task_started` ID matches the `Agent` result's `agentId`. A follow-up `SendMessage`
+resumes the same child; after parent-session resume the conversation transcript remains, but the
+old child task is no longer available to `TaskOutput` and no new completion notification arrives.
+"""
 
 from __future__ import annotations
 

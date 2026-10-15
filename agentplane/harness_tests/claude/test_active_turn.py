@@ -1,4 +1,8 @@
-"""Input and control while a turn is active: queued input delivery and interruption."""
+"""Claude accepts active-turn input through its native queue, not a steer operation.
+
+The tests cover coalescing inputs around tool execution, the different interrupt choices for queued
+input, runtime model/effort changes, and aborting an in-flight model request.
+"""
 
 from __future__ import annotations
 

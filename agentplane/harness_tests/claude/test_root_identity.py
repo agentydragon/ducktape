@@ -1,4 +1,8 @@
-"""When a fresh root identity becomes observable, without synthetic allocation prompts."""
+"""A fresh Claude root's session ID appears on the first input, not initialization.
+
+With and without a preselected ID, the test checks initialization frames before any model request,
+then verifies the first input/result carries a UUID and preserves the requested value when supplied.
+"""
 
 from __future__ import annotations
 

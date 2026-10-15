@@ -10,9 +10,11 @@ The [hardening candidates](#deferred-hardening-candidates) are not a dispatch qu
 
 ## Characterization gaps
 
-What the pinned and experimental harnesses have been observed to do with native children is in
-[harness evidence § Native subagents](../docs/harness_evidence.md#native-subagents). A child must
-be created by the real harness, not synthesized by an adapter or inferred from parent prose.
+The currently tested child scenarios live beside their assertions: [Claude](../harness_tests/claude/test_tools.py),
+[Codex `multi_agent_v1`](../harness_tests/codex/test_tools.py), [Codex `multi_agent_v2`](../harness_tests/codex/test_v2_discovery.py),
+and the [experimental Claude 2.1.292 comparison](../harness_tests/x/claude_remote_io/README.md#acceptance).
+A child must be created by the real harness, not synthesized by an adapter or inferred from parent
+prose. The test index distinguishes these cases from capabilities that remain unmeasured.
 
 ### Test method and evidence
 

@@ -1,4 +1,9 @@
-"""Plain turns: one scripted exchange, and native session resume across processes."""
+"""Plain Claude turns and native session resume across processes.
+
+The cases distinguish clean transcript replay from crash recovery: an active input can replay after
+restart while queued input is dropped, and saved thinking-only assistant entries are not sent again.
+The harness uses native `--resume`; it does not redispatch the prior prompt as a new turn.
+"""
 
 from __future__ import annotations
 

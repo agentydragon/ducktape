@@ -87,7 +87,8 @@ The common conversation projection is intentionally lossy. Neither the raw log n
 that projection claims to contain hidden harness state, every system prompt, or the
 exact LLM API conversation. The runner also cannot preserve a native frame it never
 received. Mocked-LLM tests observe a further boundary and establish what native receipts
-actually prove. See [native harness evidence](harness_evidence.md).
+actually prove. See the [scripted harness capability index](../harness_tests/README.md#behavioral-coverage)
+and its linked protocol-specific test cases.
 
 The normal conversation view reads the materialized Thread projection through the implemented
 [conversation-view sync](thread_view_sync.md). The exact archive remains available for replay and

@@ -1,4 +1,10 @@
-"""Tool round trips: what the harness runs, what it reports back upstream, and workspace effects."""
+"""Tool round trips and `multi_agent_v1` child spawn/wait behavior.
+
+The parent and child model requests can interleave; this scenario routes by the native thread ID,
+checks the spawn result's child identity, and waits for a separately completed child result.
+After the parent resumes, its history still contains the child answer, but `wait_agent` reports the
+old child as `notFound`; this does not resume or rediscover the child.
+"""
 
 from __future__ import annotations
 

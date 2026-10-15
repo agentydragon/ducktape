@@ -32,21 +32,30 @@ the tests outside Bazel with a Nix-built Python is not supported: the binaries f
 - `claude/harness.py`, `codex/harness.py`: the pinned binary wired to the upstream; harness
   fixtures live in each `conftest.py`.
 
-The test modules cover plain turns plus clean and crash-resume behavior (`test_turns.py`), tool round trips
-(`test_tools.py`), input and control during an active turn (`test_active_turn.py`), upstream
-connection loss (`test_connection_loss.py`), and, for Codex, developer instructions across a
-resume (`test_instructions.py`). The harness runs drive the binaries
-through <../native/README.md>; features each harness has beyond what these tests exercise are
-listed in <../native/docs/protocol_roster.md>.
+## Behavioral coverage
 
-## Subagent characterization
+These are tested scenarios for the versions pinned in `MODULE.bazel`, not a claim that every native
+protocol capability is characterized. Each module documents the behavior its assertions cover.
 
-The subagent cases in each `test_tools.py` opt into native delegation and script a child tool
-round trip. Claude also exercises `SendMessage` to a completed child and a `TaskOutput` read
-of its follow-up result. What they establish is in
-[harness evidence](../docs/harness_evidence.md#native-subagents); discovery, forwarding,
-concurrency, cancellation, and recovery cases beyond those remain uncharacterized. These tests
-do not enable subagents in production or implement a shared session model.
+| Scenario                        | Claude Code                                                                                  | Codex app-server                                                                                                 |
+| ------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Turns and resume                | [turns](claude/test_turns.py), [compaction](claude/test_compaction.py)                       | [turns](codex/test_turns.py), [instructions](codex/test_instructions.py), [compaction](codex/test_compaction.py) |
+| Input and control during a turn | [queued input and interrupt](claude/test_active_turn.py)                                     | [joined input, steer and interrupt](codex/test_active_turn.py)                                                   |
+| Upstream connection loss        | [retry fallback and exhaustion](claude/test_connection_loss.py)                              | [retry notices and exhaustion](codex/test_connection_loss.py)                                                    |
+| Tools and MCP                   | [tool round trips](claude/test_tools.py), [driver-hosted tools](claude/test_driver_tools.py) | [tool round trips](codex/test_tools.py), [dynamic tools](codex/test_dynamic_tools.py)                            |
+| Hook decisions                  | [PreToolUse allow/deny](claude/test_hooks.py)                                                | [PreToolUse allow/deny](codex/test_hooks.py)                                                                     |
+| Native children                 | [Agent lifecycle and follow-up](claude/test_tools.py)                                        | [v1 spawn/wait](codex/test_tools.py), [v2 persisted discovery](codex/test_v2_discovery.py)                       |
+| Root identity and multiplexing  | [first-input identity](claude/test_root_identity.py); multiple roots remain uncharacterized  | [two root threads over one app-server](codex/test_multiplexing.py)                                               |
+
+The Claude suite exercises one stream-json root session at a time. The Codex multiplexing test is the
+runtime characterization for two independently controlled root threads; its pinned source
+references and untested crash-recovery boundary are explicit in that module's docstring. Neither
+suite decides whether Agentplane should change its process/Session model. The current open design question is in
+[runner delivery and harness identity](../docs/runner_delivery_and_harness_design.md#harness-process-store-and-session-identity).
+
+The harness runs drive the binaries through <../native/README.md>. The
+[protocol roster](../native/docs/protocol_roster.md) lists protocol surfaces used or left unused by
+the fixtures; it is not a claim that every listed feature is tested.
 
 ## When a binary pin changes
 
@@ -68,5 +77,6 @@ are scenario steps for parent-process death and intentionally retain their disti
   transcripts by id and silently merge repeats.
 - Codex turns on code mode (one JS `exec` tool) for model ids in its built-in catalog; the tests
   use an id it does not know so the classic function-call shape is what gets asserted.
+- Claude's `--name` fixture option suppresses the separate title-generation model request.
 - Claude's retry after a lost stream is a non-streaming request, so the retry step answers with
   `message_body`, not `message_stream`.

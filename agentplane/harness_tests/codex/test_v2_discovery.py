@@ -1,4 +1,11 @@
-"""Read-only discovery of multi_agent_v2 children, separate from model-driven reactivation."""
+"""`multi_agent_v2` child discovery without waking or resuming the child.
+
+After completed and active-child restart scenarios, `parentThreadId` finds persisted children even
+though the `subAgent` source filter and loaded-thread list are empty. `thread/read` distinguishes a
+completed child from an interrupted one; `notLoaded` alone does not identify its fate, and the
+unloaded `sessionId` is not a durable parent/child key. The bounded read-only phase starts no model
+request.
+"""
 
 from __future__ import annotations
 

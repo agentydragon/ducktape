@@ -1,4 +1,23 @@
-"""Independent Codex threads addressed over one app-server process."""
+"""Two independently addressed root threads over one pinned app-server process.
+
+The scenario holds two model requests open, checks thread-attributed requests/events, interrupts one
+turn while the other completes, then resumes both persisted IDs on a fresh process sharing
+`CODEX_HOME`. It tests selected per-thread model, effort, instructions and `cwd`; both threads share
+the process environment, provider and credentials. Separate auth identities and active multi-thread
+crash recovery are not tested.
+
+Pinned source references at Codex `rust-v0.157.0`, commit
+[`00c972ed`](https://github.com/openai/codex/tree/00c972ed5d6ff6499317fd41b7f23605b8e6850d):
+[`ThreadStartParams`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L62-L188)
+includes thread-level `cwd`, model and developer instructions. [`TurnStartParams` and
+`TurnInterruptParams`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/v2/turn.rs#L167-L335)
+carry the addressed thread ID. The
+[`ThreadStateManager`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/thread_state.rs#L343-L346)
+tracks IDs per connection, and
+[`shutdown_threads`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/request_processors/thread_processor.rs#L1281-L1291)
+shuts down its managed threads together. That joint-shutdown behavior is source-only; the test does
+not establish active multi-thread crash recovery.
+"""
 
 from __future__ import annotations
 

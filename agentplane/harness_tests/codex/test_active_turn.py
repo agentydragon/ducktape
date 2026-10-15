@@ -1,4 +1,8 @@
-"""Input and control while a turn is active: queued input, steering, and interruption."""
+"""Codex joins active-turn input and exposes a separate thread-addressed steer operation.
+
+The tests distinguish input joined during a tool from `turn/steer`, and verify that interrupting
+an in-flight model request aborts it and drops joined inputs before the next model request.
+"""
 
 from __future__ import annotations
 

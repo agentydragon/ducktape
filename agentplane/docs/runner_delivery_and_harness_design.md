@@ -10,7 +10,7 @@ checks and durable queue until a replacement contract is reviewed.
 The related decision nodes are in [section 14 of the task DAG](../plans/task_dag.md#14-delivery-boundaries-apis-and-harness-identity).
 The current runner contracts remain in [Session layering](thread_layering.md), the
 [Dispatcher README](../session_dispatcher/README.md), the [Gateway API](../runner_gateway/API.md),
-and [native harness evidence](harness_evidence.md).
+and the [scripted harness capability index](../harness_tests/README.md#behavioral-coverage).
 
 ## Current delivery and inventory facts
 
@@ -305,39 +305,16 @@ what happens if the process or runner fails between native creation and mapping 
 an explicit operation/idempotency key with the eventual Session address. No schema or migration is
 selected here.
 
-## Harness capability characterization
+## Harness capability boundary
 
-The current runner adapter does not select whether one native process should serve multiple
-Agentplane Sessions. Treat each harness as its own investigation; neither result should wait for or
-be inferred from the other.
+The [test capability index](../harness_tests/README.md#behavioral-coverage) and its linked modules
+record what the pinned binaries do in scripted scenarios. Codex's test demonstrates two root
+threads over one app-server; Claude's current suite covers one root session and does not characterize
+multiple roots in one process. The Claude multiplexing investigation remains held in the task DAG.
 
-- **Codex app-server:** the real-binary test scenario in
-  [harness evidence](harness_evidence.md#codex-threads-on-one-app-server) asserts two independently
-  started threads on one stdio process, concurrent turns, per-thread cancellation, selected
-  per-thread options, and both threads resumed after a process restart with shared `CODEX_HOME`.
-  The scenario passed in CI on #10663. The runner adapter still owns one thread ID per process; this
-  evidence characterizes Codex and does not choose whether the runner should multiplex.
-- **Claude Code:** the adapter starts one stream-json process with one `--session-id`; inputs and
-  interrupt controls have no Agentplane-side session selector. If selected, establish whether native
-  child/task sessions can be discovered and represented as visible/read-only records, and whether
-  multiple independently interactive sessions can share one process. Native child/task events do not
-  prove multiplexed conversation support. Characterize the pinned CLI's discovery/control and, if
-  process multiplexing is supported, how frames, cancellation and native state are scoped. Check
-  concurrency/isolation, model and instruction options, auth/workdir/data separation, process failure
-  and `--resume` behavior.
-
-If selected, each bounded result should identify supported API shape, concurrency and isolation limits,
-cancellation scope, which options/auth/workdir/data are process-wide or per Session, and failure,
-restart and resume semantics. Use the real pinned binaries and controlled loopback model endpoint
-when code or authoritative documentation is inconclusive, following
-[Native session discovery](../plans/native_session_discovery.md). Record “unknown” when evidence does
-not settle a capability; do not convert absence from the current driver into an upstream limitation.
-
-Feed each characterization and the identity alternatives into
-[`RUNNER_HARNESS_OBJECTS_DESIGN`](../plans/task_dag.md#runner_harness_objects_design--expose-running-harnesses-separately-from-sessions). That decision
-must state which lifecycle and capabilities belong to a process, persisted store and logical/native
-Session, including whether one harness object may own multiple Sessions. No characterization,
-identity decision or design node authorizes runtime changes by itself.
+Neither test result decides whether one runner process should serve multiple Agentplane Sessions or
+how a harness, persisted store, native Session and public Session should be addressed. Those remain
+the open questions in the identity design above; neither test result authorizes runtime changes.
 
 ## Runner delivery acceptance without History
 

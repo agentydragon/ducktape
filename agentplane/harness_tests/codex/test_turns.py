@@ -1,4 +1,9 @@
-"""Plain turns: one scripted exchange, and native thread resume across processes."""
+"""Plain Codex turns and native thread resume across processes.
+
+`thread/resume` reads the persisted thread rather than replaying a prompt. Crash cases distinguish
+the accepted in-flight turn from a live follow-up that was not persisted; redispatching an already
+accepted input can duplicate it in native history.
+"""
 
 from __future__ import annotations
 
