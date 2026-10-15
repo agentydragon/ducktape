@@ -65,18 +65,8 @@ def viewport() -> Viewport:
 
 
 @pytest.fixture
-def thread_browser_frozen_now_ms() -> int | None:
-    """Leaves live time on by default; a test can pin date-relative browser text before navigation."""
-    return None
-
-
-@pytest.fixture
 async def page(
-    request: pytest.FixtureRequest,
-    certificate: BrowserCertificate,
-    monkeypatch: pytest.MonkeyPatch,
-    viewport: Viewport,
-    thread_browser_frozen_now_ms: int | None,
+    request: pytest.FixtureRequest, certificate: BrowserCertificate, monkeypatch: pytest.MonkeyPatch, viewport: Viewport
 ) -> AsyncIterator[Page]:
     # Route.fetch runs in Playwright's Node driver, outside Chromium's SPKI trust setting.
     monkeypatch.setenv("NODE_EXTRA_CA_CERTS", str(certificate.directory / "certificate.pem"))
@@ -87,8 +77,7 @@ async def page(
         deterministic_browser_context(
             playwright,
             viewport=viewport.size,
-            # Pin only Date for date-relative text; browser timers and replication remain live.
-            frozen_now_ms=thread_browser_frozen_now_ms,
+            frozen_now_ms=None,
             extra_args=[f"--ignore-certificate-errors-spki-list={certificate.spki}"],
         ) as context,
     ):
