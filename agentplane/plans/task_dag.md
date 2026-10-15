@@ -23,7 +23,7 @@ Dispatch assignments (Rai authorized, Codex reported, 2026-10-14):
 | `vm_connection`   | VM fresh-format/retained-remount acceptance after the corrected guest image is pinned; testing wake-on-send and queued-opening acceptance, then staging activation. |
 | `image_inventory` | Publish the image inventory, then prepare app direct-command and gated direct-open cleanup PRs.                                                                     |
 | `dag_burndown`    | Measure shared Python interpreter layers using existing Bazel packaging rules; compare k3s lifecycle performance at matching source revisions.                      |
-| Coordinator       | Burn down completed nodes, finish the bounded resume coverage audit, and remove state-layout and effective-mode compatibility fallbacks.                            |
+| Coordinator       | Verify live rollout gates and burn down completed DAG nodes.                                                                                                        |
 
 These are assignments, not claims that gated work has started. Independent config changes can
 proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
@@ -729,7 +729,6 @@ flowchart TD
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     DISPATCHER_WAKE_ACTIVATION --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
-    EFFECTIVE_MODE_FALLBACK_DROP[In flight: remove spec.running compatibility fallback]
     APP_SESSION_OPEN_ACTIVATION[In flight: accept testing queued opens, then activate staging]
     APP_THREAD_HISTORY_IDENTITY --> APP_SESSION_OPEN_ACTIVATION
     APP_SESSION_DEFAULTS_LEGACY_REMOVE[Candidate: retire unused defaults after caller audit]
@@ -894,15 +893,6 @@ Related to `SANDBOX_GENERIC_SPLIT`: that node separates the resource, this one s
 Options the operator named, none chosen: mount a separate volume that carries the runner, Claude and
 Codex into a Pod image that has none of them; or take a user root filesystem and run it under
 Firecracker with the runner as init.
-
-### `EFFECTIVE_MODE_FALLBACK_DROP` — the Python readers stop falling back to `spec.running`
-
-**In flight; Coordinator, 2026-10-14 PDT.** The accepting controller is pinned in both environments;
-the rollout inventory found no old Sandbox CRs. Preserve the legitimate pre-reconciliation absence of status. `Sandbox.operating_mode` in
-`sandbox_resource.py` reads `status.operatingMode` and falls back to `spec.running` while the controller
-has not published it. Once the controller that publishes it is pinned everywhere, make the status field
-authoritative and delete the compatibility fallback. A newly created CR must remain readable before
-its first status update; do not confuse that state with an old controller.
 
 ### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
 

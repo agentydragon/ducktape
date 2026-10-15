@@ -186,6 +186,11 @@ def sandbox(name: str, *, running: bool = True, conditions: list[dict[str, Any]]
         },
         "spec": {"template": TEMPLATE, "running": running},
         "status": {
+            "operatingMode": (
+                sandbox_resource.OperatingMode.RUNNING.value
+                if running
+                else sandbox_resource.OperatingMode.SUSPENDED.value
+            ),
             **({"incarnation": {"name": name, "uid": pod_uid(name)}} if running else {}),
             **({"conditions": conditions} if conditions is not None else {}),
         },

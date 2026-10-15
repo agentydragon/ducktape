@@ -15,6 +15,7 @@ from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception_type, w
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.sandbox_resource import Sandbox
 from agentplane.sandboxes.errors import (
+    SandboxModeUnknownError,
     SandboxNotFoundError as InventorySandboxNotFoundError,
     SandboxQuiescingError,
     SandboxTearingDownError,
@@ -497,6 +498,12 @@ class Delivery:
         except SandboxQuiescingError:
             self._clear_attempt_retry(key)
             await notify(Reason.SANDBOX_RESUMING)
+            return
+        except SandboxModeUnknownError:
+            # The desired state may be known from the spec, but until the controller reports its
+            # effective mode we have not accepted a wake or started its deadline.
+            self._clear_attempt_retry(key)
+            await notify(Reason.SANDBOX_NOT_READY)
             return
         except SandboxTearingDownError, InventorySandboxNotFoundError:
             self._clear_retry(key)

@@ -17,6 +17,7 @@ from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest, SandboxPhase, S
 from agentplane.sandbox_resource import PRESET_LABEL, SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandboxes.errors import (
     SandboxConflictError,
+    SandboxModeUnknownError,
     SandboxNotFoundError,
     SandboxQuiescingError,
     SandboxRunningError,
@@ -113,7 +114,8 @@ async def test_create_writes_a_running_sandbox_of_the_template(
     )
     view = await inventory.create(spec, policy_sets={"test-b", "test-a"}, caller=CALLER)
 
-    assert (view.name, view.operating_mode) == ("my-task", OperatingMode.RUNNING)
+    assert view.name == "my-task"
+    assert not view.HasField("operating_mode")
     assert (view.service_account.name, view.binding.bootstrap) == ("my-task", "printf boot")
     stored = custom_objects.objects[(SANDBOXES_PLURAL, "my-task")]
     assert CREATE_INTENT in stored["metadata"]["annotations"]
@@ -166,9 +168,15 @@ async def test_suspend_and_resume_patch_running(
 
     live = await inventory.get("live")
     await inventory.suspend("live", uid=live.uid)
+    # The app changed desired state; only the controller changes effective mode.
+    suspended = await inventory.get("live")
+    assert suspended.operating_mode == OperatingMode.RUNNING
+    custom_objects.objects[(SANDBOXES_PLURAL, "live")]["status"]["operatingMode"] = "Suspended"
     suspended = await inventory.get("live")
     await inventory.resume("live", uid=live.uid)
     await inventory.resume("live", uid=live.uid)
+    assert (await inventory.get("live")).operating_mode == OperatingMode.SUSPENDED
+    custom_objects.objects[(SANDBOXES_PLURAL, "live")]["status"]["operatingMode"] = "Running"
     resumed = await inventory.get("live")
 
     assert custom_objects.patches == [
@@ -200,6 +208,29 @@ async def test_published_operating_mode_overrides_spec_running(
     assert live.operating_mode == OperatingMode.SUSPENDED
     await inventory.begin_teardown("live", uid=live.uid)
     assert custom_objects.deleted == [(SANDBOXES_PLURAL, "live")]
+
+
+async def test_unknown_mode_cannot_be_deleted_or_woken(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
+    _populate_one_of_each_state(custom_objects, core_v1)
+    fresh = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
+    fresh["status"].pop("operatingMode")
+    fresh["spec"]["wakeOnSend"] = True
+    view = await inventory.get("live")
+    before_resume_calls: list[int] = []
+
+    async def before_resume(generation: int) -> None:
+        before_resume_calls.append(generation)
+
+    assert not view.HasField("operating_mode")
+    with pytest.raises(SandboxModeUnknownError):
+        await inventory.begin_teardown("live", uid=view.uid)
+    with pytest.raises(SandboxModeUnknownError):
+        await inventory.wake_for_send("live", uid=view.uid, before_resume=before_resume)
+    assert before_resume_calls == []
+    assert custom_objects.deleted == []
+    assert custom_objects.patches == []
 
 
 async def test_resume_wakes_an_idle_suspended_sandbox_by_bumping_the_generation(

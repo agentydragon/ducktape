@@ -25,7 +25,7 @@ from more_itertools import one
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import CREDENTIALS_PLURAL
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
-from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND, SANDBOXES_PLURAL
+from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND, SANDBOXES_PLURAL, OperatingMode
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM
 
 NAMESPACE = "agentplane-egress-test"
@@ -363,6 +363,7 @@ def pod_for(fake: FakeApiServer, sandbox_name: str, *, pod_uid: str, ip: str) ->
     stored = fake.objects[SANDBOXES_PLURAL][sandbox_name]
     status = stored.setdefault("status", {})
     status["incarnation"] = {"name": sandbox_name, "uid": pod_uid}
+    status["operatingMode"] = OperatingMode.RUNNING.value
     status["conditions"] = [READY_CONDITION]
     owner = stored["metadata"]
     return {

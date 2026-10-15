@@ -56,7 +56,7 @@ async def test_create_binds_the_default_policy_sets(
 ) -> None:
     view = await access.create(CreateSandboxRequest(name="my-task", template=TEMPLATE))
 
-    assert view.operating_mode == OperatingMode.RUNNING
+    assert view.operating_mode is None
     assert custom_objects.objects[(SANDBOXES_PLURAL, "my-task")]["spec"]["policySets"] == ["test-default"]
     assert (await access.create(CreateSandboxRequest(name="my-task", template=TEMPLATE))).uid == view.uid
 
@@ -68,12 +68,18 @@ async def test_create_refuses_an_invalid_request_and_an_unknown_policy_set(acces
         await access.create(CreateSandboxRequest(name="needs-more", template=TEMPLATE, policy_sets=["test-missing"]))
 
 
-async def test_lifecycle_acts_on_the_incarnation_it_read(access: SandboxAccess) -> None:
+async def test_lifecycle_acts_on_the_incarnation_it_read(
+    access: SandboxAccess, custom_objects: FakeCustomObjectsApi
+) -> None:
     await access.create(CreateSandboxRequest(name="my-task", template=TEMPLATE))
 
     await access.suspend("my-task")
+    assert (await access.get("my-task")).operating_mode is None
+    custom_objects.objects[(SANDBOXES_PLURAL, "my-task")]["status"]["operatingMode"] = "Suspended"
     assert (await access.get("my-task")).operating_mode == OperatingMode.SUSPENDED
     await access.resume("my-task")
+    assert (await access.get("my-task")).operating_mode == OperatingMode.SUSPENDED
+    custom_objects.objects[(SANDBOXES_PLURAL, "my-task")]["status"]["operatingMode"] = "Running"
     assert (await access.get("my-task")).operating_mode == OperatingMode.RUNNING
     with pytest.raises(SandboxNotFoundError):
         await access.suspend("never-made")

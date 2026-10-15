@@ -26,6 +26,13 @@ class SandboxRunningError(InventoryError):
         super().__init__(f"sandbox {name} is running; suspend it before deleting it")
 
 
+class SandboxModeUnknownError(InventoryError):
+    """An operation needs the Sandbox Controller's effective mode, which it has not reported yet."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"sandbox {name} has no controller-reported operating mode yet")
+
+
 class SandboxTearingDownError(InventoryError):
     """DeleteSandbox has begun: the Sandbox takes no new Sessions or commands and keeps its mode."""
 

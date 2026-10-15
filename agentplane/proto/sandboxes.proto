@@ -78,7 +78,8 @@ message Sandbox {
   string name = 1;
   string uid = 2;
   google.protobuf.Timestamp created_at = 4;
-  string operating_mode = 5;
+  // Absent until the Sandbox Controller reports its effective mode.
+  optional string operating_mode = 5;
   ServiceAccount service_account = 8;
   SandboxBinding binding = 9;
   SandboxPod pod = 14;
