@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import grpc
 import httpx
 import pytest
 import pytest_bazel
@@ -31,6 +32,7 @@ from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.grpc_calls import bearer, dial
+from agentplane.grpc_serving import serving
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.notification_service.api import create_app
@@ -62,7 +64,6 @@ from agentplane.session_dispatcher.testing.sandbox_status import set_sandbox
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
-from util.net import pick_free_port
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -90,6 +91,17 @@ async def running_dispatcher(
         del path
         return cluster.api.configuration
 
+    listening: asyncio.Future[int] = asyncio.get_running_loop().create_future()
+
+    @asynccontextmanager
+    async def observed_serving(server: grpc.aio.Server, address: str, *, grace_s: float) -> AsyncIterator[int]:
+        # Observe the real server lifecycle, using an OS-assigned test port. Dialing a guessed
+        # port while serve() is still opening its database listeners incurs gRPC retry backoff.
+        del address, grace_s
+        async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+            listening.set_result(port)
+            yield port
+
     stopping = asyncio.Event()
 
     async def until_stopped() -> None:
@@ -97,17 +109,19 @@ async def running_dispatcher(
 
     monkeypatch.setattr(dispatcher_main, "SandboxWatch", ObservedSandboxWatch)
     monkeypatch.setattr(dispatcher_main, "kubernetes_configuration", configuration)
+    monkeypatch.setattr(dispatcher_main, "serving", observed_serving)
     monkeypatch.setattr(dispatcher_main, "until_terminated", until_stopped)
-    task = asyncio.create_task(dispatcher_main.serve(settings), name="notification-acceptance-dispatcher")
-    try:
-        async with dial(f"{settings.host}:{settings.port}") as channel:
+    async with asyncio.TaskGroup() as tasks, AsyncExitStack() as stack:
+        tasks.create_task(dispatcher_main.serve(settings), name="notification-acceptance-dispatcher")
+        try:
             async with asyncio.timeout(5):
+                port = await listening
+                channel = await stack.enter_async_context(dial(f"127.0.0.1:{port}"))
                 await channel.channel_ready()
                 await synced.wait()
             yield SessionDispatcherClient(channel, token_file=caller_token_file, request_timeout_s=10)
-    finally:
-        stopping.set()
-        await task
+        finally:
+            stopping.set()
 
 
 @pytest.fixture
@@ -218,7 +232,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 runner_token_file=runner_token_file,
                 request_timeout_s=10,
                 host="127.0.0.1",
-                port=pick_free_port(),
                 _cli_parse_args=False,
             )
             dispatcher = await stack.enter_async_context(
