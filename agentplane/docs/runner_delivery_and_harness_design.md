@@ -77,24 +77,32 @@ service boundaries rather than a Dispatcher dependency:
 There are two different Session inventories:
 
 - Runner `ListSessions` asks the current runner's `SessionStore` for records it has retained and
-  reports live harness, setup, launch and activity state. The app uses it to check archive/resume
-  conditions; Notification uses it to check that a requested Session belongs to the destination at
-  subscription time; Dispatcher uses it after runner `OpenSession` returns `ALREADY_EXISTS`. Runner
-  test drivers also use it to check lifecycle behavior. The current production callers are in
-  [`bridge.py`](../app/threads/bridge.py),
-  [`notification_service/service.py`](../notification_service/service.py), and
-  [`session_dispatcher/delivery.py`](../session_dispatcher/delivery.py).
+  reports its retained records and current harness, setup, launch and activity state. The current
+  production callers are the app and Notification, through the per-Sandbox proxy with expected
+  Sandbox UID and owner. The Gateway's separate `RunnerGateway.ListSessions` wrapper also calls it,
+  but the app and Notification no longer use that wrapper. Dispatcher does not call either list RPC:
+  an identical `OpenSession` retry returns the runner's existing attachment and a conflicting spec or
+  setup returns `ALREADY_EXISTS`. Runner test drivers use the read for lifecycle assertions.
 - History `FindSessions` and summaries describe Sessions whose Events were retained and folded. They
   can include deleted Sandboxes, do not carry Sandbox UID, and can lag the runner. They are useful
   for retained history and display, but cannot answer whether a harness is running now or whether a
   Session is present in the current runner incarnation. See the
   [History README](../history_service/README.md).
 
-Do not replace a live-state check with History merely because both APIs mention Sessions. First
-review what each caller needs and whether that need is actually live. The Dispatcher `ALREADY_EXISTS`
-list fallback has a separate known correctness issue: ID presence alone can misclassify a conflicting
-spec as a successful retry. Keep that bounded correction independent from the wider queue or
-service-boundary decision.
+| Consumer                                                | Fact it needs                                                                                                | Present authority and disposition to review                                                                                                                                                                           |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App Thread table, Sandbox filter/search and Thread view | Retained Thread identity, Sandbox association and folded display state, including after Sandbox deletion     | History `FindSessions`/summaries through `ThreadStore` and `Summaries`; keep as retained inventory. `ContentStore` uses summary scope for retained evidence, not live presence.                                       |
+| App archive safety                                      | Whether this Thread's harness is running in the current, ready runner                                        | `api.py` calls `RunnerBridge.list_sessions`; keep a live check or approve an equally authoritative narrower state read. A Pod whose runner is not ready currently blocks archive.                                     |
+| App explicit native resume                              | Current runner's retained Session, recoverable spec and setup state, compared with the History-backed Thread | `RunnerBridge.resume_thread` checks live `ListSessions` before Gateway resume. History's old attachment cannot establish present membership or current spec.                                                          |
+| Notification subscription                               | Session membership in the requested UID/owner Sandbox at subscription time                                   | `Service.subscribe` validates namespace, UID and owner, then calls live `ListSessions`; preserve an equivalent preflight or explicitly revise offline subscription semantics. This read alone is not send permission. |
+| Gateway wrapper and test drivers                        | Gateway wrapper forwards `ListSessions`; runner drivers inspect lifecycle and quiesce behavior               | Audit pinned/external wrapper callers separately; preserve test coverage through any narrower live read. Wrapper retirement does not imply runner-read retirement.                                                    |
+| Notification outcome reconciliation                     | Durable command journal watermark and entries                                                                | History `ReadSessionEvents` is evidence of runner admission/confirmation after an attempt, not destination inventory; its separate outcome design remains open.                                                       |
+
+The app's History reads are appropriate for retained views. No History inventory read can stand in for
+the three current live decisions. A narrower runner state or membership API could replace broad
+`ListSessions` only after each caller's required fields, identity fence and unavailable-runner behavior
+are preserved. If a live read survives, remove the conditional `RUNNER_LIST_SESSIONS_RETIRE` task
+rather than forcing its deletion.
 
 ## Destination checks and authority
 
@@ -118,6 +126,20 @@ including replacement between the Dispatcher check and proxy resolution. See
 [`runner_proxy.py`](../runner_gateway/runner_proxy.py),
 [`destinations.py`](../runner_gateway/destinations.py), and
 [`runner_client.py`](../session_dispatcher/runner_client.py).
+
+The current path has different authority at each step:
+
+| Boundary                             | Current check                                                                                                                                                                                                                       | Gap the decision must close                                                                                                                                                                                                                         |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Notification subscription and worker | Caller/source access; configured namespace; live Sandbox UID and owner; live membership at creation. The worker rechecks UID and owner before sending.                                                                              | A source-read subscription is not a durable grant to send or wake after owner/grant revocation. Its Dispatcher request carries the Sandbox name and Session ID, not the stored UID.                                                                 |
+| App command and resume               | The app resolves a retained Thread from History; explicit resume compares runner state. Live reads carry expected UID and owner.                                                                                                    | Retained association and a live preflight do not authorize a future command after replacement or revocation. App and Notification need the same reviewed send contract.                                                                             |
+| Dispatcher admission and wake        | Authenticated service-account allowlist; a separate wake-caller allowlist. It resolves the requested name in its watch, persists that UID with queued work, compares UID before delivery, and UID-guards the Kubernetes wake patch. | The caller does not supply the expected UID. Current admission can bind a same-name replacement, and caller identity alone does not express per-destination owner/grant/send authority. An old queued grant can be revoked before wake or delivery. |
+| Gateway proxy and runner             | Proxy authenticates an allowed service account and routes to the connection holder. UID and owner headers are optional; when supplied, the proxy checks the exact Sandbox and ready Pod. Runner rejects an unknown Session.         | Dispatcher currently supplies only the name, so a replacement between its watch check and proxy resolution can receive work. Proxy's broad caller list is not a per-destination send grant; runner membership cannot be checked while offline.      |
+
+`RunnerGateway`'s older lifecycle and command wrapper checks a full `SandboxDestination` and its
+Session registry. That wrapper's retirement is separate from selecting an execution authority for
+Dispatcher's proxy path. The registry cannot validate Sessions opened directly by Dispatcher because
+only Gateway `CreateSession` writes it; its remaining native-resume reader has its own migration gate.
 
 **Approved preferred direction (operator, 2026-10-15):** every submission names its destination as
 the Sandbox UID, an optional persisted harness/store ID, and the Session ID. Queue and retry that
@@ -156,6 +178,33 @@ Review these alternatives without preselecting centralization:
 3. Keep an early sender preflight for user-facing feedback and repeat only the security-critical
    checks at one authoritative command boundary. If this is selected, name which checks are advisory
    and which deny execution; do not silently treat duplicate checks as equivalent authority.
+
+**Reviewable candidate:** use sender preflight for source access, readable errors and early
+membership where the runner is reachable; make a single reviewed admission policy bind authenticated
+sender, exact Sandbox UID, owner or grant and send/wake permissions before accepting queued work;
+repeat the mutable grant check before wake and delivery; make the Gateway proxy enforce the exact UID
+and owner against Kubernetes immediately before forwarding; let the runner decide current
+Session/store membership. The execution fence must receive the persisted expected UID, not a new
+name-only lookup. State explicitly whether Gateway also evaluates the send grant, or whether it
+accepts a narrowly scoped Dispatcher assertion; service-account allowlisting by itself is
+insufficient. This is a candidate allocation for operator review, not an authorization to change
+the API or policy.
+
+The candidate has distinct outcomes. A missing or changed UID, revoked grant or wrong owner denies
+before any wake and denies again before forwarding if changed later. A temporarily unavailable runner
+may leave an otherwise authorized queued command waiting; it cannot prove Session membership until
+the runner returns. An available runner's unknown Session/store is terminal for that command. A lost
+reply from direct runner admission is unknown: resolve or retry the same command ID against retained
+runner storage. Loss of that storage ends runner-owned state; History is not a reconstruction source.
+
+Two choices remain open. A namespace/name plus mandatory UID request can use the existing
+namespace-local Kubernetes read and control Service as a locator; a UID-only request needs an
+authoritative UID-to-object resolver that works during suspension and rejects ambiguous or stale
+matches. Either representation must persist enough information to re-resolve the _same_ object and
+must never promote name-only discovery to an execution address. An optional persisted store ID can
+fence a Session within a store, but its wire representation and validation depend on the separate
+`HARNESS_IDENTITY_DESIGN` decision. This lane does not choose one versus several harnesses or stores
+per runner.
 
 The preferred submission address is the caller-provided Sandbox UID, optional persisted harness/store
 ID and Session ID. The exact Kubernetes locator is still open: namespace/name plus UID or UID-based

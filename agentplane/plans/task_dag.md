@@ -1119,8 +1119,12 @@ restart. Notification presentation/outcome design remains separate.
 **Decision.** Current `caller_accounts` admits every configured caller to every Sandbox. Review
 destination/operation authorization for the current app and notification callers;
 agent senders wait for the reviewed multiagent authority contract. Do not confuse send permission
-with wake permission or silently expand the caller allowlist during a cutover. Add the bounded
-implementation node once policy is reviewed; existing caller cutovers do not silently select policy.
+with wake permission or silently expand the caller allowlist during a cutover. The bounded
+`DELIVERY_DESTINATION_CONTRACT` implementation remains blocked on this decision; existing caller
+cutovers do not silently select policy.
+Coordinate this policy with `DELIVERY_DESTINATION_AUTHORITY_DESIGN`: an expected Sandbox UID proves
+identity, while the sender's permission must be checked before queued admission and again before a
+delayed wake or execution if the grant can change.
 
 ### `APP_NATIVE_RESUME_SURFACE` — decide the explicit native-resume UI
 
@@ -1346,7 +1350,9 @@ plus receiver images are deployed in both environments. Test drivers also use th
 Quiesce assertions. The Dispatcher now relies on `OpenSession` to return the existing attachment for an
 identical retry and propagates `ALREADY_EXISTS` for a conflicting spec or setup; it no longer calls
 `Runner.ListSessions` for opening. History's retained harness state and namespace/name association do
-not preserve authoritative live state or Sandbox UID/owner checks. Migrate remaining callers with their
+not preserve authoritative live state or Sandbox UID/owner checks. App archive safety needs current
+harness state; explicit native resume needs the current runner's Session and spec; Notification checks
+destination membership at subscription time. Migrate remaining callers with their
 live-state and identity requirements intact, then migrate tests and verify pinned caller images before
 removing the runner method/messages and helpers via normal generation. The Gateway wrapper may retire
 even if a narrowly justified runner live read remains; record that decision and remove this conditional
@@ -1491,6 +1497,7 @@ flowchart LR
     DISPATCHER_GATEWAY_TOPOLOGY_DESIGN[Decision: Dispatcher and Gateway topology]
     RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
+    DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
     CLAUDE_STREAM_SESSION_MULTIPLEXING[Held: Claude sessions per process]
     HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
     HTTP_JSON_FACADE_TOOLING_SPIKE[In flight: prove gRPC-Gateway integration]
@@ -1501,6 +1508,9 @@ flowchart LR
     K3S_VM_IMAGE[Blocked: build a real VM fixture, section 10]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_GATEWAY_TOPOLOGY_DESIGN
     RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state use remains .-> RUNNER_LIST_SESSIONS_RETIRE
+    DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
+    DISPATCHER_SEND_AUTHORIZATION --> DELIVERY_DESTINATION_CONTRACT
+    HARNESS_IDENTITY_DESIGN -. if a store ID enters the destination .-> DELIVERY_DESTINATION_CONTRACT
     CLAUDE_STREAM_SESSION_MULTIPLEXING -. this lane's findings inform .-> HARNESS_IDENTITY_DESIGN
     NATIVE_SUBAGENT_EXPOSURE -. child identity evidence informs .-> HARNESS_IDENTITY_DESIGN
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
@@ -1590,7 +1600,10 @@ whether each remaining caller requires live presence, retained identity/history 
 
 **Recommendation for review:** retain a live read wherever an approved caller still needs live state;
 do not substitute History by name similarity. `RUNNER_LIST_SESSIONS_RETIRE` remains conditional on
-this disposition and successful caller migration; this design does not select its removal.
+this disposition and successful caller migration; this design does not select its removal. Retiring
+the old Gateway wrapper is a separate caller/pinned-image audit, even if `Runner.ListSessions`
+remains. Keep History `FindSessions` and summaries for retained app views; Notification's History
+journal reads are command-outcome evidence, not inventory.
 
 ### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign destination validation and send permission
 
@@ -1621,6 +1634,35 @@ Preserve existing checks until each layer's authority and denial semantics are a
 subscription must not silently grant sending or waking. Question: which boundary rejects stale or
 unauthorized destinations, what locator and authorization proof does it require, and which checks are
 early feedback versus execution authority? No centralization choice is made here.
+
+The [delivery design note](../docs/runner_delivery_and_harness_design.md#destination-checks-and-authority)
+maps the current checks and candidate layered authority. Decide whether namespace/name accompanies
+mandatory UID or an authoritative UID resolver supplies it; identify the credential or delegated
+claim that represents the actual sender, and choose which boundary validates send grants. A broad
+service-account allowlist alone does not answer that question. Set explicit denial and retry rules for
+replacement, revocation, unavailable runners and unknown Sessions before implementation.
+
+### `DELIVERY_DESTINATION_CONTRACT` — carry and enforce the reviewed destination
+
+**Blocked on `DELIVERY_DESTINATION_AUTHORITY_DESIGN` and `DISPATCHER_SEND_AUTHORIZATION`; optional
+store addressing also waits for `HARNESS_IDENTITY_DESIGN`.** After approval, migrate the app and
+Notification senders and the Dispatcher request/queue/retry shape to one caller-supplied full
+destination. Persist the exact destination, command ID and payload before a queued receipt or wake;
+do not reconstruct an expected UID from a Sandbox name. Make the chosen admission authority reject
+unauthorized send/wake, recheck mutable grants before delayed wake/delivery, and make the execution
+boundary fence the same UID and owner before forwarding. A reachable runner rejects unknown
+Session/store targets terminally; unavailable runners cannot prove membership at queue acceptance.
+Keep direct mode online-only with no wake and same-ID resolution after a lost reply. Validate
+replacement, owner/grant revocation, wrong destination, suspension, duplicate retry, runner storage
+loss and staged caller/receiver rollout, including pinned images. This node does not select one or
+several harnesses per runner.
+
+This implementation can make a central Session-to-Sandbox placement lookup unnecessary for command
+delivery. `GATEWAY_WRAPPER_RETIRE` still needs its separate app native-resume outcome and external/
+pinned-caller audit; `GATEWAY_SESSION_REGISTRY_RETIRE` still needs every registry reader/writer gone
+and its caller rollout. Only then may the separate operator-approved `GATEWAY_DATABASE_DROP` proceed.
+Neither the destination design nor this node deletes retained History or the Kubernetes
+UID-to-connection locator.
 
 ### `HTTP_JSON_FACADE_TOOLING_SPIKE` — prove upstream grpc-gateway integration with Bazel
 
