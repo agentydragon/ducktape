@@ -892,7 +892,7 @@ and through HTTPS at this point in time. It does not establish roaming reliabili
 long-context retrieval through this router, or concurrent-load behavior. No Nebula
 topology change was made; the intermittent connectivity investigation remains deferred.
 
-## Next capability experiment: 128k with a stronger model
+## Qwen3.5 capability experiment: 128k with a stronger model
 
 The October 14 AA v4.3.2 snapshot suggests testing Qwen3.5 9B first, with
 4B as a lower-memory fallback, then 35B-A3B if the dense candidates are inadequate.
@@ -911,19 +911,6 @@ is a fallback experiment, with the existing slow Colibri result as a warning abo
 interactive latency. Thinking mode is a separate configuration to test, not an
 assumed improvement. The primary objective is usable long-context coding, not
 maximum short-prompt decode speed.
-
-Acceptance sequence on the installed llama.cpp build:
-
-1. Verify artifact identity and a short non-thinking completion on a temporary
-   loopback server. Measure memory before advancing.
-2. Process 64k and then approximately 128k native input tokens, allocating extra
-   room for output. Use the chat API, three exact needles distributed through the
-   input, native token counts, and truncation evidence. Record prefill/decode,
-   time to first token, power state, and minimum available memory.
-3. Check a tool-call/result roundtrip and one actual file edit in a scratch task.
-   A successful short tool call does not qualify long-context agent behavior.
-4. Try 4B if 9B cannot meet memory or latency constraints. Consider 35B-A3B after
-   these results, subject to remaining compute time and memory headroom.
 
 The initial probe used the prior guard (8 GiB available RAM or full memory PSI
 avg10 at least 25% for nine consecutive two-second samples). After it censored
@@ -1016,3 +1003,102 @@ Allow roughly an hour for cold 128k prefill under the measured conditions.
 Provisioning uses the existing asynchronous downloader and digest checks; model
 weights live under `/var/lib/rugged-llm/models`, outside `/nix/store`. The profile
 is router-only and has no additional LiteLLM route.
+
+### Final 4B and 35B-A3B observations
+
+The revised-guard 4B run completed **131,907 input tokens**, zero cached tokens,
+`truncated = 0`, and **3/3 exact ledger codes**. Prefill was 4,048.106 seconds
+(67.47 minutes, 32.58 tok/s); TTFT was 4,048.577 seconds and request latency
+4,054.307 seconds. Its 42 output tokens decoded at 7.15 tok/s. Minimum sampled
+MemAvailable was 9.03 GiB, maximum full PSI avg10 was 50.11%, AC stayed connected,
+and the guard did not fire. Its short tool/edit checks also passed. This run
+provides no evidence of a useful cold-prefill advantage over 9B at 128k; the runs
+were sequential shared-host observations, not a controlled speed comparison.
+
+Qwen3.5 **35B-A3B Q3_K_M** loaded on Vulkan and passed `READY`, an exact
+`read_file` call/result roundtrip, and the scratch `replace_text` edit. For the
+337-token tool-result prompt, native prefill was 3.498 seconds (96.34 tok/s),
+TTFT 3.502 seconds, and total request latency 4.541 seconds. Its 25 output tokens
+decoded at **23.09 tok/s**. The tool-call and edit generations were 23.50 and
+23.16 tok/s respectively. These are tiny samples, not sustained throughput.
+
+The 35B artifact is `unsloth/Qwen3.5-35B-A3B-GGUF`, revision
+`bc014a17be43adabd7066b7a86075ff935c6a4e2`,
+`Qwen3.5-35B-A3B-Q3_K_M.gguf`, 16,356,375,168 bytes, SHA-256
+`5607c8fcc8b04ada7d1a1152b9a5b6c1e67e6768232c16f6b03d9719d5ab1b2d`
+(verified). It used the same 139,264 allocation, q4_0 K/V, batch/microbatch 256,
+Flash Attention, and other settings as the 9B experiment. Minimum available RAM
+was **2.55 GiB**, maximum full PSI avg10 22.29%, AC stayed connected, and the
+34.38-second process run hit no guard. **No long input was attempted:** allocation
+and a 337-token response do not establish 128k support. This used resident Vulkan
+weights, not SSD expert streaming. The temporary servers exited; 4B and 35B have
+not been added to the permanent router roster.
+
+### Reproducing the capability smokes
+
+Use the pinned artifacts and llama.cpp build above. The 9B declarative profile
+in `nix/nixos/hosts/rugged/local_llm_router.nix` preserves the runtime settings;
+for temporary 4B/35B trials, use those same flags with the respective GGUF and a
+separate loopback port. Test one model at a time, record competing workloads and
+AC state, and stop the temporary process after collecting results.
+
+The direct chat-API experiment used `temperature: 0`, `cache_prompt: false`,
+`stream: true`, `stream_options: {include_usage: true}`, and at most 128 output
+tokens for retrieval. Require the SSE `[DONE]` marker before scoring; a watchdog
+stop or incomplete stream is censored. Collect API usage/timings and the server's
+`truncated` field. Sample `/proc/meminfo` MemAvailable, `/proc/pressure/memory`
+full avg10, and power state every two seconds. Stop below 1 GiB available or at
+70% full PSI for nine consecutive samples, with an explicit per-run deadline.
+Monotonic timings exclude suspend: check suspend/resume logs when interpreting
+wall latency. The October 14 evening log check found no suspend during testing.
+
+The deterministic long-input recipe for target `T` (64,000 or 132,000):
+
+1. Seed Python `random.Random(8593 + T)`. Generate `T // 12` lines, each containing
+   16 `rng.choices` from `amber birch cedar delta ember frost grove harbor iris
+juniper kelp lunar maple north ocean pine`, joined by spaces; join lines with
+   newlines.
+2. Call `/tokenize` with `add_special: false`, retain the first `T - 180` tokens,
+   and `/detokenize` them. At character offsets 10%, 50%, and 90% of this filler,
+   insert `\nIMPORTANT ledger N code: CODE\n` in reverse offset order. Codes for
+   ledgers 1–3 are `cedar-93017`, `harbor-58264`, and `violet-71803`.
+3. Prefix `Memorize the three IMPORTANT ledger codes in this text.\n` and suffix
+   `\nReturn all three ledger codes exactly, in ledger order. No explanation.`
+   Send as one user message. Native content counts were 63,895 and 131,895;
+   chat formatting raised API prompt counts to 63,907 and 131,907.
+4. Count exact code matches in the completed answer. This is an integrity smoke,
+   not a repository-understanding or coding benchmark.
+
+Short checks ask for `READY`, expose a `read_file(path)` tool returning a scratch
+marker, then expose `replace_text(old, new)` against
+`def subtract(a, b):\n    return a + b\n`. Execute only the expected tool/path and
+an unambiguous single replacement; verify the final file exactly equals
+`def subtract(a, b):\n    return a - b\n`. These checks exercise real scratch file
+I/O without granting arbitrary code execution to the direct-API probe.
+
+### Continuation priorities and retained evidence
+
+- **Capability:** qualify 35B-A3B Q3_K_M with a bounded direct-API long-input
+  smoke before adding it to the router. The short trial makes it a concrete
+  candidate, but its low available-memory margin is a constraint. If needed,
+  compare a harder weight quantization or expert offloading; record exact
+  artifact identity and treat published unquantized scores as external estimates.
+- **Latency:** measure an incremental cached follow-up on 9B before another
+  cold 128k sweep. About an hour of cold prefill is the main daily-use limitation.
+- **Context:** larger allocations need actual processed-token and needle checks;
+  the configured 256k option still has no completed 256k qualification.
+- **Integration:** the October 15 installed launcher check found the daily/eval
+  split active, the 9B router preset present, and background provisioning exited
+  successfully with `Ready: qwen35-9b-model`. Next check one normal OpenCode
+  edit/resume using persistent state. Listing models and direct-API
+  tools do not establish a full daily-driver session. Cluster/Nebula reliability
+  remains deferred; no extra cluster route is implied by a new local model.
+
+Keep declarative artifact pins/router/client profiles, this report's aggregate
+metrics and recipes, the AA snapshot, the plot script/SVG, and reusable evaluation
+clients. Generated long prompts, duplicate chart previews, download headers, raw
+system logs, temporary probe output, and temporary model copies are disposable
+once their measurements and artifact identities are recorded. Do not delete
+provisioned caches or useful downloaded weights just to tidy notes. Older committed
+coding fixtures/scores remain reproducibility evidence; no new full benchmark
+campaign is needed for the next capability experiment.

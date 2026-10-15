@@ -74,7 +74,7 @@ holds over that full window. Estimated AA indices use hollow markers.
 
 The llama.cpp squares show single short tool-result responses; purple diamonds
 show completed long-input retrieval requests, each labelled with its actual input
-length, recall, and prefill time. Their 17–27-token outputs are smoke measurements,
+length, recall, and prefill time. Their 17–42-token outputs are smoke measurements,
 not stable throughput estimates. Allocation is 139,264 tokens with q4_0 K/V cache.
 
 ![Rugged intelligence versus decode speed](../rugged_plot/intelligence_speed.svg)

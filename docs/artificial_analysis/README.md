@@ -8,7 +8,7 @@ scope when refreshing; API access does not itself grant redistribution rights.
 
 <cited_models_2026_10_14.csv> contains the previous 57 comparison rows refreshed
 from the [leaderboard](https://artificialanalysis.ai/leaderboards/models), plus
-14 rugged candidate/effort rows and 11 OpenAI/Anthropic plot references (82 total). Historical CSVs remain unchanged.
+15 rugged candidate/effort rows and 11 OpenAI/Anthropic plot references (83 total). Historical CSVs remain unchanged.
 The [methodology page](https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index)
 identifies the index as **v4.3.2** on this retrieval date.
 
@@ -53,7 +53,7 @@ The new CSV retains September's columns and adds the estimated flag, GPQA Diamon
 `terminalbench_hard` (raw AA field, **not** Terminal-Bench 4.0), source URL, retrieval
 date, and index version. Evaluation fractions use 0–1, except the 0–100 index and
 AA-Omniscience. Numeric zero remains zero. Use the same Flight decoding recipe
-below; select September's 57 slugs plus the 13 linked rows above plus `qwen3-5-9b-non-reasoning`, without filtering
+below; select September's 57 slugs plus the 13 linked rows above plus `qwen3-5-9b-non-reasoning` and `qwen3-5-35b-a3b-non-reasoning`, without filtering
 estimated indices. The 11 additional reference slugs are listed in the
 [rugged plot script](../../cluster/docs/inference/rugged_plot/plot.py); they come
 from the same October 14 retrieval. Only this selected cohort is redistributed.
