@@ -274,10 +274,18 @@ async def test_a_wake_retry_rechecks_ownership_after_failover(
 
     # Keep this replica's cached proof stale while the test makes the Lease expire; otherwise the
     # delivery loop's periodic renewal can race the test's read/replace and prevent failover.
+    ownership_sync_paused = asyncio.Event()
+    hold_ownership_sync = asyncio.Event()
+
     async def keep_cached_owner() -> None:
-        pass
+        ownership_sync_paused.set()
+        await hold_ownership_sync.wait()
 
     monkeypatch.setattr(delivery, "_sync_ownership", keep_cached_owner)
+    # Let any sync that started before the patch finish before changing the Lease. The no-op
+    # implementation must be reached by the background loop before the failover setup begins.
+    delivery._changed.set()
+    await ownership_sync_paused.wait()
     coordination = k8s_client.CoordinationV1Api(cluster.api)
 
     calls: list[str] = []
