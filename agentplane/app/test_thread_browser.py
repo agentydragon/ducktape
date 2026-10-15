@@ -1155,8 +1155,7 @@ async def append_run_among_rows(thread_browser: ThreadBrowser, *, below: int) ->
 
 @asynccontextmanager
 async def output_streaming_in(thread_browser: ThreadBrowser) -> AsyncIterator[tuple[list[int], asyncio.Event]]:
-    """A call running at the tail whose output keeps arriving, each delta once the browser has it,
-    for the length of the block; yields the cursors delivered so far."""
+    """Stream tail output while the block runs; yield projected cursors and a three-update event."""
     source, page = thread_browser.source, thread_browser.page
     source.append(
         event_pb2.Event(
