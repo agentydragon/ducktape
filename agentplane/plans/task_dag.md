@@ -22,7 +22,7 @@ Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 | ----------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `suspended_session_ui`        | Implement nonblocking runner Quiesce; deployed controllers already accept the optional response stage. |
 | `session_defaults_cleanup`    | Fresh VM workspace acceptance passed and fixture cleanup verified; publish evidence and metadata fix.  |
-| `suspended_session_inventory` | Diagnose the Session list/table disappearing after Sandbox suspension and navigation back.             |
+| `suspended_session_inventory` | Replace the live Session-list union with History-only rows; preserve suspended Session visibility.     |
 | Coordinator                   | Review and CI, DAG burn-down and deployment gate verification.                                         |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
@@ -370,6 +370,7 @@ flowchart LR
     VM_PROVIDER[Candidate: production provider and API]
     VM_EGRESS[Blocked: live launcher relay checks]
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
+    VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
@@ -469,6 +470,15 @@ projected tokens (the relay reopens them per request, so rotation alone needs no
 clock. Settle first what "seal before suspend" means when the harness keeps running across the suspend
 (the current quiesce stops harnesses and seals journals). Where storage or the guest cannot carry it, stop/start from the state PVC stays the
 lifecycle.
+
+### `VM_CONSOLE_DEFERRED_ATTACH` — attach after VM startup makes the console available
+
+**Unscheduled; lower priority, operator report 2026-10-15 PDT.** During VM startup the console tab
+can show `Kubernetes answered 400` and remain disconnected. Treat a not-yet-attachable VM as waiting
+and attach when its lifecycle signals readiness, without reopening the tab. Distinguish startup
+from authorization failure, deleted VM, and another attached client; clean up on tab exit and never
+open competing connections. Keep the existing read-only/no-replay contract. Test the unavailable
+→ attachable transition and cancellation; do not add a periodic polling loop or bigger timeout.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -707,7 +717,7 @@ flowchart TD
     APP_NATIVE_RESUME_SURFACE[Decision: explicit native-resume UI] --> APP_NATIVE_RESUME_CUTOVER[Blocked: remove direct native resume]
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
-    STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
+    STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
 ```
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
@@ -962,10 +972,10 @@ for a reviewed contract that the code does not already satisfy; do not add an im
 ### `SUSPENDED_SESSION_INVENTORY` — the Session list remains visible after Sandbox suspension
 
 **In flight; `suspended_session_inventory`, operator dispatch 2026-10-15 UTC.** The user reports
-that suspending a Sandbox clears its Thread list/table after navigating back. Trace the list's
-inventory source across suspension and navigation, identify the root cause, and fix the disappearance
-while preserving the existing access and Sandbox-identity fences. Add a regression for the observed
-failure. This is separate from the suspended composer behavior, which has its own rollout evidence.
+that suspending a Sandbox clears its Thread list/table after navigating back. Replace the live
+`Runner.ListSessions` table source with retained History rows so suspended Sessions remain visible.
+Preserve access and Sandbox-identity fences, and add a regression for returning to a suspended
+Sandbox. This is separate from the suspended composer behavior, which has its own rollout evidence.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -1102,7 +1112,6 @@ flowchart TD
     APP_ARCHIVE_RUNNER_READ_MIGRATION[Candidate: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
     NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION[Candidate: retire notification wrapper membership reads] --> GATEWAY_WRAPPER_RETIRE
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
-    VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
@@ -1185,15 +1194,6 @@ Sandbox reference has namespace/name, not UID/owner, so a matching name alone is
 Test owner mismatch, replaced Sandbox UID and a Session belonging elsewhere. Remove the obsolete
 notification Gateway client/config once no callers remain; config removals precede settings-reader
 removals and receiver deletion waits for the new notification image.
-
-### `VM_CONSOLE_DEFERRED_ATTACH` — attach after VM startup makes the console available
-
-**Unscheduled; lower priority, operator report 2026-10-15 PDT.** During VM startup the console tab
-can show `Kubernetes answered 400` and remain disconnected. Treat a not-yet-attachable VM as waiting
-and attach when its lifecycle signals readiness, without reopening the tab. Distinguish startup
-from authorization failure, deleted VM, and another attached client; clean up on tab exit and never
-open competing connections. Keep the existing read-only/no-replay contract. Test the unavailable
-→ attachable transition and cancellation; do not add a periodic polling loop or bigger timeout.
 
 ### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database
 
