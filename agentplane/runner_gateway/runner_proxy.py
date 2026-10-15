@@ -65,6 +65,12 @@ def sandbox_name(context: grpc.aio.ServicerContext) -> str:
     return names[0]
 
 
+def _identity_header(values: list[str | bytes]) -> str:
+    if len(values) != 1 or not isinstance(values[0], str) or not values[0]:
+        raise ValueError("all Sandbox identity headers must appear exactly once")
+    return values[0]
+
+
 def expected_sandbox(context: grpc.aio.ServicerContext, name: str) -> sandboxes_pb2.SandboxDestination | None:
     """Optional rollout fence; when present, the complete expected identity must match the live Sandbox."""
     values = {
@@ -73,11 +79,9 @@ def expected_sandbox(context: grpc.aio.ServicerContext, name: str) -> sandboxes_
     }
     if not any(values.values()):
         return None
-    if any(len(found) != 1 or not isinstance(found[0], str) or not found[0] for found in values.values()):
-        raise ValueError("all Sandbox identity headers must appear exactly once")
-    uid = values[SANDBOX_UID_HEADER][0]
-    owner_namespace = values[SANDBOX_OWNER_NAMESPACE_HEADER][0]
-    owner_name = values[SANDBOX_OWNER_NAME_HEADER][0]
+    uid = _identity_header(values[SANDBOX_UID_HEADER])
+    owner_namespace = _identity_header(values[SANDBOX_OWNER_NAMESPACE_HEADER])
+    owner_name = _identity_header(values[SANDBOX_OWNER_NAME_HEADER])
     return sandboxes_pb2.SandboxDestination(
         sandbox=name, sandbox_uid=uid, owner=sandboxes_pb2.ServiceAccount(namespace=owner_namespace, name=owner_name)
     )
