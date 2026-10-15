@@ -74,7 +74,6 @@ py_test(
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/threads/events:event_log",
-        "//agentplane/history_service/storage:db",
         "//agentplane/history_service/testing:history",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",

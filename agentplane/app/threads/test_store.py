@@ -5,13 +5,12 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import delete, update
+from sqlalchemy import delete
 
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.store import HistorySandboxMissingError, InvalidPageTokenError, ThreadStore
-from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
@@ -109,10 +108,7 @@ async def test_committed_history_without_sandbox_identity_fails_explicitly(
     store: ThreadStore, event_logs: SeededEventLogStore, history: History
 ) -> None:
     thread = await seed_thread(event_logs, history, sandbox="known", session="missing-identity", cursor=2)
-    async with history.sessions.begin() as session:
-        await session.execute(
-            update(SessionHistory).where(SessionHistory.id == thread).values(sandbox_namespace=None, sandbox_name=None)
-        )
+    await history.clear_sandbox_identity(thread)
     with pytest.raises(HistorySandboxMissingError):
         await store.get_thread(thread)
 

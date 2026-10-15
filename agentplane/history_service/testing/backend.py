@@ -120,7 +120,7 @@ async def history_service(
 
 
 @asynccontextmanager
-async def ingest(database_url: str, runner: Runner) -> AsyncIterator[None]:
+async def ingest(database_url: str, runner: Runner, *, writer: ServiceAccountRef = WRITER) -> AsyncIterator[None]:
     """Push every Session `runner` journals into the history database through the ingress, as a
     deployed runner does."""
     async with _history_engine(database_url) as engine:
@@ -130,10 +130,10 @@ async def ingest(database_url: str, runner: Runner) -> AsyncIterator[None]:
                 principals=WorkloadPrincipalResolver(
                     authentication=cast(
                         k8s_client.AuthenticationV1Api,
-                        Authentication(token=WRITER_TOKEN, audience=WRITER_AUDIENCE, account=WRITER),
+                        Authentication(token=WRITER_TOKEN, audience=WRITER_AUDIENCE, account=writer),
                     ),
                     audience=WRITER_AUDIENCE,
-                    allowed_service_account_namespaces={WRITER.namespace},
+                    allowed_service_account_namespaces={writer.namespace},
                 ),
                 history=Store(engine),
                 timing=Timing(),
