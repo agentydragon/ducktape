@@ -35,6 +35,7 @@ class FeedSnapshot:
 
 @dataclass(frozen=True)
 class FoldSummary:
+    present: bool
     sandbox: str | None
     folded_through: int
     last_event_at: datetime | None
@@ -47,6 +48,7 @@ class FoldSummary:
 
 
 NOTHING_FOLDED = FoldSummary(
+    present=False,
     sandbox=None,
     folded_through=0,
     last_event_at=None,
@@ -108,6 +110,7 @@ def _summary(summary: history_service_pb2.SessionSummary) -> FoldSummary:
                 raise ValueError(f"attached Session summary without a feed status: {status=}")
         feed = FeedSnapshot(summary.attached, end)
     return FoldSummary(
+        present=True,
         sandbox=summary.sandbox.name if summary.HasField("sandbox") else None,
         folded_through=summary.folded_through,
         last_event_at=summary.last_event_at.ToDatetime(tzinfo=UTC) if summary.HasField("last_event_at") else None,

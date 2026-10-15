@@ -1,15 +1,17 @@
 """Operator metadata over Thread views read from the History Service's fold."""
 
 from datetime import UTC
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
-from agentplane.app.threads.store import InvalidPageTokenError, ThreadStore
+from agentplane.app.threads.events.event_log import ThreadNotFoundError
+from agentplane.app.threads.store import HistorySandboxMissingError, InvalidPageTokenError, ThreadStore
+from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
@@ -76,6 +78,43 @@ async def test_thread_identity_comes_from_history_without_gateway_registration(
     assert view.sandbox == "history-owned"
     assert [item.id for item in await store.list_threads(sandbox="history-owned")] == [thread]
     assert [item.id for item in (await store.list_page(limit=20, search="HISTORY-OWNED")).threads] == [thread]
+
+
+async def test_pending_history_identity_is_hidden_without_losing_pagination_or_editing_metadata(
+    store: ThreadStore, event_logs: SeededEventLogStore, history: History
+) -> None:
+    visible = await seed_thread(event_logs, history, sandbox="visible", session="visible", cursor=2)
+    pending = uuid4()
+    await event_logs.open(str(pending))
+    assert await store.get_thread(pending) is None
+    with pytest.raises(ThreadNotFoundError):
+        await store.rename(pending, "premature")
+    with pytest.raises(ThreadNotFoundError):
+        await store.archive(pending)
+
+    found: list[UUID] = []
+    token: str | None = None
+    for _ in range(3):
+        page = await store.list_page(limit=1, page_token=token)
+        found.extend(view.id for view in page.threads)
+        token = page.next_page_token
+        if token is None:
+            break
+    else:
+        pytest.fail("pagination did not advance past the pending History identity")
+    assert found == [visible]
+
+
+async def test_committed_history_without_sandbox_identity_fails_explicitly(
+    store: ThreadStore, event_logs: SeededEventLogStore, history: History
+) -> None:
+    thread = await seed_thread(event_logs, history, sandbox="known", session="missing-identity", cursor=2)
+    async with history.sessions.begin() as session:
+        await session.execute(
+            update(SessionHistory).where(SessionHistory.id == thread).values(sandbox_namespace=None, sandbox_name=None)
+        )
+    with pytest.raises(HistorySandboxMissingError):
+        await store.get_thread(thread)
 
 
 @pytest.mark.parametrize(

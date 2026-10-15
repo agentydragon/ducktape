@@ -1440,18 +1440,22 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
 async def test_open_and_resume_reply_before_archive_catches_up(
     local_runners: RunnerDirectory,
     event_logs: SeededEventLogStore,
+    store: ThreadStore,
     content: ContentStore,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Runner receipts and a committed Thread mapping suffice; copying the feed is independent."""
+    """Runner receipts and direct commands work while the Thread's History projection is pending."""
     # Stall the runner's push to the History Service's ingress without delaying the runner itself.
     monkeypatch.setattr("agentplane.runner.ingress.IngressPusher.push", AsyncMock())
     bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content)
     opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), spec), timeout=10)
     thread_id = UUID(opened.session_id)
     assert opened.attached.last_cursor > 0
+    assert await event_logs.exists(thread_id)
+    assert await store.get_thread(thread_id) is None
+    assert await store.list_threads() == []
     assert await event_logs.last_cursor(thread_id) == 0
 
     # A native conversation must exist before Resume: an idle Open has no Claude/Codex
