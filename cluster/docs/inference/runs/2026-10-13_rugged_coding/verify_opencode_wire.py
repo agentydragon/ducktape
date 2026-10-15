@@ -220,8 +220,6 @@ def main() -> int:
         command = [
             str(args.launcher.resolve(strict=True)),
             "run",
-            "--dir",
-            str(args.workspace.resolve(strict=True)),
             "--format",
             "json",
             "--title",
