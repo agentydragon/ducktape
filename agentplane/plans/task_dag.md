@@ -21,7 +21,7 @@ Dispatch assignments (Rai authorized, Codex reported, 2026-10-14):
 | Worker            | Assigned work and remaining gates                                                                                                                                   |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `vm_connection`   | VM fresh-format/retained-remount acceptance after the corrected guest image is pinned; testing wake-on-send and queued-opening acceptance, then staging activation. |
-| `image_inventory` | Publish the image inventory, then prepare app direct-command and gated direct-open cleanup PRs.                                                                     |
+| `image_inventory` | Publish the image inventory and prepare stacked app Dispatcher-only command/opening cleanup PRs; queued-opening acceptance and activation remain gated.             |
 | `dag_burndown`    | Measure shared Python interpreter layers using existing Bazel packaging rules; compare k3s lifecycle performance at matching source revisions.                      |
 | Coordinator       | Burn down completed nodes, finish the bounded resume coverage audit, and remove state-layout and effective-mode compatibility fallbacks.                            |
 
@@ -729,7 +729,8 @@ flowchart TD
     EFFECTIVE_MODE_FALLBACK_DROP[In flight: remove spec.running compatibility fallback]
     APP_SESSION_OPEN_ACTIVATION[In flight: accept testing queued opens, then activate staging]
     APP_SESSION_DEFAULTS_LEGACY_REMOVE[Candidate: retire unused defaults after caller audit]
-    APP_GATEWAY_SEND_REMOVE --> APP_OPEN_FLAG_REMOVE[Blocked: remove obsolete opening flag after config rollout]
+    APP_GATEWAY_SEND_REMOVE[In flight: require Dispatcher for app commands and Session openings]
+    APP_GATEWAY_SEND_REMOVE --> APP_OPEN_FLAG_REMOVE[Blocked: remove accepted opening flag after config rollout]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
     APP_SESSION_OPEN_ACTIVATION --> APP_GATEWAY_SEND_REMOVE
@@ -1034,33 +1035,37 @@ implementation node once policy is reviewed; existing caller cutovers do not sil
 
 **In flight; `vm_connection`, 2026-10-14 PDT.** #10517 implemented queued openings and app-owned
 Session defaults; both environments run an accepting app image. #10533 enables
-`session_dispatcher_open_sessions` on testing and its ConfigMap is reconciled. Verify queued opening
-and eventual Thread projection on testing, then enable staging in a separate generated-config PR.
-The current probe admitted the opening and accepted a same-ID retry, but the Thread read returned
-HTTP 500: it still required a Gateway registry row that Dispatcher openings do not create. Move
-that read to authoritative History identity, pin the correction, and repeat the bounded app check
-before staging activation. No new compatibility fallback or data deletion belongs in that correction. Finish with both environments reconciled; direct-open fallback removal follows separately.
+`session_dispatcher_open_sessions` on testing and its ConfigMap is reconciled. The bounded testing
+probe admitted the opening and accepted a same-ID retry, but the Thread read returned HTTP 500
+because it required a Gateway registry row that Dispatcher openings do not create. #10547 moves the
+read to authoritative History identity while preserving pending-History behavior; it remains open.
+Merge and pin that correction, then repeat bounded queued-open and eventual Thread-projection
+acceptance in testing. Activate staging only after that acceptance, in a separate generated-config
+change, then complete the same bounded acceptance in staging. Direct-open removal remains gated on
+that corrected image and successful queued-open activation in both environments.
 
-### `APP_GATEWAY_SEND_REMOVE` — delete app direct command and Session-creation branches
+### `APP_GATEWAY_SEND_REMOVE` — require Dispatcher for app commands and new Session openings
 
-**Draft preparation authorized; `image_inventory`, 2026-10-14 PDT. Merge remains gated on
-`APP_SESSION_OPEN_ACTIVATION` in both environments for direct-open removal.** Direct command-send
-removal can land independently: command-send configuration from
-#10498 is already active in both environments; its [rollout evidence](../session_dispatcher/debug/deployment_acceptance.md#app-command-sender-activation)
-is complete. Remove optional Dispatcher selection and direct command branches first; require Dispatcher config
-for the deployed app. Remove direct CreateSession branches after queued-open activation. Retire the
-opening feature flag in reverse rollout order: make queued opening unconditional while still accepting
-the key, remove the key from generated manifests after that image is pinned, then delete its settings
-field after both ConfigMaps reconcile. The final flag deletion is tracked separately below.
-Delete obsolete client methods and tests in each step. Keep independently used Gateway reads and explicit native resume until their
-own cutovers. This cleanup need not wait for deciding the native-resume UI.
+**Drafts prepared by `image_inventory`; direct-open removal remains merge-gated.** #10548 removes
+the app's direct command-send branch and requires its Dispatcher client. This stacked draft removes
+the app's direct `CreateSession` branch so every new Session opening uses Dispatcher `OpenSession`.
+Merge this draft only after #10547's corrected app image is pinned, bounded queued-open acceptance
+passes in testing, and queued-open activation plus bounded acceptance complete in both testing and
+staging. Do not activate staging as part of this code change. Retain Runner Gateway Session reads and
+native resume, plus Gateway CreateSession receivers and other non-app callers until their own
+caller-image gates.
+
+Keep accepting `session_dispatcher_open_sessions` as an ignored setting during the reverse rollout:
+pin the unconditional-open app image first; then remove the key from generated ConfigMaps; after both
+ConfigMaps reconcile without it, remove the settings field and its compatibility test under
+`APP_OPEN_FLAG_REMOVE`.
 
 ### `APP_OPEN_FLAG_REMOVE` — retire the queued-opening rollout flag
 
-**Blocked on unconditional app queued openings and the accepting image pinned in both environments.**
-Remove `session_dispatcher_open_sessions` from generated ConfigMaps first. Once both environments
-have reconciled the omission, delete the accepted-but-unused settings field and schema/tests. This
-is the removal node for the transitional setting; do not delete the field while deployed config
+**Blocked on unconditional app queued openings being accepted and pinned in both environments.**
+After the unconditional-open app image is pinned, remove `session_dispatcher_open_sessions` from
+generated ConfigMaps. Once both environments have reconciled the omission, delete the
+accepted-but-unused app settings field and its tests. Do not delete the field while deployed config
 still sends it. No staging setting changes precede testing acceptance.
 
 ### `APP_NATIVE_RESUME_SURFACE` — decide the explicit native-resume UI
