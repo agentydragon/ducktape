@@ -207,15 +207,16 @@ func TestSandboxIsReadyWhileItsPodIsReadyAndItsRunnerConnected(t *testing.T) {
 
 func TestReadyWaitsForTheBootstrapAndStopsOnItsFailure(t *testing.T) {
 	for _, tc := range []struct {
-		name, fact, reason  string
-		bootstrapped, ready bool
+		name, fact, reason string
+		bootstrapped       bool
+		ready              metav1.ConditionStatus
 	}{
-		{"none reported", "", "BootstrapNotReported", false, true},
-		{"running", "running", "BootstrapRunning", false, false},
-		{"succeeded", "succeeded", "BootstrapSucceeded", true, true},
-		{"failed", "failed", "BootstrapFailed", false, false},
-		{"interrupted", "interrupted", "BootstrapFailed", false, false},
-		{"unknown state", "test-future-state", "BootstrapStateUnrecognised", false, false},
+		{"none reported", "", "BootstrapNotReported", false, metav1.ConditionUnknown},
+		{"running", "running", "BootstrapRunning", false, metav1.ConditionFalse},
+		{"succeeded", "succeeded", "BootstrapSucceeded", true, metav1.ConditionTrue},
+		{"failed", "failed", "BootstrapFailed", false, metav1.ConditionFalse},
+		{"interrupted", "interrupted", "BootstrapFailed", false, metav1.ConditionFalse},
+		{"unknown state", "test-future-state", "BootstrapStateUnrecognised", false, metav1.ConditionFalse},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r, c := newReconciler(t, true, testTemplate("test-image:v1"))
@@ -243,8 +244,8 @@ func TestReadyWaitsForTheBootstrapAndStopsOnItsFailure(t *testing.T) {
 			if bootstrapped.Reason != tc.reason || (bootstrapped.Status == metav1.ConditionTrue) != tc.bootstrapped {
 				t.Errorf("Bootstrapped = %s/%s, want %v/%s", bootstrapped.Status, bootstrapped.Reason, tc.bootstrapped, tc.reason)
 			}
-			if (ready.Status == metav1.ConditionTrue) != tc.ready || (!tc.ready && ready.Reason != tc.reason) {
-				t.Errorf("Ready = %s/%s, want ready=%v with the bootstrap's reason", ready.Status, ready.Reason, tc.ready)
+			if ready.Status != tc.ready || (tc.ready != metav1.ConditionTrue && ready.Reason != tc.reason) {
+				t.Errorf("Ready = %s/%s, want %s with the bootstrap's reason", ready.Status, ready.Reason, tc.ready)
 			}
 		})
 	}
