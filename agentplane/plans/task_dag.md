@@ -18,16 +18,15 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized; Codex reported, 2026-10-15 UTC):
 
-| Worker                        | Assigned work and remaining gates                                                                                                         |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `suspended_session_inventory` | Finish the protobuf-field and deployment-only CLI/config audit; then retire superseded isolated-test scaffolding with coverage preserved. |
-| Coordinator                   | Integrate notes cleanup, burn down merged tasks and review rollout and CI evidence.                                                       |
+| Worker                        | Assigned work and remaining gates                                                   |
+| ----------------------------- | ----------------------------------------------------------------------------------- |
+| `suspended_session_inventory` | Finish the protobuf-field and deployment-only CLI/config audit.                     |
+| Coordinator                   | Integrate notes cleanup, burn down merged tasks and review rollout and CI evidence. |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
 user experience. Finish reported bugs and red PR checks first. The next dispatch order is
-verified runner compatibility cleanup, then `ISOLATED_TEST_SPIKES_RETIRE` and
-`K3S_STARTUP_COST`. The per-Sandbox wake-on-message policy and suspended composer are implemented
+verified runner compatibility cleanup, then `K3S_STARTUP_COST`. The per-Sandbox wake-on-message policy and suspended composer are implemented
 and deployed. The lifecycle coverage audit found the requested eventual outcomes already covered;
 see the [suite coverage](../x/k3s_env/README.md#lifecycle-coverage).
 Audit assignment does not waive any image, embedded VM wheel, live-runner or retained-data gate.
@@ -654,18 +653,8 @@ complexity and coverage lost through shared networking, scheduling, restart and 
 boundaries, including NetworkPolicy isolation. Deliver a measured recommendation to adopt
 or discard the reduced mode, with normal-layout coverage retained for those boundaries.
 Keep the expensive workflow manual-only; this spike does not authorize a production topology
-change, removal of existing coverage or a language rewrite. Coordinate with
-`ISOLATED_TEST_SPIKES_RETIRE` so an adopted mode has one maintained invocation path.
-
-### `ISOLATED_TEST_SPIKES_RETIRE` — remove superseded isolated-test scaffolding
-
-**Assigned; `suspended_session_inventory`, after the surface audit.** The manual workflow depends on the
-maintained `agentplane/x/k3s_env` fixture and its `test_lifecycle` target; do not remove them while
-CI invokes them. Move the retained tests into their owning package and update the workflow first,
-then delete superseded `x/k3s_rbe_spike` or `x/k3s_env` entry points, image-loader paths, BUILD
-targets and old recipes only when replacements cover the same contract. Keep any still-needed
-platform-specific fixture until its replacement covers the same contract. End with one documented
-local/CI invocation path per supported test tier.
+change, removal of existing coverage or a language rewrite. Keep one documented invocation path
+per supported test tier.
 
 ### `TESTING_ENVIRONMENT_RETIRE` — retire the stateful testing deployment once coverage replaces it
 
@@ -679,7 +668,6 @@ immediate deletion of the testing namespace or its volumes.
 
 ```mermaid
 flowchart LR
-    ISOLATED_TEST_SPIKES_RETIRE[Assigned: migrate retained fixtures and remove superseded scaffolding]
     TESTING_ENVIRONMENT_RETIRE[Decision: coverage replacements before testing retirement]
 ```
 

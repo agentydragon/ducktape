@@ -96,6 +96,7 @@ async def test_create_reaches_running(stack: Stack, client: Client) -> None:
     view = await create_running(stack, client, "life-create")
     assert view.operating_mode is OperatingMode.RUNNING
     assert view.pod is not None
+    assert int(exec_in_sandbox(stack, view, "id -u").strip()) > 0
 
 
 async def test_bootstrap_script_runs_in_the_sandbox(stack: Stack, client: Client) -> None:

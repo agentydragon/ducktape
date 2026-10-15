@@ -11,9 +11,10 @@ directly with `bbr test //agentplane/x/k3s_env:test_lifecycle --test_output=all`
 `render.py` rewrites the generated manifest for a bare cluster: drops Cilium, Gateway API, Kyverno,
 Prometheus, cert-manager and External Secrets kinds, emulates the ExternalSecrets with random
 Secrets, keeps the CNPG `Cluster` and `Database` objects (the real operator is installed from its release
-manifest), makes Services headless (no kube-proxy means no ClusterIP) and generates the egress CA. `test_env.py` starts k3s (recipe from
-`agentplane/x/k3s_rbe_spike`), streams the Bazel-built OCI image layouts into containerd, applies everything and reports
-per-Deployment readiness.
+manifest), makes Services headless (no kube-proxy means no ClusterIP) and generates the egress CA. The
+model-free lifecycle and model smoke tests share [`stack.py`](stack.py), which starts k3s, streams
+the Bazel-built OCI image layouts into containerd, applies the rendered stack and reports Deployment
+readiness.
 
 The image list includes the Session Dispatcher and its migration image, matching the generated
 stack. The `test_lifecycle` target has no model credential dependency; the workflow only supplies
@@ -26,8 +27,9 @@ Docker-format `oci_load` tarballs.
 ## Lifecycle coverage
 
 The model-free [lifecycle tests](test_lifecycle.py) wait for the Sandbox's own `Ready=True`
-condition, check a bootstrap-created file, and suspend until the effective mode is `Suspended` and
-the Pod is gone. Resume waits for Ready again and verifies the state-volume marker survived.
+condition, check the runner process is non-root, check a bootstrap-created file, and
+suspend until the effective mode is `Suspended` and the Pod is gone. Resume waits for Ready again
+and verifies the state-volume marker survived.
 The controller gates Ready on workload readiness, runner connection and bootstrap success.
 
 Exact bootstrap and seal-before-stop ordering belongs in deterministic
