@@ -571,6 +571,8 @@ flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     K3S_STARTUP_COST[Candidate: profile remaining containerd import and startup cost]
+    K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
+    K3S_BUNDLED_SERVICES_SPIKE -. timing evidence .-> K3S_STARTUP_COST
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
@@ -627,6 +629,26 @@ The shared Python interpreter layers and matched lifecycle comparison are implem
 belongs in [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
 Preserve assertions and timeouts. The expensive lifecycle workflow stays **manual-only**;
 automatic triggers require a separate reviewed change. Language rewrites require Rai's decision.
+
+### `K3S_BUNDLED_SERVICES_SPIKE` — measure a less isolated control plane in real k3s
+
+**Unscheduled spike; operator, 2026-10-15 PDT.** Evaluate running Agentplane control-plane
+services together in one Pod to reduce integration-test startup time. Keep real k3s, RBAC
+objects, service APIs, databases, controllers and separately managed Sandbox workloads;
+exercise the existing end-to-end lifecycle scenarios. Preserve each service's intended
+Kubernetes identity and permissions using separate credentials rather than the Pod's union
+of service permissions. Explicitly assess how to provide those credentials: a Pod has one
+ServiceAccount, so bundling must not silently bypass authorization coverage.
+
+Compare the normal deployment layout with the bundled layout on equivalent inputs and
+scenarios. Measure image import/unpack, startup/readiness and total test time separately;
+bundling alone does not remove image bytes or process initialization. Record implementation
+complexity and coverage lost through shared networking, scheduling, restart and failure
+boundaries, including NetworkPolicy isolation. Deliver a measured recommendation to adopt
+or discard the reduced mode, with normal-layout coverage retained for those boundaries.
+Keep the expensive workflow manual-only; this spike does not authorize a production topology
+change, removal of existing coverage or a language rewrite. Coordinate with
+`ISOLATED_TEST_SPIKES_RETIRE` so an adopted mode has one maintained invocation path.
 
 ### `ISOLATED_TEST_SPIKES_RETIRE` — remove superseded isolated-test scaffolding
 
