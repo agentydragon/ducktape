@@ -24,6 +24,8 @@ Docker-format `oci_load` tarballs.
 
 ## Lifecycle measurements
 
+### OCI-layout streaming, 2026-10-14
+
 Both runs used temporary cProfile instrumentation and passed all four model-free lifecycle tests.
 The instrumentation was removed after measurement.
 
@@ -40,14 +42,38 @@ OCI stream: `ff38137b3f` plus the same instrumentation,
 Each run publishes `test.log`, `test.xml`, `k3s.log` and `lifecycle.prof` as test artifacts.
 
 The second run was 165.66 seconds (19%) shorter overall; image import was 83.45 seconds (16%) shorter.
-These are individual runs on shared RBE hosts, not a controlled benchmark or an estimate of steady-state
-CI latency. Image import still takes about 7.4 minutes and dominates setup.
+These were individual shared-RBE runs, not a controlled benchmark or an estimate of steady-state CI latency.
+This comparison predates the shared interpreter-layer prototype below.
 
-**Performance TODO:** investigate containerd image import/unpack to reduce the current 444.97-second
-import portion of the 704.32-second four-test run (compared with the 869.98-second archive-import
-baseline). Keep the lifecycle assertions intact and do not raise the test timeout to mask the cost;
-the two shared-RBE measurements are observations, not a controlled speedup claim. Deployment readiness
-accounts for part of the remaining setup time.
+### Shared interpreter layer, 2026-10-15
+
+Both runs passed the same four lifecycle tests with the same temporary cProfile wrapper. The baseline
+uses effective source tree `26755c97d4` plus that wrapper. The prototype uses the same tree, the
+shared-runtime implementation in this PR, and the identical wrapper. BuildBuddy records different
+hosted checkout SHAs (`25eec1a4ff` and `2e3a416799`) because each run applied its retained workspace
+delta; the local benchmark worktree preserves the effective base and implementation diff. The
+`test_lifecycle.py` input digest (`1e969333`, 5,164 bytes) and test executable digest (`b83e8eba`,
+12,129 bytes) match across both invocations, confirming the lifecycle harness itself did not change.
+The profiler wrapper is temporary and is not part of this PR.
+
+| Measurement       |   Baseline | Shared runtime | Change |
+| ----------------- | ---------: | -------------: | -----: |
+| Bazel test target | 1007.585 s |      601.612 s | −40.3% |
+| Pytest session    |   956.92 s |       559.30 s | −41.6% |
+| cProfile total    |  959.340 s |      563.184 s | −41.3% |
+| `running_stack`   |  891.638 s |      507.908 s | −43.0% |
+| `import_images`   |  578.430 s |      220.195 s | −61.9% |
+
+The [baseline invocation](https://app.buildbuddy.io/invocation/f23c3f8b-b66d-407e-9c4e-f36216228d4e)
+and [prototype invocation](https://app.buildbuddy.io/invocation/f880b028-836b-477b-9bae-ac325ef255e1)
+ran their TestRunner actions on the same RBE worker (`f05088d0-ba91-49d8-b520-b21739b84c12`). This is
+one matched pair, not a multi-run estimate: it supports an observed improvement for this fixture, but
+does not establish steady-state CI savings. The profile shows image import fell by 358.235 seconds;
+readiness was not timed as a separate phase, so this does not claim a readiness improvement.
+
+Image import still takes 220.195 seconds in this run. The next performance work should profile its
+remaining OCI/containerd import and unpack cost, while keeping lifecycle assertions and timeouts
+unchanged. Do not use this one pair to justify moving the expensive workflow into general CI.
 
 The separate workflow runs only the model-free lifecycle target. Its bare-cluster fixtures do not
 provide real KubeVirt, Cilium, ClusterIP routing or OIDC/Dex coverage, and this target is not
@@ -64,9 +90,10 @@ already in the cache), with the changes below. Breaks found on the way, in order
 
 - **Kernel sysctls:** the kubelet needs every `/proc/sys/kernel` entry present in the shadow copy, not only
   the keys ones.
-- **Disk:** the 16 Bazel-built service images are 3.4 GiB compressed across 46 layers, almost none shared
-  (`py_image_layer` puts the interpreter under each binary's own `.runfiles` tree), and containerd needs about
-  1 GiB per image. The default 12 GiB disk fails on the 10th image; `EstimatedFreeDiskBytes=50GB` fixes it.
+- **Disk:** the original 16-image spike inventory was 3.4 GiB compressed across 46 layers, with Python
+  interpreters duplicated under each binary's `.runfiles` tree. The shared-runtime prototype moves those
+  interpreter files into one layer reused by the Python images; containerd still needs about 1 GiB per image.
+  The default 12 GiB disk failed on the 10th image; `EstimatedFreeDiskBytes=50GB` fixes it.
 - **No ClusterIP:** without kube-proxy, Pods reach neither the `kube-dns` Service nor `kubernetes.default`.
   CoreDNS runs with `hostNetwork` on the node IP, the kubelet's `cluster-dns` points at it, and every
   container gets `KUBERNETES_SERVICE_HOST`/`PORT` for the node IP.
