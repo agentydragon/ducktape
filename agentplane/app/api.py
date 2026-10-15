@@ -852,10 +852,10 @@ async def thread_command(
     thread_id: UUID,
     body: dict[str, object],
 ) -> dict[str, object]:
-    """Return the runner's exact durable CommandAdmitted EventEntry.
+    """Return the Dispatcher's durable result, or an archived admission for an exact retry.
 
-    The app archive may still lag this receipt. An exact retry is served from the archive
-    when present, or deduplicated by the runner; neither response promises native effect.
+    The Dispatcher may still be delivering the command. Neither a queued result nor runner
+    admission promises a native effect.
     """
     command = runner_bridge.parse_command(body)
     if not command.command_id or command.WhichOneof("operation") is None:
@@ -1020,8 +1020,7 @@ _ERROR_STATUS: dict[type[Exception], int] = {
     # says it is not. The body parsed and named something that does not resolve.
     UnknownPolicySetError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     SandboxNotReachableError: status.HTTP_409_CONFLICT,
-    runner_bridge.RunnerAdmissionTimeoutError: status.HTTP_504_GATEWAY_TIMEOUT,
-    runner_bridge.DispatcherNotConfiguredError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    runner_bridge.DispatcherRequestTimeoutError: status.HTTP_504_GATEWAY_TIMEOUT,
     runner_bridge.DispatchNotFoundError: status.HTTP_404_NOT_FOUND,
     runner_bridge.SessionOpeningNotFoundError: status.HTTP_404_NOT_FOUND,
     # The runner or the Sandbox's state refused a lifecycle request or a command: an unknown session.

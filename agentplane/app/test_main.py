@@ -34,6 +34,7 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
+from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS, TEST_REASONING_EFFORTS
 from agentplane.app.testing.system_status import answering_system_status
@@ -51,6 +52,7 @@ from util.net import pick_free_port
 APP_ENVIRONMENT = {
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
     "AGENTPLANE_RUNNER_GATEWAY_TARGET": "runner-gateway.test:8080",
+    "AGENTPLANE_SESSION_DISPATCHER_TARGET": "session-dispatcher.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET": "{sandbox}-control.{namespace}.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TOKEN_FILE": "/tokens/runner-gateway",
     "AGENTPLANE_HISTORY_SERVICE_TARGET": "history-service.test:8080",
@@ -143,7 +145,7 @@ def test_the_two_settings_models_read_environment_and_config_without_colliding(
     assert settings.runner_gateway_request_timeout_s == 20
     assert settings.runner_gateway_lifecycle_timeout_s == 310
     assert (settings.port, settings.token_audience) == (8080, "agentplane")
-    assert settings.session_dispatcher_target is None
+    assert settings.session_dispatcher_target == "session-dispatcher.test:8080"
     assert settings.session_dispatcher_open_sessions is False
     assert str(settings.session_dispatcher_token_file) == "/var/run/secrets/agentplane-session-dispatcher/token"
     assert oidc.redirect_uri == "https://app.test.invalid/auth/callback"
@@ -250,6 +252,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
     history_client: HistoryServiceClient,
+    dispatcher: GatewayBackedDispatcher,
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
@@ -260,7 +263,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
     await event_logs.seed(SANDBOX, "shutdown-session")
     app = create_app(
         inventory,
-        RunnerBridge(runners=runners, event_logs=event_logs, content=content),
+        RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher),
         store,
         TEST_MODELS,
         egress,

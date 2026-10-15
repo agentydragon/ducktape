@@ -66,7 +66,7 @@ class RunnerGatewayClient:
         channel: grpc.aio.Channel,
         *,
         token_file: Path,
-        command_admission_timeout_s: float,
+        command_admission_timeout_s: float = 20,
         request_timeout_s: float,
         control: SandboxControlClient,
     ) -> None:

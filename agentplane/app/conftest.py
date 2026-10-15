@@ -27,6 +27,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.sandbox_access import SandboxAccess
+from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.replication_source import Placements
@@ -261,10 +262,20 @@ def runners(live_index: LiveIndex, gateway: RunnerGatewayClient) -> RunnerDirect
 
 
 @pytest.fixture
+def dispatcher(runners: RunnerDirectory) -> GatewayBackedDispatcher:
+    """The Dispatcher interface for app tests whose scenarios need a live local runner."""
+    return GatewayBackedDispatcher(runners)
+
+
+@pytest.fixture
 def bridge(
-    runners: RunnerDirectory, event_logs: SeededEventLogStore, content: ContentStore, database_updates: WakeupListener
+    runners: RunnerDirectory,
+    dispatcher: GatewayBackedDispatcher,
+    event_logs: SeededEventLogStore,
+    content: ContentStore,
+    database_updates: WakeupListener,
 ) -> RunnerBridge:
-    return RunnerBridge(runners=runners, event_logs=event_logs, content=content)
+    return RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
 
 
 @pytest.fixture

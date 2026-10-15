@@ -36,6 +36,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
+from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.testing.system_status import answering_system_status
@@ -243,7 +244,10 @@ async def _serve(
                 ),
             )
             store = ThreadStore(engine, summaries, gateway=gateway)
-            bridge = RunnerBridge(runners=RunnerDirectory(index, gateway), event_logs=event_logs, content=content)
+            runners = RunnerDirectory(index, gateway)
+            bridge = RunnerBridge(
+                runners=runners, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(runners)
+            )
             history_watch = HistoryWatch(
                 watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
             )

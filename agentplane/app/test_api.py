@@ -27,10 +27,12 @@ from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_access import SandboxAccess
+from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -39,9 +41,8 @@ from agentplane.grpc_calls import dial
 from agentplane.grpc_serving import serving
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2, session_dispatcher_pb2
+from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner.harness import Harness
-from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.runner_gateway.testing.backend import backend
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.inventory import SandboxInventory
@@ -599,12 +600,11 @@ async def test_a_runner_that_has_not_connected_is_a_503(
     live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
     with backend(custom_objects, core_v1, tmp_path / "failure-token", database_url=service_history_db_url) as endpoint:
         async with dial(endpoint.target) as channel:
+            runners = RunnerDirectory(live_index, endpoint.gateway(channel))
             app = create_app(
                 inventory,
                 RunnerBridge(
-                    runners=RunnerDirectory(live_index, endpoint.gateway(channel)),
-                    event_logs=event_logs,
-                    content=content,
+                    runners=runners, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(runners)
                 ),
                 store,
                 TEST_MODELS,
@@ -629,48 +629,69 @@ async def test_a_runner_that_has_not_connected_is_a_503(
 
 
 @asynccontextmanager
-async def unanswered_command_service(token_file: Path) -> AsyncIterator[tuple[RunnerGatewayClient, asyncio.Queue[str]]]:
-    class UnansweredGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
+async def unanswered_dispatcher_service(
+    token_file: Path,
+) -> AsyncIterator[tuple[SessionDispatcherClient, asyncio.Queue[str]]]:
+    class UnansweredDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         @override
-        async def BatchGetSessionSandboxes(
-            self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
-        ) -> runner_gateway_pb2.BatchGetSessionSandboxesResponse:
-            return runner_gateway_pb2.BatchGetSessionSandboxesResponse(
-                sessions=[
-                    runner_gateway_pb2.SessionSandbox(session_id=id, sandbox="live") for id in request.session_ids
-                ]
-            )
-
-        @override
-        async def SubmitCommand(
-            self, request: runner_gateway_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
-        ) -> runner_gateway_pb2.SubmitCommandResponse:
+        async def SubmitInput(
+            self, request: session_dispatcher_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
+        ) -> session_dispatcher_pb2.SubmitInputResponse:
             try:
                 await asyncio.Event().wait()
             finally:
-                cancelled.put_nowait(request.destination.session_id)
-            raise AssertionError("the command is never answered")
+                cancelled.put_nowait(request.session_id)
+            raise AssertionError("the dispatch is never answered")
 
     cancelled: asyncio.Queue[str] = asyncio.Queue()
     server = grpc.aio.server()
-    runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(UnansweredGateway(), server)
+    session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(UnansweredDispatcher(), server)
     await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
     async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
-        yield (
-            RunnerGatewayClient(
-                channel,
-                token_file=token_file,
-                command_admission_timeout_s=1,
-                request_timeout_s=5,
-                control=SandboxControlClient(
-                    control_target=f"127.0.0.1:{port}",
-                    token_file=token_file,
-                    request_timeout_s=5,
-                    lifecycle_timeout_s=5,
-                ),
-            ),
-            cancelled,
-        )
+        yield (SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=1), cancelled)
+
+
+@asynccontextmanager
+async def queued_dispatcher_service(token_file: Path) -> AsyncIterator[SessionDispatcherClient]:
+    class QueuedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
+        @override
+        async def SubmitInput(
+            self, request: session_dispatcher_pb2.SubmitInputRequest, _context: grpc.aio.ServicerContext
+        ) -> session_dispatcher_pb2.SubmitInputResponse:
+            return session_dispatcher_pb2.SubmitInputResponse(
+                dispatch=session_dispatcher_pb2.Dispatch(
+                    command_id=request.command_id,
+                    session_id=request.session_id,
+                    sandbox=request.sandbox,
+                    sandbox_uid="test-sandbox-uid",
+                    operation=session_dispatcher_pb2.OPERATION_SUBMIT_INPUT,
+                    state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+                    reason="sandbox_resuming",
+                )
+            )
+
+    server = grpc.aio.server()
+    session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(QueuedDispatcher(), server)
+    await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
+        yield SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=5)
+
+
+async def test_bridge_returns_the_dispatcher_queued_receipt_over_grpc(
+    tmp_path: Path, bridge: RunnerBridge, event_logs: SeededEventLogStore
+) -> None:
+    thread_id = await event_logs.seed("live", str(uuid4()))
+    command = command_pb2.Command(
+        command_id="queued-at-dispatcher", submit_input=command_pb2.SubmitInput(text="wait for resume")
+    )
+    async with queued_dispatcher_service(tmp_path / "queued-token") as dispatcher:
+        bridge._dispatcher = dispatcher
+        result = await bridge.command(thread_id, command, sandbox="live")
+
+    assert isinstance(result, session_dispatcher_pb2.Dispatch)
+    assert result.command_id == command.command_id
+    assert result.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+    assert result.reason == "sandbox_resuming"
 
 
 async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
@@ -684,6 +705,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
+    runners: RunnerDirectory,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     event_logs: SeededEventLogStore,
@@ -696,10 +718,10 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
     session_id = str(uuid4())
     thread_id = await event_logs.seed("live", session_id)
-    async with unanswered_command_service(tmp_path / "wedged-token") as (service, cancelled):
+    async with unanswered_dispatcher_service(tmp_path / "wedged-token") as (dispatcher, cancelled):
         app = create_app(
             inventory,
-            RunnerBridge(runners=RunnerDirectory(live_index, service), event_logs=event_logs, content=content),
+            RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher),
             store,
             TEST_MODELS,
             egress,

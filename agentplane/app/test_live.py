@@ -56,6 +56,7 @@ from agentplane.app.operator_sessions import (
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
+from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
@@ -309,6 +310,7 @@ def app(
     egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
+    dispatcher: GatewayBackedDispatcher,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     tmp_path: Path,
@@ -328,7 +330,9 @@ def app(
     database_updates = create_database_updates(engine.url)
     return create_app(
         inventory,
-        RunnerBridge(runners=RunnerDirectory(live_index, gateway), event_logs=event_logs, content=content),
+        RunnerBridge(
+            runners=RunnerDirectory(live_index, gateway), event_logs=event_logs, content=content, dispatcher=dispatcher
+        ),
         ThreadStore(engine, summaries, gateway=gateway),
         TEST_MODELS,
         egress,
