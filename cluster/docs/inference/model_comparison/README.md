@@ -73,3 +73,7 @@ labels describe separate tests, not a claim that the short-prompt decode rate
 holds over that full window. Estimated AA indices use hollow markers.
 
 ![Rugged intelligence versus decode speed](../rugged_plot/intelligence_speed.svg)
+
+Vertical reference lines use the same dated CSV: green dashed lines for OpenAI
+and terracotta dotted lines for Anthropic, with model names, scores, and estimate
+flags in the legend. These references have no rugged throughput measurement.
