@@ -358,7 +358,7 @@ py_test(
         "-p",
         "util.testing.pytest_logfile",
         "--log-file-level=DEBUG",
-        "--log-file-format=%(asctime)s.%(msecs)03d %(levelname)-8s %(name)s:%(filename)s:%(lineno)d %(message)s",
+        "--log-file-format=%(asctime)s.%(msecs)03d|%(levelname)-8s|%(name)s:%(filename)s:%(lineno)d|%(message)s",
         "--log-file-date-format=%Y-%m-%dT%H:%M:%S",
     ],
     data = [
