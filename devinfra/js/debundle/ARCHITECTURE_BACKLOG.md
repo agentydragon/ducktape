@@ -16,7 +16,7 @@ are deleted, not struck through.
    one-function modules.
 2. **The same words name different layers.** See [Vocabulary / naming debt](#vocabulary--naming-debt)
    below. Fix the highest-friction local ambiguity first; avoid a project-wide
-   rename that changes spec, report, or CLI wire formats.
+   rename without updating the live spec, report, and CLI readers together.
 3. **Graph and lowering boundaries are permissive.** The owner graph,
    incremental quotient, realizability index, and emitted schedule have
    related but separately maintained state. Broad crate-internal visibility
@@ -58,12 +58,11 @@ scan.
 ### `owner` → `node` rename (deferred)
 
 Folding `OwnerId`/`OwnerIdx` into one `NodeId`, renaming `OwnerGraph*` →
-`NodeGraph*`, and the wire ids `owner:N` → `node:N`. Deliberately not
-done in the naming/identity sweep: "owner" is a coherent, pervasive
+`NodeGraph*`, and the report/CLI ids `owner:N` → `node:N`. Deliberately
+not done in the naming/identity sweep: "owner" is a coherent, pervasive
 term (~1100+ uses) and an owner genuinely _is_ a graph node, so a
-half-rename worsens consistency while a full rename breaks the wire
-format and diverges the frozen `props/specimens` snapshot. Revisit only
-as a deliberate wholesale rename.
+half-rename worsens consistency. Revisit as a deliberate wholesale rename
+of the live definitions, consumers, and documentation.
 
 ## Vocabulary / naming debt
 
@@ -86,8 +85,8 @@ as a deliberate wholesale rename.
   becomes an anonymous statement in some callers, while materialization
   carries `anonymous_statement_ordinals` and a sentinel `ModuleId`. Consider
   an explicit kind or destination type after first pinning its invariants;
-  see the discussion below. Do **not** casually rename `OwnerId` to `NodeId`:
-  that breaks wire IDs (see deferred item).
+  see the discussion below. Coordinate an `OwnerId` → `NodeId` rename across
+  live consumers (see deferred item).
 
 ## Duplicated calculations
 
