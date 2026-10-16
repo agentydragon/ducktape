@@ -1840,9 +1840,9 @@ queued acceptance cannot prove membership. Native child IDs are harness-chosen: 
 stable runner-chosen public mappings with store and parent identity before publication, and separate visibility
 from independent control. Use `NATIVE_SUBAGENT_EXPOSURE` for which children to project and the merged
 Claude characterization for process capability. The operator's private remote-control RE finding
-reports outbound session-start polling with one Claude process launched per Session; `RemoteIO`
-shares structured input parsing with stream-json but adds remote framing. This is static source
-analysis, not a runtime process-count test or proof that Claude can never multiplex by another
+reports outbound HTTP session-start polling with one Claude process launched per Session speaking
+RemoteIO, characterized as essentially the existing stream-json stdio protocol. This is an
+attributed finding, not a runtime process-count test or proof that Claude can never multiplex by another
 route. Use one Claude process per root Session and Codex's demonstrated shared app-server as current
 adapter baselines, without exposing process routing or imposing one process per store. No
 one-versus-many store or shared-store safety decision is made here.

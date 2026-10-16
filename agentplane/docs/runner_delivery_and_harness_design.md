@@ -557,14 +557,13 @@ process leaves the other's request usable. Different credentials, sharing one co
 across processes, and concurrent multi-process crash recovery remain untested. The existing
 single-session `--resume` tests cover restart of one root in a new process.
 
-The operator also reports a static finding from the private `gaffer-private` Claude remote-control
-orchestrator analysis: its daemon polls outbound HTTP for session-start work and launches each
-Session in its own Claude process. The pinned Claude Code 2.1.292 `RemoteIO` analysis in that repo
-shows that remote delivery feeds the same structured input parser as stream-json, with additional
-SSE/HTTP framing and accounting. The daemon finding has not been reproduced as a runtime
-process-count test here. It gives no process-sharing benefit to adopt that mode solely for
-multiplexing. Use one Claude process per root Session as the present allocation baseline and allow
-Codex to use its demonstrated shared app-server, both behind the same public Session interface.
+The operator reports a finding from the private Claude remote-control investigation: an
+orchestrator daemon polls outbound HTTP for session-start work and launches each Session in its
+own Claude process speaking RemoteIO, which the operator describes as essentially the existing
+stream-json stdio protocol. This has not been reproduced as a runtime process-count test here.
+It gives no process-sharing benefit to adopt that mode solely for multiplexing. Use one Claude
+process per root Session as the present allocation baseline and allow Codex to use its
+demonstrated shared app-server, both behind the same public Session interface.
 Neither process policy belongs in the public address or requires one process per store; another
 Claude mode could change the evidence later.
 
