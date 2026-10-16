@@ -282,7 +282,6 @@ async def test_dispatcher_queued_while_sandbox_wakes(
     await view.check(context="fixture ready")
     page = view.page
     await expect(page.get_by_role("textbox", name="Message")).to_be_enabled()
-    await expect(page.locator('.agentplane-thread-status-indicator[data-status="suspended"]')).to_be_visible()
     await expect(
         page.get_by_text(
             "Sandbox is suspended. Wake on message is on; submitted messages will queue while it wakes.", exact=True

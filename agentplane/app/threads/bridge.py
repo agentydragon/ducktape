@@ -18,6 +18,7 @@ from agentplane.app.threads.view.content import ContentStore
 
 # Not `runner_pb2`: that name is the runner's protocol here.
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.runner.harness import Harness
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -87,6 +88,42 @@ class RunnerBridge:
         if opening.sandbox != sandbox:
             raise SessionOpeningNotFoundError(str(session_id))
         return opening
+
+    async def resume_thread(
+        self, thread_id: UUID, *, sandbox: str, expected_harness: Harness | None, expected_cwd: str | None
+    ) -> runner_pb2.Attached:
+        """Resume the native session already bound to this Thread in its History-backed Sandbox.
+
+        The expectations are the Thread's view of its harness and workspace; None, before any
+        runner attachment is folded, leaves nothing to check the retained spec against.
+        The Runner Gateway still verifies the current Sandbox UID and the Session's registered
+        incarnation before attaching.
+        """
+        if not await self._event_logs.exists(thread_id):
+            raise ThreadNotFoundError(thread_id)
+        snapshot = await self._event_logs.feed_state(thread_id)
+        if snapshot is not None and isinstance(snapshot.end, FeedError):
+            raise ThreadStateError(f"runner history is rejected: {snapshot.end.message}")
+        session_id = str(thread_id)
+        sessions = await self.list_sessions(sandbox)
+        summary = next((row for row in sessions if row.session_id == session_id), None)
+        if summary is None:
+            raise ThreadStateError(f"runner has no retained session {session_id!r}; this Thread cannot be resumed")
+        if summary.setup_state in (runner_pb2.SETUP_STATE_FAILED, runner_pb2.SETUP_STATE_INTERRUPTED):
+            raise ThreadStateError("Thread setup failed or was interrupted; create a new Thread to try again")
+        if (
+            summary.spec.harness not in (runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX)
+            or not summary.spec.cwd
+            or not summary.spec.model
+        ):
+            raise ThreadStateError(f"runner session {session_id!r} has no recoverable session spec")
+        if (expected_harness is not None and runner_pb2.Harness.Name(summary.spec.harness) != expected_harness) or (
+            expected_cwd is not None and summary.spec.cwd != expected_cwd
+        ):
+            raise ThreadStateError("runner's retained session spec does not match this Thread's harness and workspace")
+        # The Thread mapping already exists. Do not make runner Resume depend on archive
+        # catch-up; its feed exposes that later, and a stale view remains non-authoritative.
+        return await self._runners.client(sandbox).resume(session_id)
 
     async def command(
         self, thread_id: UUID, command: command_pb2.Command, *, sandbox: str

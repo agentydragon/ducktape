@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast, override
 from uuid import UUID, uuid4
 
@@ -538,6 +539,33 @@ async def test_runner_backed_sandbox_session_inventory_route_is_removed(
     operations = app.openapi()["paths"]["/sandboxes/{name}/sessions"]
     assert "get" not in operations
     assert "post" in operations
+
+
+@pytest.mark.parametrize("model_catalog", [CODEX_ONLY], indirect=True)
+async def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
+    client: httpx.AsyncClient, bridge: RunnerBridge, store: ThreadStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert (await client.get("/models")).json()["harnesses"]["HARNESS_CLAUDE"] == []
+    thread_id = UUID("be4017d0-8994-4a36-b58c-5e6e264d0119")
+
+    async def get_thread(_thread_id: UUID) -> Any:
+        return SimpleNamespace(sandbox="live", archived=False, harness=Harness.CLAUDE, cwd="/w")
+
+    calls: list[tuple[UUID, Harness | None, str | None]] = []
+
+    async def resume_thread(
+        thread: UUID, *, sandbox: str, expected_harness: Harness | None, expected_cwd: str | None
+    ) -> runner_pb2.Attached:
+        assert sandbox == "live"
+        calls.append((thread, expected_harness, expected_cwd))
+        return runner_pb2.Attached(session_id="regular-session")
+
+    monkeypatch.setattr(store, "get_thread", get_thread)
+    monkeypatch.setattr(bridge, "resume_thread", resume_thread)
+    response = await client.post(f"/threads/{thread_id}/resume")
+
+    assert response.status_code == 200, response.text
+    assert calls == [(thread_id, Harness.CLAUDE, "/w")]
 
 
 @pytest.mark.parametrize("model_catalog", [CODEX_ONLY], indirect=True)

@@ -27,6 +27,7 @@ import {
   getThread,
   models,
   modelsForHarness,
+  resumeThread,
   type ModelOption,
   type SandboxView,
   type ThreadView,
@@ -1076,6 +1077,10 @@ function ProjectedSessionBody({
     thread.launch_outcome !== "LAUNCH_OUTCOME_PENDING" &&
     operational?.status !== "failed";
   const canSend = running || (canSendWhileSuspended && resumableSession);
+  const canResume =
+    available && resumableSession && (operational?.status !== "active" || controls?.harness_state !== "running");
+  const [resuming, setResuming] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const activeTurn = controls?.active_turn_id ?? null;
   const threadsLive = useRequiredThreadsLive();
   const status = threadStatusFromSnapshot(
@@ -1182,6 +1187,19 @@ function ProjectedSessionBody({
     else submitting.current = false;
   }
 
+  async function resume(): Promise<void> {
+    if (!canResume || resuming) return;
+    setResuming(true);
+    setResumeError(null);
+    try {
+      await resumeThread(threadId);
+    } catch (reason: unknown) {
+      setResumeError(displayableError(reason));
+    } finally {
+      setResuming(false);
+    }
+  }
+
   function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
     if (event.key !== "Enter") return;
     event.preventDefault();
@@ -1231,6 +1249,11 @@ function ProjectedSessionBody({
             {commands.submissionError}
           </Text>
         )}
+        {resumeError && (
+          <Text role="alert" c="red">
+            Could not resume harness: {resumeError}
+          </Text>
+        )}
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}
@@ -1244,6 +1267,11 @@ function ProjectedSessionBody({
         />
         <Group className="agentplane-composer-controls" justify="space-between" gap="xs" wrap="nowrap" pb="xs">
           <Group className="agentplane-composer-settings" gap="xs" wrap="nowrap">
+            {canResume && (
+              <Button size="xs" aria-label="Resume harness" loading={resuming} onClick={() => void resume()}>
+                Resume harness
+              </Button>
+            )}
             <Select
               aria-label="Model"
               className="agentplane-composer-model"
@@ -1426,7 +1454,7 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
   if (sandbox.phase === "Suspended" && sandbox.operating_mode === "Suspended" && inventoryFresh) {
     return sandbox.wake_on_send
       ? "Sandbox is suspended. Wake on message is on; submitted messages will queue while it wakes."
-      : "Sandbox is suspended. Wake on message is off; submitted messages stay queued until you resume the Sandbox manually.";
+      : "Sandbox is suspended. Wake on message is off; submitted messages stay queued until you resume it manually.";
   }
   return `Last observed Sandbox and Pod: ${sandboxSummary(sandbox).label}. Showing retained Thread history; controls are disabled.`;
 }

@@ -366,11 +366,11 @@ async def test_session_streaming_interleaved(view: VisualPage, app: AgentplaneFi
     await view.capture(target=view.page.locator(".agentplane-shell-main-content"))
 
 
-async def test_session_stopped(view: VisualPage, app: AgentplaneFixture) -> None:
+async def test_session_resume(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.ENDED_ATTACHMENT)
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[aria-label="Harness not running"]', state="attached")
-    await expect(view.page.get_by_role("textbox", name="Message")).to_be_disabled()
+    await view.page.wait_for_selector('[aria-label="Resume harness"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture()
 

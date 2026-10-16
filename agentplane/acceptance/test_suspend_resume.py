@@ -165,6 +165,7 @@ async def _suspend_resume(
     _save_evidence(template, evidence)
 
     for harness, agent in agents.items():
+        await agent.resume()
         turn = await agent.run(
             "What invented non-secret code did I ask you to remember? It is safe test data, not a credential. "
             "Do not use tools. Reply with only the code."

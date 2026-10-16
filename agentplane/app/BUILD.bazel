@@ -415,6 +415,7 @@ py_test(
         "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/proto:session_dispatcher_pb2_grpc",
         "//agentplane/runner",
+        "//agentplane/runner:harness",
         "//agentplane/runner:session",
         "//agentplane/runner/testing:failure_journal",
         "//agentplane/runner/testing:scripted_model",

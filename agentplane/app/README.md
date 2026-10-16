@@ -60,7 +60,7 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   fields.
 - Sandbox provisioning uses the shared `agentplane/sandboxes` inventory directly as the requesting
   operator. Session openings and commands use `SessionDispatcherClient`; the Sandbox control client
-  reaches current-incarnation live checks through the Runner Gateway.
+  reaches current-incarnation live checks and explicit native resume through the Runner Gateway.
   The app reads Kubernetes projections for UI updates. Its Gateway placement API client has no
   production caller after #10622, pending pinned-caller review.
 - `egress_access.py`: egress-policy/binding projections for the UI, and the operator's grants and
@@ -164,10 +164,8 @@ A Session gets its Thread from the History Service's watch, which names each Ses
 on the runner's first push; every stream resumes after the last one the replica opened, and a new
 process starts from the first. Opening a Thread does not restart its harness. Explicit Open starts or resumes it without waiting for its history;
 its feed reads ended while the harness is stopped and active again once the resumed harness reports
-started. A Thread page sends commands through the Dispatcher. A submitted message can restart a
-stopped harness without a separate native-resume action. The Sandbox remains visibly suspended in
-the UI while its composer can queue a message; if wake on message is enabled, the Dispatcher wakes
-the Sandbox to deliver it. Explicit Sandbox resume remains a separate control.
+started. On a Thread page, **Resume harness** opens that Thread's existing runner session using its retained
+runner-owned spec; it cannot create a new Thread or substitute another harness.
 
 After interruption/resume, runner `ConversationReconciled` events give each affected item a
 `recovery` disposition and `recovery_reason`. The fold retains absent/unknown observations;

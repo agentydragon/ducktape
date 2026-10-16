@@ -11,7 +11,15 @@ import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import type * as ClientModule from "../client";
-import { command, commandDispatch, getThread, models, type SandboxView, type ThreadView } from "../client";
+import {
+  command,
+  commandDispatch,
+  getThread,
+  models,
+  resumeThread,
+  type SandboxView,
+  type ThreadView,
+} from "../client";
 import { historyRows, rowKey } from "./history_rows";
 import { SandboxesLiveProvider, ThreadsLiveProvider, useRequiredThreadsLive } from "../live";
 import { LocalCommands } from "./local_commands";
@@ -40,6 +48,7 @@ vi.mock("../client", async (importOriginal) => ({
   commandDispatch: vi.fn(),
   getThread: vi.fn(),
   models: vi.fn(),
+  resumeThread: vi.fn(),
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -118,6 +127,7 @@ beforeEach(() => {
     harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
   });
   vi.mocked(command).mockReturnValue(new Promise(() => {}));
+  vi.mocked(resumeThread).mockResolvedValue({} as never);
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
@@ -384,12 +394,11 @@ it.each([true, false])(
     const container = await render(sealedThread);
     const field = composer(container);
     expect(field.disabled).toBe(false);
-    expect(container.querySelector('.agentplane-thread-status-indicator[data-status="suspended"]')).not.toBeNull();
     expect(button(container, "Send").disabled).toBe(true);
     expect(container.textContent).toContain(
       wakeOnSend
         ? "Wake on message is on; submitted messages will queue while it wakes."
-        : "Wake on message is off; submitted messages stay queued until you resume the Sandbox manually."
+        : "Wake on message is off; submitted messages stay queued until you resume it manually."
     );
 
     await type(field, "Continue after resume");
@@ -468,6 +477,36 @@ it("sends the draft from the Send button, which an empty draft disables", async 
   await type(composer(container), "hello");
   await act(async () => button(container, "Send").click());
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
+});
+
+it("resumes the existing Thread and restores sending on the open and reloaded pages", async () => {
+  const ended = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+  const original = await render(ended);
+  expect(composer(original).disabled).toBe(true);
+  await act(async () => button(original, "Resume harness").click());
+  expect(resumeThread).toHaveBeenCalledWith(THREAD.id);
+
+  const running = threadState();
+  await rerender(original, running);
+  expect(composer(original).disabled).toBe(false);
+  await type(composer(original), "from the open page");
+  await press(composer(original), {});
+
+  const reloaded = await render(running);
+  expect(composer(reloaded).disabled).toBe(false);
+  await type(composer(reloaded), "from the reloaded page");
+  await press(composer(reloaded), {});
+  expect(sentOperations()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ case: "submitInput", value: expect.objectContaining({ text: "from the open page" }) }),
+      expect.objectContaining({
+        case: "submitInput",
+        value: expect.objectContaining({ text: "from the reloaded page" }),
+      }),
+    ])
+  );
+  expect(new Set(vi.mocked(command).mock.calls.map(([, value]) => value.commandId)).size).toBe(2);
+  expect(vi.mocked(command).mock.calls.every(([threadId]) => threadId === THREAD.id)).toBe(true);
 });
 
 it("shows the thread id in the More menu, not inline once a name is set", async () => {
@@ -664,7 +703,7 @@ it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | n
     "a suspended sandbox",
     [SUSPENDED],
     {},
-    "Sandbox is suspended. Wake on message is off; submitted messages stay queued until you resume the Sandbox manually.",
+    "Sandbox is suspended. Wake on message is off; submitted messages stay queued until you resume it manually.",
   ],
   ["a deleted sandbox", [], {}, "Sandbox no longer exists."],
   ["a running sandbox on a stale inventory", [RUNNING], { fresh: false }, null],
