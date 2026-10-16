@@ -1403,8 +1403,8 @@ cancellation, duplicate opens, sender and replica failure, and retries. Runner-l
 protects work only after the runner has committed admission; it does not accept work while that runner
 is absent. Inventory all database owners before making any CNPG claim: current manifests declare the
 shared cluster databases `app`, `sandbox_service`, `actions`, `egress`, `notifications` and the
-Dispatcher; testing and staging SQL checks confirmed that `sandbox_commands` and its role are absent.
-Indexing has a separate PostgreSQL dependency.
+Dispatcher; the retired `sandbox_commands` database is not part of the current manifests. Indexing
+has a separate PostgreSQL dependency.
 
 **Recommendation for review:** preserve the queue's durable acceptance and wake-to-deliver contract.
 If a direct mode is considered, keep it a separate online-only contract with explicit idempotent

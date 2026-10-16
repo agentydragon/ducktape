@@ -33,9 +33,9 @@ Event archive and the Dispatcher queue are independent state owners.
 ## Database artifact cleanup
 
 The database-drop change removed the Gateway database resource, URL wiring, and migration init
-container from current manifests. This cleanup removes the now-unused serving setting, migration
-sources and test fixture, and the old migration-image publication path. It retains the shared CNPG
-PostgreSQL Cluster and every other service database.
+container from current manifests. This cleanup removes the unused serving setting, migration sources
+and test fixture, and the old migration-image publication path. It retains the shared CNPG PostgreSQL
+Cluster and every other service database.
 
 The HTTP/client paths likewise have distinct effects: app `POST /sandboxes/{name}/resume`
 changes a Sandbox desired state, whereas `POST /threads/{thread_id}/resume` explicitly resumes
@@ -47,12 +47,6 @@ its status; `GET /sandboxes/{name}/sessions/{session_id}/opening`
 (`client.ts::getSessionOpening`) polls a separate opening. None is a duplicate command sender.
 The browser's old Sandbox session GET is already removed; retained Threads come from History.
 
-Testing and staging SQL checks confirmed that the `sandbox_commands` database and role are absent;
-this cleanup removes the temporary CNPG role tombstone. The remaining
-[Gateway database-drop gate](../plans/task_dag.md#12-the-runner-gateway-serves-the-runners-own-service)
-tracks live verification that the old Secret and migration init container are gone. Merged source
-changes alone do not prove that rollout state.
-
 ## Source links
 
 - [RunnerControl and the reverse stream](runner_control.md) and [RunnerControl proto](../proto/runner_control.proto)
@@ -60,4 +54,4 @@ changes alone do not prove that rollout state.
 - [Session Dispatcher API](../proto/session_dispatcher.proto)
 - [Gateway proxy implementation](../runner_gateway/runner_proxy.py)
 - [Gateway runtime](../runner_gateway/README.md)
-- [Rollout and database-drop gates](../plans/task_dag.md#12-the-runner-gateway-serves-the-runners-own-service)
+- [Gateway plan](../plans/task_dag.md#12-the-runner-gateway-serves-the-runners-own-service)

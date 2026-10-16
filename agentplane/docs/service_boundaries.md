@@ -63,7 +63,7 @@ presentation state and projections, but those must not become hidden sources of 
   Proxy and read-only Sandbox inventory. It does not own Session records or command admission. The
   app and Dispatcher use the proxy for live Runner RPCs; the Dispatcher owns sender-facing durable
   command admission and delivery state. The retired `sandbox_commands` database resource is absent
-  from current manifests, and testing and staging SQL checks confirmed the database and role are gone.
+  from current manifests.
 - **History Service:** the Session Event archive, the ingress runners push their journals to, the
   Thread fold of each Session, and the read API over both. It retains the existing `sandbox_service`
   PostgreSQL database and its authored history.
@@ -87,11 +87,9 @@ uses it for quiesce. The Session Dispatcher owns durable sender-facing command a
 No backend needs the app process to keep serving these operations.
 
 The Gateway-specific Session API, registry runtime, and database resource are removed from current
-source and manifests. Testing and staging SQL checks confirmed that the retired database and role
-are absent; the migration-artifact cleanup still verifies the old Secret and init-container rollout.
-Notification-triggered wake and durable acceptance for offline destinations are separate features
-with their own rollout gates. Do not create another runner-command queue as a side effect of a
-service-boundary change.
+source and manifests. Notification-triggered wake and durable acceptance for offline destinations are
+separate features with their own rollout gates. Do not create another runner-command queue as a side
+effect of a service-boundary change.
 
 Runner journals remain durable on runner state volumes. Runners push them to the History Service,
 whose Session Event archive outlives the runner volume; the app reads history from that archive and
