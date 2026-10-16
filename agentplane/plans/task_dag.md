@@ -1510,7 +1510,7 @@ flowchart LR
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
     HARNESS_IDENTITY_DESIGN[Decision: public store exposure and private mapping]
-    RUNNER_STORE_SESSION_IDENTITY[Blocked: implement store and Session identity]
+    RUNNER_STORE_SESSION_IDENTITY[Candidate: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
@@ -1852,7 +1852,7 @@ design node authorizes runtime changes.
 
 ### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping
 
-**The private-mapping implementation can proceed under either public address choice; independent of
+**Requires review of the private mapping contract, not a public store-ID decision; independent of
 the Claude multiplex result and Go unification.** Add runner-owned durable store IDs, exact Sandbox
 UID binding, public Session
 reservations and native-ID mappings using a new migration rather than editing landed state formats.
