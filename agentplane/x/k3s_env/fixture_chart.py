@@ -164,6 +164,7 @@ def objects(
         ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME): notifications.service(NAMESPACE).pods
     }
     dispatcher_callers = app_caller | notifications_caller
+    go_database_env = {"PGSSLMODE": EnvValue.from_value("disable")}
     control = runner_gateway_go.runner_control_service(NAMESPACE, port=Port(name="grpc", number=8080))
     runner_gateway_go.add_stable_services(chart, env, cluster_ip="None", control=control)
     runner_gateway_go.GoRunnerGateway(
@@ -183,7 +184,7 @@ def objects(
             name="goose-migrate",
             image=GO_QUEUE_MIGRATOR_IMAGE,
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            env_variables={"DATABASE_URL": dispatcher_database_url, "PGSSLMODE": EnvValue.from_value("disable")},
+            env_variables={"DATABASE_URL": dispatcher_database_url, **go_database_env},
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(25)), memory=MemoryResources(request=Size.mebibytes(64))
             ),
@@ -191,7 +192,7 @@ def objects(
         ),
         registry_secret_name=None,
         placement=None,
-        container_env=kube_api_env,
+        container_env={**kube_api_env, **go_database_env},
         memory_limit=None,
     )
     control_target = f"{control.fqdn}:{control.port.number}"
