@@ -242,12 +242,11 @@ History Service has.
 The Session Dispatcher is the sender-facing durable queue for openings and commands. The app server
 stores Thread presentation state; the browser keeps unconfirmed submissions locally. The app sends
 commands to Dispatcher and reads queued/delivering/admitted results. Dispatcher wakes an eligible
-suspended Sandbox, waits for `Ready`, and delivers through
-the Runner Gateway proxy. A queued `Dispatch`, a runner `CommandAdmitted`, a History observation and
-a native effect remain separate facts. The app has no second command queue, and current production
-senders do not use the Gateway's legacy `SubmitCommand` wrapper; this PR removes its server path.
-The remaining wrapper and pinned-image gates are tracked in the
-[control-surface audit](control_surface_retirement.md).
+suspended Sandbox, waits for `Ready`, and delivers through the Runner Gateway proxy. A queued
+`Dispatch`, a runner `CommandAdmitted`, a History observation and a native effect remain separate
+facts. The app has no second command queue; the legacy Gateway `SubmitCommand` wrapper is retired.
+See the [control-surface audit](control_surface_retirement.md) for current service ownership and
+callers.
 
 ### Message sketches used below
 

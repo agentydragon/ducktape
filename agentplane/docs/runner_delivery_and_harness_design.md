@@ -93,14 +93,12 @@ There are two different Session inventories:
 | App archive safety                                      | Whether this Thread's harness is running in the current, ready runner                                        | `api.py` calls `RunnerBridge.list_sessions`; keep a live check or approve an equally authoritative narrower state read. A Pod whose runner is not ready currently blocks archive.                                                      |
 | App explicit native resume                              | Current runner's retained Session, recoverable spec and setup state, compared with the History-backed Thread | `RunnerBridge.resume_thread` checks live `ListSessions`, then calls `Runner.ResumeSession` through the per-Sandbox proxy with the live Sandbox identity. History's old attachment cannot establish present membership or current spec. |
 | Notification subscription                               | Session membership in the requested UID/owner Sandbox at subscription time                                   | `Service.subscribe` validates namespace, UID and owner, then calls live `ListSessions`; preserve an equivalent preflight or explicitly revise offline subscription semantics. This read alone is not send permission.                  |
-| Former Gateway wrapper and runner test drivers          | Production callers use the Runner proxy directly; runner drivers inspect lifecycle and quiesce behavior      | The Gateway wrapper is retired after pinned-caller verification; retain runner-read coverage for current app and Notification decisions.                                                                                               |
 | Notification outcome reconciliation                     | Durable command journal watermark and entries                                                                | History `ReadSessionEvents` is evidence of runner admission/confirmation after an attempt, not destination inventory; its separate outcome design remains open.                                                                        |
 
 The app's History reads are appropriate for retained views. No History inventory read can stand in for
 the three current live decisions. A narrower runner state or membership API could replace broad
 `ListSessions` only after each caller's required fields, identity fence and unavailable-runner behavior
-are preserved. If a live read survives, remove the conditional `RUNNER_LIST_SESSIONS_RETIRE` task
-rather than forcing its deletion.
+are preserved. The current app and Notification callers still require the live read.
 
 ## Destination checks and authority
 
@@ -258,8 +256,8 @@ and runner Connect as distinct authenticated surfaces. Keep the Dispatcher queue
 delivery Lease and database-generation fence separate from the Gateway connection Lease and
 EndpointSlice. A worker may own queued work on replica A while replica B holds that runner's stream;
 the per-Sandbox control Service still routes the call to B. Co-location alone cannot safely replace
-that routing with an in-process call or remove the queue. Gateway database retirement is separate
-from this topology decision; it did not remove the Dispatcher queue or retained History.
+that routing with an in-process call or remove the queue. The Python Gateway registry and its database
+are retired; the Dispatcher queue and retained History remain separate state owners.
 
 One deployment could remove a deployment and some duplicated configuration. A local fast path could
 avoid a service hop only when the queue owner also holds that runner connection, and would need the
@@ -334,9 +332,9 @@ runner reconnect, UID replacement, controller Quiesce and app/Notification live 
 two old Deployments as part of the fenced cutover so they cannot race the new writers; recheck that
 neither service has acquired a History dependency. Only after the unified path is stable should
 old images/config/RBAC and obsolete inter-service token
-projection be removed. The explicit Resume action continues through the Runner Proxy; any legacy
-Gateway wrapper remains available only as long as external or pinned callers require it. Wrapper
-retirement, registry retirement and database deletion are separate work.
+projection be removed. The explicit Resume action continues through the Runner Proxy. The Python
+Gateway Session wrappers, registry runtime and database have been retired; the unified service must
+preserve the live Runner proxy and control-stream contracts without recreating those surfaces.
 
 For persistence, compare the current durable queue with direct runner admission:
 
