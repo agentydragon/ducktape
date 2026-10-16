@@ -272,19 +272,24 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                 asyncio.create_task(read(connection), name=f"runner-control-read:{epoch}"),
                 asyncio.create_task(keep_alive(), name=f"runner-control-keep-alive:{epoch}"),
             ]
+            done: set[asyncio.Task[None]] = set()
             try:
                 done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             finally:
                 for task in tasks:
                     task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                logger.info(
+                    "Runner control stream tasks stopped: epoch=%d context_cancelled=%s last_frame_age_s=%.3f tasks=%s",
+                    epoch,
+                    context.cancelled(),
+                    loop.time() - last_frame,
+                    [
+                        (task.get_name(), "cancelled" if task.cancelled() else repr(result))
+                        for task, result in zip(tasks, results, strict=True)
+                    ],
+                )
             # Raise the stream's actual failure before `TunnelCaller` exits, so its failure log can
             # retain the reason while still reporting unanswered calls as outcome-unknown.
             for task in done:
-                if task.cancelled():
-                    logger.info("Runner control stream task %s was cancelled", task.get_name())
-                elif task.exception() is None:
-                    logger.info("Runner control stream task %s returned normally", task.get_name())
-                else:
-                    logger.warning("Runner control stream task %s ended: %r", task.get_name(), task.exception())
                 task.result()
