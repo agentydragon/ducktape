@@ -116,7 +116,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
                 assert any(entry.event.HasField("harness_exited") for entry in archived)
 
 
-async def test_history_resume_rejects_a_recreated_sandbox_incarnation(
+async def test_live_inventory_rejects_a_recreated_sandbox_incarnation(
     cluster: SandboxCluster,
     live_index: LiveIndex,
     tmp_path: Path,
@@ -136,8 +136,7 @@ async def test_history_resume_rejects_a_recreated_sandbox_incarnation(
             content=content,
             dispatcher=GatewayBackedDispatcher(directory, remote, event_logs),
         )
-        opening = await bridge.create_session(SANDBOX, uuid4(), spec)
-        thread_id = UUID(opening.session_id)
+        await bridge.create_session(SANDBOX, uuid4(), spec)
         current = live_index.sandbox_view(SANDBOX)
         assert current is not None
 
@@ -147,10 +146,10 @@ async def test_history_resume_rejects_a_recreated_sandbox_incarnation(
         assert replacement is not None
         assert replacement.uid != current.uid
 
-        # History provides the name only; the runner proxy must use the current UID and refuse
-        # to resume the old Session through the still-running Pod of the deleted resource.
+        # The runner proxy must refuse to list the old incarnation through the still-running Pod
+        # of the deleted resource, even though the Sandbox name still matches.
         with pytest.raises(ServiceError):
-            await bridge.resume_thread(thread_id, sandbox=SANDBOX, expected_harness=None, expected_cwd=None)
+            await bridge.list_sessions(SANDBOX)
 
 
 async def test_stopped_service_never_falls_back_to_reachable_runner(

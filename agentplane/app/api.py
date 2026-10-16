@@ -809,20 +809,6 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
     return view
 
 
-@threads.post("/{thread_id}/resume")
-async def resume_thread(store: Store, bridge: runner_bridge.Bridge, thread_id: UUID) -> dict[str, object]:
-    thread = await store.get_thread(thread_id)
-    if thread is None:
-        raise ThreadNotFoundError(thread_id)
-    if thread.archived:
-        raise HTTPException(status.HTTP_409_CONFLICT, "an archived Thread cannot be resumed")
-    return MessageToDict(
-        await bridge.resume_thread(
-            thread_id, sandbox=thread.sandbox, expected_harness=thread.harness, expected_cwd=thread.cwd
-        )
-    )
-
-
 @threads.patch("/{thread_id}")
 async def rename_thread(store: Store, thread_id: UUID, body: ThreadRename) -> ThreadView:
     return await store.rename(thread_id, body.name)

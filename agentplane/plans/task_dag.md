@@ -814,7 +814,7 @@ flowchart TD
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
-    APP_NATIVE_RESUME_SURFACE[Decision: explicit native-resume UI] --> APP_NATIVE_RESUME_CUTOVER[Blocked: remove direct native resume]
+    APP_NATIVE_RESUME_SURFACE[Approved: queued commands revive harness; no direct UI action] --> APP_NATIVE_RESUME_CUTOVER[In review: remove direct native resume]
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
@@ -1117,20 +1117,21 @@ mandatory Sandbox UID fence is part of `DELIVERY_DESTINATION_CONTRACT`, independ
 
 ### `APP_NATIVE_RESUME_SURFACE` — decide the explicit native-resume UI
 
-**Decision; proposal can proceed independently.** ADR D4 already requires Dispatcher-only starts and
-makes runner `ResumeSession` an internal step of each command. The app still exposes a direct native
-resume action. Recommended: remove that action and revive the native harness when a queued command
-arrives, preserving explicit Sandbox wake. Alternative: retain a standalone native-resume action,
-which needs an explicitly reviewed durable Dispatcher operation and retry/outcome contract. The
-question is whether the UI must resume a native harness without submitting work; the existing ADR
-does not authorize silently adding that RPC. No change to Sandbox suspend/resume semantics.
+**Approved direction.** ADR D4 requires Dispatcher-only starts and makes runner `ResumeSession` an
+internal step of each command. Remove the app's separate native-resume action; a submitted command
+revives the harness. Keep the visible suspended Sandbox status and permit the composer to queue
+commands according to the current Sandbox send/wake policy. Explicit Sandbox resume remains a
+separate control. This decision does not add a standalone Dispatcher resume operation or change
+Sandbox suspend/resume semantics.
 
 ### `APP_NATIVE_RESUME_CUTOVER` — remove the app's direct native-resume path
 
-**Blocked on `APP_NATIVE_RESUME_SURFACE`.** Implement the reviewed UI behavior. If it requires a new
-Dispatcher receiver, land and pin that before enabling its caller; otherwise remove the direct
-native-resume UI/API/client together. Preserve retained native identity/history and ordinary retries.
-Complete caller rollout before narrowing Gateway authorization or removing the legacy receiver.
+**Implementation in review.** Remove the direct native-resume UI, Thread API route, Bridge and
+acceptance-client call together; use queued commands to continue a stopped harness. Keep suspended
+status visible, the composer enabled for a current suspended Sandbox under the existing send policy,
+and explicit Sandbox resume. Preserve retained native identity/history and ordinary retries.
+Gate the downstream proxy/Gateway changes on this app image reaching both testing and staging, then
+review external and pinned callers before deleting Gateway `ResumeSession` or its registry reader.
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
 
@@ -1331,16 +1332,15 @@ migrations or authorize broad compatibility shims, language rewrites or speculat
 ### `RUNNER_LIST_SESSIONS_RETIRE` — retire live inventory only if its reviewed purposes no longer need it
 
 **Blocked on the surface audit's disposition and migration of its remaining real callers.** The
-Sandbox table uses retained History inventory. App archive safety/native resume and Notification
-membership still use live runner inventory; app and Notification now reach `Runner.ListSessions`
+Sandbox table uses retained History inventory. App archive safety and Notification membership
+still use live runner inventory; app and Notification now reach `Runner.ListSessions`
 through the per-Sandbox proxy with expected Sandbox UID and owner metadata (#10619), and their caller
 plus receiver images are deployed in both environments. Test drivers also use the read to order
 Quiesce assertions. The Dispatcher now relies on `OpenSession` to return the existing attachment for an
 identical retry and propagates `ALREADY_EXISTS` for a conflicting spec or setup; it no longer calls
 `Runner.ListSessions` for opening. History's retained harness state and namespace/name association do
 not preserve authoritative live state or Sandbox UID/owner checks. App archive safety needs current
-harness state; explicit native resume needs the current runner's Session and spec; Notification checks
-destination membership at subscription time. Migrate remaining callers with their
+harness state; Notification checks destination membership at subscription time. Migrate remaining callers with their
 live-state and identity requirements intact, then migrate tests and verify pinned caller images before
 removing the runner method/messages and helpers via normal generation. The Gateway wrapper may retire
 even if a narrowly justified runner live read remains; record that decision and remove this conditional

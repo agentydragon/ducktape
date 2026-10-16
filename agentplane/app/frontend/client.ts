@@ -3,7 +3,7 @@ import createClient from "openapi-fetch";
 
 import type { components, paths } from "./api/schema";
 import { redirectToLogin } from "./operator_login";
-import { AttachedSchema, SessionSpecSchema, type Attached, type SessionSpec } from "../../proto/runner_pb";
+import { SessionSpecSchema, type SessionSpec } from "../../proto/runner_pb";
 import { CommandSchema, type Command } from "../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../proto/event_log_pb";
 
@@ -258,11 +258,6 @@ export async function getSessionOpening(sandbox: string, sessionId: string): Pro
       params: { path: { name: sandbox, session_id: sessionId } },
     })
   ) as SessionOpening;
-}
-
-export async function resumeThread(threadId: string): Promise<Attached> {
-  const data = ok(await api.POST("/threads/{thread_id}/resume", { params: { path: { thread_id: threadId } } }));
-  return fromJson(AttachedSchema, data as JsonValue);
 }
 
 export async function models(): Promise<ModelCatalog> {

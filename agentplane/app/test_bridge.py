@@ -39,7 +39,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
-from agentplane.app.testing.history import SeededEventLogStore, register_gateway_session
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import DispatcherRequestTimeoutError, DispatchNotFoundError, RunnerBridge
@@ -68,7 +68,6 @@ from agentplane.proto import (
     session_dispatcher_pb2_grpc,
 )
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
-from agentplane.runner.harness import Harness
 from agentplane.runner.runner import Runner
 from agentplane.runner.session import Session
 from agentplane.runner.testing.failure_journal import FailureEvidence
@@ -318,7 +317,7 @@ async def app_url(
 
 
 async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_event_id(
-    app_url: str, model: ScriptedModel, spec: runner_pb2.SessionSpec, failed_bridge_state: None
+    app_url: str, model: ScriptedModel, runner: Runner, spec: runner_pb2.SessionSpec, failed_bridge_state: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         session_id = uuid4()
@@ -443,16 +442,13 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         summary = (await http.get(f"/threads/{thread_id}")).json()
         assert summary["harness_state"] == "HARNESS_STATE_STOPPED"
 
-        resumed = await http.post(f"/threads/{thread_id}/resume")
-        assert resumed.status_code == 200, resumed.text
-        assert resumed.json()["sessionId"] == thread_id
-        assert resumed.json()["spec"]["harness"] == runner_pb2.Harness.Name(spec.harness)
-        assert resumed.json()["harnessState"] == "HARNESS_STATE_RUNNING"
+        # Restart through the local runner fixture; this scenario checks the app's retained
+        # stream and the native continuation, not a separate app resume operation.
+        await runner.resume(thread_id)
         assert (await http.get("/threads")).json()["threads"][0]["id"] == thread_id
 
-        # The Thread route resumes the session from the runner-owned stored spec. The event stream
-        # continues after the previous shutdown and the native request still has both completed
-        # turns in context.
+        # The stream continues after the previous shutdown and the native request still has
+        # both completed turns in context.
         previous_cursor = int(stored[-1]["cursor"])
         async with http.stream(
             "GET", f"/threads/{thread_id}/events/stream", headers={"Last-Event-ID": str(previous_cursor)}
@@ -739,9 +735,7 @@ async def _interrupt_and_recover(http: httpx.AsyncClient, runner: Runner, thread
     )
     if mode != "interrupt":
         await _stored_events(http, thread_id, until="harnessExited")
-        resumed = await http.post(f"/threads/{thread_id}/resume")
-        assert resumed.status_code == 200, resumed.text
-        assert resumed.json()["sessionId"] == thread_id
+        await runner.resume(thread_id)
     else:
         assert session.process is process
         assert process.running
@@ -975,17 +969,6 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
             matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_COMPLETED"),
         )
         assert marker.read_text().splitlines() == [token]
-
-
-async def test_thread_resume_reports_missing_runner_recovery_state(
-    app_url: str, event_logs: SeededEventLogStore, history: History
-) -> None:
-    thread_id = await event_logs.seed(SANDBOX, "missing-runner-session")
-    await history.open(thread_id, sandbox_name=SANDBOX)
-    await register_gateway_session(history.engine, thread_id, sandbox=SANDBOX)
-    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        response = await http.post(f"/threads/{thread_id}/resume")
-    assert response.status_code == 409
 
 
 async def test_the_feed_records_a_turn_nobody_is_watching(
@@ -1508,6 +1491,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     store: ThreadStore,
     content: ContentStore,
     model: ScriptedModel,
+    runner: Runner,
     spec: runner_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1532,7 +1516,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     assert await store.list_threads() == []
     assert await event_logs.last_cursor(thread_id) == 0
 
-    # A native conversation must exist before Resume: an idle Open has no Claude/Codex
+    # A native conversation must exist before restarting: an idle Open has no Claude/Codex
     # history to restore even if the runner subsequently reports STOPPED.
     seed = await bridge.command(
         thread_id,
@@ -1557,24 +1541,16 @@ async def test_open_and_resume_reply_before_archive_catches_up(
         sandbox=SANDBOX,
     )
     # Admission is not harness shutdown. Wait on the runner's own state, not on the
-    # stalled archive, before attempting a legitimate Resume.
+    # stalled archive, before restarting through the local runner fixture.
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
             (summary,) = await local_runners.client(SANDBOX).list_sessions()
             assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
-    resumed = await asyncio.wait_for(
-        bridge.resume_thread(
-            thread_id,
-            sandbox=SANDBOX,
-            expected_harness=Harness(runner_pb2.Harness.Name(spec.harness)),
-            expected_cwd=spec.cwd,
-        ),
-        timeout=10,
-    )
+    resumed = await asyncio.wait_for(runner.resume(str(thread_id)), timeout=10)
     assert resumed.session_id == opened.session_id
-    assert resumed.last_cursor > opened_cursor
+    assert resumed.journal.last_cursor > opened_cursor
     assert await event_logs.last_cursor(thread_id) == 0
 
 
