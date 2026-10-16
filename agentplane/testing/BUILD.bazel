@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
     default_testonly = True,
@@ -43,4 +43,16 @@ py_library(
     name = "agent_docs",
     srcs = ["agent_docs.py"],
     deps = ["@pypi//httpx"],
+)
+
+py_test(
+    name = "test_fake_apiserver",
+    srcs = ["test_fake_apiserver.py"],
+    deps = [
+        ":fake_apiserver",
+        "//:conftest",
+        "//agentplane:sandbox_resource",
+        "@pypi//aiohttp",
+        "@pypi//pytest_bazel",
+    ],
 )

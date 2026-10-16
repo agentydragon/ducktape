@@ -75,6 +75,7 @@ py_test(
         "//:conftest",
         "//agentplane/proto:sandboxes_pb2",
         "//agentplane/runner_gateway/testing:runner_peer",
+        "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
 )
