@@ -16070,7 +16070,7 @@
   ],
   "fleet_repeat_evidence": {
     "scope": "Two separate five-run executions of all 25 visual-review test targets; compare only PNGs declared in visual-review.json. Diagnostic captures are excluded.",
-    "captured_at_utc": "2026-10-16T08:48:50Z",
+    "captured_at_utc": "2026-10-16T08:52:42Z",
     "runs": [
       {
         "label": "five-run-before-notification-scrollbar-readiness-fix",
@@ -16447,10 +16447,12 @@
       },
       "run1_review_assets": {
         "declared_roster_size": 590,
-        "mapped_and_available": 588,
-        "unmapped_due_to_failed_target": 2
+        "accepted_from_passing_targets_by_comparator": 588,
+        "failed_shard_assets_excluded_from_comparator": 2,
+        "excluded_asset_files_present_in_run_artifacts": true
       },
-      "stability_conclusion": "None. This is one incomplete run with a functional test failure and two unavailable declared images; it cannot support a five-run stability or absence claim."
+      "stability_conclusion": "None. One of five runs completed with a functional test failure. Two failed-shard images are present in the run artifacts but excluded from pass-only mapping, so this run cannot support a five-run stability or absence claim.",
+      "workflow_status": "IN_PROGRESS"
     },
     "trace_policy_probe": {
       "source_sha": "5bc2dcdc2cb0761345394b59ebd59c9e1e4ed4df",
