@@ -11,20 +11,19 @@ built locally as `bazel-bin/devinfra/js/debundle/debundle`). All commands
 share the same JSON-on-stdout / structured-diagnostic-on-stderr convention
 as the rest of ducktape.
 
-## Command index
+## Find a workflow
 
-- Pipeline: `run` (mutates: emits JS + reports)
-- Spec edits (mutate the modules tree):
-  `bindings {assign,unassign,rename,comment}`,
-  `modules {merge,delete,comment}`,
-  `spec synthesize-selectors` with `--apply`
-- Read-only queries: `bindings list`, `modules {list,propose}`,
-  `spec {stats,selector-debt,match-selector,validate}`, `atoms`, `coverage`,
-  `graph-summary`, `describe <id>`, `inspect-source`, `scc`,
-  `cluster <sym>`, `gate {list,describe,cut}`
+- Transform a spec: [Running the pipeline](#running-the-pipeline).
+- Inspect a binding or source: [Workflow: investigating a binding
+  end-to-end](#workflow-investigating-a-binding-end-to-end) and
+  [Inspecting source](#inspecting-source).
+- Edit assignments or claim proposals: [Batch atomicity](#batch-atomicity-bindings-assign),
+  [Claiming fresh proposals](#claiming-fresh-proposals-modules-apply), and
+  <spec_editing.md>.
+- Diagnose a rejected edit: [Rejection diagnostics](#rejection-diagnostics)
+  and [Gate queries](#gate-queries).
 
-Renaming or disabling a module is a plain `mv` of its YAML file, not a
-command: <spec_editing.md> § Renaming or disabling a module.
+Use `debundle <command> --help` for the current command and flag inventory.
 
 ## Common arguments and env vars
 

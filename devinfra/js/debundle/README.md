@@ -40,63 +40,9 @@ defaults, batch atomicity, gate queries). Workflow docs: `docs/selectors.md` (po
 selector authoring), `docs/spec_editing.md` (module/binding editing).
 How selectors actually resolve: `docs/selector_resolution.md`.
 
-Import planning and emission helpers are grouped under `lowering/imports/`.
-They remain separate modules and passes, composed by the lowering crate.
-
-Vendor internals separate package lookup/containment (`vendor/packages.rs`),
-export-surface inspection (`vendor/export_surface.rs`), emitted-output import
-resolution (`vendor/output_imports.rs`), and import/identifier rewrites
-(`vendor/import_rewrites.rs`). The post-strip consumer gate remains mandatory.
-Export AST constructors live in `js_ast.rs`; callers choose name encoding and
-alias policy. Lowering carries each naturalized body, its rename maps and its
-post-rename facts together as `NaturalizedModuleBody` before module emission.
-
-Selector implementation is grouped under `selectors/`: AST matching and
-`source_match` live in `matching/`, selector solving in `resolution/`, selector
-generation and minimization in `authoring/`, and selector-debt reporting in
-`diagnostics/`. Bazel target names remain stable.
-
-The CLI root only composes and routes commands. `cli/{bindings,modules,spec,
-inspection}_commands.rs` own each family's arguments, adapters, and renderers;
-`cli/binding.rs`, `cli/module.rs`, and `cli/edit_gate.rs` own spec editing and
-validation independently of presentation.
-
-### Analysis and planning vocabulary
-
-- `chunk_analysis::ChunkAnalysisOutput` contains semantic statement facts, the
-  owner graph, and structural atomic units, independent of module assignment.
-- `gate::FactorizationInputs` holds the owner graph, authored module/binding
-  catalogue, and lookup indexes shared by candidate `ChunkFactorization`s.
-- `peel::propose` produces advisory module-move proposals; it does not assign
-  owners authoritatively. `factor_assembly` constructs the actual partition.
-- `selectors/matching/chunk_facts` projects AST syntax for matching;
-  `facts/` computes semantic effects and dependencies. `program_analysis`
-  performs the shallow manifest scan, including pass-through chunks.
-
-These are different data products, not alternate names for one analysis.
-
-Cheat sheet of the most-used commands:
-
-- `debundle run` — execute the transform pipeline (parse + facts +
-  owner_graph + realizability gate + lower + emit). Add `--dry-run`
-  to run pipeline checks without writing emitted JS or reports.
-- `debundle bindings assign <sym>:<module>[:<readable>]` — move a
-  binding (single, multi-positional, or `--batch <file.json>`).
-- `debundle bindings rename <original> <readable>` — rename without
-  moving.
-- `debundle modules propose` — proposer-derived move proposals;
-  `--source-root` annotates anonymous-statement addressability.
-- `debundle modules merge --target <T> <sources...>` — splice module
-  YAMLs.
-- `debundle describe <id>` — graph + spec context for a binding, module,
-  atom, owner, proposal, or diagnostic ID.
-- `debundle inspect-source --id <id>` — select the owners behind one of those
-  IDs and show their numbered source items without including unrelated code.
-- `debundle inspect-source --source-file <file> --statements 12..16` — inspect
-  source without a graph. Both modes show raw `body[N]` indices and byte/line
-  ranges; snippets are bounded by default. Use `--view raw` for original text.
-- `debundle bindings comment <sym>` / `debundle modules comment <module>` —
-  edit `comment:` fields (see <docs/spec_editing.md> § Comments and notes).
+Implementation entry points for the splitting pipeline are in
+<docs/design.md> § File references. Use <docs/cli.md> to find inspection and
+editing workflows; `debundle <command> --help` lists current flags.
 
 ## Getting started
 
