@@ -334,7 +334,7 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
         let label = display_relative(modules_root, src);
         // Source module comments concatenate into the target's
         // module-level `comment:` with a `--- from <source>:` divider
-        // (README.md § "Comments").
+        // (docs/spec_editing.md § "Comments and notes").
         if let Some(comment) = src_module
             .comment
             .as_deref()
@@ -382,7 +382,7 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
     // comment: the rewriters (`bindings assign`, `synthesize --apply`,
     // `modules merge`) re-emit the YAML and drop every `#` comment, so a `#`
     // provenance line would be silently lost on the next automated edit
-    // (README.md § "Comments"). `note:` is non-emitting and round-trips.
+    // (docs/spec_editing.md § "Comments and notes"). `note:` is non-emitting and round-trips.
     if !merged_source_labels.is_empty() {
         let provenance = format!("merged from: {}", merged_source_labels.join(", "));
         target_module.note = Some(compose_block(
