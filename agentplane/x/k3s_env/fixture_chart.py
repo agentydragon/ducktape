@@ -99,7 +99,7 @@ def objects(
     app = Testing.app()
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
-    fixture_database.add_database(chart, env, node_ip=node_ip)
+    fixture_database.add_database(chart, env)
     llm_ingress.LlmIngress(
         chart,
         "llm-ingress",

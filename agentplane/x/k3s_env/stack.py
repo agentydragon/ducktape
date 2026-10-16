@@ -30,7 +30,6 @@ from util.bazel.runfiles import get_required_path
 logger = logging.getLogger(__name__)
 
 K3S_VERSION = "v1.33.4+k3s1"
-CNPG_MANIFEST_URL = "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.0/cnpg-1.30.0.yaml"
 # Electric exits until history-service's migration has created its publication; its restart back-off reaches 5 min.
 DEPLOY_TIMEOUT_SECONDS = 480
 # k3s's default Pod CIDR.
@@ -174,13 +173,7 @@ class K3s:
             )  # fmt: skip
         corefile = self.kubectl(
             "-n", "kube-system", "get", "configmap/coredns", "-o", "jsonpath={.data.Corefile}"
-        ).replace(
-            ".:53 {",
-            f".:53 {{\n    bind {self.node_ip}\n"
-            f"    rewrite name exact postgres-rw.{fixture_chart.NAMESPACE}.svc.cluster.local "
-            f"{fixture_chart.PRIMARY_SERVICE}.{fixture_chart.NAMESPACE}.svc.cluster.local",
-            1,
-        )
+        ).replace(".:53 {", f".:53 {{\n    bind {self.node_ip}", 1)
         self.kubectl(
             "-n", "kube-system", "patch", "configmap/coredns", "--type", "merge", "-p",
             json.dumps({"data": {"Corefile": corefile}}),
@@ -248,59 +241,11 @@ class K3s:
                 raise RuntimeError(f"containerd image import exited {code}: {log[-6000:]}")
             print(log)
 
-    def install_cnpg_operator(self) -> None:
-        """The release manifest of the operator the cluster runs (`cluster/cdk8s/cnpg_operator.py`)."""
-        manifest = self.work / "cnpg.yaml"
-        run("curl", "-fsSL", "-o", str(manifest), CNPG_MANIFEST_URL)
-        self.kubectl("apply", "--server-side", "-f", str(manifest))
-        # No kube-proxy: the operator dials the apiserver directly, and the apiserver cannot reach the
-        # webhook Service, so an unreachable webhook must not fail the request. The operator still needs
-        # the configurations to exist: it injects its CA into them at startup.
-        for kind, name in (
-            ("mutatingwebhookconfiguration", "cnpg-mutating-webhook-configuration"),
-            ("validatingwebhookconfiguration", "cnpg-validating-webhook-configuration"),
-        ):
-            configuration = json.loads(self.kubectl("get", f"{kind}/{name}", "-o", "json"))
-            for webhook in configuration["webhooks"]:
-                webhook["failurePolicy"] = "Ignore"
-                webhook["timeoutSeconds"] = 2
-            self.kubectl("apply", "--server-side", "--force-conflicts", "-f", "-", input_text=json.dumps(configuration))
-        # The release manifest limits the operator to 100m CPU; throttled, it misses leader-election renewals and
-        # restarts, and the Cluster waits for it.
-        self.kubectl(
-            "-n", "cnpg-system", "patch", "deploy/cnpg-controller-manager", "--type=json", "-p",
-            '[{"op": "remove", "path": "/spec/template/spec/containers/0/resources/limits"}]',
-        )  # fmt: skip
-        self.kubectl(
-            "-n", "cnpg-system", "set", "env", "deploy/cnpg-controller-manager",
-            f"KUBERNETES_SERVICE_HOST={self.node_ip}", "KUBERNETES_SERVICE_PORT=6443",
-        )  # fmt: skip
-        waited = self.kubectl(
-            "-n", "cnpg-system", "wait", "--for=condition=Available", "deploy/cnpg-controller-manager", "--timeout=240s",
-            check=False,
-        )  # fmt: skip
-        if "condition met" not in waited:
-            raise RuntimeError(
-                f"CNPG operator not Available: {waited}\n"
-                + self.kubectl("-n", "cnpg-system", "get", "pods", "-o", "wide", check=False)
-                + self.kubectl("-n", "cnpg-system", "describe", "pods", check=False)[-3000:]
-                + self.kubectl("-n", "cnpg-system", "logs", "deploy/cnpg-controller-manager", "--tail=40", check=False)
-            )
-
     def report(self) -> str:
         parts = [
             self.kubectl("get", "pods", "-A", "-o", "wide", check=False),
             self.kubectl("get", "events", "-A", "--sort-by=.lastTimestamp", check=False)[-6000:],
         ]
-        parts.append(self.kubectl("get", "cluster,database", "-A", check=False))
-        parts.append(
-            self.kubectl("-n", "cnpg-system", "logs", "deploy/cnpg-controller-manager", "--tail=25", check=False)
-        )
-        parts.append(
-            self.kubectl(
-                "-n", "cnpg-system", "logs", "deploy/cnpg-controller-manager", "--previous", "--tail=25", check=False
-            )
-        )
         pods = self.kubectl("get", "pods", "-n", fixture_chart.NAMESPACE, "-o", "name", check=False).split()
         for pod in pods:
             ready = self.kubectl(
@@ -396,7 +341,6 @@ def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(_kubevirt_stub_crds()))
-        k3s.install_cnpg_operator()
         # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
         namespaces = [d for d in everything if d["kind"] == "Namespace"]
         rest = [d for d in everything if d["kind"] != "Namespace"]

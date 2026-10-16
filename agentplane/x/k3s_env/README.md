@@ -14,8 +14,9 @@ role required by the existing migrations; it does not start an Electric process.
 
 [`fixture_chart.py`](fixture_chart.py) constructs the chart directly
 with shared service constructs and explicit bare-k3s settings. It supplies fixture Secrets,
-headless Services, local-path storage and a test egress CA; the CNPG operator is installed from its
-release manifest. Unsupported Cilium, Gateway API, Kyverno, Prometheus, cert-manager and External
+headless Services, local-path storage and a test egress CA. One PostgreSQL 18 Deployment uses the
+repo's pinned OCI image, an emptyDir data volume and [`bootstrap.sql`](bootstrap.sql) to create the
+service-owned databases. Unsupported Cilium, Gateway API, Kyverno, Prometheus, cert-manager and External
 Secrets resources are omitted during construction. The chart instantiates the Go Runner Gateway
 directly with one gRPC listener on port 8080; the stable `runner-gateway` and `session-dispatcher`
 Service names remain. A Goose init container runs before the Go server container and uses the
@@ -130,11 +131,12 @@ result for the new Go composition. Breaks found on the way, in order:
   container gets `KUBERNETES_SERVICE_HOST`/`PORT` for the node IP.
 - **KubeVirt kinds:** the sandbox controller's cache needs `VirtualMachine`/`VirtualMachineInstance` to exist, so
   schemaless stub CRDs are applied. It should instead start without KubeVirt when the kinds are absent.
-- **Real CNPG:** the operator runs unmodified (its webhooks are reachable because the apiserver can call Services
-  by Pod IP; `failurePolicy` is set to `Ignore`). It generates `postgres-app` itself. Its `postgres-rw` Service is
-  a reserved ClusterIP that cannot be disabled, so the Cluster adds a headless `postgres-primary` Service and
-  CoreDNS rewrites `postgres-rw.<ns>` to it. The operator and instance Pods also need the `KUBERNETES_SERVICE_*` env.
-- **No resource limits:** every container and the CNPG Cluster lose `resources.limits` (requests stay). The app's
+- **PostgreSQL:** a single-replica Deployment uses the repository's pinned PostgreSQL 18 image, an emptyDir data
+  volume, and a headless `postgres-primary` Service that works without kube-proxy. `bootstrap.sql` creates each
+  service role and database with the matching owner; the separate `fixture_admin` account exists only to bootstrap
+  the disposable database. Logical WAL remains enabled for the existing publication migrations. No operator,
+  CRD, release download, or CoreDNS rewrite is needed.
+- **No resource limits:** the fixture removes container `resources.limits` (requests stay). The app's
   500m CPU limit throttled Python imports by about 14s each on the shared VM.
 - **Pod egress:** flannel `host-gw` does not translate Pod traffic, so the test adds a `MASQUERADE` rule for the Pod
   CIDR using the `iptables` k3s ships; without it Pods resolve `litellm.allegedly.works` but cannot connect.
