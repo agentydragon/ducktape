@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import urllib.parse
 import urllib.request
@@ -72,7 +73,17 @@ class Observations:
 @dataclass(frozen=True)
 class Execution:
     invocation: str
+    command: tuple[str, ...]
     returncode: int
+
+
+@dataclass(frozen=True)
+class TargetObservations:
+    """Separate observed target results from attempted runs with no BuildBuddy record."""
+
+    runs: dict[str, list[TestRun]]
+    invocations: list[str]
+    unavailable_invocations: list[str]
 
 
 def load_manifest(uri: str) -> VisualReviewManifest:
@@ -143,13 +154,16 @@ def run_once(targets: list[str], *, bbr: Path, run: Runner) -> Execution:
     a missing test summary. Finish the other runs before reporting the failures.
     """
     invocation = str(uuid.uuid4())
-    result = run(
-        [bbr, "test", f"--invocation_id={invocation}", "--nocache_test_results", "--noremote_accept_cached", *targets],
-        check=False,
-        text=True,
-        cwd=get_build_workspace_directory(),
-    )
-    return Execution(invocation, result.returncode)
+    command: list[str | Path] = [
+        bbr,
+        "test",
+        f"--invocation_id={invocation}",
+        "--nocache_test_results",
+        "--noremote_accept_cached",
+        *targets,
+    ]
+    result = run(command, check=False, text=True, cwd=get_build_workspace_directory())
+    return Execution(invocation, tuple(str(part) for part in command), result.returncode)
 
 
 def observe(
@@ -189,19 +203,27 @@ def observe(
     return Observations(review=review, diagnostics=diagnostics)
 
 
-def observe_targets(
-    invocations: list[str], targets: list[str], *, bbapi: Path, run: Runner
-) -> dict[str, list[TestRun]]:
-    """Every run's view of each target, keyed by label.
+def observe_targets(invocations: list[str], targets: list[str], *, bbapi: Path, run: Runner) -> TargetObservations:
+    """Every observed invocation's view of each target, keyed by label.
 
     `targets` is what was swept, so a listing that came back short can be completed rather than
-    quietly reporting on fewer targets than ran.
+    quietly reporting on fewer targets than ran. An invocation BuildBuddy does not know about is
+    returned separately so it cannot hide other observations or count as a missing screenshot.
     """
     by_label: dict[str, list[TestRun]] = defaultdict(list)
+    available_invocations: list[str] = []
+    unavailable_invocations: list[str] = []
     for invocation in invocations:
-        for test_run in list_test_runs(invocation, targets, bbapi=bbapi, run=run):
+        test_runs = list_test_runs(invocation, targets, bbapi=bbapi, run=run)
+        if test_runs is None:
+            unavailable_invocations.append(invocation)
+            continue
+        available_invocations.append(invocation)
+        for test_run in test_runs:
             by_label[test_run.label].append(test_run)
-    return dict(by_label)
+    return TargetObservations(
+        runs=dict(by_label), invocations=available_invocations, unavailable_invocations=unavailable_invocations
+    )
 
 
 @dataclass(frozen=True)
@@ -260,11 +282,14 @@ def report(
     invocations: list[str],
     targets: dict[str, list[TestRun]],
     *,
-    failed_executions: Sequence[Execution] = (),
+    executions: Sequence[Execution] = (),
+    unavailable_invocations: Sequence[str] = (),
 ) -> str:
     """Review-asset reproducibility, non-failing diagnostics, and execution health."""
     runs = len(invocations)
-    lines = [f"# Visual determinism over {runs} runs", ""]
+    lines = [f"# Visual determinism over {runs} observed runs", ""]
+    if executions:
+        lines += [f"{len(executions)} commands were attempted; {runs} produced BuildBuddy invocations.", ""]
     lines += ["Artifacts are retained in each invocation's undeclared test outputs:", ""]
     lines += [f"{index + 1}. `{invocation}`" for index, invocation in enumerate(invocations)]
     lines += ["", "```bash", "bbapi artifact download <invocation> '*.png' --all", "```", ""]
@@ -283,9 +308,21 @@ def report(
         "",
     ]
     lines += _image_report(observations.diagnostics, runs=runs)
+    unavailable = set(unavailable_invocations)
+    failed_executions = [
+        execution for execution in executions if execution.returncode != 0 or execution.invocation in unavailable
+    ]
     if failed_executions:
         lines += ["", "## Failed executions", ""]
-        lines += [f"- `{execution.invocation}`: bbr exited {execution.returncode}" for execution in failed_executions]
+        for execution in failed_executions:
+            if execution.invocation in unavailable:
+                outcome = "BuildBuddy has no invocation record"
+            else:
+                outcome = "BuildBuddy recorded the invocation"
+            lines.append(
+                f"- `{execution.invocation}`: {outcome}; bbr exited {execution.returncode}. "
+                f"Command: `{shlex.join(execution.command)}`"
+            )
     failed_targets = sorted(label for label, tests in targets.items() if any(test.status != "PASSED" for test in tests))
     if failed_targets:
         lines += ["", "## Non-passing test targets", ""]
@@ -329,22 +366,29 @@ def main() -> None:
         print(f"run {index + 1}/{args.runs}: {' '.join(targets)}", flush=True)
         executions.append(run_once(targets, bbr=args.bbr, run=subprocess.run))
 
-    invocations = [execution.invocation for execution in executions]
+    attempted_invocations = [execution.invocation for execution in executions]
+    target_observations = observe_targets(attempted_invocations, targets, bbapi=args.bbapi, run=subprocess.run)
+    invocations = target_observations.invocations
     observations = observe(invocations, bbapi=args.bbapi, run=subprocess.run, read_manifest=load_manifest)
-    test_runs = observe_targets(invocations, targets, bbapi=args.bbapi, run=subprocess.run)
-    failed_executions = [execution for execution in executions if execution.returncode != 0]
-    summary = report(observations, invocations, test_runs, failed_executions=failed_executions)
+    summary = report(
+        observations,
+        invocations,
+        target_observations.runs,
+        executions=executions,
+        unavailable_invocations=target_observations.unavailable_invocations,
+    )
     print(summary)
     if args.summary:
         args.summary.write_text(summary)
 
-    findings = analyze(observations.review, runs=args.runs)
+    findings = analyze(observations.review, runs=len(invocations))
     if (
         findings.drifted
         or findings.missing
-        or failed_executions
-        or not test_runs
-        or any(test.status != "PASSED" for tests in test_runs.values() for test in tests)
+        or any(execution.returncode != 0 for execution in executions)
+        or target_observations.unavailable_invocations
+        or not target_observations.runs
+        or any(test.status != "PASSED" for tests in target_observations.runs.values() for test in tests)
     ):
         raise SystemExit(1)
 

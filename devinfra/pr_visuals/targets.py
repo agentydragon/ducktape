@@ -15,7 +15,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from devinfra.pr_visuals.artifacts import Runner
+from devinfra.pr_visuals.artifacts import INVOCATION_ABSENT, Runner
 
 
 class TestSummary(BaseModel):
@@ -74,9 +74,11 @@ class TestRun:
     summary: TestSummary
 
 
-def _listing(invocation: str, *extra: str, bbapi: Path, run: Runner) -> list[TestRun]:
+def _listing(invocation: str, *extra: str, bbapi: Path, run: Runner) -> list[TestRun] | None:
     result = run([bbapi, "target", invocation, "--json", *extra], check=False, text=True, capture_output=True)
     if result.returncode != 0:
+        if INVOCATION_ABSENT in result.stderr:
+            return None
         raise RuntimeError(f"listing targets of {invocation} failed: {result.stderr.strip()}")
     listing = TargetListing.model_validate_json(result.stdout)
     return [
@@ -89,7 +91,7 @@ def _listing(invocation: str, *extra: str, bbapi: Path, run: Runner) -> list[Tes
 
 def list_test_runs(
     invocation: str, expected: list[str], *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
-) -> list[TestRun]:
+) -> list[TestRun] | None:
     """Every target in `invocation` that ran as a test, including the ones the listing truncates.
 
     The listing also carries each target's file and build rows; the test summary is what marks
@@ -102,7 +104,12 @@ def list_test_runs(
     complete one.
     """
     runs = _listing(invocation, bbapi=bbapi, run=run)
+    if runs is None:
+        return None
     missing = sorted(set(expected) - {test_run.label for test_run in runs})
     for label in missing:
-        runs.extend(_listing(invocation, "--label", label, bbapi=bbapi, run=run))
+        additional_runs = _listing(invocation, "--label", label, bbapi=bbapi, run=run)
+        if additional_runs is None:
+            return None
+        runs.extend(additional_runs)
     return runs

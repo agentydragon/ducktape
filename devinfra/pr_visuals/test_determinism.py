@@ -295,8 +295,8 @@ def test_durations_come_from_buildbuddy_as_wall_time_not_summed_shards() -> None
 
     targets = observe_targets(["run-1"], ["//ui:visual"], bbapi=Path("bbapi"), run=fake_run)
 
-    assert [test_run.summary.shard_count for test_run in targets["//ui:visual"]] == [4]
-    assert [test_run.summary.wall_time for test_run in targets["//ui:visual"]] == [timedelta(seconds=11.1)]
+    assert [test_run.summary.shard_count for test_run in targets.runs["//ui:visual"]] == [4]
+    assert [test_run.summary.wall_time for test_run in targets.runs["//ui:visual"]] == [timedelta(seconds=11.1)]
 
 
 def test_a_target_the_bulk_listing_truncated_is_still_timed() -> None:
@@ -316,7 +316,7 @@ def test_a_target_the_bulk_listing_truncated_is_still_timed() -> None:
 
     timed = observe_targets(["run-1"], ["//ui:early", "//zz:late"], bbapi=Path("bbapi"), run=fake_run)
 
-    assert sorted(timed) == ["//ui:early", "//zz:late"]
+    assert sorted(timed.runs) == ["//ui:early", "//zz:late"]
     # Only the one the bulk listing missed costs an extra call.
     assert [flags for flags in asked if "--label" in flags] == [
         ["bbapi", "target", "run-1", "--json", "--label", "//zz:late"]
@@ -335,11 +335,8 @@ def test_a_target_that_did_not_pass_says_so_in_the_report() -> None:
         }
         return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
 
-    summary = report(
-        Observations(review={}, diagnostics={}),
-        ["run-1", "run-2"],
-        observe_targets(["run-1", "run-2"], ["//ui:visual"], bbapi=Path("bbapi"), run=fake_run),
-    )
+    observed = observe_targets(["run-1", "run-2"], ["//ui:visual"], bbapi=Path("bbapi"), run=fake_run)
+    summary = report(Observations(review={}, diagnostics={}), ["run-1", "run-2"], observed.runs)
 
     assert "FLAKY, PASSED" in summary
 
@@ -407,6 +404,57 @@ def test_exit_status_preserves_review_and_test_failures_but_not_diagnostic_drift
     monkeypatch.setattr(sys, "argv", ["determinism", "--runs", str(len(published_uris)), "//ui:visual"])
 
     assert _exit_status() == exit_code
+
+
+def test_unstarted_command_is_reported_without_discarding_observed_runs(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = tuple(str(part) for part in command)
+        match words:
+            case ("bbr", "test", *_):
+                commands.append(words)
+                if len(commands) == 2:
+                    return subprocess.CompletedProcess(command, 19, "", "remote runner unavailable")
+                return subprocess.CompletedProcess(command, 0, "", "")
+            case ("bbapi", "target", invocation, "--json", *_):
+                failed_invocation = commands[1][2].removeprefix("--invocation_id=")
+                if invocation == failed_invocation:
+                    return subprocess.CompletedProcess(command, 1, "", "Error: invocation not found")
+                payload = {"targetGroups": [{"targets": [_test_row("//ui:visual", seconds=9.0)]}]}
+                return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+            case ("bbapi", "artifact", "list", _, "--json"):
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    json.dumps(
+                        [
+                            _artifact("//ui:visual", "visual-review.json", "manifest"),
+                            _artifact("//ui:visual", "list.png", "stable-image"),
+                        ]
+                    ),
+                    "",
+                )
+            case other:
+                raise AssertionError(f"unexpected command {other}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("devinfra.pr_visuals.determinism.load_manifest", lambda _: _manifest("list.png"))
+    monkeypatch.setattr(sys, "argv", ["determinism", "--runs", "3", "//ui:visual"])
+
+    assert _exit_status() == 1
+
+    output = capsys.readouterr().out
+    failed_command = commands[1]
+    invocation = failed_command[2].removeprefix("--invocation_id=")
+    assert len(commands) == 3
+    assert "# Visual determinism over 2 observed runs" in output
+    assert "3 commands were attempted; 2 produced BuildBuddy invocations." in output
+    assert "All 1 image(s) reproduced identically in every run." in output
+    assert f"`{invocation}`: BuildBuddy has no invocation record; bbr exited 19." in output
+    assert "Command: `bbr test " + " ".join(failed_command[2:]) + "`" in output
 
 
 if __name__ == "__main__":
