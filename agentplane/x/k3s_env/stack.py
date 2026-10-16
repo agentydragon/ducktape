@@ -30,7 +30,6 @@ from util.bazel.runfiles import get_required_path
 logger = logging.getLogger(__name__)
 
 K3S_VERSION = "v1.33.4+k3s1"
-# Electric exits until history-service's migration has created its publication; its restart back-off reaches 5 min.
 DEPLOY_TIMEOUT_SECONDS = 480
 # k3s's default Pod CIDR.
 POD_CIDR = "10.42.0.0/16"
