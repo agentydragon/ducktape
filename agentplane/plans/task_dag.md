@@ -1838,9 +1838,9 @@ A reachable runner returns a terminal missing-target outcome for the public Sess
 public store; offline
 queued acceptance cannot prove membership. Native child IDs are harness-chosen: if exposed, register
 stable runner-chosen public mappings with store and parent identity before publication, and separate visibility
-from independent control. Use `NATIVE_SUBAGENT_EXPOSURE` for which children to project, and the held
-Claude investigation for process capability; #10677's bounded single-root observation is not a
-proof that Claude can never multiplex. No one-versus-many process/store or shared-store safety
+from independent control. Use `NATIVE_SUBAGENT_EXPOSURE` for which children to project and the merged
+Claude characterization for process capability; its bounded stream-json result is not a proof that
+Claude can never multiplex by another route. No one-versus-many process/store or shared-store safety
 decision is made here.
 
 Feed the reviewed process-diagnostic shape into
@@ -1853,7 +1853,7 @@ design node authorizes runtime changes.
 ### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping
 
 **Requires review of the private mapping contract, not a public store-ID decision; independent of
-the Claude multiplex result and Go unification.** Add runner-owned durable store IDs, exact Sandbox
+Go unification.** Add runner-owned durable store IDs, exact Sandbox
 UID binding, public Session
 reservations and native-ID mappings using a new migration rather than editing landed state formats.
 Implement adapter-internal process selection, restart/resume and store write fencing; a process
