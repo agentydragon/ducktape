@@ -38,7 +38,7 @@ _START_POLL_SECS = 0.02
 
 def _start(app: ASGIApp, sock: socket.socket) -> tuple[uvicorn.Server, threading.Thread]:
     """Run ``app`` under uvicorn on ``sock`` in a daemon thread; return once it is serving."""
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    server = uvicorn.Server(uvicorn.Config(app, log_config=None, log_level="warning"))
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
     deadline = time.monotonic() + _START_TIMEOUT_SECS
@@ -91,7 +91,7 @@ async def serve_app_in_loop(app: ASGIApp, *, sock: socket.socket) -> AsyncIterat
     start within ten seconds. On exit, stops the server, waits out its graceful shutdown and
     re-raises its failure, if any. Requests to it must be awaited: a blocking call in the test
     stalls the server."""
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    server = uvicorn.Server(uvicorn.Config(app, log_config=None, log_level="warning"))
     serving = asyncio.create_task(_serve_in_loop(server, sock))
     try:
         async with asyncio.timeout(_START_TIMEOUT_SECS):
