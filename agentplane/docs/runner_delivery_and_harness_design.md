@@ -469,18 +469,62 @@ diagnostic objects with hosted Sessions and status. The tuple works with one or 
 processes per Runner; that policy and shared-store concurrency safety remain unsettled.
 
 The Sandbox UID must identify the exact incarnation; namespace/name may be a locator, but its wire
-syntax and UID resolver are open. A store ID names a durable runner-local lineage, not a path or
-process. A public Session ID names a logical Session within that store; native Claude/Codex IDs are
+syntax and UID resolver are open. A store ID names one durable runner-local lineage and is never
+recycled, even after retirement; it is not a path or process. A public Session ID names a logical
+Session within that store; native Claude/Codex IDs are
 adapter-owned mappings and may collide across stores. Define authorization binding,
 unavailable/suspended lookup and store movement without promoting a same-name Sandbox replacement.
 
-Creation idempotency is a separate design axis from address identity. Today the caller-chosen public
-Session ID is the retry key to Dispatcher and Runner; the native ID may only be known after the
-harness starts. If a proposed flow lets the harness assign the canonical ID, specify how a retry
-finds a creation whose response was lost, how the durable public-to-native mapping is committed, and
-what happens if the process or runner fails between native creation and mapping persistence. Compare
-an explicit operation/idempotency key with the eventual Session address. No schema or migration is
-selected here.
+**Recommended creation contract for review, not an approved ID-allocation decision:** keep
+client-chosen, globally unique public Session IDs, with the exact `(Sandbox UID, store ID, Session
+ID)` and creation spec as the idempotency key. A retry with the same tuple and spec returns the same
+opening; reuse of the public ID with another store, Sandbox or spec conflicts. The runner first
+durably reserves the public ID and store binding, then asks the adapter to create a native Session,
+then durably records the harness-chosen native ID before reporting a completed opening. A queued
+opening is only acceptance; it does not assert native creation. Store a stable public-to-native
+mapping in runner-owned state, scoped by store, and reuse it after process or Runner restart. Do not
+make a native ID, PID or process incarnation the public retry key.
+
+This ordering does **not** make native creation exactly once: Codex may create a thread and the
+process may die before the returned native ID is committed. Recovery must inspect durable native
+store evidence or use a proven native idempotency mechanism before binding that thread. If neither
+can establish which native Session belongs to the reservation, mark creation unresolved and stop
+automatic native-create retries; expose that non-success state through the reviewed API and retain
+the possibly orphaned native data for reconciliation. A lost response after the mapping
+commit resolves by the same public ID. Claude's current adapter chooses a native ID before launch;
+that narrower path does not solve the harness-chosen-ID crash window in general. Specify the
+reservation/mapping format, native reconciliation proof, and failure status before implementation.
+
+**Store and Session lifecycle proposal for review:** a store has a durable ID, harness type and
+binding to the exact Sandbox UID; it survives process exit, Runner restart and Sandbox suspension.
+Creating or reusing a store is a store-level operation, while opening, resuming, stopping and
+changing model/effort are Session-level operations unless a harness proves an option is necessarily
+shared. A process has only ephemeral start/health/hosted-Session status and runner-selected capacity;
+it is never the API target for opening a Session. The runner may restart or replace a process without
+changing the store or public Session address. A stopped Session keeps its mapping and data for
+resume. Retiring a store stops new Sessions and requires an explicit policy for existing ones;
+deleting its authored native files is a separate, explicitly authorized data operation, never a
+side effect of stopping a Session/process, failed creation or Sandbox replacement. Moving/copying a
+store across Sandbox UIDs needs a new binding and authorization; do not silently preserve the old
+destination. Until shared-store concurrent writes are proven safe for a pinned adapter, serialize or
+exclude them within that store. Exact create/retire/delete RPC shapes and retention policy remain
+open.
+
+Native subagent IDs remain harness-chosen. If a discovered child is exposed as a public Session,
+durably register its native ID with store and parent public Session before publishing it, assigning
+a stable public ID on replay/restart. Parentage, visibility in History/UI and independent control
+are separate: a child may be visible and read-only even when the harness cannot accept direct input
+for it. A child's Sandbox/store lineage does not automatically grant the parent's send permission.
+The `NATIVE_SUBAGENT_EXPOSURE` lane decides which children to project and whether any are
+controllable; this identity contract does not presume Claude root multiplexing from the bounded
+single-root stream-json evidence or select one versus several processes per store.
+
+When a runner is reachable, a missing store or Session under the exact tuple is a terminal
+unknown-target result; no other store, process or same-name replacement is searched. When suspended
+or unreachable, queued acceptance cannot prove live membership and keeps the exact tuple until
+delivery. Loss of runner storage ends runner-owned state; retained History is not a native store or
+mapping reconstruction source. An unknown delivery response is handled by the same command ID,
+not by inventing another Session.
 
 ## Harness capability boundary
 
@@ -495,9 +539,10 @@ process leaves the other's request usable. Different credentials, sharing one co
 across processes, and concurrent multi-process crash recovery remain untested. The existing
 single-session `--resume` tests cover restart of one root in a new process.
 
-Neither test result decides whether one runner process should serve multiple Agentplane Sessions or
-how a harness, persisted store, native Session and public Session should be addressed. Those remain
-the open questions in the identity design above; neither test result authorizes runtime changes.
+Neither result decides how many processes or stores a Runner should use, whether concurrent Sessions
+may safely write one store, or which native children can be controlled. The approved public
+destination remains the Sandbox UID, store ID and Agentplane Session ID; these tests do not
+authorize runtime changes.
 
 ## Runner delivery acceptance without History
 

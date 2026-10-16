@@ -235,7 +235,7 @@ flowchart TD
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
     NATIVE_SUBAGENT_EXPOSURE[Explore: expose native harness children as Sessions]
-    RUNNER_HARNESS_OBJECTS_DESIGN[Decision: explicit running harness objects]
+    RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
     HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
     NATIVE_SUBAGENT_EXPOSURE -. if multiple Sessions share a harness .-> RUNNER_HARNESS_OBJECTS_DESIGN
     NATIVE_SUBAGENT_EXPOSURE -. the native-child boundary it informs .-> MULTIAGENT_MODEL
@@ -348,18 +348,19 @@ effective spec and delegation server-side. Test allowed and forbidden launch par
 concurrent retries. Reuse the app's create path (the shared Sandbox inventory), not harness-native agent tools. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
 
-### `RUNNER_HARNESS_OBJECTS_DESIGN` — expose running harnesses separately from Sessions
+### `RUNNER_HARNESS_OBJECTS_DESIGN` — decide process diagnostics and placement policy
 
-**Conditional design decision; operator, 2026-10-15 PDT.** Evaluate exposing running harnesses as
-explicit runner objects with Session-to-harness associations. Use the merged Codex multi-thread test
-and Claude's single-root-per-process characterization alongside `HARNESS_IDENTITY_DESIGN` and
-`NATIVE_SUBAGENT_EXPOSURE`; do
+**Conditional design decision; operator, 2026-10-15 PDT.** Evaluate exposing process incarnations as
+diagnostic objects with hosted Sessions and status, while store/Session APIs own public lifecycle.
+Use the merged Codex multi-thread test and Claude's separate-store single-root characterization
+alongside `HARNESS_IDENTITY_DESIGN` and `NATIVE_SUBAGENT_EXPOSURE`; do
 not assume one Agentplane Session is one process, one persisted store, or one native conversation, or
 that every discovered child is independently controllable.
 
-Compare explicit harness identity/lifecycle with retaining Session-only projections. Specify
-which operations, options, status and authorization belong to a process incarnation, persisted
-store and logical/native Session; include concurrency, cancellation and failure/restart behavior.
+Compare diagnostic process objects with retaining store/Session-only projections. Process placement
+and allocation remain internal, without a public create-Session-on-process API or refusal. Specify
+which options and status belong to the process incarnation, persisted store and public Session;
+include concurrency, cancellation and failure/restart behavior.
 Compare two coherent alternatives: one fixed harness type and persisted store per Runner, with the
 process lifecycle coupled to that Runner; or multiple processes and stores per Runner, each
 potentially serving multiple Sessions without an arbitrary same-type restriction. Do not retain the
@@ -1507,7 +1508,9 @@ flowchart LR
     RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
-    HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
+    HARNESS_IDENTITY_DESIGN[Decision: complete durable store/Session contract]
+    RUNNER_STORE_SESSION_IDENTITY[Blocked: implement store and Session identity]
+    RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
     RUNNER_DELIVERY_INGRESS_ACCEPTANCE[Candidate: test queued delivery and flush with real ingress, without History]
@@ -1526,6 +1529,9 @@ flowchart LR
     RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state use remains .-> RUNNER_LIST_SESSIONS_RETIRE
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     HARNESS_IDENTITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
+    HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
+    RUNNER_STORE_SESSION_IDENTITY --> DELIVERY_DESTINATION_CONTRACT
+    DELIVERY_DESTINATION_CONTRACT --> RUNNER_IDENTITY_LEGACY_CLEANUP
     NATIVE_SUBAGENT_EXPOSURE -. child identity evidence informs .-> HARNESS_IDENTITY_DESIGN
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
@@ -1758,18 +1764,20 @@ runners and unknown Sessions before implementation.
 
 ### `DELIVERY_DESTINATION_CONTRACT` — carry and enforce the reviewed destination
 
-**Blocked on `DELIVERY_DESTINATION_AUTHORITY_DESIGN` and the durable
-`HARNESS_IDENTITY_DESIGN` contract.** After approval, migrate the app and
+**Blocked on `DELIVERY_DESTINATION_AUTHORITY_DESIGN`, the durable
+`HARNESS_IDENTITY_DESIGN` contract and `RUNNER_STORE_SESSION_IDENTITY`.** After approval, migrate the app and
 Notification senders and the Dispatcher request/queue/retry shape to one caller-supplied full
-destination. Persist the exact destination, command ID and payload before a queued receipt or wake;
+`Sandbox UID + store ID + public Session ID` destination. Persist the exact destination, command ID
+and payload before a queued receipt or wake;
 do not reconstruct an expected UID from a Sandbox name. Make the chosen admission authority reject
 senders outside the v0 App/Notification trust boundary; only separately allowed callers may wake.
 Make the execution boundary fence the same UID and owner before forwarding. A reachable runner rejects unknown
 Session/store targets terminally; unavailable runners cannot prove membership at queue acceptance.
 Keep direct mode online-only with no wake and same-ID resolution after a lost reply. Validate
 replacement, owner change, wrong destination, suspension, duplicate retry, runner storage
-loss and staged caller/receiver rollout, including pinned images. This node does not select one or
-several harnesses per runner.
+loss and staged caller/receiver rollout, including pinned images. It consumes the runner's durable
+public-to-native mapping but does not expose process placement or select one versus several
+harnesses per runner.
 
 This implementation can make a central Session-to-Sandbox placement lookup unnecessary for command
 delivery. `GATEWAY_WRAPPER_RETIRE` still needs its separate app native-resume outcome and external/
@@ -1811,33 +1819,55 @@ for diagnostics with hosted Sessions/status. Adapter policy can put Codex's serv
 current Claude process per Session. Neither the number of stores/processes per Runner nor concurrent
 shared-store safety has been selected.
 
-Compare two coherent ownership choices: one fixed harness type and persisted store per Runner with
-process lifecycle coupled to the Runner, or multiple processes and stores per Runner, each able to
-serve multiple Sessions when supported and without an arbitrary same-type restriction. Reject the
-hybrid of one process at a time switching among per-Session stores; it retains store routing while
-constraining harness choice. A single persisted store removes store-address ambiguity but raises
-shared-store isolation/concurrency questions and prevents mixed Codex/Claude Sessions in one
-Sandbox/Runner. A Runner restart creates a new process incarnation even when the store is reused.
-Migration flexibility mildly favors multiple-harness support because restricting to one later is
-easier than introducing process/store identity and routing later; this does not settle the choice.
-Use the merged Codex multi-thread result and Claude's single-root-per-process characterization in
-the [harness test index](../native/README.md#behavioral-coverage), plus child-identity evidence from
-`NATIVE_SUBAGENT_EXPOSURE`, to distinguish native child visibility from multiple independently
-interactive Sessions before recommending either arrangement. Claude's test uses separate config
-stores; concurrent processes sharing a store and distinct credentials remain untested.
+**Recommendation for review, not approved ID allocation:** retain client-chosen globally unique
+public Session IDs, bound to one Sandbox UID, store ID and immutable creation spec. Reserve the
+public ID durably before native creation; map it durably to the harness-chosen native ID before
+reporting a completed opening. An identical retry resolves by public ID, while reuse against a
+different destination/spec conflicts. A queued opening is not proof of native creation. If native
+creation succeeds but its ID is lost before mapping commits, inspect native store evidence or a
+proven harness idempotency mechanism; if identity cannot be proved, report unresolved creation and
+do not blindly create again. Specify how the reservation, mapping and native evidence survive
+Runner/process crashes. Native ID is scoped to the store and never substitutes for the public ID.
 
-Keep creation idempotency separate from address identity: define operation keys, retries after a lost
-creation response, and durable mapping/crash recovery when the native ID is assigned after opening.
-The API must say which Sandbox namespace/name/UID identity is bound to a store and Session. Consider
-how that binding survives restart without making a replacement Sandbox an authorized target.
-**Recommendation for review:** represent process incarnation and persisted data lineage separately;
-retain the current public Session identity until evidence justifies another address. Question: what
-stable opaque address and mapping rules cover several native Sessions in one store without conflating
-identity and create-idempotency? No schema or migration is proposed.
+Define store create/reuse without ID recycling, Session open/resume/stop, per-store versus per-Session options, store
+retirement and explicitly authorized data deletion. Persist store harness type and exact Sandbox UID
+binding; process death and Sandbox suspension do not delete data. Moving a store to another Sandbox
+requires a new binding and authorization. Until proven safe, prevent concurrent writes to one store.
+A reachable runner returns a terminal missing-target outcome for the exact store/Session; offline
+queued acceptance cannot prove membership. Native child IDs are harness-chosen: if exposed, register
+stable public mappings with store and parent identity before publication, and separate visibility
+from independent control. Use `NATIVE_SUBAGENT_EXPOSURE` for which children to project, and the held
+Claude investigation for process capability; #10677's bounded single-root observation is not a
+proof that Claude can never multiplex. No one-versus-many process/store or shared-store safety
+decision is made here.
 
-Feed the merged Codex multi-thread test, Claude's single-root-per-process characterization and
-reviewed identity alternatives into [`RUNNER_HARNESS_OBJECTS_DESIGN`](#runner_harness_objects_design--expose-running-harnesses-separately-from-sessions).
-Keep unresolved child identity and visibility under `NATIVE_SUBAGENT_EXPOSURE`. The harness-object
-decision must state which lifecycle, options, status, auth and cancellation belong to a process
-incarnation, persisted store and logical/native Session; neither design node authorizes runtime
-changes.
+Feed the reviewed process-diagnostic shape into
+[`RUNNER_HARNESS_OBJECTS_DESIGN`](#runner_harness_objects_design--decide-process-diagnostics-and-placement-policy).
+This contract precedes destination migration; it does not block Dispatcher/Gateway Go unification
+planning. A unified service may preserve today's wire first and consume the approved identity
+contract when destination migration is ready. Neither design node authorizes runtime changes.
+
+### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping
+
+**Blocked on `HARNESS_IDENTITY_DESIGN`; independent of the Claude multiplex result and Go
+unification.** Add runner-owned durable store IDs, exact Sandbox UID binding, public Session
+reservations and native-ID mappings using a new migration rather than editing landed state formats.
+Implement adapter-internal process selection, restart/resume and store write fencing; a process
+incarnation must not enter a durable destination. Preserve the current per-Session state and authored
+native data through migration. Cover same-ID/same-spec retries, conflicting reuse, crashes before
+native creation, after native creation but before mapping, and after mapping but before response.
+Where the native create result cannot be reconstructed, expose unresolved creation and preserve
+orphaned native data for reconciliation instead of duplicating it. Exercise Codex and Claude adapter
+paths without assuming Claude multiplexing. Specify atomic caller/proto and pinned runner/VM image
+rollout before changing live addresses.
+
+### `RUNNER_IDENTITY_LEGACY_CLEANUP` — retire only obsolete identity assumptions
+
+**Blocked on `RUNNER_STORE_SESSION_IDENTITY` and `DELIVERY_DESTINATION_CONTRACT` rollout.** Audit
+running/saved SandboxTemplates, pinned runner wheels and every caller before removing old
+Sandbox-plus-Session address handling, per-Session-process assumptions and stale docs/protos.
+Identify any remaining placement-registry lookups, but keep the Gateway registry's separate
+native-resume and pinned-caller retirement
+gates; this node does not drop its database or delete retained runner stores, native conversations or
+History. Confirm exact UID/store/Session routing, suspended-queue retry and restart on the deployed
+images before retiring old paths.
