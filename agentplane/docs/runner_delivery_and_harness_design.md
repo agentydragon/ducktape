@@ -295,13 +295,13 @@ method. Do not port the removed Gateway Session wrappers or registry. The Gatewa
 database resources are removed through their separate rollout-gated retirement.
 
 Keep the current `agentplane-session-dispatcher` and `agentplane-runner-gateway` Service names and
-token audiences as two logical front doors to the unified Pods. Use distinct, authenticated
-Dispatcher sender, per-Sandbox Runner proxy and runner-control listeners; retain method-level allowlists:
+token audiences as two logical front doors to the unified Pods. Expose Dispatcher, the per-Sandbox Runner proxy and runner-control services on one gRPC listener;
+retain their distinct authentication and method-level allowlists:
 App and Notification alone may submit to Dispatcher v0, the existing narrower wake allowlist still
 applies, controller alone may Quiesce, and runner `Connect` still requires its runner audience and
 Pod/ServiceAccount proof. The current Gateway proxy admits its configured callers for non-Quiesce
-Runner methods; tightening that policy is separate from co-location. Network ingress must reflect
-each listener rather than granting every Gateway caller the Dispatcher sender surface. A combined
+Runner methods; tightening that policy is separate from co-location. Network ingress permits the union of the required callers; service authentication and
+authorization keep Dispatcher admission, proxy methods and runner connections distinct. A combined
 ServiceAccount needs the union of the two current
 Kubernetes permissions, with a reviewed namespace-bounded RBAC and network-policy diff. Local
 in-process shortcuts are optional, not part of the required merger: a Dispatcher worker on replica A

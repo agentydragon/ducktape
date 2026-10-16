@@ -14,8 +14,7 @@ Secrets, keeps the CNPG `Cluster` and `Database` objects (the real operator is i
 manifest), makes Services headless (no kube-proxy means no ClusterIP) and generates the egress CA. In
 this fixture only, the Python Runner Gateway and Session Dispatcher Deployments are replaced with the
 Go Runner Gateway; the stable `runner-gateway` and `session-dispatcher` Service names remain. The
-headless Dispatcher Service and its fixture clients use port 8081 directly, while the live generated
-Service contract remains on port 8080 for the separately reviewed cutover. A Goose init container
+headless Services and their fixture clients use the shared gRPC listener on port 8080. A Goose init container
 runs before the Go server container and uses the existing Dispatcher database Secret. The
 model-free lifecycle and model smoke tests share [`stack.py`](stack.py), which starts k3s, streams
 the Bazel-built OCI image layouts into containerd, applies the rendered stack and reports Deployment

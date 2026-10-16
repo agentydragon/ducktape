@@ -6,7 +6,7 @@ stamps them, so the informer's list-then-watch-from-version protocol is exercise
 replays every change after the version it names, then streams live ones until `timeoutSeconds`
 passes or `close_watches` ends it (which is how a test forces a relist). The kinds served and the
 namespace each is legitimately read from default to the egress proxy's; another informer's tests
-pass their own map. Streaming initial lists send the current snapshot followed by an end bookmark.
+pass their own map.
 """
 
 from __future__ import annotations
@@ -41,17 +41,6 @@ _NAMESPACE_OF = {
     CREDENTIALS_PLURAL: NAMESPACE,
     POLICY_SETS_PLURAL: NAMESPACE,
     POLICY_BINDINGS_PLURAL: NAMESPACE,
-}
-
-_KIND_OF = {
-    SECRETS_PLURAL: "Secret",
-    SANDBOXES_PLURAL: SANDBOX_KIND,
-    CREDENTIALS_PLURAL: "EgressCredential",
-    POLICY_SETS_PLURAL: "PolicySet",
-    POLICY_BINDINGS_PLURAL: "PolicyBinding",
-    "leases": "Lease",
-    "services": "Service",
-    "endpointslices": "EndpointSlice",
 }
 
 
@@ -209,7 +198,7 @@ class FakeApiServer:
         )
 
     async def _watch(self, request: web.Request, plural: str, selector: str) -> web.StreamResponse:
-        since = int(request.query.get("resourceVersion") or "0")
+        since = int(request.query.get("resourceVersion", "0"))
         # The API server parses timeoutSeconds with strconv.ParseInt and answers 400 for anything
         # else, so a float reaches it as "300.0" and every watch fails. Refusing it here too keeps
         # the difference from hiding that.
@@ -230,37 +219,13 @@ class FakeApiServer:
         deadline = asyncio.get_running_loop().time() + timeout
         response = web.StreamResponse(headers={"Content-Type": "application/json"})
         response.enable_chunked_encoding()
+        await response.prepare(request)
         queue: asyncio.Queue[_Event | None] = asyncio.Queue()
-        initial: list[dict[str, Any]] = []
-        if request.query.get("sendInitialEvents", "").lower() == "true":
-            initial.extend(
-                {"type": "ADDED", "object": obj} for obj in self.objects[plural].values() if _selected(selector, obj)
-            )
-            group = request.match_info.get("group")
-            api_version = f"{group}/{request.match_info['version']}" if group else "v1"
-            initial.append(
-                {
-                    "type": "BOOKMARK",
-                    "object": {
-                        "apiVersion": api_version,
-                        "kind": _KIND_OF[plural],
-                        "metadata": {
-                            "resourceVersion": str(self._version),
-                            "annotations": {"k8s.io/initial-events-end": "true"},
-                        },
-                    },
-                }
-            )
-        else:
-            for missed in self._events:
-                if missed.version > since:
-                    queue.put_nowait(missed)
-        # Register before the first await so changes during snapshot writes follow the bookmark.
+        for missed in self._events:
+            if missed.version > since:
+                queue.put_nowait(missed)
         self._watchers.add(queue)
         try:
-            await response.prepare(request)
-            for event_body in initial:
-                await response.write((json.dumps(event_body) + "\n").encode())
             while True:
                 remaining = deadline - asyncio.get_running_loop().time()
                 if remaining <= 0:

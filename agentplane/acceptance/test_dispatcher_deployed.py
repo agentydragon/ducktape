@@ -134,7 +134,7 @@ async def _forward(resource: str = f"service/{SERVICE}") -> AsyncIterator[str]:
         NAMESPACE,
         "port-forward",
         resource,
-        f"{port}:{8081 if resource.startswith('pod/') else 8080}",
+        f"{port}:8080",
         "--address=127.0.0.1",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,

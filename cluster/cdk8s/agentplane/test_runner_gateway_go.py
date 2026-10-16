@@ -1,4 +1,4 @@
-"""The staged Go cutover keeps the old addresses and restricts each listener."""
+"""The staged Go cutover keeps the old addresses and authenticates each service."""
 
 from typing import Any, cast
 
@@ -45,7 +45,7 @@ def _go_objects() -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
-def test_go_gateway_preserves_services_and_fences_listener_ingress() -> None:
+def test_go_gateway_preserves_services_and_fences_service_ingress() -> None:
     docs = _go_objects()
     root = Chart(Cdk8sTesting.app(), "root-services", disable_resource_name_hashes=True)
     runner_gateway_go.add_stable_services(root, staging.ENV)
@@ -57,7 +57,7 @@ def test_go_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert container["image"].startswith("git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:")
     assert pod["serviceAccountName"] == runner_gateway.NAME
     assert deployment["spec"]["strategy"] == {"type": "Recreate"}
-    assert {p["containerPort"] for p in container["ports"]} == {8080, 8081, 8082}
+    assert {p["containerPort"] for p in container["ports"]} == {8080}
     assert f"--dispatcher-audience={session_dispatcher.TOKEN_AUDIENCE}" in container["args"]
     assert f"--gateway-audience={runner_gateway.TOKEN_AUDIENCE}" in container["args"]
     assert f"--dispatcher-caller={staging.ENV.namespace}/{app.NAME}" in container["args"]
@@ -67,10 +67,10 @@ def test_go_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert "initContainers" not in pod
     assert _resource(root_docs, "Service", runner_gateway.NAME)["spec"]["ports"] == [
         {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080},
-        {"name": "runner-control", "port": 8082, "protocol": "TCP", "targetPort": 8082},
+        {"name": "runner-control", "port": 8082, "protocol": "TCP", "targetPort": 8080},
     ]
     assert _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]["ports"] == [
-        {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8081}
+        {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080}
     ]
     assert _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]["selector"] == {
         "app.kubernetes.io/name": runner_gateway.NAME
@@ -82,8 +82,8 @@ def test_go_gateway_preserves_services_and_fences_listener_ingress() -> None:
         for endpoint in rule.get("fromEndpoints", [])
         for port in rule.get("toPorts", [{}])[0].get("ports", [])
     }
-    assert (app.NAME, "8081") in ingress
-    assert (notifications.NAME, "8081") in ingress
+    assert (app.NAME, "8080") in ingress
+    assert (notifications.NAME, "8080") in ingress
     assert (runner_gateway.NAME, "8080") in ingress
     assert (sandbox_controller.NAME, "8080") in ingress
     assert (sandbox_controller.NAME, "8081") not in ingress

@@ -18,7 +18,7 @@ RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
 GO_RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset"
 GO_QUEUE_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
-DISPATCHER_PORT = 8081
+DISPATCHER_PORT = 8080
 
 # Kinds a bare k3s has no CRD for and that the services do not read.
 LITELLM_INTERNAL_HOST = "litellm.litellm.svc.cluster.local"
@@ -209,11 +209,7 @@ def _go_runner_gateway(deployment: dict[str, Any]) -> None:
                 f"--wake-caller={NAMESPACE}/app",
                 f"--wake-caller={NAMESPACE}/notifications",
             ],
-            "ports": [
-                {"name": "grpc", "containerPort": 8080, "protocol": "TCP"},
-                {"name": "dispatcher", "containerPort": DISPATCHER_PORT, "protocol": "TCP"},
-                {"name": "runner-control", "containerPort": 8082, "protocol": "TCP"},
-            ],
+            "ports": [{"name": "grpc", "containerPort": 8080, "protocol": "TCP"}],
         }
     )
     env = [entry for entry in container.get("env", []) if entry.get("name") != "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"]
@@ -296,7 +292,10 @@ def _go_dispatcher_endpoint(node: Any) -> Any:
     if isinstance(node, list):
         return [_go_dispatcher_endpoint(value) for value in node]
     if isinstance(node, str):
-        return node.replace(old, new)
+        return node.replace(old, new).replace(
+            f"{RUNNER_GATEWAY}.{NAMESPACE}.svc.cluster.local:8082",
+            f"{RUNNER_GATEWAY}.{NAMESPACE}.svc.cluster.local:8080",
+        )
     return node
 
 
@@ -344,6 +343,8 @@ def rewrite(
         elif kind == "Service":
             if name == SESSION_DISPATCHER:
                 _go_dispatcher_service(doc, gateway_selector)
+            if name == RUNNER_GATEWAY:
+                doc["spec"]["ports"] = [port for port in doc["spec"]["ports"] if port["name"] == "grpc"]
             _headless(doc)
         elif kind == "Cluster":
             _cnpg_cluster_fixups(doc, node_ip)

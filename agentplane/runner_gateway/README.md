@@ -2,8 +2,8 @@
 
 The Go Runner Gateway combines durable Session Dispatcher admission and delivery with the
 runners' outbound [RunnerControl stream](../docs/runner_control.md) and the identity-fenced
-Runner proxy. Its three authenticated gRPC listeners serve the Runner proxy on `:8080`,
-Dispatcher on `:8081`, and runner `Connect` on `:8082`. The app and Notification service use
+Runner proxy. One gRPC listener on `:8080` serves Dispatcher, the Runner proxy and runner `Connect`,
+with separate authentication and authorization for each service. The app and Notification service use
 Python gRPC clients against those contracts. The Sandbox Controller owns `Sandbox.status`.
 
 The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox delivery Leases
@@ -26,6 +26,9 @@ conversation and from Runner admission.
 Build `//agentplane/runner_gateway/go:runner-gateway` or `//agentplane/runner_gateway:go_image`.
 The migrator image is `//agentplane/runner_gateway/go/migrations:image`; serving never applies
 migrations. Integration tests exercise real PostgreSQL and queue-to-runner tunnels on RBE.
+The cross-language Notification acceptance runs a real Kubernetes API server and etcd through
+`envtest`, installs the Agentplane CRDs and issues Pod-bound ServiceAccount tokens. Narrow
+consumer tests continue using lightweight gRPC peers.
 
 ## Deployment gate
 

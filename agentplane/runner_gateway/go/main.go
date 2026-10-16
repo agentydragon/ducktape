@@ -174,39 +174,19 @@ func serve(ctx context.Context, c config) error {
 		WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
 		Hub: hub, WatchLease: c.WatchLease,
 	}
-	proxy := grpc.NewServer()
-	publicDispatcher := grpc.NewServer()
-	control := grpc.NewServer()
-	dispatcherpb.RegisterSessionDispatcherServer(publicDispatcher, service)
-	g.RegisterProxy(proxy)
-	g.RegisterRunnerControl(control)
-	proxyHealth, dispatcherHealth, controlHealth := health.NewServer(), health.NewServer(), health.NewServer()
-	healthpb.RegisterHealthServer(proxy, proxyHealth)
-	healthpb.RegisterHealthServer(publicDispatcher, dispatcherHealth)
-	healthpb.RegisterHealthServer(control, controlHealth)
-	proxyListener, err := net.Listen("tcp", c.ProxyListenAddress)
+	server := grpc.NewServer()
+	dispatcherpb.RegisterSessionDispatcherServer(server, service)
+	g.RegisterProxy(server)
+	g.RegisterRunnerControl(server)
+	healthServer := health.NewServer()
+	healthpb.RegisterHealthServer(server, healthServer)
+	listener, err := net.Listen("tcp", c.ListenAddress)
 	if err != nil {
 		return err
 	}
-	defer proxyListener.Close()
-	dispatcherListener, err := net.Listen("tcp", c.DispatcherListenAddress)
-	if err != nil {
-		return err
-	}
-	defer dispatcherListener.Close()
-	controlListener, err := net.Listen("tcp", c.ControlListenAddress)
-	if err != nil {
-		return err
-	}
-	defer controlListener.Close()
-	proxyHealth.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-	dispatcherHealth.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-	controlHealth.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-	go func() { reportUnexpected(ctx, failed, "Runner proxy gRPC listener", proxy.Serve(proxyListener)) }()
-	go func() {
-		reportUnexpected(ctx, failed, "Dispatcher gRPC listener", publicDispatcher.Serve(dispatcherListener))
-	}()
-	go func() { reportUnexpected(ctx, failed, "runner Connect listener", control.Serve(controlListener)) }()
+	defer listener.Close()
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
 	var result error
 	select {
 	case err := <-failed:
@@ -214,18 +194,14 @@ func serve(ctx context.Context, c config) error {
 	case <-ctx.Done():
 		result = ctx.Err()
 	}
-	proxyHealth.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
-	dispatcherHealth.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
-	controlHealth.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	cancel()
 	stopped := make(chan struct{})
-	go func() { proxy.GracefulStop(); publicDispatcher.GracefulStop(); control.GracefulStop(); close(stopped) }()
+	go func() { server.GracefulStop(); close(stopped) }()
 	select {
 	case <-stopped:
 	case <-time.After(5 * time.Second):
-		proxy.Stop()
-		publicDispatcher.Stop()
-		control.Stop()
+		server.Stop()
 	}
 	return result
 }
