@@ -1,5 +1,4 @@
 import { ActionIcon, Box, Button, Flex, Group, Menu, Paper, Select, Stack, Text, Textarea } from "@mantine/core";
-import { create } from "@bufbuild/protobuf";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import IconArrowDown from "@tabler/icons-react/dist/esm/icons/IconArrowDown.mjs";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
@@ -20,7 +19,6 @@ import {
   useState,
 } from "react";
 
-import { CommandSchema } from "../../../proto/command_pb";
 import { ItemKind } from "../../../proto/event_pb";
 import {
   displayableError,
@@ -1179,11 +1177,7 @@ function ProjectedSessionBody({
   function submit(): void {
     if (!draft.trim() || !canSend || submitting.current) return;
     submitting.current = true;
-    const value = create(CommandSchema, {
-      commandId: crypto.randomUUID(),
-      operation: { case: "submitInput", value: { text: draft } },
-    });
-    if (commands.submit(value)) setDraft("");
+    if (commands.submitInput(draft)) setDraft("");
     else submitting.current = false;
   }
 
@@ -1285,15 +1279,7 @@ function ProjectedSessionBody({
                     : "Model"
               }
               disabled={!running}
-              onChange={(model) =>
-                model &&
-                commands.submit(
-                  create(CommandSchema, {
-                    commandId: crypto.randomUUID(),
-                    operation: { case: "changeModel", value: { model } },
-                  })
-                )
-              }
+              onChange={(model) => model && commands.changeModel(model)}
             />
             {effortOptions.length > 0 && (
               <Select
@@ -1303,15 +1289,7 @@ function ProjectedSessionBody({
                 value={controls?.applied_reasoning_effort ?? thread.reasoning_effort ?? null}
                 placeholder="Effort"
                 disabled={!running}
-                onChange={(effort) =>
-                  effort &&
-                  commands.submit(
-                    create(CommandSchema, {
-                      commandId: crypto.randomUUID(),
-                      operation: { case: "changeReasoningEffort", value: { effort } },
-                    })
-                  )
-                }
+                onChange={(effort) => effort && commands.changeReasoningEffort(effort)}
               />
             )}
           </Group>
@@ -1345,14 +1323,7 @@ function ProjectedSessionBody({
                   color="red"
                   leftSection={<IconPower size={15} />}
                   disabled={!running}
-                  onClick={() =>
-                    commands.submit(
-                      create(CommandSchema, {
-                        commandId: crypto.randomUUID(),
-                        operation: { case: "stopRunnerSession", value: {} },
-                      })
-                    )
-                  }
+                  onClick={() => commands.stopRunnerSession()}
                 >
                   Shut down harness
                 </Menu.Item>
@@ -1372,15 +1343,7 @@ function ProjectedSessionBody({
               color="red"
               aria-label="Interrupt"
               disabled={!running || !activeTurn}
-              onClick={() =>
-                activeTurn &&
-                commands.submit(
-                  create(CommandSchema, {
-                    commandId: crypto.randomUUID(),
-                    operation: { case: "interruptTurn", value: { turnId: activeTurn } },
-                  })
-                )
-              }
+              onClick={() => activeTurn && commands.interruptTurn(activeTurn)}
             >
               <IconPlayerStop size={16} />
             </ActionIcon>

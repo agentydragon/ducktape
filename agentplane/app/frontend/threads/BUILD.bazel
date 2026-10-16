@@ -353,7 +353,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/proto:command_pb",
     ],
 )
 

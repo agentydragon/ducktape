@@ -15,7 +15,7 @@ from agentplane.acceptance.agent import RUNNER_ANSWERS_SECONDS, Agent
 from agentplane.acceptance.conftest import SandboxNotReadyError, suspend_and_delete
 from agentplane.app.live import SandboxesSnapshot
 from agentplane.app.testing.client import Client
-from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.sandbox_resource import OperatingMode
 
 # gazelle:include_dep @pypi//protobuf
@@ -172,9 +172,9 @@ async def test_run_returns_successful_turn_outputs() -> None:
     assert turn.tool_outputs == ["test tool output"]
     assert turn.answer == "test answer"
     assert turn.native == ['{"test": "result"}']
-    client.command.assert_awaited_once()
-    assert client.command.call_args.args[0] == thread_id
-    assert client.command.call_args.args[1].submit_input.text == "test prompt"
+    client.submit_input.assert_awaited_once()
+    assert client.submit_input.call_args.args[0] == thread_id
+    assert client.submit_input.call_args.args[2] == "test prompt"
 
 
 @pytest.mark.parametrize(
@@ -193,7 +193,14 @@ async def test_run_rejects_unsuccessful_terminal_after_partial_output(status: ev
     async def events() -> AsyncIterator[event_log_pb2.EventEntry]:
         for cursor, event in enumerate(
             [
-                event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=client.command.call_args.args[1])),
+                event_pb2.Event(
+                    command_admitted=event_pb2.CommandAdmitted(
+                        command=command_pb2.Command(
+                            command_id=client.submit_input.call_args.args[1],
+                            submit_input=command_pb2.SubmitInput(text=client.submit_input.call_args.args[2]),
+                        )
+                    )
+                ),
                 event_pb2.Event(
                     item_completed=event_pb2.ItemCompleted(item_id="test-partial", text="test partial output")
                 ),
@@ -217,9 +224,9 @@ async def test_run_rejects_unsuccessful_terminal_after_partial_output(status: ev
     assert repr(diagnostic) in str(caught.value)
     assert "\x1b" not in str(caught.value)
     assert "test partial output" not in str(caught.value)
-    client.command.assert_awaited_once()
-    first_command = client.command.call_args.args[1]
-    assert first_command.submit_input.text == "test admitted prompt"
+    client.submit_input.assert_awaited_once()
+    first_command_id = client.submit_input.call_args.args[1]
+    assert client.submit_input.call_args.args[2] == "test admitted prompt"
 
     async def next_turn() -> AsyncIterator[event_log_pb2.EventEntry]:
         yield event_log_pb2.EventEntry(
@@ -231,9 +238,9 @@ async def test_run_rejects_unsuccessful_terminal_after_partial_output(status: ev
 
     client.events.return_value = next_turn()
     await agent.run("test explicit next prompt")
-    assert client.command.await_count == 2
-    assert client.command.call_args.args[1].command_id != first_command.command_id
-    assert client.command.call_args.args[1].submit_input.text == "test explicit next prompt"
+    assert client.submit_input.await_count == 2
+    assert client.submit_input.call_args.args[1] != first_command_id
+    assert client.submit_input.call_args.args[2] == "test explicit next prompt"
     assert client.events.call_args.kwargs["after"] == 11
 
 

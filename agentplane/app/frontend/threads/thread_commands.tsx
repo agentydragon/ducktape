@@ -1,12 +1,21 @@
 import { Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
-import { type Command } from "../../../proto/command_pb";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { command, commandDispatch, CommandSubmissionRefused, displayableError } from "../client";
+import {
+  changeModel,
+  changeReasoningEffort,
+  commandDispatch,
+  CommandSubmissionRefused,
+  displayableError,
+  interruptTurn,
+  stopRunnerSession,
+  submitInput,
+  type CommandSubmission,
+} from "../client";
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
-import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
+import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type PendingCommand } from "./local_commands";
 import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
@@ -25,7 +34,11 @@ interface ProjectedCommands {
   local: LocalCommandSnapshot;
   errors: ReadonlyMap<string, CommandIssue>;
   submissionError: string | null;
-  submit: (value: Command) => boolean;
+  submitInput: (text: string) => boolean;
+  changeModel: (model: string) => boolean;
+  changeReasoningEffort: (effort: string) => boolean;
+  stopRunnerSession: () => boolean;
+  interruptTurn: (turnId: string) => boolean;
   deliver: (value: LocalCommand) => Promise<void>;
   store: LocalCommands;
 }
@@ -66,7 +79,28 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
       };
       try {
         if (!navigator.onLine || !store.markAttempted(id)) return;
-        const result = await command(threadId, value.command);
+        const operation = value.command.operation;
+        const commandId = value.command.commandId;
+        let result: CommandSubmission;
+        switch (operation.case) {
+          case "submitInput":
+            result = await submitInput(threadId, commandId, operation.value.text);
+            break;
+          case "changeModel":
+            result = await changeModel(threadId, commandId, operation.value.model);
+            break;
+          case "changeReasoningEffort":
+            result = await changeReasoningEffort(threadId, commandId, operation.value.effort);
+            break;
+          case "stopRunnerSession":
+            result = await stopRunnerSession(threadId, commandId);
+            break;
+          case "interruptTurn":
+            result = await interruptTurn(threadId, commandId, operation.value.turnId);
+            break;
+          default:
+            throw new Error("Unknown retained operation");
+        }
         if (result.kind === "archived_admission") store.acknowledge(value.command, result.admission);
         else store.acknowledgeDispatch(value.command, result.dispatch);
         settle(null);
@@ -135,7 +169,7 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [pollingIds, store, threadId]);
-  function submit(value: Command): boolean {
+  function submit(value: PendingCommand): boolean {
     try {
       void deliver(store.remember(value));
       setSubmissionError(null);
@@ -145,7 +179,23 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
       return false;
     }
   }
-  return { local, errors, submissionError, submit, deliver, store };
+  return {
+    local,
+    errors,
+    submissionError,
+    deliver,
+    store,
+    submitInput: (text: string) =>
+      submit({ commandId: crypto.randomUUID(), operation: { case: "submitInput", value: { text } } }),
+    changeModel: (model: string) =>
+      submit({ commandId: crypto.randomUUID(), operation: { case: "changeModel", value: { model } } }),
+    changeReasoningEffort: (effort: string) =>
+      submit({ commandId: crypto.randomUUID(), operation: { case: "changeReasoningEffort", value: { effort } } }),
+    stopRunnerSession: () =>
+      submit({ commandId: crypto.randomUUID(), operation: { case: "stopRunnerSession", value: {} } }),
+    interruptTurn: (turnId: string) =>
+      submit({ commandId: crypto.randomUUID(), operation: { case: "interruptTurn", value: { turnId } } }),
+  };
 }
 
 function subject(operation: string): CommandSubject {

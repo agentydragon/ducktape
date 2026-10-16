@@ -120,7 +120,6 @@ ts_library(
         ":schema",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/openapi-fetch",
-        "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:runner_pb",
     ],
@@ -134,7 +133,6 @@ agentplane_vitest_test(
         ":operator_login",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
-        "//agentplane/proto:command_pb",
     ],
 )
 

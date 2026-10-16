@@ -20,7 +20,7 @@ from typing import Any, Self
 from uuid import UUID
 
 import httpx
-from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
+from google.protobuf.json_format import ParseDict, ParseError
 
 from agentplane.app.live import DecisionsSnapshot, DecisionsUnavailable, SandboxesSnapshot
 from agentplane.app.model_catalog import ModelCatalog
@@ -29,7 +29,7 @@ from agentplane.app.sandbox_models import NewSandbox, SandboxView
 from agentplane.app.threads.bridge import NewSession
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.egress.decisions import Decision
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.proto import event_log_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.sandboxes.egress_views import BindingView
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -266,11 +266,13 @@ class Client:
         """The persistent Thread of a created Session; its ID is the Session's public ID."""
         return ThreadView.model_validate(await self._json("GET", f"/threads/{thread_id}"))
 
-    async def command(
-        self, thread_id: UUID, command: command_pb2.Command
+    async def submit_input(
+        self, thread_id: UUID, command_id: str, text: str
     ) -> session_dispatcher_pb2.Dispatch | event_log_pb2.EventEntry:
-        """Return the durable Dispatch, or archived admission for an exact retry; neither is a native outcome."""
-        answered = await self._json("POST", f"/threads/{thread_id}/commands", json=MessageToDict(command))
+        """Submit an input by its stable ID and return durable or archived admission evidence."""
+        answered = await self._json(
+            "POST", f"/threads/{thread_id}/submit-input", json={"commandId": command_id, "text": text}
+        )
         match answered["kind"]:
             case "dispatch":
                 return ParseDict(answered["dispatch"], session_dispatcher_pb2.Dispatch())

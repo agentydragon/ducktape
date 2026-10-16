@@ -702,8 +702,15 @@ async def test_bridge_returns_the_dispatcher_queued_receipt_over_grpc(
         command_id="queued-at-dispatcher", submit_input=command_pb2.SubmitInput(text="wait for resume")
     )
     async with queued_dispatcher_service(tmp_path / "queued-token") as dispatcher:
-        bridge._dispatcher = dispatcher
-        result = await bridge.command(thread_id, command, sandbox="live")
+        bridge.dispatcher = dispatcher
+        result = (
+            await bridge.dispatcher.unary(
+                bridge.dispatcher.stub.SubmitInput,
+                session_dispatcher_pb2.SubmitInputRequest(
+                    command_id=command.command_id, session_id=str(thread_id), sandbox="live", text="wait for resume"
+                ),
+            )
+        ).dispatch
 
     assert isinstance(result, session_dispatcher_pb2.Dispatch)
     assert result.command_id == command.command_id
@@ -718,32 +725,18 @@ async def test_command_submission_tags_dispatch_and_archived_retry_after_sandbox
     history: History,
     store: ThreadStore,
     custom_objects: FakeCustomObjectsApi,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     thread_id = await event_logs.seed("live", str(uuid4()))
     command = command_pb2.Command(command_id="retry-after-archive", submit_input=command_pb2.SubmitInput(text="once"))
-    queued = session_dispatcher_pb2.Dispatch(
-        command_id=command.command_id,
-        session_id=str(thread_id),
-        sandbox="live",
-        state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
-    )
-    calls: list[command_pb2.Command] = []
-
-    async def submit(
-        candidate_thread: UUID, candidate: command_pb2.Command, *, sandbox: str
-    ) -> session_dispatcher_pb2.Dispatch:
-        assert (candidate_thread, sandbox) == (thread_id, "live")
-        calls.append(candidate)
-        return queued
-
-    monkeypatch.setattr(bridge, "command", submit)
-    path = f"/threads/{thread_id}/commands"
-    body = MessageToDict(command)
-    first = await client.post(path, json=body)
-    assert first.status_code == 200, first.text
-    assert first.json() == {"kind": "dispatch", "dispatch": MessageToDict(queued)}
-    assert calls == [command]
+    path = f"/threads/{thread_id}/submit-input"
+    body = {"commandId": command.command_id, "text": command.submit_input.text}
+    async with queued_dispatcher_service(tmp_path / "queued-token") as dispatcher:
+        bridge.dispatcher = dispatcher
+        first = await client.post(path, json=body)
+        assert first.status_code == 200, first.text
+        assert first.json()["kind"] == "dispatch"
+        assert first.json()["dispatch"]["commandId"] == command.command_id
 
     timestamp = Timestamp()
     timestamp.GetCurrentTime()
@@ -759,9 +752,8 @@ async def test_command_submission_tags_dispatch_and_archived_retry_after_sandbox
     retry = await client.post(path, json=body)
     assert retry.status_code == 200, retry.text
     assert retry.json() == {"kind": "archived_admission", "admission": MessageToDict(admission)}
-    conflict = await client.post(path, json={"commandId": command.command_id, "submitInput": {"text": "different"}})
+    conflict = await client.post(path, json={"commandId": command.command_id, "text": "different"})
     assert conflict.status_code == 409, conflict.text
-    assert calls == [command]
 
 
 async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
@@ -810,8 +802,8 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
         )
         async with _agent_client(app) as http, asyncio.timeout(10):
             response = await http.post(
-                f"/threads/{thread_id}/commands",
-                json={"commandId": "test-unanswered-command", "submitInput": {"text": "never admitted"}},
+                f"/threads/{thread_id}/submit-input",
+                json={"commandId": "test-unanswered-command", "text": "never admitted"},
             )
             assert response.status_code == 504, response.text
             assert await cancelled.get() == session_id

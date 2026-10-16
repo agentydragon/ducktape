@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -17,7 +17,7 @@ from agentplane.app.threads.summaries import FeedError
 from agentplane.app.threads.view.content import ContentStore
 
 # Not `runner_pb2`: that name is the runner's protocol here.
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.proto import runner_pb2, session_dispatcher_pb2
 from agentplane.runner.harness import Harness
 
 # gazelle:include_dep @pypi//protobuf
@@ -70,7 +70,7 @@ class RunnerBridge:
         self._runners = runners
         self._event_logs = event_logs
         self._content = content
-        self._dispatcher = dispatcher
+        self.dispatcher = dispatcher
 
     async def list_sessions(self, sandbox: str) -> list[runner_pb2.SessionSummary]:
         return await self._runners.client(sandbox).list_sessions()
@@ -79,12 +79,23 @@ class RunnerBridge:
         self, sandbox: str, session_id: UUID, spec: runner_pb2.SessionSpec, setup_script: str | None = None
     ) -> session_dispatcher_pb2.SessionOpening:
         """Queue a complete Session spec with the Dispatcher."""
-        return await self._dispatcher.open_session(
-            sandbox=sandbox, session_id=str(session_id), spec=spec, setup_script=setup_script
+        request = session_dispatcher_pb2.OpenSessionRequest(sandbox=sandbox, session_id=str(session_id), spec=spec)
+        if setup_script is not None:
+            request.setup_script = setup_script
+        response = cast(
+            session_dispatcher_pb2.OpenSessionResponse,
+            await self.dispatcher.unary(self.dispatcher.stub.OpenSession, request),
         )
+        return response.opening
 
     async def session_opening(self, sandbox: str, session_id: UUID) -> session_dispatcher_pb2.SessionOpening:
-        opening = await self._dispatcher.get_session_opening(str(session_id))
+        opening = cast(
+            session_dispatcher_pb2.GetSessionOpeningResponse,
+            await self.dispatcher.unary(
+                self.dispatcher.stub.GetSessionOpening,
+                session_dispatcher_pb2.GetSessionOpeningRequest(session_id=str(session_id)),
+            ),
+        ).opening
         if opening.sandbox != sandbox:
             raise SessionOpeningNotFoundError(str(session_id))
         return opening
@@ -125,47 +136,34 @@ class RunnerBridge:
         # catch-up; its feed exposes that later, and a stale view remains non-authoritative.
         return await self._runners.client(sandbox).resume(session_id)
 
-    async def command(
-        self, thread_id: UUID, command: command_pb2.Command, *, sandbox: str
-    ) -> event_log_pb2.EventEntry | session_dispatcher_pb2.Dispatch:
-        """Return a Dispatcher receipt, or an archived admission for an exact retry.
-
-        An exact retry already in the archive needs no runner, including when the Sandbox is
-        gone. Otherwise the Dispatcher stores a durable queue entry or immediately delivers an
-        interrupt. A retry keeps the same immutable command ID and payload if the response is lost.
-        """
-        if admitted := await self._content.admitted_command(thread_id, command):
-            return admitted
+    async def command_ready(self, thread_id: UUID) -> None:
+        """Reject absent or failed Thread history before a new Dispatcher submission."""
         if not await self._event_logs.exists(thread_id):
             raise ThreadNotFoundError(thread_id)
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise ThreadStateError(f"runner history is rejected: {snapshot.end.message}")
-        try:
-            return await self._dispatcher.command(sandbox=sandbox, session_id=str(thread_id), command=command)
-        except TimeoutError as error:
-            raise DispatcherRequestTimeoutError(command.command_id) from error
 
     async def dispatch(self, thread_id: UUID, command_id: str) -> session_dispatcher_pb2.Dispatch:
         """Read only this Thread's dispatch; a guessed ID for another Session stays hidden."""
         if not await self._event_logs.exists(thread_id):
             raise ThreadNotFoundError(thread_id)
-        dispatch = await self._dispatcher.get_dispatch(command_id)
+        dispatch = cast(
+            session_dispatcher_pb2.GetDispatchResponse,
+            await self.dispatcher.unary(
+                self.dispatcher.stub.GetDispatch, session_dispatcher_pb2.GetDispatchRequest(command_id=command_id)
+            ),
+        ).dispatch
         if dispatch.session_id != str(thread_id):
             raise DispatchNotFoundError(command_id)
         return dispatch
 
 
-def _parse[M: command_pb2.Command | runner_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:
+def _parse(message: runner_pb2.SessionSpec, body: dict[str, object]) -> runner_pb2.SessionSpec:
     try:
         return ParseDict(body, message)
     except ParseError as error:
         raise MalformedMessageError(f"not a {type(message).__name__}: {error}") from error
-
-
-def parse_command(body: dict[str, object]) -> command_pb2.Command:
-    """Decode the one generated Command shape used by the Thread command route."""
-    return _parse(command_pb2.Command(), body)
 
 
 router = APIRouter(prefix="/sandboxes/{name}/sessions", tags=["sessions"])

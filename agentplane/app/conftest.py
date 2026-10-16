@@ -26,11 +26,12 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.testing.dispatcher import RunnerProxyBackedDispatcher
+from agentplane.app.testing.dispatcher import runner_proxy_backed_dispatcher
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.history_watch import HistoryWatch
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
@@ -244,15 +245,18 @@ def runners(live_index: LiveIndex, gateway: SandboxControlClient) -> RunnerDirec
 
 
 @pytest.fixture
-def dispatcher(runners: RunnerDirectory, event_logs: SeededEventLogStore) -> RunnerProxyBackedDispatcher:
+async def dispatcher(
+    runners: RunnerDirectory, event_logs: SeededEventLogStore, tmp_path: Path
+) -> AsyncIterator[SessionDispatcherClient]:
     """The Dispatcher interface for app tests whose scenarios need a live local runner."""
-    return RunnerProxyBackedDispatcher(runners, event_logs)
+    async with runner_proxy_backed_dispatcher(runners, event_logs, tmp_path / "dispatcher-token") as client:
+        yield client
 
 
 @pytest.fixture
 def bridge(
     runners: RunnerDirectory,
-    dispatcher: RunnerProxyBackedDispatcher,
+    dispatcher: SessionDispatcherClient,
     event_logs: SeededEventLogStore,
     content: ContentStore,
     database_updates: WakeupListener,

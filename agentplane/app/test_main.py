@@ -34,11 +34,11 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
-from agentplane.app.testing.dispatcher import RunnerProxyBackedDispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS, TEST_REASONING_EFFORTS
 from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.history_watch import SessionOpenings
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
@@ -251,7 +251,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
     history_client: HistoryServiceClient,
-    dispatcher: RunnerProxyBackedDispatcher,
+    dispatcher: SessionDispatcherClient,
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness

@@ -36,7 +36,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.testing.dispatcher import RunnerProxyBackedDispatcher
+from agentplane.app.testing.dispatcher import runner_proxy_backed_dispatcher
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.testing.system_status import answering_system_status
@@ -262,86 +262,84 @@ async def _serve(
             )
             store = ThreadStore(engine, summaries)
             runners = RunnerDirectory(index, gateway)
-            bridge = RunnerBridge(
-                runners=runners,
-                event_logs=event_logs,
-                content=content,
-                dispatcher=RunnerProxyBackedDispatcher(runners, event_logs),
-            )
-            history_watch = HistoryWatch(
-                watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
-            )
-            action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
-            egress = EgressAccess(namespace=NAMESPACE, custom_objects=custom, action_policy=action_policy)
-            app = create_app(
-                inventory,
-                bridge,
-                store,
-                ModelCatalog(
-                    models=[
-                        ModelOption(
-                            model="test-model-before",
-                            display_name="Test Model Before",
-                            reasoning_efforts=list(TEST_REASONING_EFFORTS),
-                        ),
-                        ModelOption(
-                            model="test-model-after",
-                            display_name="Test Model After",
-                            reasoning_efforts=list(TEST_REASONING_EFFORTS),
-                        ),
-                    ],
-                    harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
-                ),
-                egress,
-                DecisionsClient(decisions_http),
-                index,
-                action_policy,
-                electric=ElectricProxy(
-                    electric_http,
-                    content,
-                    event_logs=event_logs,
-                    thread_changes=database_updates.changes[Channel.THREADS],
-                ),
-                event_logs=event_logs,
-                content=content,
-                database_updates=database_updates,
-                operator_sessions=OperatorSessionStore(engine),
-                notifications_http=notifications_http,
-                notifications_token_file=Path(directory) / "notifications-token",
-                system_status=answering_system_status(),
-            )
-            # Authentication is tested separately; the production routes, HTTP transport, ingestion,
-            # PostgreSQL notifications, and SSE generator all run here unchanged.
-            app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
-            if frontend_directory is not None:
-                app.add_middleware(EmptyActionsStream)
-            if replay_after is not None:
-                app.add_middleware(
-                    GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
+            async with runner_proxy_backed_dispatcher(
+                runners, event_logs, Path(directory) / "dispatcher-token"
+            ) as dispatcher:
+                bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
+                history_watch = HistoryWatch(
+                    watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
                 )
-            if frontend_directory is not None:
-                app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
-            try:
-                async with database_updates.listener.listen():
-                    watching = asyncio.create_task(history_watch.run(), name="test-app-history-watch")
-                    opening = asyncio.create_task(
-                        SessionOpenings(openings_client, event_logs, retry_interval_s=0.05).run(),
-                        name="test-app-session-openings",
+                action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
+                egress = EgressAccess(namespace=NAMESPACE, custom_objects=custom, action_policy=action_policy)
+                app = create_app(
+                    inventory,
+                    bridge,
+                    store,
+                    ModelCatalog(
+                        models=[
+                            ModelOption(
+                                model="test-model-before",
+                                display_name="Test Model Before",
+                                reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                            ),
+                            ModelOption(
+                                model="test-model-after",
+                                display_name="Test Model After",
+                                reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                            ),
+                        ],
+                        harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
+                    ),
+                    egress,
+                    DecisionsClient(decisions_http),
+                    index,
+                    action_policy,
+                    electric=ElectricProxy(
+                        electric_http,
+                        content,
+                        event_logs=event_logs,
+                        thread_changes=database_updates.changes[Channel.THREADS],
+                    ),
+                    event_logs=event_logs,
+                    content=content,
+                    database_updates=database_updates,
+                    operator_sessions=OperatorSessionStore(engine),
+                    notifications_http=notifications_http,
+                    notifications_token_file=Path(directory) / "notifications-token",
+                    system_status=answering_system_status(),
+                )
+                # Authentication is tested separately; the production routes, HTTP transport, ingestion,
+                # PostgreSQL notifications, and SSE generator all run here unchanged.
+                app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
+                if frontend_directory is not None:
+                    app.add_middleware(EmptyActionsStream)
+                if replay_after is not None:
+                    app.add_middleware(
+                        GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
                     )
-                    try:
-                        with socket.socket() as listener:
-                            listener.bind(("127.0.0.1", 0))
-                            url = f"http://127.0.0.1:{listener.getsockname()[1]}"
-                            await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(
-                                sockets=[listener]
-                            )
-                    finally:
-                        watching.cancel()
-                        opening.cancel()
-                        await asyncio.gather(watching, opening, return_exceptions=True)
-            finally:
-                await engine.dispose()
-                await core.close()
+                if frontend_directory is not None:
+                    app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
+                try:
+                    async with database_updates.listener.listen():
+                        watching = asyncio.create_task(history_watch.run(), name="test-app-history-watch")
+                        opening = asyncio.create_task(
+                            SessionOpenings(openings_client, event_logs, retry_interval_s=0.05).run(),
+                            name="test-app-session-openings",
+                        )
+                        try:
+                            with socket.socket() as listener:
+                                listener.bind(("127.0.0.1", 0))
+                                url = f"http://127.0.0.1:{listener.getsockname()[1]}"
+                                await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(
+                                    sockets=[listener]
+                                )
+                        finally:
+                            watching.cancel()
+                            opening.cancel()
+                            await asyncio.gather(watching, opening, return_exceptions=True)
+                finally:
+                    await engine.dispose()
+                    await core.close()
 
 
 async def receive(connection: Connection) -> object:

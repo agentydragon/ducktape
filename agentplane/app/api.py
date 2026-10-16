@@ -95,7 +95,7 @@ from agentplane.app.threads.view.content import CommandIdConflictError, ContentS
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import event_log_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandboxes.egress_views import (
     BindingNotFoundError,
@@ -872,43 +872,182 @@ class ArchivedCommandAdmission(BaseModel):
 CommandSubmissionResponse = Annotated[DispatchedCommand | ArchivedCommandAdmission, Field(discriminator="kind")]
 
 
-@threads.post("/{thread_id}/commands", response_model=CommandSubmissionResponse)
-async def thread_command(
+class CommandIdBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    command_id: str = Field(alias="commandId", min_length=1)
+
+
+class SubmitInputBody(CommandIdBody):
+    text: str
+
+
+class ChangeModelBody(CommandIdBody):
+    model: str
+
+
+class ChangeReasoningEffortBody(CommandIdBody):
+    effort: str
+
+
+class InterruptTurnBody(CommandIdBody):
+    turn_id: str = Field(alias="turnId")
+
+
+async def _submission_target(
+    store: Store, content: Content, bridge: runner_bridge.Bridge, thread_id: UUID, journal_command: command_pb2.Command
+) -> ThreadView | ArchivedCommandAdmission:
+    """An exact archived retry survives Sandbox deletion; a new submission needs a live Thread."""
+    if admitted := await content.admitted_command(thread_id, journal_command):
+        return ArchivedCommandAdmission(admission=MessageToDict(admitted))
+    thread = await store.get_thread(thread_id)
+    if thread is None:
+        raise ThreadNotFoundError(thread_id)
+    await bridge.command_ready(thread_id)
+    return thread
+
+
+@threads.post("/{thread_id}/submit-input", response_model=CommandSubmissionResponse)
+async def submit_input(
+    store: Store, content: Content, bridge: runner_bridge.Bridge, thread_id: UUID, body: SubmitInputBody
+) -> DispatchedCommand | ArchivedCommandAdmission:
+    target = await _submission_target(
+        store,
+        content,
+        bridge,
+        thread_id,
+        command_pb2.Command(command_id=body.command_id, submit_input=command_pb2.SubmitInput(text=body.text)),
+    )
+    if isinstance(target, ArchivedCommandAdmission):
+        return target
+    try:
+        response = await bridge.dispatcher.unary(
+            bridge.dispatcher.stub.SubmitInput,
+            session_dispatcher_pb2.SubmitInputRequest(
+                command_id=body.command_id, session_id=str(thread_id), sandbox=target.sandbox, text=body.text
+            ),
+        )
+    except TimeoutError as error:
+        raise runner_bridge.DispatcherRequestTimeoutError(body.command_id) from error
+    return DispatchedCommand(dispatch=MessageToDict(response.dispatch))
+
+
+@threads.post("/{thread_id}/change-model", response_model=CommandSubmissionResponse)
+async def change_model(
     store: Store,
     content: Content,
     bridge: runner_bridge.Bridge,
     catalog: Models,
     thread_id: UUID,
-    body: dict[str, object],
+    body: ChangeModelBody,
 ) -> DispatchedCommand | ArchivedCommandAdmission:
-    """Return the Dispatcher's durable result, or an archived admission for an exact retry.
-
-    The Dispatcher may still be delivering the command. Neither a queued result nor runner
-    admission promises a native effect.
-    """
-    command = runner_bridge.parse_command(body)
-    if not command.command_id or command.WhichOneof("operation") is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="command requires id and operation"
-        )
-    if admitted := await content.admitted_command(thread_id, command):
-        return ArchivedCommandAdmission(admission=MessageToDict(admitted))
-    thread = await store.get_thread(thread_id)
-    if thread is None:
-        raise ThreadNotFoundError(thread_id)
-    if command.HasField("change_model") and (
-        not command.change_model.model
-        or thread.harness is None
-        or command.change_model.model not in catalog.harnesses[thread.harness]
-    ):
+    target = await _submission_target(
+        store,
+        content,
+        bridge,
+        thread_id,
+        command_pb2.Command(command_id=body.command_id, change_model=command_pb2.ChangeModel(model=body.model)),
+    )
+    if isinstance(target, ArchivedCommandAdmission):
+        return target
+    if not body.model or target.harness is None or body.model not in catalog.harnesses[target.harness]:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="model is incompatible with this thread's harness"
         )
-    receipt = await bridge.command(thread_id, command, sandbox=thread.sandbox)
-    if isinstance(receipt, event_log_pb2.EventEntry):
-        return ArchivedCommandAdmission(admission=MessageToDict(receipt))
-    assert isinstance(receipt, session_dispatcher_pb2.Dispatch)
-    return DispatchedCommand(dispatch=MessageToDict(receipt))
+    try:
+        response = await bridge.dispatcher.unary(
+            bridge.dispatcher.stub.ChangeModel,
+            session_dispatcher_pb2.ChangeModelRequest(
+                command_id=body.command_id, session_id=str(thread_id), sandbox=target.sandbox, model=body.model
+            ),
+        )
+    except TimeoutError as error:
+        raise runner_bridge.DispatcherRequestTimeoutError(body.command_id) from error
+    return DispatchedCommand(dispatch=MessageToDict(response.dispatch))
+
+
+@threads.post("/{thread_id}/change-reasoning-effort", response_model=CommandSubmissionResponse)
+async def change_reasoning_effort(
+    store: Store, content: Content, bridge: runner_bridge.Bridge, thread_id: UUID, body: ChangeReasoningEffortBody
+) -> DispatchedCommand | ArchivedCommandAdmission:
+    target = await _submission_target(
+        store,
+        content,
+        bridge,
+        thread_id,
+        command_pb2.Command(
+            command_id=body.command_id, change_reasoning_effort=command_pb2.ChangeReasoningEffort(effort=body.effort)
+        ),
+    )
+    if isinstance(target, ArchivedCommandAdmission):
+        return target
+    try:
+        response = await bridge.dispatcher.unary(
+            bridge.dispatcher.stub.ChangeReasoningEffort,
+            session_dispatcher_pb2.ChangeReasoningEffortRequest(
+                command_id=body.command_id, session_id=str(thread_id), sandbox=target.sandbox, effort=body.effort
+            ),
+        )
+    except TimeoutError as error:
+        raise runner_bridge.DispatcherRequestTimeoutError(body.command_id) from error
+    return DispatchedCommand(dispatch=MessageToDict(response.dispatch))
+
+
+@threads.post("/{thread_id}/stop-runner-session", response_model=CommandSubmissionResponse)
+async def stop_runner_session(
+    store: Store, content: Content, bridge: runner_bridge.Bridge, thread_id: UUID, body: CommandIdBody
+) -> DispatchedCommand | ArchivedCommandAdmission:
+    target = await _submission_target(
+        store,
+        content,
+        bridge,
+        thread_id,
+        command_pb2.Command(command_id=body.command_id, stop_runner_session=command_pb2.StopRunnerSession()),
+    )
+    if isinstance(target, ArchivedCommandAdmission):
+        return target
+    try:
+        response = await bridge.dispatcher.unary(
+            bridge.dispatcher.stub.StopRunnerSession,
+            session_dispatcher_pb2.StopRunnerSessionRequest(
+                command_id=body.command_id, session_id=str(thread_id), sandbox=target.sandbox
+            ),
+        )
+    except TimeoutError as error:
+        raise runner_bridge.DispatcherRequestTimeoutError(body.command_id) from error
+    return DispatchedCommand(dispatch=MessageToDict(response.dispatch))
+
+
+@threads.post("/{thread_id}/interrupt-turn", response_model=CommandSubmissionResponse)
+async def interrupt_turn(
+    store: Store, content: Content, bridge: runner_bridge.Bridge, thread_id: UUID, body: InterruptTurnBody
+) -> DispatchedCommand | ArchivedCommandAdmission:
+    target = await _submission_target(
+        store,
+        content,
+        bridge,
+        thread_id,
+        command_pb2.Command(command_id=body.command_id, interrupt_turn=command_pb2.InterruptTurn(turn_id=body.turn_id)),
+    )
+    if isinstance(target, ArchivedCommandAdmission):
+        return target
+    try:
+        response = await bridge.dispatcher.unary(
+            bridge.dispatcher.stub.InterruptTurn,
+            session_dispatcher_pb2.InterruptTurnRequest(
+                command_id=body.command_id, session_id=str(thread_id), sandbox=target.sandbox, turn_id=body.turn_id
+            ),
+        )
+    except TimeoutError as error:
+        raise runner_bridge.DispatcherRequestTimeoutError(body.command_id) from error
+    # HTTP presentation retains receipt fields, but this transient result has no durable Dispatch.
+    return DispatchedCommand(
+        dispatch={
+            "commandId": body.command_id,
+            "sessionId": str(thread_id),
+            "sandbox": target.sandbox,
+            **MessageToDict(response),
+        }
+    )
 
 
 @threads.get("/{thread_id}/commands/{command_id}/dispatch")

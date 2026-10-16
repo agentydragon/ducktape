@@ -42,6 +42,16 @@ Runner Gateway are 1/1 Ready, staging app and Runner Gateway are 2/2 Ready, and 
 `devel-*4693fc9`; the image includes #10709's app change. This clears the direct-resume caller gate.
 The registry-free receiver image has not rolled out yet, so the database-drop gate remains closed.
 
+The HTTP/client paths likewise have distinct effects: app `POST /sandboxes/{name}/resume`
+changes a Sandbox desired state, whereas `POST /threads/{thread_id}/resume` explicitly resumes
+its native harness. The latter UI action stays when automatic resume-on-send is off; the suspended
+indicator stays in both modes. The typed `POST /threads/{thread_id}/{submit-input,change-model,change-reasoning-effort,stop-runner-session,interrupt-turn}`
+routes call the matching Dispatcher RPC, while
+`GET /threads/{thread_id}/commands/{command_id}/dispatch` (`client.ts::commandDispatch`) reads
+its status; `GET /sandboxes/{name}/sessions/{session_id}/opening`
+(`client.ts::getSessionOpening`) polls a separate opening. None is a duplicate command sender.
+The browser's old Sandbox session GET is already removed; retained Threads come from History.
+
 After the registry-free image is Ready in testing and staging and deployed callers no longer require
 the old receiver, a separate PR removes the `session` table and Gateway-owned database resources.
 That PR removes the CNPG Database, role, generated Secret, migration init container, URL wiring and

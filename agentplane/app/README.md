@@ -46,8 +46,8 @@ bbr test //agentplane/app/...
 ### While the History Service is down or rolling
 
 Thread lists, Thread views, the retained-event SSE API and Thread commands fail with the History
-Service's error: a command first looks for its admission in the archive and checks the Thread's
-feed state there (`threads/bridge.py`), so even a command the runner would accept is refused. Resume
+Service's error: each typed command route first looks for its admission in the archive and checks
+the Thread's feed state (`api.py`, `threads/bridge.py`), so even a command the runner would accept is refused. Resume
 reads the feed state the same way. Sandbox lifecycle and Action review keep working.
 `HistoryWatch` reconnects on its own, and Sessions recorded meanwhile get their Threads once it does.
 
@@ -128,9 +128,10 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 
 ### Replica-safe command delivery
 
-Any app replica relays `POST /threads/{id}/commands` (generated `Command` payloads with stable
-command ids). The required `session_dispatcher_target` sends each command to the Session Dispatcher,
-which stores it and returns its durable `Dispatch`, or immediately delivers an interrupt. A Dispatcher
+Any app replica accepts typed `submit-input`, `change-model`, `change-reasoning-effort`,
+`stop-runner-session`, and `interrupt-turn` requests under `/threads/{id}/`, each with a stable
+command id. The required `session_dispatcher_target` calls the matching generated Session Dispatcher
+RPC, which stores durable operations and returns their `Dispatch`, or immediately delivers an interrupt. A Dispatcher
 failure is returned to the caller; the app has no direct Runner Gateway command path. An exact retry
 already present in the History archive returns its `CommandAdmitted` entry without another service
 call. Otherwise the browser keeps Retry and never Cancel after an unconfirmed result, because the

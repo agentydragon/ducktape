@@ -12,7 +12,11 @@ import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import type * as ClientModule from "../client";
 import {
-  command,
+  submitInput,
+  changeModel,
+  changeReasoningEffort,
+  stopRunnerSession,
+  interruptTurn,
   commandDispatch,
   getThread,
   models,
@@ -44,7 +48,11 @@ import { TopbarContext } from "../topbar";
 
 vi.mock("../client", async (importOriginal) => ({
   ...(await importOriginal<typeof ClientModule>()),
-  command: vi.fn(),
+  submitInput: vi.fn(),
+  changeModel: vi.fn(),
+  changeReasoningEffort: vi.fn(),
+  stopRunnerSession: vi.fn(),
+  interruptTurn: vi.fn(),
   commandDispatch: vi.fn(),
   getThread: vi.fn(),
   models: vi.fn(),
@@ -126,7 +134,9 @@ beforeEach(() => {
     models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
     harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
   });
-  vi.mocked(command).mockReturnValue(new Promise(() => {}));
+  for (const operation of [submitInput, changeModel, changeReasoningEffort, stopRunnerSession, interruptTurn]) {
+    vi.mocked(operation).mockReturnValue(new Promise(() => {}));
+  }
   vi.mocked(resumeThread).mockResolvedValue({} as never);
   vi.stubGlobal(
     "EventSource",
@@ -305,7 +315,29 @@ async function openMenuItem(container: HTMLDivElement, text: string): Promise<HT
 }
 
 function sentOperations(): unknown[] {
-  return vi.mocked(command).mock.calls.map(([, value]) => value.operation);
+  const sent = [
+    ...vi.mocked(submitInput).mock.calls.map(([, , text], index) => ({
+      order: vi.mocked(submitInput).mock.invocationCallOrder[index],
+      operation: { case: "submitInput", value: { text } },
+    })),
+    ...vi.mocked(changeModel).mock.calls.map(([, , model], index) => ({
+      order: vi.mocked(changeModel).mock.invocationCallOrder[index],
+      operation: { case: "changeModel", value: { model } },
+    })),
+    ...vi.mocked(changeReasoningEffort).mock.calls.map(([, , effort], index) => ({
+      order: vi.mocked(changeReasoningEffort).mock.invocationCallOrder[index],
+      operation: { case: "changeReasoningEffort", value: { effort } },
+    })),
+    ...vi.mocked(stopRunnerSession).mock.calls.map((_, index) => ({
+      order: vi.mocked(stopRunnerSession).mock.invocationCallOrder[index],
+      operation: { case: "stopRunnerSession", value: {} },
+    })),
+    ...vi.mocked(interruptTurn).mock.calls.map(([, , turnId], index) => ({
+      order: vi.mocked(interruptTurn).mock.invocationCallOrder[index],
+      operation: { case: "interruptTurn", value: { turnId } },
+    })),
+  ];
+  return sent.sort((left, right) => left.order - right.order).map((value) => value.operation);
 }
 
 it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }])(
@@ -319,7 +351,7 @@ it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }, { shiftKey: tr
     await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
     expect(field.value).toBe("hello\nworld");
     expect([field.selectionStart, field.selectionEnd]).toEqual([6, 6]);
-    expect(command).not.toHaveBeenCalled();
+    expect(submitInput).not.toHaveBeenCalled();
   }
 );
 
@@ -405,8 +437,8 @@ it.each([true, false])(
     await press(field, {});
 
     expect(field.value).toBe("");
-    expect(vi.mocked(command).mock.calls).toHaveLength(1);
-    expect(vi.mocked(command).mock.calls[0]?.[0]).toBe(THREAD.id);
+    expect(vi.mocked(submitInput).mock.calls).toHaveLength(1);
+    expect(vi.mocked(submitInput).mock.calls[0]?.[0]).toBe(THREAD.id);
     expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "Continue after resume" } }]);
   }
 );
@@ -426,7 +458,7 @@ it.each(["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED", "SETUP_STATE_RUNNING"]
     expect(composer(container).disabled).toBe(true);
     await type(composer(container), "Do not send");
     await press(composer(container), {});
-    expect(command).not.toHaveBeenCalled();
+    expect(submitInput).not.toHaveBeenCalled();
   }
 );
 
@@ -440,7 +472,7 @@ it.each<[string, Inventory, boolean]>([
   expect(composer(container).disabled).toBe(true);
   await type(composer(container), "Do not send");
   await press(composer(container), {});
-  expect(command).not.toHaveBeenCalled();
+  expect(submitInput).not.toHaveBeenCalled();
 });
 
 it("keeps an archived Thread read-only when its suspended Sandbox would wake on message", async () => {
@@ -450,7 +482,7 @@ it("keeps an archived Thread read-only when its suspended Sandbox would wake on 
   expect(composer(container).disabled).toBe(true);
   await type(composer(container), "Do not send");
   await press(composer(container), {});
-  expect(command).not.toHaveBeenCalled();
+  expect(submitInput).not.toHaveBeenCalled();
 });
 
 it("submits once for two Enters before the cleared draft renders, then takes the next draft", async () => {
@@ -505,8 +537,8 @@ it("resumes the existing Thread and restores sending on the open and reloaded pa
       }),
     ])
   );
-  expect(new Set(vi.mocked(command).mock.calls.map(([, value]) => value.commandId)).size).toBe(2);
-  expect(vi.mocked(command).mock.calls.every(([threadId]) => threadId === THREAD.id)).toBe(true);
+  expect(new Set(vi.mocked(submitInput).mock.calls.map(([, commandId]) => commandId)).size).toBe(2);
+  expect(vi.mocked(submitInput).mock.calls.every(([threadId]) => threadId === THREAD.id)).toBe(true);
 });
 
 it("shows the thread id in the More menu, not inline once a name is set", async () => {
@@ -782,13 +814,22 @@ function admission(value: Command): EventEntry {
 
 async function admit(
   _threadId: string,
-  value: Command
+  commandId: string,
+  text: string
 ): Promise<{ kind: "archived_admission"; admission: EventEntry }> {
-  return { kind: "archived_admission", admission: admission(value) };
+  return {
+    kind: "archived_admission",
+    admission: admission(
+      create(CommandSchema, {
+        commandId,
+        operation: { case: "submitInput", value: { text } },
+      })
+    ),
+  };
 }
 
 function sentIds(): string[] {
-  return vi.mocked(command).mock.calls.map(([, value]) => value.commandId);
+  return vi.mocked(submitInput).mock.calls.map(([, commandId]) => commandId);
 }
 
 function pendingRow(container: Element, commandId: string): HTMLElement {
@@ -815,7 +856,7 @@ it("does not send a retained command whose admission it already holds", async ()
   store.acknowledge(message("retained-admitted"), admission(message("retained-admitted")));
   // Its unadmitted sibling being sent shows the mount's delivery ran.
   store.remember(message("retained-unadmitted"));
-  vi.mocked(command).mockImplementation(admit);
+  vi.mocked(submitInput).mockImplementation(admit);
   const container = await render();
   expect(sentIds()).toEqual(["retained-unadmitted"]);
   expect(progressLabel(container, "retained-admitted")).toBe("Runner accepted · waiting for agent confirmation");
@@ -832,7 +873,7 @@ it.each([
 ])("shows a queued Dispatcher receipt for %s without offering a retry", async (reason, expectedLabel) => {
   const queued = message("queued-by-dispatcher");
   new LocalCommands(THREAD.id).remember(queued);
-  vi.mocked(command).mockResolvedValue({
+  vi.mocked(submitInput).mockResolvedValue({
     kind: "dispatch",
     dispatch: {
       commandId: queued.commandId,
@@ -874,7 +915,7 @@ it("shows the cause when a send-triggered Sandbox wake misses its deadline", asy
     updatedAt: "2026-10-14T12:00:00Z",
     admission: null,
   } as const;
-  vi.mocked(command).mockResolvedValue({ kind: "dispatch", dispatch });
+  vi.mocked(submitInput).mockResolvedValue({ kind: "dispatch", dispatch });
   vi.mocked(commandDispatch).mockResolvedValue(dispatch);
 
   const container = await render();
@@ -922,7 +963,7 @@ it("lets the browser cancel only a locally queued, never-sent message", async ()
   const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
   new LocalCommands(THREAD.id).remember(message("unsent"));
   const container = await render();
-  expect(vi.mocked(command)).not.toHaveBeenCalled();
+  expect(vi.mocked(submitInput)).not.toHaveBeenCalled();
   const row = pendingRow(container, "unsent");
   expect(buttonIn(row, "Cancel")).toBeDefined();
   expect(buttonIn(row, "Retry")).toBeUndefined();
@@ -930,7 +971,7 @@ it("lets the browser cancel only a locally queued, never-sent message", async ()
   expect(new LocalCommands(THREAD.id).getSnapshot().commands).toEqual([]);
   online.mockReturnValue(true);
   await act(async () => window.dispatchEvent(new Event("online")));
-  expect(vi.mocked(command)).not.toHaveBeenCalled();
+  expect(vi.mocked(submitInput)).not.toHaveBeenCalled();
 });
 
 it("does not offer Cancel once an offline command has begun its first HTTP attempt", async () => {
@@ -948,7 +989,7 @@ it("does not offer Cancel once an offline command has begun its first HTTP attem
 it("shows a delivery that outlives its deadline as unconfirmed and retriable", async () => {
   new LocalCommands(THREAD.id).remember(message("hung"));
   let expire!: (reason: unknown) => void;
-  vi.mocked(command)
+  vi.mocked(submitInput)
     .mockReturnValueOnce(
       new Promise((_resolve, reject) => {
         expire = reject;
@@ -978,14 +1019,14 @@ it("shows a delivery that outlives its deadline as unconfirmed and retriable", a
 
 it("leaves a command whose delivery reply was lost unconfirmed", async () => {
   new LocalCommands(THREAD.id).remember(message("lost"));
-  vi.mocked(command).mockRejectedValueOnce(new Error("Command admission unconfirmed: 503"));
+  vi.mocked(submitInput).mockRejectedValueOnce(new Error("Command admission unconfirmed: 503"));
   const container = await render();
   expect(progressLabel(container, "lost")).toBe("Dispatcher receipt unconfirmed: Command admission unconfirmed: 503");
 });
 
 it("redelivers an unconfirmed command when the browser comes back online", async () => {
   new LocalCommands(THREAD.id).remember(message("offline"));
-  vi.mocked(command)
+  vi.mocked(submitInput)
     .mockRejectedValueOnce(new Error("the sandbox's runner is not answering"))
     .mockImplementationOnce(admit);
   const container = await render();

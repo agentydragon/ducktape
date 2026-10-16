@@ -15,7 +15,7 @@ from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
-from agentplane.proto import command_pb2, event_log_pb2, session_dispatcher_pb2
+from agentplane.proto import event_log_pb2, session_dispatcher_pb2
 
 # A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
 # test is how the client reads a connection that dies, which an ASGI transport cannot produce.
@@ -79,11 +79,9 @@ async def _unavailable(after: int, writer: asyncio.StreamWriter) -> None:
 
 
 async def test_command_accepts_the_dispatchers_durable_receipt() -> None:
-    command = command_pb2.Command(command_id="resume-by-input", submit_input=command_pb2.SubmitInput(text="Continue"))
+    command_id = "resume-by-input"
     receipt = session_dispatcher_pb2.Dispatch(
-        command_id=command.command_id,
-        session_id=str(uuid4()),
-        state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+        command_id=command_id, session_id=str(uuid4()), state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
     )
 
     async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
@@ -95,12 +93,12 @@ async def test_command_accepts_the_dispatchers_durable_receipt() -> None:
         )
 
     async with _app(accepted) as (client, _):
-        result = await client.command(uuid4(), command)
+        result = await client.submit_input(uuid4(), command_id, "Continue")
     assert result == receipt
 
 
 async def test_command_accepts_an_archived_admission_without_a_dispatch() -> None:
-    command = command_pb2.Command(command_id="archived", submit_input=command_pb2.SubmitInput(text="Continue"))
+    command_id = "archived"
     admission = event_log_pb2.EventEntry(cursor=1)
 
     async def archived(_after: int, writer: asyncio.StreamWriter) -> None:
@@ -112,7 +110,7 @@ async def test_command_accepts_an_archived_admission_without_a_dispatch() -> Non
         )
 
     async with _app(archived) as (client, _):
-        result = await client.command(uuid4(), command)
+        result = await client.submit_input(uuid4(), command_id, "Continue")
     assert result == admission
 
 

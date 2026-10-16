@@ -56,13 +56,13 @@ from agentplane.app.operator_sessions import (
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
-from agentplane.app.testing.dispatcher import RunnerProxyBackedDispatcher
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.events import event_log
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
@@ -298,7 +298,7 @@ def app(
     egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
-    dispatcher: RunnerProxyBackedDispatcher,
+    dispatcher: SessionDispatcherClient,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     tmp_path: Path,

@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
-from agentplane.proto import command_pb2, event_pb2, runner_pb2
+from agentplane.proto import event_pb2, runner_pb2
 
 # A turn on the cheap model with a few tool calls. A harness that stops making progress should fail
 # its scenario rather than hold the suite until Bazel's clock runs out.
@@ -149,12 +149,7 @@ class Agent:
         """Send `prompt` and collect the turn it starts. Nothing else drives this session, so reading
         the cursor before submitting cannot miss an event."""
         after = self._cursor
-        await self._client.command(
-            self._thread_id,
-            command_pb2.Command(
-                command_id=f"input-{uuid4().hex[:8]}", submit_input=command_pb2.SubmitInput(text=prompt)
-            ),
-        )
+        await self._client.submit_input(self._thread_id, f"input-{uuid4().hex[:8]}", prompt)
         turn = Turn(admitted=time.monotonic())
         async for entry in self._client.events(self._thread_id, after=after, read_seconds=TURN_SECONDS):
             self._cursor = entry.cursor

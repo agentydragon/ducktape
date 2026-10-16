@@ -300,7 +300,7 @@ sequenceDiagram
     participant R as Runner and journal
     participant HS as History Service
     participant H as Codex harness
-    F->>A: POST /threads/T/commands<br/>M = Command {command_id:M, change_model:{model:new-model}}
+    F->>A: POST /threads/T/change-model<br/>commandId:M, model:new-model
     A->>SD: ChangeModel {command_id:M, session_id:T, model:new-model}
     SD->>SD: Persist Dispatch M
     SD-->>A: Dispatch M queued
@@ -319,7 +319,7 @@ sequenceDiagram
     A-->>F: Dispatch M runner-admitted
     A-->>F: SSE id:41, data:E41
     Note over F,H: Picker still shows applied old model. M is pending
-    F->>A: POST /threads/T/commands<br/>I = Command {command_id:I, submit_input:{text:Continue the task}}
+    F->>A: POST /threads/T/submit-input<br/>commandId:I, text:Continue the task
     A->>SD: SubmitInput {command_id:I, session_id:T, text:Continue the task}
     SD->>SD: Persist Dispatch I
     SD->>G: SubmitInput for T
@@ -403,12 +403,12 @@ sequenceDiagram
     participant G as Runner Gateway proxy
     participant R as Runner
     participant HS as History Service
-    F->>F: Persist local Command C and id
-    F->>A: POST /threads/T/commands, Command C
-    A->>SD: per-operation RPC for C
+    F->>F: Persist typed operation C and id for retry
+    F->>A: POST /threads/T/submit-input, commandId:C and text
+    A->>SD: SubmitInput C
     SD->>SD: Commit Dispatch C
     SD-->>A: Dispatch C
-    A->>G: runner operation for C after Sandbox is Ready
+    SD->>G: runner operation for C after Sandbox is Ready
     G->>R: C over the control stream
     R->>R: Persist C once
     R-->>G: CommandAdmitted C

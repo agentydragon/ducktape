@@ -11,7 +11,6 @@ py_library(
     srcs = ["agent.py"],
     deps = [
         "//agentplane/app/testing:client",
-        "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "@pypi//httpx",
@@ -402,6 +401,7 @@ py_test(
         "//agentplane:sandbox_resource",
         "//agentplane/app:live",
         "//agentplane/app/testing:client",
+        "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
