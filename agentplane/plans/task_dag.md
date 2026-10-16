@@ -21,20 +21,19 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 ### Handoff snapshot — 2026-10-16 UTC
 
 **Dispatch paused by Rai. All coordinator workers have stopped.** No new projects or live cutover
-are authorized by this handoff. The following work is implemented on review branches, **not merged**;
-all published-head checks passed when checked for this handoff. Recheck GitHub before resuming.
+are authorized by this handoff. The following change is implemented on a review branch, **not merged**;
+its published-head checks passed when checked for this handoff. Recheck GitHub before resuming.
 Rai merges every PR by hand; do not merge or enable auto-merge.
 
-| Open PR / exact reviewed head                                               | Scope                                                                                                                   | Remaining gate                                                                                                             |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| [#10705](https://github.com/agentydragon/ducktape/pull/10705)               | Unified Go Runner Gateway, Dispatcher queue, Goose, separate image publication slots and inactive deployment constructs | Review/merge; then image pins, migration/Flux wiring and fenced deployment acceptance below. Live charts still run Python. |
-| [#10734](https://github.com/agentydragon/ducktape/pull/10734), `39522ca3ab` | 8 GiB VM guest and testing admission limits                                                                             | Review/merge/reconcile; actual launcher resources, guest memory and representative build/test acceptance.                  |
+| Open PR / exact reviewed head                                               | Scope                                       | Remaining gate                                                                                                   |
+| --------------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| [#10734](https://github.com/agentydragon/ducktape/pull/10734), `39522ca3ab` | 8 GiB VM guest and testing admission limits | Review/merge/reconcile; actual launcher resources, guest memory and representative build/test acceptance.        |
 
-These PRs also edit this DAG. When rebasing them after this handoff, preserve the current status,
-remaining gates and Sandbox trust-boundary decision; do not restore their older planning snapshots.
+This PR also edits this DAG. When rebasing it after this handoff, preserve the current status,
+remaining gates and Sandbox trust-boundary decision; do not restore its older planning snapshot.
 Delete the corresponding review row when it merges; remove implementation-only nodes and retain
 acceptance nodes until their unfinished rollout checks pass.
-No replacement implementation should be dispatched for code already in these PRs.
+No replacement implementation should be dispatched for code already in this PR.
 
 Operator priority remains usable VM Sandboxes and retiring obsolete paths. The Gateway wrapper,
 registry/database and migration-artifact retirements are complete; they are not cutover prerequisites
@@ -652,14 +651,6 @@ belongs in [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measu
 Preserve assertions and timeouts. The expensive lifecycle workflow stays **manual-only**;
 automatic triggers require a separate reviewed change. Language rewrites require Rai's decision.
 
-**Rewrite candidate, operator note, 2026-10-15 PDT:** consider Runner Gateway in Go for
-consistency with existing Go components. Its gRPC/protobuf boundaries and generated bindings
-make it a promising bounded candidate. First measure its image/startup contribution and
-inventory the full contract: stream ownership and forwarding, authentication, Sandbox identity
-fencing, cancellation/deadlines and remaining registry persistence. Compare a Go rewrite with
-Python packaging improvements; protocol generation alone does not preserve those semantics.
-This records a candidate, not authorization to rewrite it. Account for planned wrapper/registry
-retirements so a rewrite need not recreate obsolete surfaces.
 
 ### `K3S_BUNDLED_SERVICES_SPIKE` — measure a less isolated control plane in real k3s
 
@@ -1292,10 +1283,6 @@ selectable; the freezer's
 resumed harness or a lost push reads back) once acknowledged entries are gone, including what a revived incarnation reads back
 (the retained incarnation history).
 
-## 11. Coherence refactors
-
-No refactor is open here.
-
 ## 12. The Runner Gateway serves the runner's own service
 
 Target and decisions: [History Service plan](history_service.md#decided-operator-2026-10-10-pdt)
@@ -1349,7 +1336,6 @@ items below; this direction does not authorize runtime changes.
 ```mermaid
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: durable queue or direct admission]
-    GATEWAY_GO_IMPLEMENTATION[In review: unified Go implementation, PR 10705]
     GATEWAY_GO_ROLLOUT_CONFIG[Blocked: image pins and migration-gated Flux wiring]
     DELIVERY_UNIFIED_CUTOVER[Atomic cutover and recovery verification]
     DELIVERY_OLD_RUNTIME_RETIRE[Retire obsolete runtime objects]
@@ -1363,7 +1349,6 @@ flowchart LR
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a narrow CNPG-free K3s integration tier]
     K3S_VM_IMAGE[Blocked: build a real VM fixture, section 10]
-    GATEWAY_GO_IMPLEMENTATION --> GATEWAY_GO_ROLLOUT_CONFIG
     GATEWAY_GO_ROLLOUT_CONFIG --> DELIVERY_UNIFIED_CUTOVER
     DELIVERY_UNIFIED_CUTOVER --> DELIVERY_OLD_RUNTIME_RETIRE
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
@@ -1427,33 +1412,16 @@ design record. The [delivery design note](../docs/runner_delivery_and_harness_de
 records the tradeoffs. Direct admission and new sender grants remain separate decisions;
 wrapper/registry retirement is complete.
 
-### `GATEWAY_GO_IMPLEMENTATION` — review the unified Go Runner Gateway
-
-**In review: [#10705](https://github.com/agentydragon/ducktape/pull/10705).**
-The branch implements generated Go APIs/auth, durable Dispatcher admission/ownership/delivery,
-Runner reverse tunnels and proxying, guarded wake, Goose's Dispatcher-only schema handoff, image
-publication and inactive cdk8s constructs. Code lives under `agentplane/runner_gateway/go`; generated
-Go stays in Bazel output. Review queued row/ID preservation, separate delivery and connection
-fences, per-method auth and cross-replica routing. Review the existing patch; do not dispatch these ports again.
-
-The old Gateway database, wrappers and migration image have already been retired on devel, and this
-branch has been rebased after them. There is no remaining retirement/rebase prerequisite node.
-The superseded Python serving source, tests and image publishers are removed in this PR; consumer
-fixtures use narrow gRPC peers, with a focused Python-to-Go acceptance. Python clients and the
-immutable Dispatcher Alembic migration history remain.
-Live charts retain the existing Python pins and configuration contracts; distinct Go serving and
-queue-migrator slots prevent premature auto-pin activation. No Go deployment or live two-replica acceptance has occurred.
-Delete this implementation-review node after merge; deployment remains in the following nodes.
-
 ### `GATEWAY_GO_ROLLOUT_CONFIG` — publish images and wire migration readiness into Flux
 
-**Blocked on implementation merge and published, pinned images; not started.** Use the existing
-root Flux owner for CNPG, database/Secrets and stable Gateway/Dispatcher Services. Add the
-full-digest-named Goose Job there with an explicit completion health check; put only the new Go
-serving workload in a separate Kustomization depending on that root. This avoids a migration/serving
-dependency cycle without transferring stateful resource ownership. The inactive constructs in
-#10705 are not this live chart wiring. Verify the deployed Dispatcher Alembic head/schema before
-Goose's data-preserving handoff; the retired Gateway database must not return.
+**Blocked on image pins and migration-gated Flux wiring; rollout not started.** The Go implementation
+is merged, but live charts still use Python pins. Use the existing root Flux owner for CNPG,
+database/Secrets and stable Gateway/Dispatcher Services. Add the full-digest-named Goose Job there
+with an explicit completion health check; put only the new Go serving workload in a separate
+Kustomization depending on that root. This avoids a migration/serving dependency cycle without
+transferring stateful resource ownership. The inactive Go cdk8s constructs are not this live chart
+wiring. Verify the deployed Dispatcher Alembic head/schema before Goose's data-preserving handoff;
+the retired Gateway database must not return.
 
 Prepare the staged cutover: stop Python acceptance/workers and Gateway connections, verify zero old
 Pods/workers, then remove their Deployments before activating Go queue owners. Preserve stable
