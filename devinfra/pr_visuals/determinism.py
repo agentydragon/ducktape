@@ -251,15 +251,15 @@ def analyze(observations: dict[Render, Observation], *, runs: int) -> Findings:
 
 def _image_report(observations: dict[Render, Observation], *, runs: int) -> list[str]:
     if runs < 2:
-        lines = [f"Insufficient observed runs: {runs}; at least 2 are required to assess reproducibility."]
+        insufficient_lines = [f"Insufficient observed runs: {runs}; at least 2 are required to assess reproducibility."]
         if not observations:
-            lines.append("No images in this group.")
+            insufficient_lines.append("No images in this group.")
         else:
-            lines += [
+            insufficient_lines += [
                 f"- `{render.target}` — `{render.asset}`: observed in {seen.runs_present}/{runs} invocation(s)"
                 for render, seen in sorted(observations.items(), key=lambda item: (item[0].target, item[0].asset))
             ]
-        return [*lines, ""]
+        return [*insufficient_lines, ""]
     if not observations:
         return ["No images in this group.", ""]
     findings = analyze(observations, runs=runs)
