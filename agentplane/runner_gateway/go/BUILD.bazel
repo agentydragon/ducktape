@@ -17,6 +17,7 @@ go_library(
         "@io_k8s_client_go//dynamic",
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//rest",
+        "@io_k8s_client_go//tools/clientcmd",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//health",
         "@org_golang_google_grpc//health/grpc_health_v1",
@@ -27,7 +28,7 @@ go_binary(
     name = "runner-gateway",
     embed = [":main_lib"],
     pure = "on",
-    visibility = ["//agentplane/runner_gateway:__pkg__"],
+    visibility = ["//agentplane/runner_gateway:__subpackages__"],
 )
 
 go_test(

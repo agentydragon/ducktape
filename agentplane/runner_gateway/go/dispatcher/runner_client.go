@@ -3,7 +3,6 @@ package dispatcher
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -24,15 +23,18 @@ type ProxyRunner struct {
 	Namespace string
 	TokenFile string
 	Timeout   time.Duration
-	// Defaults to the current control Service when empty.
-	Target func(sandbox, namespace string) string
+	// Defaults to the per-Sandbox control Service when empty. Templates can also
+	// be a fixed target for host-process integration tests.
+	TargetTemplate string
 }
 
 func (r *ProxyRunner) target(sandbox string) string {
-	if r.Target != nil {
-		return r.Target(sandbox, r.Namespace)
+	template := r.TargetTemplate
+	if template == "" {
+		template = "{sandbox}-control.{namespace}.svc:8080"
 	}
-	return fmt.Sprintf("%s-control.%s.svc:8080", sandbox, r.Namespace)
+	target := strings.ReplaceAll(template, "{sandbox}", sandbox)
+	return strings.ReplaceAll(target, "{namespace}", r.Namespace)
 }
 
 func (r *ProxyRunner) withClient(ctx context.Context, sandbox SandboxSnapshot, call func(context.Context, controlpb.RunnerClient) error) error {

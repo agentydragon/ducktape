@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
@@ -159,6 +160,27 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	if _, _, err := gateway.sandboxes.runnerPeer(context.Background(), runnerPrincipal); err != nil {
 		t.Fatalf("runner peer resolution rejected the test Sandbox Pod: %v", err)
 	}
+	wrongRunner := runnerPrincipal
+	wrongRunner.Account.Name = "other-sandbox"
+	if _, _, err := gateway.sandboxes.runnerPeer(context.Background(), wrongRunner); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("a runner token for another ServiceAccount was accepted: %v", err)
+	}
+	missingRunnerPodUID := runnerPrincipal
+	missingRunnerPodUID.PodUID = ""
+	if _, _, err := gateway.sandboxes.runnerPeer(context.Background(), missingRunnerPodUID); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("a runner principal without its Pod UID was accepted: %v", err)
+	}
+	wrongOwnerPod := runnerPod.DeepCopy()
+	wrongOwnerPod.OwnerReferences[0].UID = types.UID("replacement-sandbox-uid")
+	if _, err := kube.CoreV1().Pods(testNamespace).Update(context.Background(), wrongOwnerPod, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("update runner Pod owner for denial case: %v", err)
+	}
+	if _, _, err := gateway.sandboxes.runnerPeer(context.Background(), runnerPrincipal); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("a runner Pod owned by another Sandbox incarnation was accepted: %v", err)
+	}
+	if _, err := kube.CoreV1().Pods(testNamespace).Update(context.Background(), runnerPod, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("restore runner Pod owner after denial case: %v", err)
+	}
 
 	listener := newBufconnListener()
 	server := grpc.NewServer()
@@ -268,7 +290,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	t.Cleanup(func() { _ = proxyListener.Close() })
 	deliveryRunner := &dispatcher.ProxyRunner{
 		Namespace: testNamespace, TokenFile: tokenFile, Timeout: 5 * time.Second,
-		Target: func(string, string) string { return proxyListener.Addr().String() },
+		TargetTemplate: proxyListener.Addr().String(),
 	}
 	deliveryDone := make(chan struct {
 		entry *eventlogpb.EventEntry
@@ -357,6 +379,29 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	_, err = client.ListSessions(wrongIncarnation, &runnerpb.ListSessionsRequest{})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("stale Sandbox UID should not route to the current runner: %v", err)
+	}
+
+	wrongOwner := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
+		"authorization", "Bearer app-token",
+		sandboxHeader, testSandbox,
+		sandboxUIDHeader, testSandboxUID,
+		sandboxOwnerNamespaceHeader, testNamespace,
+		sandboxOwnerNameHeader, "another-sandbox",
+	))
+	_, err = client.ListSessions(wrongOwner, &runnerpb.ListSessionsRequest{})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("a mismatched Sandbox owner should not route to the current runner: %v", err)
+	}
+
+	incompleteIdentity := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
+		"authorization", "Bearer app-token",
+		sandboxHeader, testSandbox,
+		sandboxOwnerNamespaceHeader, testNamespace,
+		sandboxOwnerNameHeader, testSandbox,
+	))
+	_, err = client.ListSessions(incompleteIdentity, &runnerpb.ListSessionsRequest{})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("a proxy request without the Sandbox UID should be rejected: %v", err)
 	}
 
 	_, err = client.Quiesce(callerContext("app-token"), &runnerpb.QuiesceRequest{})

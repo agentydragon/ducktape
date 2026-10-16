@@ -15,5 +15,5 @@ go_binary(
     name = "runner-gateway-queue-migrate",
     embed = [":cmd_lib"],
     pure = "on",
-    visibility = ["//agentplane/runner_gateway/go:__subpackages__"],
+    visibility = ["//agentplane/runner_gateway:__subpackages__"],
 )

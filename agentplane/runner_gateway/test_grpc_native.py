@@ -1,4 +1,4 @@
-"""Production gRPC client → workload auth/discovery → both real harnesses, without the app."""
+"""The Python Runner client and both native harnesses, using the Runner's generated gRPC service."""
 
 import asyncio
 import shlex
@@ -11,45 +11,27 @@ from uuid import uuid4
 import grpc
 import pytest
 import pytest_bazel
-from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_pb2
+from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.runner import Runner, follow_journal
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
-from agentplane.runner_gateway.destinations import DestinationResolver
-from agentplane.runner_gateway.runner_proxy import Resources
-from agentplane.runner_gateway.testing.auth import CALLER_TOKEN
-from agentplane.runner_gateway.testing.connected_runner import runner_connected
-from agentplane.runner_gateway.testing.grpc_service import service_client
-from agentplane.runner_gateway.testing.resources import build_resources
-from agentplane.sandboxes.testing.kubernetes import DESTINATION, OWNER, SandboxCluster
-from agentplane.testing.fake_apiserver import TokenVerdict
+from agentplane.runner_gateway.testing.runner_peer import runner_peer
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
-AUDIENCE = "test-native-grpc"
-
-
-@pytest.fixture
-def resources(cluster: SandboxCluster, runner: Runner) -> Resources:
-    cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
-        username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
-        pod_name="test-native-caller",
-        pod_uid="test-native-caller-uid",
-        audiences=(AUDIENCE,),
-    )
-    return build_resources(
-        principals=cluster.build_principal_resolver(AUDIENCE),
-        destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
-        caller_accounts=frozenset({OWNER}),
-    )
+DESTINATION = SandboxDestination(
+    owner=ServiceAccount(namespace="testing", name="native-runner"),
+    sandbox="native-runner",
+    sandbox_uid="native-runner-uid",
+)
 
 
 @pytest.fixture
@@ -63,16 +45,10 @@ def config(config: RunnerConfig, bootstrap: str | None) -> RunnerConfig:
     return replace(config, launch=replace(config.launch, bootstrap=bootstrap))
 
 
-@pytest.fixture(autouse=True)
-async def connected(cluster: SandboxCluster, resources: Resources, runner: Runner) -> AsyncIterator[None]:
-    async with runner_connected(cluster, resources, runner):
-        yield
-
-
 @pytest.fixture
-async def remote(resources: Resources, token_file: Path) -> AsyncIterator[SandboxControlClient]:
-    async with service_client(resources, token_file) as client:
-        yield client
+async def remote(runner: Runner, token_file: Path) -> AsyncIterator[SandboxControlClient]:
+    async with runner_peer(token_file, runner=runner) as endpoint:
+        yield endpoint.client()
 
 
 async def inspect(runner: SandboxRunner, session_id: str) -> runner_pb2.SessionSummary:
@@ -137,12 +113,7 @@ async def complete_turn(
 
 
 async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
-    resources: Resources,
-    token_file: Path,
-    model: ScriptedModel,
-    spec: runner_pb2.SessionSpec,
-    workspace: Path,
-    runner: Runner,
+    token_file: Path, model: ScriptedModel, spec: runner_pb2.SessionSpec, workspace: Path, runner: Runner
 ) -> None:
     bootstrap_marker = workspace / "bootstrap-runs"
     setup_marker = workspace / "setup-runs"
@@ -150,7 +121,8 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     launch_spec = runner_pb2.SessionSpec()
     launch_spec.CopyFrom(spec)
     setup_script = f"printf S >> {shlex.quote(str(setup_marker))}"
-    async with service_client(resources, token_file) as remote:
+    async with runner_peer(token_file, runner=runner) as endpoint:
+        remote = endpoint.client()
         destination = remote.runner(DESTINATION)
         requested = uuid4()
         created = await destination.open_session(session_id=requested, spec=launch_spec, setup_script=setup_script)
@@ -195,7 +167,8 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
             for entry in await journal.since(0, limit=journal.last_cursor)
         ]
     # Stop the service and recover the complete launch spec solely from the runner.
-    async with service_client(resources, token_file) as restarted:
+    async with runner_peer(token_file, runner=runner) as restarted_endpoint:
+        restarted = restarted_endpoint.client()
         destination = restarted.runner(DESTINATION)
         resumed = await destination.resume(session)
         assert resumed.spec == opened.spec

@@ -52,7 +52,7 @@ from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 # with the runner.
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
 from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.testing.backend import Endpoint, backend
+from agentplane.runner_gateway.testing.runner_peer import Endpoint, runner_peer
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
@@ -265,10 +265,8 @@ def bridge(
 
 
 @pytest.fixture
-def gateway_endpoint(
-    custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, tmp_path: Path
-) -> Iterator[Endpoint]:
-    with backend(custom_objects, core_v1, tmp_path / "sandbox-token") as endpoint:
+async def gateway_endpoint(tmp_path: Path) -> AsyncIterator[Endpoint]:
+    async with runner_peer(tmp_path / "sandbox-token") as endpoint:
         yield endpoint
 
 

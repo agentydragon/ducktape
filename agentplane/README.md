@@ -11,10 +11,9 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   and an MCP endpoint over OAuth.
-- [Runner Gateway](runner_gateway/README.md): the runner control stream and authorized live Runner
-  proxy.
-- [Session Dispatcher](session_dispatcher/README.md): the durable command queue and delivery state
-  between senders and Sandbox runners.
+- [Runner Gateway](runner_gateway/README.md): one Go process serving the runner control stream,
+  authorized live Runner proxy and [Session Dispatcher](session_dispatcher/README.md) durable queue.
+  Live charts retain the pinned Python predecessors until the fenced migration cutover.
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
 - [Runner](runner/README.md) and [native drivers](native/README.md): run Claude Code or Codex in a
@@ -46,8 +45,7 @@ flowchart LR
     app[Integration app]
     subgraph services[Agentplane services]
         direction TB
-        gw[Runner Gateway]
-        dispatcher[Session Dispatcher]
+        gw[Runner Gateway: Go queue, proxy and tunnel]
         sandboxctl[Sandbox Controller]
         policy[Policy Controller]
         hs[History Service]
@@ -78,7 +76,7 @@ flowchart LR
 
     browser -->|HTTPS requests| app
     app -->|gRPC health + tunneled Runner RPCs| gw
-    app --> dispatcher
+    app -->|Dispatcher API| gw
     app --> hs
     app --> notif
     app --> actions
@@ -87,8 +85,6 @@ flowchart LR
     app --> k8s
 
     gw --> k8s
-    dispatcher --> k8s
-    dispatcher --> gw
     policy --> k8s
     sandboxctl --> k8s
     sandboxctl --> gw
@@ -114,7 +110,6 @@ flowchart LR
     click actions href "action_service/api.py" "Action Service API"
     click policy href "policy_controller/controller.go" "Policy Controller"
     click sandboxctl href "sandbox_controller/controller.go" "Sandbox Controller"
-    click dispatcher href "proto/session_dispatcher.proto" "Session Dispatcher API"
     click egress href "egress/addon.py" "Egress proxy"
     click llm href "llm_ingress/app.py" "LLM ingress"
     click electric href "../cluster/cdk8s/agentplane/electric.py" "Electric deployment"
@@ -131,8 +126,10 @@ and owns a separate PostgreSQL database. See the [indexing README](indexing/READ
 ```mermaid
 flowchart LR
     app[Integration app]
-    dispatcher[Session Dispatcher]
-    gateway[Runner Gateway]
+    subgraph unified[Go Runner Gateway]
+        dispatcher[Dispatcher API and durable delivery]
+        gateway[Runner proxy and control tunnel]
+    end
     sandboxctl[Sandbox Controller]
     k8s[Kubernetes API]
     app -->|session opens + commands| dispatcher
@@ -218,7 +215,7 @@ flowchart LR
     actions[Action Service]
     k8s[Kubernetes API]
     gateway[Runner Gateway]
-    dispatcher[Session Dispatcher]
+    dispatcher[Runner Gateway Dispatcher API]
     history[History Service]
 
     agent -->|notification API| notifications
@@ -314,12 +311,11 @@ source are retired; the History Service retains its database and authored histor
   The History Service retains the existing `sandbox_service` database; no database or authored
   history is removed with the Sandbox Service Deployment. The history and Dispatcher databases are drawn.
 - **Sandbox lifecycle and runner control.** The app writes requested Sandbox state and operator
-  grants to Kubernetes; the Sandbox Controller reconciles resources and owns status. The Session
-  Dispatcher owns production Session openings and durable command admission/delivery state. The
-  Runner Gateway owns the runner control stream and authorized live runner access. The app reads
+  grants to Kubernetes; the Sandbox Controller reconciles resources and owns status. The Go Runner Gateway
+  implements Dispatcher Session openings and durable command admission/delivery alongside its runner
+  control stream and authorized live runner access. The app reads
   current runner inventory and explicitly resumes a retained harness through the Sandbox control
-  Service, with the Runner Proxy checking the live Sandbox name, UID and owner. The Gateway has
-  no database. The controller holds deletion until the runner has sealed its Sessions through the Gateway.
+  Service, with the Runner Proxy checking the live Sandbox name, UID and owner. Its queue uses the existing Dispatcher database; the Gateway has no separate registry database. The controller holds deletion until the runner has sealed its Sessions through the Gateway.
 
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
 [`docs/`](docs/).

@@ -23,13 +23,15 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
-const (
-	proxyAddress      = ":8080"
-	dispatcherAddress = ":8081"
-	controlAddress    = ":8082"
-)
+func kubernetesConfig(c config) (*rest.Config, error) {
+	if c.Kubeconfig != "" {
+		return clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
+	}
+	return rest.InClusterConfig()
+}
 
 func accountSet(accounts []auth.Account) map[auth.Account]struct{} {
 	result := make(map[auth.Account]struct{}, len(accounts))
@@ -80,7 +82,7 @@ func reportUnexpected(ctx context.Context, failed chan<- error, role string, err
 }
 
 func serve(ctx context.Context, c config) error {
-	config, err := rest.InClusterConfig()
+	config, err := kubernetesConfig(c)
 	if err != nil {
 		return err
 	}
@@ -124,7 +126,7 @@ func serve(ctx context.Context, c config) error {
 	g, err := gateway.New(gateway.Config{
 		Namespace: c.Namespace, CallerAccounts: c.GatewayCallers,
 		SandboxControllerAccount: c.ControllerAccount,
-		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: 8080,
+		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: int32(c.ProxyPort),
 	}, gatewayAuth, runnerAuth, objects, kube.CoreV1(), kube.CoordinationV1(), kube.DiscoveryV1())
 	if err != nil {
 		return err
@@ -149,7 +151,10 @@ func serve(ctx context.Context, c config) error {
 	if err := waitForListener(ctx, hub, failed); err != nil {
 		return err
 	}
-	runner := &dispatcher.ProxyRunner{Namespace: c.Namespace, TokenFile: c.RunnerTokenFile, Timeout: c.RunnerTimeout}
+	runner := &dispatcher.ProxyRunner{
+		Namespace: c.Namespace, TokenFile: c.RunnerTokenFile, Timeout: c.RunnerTimeout,
+		TargetTemplate: c.RunnerControlTargetTemplate,
+	}
 	ready := make(chan struct{})
 	worker := &dispatcher.DeliveryWorker{
 		Store: store, Catalog: catalog, Wake: catalog,
@@ -179,17 +184,17 @@ func serve(ctx context.Context, c config) error {
 	healthpb.RegisterHealthServer(proxy, proxyHealth)
 	healthpb.RegisterHealthServer(publicDispatcher, dispatcherHealth)
 	healthpb.RegisterHealthServer(control, controlHealth)
-	proxyListener, err := net.Listen("tcp", proxyAddress)
+	proxyListener, err := net.Listen("tcp", c.ProxyListenAddress)
 	if err != nil {
 		return err
 	}
 	defer proxyListener.Close()
-	dispatcherListener, err := net.Listen("tcp", dispatcherAddress)
+	dispatcherListener, err := net.Listen("tcp", c.DispatcherListenAddress)
 	if err != nil {
 		return err
 	}
 	defer dispatcherListener.Close()
-	controlListener, err := net.Listen("tcp", controlAddress)
+	controlListener, err := net.Listen("tcp", c.ControlListenAddress)
 	if err != nil {
 		return err
 	}

@@ -1,14 +1,15 @@
 # Session Dispatcher
 
-The durable queue between senders and a Sandbox's runner. A sender stores a command and gets a
-`Dispatch` back at once; the Dispatcher delivers it through the Runner Gateway's runner proxy once the
-Sandbox is `Ready`, and the sender reads where it is. The manifests use the environment replica profile: two rolling replicas in staging and one
-replica in testing. Testing can temporarily run two replicas for failover acceptance. The delivery loop shards work by
-per-Sandbox Lease and fences claims and settlements with a PostgreSQL ownership generation. The app and
-Notifications submit commands through Dispatcher; app lifecycle and live-state callers remain
-separate. Control design: [ADR](../docs/adr_sandbox_session_control.md). The manual queue, replica and
+The durable command queue is the Dispatcher role of the
+[Go Runner Gateway](../runner_gateway/README.md). Python App and Notification callers use the
+unchanged Session Dispatcher gRPC contract; the stable Dispatcher Service maps its port `8080`
+to the Go listener on `8081` at cutover. The Go worker delivers through the Runner proxy once
+the exact Sandbox is ready, with per-Sandbox Lease and PostgreSQL generation fencing.
+
+This package retains the immutable Alembic migration history and its dependencies for the Goose
+handoff. Its Python serving implementation and tests are removed. Live manifests still run their
+pinned Python images until the separately reviewed fenced cutover. The manual queue, replica and
 wake probes are documented in the [acceptance suite](../acceptance/README.md#dispatcher-queue-and-replica-acceptance).
-The [task DAG](../plans/task_dag.md) tracks rollout acceptance.
 
 ## Contract
 
@@ -74,9 +75,10 @@ Sandboxes) or a retry deadline. Each replica also renews its owned Leases every 
 
 ## Running
 
-Bazel targets: `:server`, `:migrate`, `:image`, `:migration_image`. Settings are the `Settings` class
-(`AGENTPLANE_SESSION_DISPATCHER_CONFIG_FILE`): its own PostgreSQL database, the namespace of the Sandboxes,
-the runner control target (`{sandbox}-control.{namespace}.svc:8080`) with a projected token the gateway admits,
-and the callers' accounts and audience. `wake_caller_accounts` is optional and empty by default; configure it
-only after the accepting Dispatcher and Sandbox Controller images are pinned and Dispatcher Sandbox `patch`
-permission is reconciled. Run `:migrate` before starting; `grpc.health.v1` is served.
+The serving binary and image live under `//agentplane/runner_gateway/go` and
+`//agentplane/runner_gateway:go_image`. Go uses explicit audience/caller flags, a projected
+Gateway token for calls to other holder replicas, and
+`AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. Apply the Goose queue migrator before
+serving; `grpc.health.v1` is available on each listener. The retained `:migrate` and
+`:migration_image` targets create the historical Alembic schema for handoff tests and the pinned
+legacy deployment. They never run the removed Python service.

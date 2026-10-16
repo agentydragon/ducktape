@@ -27,7 +27,7 @@ Rai merges every PR by hand; do not merge or enable auto-merge.
 
 | Open PR / exact reviewed head                                               | Scope                                                                                                                   | Remaining gate                                                                                                             |
 | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| [#10705](https://github.com/agentydragon/ducktape/pull/10705), `897acb320f` | Unified Go Runner Gateway, Dispatcher queue, Goose, separate image publication slots and inactive deployment constructs | Review/merge; then image pins, migration/Flux wiring and fenced deployment acceptance below. Live charts still run Python. |
+| [#10705](https://github.com/agentydragon/ducktape/pull/10705)               | Unified Go Runner Gateway, Dispatcher queue, Goose, separate image publication slots and inactive deployment constructs | Review/merge; then image pins, migration/Flux wiring and fenced deployment acceptance below. Live charts still run Python. |
 | [#10734](https://github.com/agentydragon/ducktape/pull/10734), `39522ca3ab` | 8 GiB VM guest and testing admission limits                                                                             | Review/merge/reconcile; actual launcher resources, guest memory and representative build/test acceptance.                  |
 
 These PRs also edit this DAG. When rebasing them after this handoff, preserve the current status,
@@ -1316,7 +1316,7 @@ node is removed. This does not remove the separate destination-authority decisio
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
 **Needs policy revision; preserve the explicitly approved direct app `Runner.ResumeSession` caller.**
-The runner proxy (`runner_gateway/runner_proxy.py`) currently lets each configured caller account
+The runner proxy (`runner_gateway/go/gateway/proxy.go`) currently lets each configured caller account
 invoke the Runner methods allowed by policy, except `Quiesce` and `Seal`. Review the per-method policy
 for `OpenSession` and other start-or-continue-work methods against the Dispatcher-only command
 boundary and the approved app resume path. Do not revoke app resume as part of retiring the Gateway
@@ -1429,18 +1429,20 @@ wrapper/registry retirement is complete.
 
 ### `GATEWAY_GO_IMPLEMENTATION` — review the unified Go Runner Gateway
 
-**In review: [#10705](https://github.com/agentydragon/ducktape/pull/10705); worker stopped.**
+**In review: [#10705](https://github.com/agentydragon/ducktape/pull/10705).**
 The branch implements generated Go APIs/auth, durable Dispatcher admission/ownership/delivery,
 Runner reverse tunnels and proxying, guarded wake, Goose's Dispatcher-only schema handoff, image
 publication and inactive cdk8s constructs. Code lives under `agentplane/runner_gateway/go`; generated
-Go stays in Bazel output. PostgreSQL-backed and composed queue-to-tunnel tests pass, as does CI on
-the handoff head. It preserves queued rows/IDs, separate delivery and connection fences, per-method
-auth and cross-replica routing. Review the existing patch; do not dispatch these ports again.
+Go stays in Bazel output. Review queued row/ID preservation, separate delivery and connection
+fences, per-method auth and cross-replica routing. Review the existing patch; do not dispatch these ports again.
 
 The old Gateway database, wrappers and migration image have already been retired on devel, and this
 branch has been rebased after them. There is no remaining retirement/rebase prerequisite node.
-The current Python serving image slot remains Python; distinct Go serving and queue-migrator slots
-prevent premature auto-pin activation. No Go deployment or live two-replica acceptance has occurred.
+The superseded Python serving source, tests and image publishers are removed in this PR; consumer
+fixtures use narrow gRPC peers, with a focused Python-to-Go acceptance. Python clients and the
+immutable Dispatcher Alembic migration history remain.
+Live charts retain the existing Python pins and configuration contracts; distinct Go serving and
+queue-migrator slots prevent premature auto-pin activation. No Go deployment or live two-replica acceptance has occurred.
 Delete this implementation-review node after merge; deployment remains in the following nodes.
 
 ### `GATEWAY_GO_ROLLOUT_CONFIG` — publish images and wire migration readiness into Flux
@@ -1480,9 +1482,9 @@ or claim History can reconstruct runner storage. Record exact cutover and recove
 
 **Depends on verified cutover.** Remove obsolete Deployment definitions, single-purpose ConfigMaps,
 service accounts/RBAC, network policies, projected inter-service Gateway token and image automation
-entries once no running or saved client needs them. Delete the superseded Python serving code and
-its tests/BUILD targets, retaining any still-used shared helpers and Dispatcher migration history
-needed by the reviewed Goose handoff. Restore RollingUpdate after fenced-cutover acceptance.
+entries once no running or saved client needs them. Remove the legacy Python deployment settings contracts after no pinned image needs them; retain
+Dispatcher migration history needed by the reviewed Goose handoff. Restore RollingUpdate after
+fenced-cutover acceptance.
 Keep both stable Service front doors, per-Sandbox Services/EndpointSlices and the Dispatcher database;
 the Go worker may still need a Gateway-audience token for a different connection-holder replica, so
 remove only unused token projections. Do not recreate the already-retired Gateway wrappers or DB. Search code, BUILD, chart, image automation, docs,

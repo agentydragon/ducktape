@@ -52,6 +52,6 @@ The browser's old Sandbox session GET is already removed; retained Threads come 
 - [RunnerControl and the reverse stream](runner_control.md) and [RunnerControl proto](../proto/runner_control.proto)
 - [Runner RPCs](../proto/runner.proto)
 - [Session Dispatcher API](../proto/session_dispatcher.proto)
-- [Gateway proxy implementation](../runner_gateway/runner_proxy.py)
+- [Gateway proxy implementation](../runner_gateway/go/gateway/proxy.go)
 - [Gateway runtime](../runner_gateway/README.md)
 - [Gateway plan](../plans/task_dag.md#12-the-runner-gateway-serves-the-runners-own-service)

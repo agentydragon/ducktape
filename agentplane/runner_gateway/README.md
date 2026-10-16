@@ -1,21 +1,39 @@
 # Runner Gateway
 
-The Runner Gateway holds the runners' outbound
-[RunnerControl stream](../docs/runner_control.md), publishes which replica holds each connection,
-and proxies the runner's `Runner` RPCs to that connection. The app uses the per-Sandbox proxy for
-live inventory and explicit native resume; Session openings and durable command admission go through
-the Session Dispatcher. The Gateway reads Sandbox and Pod state and writes connection Leases and
-EndpointSlices; the Sandbox Controller owns `Sandbox.status`.
+The Go Runner Gateway combines durable Session Dispatcher admission and delivery with the
+runners' outbound [RunnerControl stream](../docs/runner_control.md) and the identity-fenced
+Runner proxy. Its three authenticated gRPC listeners serve the Runner proxy on `:8080`,
+Dispatcher on `:8081`, and runner `Connect` on `:8082`. The app and Notification service use
+Python gRPC clients against those contracts. The Sandbox Controller owns `Sandbox.status`.
 
-The Gateway has no database, migration init container or Session registry. Other services retain
-their databases on the shared PostgreSQL cluster.
+The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox delivery Leases
+and database ownership generations. The connection role keeps separate connection Leases and
+EndpointSlices; delivery on one replica routes to the replica holding the runner connection.
+There is no separate Gateway database or Session registry and no History Service client.
+[Queue semantics](../session_dispatcher/README.md) remain distinct from History's retained
+conversation and from Runner admission.
 
-The Gateway has no History Service client. Its proxy can serve live runner calls while History is
-unavailable, but it does not replace Dispatcher admission or History's retained conversation.
+## Source and tests
 
-- `runner_control.py`, `lifecycle_control.py`, `connection_records.py`: runner connections, the
-  control requests sent over them, and per-Sandbox connection ownership.
-- `runner_proxy.py`: the runner's `Runner` service, forwarded through the connection held by this
-  replica ([runner proxy](../docs/runner_control.md#runner-proxy)).
-- `destinations.py`: validates the Sandbox incarnation and ready runner Pod before proxying.
-- `settings.py`, `main.py`: server settings and listener wiring.
+- `go/main.go`, `go/config.go`: process, listener wiring and deployment flags.
+- `go/gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
+- `go/dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
+- `go/migrations/`: Goose migrations and the data-preserving Dispatcher Alembic handoff.
+- `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and
+  the real Go fixture for cross-language acceptance.
+- `settings.py`: configuration contract for the still-pinned Python deployment, retained until cutover.
+
+Build `//agentplane/runner_gateway/go:runner-gateway` or `//agentplane/runner_gateway:go_image`.
+The migrator image is `//agentplane/runner_gateway/go/migrations:image`; serving never applies
+migrations. Integration tests exercise real PostgreSQL and queue-to-runner tunnels on RBE.
+
+## Deployment gate
+
+The live chart still renders the existing Python image pins. Their serving source and image
+publishers are removed; the dedicated `agentplane-runner-gateway-go` release slot publishes Go
+without advancing those pins. Before activation, stop old Python acceptance, delivery workers
+and runner connections, verify all old Pods/workers are gone, then apply the digest-named Goose
+Job under the existing root Flux owner. Keep CNPG, PVCs, Secrets, database and stable Services
+under that owner. The new Go workload belongs to a dependent Kustomization and starts only after
+migration completion. Verify row recovery, reconnect, two-replica routing and fencing before
+restoring RollingUpdate. See the [delivery design](../docs/runner_delivery_and_harness_design.md).

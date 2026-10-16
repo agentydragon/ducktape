@@ -95,6 +95,10 @@ command checkpoint or interrupted setup; deterministic coverage for those bounda
 
 ## Dispatcher queue and replica acceptance
 
+These probes target the unified Go Runner Gateway after its fenced cutover. The Dispatcher
+Service remains `session-dispatcher:8080`; replica operations target the `runner-gateway`
+Deployment, and direct Pod probes use its Dispatcher listener on `8081`.
+
 The `queue` case checks authenticated submission to a stopped Sandbox, durable queueing, and
 runner admission after an explicit start. It uses a fixture Sandbox and the testing app's workload
 identity for TokenReview; it does not call app HTTP or run a model turn. Run it on the authorized
@@ -112,7 +116,7 @@ bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
   --test_arg=-k --test_arg=replicas --test_output=streamed
 ```
 
-It queues a setting change in a fresh stopped Sandbox, temporarily scales the testing Dispatcher
+It queues a setting change in a fresh stopped Sandbox, temporarily scales the testing Go Runner Gateway
 from one replica to two, deletes the original owner's Pod with a UID precondition, and observes
 Lease takeover through a watch. The retained command is then delivered after explicitly starting
 the Sandbox. Finally, streams pinned to both replica Pods must receive the queued command's
@@ -126,8 +130,8 @@ scale, preserving concurrent GitOps/operator changes. Evidence is written to
 case retains the original single-replica delivery check.
 
 The `opted_in` case covers send-triggered wake for both app `OpenSession` and notification
-`SubmitInput`. Run it after the Dispatcher, migration, Sandbox Controller, app and notification
-images are Ready and the caller allowlist matches the intended identities:
+`SubmitInput`. Run it after the Goose migration completes and the Go Runner Gateway, Sandbox Controller, app
+and notification images are Ready and the caller allowlist matches the intended identities:
 
 ```bash
 bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
