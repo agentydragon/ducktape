@@ -336,6 +336,7 @@ class RunnerControlClient:
 
     async def connect(self, runner: grpc.aio.Channel) -> None:
         loop = asyncio.get_running_loop()
+        attempt_started = loop.time()
         welcomed_at: float | None = None
         lost = StreamLostError(None, "the stream ended")
         async with grpc.aio.insecure_channel(self.target, options=(("grpc.use_local_subchannel_pool", 1),)) as channel:
@@ -363,9 +364,18 @@ class RunnerControlClient:
                 lost = StreamLostError(None, "no frame from the Runner Gateway")
             except StreamLostError as error:
                 lost = error
+            except asyncio.CancelledError:
+                logger.info(
+                    "runner control stream attempt cancelled after %.3fs; welcomed=%s",
+                    loop.time() - attempt_started,
+                    welcomed_at is not None,
+                )
+                raise
+        elapsed = loop.time() - attempt_started
         if welcomed_at is not None and loop.time() - welcomed_at >= self.timing.liveness_s:
-            logger.warning("runner control stream ended: %s", lost)
+            logger.warning("runner control stream ended after %.3fs: %s", elapsed, lost)
             return
+        logger.info("runner control stream attempt ended after %.3fs: %s", elapsed, lost)
         raise lost
 
     async def serve(
@@ -385,6 +395,12 @@ class RunnerControlClient:
                     await call.write(frame)
                 except asyncio.InvalidStateError:
                     # A write after the gateway ended the call.
+                    logger.warning(
+                        "runner control frame write failed; gateway code=%s detail=%s frame=%s",
+                        await call.code(),
+                        await call.details(),
+                        frame.WhichOneof("frame"),
+                    )
                     raise StreamLostError(await call.code(), await call.details()) from None
 
         async def answer(tunneled: grpc_tunnel_pb2.Call) -> None:
@@ -401,7 +417,14 @@ class RunnerControlClient:
                         tasks.create_task(answer(frame.call))
                     case kind:
                         raise StreamLostError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
-            raise StreamLostError(await call.code(), await call.details())
+            code, detail = await call.code(), await call.details()
+            logger.warning(
+                "runner control response stream ended; code=%s detail=%s last_frame_age_s=%.3f",
+                code,
+                detail,
+                loop.time() - last_frame,
+            )
+            raise StreamLostError(code, detail)
 
         async def publish_facts() -> None:
             # Cleared before reading, so a change during the read is not lost. A new connection starts
@@ -419,7 +442,13 @@ class RunnerControlClient:
         async def keep_alive() -> None:
             while True:
                 await asyncio.sleep(self.timing.heartbeat_s)
-                if loop.time() - last_frame > self.timing.liveness_s:
+                frame_age = loop.time() - last_frame
+                if frame_age > self.timing.liveness_s:
+                    logger.warning(
+                        "runner control liveness expired; last_frame_age_s=%.3f liveness_s=%.3f",
+                        frame_age,
+                        self.timing.liveness_s,
+                    )
                     raise TimeoutError
                 await send(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.RunnerHeartbeat()))
 
