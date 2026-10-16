@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Playwright, expect
 
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.viewports import Viewport
 from util.testing.visual_capture import HarnessConfig, InlinePage, VisualHarness
 
@@ -97,26 +98,10 @@ async def test_trace_default_opt_out_selection_and_failure_retention(
 
 async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(harness: VisualHarness) -> None:
     async with harness.open("plain", viewport=Viewport(width=300, height=200, device_scale_factor=2)) as view:
-        await view.page.evaluate("""() => {
-            document.body.style.height = "1200px";
-            const history = document.createElement("div");
-            history.className = "history";
-            history.style.cssText = "position:absolute;left:10.25px;top:20.5px;width:80.5px;height:40px;overflow-y:auto";
-            history.dataset.layoutSettled = "true";
-            history.dataset.scrollMode = "virtualized";
-            const entry = document.createElement("div");
-            entry.className = "entry";
-            entry.style.cssText = "height:300px;width:100px";
-            history.append(entry);
-            document.body.append(history);
-            history.scrollTop = 17;
-            const input = document.createElement("input");
-            input.value = "sensitive-selection";
-            document.body.append(input);
-            input.focus();
-            input.setSelectionRange(2, 9, "forward");
-            window.scrollTo(0, 50);
-        }""")
+        fixture = get_required_path(own_repo_rlocation("util/testing/capture-diagnostics-fixture.js")).read_text(
+            encoding="utf-8"
+        )
+        await view.page.evaluate(fixture)
         await view.capture("viewport", scale="css")
         await view.capture("cropped", target=view.page.locator(".entry"), scale="css")
 

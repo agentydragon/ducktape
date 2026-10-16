@@ -1,0 +1,20 @@
+() => {
+  document.body.style.height = "1200px";
+  const history = document.createElement("div");
+  history.className = "history";
+  history.style.cssText = "position:absolute;left:10.25px;top:20.5px;width:80.5px;height:40px;overflow-y:auto";
+  history.dataset.layoutSettled = "true";
+  history.dataset.scrollMode = "virtualized";
+  const entry = document.createElement("div");
+  entry.className = "entry";
+  entry.style.cssText = "height:300px;width:100px";
+  history.append(entry);
+  document.body.append(history);
+  history.scrollTop = 17;
+  const input = document.createElement("input");
+  input.value = "sensitive-selection";
+  document.body.append(input);
+  input.focus();
+  input.setSelectionRange(2, 9, "forward");
+  window.scrollTo(0, 50);
+};

@@ -315,6 +315,12 @@ js_library(
     srcs = ["capture-diagnostics.js"],
 )
 
+js_library(
+    name = "capture_diagnostics_fixture_js",
+    testonly = True,
+    srcs = ["capture-diagnostics-fixture.js"],
+)
+
 py_library(
     name = "visual_fixtures",
     srcs = ["visual_fixtures.py"],
@@ -333,11 +339,16 @@ py_library(
 py_test(
     name = "test_visual_capture",
     srcs = ["test_visual_capture.py"],
+    data = [
+        "capture-diagnostics-fixture.js",
+        ":capture_diagnostics_fixture_js",
+    ],
     deps = [
         ":viewports",
         ":visual_capture",
         "//:conftest",
         "//util:playwright",
+        "//util/bazel:runfiles",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
