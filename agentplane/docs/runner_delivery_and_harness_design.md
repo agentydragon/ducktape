@@ -7,7 +7,7 @@ facade is gRPC-Gateway. This does not authorize runtime/API cutover. Other secti
 schemas, database ownership, identity mappings or caller permissions. Keep the existing security
 checks and durable queue until a replacement contract is reviewed.
 
-The related decision nodes are in [section 14 of the task DAG](../plans/task_dag.md#14-delivery-boundaries-apis-and-harness-identity).
+The related decision nodes are in [section 13 of the task DAG](../plans/task_dag.md#13-delivery-boundaries-apis-and-harness-identity).
 The current runner contracts remain in [Session layering](thread_layering.md), the
 [Dispatcher README](../session_dispatcher/README.md), the [Gateway API](../runner_gateway/API.md),
 and the [scripted harness capability index](../native/README.md#behavioral-coverage).

@@ -95,31 +95,15 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_only_staging_probe_keeps_legacy_tool_config(
+def test_runner_tool_config_role_is_scoped_to_the_canonical_map(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     docs = agentplane_manifests[namespace]
-    legacy_names = {
-        "agentplane-runner-platform-instructions",
-        "agentplane-sandbox-tool-config",
-        "agentplane-runner-vm-config",
-    }
-    legacy_maps = {
-        doc["metadata"]["name"]: doc
-        for doc in docs
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] in legacy_names
-    }
-    assert set(legacy_maps) == ({"agentplane-sandbox-tool-config"} if namespace == "agentplane-staging" else set())
+    _by_name(docs, "ConfigMap", "sandbox-tool-config")
     role = _by_name(docs, "Role", "agentplane-sandbox-tool-config-reader")
-    granted_maps = {name for rule in role["rules"] for name in rule["resourceNames"]}
-    assert all(rule["resources"] == ["configmaps"] and rule["verbs"] == ["get"] for rule in role["rules"])
-    expected_grants = {"sandbox-tool-config"}
-    if namespace == "agentplane-staging":
-        current = _by_name(docs, "ConfigMap", "sandbox-tool-config")
-        compatibility = legacy_maps["agentplane-sandbox-tool-config"]
-        assert compatibility["data"] == current["data"]
-        expected_grants.add("agentplane-sandbox-tool-config")
-    assert granted_maps == expected_grants
+    assert role["rules"] == [
+        {"apiGroups": [""], "resourceNames": ["sandbox-tool-config"], "resources": ["configmaps"], "verbs": ["get"]}
+    ]
 
     runner = next(template for template in _templates(docs) if template["metadata"]["name"] == "runner")
     volumes = runner["spec"]["pod"]["spec"]["volumes"]

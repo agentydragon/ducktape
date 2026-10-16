@@ -423,14 +423,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
             Rule.egress(
-                hosts=[
-                    agent_api(namespace).fqdn,
-                    *(
-                        [f"agentplane-egress.{namespace}.svc.cluster.local"]
-                        if namespace == "agentplane-staging"
-                        else []
-                    ),
-                ],
+                hosts=[agent_api(namespace).fqdn],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/openapi.json", "/v1/rules"],
@@ -806,7 +799,6 @@ class Egress(Construct):
                 f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=migrate_env
             ),
             tolerate_control_plane=True,
-            legacy_service_names=("agentplane-egress",) if self.env.namespace == "agentplane-staging" else (),
         )
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)

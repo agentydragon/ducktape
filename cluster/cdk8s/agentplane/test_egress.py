@@ -24,6 +24,7 @@ from cluster.cdk8s.agentplane.egress import (
     KUBERNETES_CREDENTIAL,
     KUBERNETES_HOST,
     PUBLIC_INTERNET_POLICY,
+    agent_api,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import (
     ACTIVITYWATCH_READ_POLICY,
@@ -57,32 +58,6 @@ def _app_default_policies(docs: list[dict[str, Any]]) -> list[str]:
     config = _by_name(docs, "ConfigMap", "app-config")
     defaults: list[str] = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
     return defaults
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_staging_probe_egress_alias_targets_the_current_workload(
-    agentplane_manifests: dict[str, list[dict[str, Any]]], namespace: str
-) -> None:
-    docs = agentplane_manifests[namespace]
-    legacy_names = {
-        "agentplane-actions",
-        "agentplane-egress",
-        "agentplane-history-service",
-        "agentplane-llm-ingress",
-        "agentplane-notifications",
-        "agentplane-runner-gateway",
-    }
-    aliases = {
-        doc["metadata"]["name"]: doc
-        for doc in docs
-        if doc["kind"] == "Service" and doc["metadata"]["name"] in legacy_names
-    }
-    assert set(aliases) == ({"agentplane-egress"} if namespace == "agentplane-staging" else set())
-    if namespace == "agentplane-staging":
-        current = _by_name(docs, "Service", "egress")
-        compatibility = aliases["agentplane-egress"]
-        assert compatibility["spec"]["selector"] == current["spec"]["selector"]
-        assert compatibility["spec"]["ports"] == current["spec"]["ports"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
@@ -135,7 +110,7 @@ def test_workload_policy_grants_only_the_agent_facing_actions_api(
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_probe_egress_api_host_is_allowed_only_in_staging(
+def test_agent_egress_api_uses_its_canonical_service(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     policy = one(
@@ -143,21 +118,11 @@ def test_probe_egress_api_host_is_allowed_only_in_staging(
         for doc in agentplane_manifests[namespace]
         if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == BASIC_POLICY
     )
-    hosts = {host for rule in policy["spec"]["rules"] for host in rule.get("hosts", [])}
-    probe_host = f"agentplane-egress.{namespace}.svc.cluster.local"
-    assert (probe_host in hosts) == (namespace == "agentplane-staging")
-    compatibility_hosts = {
-        f"{service}.{namespace}.svc.cluster.local"
-        for service in (
-            "agentplane-actions",
-            "agentplane-egress",
-            "agentplane-history-service",
-            "agentplane-llm-ingress",
-            "agentplane-notifications",
-            "agentplane-runner-gateway",
-        )
-    }
-    assert hosts & compatibility_hosts == ({probe_host} if namespace == "agentplane-staging" else set())
+    canonical_host = agent_api(namespace).fqdn
+    rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule["hosts"])
+    assert rule["hosts"] == [canonical_host]
+    assert rule["methods"] == ["GET"]
+    assert rule["paths"] == ["/openapi.json", "/v1/rules"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)

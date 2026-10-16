@@ -1438,33 +1438,6 @@ the History Service holds every Session's Sandbox and all pinned gateways have s
 writing this database. First remove strict config keys from manifests with an accepting receiver;
 only after that rollout delete their settings readers. This remains a separate data-drop PR.
 
-## 13. Namespace-local Kubernetes object names
-
-```mermaid
-flowchart TD
-    AGENTPLANE_LEGACY_RUNTIME_ALIASES_RETIRE[Remove legacy Sandbox DNS and ConfigMap aliases after reader gate]
-```
-
-The namespace-local rename is in place, while runtime aliases and ConfigMap mirrors remain only for
-verified old readers. Secret and credential names, PolicySets, database resources, Flux
-Kustomization identities, token audiences, and other durable auth or data identities retain their
-established names. Runner Pod labels also keep their prior value so existing incarnations remain
-covered by the network fences.
-
-### `AGENTPLANE_LEGACY_RUNTIME_ALIASES_RETIRE` — remove old Sandbox runtime references
-
-**Partially complete; retain only live-reader compatibility.** The 2026-10-16 read-only inventory
-found no Sandbox CRs in staging or testing and no old Service DNS or ConfigMap references in their
-persisted SandboxTemplates or PodTemplates. Remove independently verified unused aliases rather
-than holding every namespace-local name for one remaining reader.
-
-The staging `claude-ai-forgejo-clone-probe` Pod still reads
-`agentplane-egress.agentplane-staging.svc.cluster.local` and mounts
-`agentplane-sandbox-tool-config`. Keep those two staging resources, the matching basic-policy
-host, and the ConfigMap read grant until that probe's owner moves those references. No matching
-reader exists in testing, so its aliases and mirrors can be removed independently. Do not delete the
-probe or force-recreate user-owned Sandboxes to clear this gate.
-
 ## Scope and retirement of stale gates
 
 - Notifications keep workers in the HTTP service. Retention, worker extraction, idle-polling
@@ -1477,7 +1450,7 @@ probe or force-recreate user-owned Sandboxes to clear this gate.
   integration checks remain requirements. The freezer is not a waiver for a known data-loss or
   unauthorized-access bug; promote one when evidence makes it concrete.
 
-## 14. Delivery boundaries, APIs and harness identity
+## 13. Delivery boundaries, APIs and harness identity
 
 These are operator-reviewable design and characterization tasks. They do not authorize a queue,
 database, transport, identity or permission change. Detailed code paths and alternatives are in the
