@@ -45,11 +45,14 @@ def test_missing_workspace_is_immediately_prunable(prunable_base: Path) -> None:
     assert isinstance(_inspect(prunable_base), gc.PrunableBase)
 
 
-def test_existing_workspace_is_retained(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
+def test_existing_tmp_workspace_is_prunable_immediately(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(gc, "_TMP_ROOT", tmp_path / "tmp-root")
+    workspace = gc._TMP_ROOT / "workspace"
     workspace.mkdir()
     base = make_base(tmp_path / "output", workspace)
-    assert _reason(_inspect(base)) is gc.RetainedBaseReason.WORKSPACE_EXISTS
+    inspection = _inspect(base)
+    assert isinstance(inspection, gc.PrunableBase)
+    assert inspection.reason is gc.PrunableBaseReason.TMP_WORKSPACE
 
 
 def test_dangling_workspace_symlink_is_not_prunable(tmp_path: Path) -> None:

@@ -1,12 +1,11 @@
-"""Find and safely remove orphaned or stale temporary Bazel output bases.
+"""Find and safely remove orphaned Bazel output bases and bases for `/tmp` workspaces.
 
 Only default, MD5-named output bases directly below one output user root are
-eligible. A base is eligible when its workspace is absent, or when its workspace is
-under `/tmp` and the base has had no recorded activity for 14 days. The workspace is
-recovered from whichever of the base's own records (server/cmdline, README,
-DO_NOT_BUILD_HERE) are present — a dead or never-started server does not block
-cleanup — and every present record must agree and hash to the base name. Ambiguous
-state is reported for manual review and is never deleted.
+eligible. A base is eligible when its workspace is absent or under `/tmp`. The
+workspace is recovered from whichever of the base's own records (server/cmdline,
+README, DO_NOT_BUILD_HERE) are present — a dead or never-started server does not
+block cleanup — and every present record must agree and hash to the base name.
+Ambiguous state is reported for manual review and is never deleted.
 """
 
 import enum
@@ -24,9 +23,8 @@ import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
-from time import time_ns
 
 import humanize
 from tabulate import tabulate
@@ -39,8 +37,6 @@ _HASHED_BASE_RE = re.compile(r"[0-9a-f]{32}")
 _QUARANTINE_PREFIX = ".bazel-output-base-gc-"
 _METADATA_LIMIT = 4 * 1024 * 1024
 _TMP_ROOT = Path("/tmp")
-TMP_WORKSPACE_OUTPUT_BASE_MAX_AGE = timedelta(days=14)
-_TMP_WORKSPACE_OUTPUT_BASE_MAX_AGE_NS = int(TMP_WORKSPACE_OUTPUT_BASE_MAX_AGE.total_seconds() * 1_000_000_000)
 
 
 class MetadataError(ValueError):
@@ -49,7 +45,7 @@ class MetadataError(ValueError):
 
 class PrunableBaseReason(enum.StrEnum):
     WORKSPACE_ABSENT = enum.auto()
-    TMP_WORKSPACE_IDLE = enum.auto()
+    TMP_WORKSPACE = enum.auto()
 
 
 @dataclass(frozen=True, slots=True)
@@ -324,9 +320,7 @@ def _nested_mount(base: Path, points: set[Path]) -> Path | None:
     return next((point for point in sorted(points) if point == base or point.is_relative_to(base)), None)
 
 
-def inspect_output_base(
-    base: Path, *, uid: int, points: set[Path], proc_root: Path = Path("/proc"), now_ns: int | None = None
-) -> Inspection:
+def inspect_output_base(base: Path, *, uid: int, points: set[Path], proc_root: Path = Path("/proc")) -> Inspection:
     try:
         metadata = base.lstat()
     except OSError as error:
@@ -338,7 +332,6 @@ def inspect_output_base(
             base, ReviewBaseReason.WRONG_OWNER, metadata.st_mtime_ns, detail=f"uid {metadata.st_uid}, expected {uid}"
         )
 
-    now_ns = time_ns() if now_ns is None else now_ns
     try:
         workspace = _read_workspace_provenance(base, uid=uid)
         last_activity_ns = _last_activity_ns(base)
@@ -371,9 +364,9 @@ def inspect_output_base(
                 last_activity_ns,
                 detail=f"{resolved_workspace}, not {workspace}",
             )
-        if _workspace_is_under_tmp(workspace) and last_activity_ns <= now_ns - _TMP_WORKSPACE_OUTPUT_BASE_MAX_AGE_NS:
+        if _workspace_is_under_tmp(workspace):
             return PrunableBase(
-                base, workspace, _identity(metadata), last_activity_ns, reason=PrunableBaseReason.TMP_WORKSPACE_IDLE
+                base, workspace, _identity(metadata), last_activity_ns, reason=PrunableBaseReason.TMP_WORKSPACE
             )
         return RetainedBase(base, workspace, RetainedBaseReason.WORKSPACE_EXISTS, last_activity_ns, False)
 
@@ -390,7 +383,6 @@ def scan_output_user_root(
 ) -> list[Inspection]:
     uid = os.getuid() if uid is None else uid
     root = root.resolve(strict=True)
-    now_ns = time_ns()
     points = mount_points(mountinfo_path=mountinfo_path)
     inspections: list[Inspection] = []
     candidates = [
@@ -404,7 +396,7 @@ def scan_output_user_root(
     for index, base in enumerate(candidates, start=1):
         logger.info("Scanning output base %d/%d %s", index, len(candidates), base.name)
         if _HASHED_BASE_RE.fullmatch(base.name):
-            inspection = inspect_output_base(base, uid=uid, points=points, proc_root=proc_root, now_ns=now_ns)
+            inspection = inspect_output_base(base, uid=uid, points=points, proc_root=proc_root)
         else:
             inspection = ReviewBase(base, ReviewBaseReason.INCOMPLETE_QUARANTINE, base.lstat().st_mtime_ns)
         inspections.append(inspection)
@@ -532,7 +524,7 @@ def _inspection_reason(inspection: Inspection) -> str:
 def _prunable_reason(inspection: PrunableBase) -> str:
     if inspection.reason is PrunableBaseReason.WORKSPACE_ABSENT:
         return "workspace is absent"
-    return f"workspace is under /tmp; output base idle for at least {TMP_WORKSPACE_OUTPUT_BASE_MAX_AGE.days} days"
+    return "workspace is under /tmp"
 
 
 def _status(inspection: Inspection) -> ProgressCategory:
@@ -548,10 +540,7 @@ def _detail(inspection: Inspection) -> str:
         return f"{inspection.workspace} ({_prunable_reason(inspection)})"
     if isinstance(inspection, RetainedBase):
         prefix = f"{inspection.workspace}: " if inspection.workspace is not None else ""
-        reason = describe_reason(inspection)
-        if inspection.workspace is not None and _workspace_is_under_tmp(inspection.workspace):
-            reason += f" (under /tmp; retained until idle for {TMP_WORKSPACE_OUTPUT_BASE_MAX_AGE.days} days)"
-        return prefix + reason
+        return prefix + describe_reason(inspection)
     return describe_reason(inspection)
 
 
