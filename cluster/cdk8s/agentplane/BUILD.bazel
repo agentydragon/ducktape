@@ -330,7 +330,6 @@ py_library(
 py_library(
     name = "runner_sandbox",
     srcs = ["runner_sandbox.py"],
-    data = ["kubernetes_admin_instructions.md"],
     deps = [
         ":actions",
         ":egress",

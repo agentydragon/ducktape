@@ -53,6 +53,8 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   (`--platform-instructions-file`, or the guest config's `platform_instructions`), the Session's
   notification destination (the Sandbox identity from the launch file and the Session ID) and the
   caller's task, in that order; callers supply only the task. They are fixed because a `spec` supplied on reopening must equal the stored one.
+  Platform guidance supplies deployment service addresses and essential constraints; detailed
+  workflows are discoverable through the independent services' `/llms.txt` indexes.
 - The runner asks the workload-authenticated LLM ingress for `ModelConfig` when a
   session or model selection is made. Its `total_context_budget_tokens` is a client
   budget shared by input and output, not a provider maximum or an output request cap.
