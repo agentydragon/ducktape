@@ -1,0 +1,50 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//devinfra/python:defs.bzl", "py_test")
+
+js_library(
+    name = "overflow_test_lib",
+    testonly = True,
+    srcs = ["overflow_test.mjs"],
+    deps = ["//:node_modules/chart.js"],
+)
+
+js_test(
+    name = "overflow_test",
+    data = [":overflow_test_lib"],
+    entry_point = "overflow_test.mjs",
+)
+
+js_library(
+    name = "layout_fixture",
+    srcs = ["layout-fixture.js"],
+    deps = ["//:node_modules/chart.js"],
+)
+
+spa_bundle(
+    name = "layout_bundle",
+    entry_point = "layout-fixture.js",
+    index_html = None,
+    out_dir = "layout-dist",
+    deps = [":layout_fixture"],
+)
+
+py_test(
+    name = "test_layout",
+    srcs = ["test_layout.py"],
+    data = [":layout_bundle"],
+    deps = [
+        "//:conftest",
+        "//util:playwright",
+        "//util/bazel:runfiles",
+        "//util/testing:asgi",
+        "//util/testing:frontend_visual",
+        "//util/testing:undeclared_outputs",
+        "//util/testing:visual_capture",
+        "@pypi//fastapi",
+        "@pypi//playwright",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -596,6 +596,7 @@ npm.npm_translate_lock(
         "//:props/frontend/package.json",
         "//:study_casino/frontend/package.json",
         "//:x/rspcache/admin_ui/package.json",
+        "//patches:chartjs_line_overflow.patch",
     ],
     # Disable postinstall for packages that download binaries during lifecycle hooks.
     # These fail in Bazel's sandboxed builds (network blocked, RBE).
