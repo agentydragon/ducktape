@@ -33,7 +33,9 @@ def _runner_vm_manifests(*, console_autologin: bool) -> dict[str, dict[str, Any]
         platform_instructions="Test platform guidance.",
     )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    config_map = one(doc for doc in docs if doc["kind"] == "ConfigMap")
+    config_map = one(
+        doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "runner-vm-config"
+    )
     sandbox_template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
     return {
         "config": cast(dict[str, Any], json.loads(config_map["data"]["config.json"])),
