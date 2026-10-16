@@ -11,6 +11,7 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/client-go/util/workqueue"
 )
 
 var (
@@ -65,14 +66,15 @@ type DeliveryWorker struct {
 	// must wait for this so admission never precedes queue recovery.
 	Ready chan struct{}
 
-	mu             sync.Mutex
-	owners         map[string]Owner
-	delivering     map[string]struct{}
-	refused        map[string]string
-	attempts       map[string]int
-	retryAt        map[string]time.Time
-	wakeDeadlineAt map[string]time.Time
-	done           chan struct{}
+	mu      sync.Mutex
+	owners  map[string]Owner
+	refused map[string]string
+	queue   workqueue.TypedRateLimitingInterface[string]
+	limiter workqueue.TypedRateLimiter[string]
+	// A delayed item can be added early by a database notification. Keep only
+	// its due time here; the queue owns the timer and retry count.
+	retryAfter map[string]time.Time
+	retryWork  map[string]string
 }
 
 func (w *DeliveryWorker) init() {
@@ -80,12 +82,11 @@ func (w *DeliveryWorker) init() {
 		w.Logger = slog.Default()
 	}
 	w.owners = map[string]Owner{}
-	w.delivering = map[string]struct{}{}
 	w.refused = map[string]string{}
-	w.attempts = map[string]int{}
-	w.retryAt = map[string]time.Time{}
-	w.wakeDeadlineAt = map[string]time.Time{}
-	w.done = make(chan struct{}, 1)
+	w.limiter = workqueue.NewTypedItemExponentialFailureRateLimiter[string](500*time.Millisecond, 30*time.Second)
+	w.queue = workqueue.NewTypedRateLimitingQueue(w.limiter)
+	w.retryAfter = map[string]time.Time{}
+	w.retryWork = map[string]string{}
 }
 
 func (w *DeliveryWorker) Run(ctx context.Context) error {
@@ -93,7 +94,9 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 		return errors.New("dispatcher delivery dependencies are required")
 	}
 	w.init()
+	defer w.queue.ShutDown()
 	var ready sync.Once
+	recovered := false
 	if !w.Catalog.WaitSynced(ctx) {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -117,54 +120,41 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 		}
 	}
 	defer unsubscribe()
+	// A queue key is a Session ID, so even with multiple workers an opening
+	// and its commands cannot be delivered concurrently in this process.
+	for range 4 {
+		go w.runQueue(ctx)
+	}
+	renew := true
+	ticker := time.NewTicker(LeaseRenewInterval)
+	defer ticker.Stop()
 	for {
-		if err := w.reconcile(ctx); err != nil {
-			w.Logger.Warn("dispatcher delivery reconciliation unavailable; retrying", "error", err)
-		} else if w.Ready != nil {
-			ready.Do(func() { close(w.Ready) })
+		if !recovered {
+			renew = true
 		}
-		wait := w.nextWait()
-		timer := time.NewTimer(wait)
+		if err := w.reconcile(ctx, renew); err != nil {
+			w.Logger.Warn("dispatcher delivery reconciliation unavailable; retrying", "error", err)
+		} else if renew {
+			recovered = true
+			if w.Ready != nil {
+				ready.Do(func() { close(w.Ready) })
+			}
+		}
+		renew = false
 		select {
 		case <-ctx.Done():
-			timer.Stop()
 			return ctx.Err()
-		case <-timer.C:
+		case <-ticker.C:
+			renew = true
 		case <-sub.changed:
-			timer.Stop()
 		case <-w.Catalog.Changes():
-			timer.Stop()
-		case <-w.done:
-			timer.Stop()
 		case message := <-sub.failure:
-			timer.Stop()
 			return fmt.Errorf("dispatcher listener lost notifications: %s", message)
 		}
 	}
 }
 
-func (w *DeliveryWorker) nextWait() time.Duration {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	now := time.Now()
-	deadline := now.Add(LeaseRenewInterval)
-	for _, when := range w.retryAt {
-		if when.After(now) && when.Before(deadline) {
-			deadline = when
-		}
-	}
-	for _, when := range w.wakeDeadlineAt {
-		if when.After(now) && when.Before(deadline) {
-			deadline = when
-		}
-	}
-	if remaining := time.Until(deadline); remaining > 0 {
-		return remaining
-	}
-	return 0
-}
-
-func (w *DeliveryWorker) reconcile(ctx context.Context) error {
+func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) error {
 	sandboxes, err := w.Catalog.ListSandboxes(ctx)
 	if err != nil {
 		return err
@@ -187,6 +177,9 @@ func (w *DeliveryWorker) reconcile(ctx context.Context) error {
 		}
 	}
 	for _, sandbox := range sandboxes {
+		if !renew {
+			continue
+		}
 		owner, err := w.Leases.Acquire(ctx, sandbox.Name, sandbox.UID)
 		if err != nil {
 			return err
@@ -226,58 +219,16 @@ func (w *DeliveryWorker) reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	active := make(map[string]struct{}, len(openings)+len(heads))
-	for _, opening := range openings {
-		active["opening:"+opening.SessionID] = struct{}{}
-	}
-	for _, head := range heads {
-		active[head.CommandID] = struct{}{}
-	}
-	w.mu.Lock()
-	for key := range w.retryAt {
-		if _, okay := active[key]; !okay {
-			delete(w.retryAt, key)
-			delete(w.attempts, key)
-		}
-	}
-	for key := range w.wakeDeadlineAt {
-		if _, okay := active[key]; !okay {
-			delete(w.wakeDeadlineAt, key)
-		}
-	}
-	w.mu.Unlock()
 	for _, opening := range openings {
 		sandbox, live := byName[opening.SandboxName]
-		if !live || sandbox.UID != opening.SandboxUID {
-			continue
-		}
-		owner, okay := w.ownerFor(opening.SandboxUID)
-		if !okay || !w.canStart(opening.SessionID) {
-			continue
-		}
-		ready, err := w.prepareOpening(ctx, opening, sandbox, owner)
-		if err != nil {
-			return err
-		}
-		if ready {
-			w.start(opening.SessionID, func() { w.deliverOpening(ctx, opening, sandbox, owner) })
+		if live && sandbox.UID == opening.SandboxUID {
+			w.enqueue(opening.SessionID)
 		}
 	}
 	for _, head := range heads {
 		sandbox, live := byName[head.SandboxName]
-		if !live || sandbox.UID != head.SandboxUID {
-			continue
-		}
-		owner, okay := w.ownerFor(head.SandboxUID)
-		if !okay || !w.canStart(head.SessionID) {
-			continue
-		}
-		ready, err := w.prepareDispatch(ctx, head, sandbox, owner)
-		if err != nil {
-			return err
-		}
-		if ready {
-			w.start(head.SessionID, func() { w.deliverCommand(ctx, head, sandbox, owner) })
+		if live && sandbox.UID == head.SandboxUID {
+			w.enqueue(head.SessionID)
 		}
 	}
 	return nil
@@ -290,74 +241,120 @@ func (w *DeliveryWorker) ownerFor(uid string) (Owner, bool) {
 	return owner, okay
 }
 
-func (w *DeliveryWorker) canStart(sessionID string) bool {
+func (w *DeliveryWorker) enqueue(sessionID string) {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	if _, busy := w.delivering[sessionID]; busy {
-		return false
-	}
-	return true
-}
-
-func (w *DeliveryWorker) retryPending(key string) bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	until, retrying := w.retryAt[key]
-	if retrying && until.After(time.Now()) {
-		return true
-	}
-	delete(w.retryAt, key)
-	return false
-}
-
-func (w *DeliveryWorker) start(sessionID string, deliver func()) {
-	w.mu.Lock()
-	if _, busy := w.delivering[sessionID]; busy {
-		w.mu.Unlock()
-		return
-	}
-	w.delivering[sessionID] = struct{}{}
+	until := w.retryAfter[sessionID]
 	w.mu.Unlock()
-	go func() {
-		defer func() {
-			w.mu.Lock()
-			delete(w.delivering, sessionID)
-			w.mu.Unlock()
-			select {
-			case w.done <- struct{}{}:
-			default:
+	if delay := time.Until(until); delay > 0 {
+		w.queue.AddAfter(sessionID, delay)
+	} else {
+		w.queue.Add(sessionID)
+	}
+}
+
+func (w *DeliveryWorker) runQueue(ctx context.Context) {
+	for {
+		sessionID, shutdown := w.queue.Get()
+		if shutdown {
+			return
+		}
+		func() {
+			defer w.queue.Done(sessionID)
+			if ctx.Err() != nil {
+				return
+			}
+			if err := w.processSession(ctx, sessionID); err != nil && ctx.Err() == nil {
+				w.Logger.Warn("dispatcher session delivery unavailable; retrying", "session_id", sessionID, "error", err)
+				w.backoff(sessionID, w.workFor(sessionID))
 			}
 		}()
-		deliver()
-	}()
+	}
 }
 
-func (w *DeliveryWorker) clearRetry(key string) {
+func (w *DeliveryWorker) retryRemaining(sessionID string) time.Duration {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	delete(w.attempts, key)
-	delete(w.retryAt, key)
-	delete(w.wakeDeadlineAt, key)
+	return time.Until(w.retryAfter[sessionID])
 }
 
-func (w *DeliveryWorker) backoff(key string) {
+func (w *DeliveryWorker) workFor(sessionID string) string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.attempts[key]++
-	delay := 500 * time.Millisecond
-	for i := 1; i < w.attempts[key] && delay < 30*time.Second; i++ {
-		delay *= 2
-	}
-	if delay > 30*time.Second {
-		delay = 30 * time.Second
-	}
-	w.retryAt[key] = time.Now().Add(delay)
+	return w.retryWork[sessionID]
 }
 
-func (w *DeliveryWorker) setRetry(key string, after time.Duration) {
+func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) error {
+	opening, head, err := w.Store.SessionHead(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if opening == nil && head == nil {
+		w.clearRetry(sessionID)
+		return nil
+	}
+	name, uid, workID := "", "", ""
+	if opening != nil {
+		name, uid, workID = opening.SandboxName, opening.SandboxUID, "opening:"+opening.SessionID
+	} else {
+		name, uid, workID = head.SandboxName, head.SandboxUID, head.CommandID
+	}
 	w.mu.Lock()
-	w.retryAt[key] = time.Now().Add(after)
+	if previous := w.retryWork[sessionID]; previous != "" && previous != workID {
+		delete(w.retryAfter, sessionID)
+		delete(w.retryWork, sessionID)
+		w.queue.Forget(sessionID)
+	}
 	w.mu.Unlock()
+	sandbox, live, err := w.Catalog.GetSandbox(ctx, name)
+	if err != nil {
+		return err
+	}
+	if !live || sandbox.UID != uid {
+		return nil
+	}
+	owner, okay := w.ownerFor(uid)
+	if !okay {
+		return nil
+	}
+	if opening != nil {
+		ready, err := w.prepareOpening(ctx, opening, sandbox, owner)
+		if err != nil || !ready {
+			return err
+		}
+		if w.deliverOpening(ctx, opening, sandbox, owner) {
+			w.enqueue(sessionID)
+		}
+	} else {
+		ready, err := w.prepareDispatch(ctx, head, sandbox, owner)
+		if err != nil || !ready {
+			return err
+		}
+		if w.deliverCommand(ctx, head, sandbox, owner) {
+			w.enqueue(sessionID)
+		}
+	}
+	return nil
+}
+
+func (w *DeliveryWorker) clearRetry(sessionID string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.retryAfter, sessionID)
+	delete(w.retryWork, sessionID)
+	w.queue.Forget(sessionID)
+}
+
+func (w *DeliveryWorker) backoff(sessionID, workID string) {
+	delay := w.limiter.When(sessionID)
+	w.setRetry(sessionID, workID, delay)
+}
+
+func (w *DeliveryWorker) setRetry(sessionID, workID string, after time.Duration) {
+	w.mu.Lock()
+	w.retryAfter[sessionID] = time.Now().Add(after)
+	w.retryWork[sessionID] = workID
+	w.mu.Unlock()
+	w.queue.AddAfter(sessionID, after)
 }
 
 func (w *DeliveryWorker) refusedHere(uid, incarnation string) bool {
@@ -380,10 +377,10 @@ func (w *DeliveryWorker) markRefused(uid, incarnation string) {
 	w.mu.Unlock()
 }
 
-func (w *DeliveryWorker) deliveryFailure(key, uid, incarnation, operation string, err error) (string, string) {
+func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation, operation string, err error) (string, string) {
 	grpcStatus, okay := status.FromError(err)
 	if !okay {
-		w.backoff(key)
+		w.backoff(sessionID, workID)
 		return QueueState, "delivery_unavailable"
 	}
 	switch grpcStatus.Code() {
@@ -391,7 +388,7 @@ func (w *DeliveryWorker) deliveryFailure(key, uid, incarnation, operation string
 		w.markRefused(uid, incarnation)
 		return QueueState, "runner_refused_work"
 	case codes.Unavailable, codes.DeadlineExceeded:
-		w.backoff(key)
+		w.backoff(sessionID, workID)
 		return QueueState, "delivery_unavailable"
 	case codes.FailedPrecondition:
 		if operation == "stop_runner_session" {
@@ -423,45 +420,51 @@ func (w *DeliveryWorker) retryStorage(ctx context.Context, fn func() error) {
 	}
 }
 
-func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner Owner) {
+func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner Owner) bool {
 	claimed, err := w.Store.Settle(ctx, head.CommandID, owner, []string{QueueState}, DeliveringState, "", nil)
 	if err != nil {
 		w.Logger.Error("cannot claim queued dispatch", "command_id", head.CommandID, "error", err)
-		return
+		return false
 	}
 	if claimed == nil {
-		return
+		return false
 	}
-	w.clearRetry(head.CommandID)
 	admission, callErr := w.Runner.Deliver(ctx, sandbox, head.SessionID, head.Command)
 	state, reason := AdmittedState, ""
 	if callErr != nil {
-		state, reason = w.deliveryFailure(head.CommandID, head.SandboxUID, sandbox.Incarnation, head.Operation, callErr)
+		state, reason = w.deliveryFailure(head.SessionID, head.CommandID, head.SandboxUID, sandbox.Incarnation, head.Operation, callErr)
 	}
 	w.retryStorage(ctx, func() error {
 		_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, state, reason, admission)
 		return err
 	})
+	if state != QueueState {
+		w.clearRetry(head.SessionID)
+	}
+	return true
 }
 
-func (w *DeliveryWorker) deliverOpening(ctx context.Context, opening *Opening, sandbox SandboxSnapshot, owner Owner) {
+func (w *DeliveryWorker) deliverOpening(ctx context.Context, opening *Opening, sandbox SandboxSnapshot, owner Owner) bool {
 	key := "opening:" + opening.SessionID
 	claimed, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{QueueState}, DeliveringState, "")
 	if err != nil {
 		w.Logger.Error("cannot claim queued opening", "session_id", opening.SessionID, "error", err)
-		return
+		return false
 	}
 	if claimed == nil {
-		return
+		return false
 	}
-	w.clearRetry(key)
 	callErr := w.Runner.OpenSession(ctx, sandbox, opening.SessionID, opening.Spec, opening.SetupScript)
 	state, reason := AdmittedState, ""
 	if callErr != nil {
-		state, reason = w.deliveryFailure(key, opening.SandboxUID, sandbox.Incarnation, "open_session", callErr)
+		state, reason = w.deliveryFailure(opening.SessionID, key, opening.SandboxUID, sandbox.Incarnation, "open_session", callErr)
 	}
 	w.retryStorage(ctx, func() error {
 		_, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{DeliveringState}, state, reason)
 		return err
 	})
+	if state != QueueState {
+		w.clearRetry(opening.SessionID)
+	}
+	return true
 }

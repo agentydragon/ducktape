@@ -31,14 +31,15 @@ def test_go_store_against_current_schema(postgres_admin_url: str, database_names
         subprocess.run(
             [str(_MIGRATOR), "--database-url", wire_url], capture_output=True, text=True, timeout=60, check=True
         )
-        subprocess.run(
+        result = subprocess.run(
             [str(_GO_TEST), "-test.v"],
             env={**os.environ, "AGENTPLANE_TEST_DATABASE_URL": wire_url},
             capture_output=True,
             text=True,
             timeout=90,
-            check=True,
+            check=False,
         )
+        assert result.returncode == 0, f"Go store integration tests failed:\n{result.stdout}\n{result.stderr}"
 
 
 if __name__ == "__main__":

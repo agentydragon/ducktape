@@ -419,9 +419,47 @@ func (l testLease) StillOwns(ctx context.Context, owner Owner) (bool, error) {
 	return l.store.IsCurrentOwner(ctx, owner)
 }
 
+type countingLease struct {
+	testLease
+	calls int
+}
+
+func (l *countingLease) Acquire(ctx context.Context, name, uid string) (*Owner, error) {
+	l.calls++
+	return l.testLease.Acquire(ctx, name, uid)
+}
+
 type retryRunner struct {
 	mu    sync.Mutex
 	calls int
+}
+
+func TestWorkerRetainsBackoffAcrossUncertainReplies(t *testing.T) {
+	worker := &DeliveryWorker{}
+	worker.init()
+	defer worker.queue.ShutDown()
+	for attempt, delay := range []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second} {
+		before := time.Now()
+		state, reason := worker.deliveryFailure("session", "command", sandboxUID, "pod-1", "submit_input",
+			status.Error(codes.Unavailable, "uncertain reply"))
+		after := time.Now()
+		if state != QueueState || reason != "delivery_unavailable" {
+			t.Fatalf("attempt %d: %s %s", attempt+1, state, reason)
+		}
+		if got := worker.limiter.NumRequeues("session"); got != attempt+1 {
+			t.Fatalf("attempt %d: limiter count %d", attempt+1, got)
+		}
+		worker.mu.Lock()
+		due := worker.retryAfter["session"]
+		worker.mu.Unlock()
+		if due.Before(before.Add(delay)) || due.After(after.Add(delay)) {
+			t.Fatalf("attempt %d: due %s outside expected %s delay", attempt+1, due, delay)
+		}
+	}
+	worker.clearRetry("session")
+	if got := worker.limiter.NumRequeues("session"); got != 0 {
+		t.Fatalf("terminal settlement retained %d attempts", got)
+	}
 }
 
 func (r *retryRunner) Deliver(_ context.Context, sandbox SandboxSnapshot, _ string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
@@ -452,38 +490,117 @@ func TestWorkerRetriesUncertainRunnerReplyUnderCurrentOwner(t *testing.T) {
 		Name: "sandbox-worker", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
 	}}, Wake: testWake{}, Leases: testLease{store}, Runner: runner}
 	worker.init()
-	if err := worker.reconcile(ctx); err != nil {
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer worker.queue.ShutDown()
+	go worker.runQueue(workerCtx)
+	if err := worker.reconcile(ctx, true); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-worker.done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("first runner attempt did not settle")
+	waitState := func(state string) *Dispatch {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			row, err := store.GetDispatch(ctx, "worker-input")
+			if err == nil && row.State == state && (state != QueueState || row.Reason == "delivery_unavailable") {
+				return row
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("dispatch did not reach %s", state)
+		return nil
 	}
-	queued, err := store.GetDispatch(ctx, "worker-input")
-	if err != nil || queued.State != QueueState || queued.Reason != "delivery_unavailable" {
-		t.Fatalf("uncertain reply should retry: %+v %v", queued, err)
+	queued := waitState(QueueState)
+	if queued.Reason != "delivery_unavailable" {
+		t.Fatalf("uncertain reply should retry: %+v", queued)
 	}
-	if !worker.retryPending("worker-input") {
+	if worker.retryRemaining("worker-session") <= 0 {
 		t.Fatal("missing retry backoff")
 	}
-	worker.setRetry("worker-input", 0)
-	if err := worker.reconcile(ctx); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-worker.done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("retry did not settle")
-	}
-	admitted, err := store.GetDispatch(ctx, "worker-input")
-	if err != nil || admitted.State != AdmittedState || admitted.Admission == nil {
-		t.Fatalf("retry was not admitted: %+v %v", admitted, err)
+	admitted := waitState(AdmittedState)
+	if admitted.Admission == nil {
+		t.Fatalf("retry was not admitted: %+v", admitted)
 	}
 	runner.mu.Lock()
 	calls := runner.calls
 	runner.mu.Unlock()
 	if calls != 2 {
 		t.Fatalf("runner calls = %d, want 2", calls)
+	}
+}
+
+type orderedRunner struct {
+	entered chan string
+	release chan struct{}
+	mu      sync.Mutex
+	active  int
+	peak    int
+}
+
+func (r *orderedRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
+	r.mu.Lock()
+	r.active++
+	if r.active > r.peak {
+		r.peak = r.active
+	}
+	r.mu.Unlock()
+	r.entered <- command.GetCommandId()
+	<-r.release
+	r.mu.Lock()
+	r.active--
+	r.mu.Unlock()
+	return &eventlogpb.EventEntry{Cursor: 1}, nil
+}
+
+func (*orderedRunner) OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string) error {
+	return errors.New("unexpected opening")
+}
+
+func TestWorkerSerializesCommandsPerSession(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := testStore(t, 3)
+	for _, id := range []string{"ordered-1", "ordered-2"} {
+		if _, err := store.Enqueue(ctx, "ordered-session", "sandbox-ordered", sandboxUID, input(id, id), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runner := &orderedRunner{entered: make(chan string, 2), release: make(chan struct{}, 2)}
+	leases := &countingLease{testLease: testLease{store: store}}
+	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
+		Name: "sandbox-ordered", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
+	}}, Wake: testWake{}, Leases: leases, Runner: runner}
+	worker.init()
+	defer worker.queue.ShutDown()
+	go worker.runQueue(ctx)
+	go worker.runQueue(ctx)
+	if err := worker.reconcile(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if leases.calls != 1 {
+		t.Fatalf("initial lease acquisitions = %d", leases.calls)
+	}
+	for _, want := range []string{"ordered-1", "ordered-2"} {
+		select {
+		case got := <-runner.entered:
+			if got != want {
+				t.Fatalf("delivery order = %s, want %s", got, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("missing %s delivery", want)
+		}
+		if err := worker.reconcile(ctx, false); err != nil {
+			t.Fatal(err)
+		}
+		if leases.calls != 1 {
+			t.Fatalf("delivery notification renewed lease %d times", leases.calls)
+		}
+		runner.release <- struct{}{}
+	}
+	runner.mu.Lock()
+	peak := runner.peak
+	runner.mu.Unlock()
+	if peak != 1 {
+		t.Fatalf("parallel deliveries for one Session: %d", peak)
 	}
 }

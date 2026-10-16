@@ -18,16 +18,23 @@ type queuedWork struct {
 
 func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, sandbox SandboxSnapshot, owner Owner) (bool, error) {
 	return w.prepare(ctx, queuedWork{
-		row.CommandID, row.CommandID, false, row.WakeEligible, row.WakeCaller,
+		row.CommandID, row.SessionID, false, row.WakeEligible, row.WakeCaller,
 		row.WakeFromIncarnation, row.WakeRequestedAt, row.Operation,
 	}, sandbox, owner)
 }
 
 func (w *DeliveryWorker) prepareOpening(ctx context.Context, row *Opening, sandbox SandboxSnapshot, owner Owner) (bool, error) {
 	return w.prepare(ctx, queuedWork{
-		row.SessionID, "opening:" + row.SessionID, true, row.WakeEligible, row.WakeCaller,
+		row.SessionID, row.SessionID, true, row.WakeEligible, row.WakeCaller,
 		row.WakeFromIncarnation, row.WakeRequestedAt, "open_session",
 	}, sandbox, owner)
+}
+
+func (work queuedWork) workID() string {
+	if work.opening {
+		return "opening:" + work.id
+	}
+	return work.id
 }
 
 func awaitingNewIncarnation(sandbox SandboxSnapshot, from *string) bool {
@@ -46,20 +53,20 @@ func (w *DeliveryWorker) noteWaiting(ctx context.Context, work queuedWork, owner
 
 func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox SandboxSnapshot, owner Owner) (bool, error) {
 	if sandbox.Deleting {
-		w.clearRetry(work.key)
+		w.clearDelay(work.key)
 		return false, w.noteWaiting(ctx, work, owner, "sandbox_deleted")
 	}
 	awaiting := awaitingNewIncarnation(sandbox, work.wakeFrom)
 	wakeDisabled := work.wakeEligible && !sandbox.WakeOnSend && (awaiting || sandbox.Blocker == "sandbox_suspended")
 	if wakeDisabled {
-		w.clearRetry(work.key)
+		w.clearDelay(work.key)
 		if err := w.Store.ClearWakeState(ctx, work.id, owner, work.opening); err != nil {
 			return false, err
 		}
 		awaiting = false
 	} else if work.wakeRequestedAt != nil {
 		if !awaiting && sandbox.Blocker == "" {
-			w.clearRetry(work.key)
+			w.clearDelay(work.key)
 			if err := w.Store.ClearWakeState(ctx, work.id, owner, work.opening); err != nil {
 				return false, err
 			}
@@ -73,12 +80,11 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 				w.clearRetry(work.key)
 				return false, nil
 			}
-			w.mu.Lock()
-			w.wakeDeadlineAt[work.key] = time.Now().Add(remaining)
-			w.mu.Unlock()
+			w.queue.AddAfter(work.key, remaining)
 		}
 	}
-	if w.retryPending(work.key) && !wakeDisabled {
+	if delay := w.retryRemaining(work.key); delay > 0 && !wakeDisabled {
+		w.queue.AddAfter(work.key, delay)
 		return false, nil
 	}
 	if awaiting {
@@ -165,19 +171,19 @@ func (w *DeliveryWorker) wakeFor(ctx context.Context, work queuedWork, sandbox S
 		case errors.Is(err, ErrWakeModeUnknown):
 			return w.noteWaiting(ctx, work, owner, "sandbox_not_ready")
 		case errors.Is(err, ErrWakeDeleted):
-			w.clearRetry(work.key)
+			w.clearDelay(work.key)
 			return w.noteWaiting(ctx, work, owner, "sandbox_deleted")
 		case errors.As(err, &limited):
-			w.setRetry(work.key, limited.retryAfter)
+			w.setRetry(work.key, work.workID(), limited.retryAfter)
 			return w.noteWaiting(ctx, work, owner, "wake_rate_limited")
 		default:
-			w.backoff(work.key)
+			w.backoff(work.key, work.workID())
 			w.Logger.Warn("Sandbox wake request unavailable", "sandbox", sandbox.Name, "error", err)
 			return w.noteWaiting(ctx, work, owner, "delivery_unavailable")
 		}
 	}
 	if !requested {
-		w.clearRetry(work.key)
+		w.clearDelay(work.key)
 		return w.noteWaiting(ctx, work, owner, "wake_on_send_disabled")
 	}
 	if requestedAt == nil {
@@ -190,14 +196,13 @@ func (w *DeliveryWorker) wakeFor(ctx context.Context, work queuedWork, sandbox S
 		}
 		w.scheduleWakeDeadline(work.key, *requestedAt)
 	}
-	w.clearAttemptRetry(work.key)
+	w.clearDelay(work.key)
 	return w.noteWaiting(ctx, work, owner, "sandbox_resuming")
 }
 
-func (w *DeliveryWorker) clearAttemptRetry(key string) {
+func (w *DeliveryWorker) clearDelay(key string) {
 	w.mu.Lock()
-	delete(w.attempts, key)
-	delete(w.retryAt, key)
+	delete(w.retryAfter, key)
 	w.mu.Unlock()
 }
 
@@ -206,7 +211,5 @@ func (w *DeliveryWorker) scheduleWakeDeadline(key string, requestedAt time.Time)
 	if remaining < 0 {
 		remaining = 0
 	}
-	w.mu.Lock()
-	w.wakeDeadlineAt[key] = time.Now().Add(remaining)
-	w.mu.Unlock()
+	w.queue.AddAfter(key, remaining)
 }

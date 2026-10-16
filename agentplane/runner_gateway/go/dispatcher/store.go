@@ -406,6 +406,28 @@ func (s *Store) OpeningHeads(ctx context.Context) ([]*Opening, error) {
 	return result, rows.Err()
 }
 
+// SessionHead reads the durable head after a queue key becomes runnable. The
+// in-process queue never decides ordering or whether an opening is complete.
+func (s *Store) SessionHead(ctx context.Context, sessionID string) (*Opening, *Dispatch, error) {
+	opening, err := scanOpening(s.DB.QueryRowContext(ctx,
+		"SELECT "+openingColumns+" FROM session_opening WHERE session_id=$1 AND state=$2", sessionID, QueueState))
+	if err == nil {
+		return opening, nil, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, err
+	}
+	head, err := scanDispatch(s.DB.QueryRowContext(ctx, `SELECT `+dispatchColumns+` FROM dispatch d WHERE d.session_id=$1 AND d.state=$2
+		AND NOT EXISTS (SELECT 1 FROM dispatch earlier WHERE earlier.session_id=d.session_id
+			AND earlier.position<d.position AND earlier.state IN ($2,$3))
+		AND NOT EXISTS (SELECT 1 FROM session_opening o WHERE o.session_id=d.session_id
+			AND o.state IN ($2,$3)) ORDER BY d.position LIMIT 1`, sessionID, QueueState, DeliveringState))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, nil
+	}
+	return nil, head, err
+}
+
 func (s *Store) Heads(ctx context.Context) ([]*Dispatch, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+dispatchColumns+` FROM dispatch d WHERE d.state=$1
 		AND NOT EXISTS (SELECT 1 FROM dispatch earlier WHERE earlier.session_id=d.session_id
