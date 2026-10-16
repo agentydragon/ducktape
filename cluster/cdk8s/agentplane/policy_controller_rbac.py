@@ -65,7 +65,7 @@ class PolicyControllerRbac(Construct):
                 ),
                 RolePolicyRule(resources=[custom_resource("", "events")], verbs=["create", "patch"]),
                 # RoleBindings in its own namespace; binding_delegation.py grants the same elsewhere.
-                RolePolicyRule(resources=[custom_resource(_RBAC, "rolebindings")], verbs=["create", "delete"]),
+                RolePolicyRule(resources=[custom_resource(_RBAC, "rolebindings")], verbs=["delete", "patch"]),
                 *(
                     RolePolicyRule(resources=[named_resource(_RBAC, "roles", name)], verbs=["bind"])
                     for name in own_roles
@@ -90,7 +90,7 @@ class PolicyControllerRbac(Construct):
                     resources=["rolebindings", "clusterrolebindings", "roles", "clusterroles"],
                     verbs=["get", "list", "watch"],
                 ),
-                k8s.PolicyRule(api_groups=[_RBAC], resources=["clusterrolebindings"], verbs=["create", "delete"]),
+                k8s.PolicyRule(api_groups=[_RBAC], resources=["clusterrolebindings"], verbs=["delete", "patch"]),
                 *(
                     [
                         k8s.PolicyRule(

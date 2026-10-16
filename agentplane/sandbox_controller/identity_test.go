@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
 )
 
 func setPolicySets(t *testing.T, c client.Client, sets ...string) {
@@ -23,9 +23,9 @@ func setPolicySets(t *testing.T, c client.Client, sets ...string) {
 	}
 }
 
-func getBinding(t *testing.T, c client.Client) *policycontroller.PolicyBinding {
+func getBinding(t *testing.T, c client.Client) *policyapi.PolicyBinding {
 	t.Helper()
-	var binding policycontroller.PolicyBinding
+	var binding policyapi.PolicyBinding
 	if err := c.Get(context.Background(), sandboxKey, &binding); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
@@ -85,8 +85,8 @@ func TestBindingIsCreatedWithThePodWithoutWaitingForItsReaders(t *testing.T) {
 	if binding == nil || !metav1.IsControlledBy(binding, getSandbox(t, c)) {
 		t.Fatalf("PolicyBinding = %v, want one the Sandbox controls", binding)
 	}
-	want := policycontroller.PolicyBindingSpec{
-		Subject:    policycontroller.ServiceAccountRef{Namespace: namespace, Name: sandboxName},
+	want := policyapi.PolicyBindingSpec{
+		Subject:    policyapi.ServiceAccountRef{Namespace: namespace, Name: sandboxName},
 		PolicySets: []string{"test-set-a", "test-set-b"},
 	}
 	if binding.Spec.Subject != want.Subject || !slices.Equal(binding.Spec.PolicySets, want.PolicySets) || binding.Spec.ExpiresAt != nil {

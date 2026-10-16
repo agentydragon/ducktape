@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 )
 
@@ -40,7 +41,7 @@ func run(policyNamespace string, subjectNamespaces []string, metricsAddress, pro
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return err
 	}
-	if err := policycontroller.AddToScheme(scheme); err != nil {
+	if err := policyapi.AddToScheme(scheme); err != nil {
 		return err
 	}
 	ours := labels.SelectorFromSet(labels.Set{
@@ -65,11 +66,11 @@ func run(policyNamespace string, subjectNamespaces []string, metricsAddress, pro
 		LeaderElectionID:        "agentplane-policy-controller",
 		LeaderElectionNamespace: policyNamespace,
 		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&policycontroller.PolicySet{}:     {Namespaces: only(policyNamespace)},
-			&policycontroller.PolicyBinding{}: {Namespaces: only(policyNamespace)},
-			&corev1.ServiceAccount{}:          {Namespaces: only(subjectNamespaces...)},
-			&rbacv1.RoleBinding{}:             {Label: ours},
-			&rbacv1.ClusterRoleBinding{}:      {Label: ours},
+			&policyapi.PolicySet{}:       {Namespaces: only(policyNamespace)},
+			&policyapi.PolicyBinding{}:   {Namespaces: only(policyNamespace)},
+			&corev1.ServiceAccount{}:     {Namespaces: only(subjectNamespaces...)},
+			&rbacv1.RoleBinding{}:        {Label: ours},
+			&rbacv1.ClusterRoleBinding{}: {Label: ours},
 		}},
 	})
 	if err != nil {
@@ -77,7 +78,7 @@ func run(policyNamespace string, subjectNamespaces []string, metricsAddress, pro
 	}
 	reconciler := &policycontroller.Reconciler{
 		Client:            mgr.GetClient(),
-		Roles:             mgr.GetAPIReader(),
+		APIReader:         mgr.GetAPIReader(),
 		PolicyNamespace:   policyNamespace,
 		SubjectNamespaces: subjectNamespaces,
 	}

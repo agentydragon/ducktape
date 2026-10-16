@@ -1,15 +1,11 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/go:controller_gen.bzl", "controller_deepcopy")
 
 go_library(
     name = "policy_controller",
     srcs = [
         "controller.go",
-        "scheme.go",
-        "types.go",
-        ":deepcopy",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller",
     visibility = [
@@ -18,57 +14,53 @@ go_library(
         "//agentplane/sandbox_controller:__subpackages__",
     ],
     deps = [
+        "//agentplane/policy/api",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",
+        "@io_k8s_client_go//applyconfigurations/rbac/v1:rbac",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/runtime",
-        "@io_k8s_apimachinery//pkg/runtime/schema",
         "@io_k8s_apimachinery//pkg/types",
         "@io_k8s_sigs_controller_runtime//:controller-runtime",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/handler",
         "@io_k8s_sigs_controller_runtime//pkg/reconcile",
-        "@io_k8s_sigs_controller_runtime//pkg/scheme",
     ],
-)
-
-go_library(
-    name = "deepcopy_inputs",
-    srcs = ["types.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller",
-    visibility = ["//visibility:private"],
-    deps = ["@io_k8s_apimachinery//pkg/apis/meta/v1:meta"],
-)
-
-go_path(
-    name = "deepcopy_gopath",
-    mode = "copy",
-    deps = [":deepcopy_inputs"],
-)
-
-controller_deepcopy(
-    name = "deepcopy",
-    gopath = ":deepcopy_gopath",
-    importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller",
 )
 
 go_test(
     name = "policy_controller_test",
-    srcs = ["controller_test.go"],
+    srcs = [
+        "controller_envtest_test.go",
+        "controller_test.go",
+    ],
+    data = [
+        "//agentplane/crds",
+        "@envtest_kubernetes_linux_amd64//:assets",
+    ],
     embed = [":policy_controller"],
     deps = [
+        "//agentplane/policy/api",
+        "@io_bazel_rules_go//go/runfiles",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",
+        "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/labels",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_client_go//kubernetes/scheme",
+        "@io_k8s_sigs_controller_runtime//:controller-runtime",
+        "@io_k8s_sigs_controller_runtime//pkg/cache",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@io_k8s_sigs_controller_runtime//pkg/envtest",
+        "@io_k8s_sigs_controller_runtime//pkg/metrics/server",
         "@io_k8s_sigs_controller_runtime//pkg/reconcile",
+        "@io_k8s_sigs_controller_runtime//pkg/webhook",
     ],
 )
 

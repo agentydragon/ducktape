@@ -1,10 +1,8 @@
-// Package policycontroller is the Policy Controller: it deletes PolicyBindings past their expiresAt
-// and keeps the native RoleBindings and ClusterRoleBindings that their Kubernetes rules expand to.
-// Contract: SPEC.md.
+// Package api defines Agentplane's v1alpha1 PolicySet and PolicyBinding Kubernetes API.
 //
 // +kubebuilder:object:generate=true
 // +groupName=agentplane.allegedly.works
-package policycontroller
+package api
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

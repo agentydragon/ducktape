@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
 )
 
 const (
@@ -73,7 +73,7 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	if err := policycontroller.AddToScheme(scheme); err != nil {
+	if err := policyapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	if err := kubevirtv1.AddToScheme(scheme); err != nil {

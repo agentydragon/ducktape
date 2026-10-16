@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
 )
 
 func eventually(t *testing.T, check func() bool) {
@@ -61,7 +61,7 @@ func TestChildApplyOwnershipAndDrift(t *testing.T) {
 		}
 	})
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policycontroller.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
 		}
@@ -74,7 +74,7 @@ func TestChildApplyOwnershipAndDrift(t *testing.T) {
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme: scheme, Metrics: metricsserver.Options{BindAddress: "0"},
 		Cache: cache.Options{DefaultNamespaces: map[string]cache.Config{ns: {}}, ByObject: map[client.Object]cache.ByObject{
-			&corev1.ServiceAccount{}: {Label: selector}, &policycontroller.PolicyBinding{}: {Label: selector},
+			&corev1.ServiceAccount{}: {Label: selector}, &policyapi.PolicyBinding{}: {Label: selector},
 		}},
 	})
 	if err != nil {
@@ -180,7 +180,7 @@ func TestChildApplyOwnershipAndDrift(t *testing.T) {
 	eventually(t, func() bool {
 		return objects.Get(ctx, launchKey, &launch) == nil && launch.UID != deletedUID && launch.Data[LaunchFile] == wantLaunch
 	})
-	var binding policycontroller.PolicyBinding
+	var binding policyapi.PolicyBinding
 	if err := objects.Get(ctx, key, &binding); err != nil {
 		t.Fatal(err)
 	}
@@ -208,15 +208,15 @@ func TestChildApplyOwnershipAndDrift(t *testing.T) {
 	if err := objects.Update(ctx, sandbox); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, func() bool { return apierrors.IsNotFound(objects.Get(ctx, key, &policycontroller.PolicyBinding{})) })
+	eventually(t, func() bool { return apierrors.IsNotFound(objects.Get(ctx, key, &policyapi.PolicyBinding{})) })
 	for _, test := range []struct {
 		name, reason string
 		foreign      client.Object
 	}{
 		{"foreign-launch", "ConfigMapConflict", &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "foreign-launch-launch", Namespace: ns}}},
-		{"foreign-binding", "PolicyBindingConflict", &policycontroller.PolicyBinding{
+		{"foreign-binding", "PolicyBindingConflict", &policyapi.PolicyBinding{
 			ObjectMeta: metav1.ObjectMeta{Name: "foreign-binding", Namespace: ns},
-			Spec:       policycontroller.PolicyBindingSpec{Subject: policycontroller.ServiceAccountRef{Namespace: ns, Name: "foreign-binding"}, PolicySets: []string{"foreign-grant"}},
+			Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.ServiceAccountRef{Namespace: ns, Name: "foreign-binding"}, PolicySets: []string{"foreign-grant"}},
 		}},
 		{"foreign-service", "ServiceConflict", &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "foreign-service-control", Namespace: ns}, Spec: corev1.ServiceSpec{ClusterIP: corev1.ClusterIPNone}}},
 	} {

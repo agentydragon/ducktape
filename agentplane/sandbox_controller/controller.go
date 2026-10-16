@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
 )
 
 const (
@@ -803,7 +803,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
-		Owns(&policycontroller.PolicyBinding{}).
+		Owns(&policyapi.PolicyBinding{}).
 		// A virt-launcher Pod is its VMI's, not the Sandbox's, so Pods map back by the label.
 		Watches(&corev1.Pod{}, bySandboxLabel).
 		Watches(&corev1.PersistentVolumeClaim{}, bySandboxLabel).

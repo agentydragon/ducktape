@@ -18,10 +18,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	applyrbacv1 "k8s.io/client-go/applyconfigurations/rbac/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
 )
 
 const (
@@ -33,8 +36,9 @@ const (
 	BindingUIDAnn      = "policy.agentplane.allegedly.works/binding-uid"
 	SubjectUIDAnn      = "policy.agentplane.allegedly.works/subject-uid"
 
-	setsIndex    = "spec.policySets"
-	subjectIndex = "spec.subject"
+	setsIndex          = "spec.policySets"
+	subjectIndex       = "spec.subject"
+	nativeBindingIndex = "metadata.annotations[" + BindingAnnotation + "]"
 	// Bindings told a role is missing; any role change retries them.
 	roleMissingIndex = "status.roleMissing"
 )
@@ -48,8 +52,9 @@ var errRoleMissing = errors.New("role not found")
 // +kubebuilder:object:generate=false
 type Reconciler struct {
 	client.Client
-	// Uncached: reading roles through the cache would watch every Role in the cluster.
-	Roles             client.Reader
+	// Uncached: reading roles or checking desired-name collisions through the cache would watch
+	// every Role and foreign binding in the cluster.
+	APIReader         client.Reader
 	PolicyNamespace   string
 	SubjectNamespaces []string
 }
@@ -59,11 +64,11 @@ type Reconciler struct {
 // +kubebuilder:object:generate=false
 type native struct {
 	Namespace, Name string
-	Role            RoleRef
+	Role            policyapi.RoleRef
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (result ctrl.Result, err error) {
-	var binding PolicyBinding
+	var binding policyapi.PolicyBinding
 	if err := r.Get(ctx, req.NamespacedName, &binding); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, r.converge(ctx, req.Name, nil)
@@ -91,12 +96,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (resu
 	}
 	if err := r.converge(ctx, binding.Name, desired); err != nil {
 		reason, message = "ApplyFailed", err.Error()
+		return ctrl.Result{}, errors.Join(err, r.applyCondition(ctx, &binding, reason, message))
 	}
 	return ctrl.Result{}, r.applyCondition(ctx, &binding, reason, message)
 }
 
 // expand returns the native bindings the binding grants, with the condition reason and message.
-func (r *Reconciler) expand(ctx context.Context, binding *PolicyBinding) (map[native]client.Object, string, string, error) {
+func (r *Reconciler) expand(ctx context.Context, binding *policyapi.PolicyBinding) (map[native]client.Object, string, string, error) {
 	spec := binding.Spec
 	if !slices.Contains(r.SubjectNamespaces, spec.Subject.Namespace) {
 		return nil, "SubjectNotWatched", fmt.Sprintf("subject namespace %s is not one this controller binds", spec.Subject.Namespace), nil
@@ -111,7 +117,7 @@ func (r *Reconciler) expand(ctx context.Context, binding *PolicyBinding) (map[na
 	desired := map[native]client.Object{}
 	var missingSets, missingRoles []string
 	for _, setName := range spec.PolicySets {
-		var set PolicySet
+		var set policyapi.PolicySet
 		if err := r.Get(ctx, types.NamespacedName{Namespace: r.PolicyNamespace, Name: setName}, &set); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return nil, "", "", err
@@ -142,7 +148,7 @@ func (r *Reconciler) expand(ctx context.Context, binding *PolicyBinding) (map[na
 	return desired, "Applied", fmt.Sprintf("%d native bindings", len(desired)), nil
 }
 
-func scopes(rule Rule) []native {
+func scopes(rule policyapi.Rule) []native {
 	switch rule.Type {
 	case "kubernetes_role_binding":
 		var out []native
@@ -151,7 +157,7 @@ func scopes(rule Rule) []native {
 		}
 		return out
 	case "kubernetes_cluster_role_binding":
-		return []native{{Role: RoleRef{Kind: "ClusterRole", Name: rule.ClusterRole}}}
+		return []native{{Role: policyapi.RoleRef{Kind: "ClusterRole", Name: rule.ClusterRole}}}
 	}
 	return nil // Another reader's rule type.
 }
@@ -159,9 +165,9 @@ func scopes(rule Rule) []native {
 func (r *Reconciler) requireRole(ctx context.Context, n native) error {
 	var err error
 	if n.Role.Kind == "Role" {
-		err = r.Roles.Get(ctx, types.NamespacedName{Namespace: n.Namespace, Name: n.Role.Name}, &rbacv1.Role{})
+		err = r.APIReader.Get(ctx, types.NamespacedName{Namespace: n.Namespace, Name: n.Role.Name}, &rbacv1.Role{})
 	} else {
-		err = r.Roles.Get(ctx, types.NamespacedName{Name: n.Role.Name}, &rbacv1.ClusterRole{})
+		err = r.APIReader.Get(ctx, types.NamespacedName{Name: n.Role.Name}, &rbacv1.ClusterRole{})
 	}
 	if apierrors.IsNotFound(err) {
 		return fmt.Errorf("%w: %s %s", errRoleMissing, n.Role.Kind, n.Role.Name)
@@ -169,7 +175,7 @@ func (r *Reconciler) requireRole(ctx context.Context, n native) error {
 	return err
 }
 
-func (r *Reconciler) render(binding *PolicyBinding, account *corev1.ServiceAccount, n native) client.Object {
+func (r *Reconciler) render(binding *policyapi.PolicyBinding, account *corev1.ServiceAccount, n native) client.Object {
 	digest := sha256.Sum256(fmt.Appendf(nil, "%s/%s/%s/%s/%s", binding.UID, account.UID, n.Role.Kind, n.Role.Name, n.Namespace))
 	meta := metav1.ObjectMeta{
 		Name:      fmt.Sprintf("pb-%.40s-%s", binding.Name, hex.EncodeToString(digest[:])[:16]),
@@ -200,17 +206,22 @@ func (r *Reconciler) converge(ctx context.Context, bindingName string, desired m
 		return err
 	}
 	for key, obj := range actual {
-		if wanted, ok := want[key]; ok && matches(obj, wanted) {
-			delete(want, key)
-			continue
+		if wanted, ok := want[key]; ok {
+			if sameIdentity(obj, wanted) && sameRoleRef(obj, wanted) {
+				if matches(obj, wanted) {
+					delete(want, key)
+				}
+				continue
+			}
 		}
-		// Not granted, or edited by hand: a roleRef cannot change in place.
-		if err := client.IgnoreNotFound(r.Delete(ctx, obj)); err != nil {
+		// Revoked or stale identity grants must stop applying immediately. A roleRef is immutable,
+		// so its managed binding is replaced below with the desired role.
+		if err := r.deleteNative(ctx, obj); err != nil {
 			return err
 		}
 	}
 	for _, obj := range want {
-		if err := r.Create(ctx, obj); err != nil && !apierrors.IsAlreadyExists(err) {
+		if err := r.applyNative(ctx, obj); err != nil {
 			return err
 		}
 	}
@@ -219,12 +230,13 @@ func (r *Reconciler) converge(ctx context.Context, bindingName string, desired m
 
 func (r *Reconciler) natives(ctx context.Context, bindingName string) (map[string]client.Object, error) {
 	labels := client.MatchingLabels{ManagedByLabel: FieldManager, PolicyNamespaceLbl: r.PolicyNamespace}
+	index := client.MatchingFields{nativeBindingIndex: bindingName}
 	var roleBindings rbacv1.RoleBindingList
 	var clusterBindings rbacv1.ClusterRoleBindingList
-	if err := r.List(ctx, &roleBindings, labels); err != nil {
+	if err := r.List(ctx, &roleBindings, labels, index); err != nil {
 		return nil, err
 	}
-	if err := r.List(ctx, &clusterBindings, labels); err != nil {
+	if err := r.List(ctx, &clusterBindings, labels, index); err != nil {
 		return nil, err
 	}
 	out := map[string]client.Object{}
@@ -234,31 +246,116 @@ func (r *Reconciler) natives(ctx context.Context, bindingName string) (map[strin
 	for i := range clusterBindings.Items {
 		out["/"+clusterBindings.Items[i].Name] = &clusterBindings.Items[i]
 	}
-	for key, obj := range out {
-		if obj.GetAnnotations()[BindingAnnotation] != bindingName {
-			delete(out, key)
-		}
-	}
 	return out, nil
 }
 
 func matches(actual, wanted client.Object) bool {
-	roleRef := func(obj client.Object) (rbacv1.RoleRef, []rbacv1.Subject) {
-		if rb, ok := obj.(*rbacv1.RoleBinding); ok {
-			return rb.RoleRef, rb.Subjects
+	for key, value := range wanted.GetLabels() {
+		if actual.GetLabels()[key] != value {
+			return false
 		}
-		crb := obj.(*rbacv1.ClusterRoleBinding)
-		return crb.RoleRef, crb.Subjects
 	}
-	actualRef, actualSubjects := roleRef(actual)
-	wantedRef, wantedSubjects := roleRef(wanted)
-	return actualRef == wantedRef && slices.Equal(actualSubjects, wantedSubjects) &&
-		actual.GetAnnotations()[BindingUIDAnn] == wanted.GetAnnotations()[BindingUIDAnn] &&
+	for key, value := range wanted.GetAnnotations() {
+		if actual.GetAnnotations()[key] != value {
+			return false
+		}
+	}
+	actualRef, actualSubjects := nativeRoleAndSubjects(actual)
+	wantedRef, wantedSubjects := nativeRoleAndSubjects(wanted)
+	return actualRef == wantedRef && slices.Equal(actualSubjects, wantedSubjects)
+}
+
+func sameIdentity(actual, wanted client.Object) bool {
+	return actual.GetAnnotations()[BindingUIDAnn] == wanted.GetAnnotations()[BindingUIDAnn] &&
 		actual.GetAnnotations()[SubjectUIDAnn] == wanted.GetAnnotations()[SubjectUIDAnn]
 }
 
+func sameRoleRef(actual, wanted client.Object) bool {
+	actualRef, _ := nativeRoleAndSubjects(actual)
+	wantedRef, _ := nativeRoleAndSubjects(wanted)
+	return actualRef == wantedRef
+}
+
+func nativeRoleAndSubjects(obj client.Object) (rbacv1.RoleRef, []rbacv1.Subject) {
+	if rb, ok := obj.(*rbacv1.RoleBinding); ok {
+		return rb.RoleRef, rb.Subjects
+	}
+	crb := obj.(*rbacv1.ClusterRoleBinding)
+	return crb.RoleRef, crb.Subjects
+}
+
+func (r *Reconciler) deleteNative(ctx context.Context, obj client.Object) error {
+	var options []client.DeleteOption
+	if uid := obj.GetUID(); uid != "" {
+		options = append(options, client.Preconditions{UID: &uid})
+	}
+	return client.IgnoreNotFound(r.Delete(ctx, obj, options...))
+}
+
+func (r *Reconciler) applyNative(ctx context.Context, wanted client.Object) error {
+	existing := wanted.DeepCopyObject().(client.Object)
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(wanted), existing); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+	} else {
+		if !matchesIdentity(existing, wanted) {
+			return fmt.Errorf("refusing to adopt foreign %T %s", existing, client.ObjectKeyFromObject(wanted))
+		}
+		if !sameRoleRef(existing, wanted) {
+			// roleRef is immutable, so remove the old managed object before applying its replacement.
+			if err := r.deleteNative(ctx, existing); err != nil {
+				return err
+			}
+		}
+	}
+
+	var configuration any
+	switch obj := wanted.(type) {
+	case *rbacv1.RoleBinding:
+		configuration = applyrbacv1.RoleBinding(obj.Name, obj.Namespace).
+			WithAPIVersion(rbacv1.GroupName + "/v1").
+			WithKind("RoleBinding").
+			WithNamespace(obj.Namespace).
+			WithLabels(obj.Labels).
+			WithAnnotations(obj.Annotations).
+			WithRoleRef(applyrbacv1.RoleRef().WithAPIGroup(obj.RoleRef.APIGroup).WithKind(obj.RoleRef.Kind).WithName(obj.RoleRef.Name)).
+			WithSubjects(applyrbacv1.Subject().WithKind("ServiceAccount").WithNamespace(obj.Subjects[0].Namespace).WithName(obj.Subjects[0].Name))
+	case *rbacv1.ClusterRoleBinding:
+		configuration = applyrbacv1.ClusterRoleBinding(obj.Name).
+			WithAPIVersion(rbacv1.GroupName + "/v1").
+			WithKind("ClusterRoleBinding").
+			WithLabels(obj.Labels).
+			WithAnnotations(obj.Annotations).
+			WithRoleRef(applyrbacv1.RoleRef().WithAPIGroup(obj.RoleRef.APIGroup).WithKind(obj.RoleRef.Kind).WithName(obj.RoleRef.Name)).
+			WithSubjects(applyrbacv1.Subject().WithKind("ServiceAccount").WithNamespace(obj.Subjects[0].Namespace).WithName(obj.Subjects[0].Name))
+	default:
+		return fmt.Errorf("unsupported native binding type %T", wanted)
+	}
+	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(configuration)
+	if err != nil {
+		return err
+	}
+	return r.Apply(ctx, client.ApplyConfigurationFromUnstructured(&unstructured.Unstructured{Object: object}),
+		client.FieldOwner(FieldManager), client.ForceOwnership)
+}
+
+func matchesIdentity(actual, wanted client.Object) bool {
+	for key, value := range wanted.GetLabels() {
+		if actual.GetLabels()[key] != value {
+			return false
+		}
+	}
+	for key, value := range wanted.GetAnnotations() {
+		if actual.GetAnnotations()[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
 // applyCondition server-side applies only KubernetesReady, so other readers' conditions stay.
-func (r *Reconciler) applyCondition(ctx context.Context, binding *PolicyBinding, reason, message string) error {
+func (r *Reconciler) applyCondition(ctx context.Context, binding *policyapi.PolicyBinding, reason, message string) error {
 	status := metav1.ConditionFalse
 	if reason == "Applied" {
 		status = metav1.ConditionTrue
@@ -269,10 +366,10 @@ func (r *Reconciler) applyCondition(ctx context.Context, binding *PolicyBinding,
 	}) {
 		return nil
 	}
-	patch := &PolicyBinding{
-		TypeMeta:   metav1.TypeMeta{APIVersion: GroupVersion.String(), Kind: "PolicyBinding"},
+	patch := &policyapi.PolicyBinding{
+		TypeMeta:   metav1.TypeMeta{APIVersion: policyapi.GroupVersion.String(), Kind: "PolicyBinding"},
 		ObjectMeta: metav1.ObjectMeta{Name: binding.Name, Namespace: binding.Namespace},
-		Status:     Status{Conditions: []metav1.Condition{*meta.FindStatusCondition(conditions, KubernetesReady)}},
+		Status:     policyapi.Status{Conditions: []metav1.Condition{*meta.FindStatusCondition(conditions, KubernetesReady)}},
 	}
 	// The CRD has no generated apply configuration; an unstructured one carries the same fields.
 	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(patch)
@@ -287,19 +384,31 @@ func (r *Reconciler) applyCondition(ctx context.Context, binding *PolicyBinding,
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	ctx := context.Background()
 	indexer := mgr.GetFieldIndexer()
-	if err := indexer.IndexField(ctx, &PolicyBinding{}, setsIndex, func(obj client.Object) []string {
-		return obj.(*PolicyBinding).Spec.PolicySets
+	indexNativeBinding := func(obj client.Object) []string {
+		if bindingName := obj.GetAnnotations()[BindingAnnotation]; bindingName != "" {
+			return []string{bindingName}
+		}
+		return nil
+	}
+	if err := indexer.IndexField(ctx, &rbacv1.RoleBinding{}, nativeBindingIndex, indexNativeBinding); err != nil {
+		return err
+	}
+	if err := indexer.IndexField(ctx, &rbacv1.ClusterRoleBinding{}, nativeBindingIndex, indexNativeBinding); err != nil {
+		return err
+	}
+	if err := indexer.IndexField(ctx, &policyapi.PolicyBinding{}, setsIndex, func(obj client.Object) []string {
+		return obj.(*policyapi.PolicyBinding).Spec.PolicySets
 	}); err != nil {
 		return err
 	}
-	if err := indexer.IndexField(ctx, &PolicyBinding{}, subjectIndex, func(obj client.Object) []string {
-		subject := obj.(*PolicyBinding).Spec.Subject
+	if err := indexer.IndexField(ctx, &policyapi.PolicyBinding{}, subjectIndex, func(obj client.Object) []string {
+		subject := obj.(*policyapi.PolicyBinding).Spec.Subject
 		return []string{subject.Namespace + "/" + subject.Name}
 	}); err != nil {
 		return err
 	}
-	if err := indexer.IndexField(ctx, &PolicyBinding{}, roleMissingIndex, func(obj client.Object) []string {
-		condition := meta.FindStatusCondition(obj.(*PolicyBinding).Status.Conditions, KubernetesReady)
+	if err := indexer.IndexField(ctx, &policyapi.PolicyBinding{}, roleMissingIndex, func(obj client.Object) []string {
+		condition := meta.FindStatusCondition(obj.(*policyapi.PolicyBinding).Status.Conditions, KubernetesReady)
 		if condition != nil && condition.Reason == "ApplyFailed" {
 			return []string{"true"}
 		}
@@ -309,7 +418,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	byIndex := func(index string, value func(client.Object) string) handler.EventHandler {
 		return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			var bindings PolicyBindingList
+			var bindings policyapi.PolicyBindingList
 			if err := r.List(ctx, &bindings, client.InNamespace(r.PolicyNamespace), client.MatchingFields{index: value(obj)}); err != nil {
 				return nil
 			}
@@ -330,8 +439,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: r.PolicyNamespace, Name: name}}}
 	})
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&PolicyBinding{}).
-		Watches(&PolicySet{}, byIndex(setsIndex, client.Object.GetName)).
+		For(&policyapi.PolicyBinding{}).
+		Watches(&policyapi.PolicySet{}, byIndex(setsIndex, client.Object.GetName)).
 		Watches(&corev1.ServiceAccount{}, byIndex(subjectIndex, func(obj client.Object) string {
 			return obj.GetNamespace() + "/" + obj.GetName()
 		})).

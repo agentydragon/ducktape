@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -59,7 +60,7 @@ func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontrol
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		return err
 	}
-	if err := policycontroller.AddToScheme(scheme); err != nil {
+	if err := policyapi.AddToScheme(scheme); err != nil {
 		return err
 	}
 	if err := kubevirtv1.AddToScheme(scheme); err != nil {
@@ -78,10 +79,10 @@ func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontrol
 	// The cache holds one namespace, and of its Pods, PVCs, ServiceAccounts, PolicyBindings and,
 	// where KubeVirt is installed, VMs and VMIs only those carrying the Sandbox label.
 	byObject := map[client.Object]cache.ByObject{
-		&corev1.Pod{}:                     {Label: ours},
-		&corev1.PersistentVolumeClaim{}:   {Label: ours},
-		&corev1.ServiceAccount{}:          {Label: ours},
-		&policycontroller.PolicyBinding{}: {Label: ours},
+		&corev1.Pod{}:                   {Label: ours},
+		&corev1.PersistentVolumeClaim{}: {Label: ours},
+		&corev1.ServiceAccount{}:        {Label: ours},
+		&policyapi.PolicyBinding{}:      {Label: ours},
 	}
 	if kubeVirt {
 		byObject[&kubevirtv1.VirtualMachine{}] = cache.ByObject{Label: ours}

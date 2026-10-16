@@ -6,8 +6,8 @@ are in [`agentplane/crds`](../crds/BUILD.bazel).
 
 A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) controller:
 
-- [`types.go`](types.go): the CRD types. Bazel generates the controller-gen deep-copy methods when
-  building the controller; build `//agentplane/policy_controller:deepcopy` to check the generated
+- [`../policy/api/types.go`](../policy/api/types.go): the neutral CRD types. Bazel generates the
+  controller-gen deep-copy methods when building the API; build `//agentplane/policy/api:deepcopy` to check the generated
   file directly. The pinned upstream `controller-gen` binary and Go SDK run with declared Bazel
   inputs, so no generated Go file is committed.
 - [`controller.go`](controller.go): one reconcile per `PolicyBinding`. Sets, subject accounts and
@@ -31,7 +31,7 @@ bb run //agentplane/policy_controller/cmd:policy-controller -- \
 It uses the in-cluster config or `KUBECONFIG`. Its ServiceAccount needs to list and watch
 PolicySets, PolicyBindings and ServiceAccounts, delete PolicyBindings, apply PolicyBinding status,
 read the referenced Roles and ClusterRoles, list and watch RoleBindings and ClusterRoleBindings
-cluster-wide, and create and delete them where sets grant, with `bind` on each referenced role. It
+cluster-wide, and patch and delete them where sets grant, with `bind` on each referenced role. It
 serves metrics on `:8080` and `/healthz`/`/readyz` on `:8081`, and replicas elect a leader by a
 Lease in the policy namespace.
 
@@ -43,7 +43,8 @@ Lease in the policy namespace.
 - **Roles are watched by metadata only**, and read uncached. Any Role or ClusterRole change
   reconciles the bindings whose condition says a role is missing, so a binding to a role created
   later is granted once it appears.
-- The CRD types exist again as the Python models of the services that will read the other rule types;
+- The CRD types are independent of the controller so every reader can depend on the API package;
+  the Python models of the other rule types remain in their owning services;
   the CRD YAML in `agentplane/crds` is the schema both follow.
 - Tests drive `Reconcile` against controller-runtime's fake client, so which events enqueue which
   binding is not covered.
