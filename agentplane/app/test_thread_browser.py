@@ -1320,6 +1320,19 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
     page = thread_browser.page
     await append_run_among_rows(thread_browser, below=8)
     history = page.get_by_role("region", name="Thread history", exact=True)
+    # Visit the preceding content before composing this review scene. Rows that left the
+    # virtual window while their text loaded retain estimates until they are visited again;
+    # which responses arrived first otherwise changes the run's fractional content offset.
+    # Wheel through the history, preserving the real virtualizer and its loading behavior.
+    for _ in range(40):
+        await expect(history).to_have_attribute("data-layout-settled", "true", timeout=30_000)
+        if await history.evaluate("area => area.scrollTop") == 0:
+            break
+        await wheel(page, -400)
+    else:
+        raise AssertionError("the review scene never reached the start of the history")
+    await wheel(page, 10_000)
+    await expect(history).to_have_attribute("data-layout-settled", "true", timeout=30_000)
     run = history.locator("[data-thread-anchor]").filter(has_text="3 tool calls")
     await read_at(page, run, 0.1)
     await run.locator(".agentplane-disclosure-summary").first.click()
