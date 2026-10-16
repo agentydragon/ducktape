@@ -253,9 +253,13 @@ class Client:
         """The persistent Thread of a created Session; its ID is the Session's public ID."""
         return ThreadView.model_validate(await self._json("GET", f"/threads/{thread_id}"))
 
-    async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
-        """Return the archived runner CommandAdmitted entry, not a native command outcome."""
+    async def command(
+        self, thread_id: UUID, command: command_pb2.Command
+    ) -> session_dispatcher_pb2.Dispatch | event_log_pb2.EventEntry:
+        """Return the durable Dispatch, or archived admission for an exact retry; neither is a native outcome."""
         answered = await self._json("POST", f"/threads/{thread_id}/commands", json=MessageToDict(command))
+        if "sessionId" in answered:
+            return ParseDict(answered, session_dispatcher_pb2.Dispatch())
         return ParseDict(answered, event_log_pb2.EventEntry())
 
     async def events(
