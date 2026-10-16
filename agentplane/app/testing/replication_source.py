@@ -123,6 +123,14 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     def __init__(self, source: ReplicationSource) -> None:
         self.source = source
 
+    @override
+    async def BatchGetSessionSandboxes(
+        self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.BatchGetSessionSandboxesResponse:
+        return runner_gateway_pb2.BatchGetSessionSandboxesResponse(
+            sessions=self.source.placements.get(request.session_ids)
+        )
+
 
 class Runner(runner_control_pb2_grpc.RunnerServicer):
     """A scripted Runner whose per-operation RPCs append command admissions to retained history."""
@@ -203,11 +211,3 @@ class Runner(runner_control_pb2_grpc.RunnerServicer):
             command_id=request.command_id, stop_runner_session=command_pb2.StopRunnerSession()
         )
         return runner_control_pb2.StopRunnerSessionResponse(admission=await self.admit(command, context))
-
-    @override
-    async def BatchGetSessionSandboxes(
-        self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.BatchGetSessionSandboxesResponse:
-        return runner_gateway_pb2.BatchGetSessionSandboxesResponse(
-            sessions=self.source.placements.get(request.session_ids)
-        )

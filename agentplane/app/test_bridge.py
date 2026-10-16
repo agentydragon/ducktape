@@ -1120,7 +1120,7 @@ async def test_dispatcher_timeout_is_not_an_internal_server_error(
 
 async def test_command_returns_dispatch_receipt_before_app_archive_catches_up(
     bridge: RunnerBridge,
-    gateway: RunnerGatewayClient,
+    dispatcher: RunnerProxyBackedDispatcher,
     event_logs: SeededEventLogStore,
     content: ContentStore,
     history: History,
@@ -1144,17 +1144,22 @@ async def test_command_returns_dispatch_receipt_before_app_archive_catches_up(
         event=event_pb2.Event(at=timestamp, command_admitted=event_pb2.CommandAdmitted(command=command)),
     )
     called = 0
+    expected_command = command
 
-    async def submit(
-        destination: SandboxDestination, session_id: str, candidate: command_pb2.Command
-    ) -> event_log_pb2.EventEntry:
+    async def submit(*, sandbox: str, session_id: str, command: command_pb2.Command) -> session_dispatcher_pb2.Dispatch:
         nonlocal called
         called += 1
-        assert (destination.sandbox, session_id) == (SANDBOX, SESSION)
-        assert candidate == command
-        return receipt
+        assert (sandbox, session_id) == (SANDBOX, str(thread))
+        assert command == expected_command
+        return session_dispatcher_pb2.Dispatch(
+            command_id=command.command_id,
+            session_id=session_id,
+            sandbox=sandbox,
+            state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
+            admission=receipt,
+        )
 
-    monkeypatch.setattr(gateway, "command", submit)
+    monkeypatch.setattr(dispatcher, "command", submit)
     dispatch = await bridge.command(thread, command, sandbox=SANDBOX)
     assert isinstance(dispatch, session_dispatcher_pb2.Dispatch)
     assert dispatch.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED

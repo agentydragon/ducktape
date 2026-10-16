@@ -86,7 +86,7 @@ async def submit_input(
     remote: RunnerGatewayClient, session_id: str, command: command_pb2.Command
 ) -> event_log_pb2.EventEntry:
     assert command.WhichOneof("operation") == "submit_input"
-    response = await remote.control.runner_unary(
+    response: runner_control_pb2.SubmitInputResponse = await remote.control.runner_unary(
         DESTINATION,
         lambda stub: stub.SubmitInput,
         runner_control_pb2.SubmitInputRequest(
@@ -98,7 +98,7 @@ async def submit_input(
 
 
 async def stop_session(remote: RunnerGatewayClient, session_id: str, command_id: str) -> event_log_pb2.EventEntry:
-    response = await remote.control.runner_unary(
+    response: runner_control_pb2.StopRunnerSessionResponse = await remote.control.runner_unary(
         DESTINATION,
         lambda stub: stub.StopRunnerSession,
         runner_control_pb2.StopRunnerSessionRequest(session_id=session_id, command_id=command_id),

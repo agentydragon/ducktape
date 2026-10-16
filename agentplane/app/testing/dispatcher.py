@@ -32,6 +32,7 @@ class RunnerProxyBackedDispatcher(SessionDispatcherClient):
     ) -> session_dispatcher_pb2.Dispatch:
         runner = self.runners.client(sandbox)
         common = {"session_id": session_id, "command_id": command.command_id}
+        operation = session_dispatcher_pb2.OPERATION_UNSPECIFIED
         match command.WhichOneof("operation"):
             case "submit_input":
                 response = await runner.control.runner_unary(
@@ -69,7 +70,9 @@ class RunnerProxyBackedDispatcher(SessionDispatcherClient):
                     lambda stub: stub.InterruptTurn,
                     runner_control_pb2.InterruptTurnRequest(**common, turn_id=command.interrupt_turn.turn_id),
                 )
-                operation = session_dispatcher_pb2.OPERATION_INTERRUPT_TURN
+                # Interrupts are delivered immediately and are deliberately absent from the
+                # durable Dispatch operation enum. Mirror SessionDispatcherClient's transient
+                # response conversion while retaining the runner admission receipt.
             case _:
                 raise ValueError(
                     f"unsupported Session Dispatcher command operation: {command.WhichOneof('operation')!r}"
