@@ -1031,8 +1031,8 @@ resource controls remain in place while it is prepared.
 ### `K3S_VM_IMAGE` — build a lightweight guest disk in Bazel for the k3s integration test
 
 **Blocked on the VM split; operator, 2026-10-15 PDT.** The k3s spike cannot exercise a VM Sandbox at all:
-`agentplane/x/k3s_env/render.py` drops `("SandboxTemplate", "runner-vm")` because the template needs
-KubeVirt, and serves schemaless stub `VirtualMachine` kinds only so the controller's cache resolves. So
+the direct K3s chart omits the `runner-vm` SandboxTemplate because the template needs
+KubeVirt, and the harness installs schemaless stub `VirtualMachine` kinds only so the controller's cache resolves. So
 the VM path has no integration coverage in the disposable environment, and pulling the real guest is
 unattractive because `agentplane/runner/container-disk.nix` builds it from a NixOS qcow2 — the heavy
 artifact the spike exists to avoid, and one that cannot carry the code under test.

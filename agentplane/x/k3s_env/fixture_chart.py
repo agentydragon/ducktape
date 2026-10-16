@@ -1,0 +1,335 @@
+"""Compose the ephemeral Agentplane testing stack directly from cdk8s constructs.
+
+The fixture keeps the service contracts and settings authored in cluster/cdk8s/agentplane.
+It supplies bare-k3s dependencies (Secrets, headless routing, local-path storage) as inputs
+and never reads or edits the production generated manifest.
+"""
+
+from __future__ import annotations
+
+import secrets
+import string
+from dataclasses import replace
+from typing import Any
+
+from cdk8s import ApiObjectMetadata, Chart, Size, Testing
+from cdk8s_plus_34 import (
+    ContainerProps,
+    ContainerResources,
+    ContainerSecurityContextProps,
+    Cpu,
+    CpuResources,
+    EnvValue,
+    ImagePullPolicy,
+    MemoryResources,
+    k8s,
+)
+
+from agentplane.subjects import ServiceAccountRef
+from agentplane.x.k3s_env import fixture_database
+from cluster.cdk8s import agent_access_profiles as access
+from cluster.cdk8s.agentplane import (
+    actions,
+    app as app_component,
+    command_sandbox,
+    egress,
+    electric,
+    history_service,
+    llm_ingress,
+    notifications,
+    policy_controller,
+    policy_controller_rbac,
+    runner_gateway,
+    runner_gateway_go,
+    runner_sandbox,
+    sandbox_controller,
+    sandbox_pod,
+    session_dispatcher,
+    testing,
+)
+from cluster.cdk8s.agentplane.chart import Namespace
+from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
+from cluster.cdk8s.providers.agentplane.policy_set import PolicySet
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Port, ServiceRef
+
+NAMESPACE = testing.ENV.namespace
+PRIMARY_SERVICE = "postgres-primary"
+RUNNER_GATEWAY = "runner-gateway"
+SESSION_DISPATCHER = "session-dispatcher"
+GO_RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset"
+GO_QUEUE_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
+DISPATCHER_PORT = 8080
+
+
+def _password(length: int = 40) -> str:
+    return "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(length))
+
+
+def _secret(
+    chart: Chart, name: str, data: dict[str, str], *, namespace: str = NAMESPACE, kind: str = "Opaque"
+) -> k8s.KubeSecret:
+    return k8s.KubeSecret(
+        chart,
+        f"fixture-secret-{namespace}-{name}",
+        metadata=k8s.ObjectMeta(name=name, namespace=namespace),
+        type=kind,
+        string_data=data,
+    )
+
+
+def objects(
+    *, node_ip: str, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, litellm_key: str | None
+) -> list[dict[str, Any]]:
+    """Synthesize only the objects the one-node, operator-light k3s fixture deploys."""
+    env = replace(testing.ENV, vm_sandboxes=False)
+    sandbox_api_env = (
+        k8s.EnvVar(name="KUBERNETES_SERVICE_HOST", value=node_ip),
+        k8s.EnvVar(name="KUBERNETES_SERVICE_PORT", value="6443"),
+    )
+    sandbox_sidecar_resources = k8s.ResourceRequirements(
+        requests={
+            "cpu": k8s.Quantity.from_string(Cpu.millis(10).amount),
+            "memory": k8s.Quantity.from_string(Size.mebibytes(32).as_string()),
+        }
+    )
+    kube_api_env = {
+        "KUBERNETES_SERVICE_HOST": EnvValue.from_value(node_ip),
+        "KUBERNETES_SERVICE_PORT": EnvValue.from_value("6443"),
+    }
+    app = Testing.app()
+    chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
+    Namespace(chart, "namespace", env)
+    fixture_database.add_database(chart, env, node_ip=node_ip)
+    electric.Electric(
+        chart, "electric", env, placement=None, service_cluster_ip="None", container_env=kube_api_env, memory_limit=None
+    )
+    llm_ingress.LlmIngress(
+        chart,
+        "llm-ingress",
+        env,
+        litellm_url=(
+            "https://litellm.allegedly.works"
+            if litellm_key is not None
+            else "http://litellm.litellm.svc.cluster.local:4000"
+        ),
+        placement=None,
+        registry_secret_name=None,
+        service_cluster_ip="None",
+        container_env=kube_api_env,
+        memory_limit=None,
+    )
+    agent_api = ServiceRef(name=egress.NAME, port=Port(name="http", number=8082), pods=egress.agent_api(NAMESPACE).pods)
+    egress.Egress(
+        chart,
+        "egress",
+        env,
+        runners=runner_sandbox.pods(env.namespace),
+        agent_api_service=agent_api,
+        litellm_host="litellm.allegedly.works" if litellm_key is not None else None,
+        litellm_cluster_internal=litellm_key is None,
+        placement=None,
+        registry_secret_name=None,
+        service_cluster_ip="None",
+        container_env=kube_api_env,
+        memory_limit=None,
+        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        migrate_memory_limit=None,
+    )
+    sandbox_pod.add_tool_config(chart, env)
+    app_caller = {
+        ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME): app_component.service(NAMESPACE).pods
+    }
+    notifications_caller = {
+        ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME): notifications.service(NAMESPACE).pods
+    }
+    dispatcher_callers = app_caller | notifications_caller
+    control = runner_gateway_go.runner_control_service(NAMESPACE, port=Port(name="grpc", number=8080))
+    runner_gateway_go.add_stable_services(chart, env, cluster_ip="None", control=control)
+    migration_database = (
+        SecretRef(namespace=NAMESPACE, name="postgres-session-dispatcher").key("uri").env_value(chart, "goose-database")
+    )
+    runner_gateway_go.GoRunnerGateway(
+        chart,
+        "runner-gateway-go",
+        env,
+        dispatcher_callers=dispatcher_callers,
+        gateway_callers=dispatcher_callers,
+        wake_callers=env.wake_caller_accounts,
+        sandbox_controller=(
+            ServiceAccountRef(namespace=NAMESPACE, name=sandbox_controller.NAME),
+            sandbox_controller.pods(NAMESPACE),
+        ),
+        control=control,
+        migration=ContainerProps(
+            name="goose-migrate",
+            image=GO_QUEUE_MIGRATOR_IMAGE,
+            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+            env_variables={"DATABASE_URL": migration_database},
+            resources=ContainerResources(
+                cpu=CpuResources(request=Cpu.millis(25)), memory=MemoryResources(request=Size.mebibytes(64))
+            ),
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
+        ),
+        registry_secret_name=None,
+        placement=None,
+        container_env=kube_api_env,
+        memory_limit=None,
+    )
+    control_target = f"{control.fqdn}:{control.port.number}"
+    history_service.HistoryService(
+        chart,
+        "history-service",
+        env,
+        callers=app_caller | notifications_caller,
+        placement=None,
+        registry_secret_name=None,
+        service_cluster_ip="None",
+        container_env=kube_api_env,
+        memory_limit=None,
+        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        migrate_memory_limit=None,
+    )
+    app_component.App(
+        chart,
+        "app",
+        env,
+        placement=None,
+        registry_secret_name=None,
+        service_cluster_ip="None",
+        runner_control_target=f"{{sandbox}}-control.{{namespace}}.svc:{control.port.number}",
+        container_env=kube_api_env,
+        memory_limit=None,
+        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        migrate_memory_limit=None,
+    )
+    runner_sandbox.RunnerSandbox(
+        chart,
+        "runner-sandbox",
+        env,
+        egress_api_service=agent_api,
+        storage_class="local-path",
+        runner_resources=k8s.ResourceRequirements(
+            requests={
+                "cpu": k8s.Quantity.from_string(Cpu.millis(500).amount),
+                "memory": k8s.Quantity.from_string(Size.gibibytes(1).as_string()),
+            }
+        ),
+        sidecar_resources=sandbox_sidecar_resources,
+        workload_env=sandbox_api_env,
+        image_pull_secret_name=None,
+        trust_mounts=sandbox_pod.egress_proxy_mounts(),
+        control_service=control,
+    )
+    sandbox_controller.SandboxController(
+        chart,
+        "sandbox-controller",
+        env,
+        gateway=runner_gateway.service(NAMESPACE),
+        gateway_audience=runner_gateway.TOKEN_AUDIENCE,
+        gateway_control_target=control_target,
+        placement=None,
+        registry_secret_name=None,
+        service_cluster_ip="None",
+        container_env=kube_api_env,
+        memory_limit=None,
+    )
+    actions.Actions(
+        chart,
+        "actions",
+        env,
+        placement=None,
+        registry_secret_name=None,
+        service_cluster_ip="None",
+        container_env=kube_api_env,
+        image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        memory_limit=None,
+        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        migrate_memory_limit=None,
+    )
+    notifications.Notifications(
+        chart,
+        "notifications",
+        env,
+        actions=actions.service(NAMESPACE),
+        gateway=runner_gateway.service(NAMESPACE),
+        gateway_audience=runner_gateway.TOKEN_AUDIENCE,
+        gateway_control_target=control_target,
+        history=history_service.service(NAMESPACE),
+        history_audience=history_service.TOKEN_AUDIENCE,
+        dispatcher=runner_gateway_go.dispatcher_service(NAMESPACE),
+        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
+        callers=[egress.proxy(NAMESPACE).pods, app_component.service(NAMESPACE).pods],
+        placement=None,
+        registry_secret_name=None,
+        service_cluster_ip="None",
+        container_env=kube_api_env,
+        memory_limit=None,
+        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        migrate_memory_limit=None,
+    )
+    command_sandbox.CommandSandbox(
+        chart,
+        "command-sandbox",
+        env,
+        workload_env=sandbox_api_env,
+        sidecar_env=sandbox_api_env,
+        sidecar_resources=sandbox_sidecar_resources,
+        image_pull_secret_name=None,
+        trust_mounts=sandbox_pod.egress_proxy_mounts(),
+    )
+    # The Action Service and app still read their normal Secret names. Dex is deliberately
+    # absent; the lifecycle and model smoke authenticate with a service-account token.
+    _secret(
+        chart,
+        "agentplane-oidc",
+        {"client-id": "agentplane-testing", "client-secret": _password(), "session-secret": _password(64)},
+    )
+    _secret(chart, "agentplane-mcp-oauth", {"client-id": "agentplane-testing-mcp", "client-secret": _password()})
+    _secret(
+        chart,
+        "agentplane-testing-egress-ca",
+        {"tls.crt": ca_cert, "tls.key": ca_key, "ca.crt": ca_cert},
+        kind="kubernetes.io/tls",
+    )
+    k8s.KubeConfigMap(
+        chart,
+        "fixture-egress-ca",
+        metadata=k8s.ObjectMeta(name="agentplane-testing-egress-ca", namespace=NAMESPACE),
+        data={"ca-certificates.crt": system_roots + ca_cert},
+    )
+    k8s.KubeConfigMap(
+        chart,
+        "fixture-egress-upstream-ca",
+        metadata=k8s.ObjectMeta(name="agentplane-testing-egress-upstream-ca", namespace=NAMESPACE),
+        data={"ca-certificates.crt": system_roots + cluster_ca},
+    )
+    _secret(chart, "litellm-key-cheap-experiments", {"api-key": litellm_key or "unused-without-model"})
+    EgressCredentials(
+        chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=NAMESPACE
+    )
+    if litellm_key is not None:
+        _secret(
+            chart, "litellm-key-cheap-experiments", {"api-key": litellm_key}, namespace=env.egress.credentials_namespace
+        )
+    tool_config_grant = sandbox_pod.tool_config_grant(NAMESPACE)
+    PolicySet(
+        chart,
+        f"policy-set-{sandbox_pod.TOOL_CONFIG_GRANT}",
+        metadata=ApiObjectMetadata(name=sandbox_pod.TOOL_CONFIG_GRANT, namespace=NAMESPACE),
+        rules=access.rules_for_grants([tool_config_grant]),
+    )
+    controller = policy_controller.PolicyController(
+        chart,
+        "policy-controller",
+        env,
+        placement=None,
+        registry_secret_name=None,
+        service_cluster_ip="None",
+        container_env=kube_api_env,
+        memory_limit=None,
+    )
+    policy_controller_rbac.PolicyControllerRbac(
+        chart, "policy-controller-rbac", env, account=controller.account, assignable_grants=[tool_config_grant]
+    )
+    return list(Testing.synth(chart))
