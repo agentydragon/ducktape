@@ -19,7 +19,7 @@ header{padding:2.2rem clamp(1rem,4vw,3.3rem);border-radius:18px;background:#1024
 <div><strong>Sample</strong>100 newest merged PRs, #10618–#10723</div>
 <div><strong>Merge-time span (UTC)</strong>2026-10-15T12:43:39Z to 2026-10-16T05:14:26Z</div>
 <div><strong>Source revision</strong><code>ee3ffa76a8f899be9a35a776374d2a4fd94198c1</code> on devel</div>
-<div><strong>Collected</strong>2026-10-16T06:18:20Z</div>
+<div><strong>Collected</strong>2026-10-16T06:32:42Z</div>
 <div><strong>Evidence method</strong>GitHub PR comments and exact head SHAs; immutable gallery metadata; exact-head review-check summaries; complete PR file lists. Full record per PR in <a href="evidence.json">evidence.json</a>.</div>
 </section>
 <section class="cards" aria-label="Coverage summary">
@@ -29,7 +29,7 @@ header{padding:2.2rem clamp(1rem,4vw,3.3rem);border-radius:18px;background:#1024
 <div class="card"><span class="n">61</span><span>neutral checks; no manifest exposed</span></div>
 <div class="card"><span class="n">96 / 10 / 8,091</span><span>modified / removed / unchanged assets</span></div>
 </section>
-<p class="callout"><strong>Read the 61 no-comment rows carefully.</strong> Every exact-head <code>PR visual review</code> check was neutral and said “No tests executed by Bazel CI exposed visual-review.json.” That establishes that the check had no review manifest to compare; it does not establish that the PR had no screenshot changes. File lists are now complete for all 100 PRs. Among the 78 lists fetched after the initial changed-gallery batch, #10693 changed Agentplane command-kind handling in the client and thread command renderer; its gallery was classified unchanged. This shows that manifest coverage can exist without changed assets. File paths help assess possible UI scope, but do not substitute for review images.</p>
+<p class="callout"><strong>Read the 61 no-comment rows carefully.</strong> Every exact-head <code>PR visual review</code> check was neutral and said “No tests executed by Bazel CI exposed visual-review.json.” That establishes that the check had no review manifest to compare; it does not establish that the PR had no screenshot changes. File lists are now complete for all 100 PRs. None of the 61 no-comment PRs changed production frontend paths tracked by this audit. Among the additional 78 lists, #10693 is one of nine unchanged-gallery PRs, not a no-comment PR; it changed Agentplane command-kind handling in the client and thread command renderer, while its 314-image gallery was classified unchanged. This shows that changed frontend paths can still produce unchanged screenshots. File paths help assess possible UI scope, but do not substitute for review images.</p>
 <h2>What is supported by the evidence</h2>
 <article class="finding"><span class="tag">Confirmed time-sensitive render</span><h3>Plaid Spend GNOME changed because “Sync N ago” uses the live clock</h3>
 <p>Four PR galleries (#10655, #10662, #10697, #10699) show the same allowance screenshots advancing from <code>Sync 0m ago</code> to <code>Sync 10h ago</code> and then <code>Sync 15h ago</code>. The fixed fixture timestamp flows through <code>Date.now()</code> in the renderer. Hashes show each later baseline is byte-identical to the preceding candidate. None of these PRs changes the GNOME renderer or fixture; this is a time-dependent baseline diff, not independent pixel noise.</p>

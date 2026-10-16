@@ -504,7 +504,7 @@
     "source_devel_commit": "ee3ffa76a8f899be9a35a776374d2a4fd94198c1",
     "window_start_utc": "2026-10-15T12:43:39Z",
     "window_end_utc": "2026-10-16T05:14:26Z",
-    "collection_time_utc": "2026-10-16T06:18:20Z",
+    "collection_time_utc": "2026-10-16T06:32:42Z",
     "selection_method": "100 newest merged pull requests in the supplied GitHub cohort, ordered by mergedAt descending; all 100 issue-comment connections exhausted their first page with no continuation cursor.",
     "exact_head_check_collection": {
       "records_checked": 61,
@@ -933,7 +933,10 @@
           ]
         }
       ],
-      "full_sample_scope": "Every PR file list was paginated to completion. The first 22 lists had been queried for changed galleries; the remaining 78 were subsequently fetched. Compact per-PR paths and status counts are retained, not full API payloads."
+      "full_sample_scope": "Every PR file list was paginated to completion. The first 22 lists had been queried for changed galleries; the remaining 78 were subsequently fetched. Compact per-PR paths and status counts are retained, not full API payloads.",
+      "no_comment_frontend_path_prs": [],
+      "no_comment_frontend_path_pr_count": 0,
+      "no_comment_frontend_path_scope": "All 61 no-current-comment records had complete file lists and none changed production frontend paths tracked by this audit."
     },
     "historical_asset_closure": {
       "source_note": "These follow-up mappings supplement the original exact-head per-PR records. A known pattern is not a claim that old per-run trace logs exist.",
