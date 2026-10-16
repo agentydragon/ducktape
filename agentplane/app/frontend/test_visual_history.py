@@ -141,6 +141,8 @@ async def recovery_tools(view: VisualPage, app: AgentplaneFixture) -> VisualPage
     await expect(view.page.get_by_role("region", name="Thread history")).to_have_attribute(
         "data-layout-settled", "true"
     )
+    # Fixture clicks must not select a hover state when the scene subsequently scrolls.
+    await view.page.mouse.move(0, 0)
     return view
 
 

@@ -58,3 +58,6 @@ Filter within a target with the test function or parametrized case ID.
 Do not center a sticky heading with `scrollIntoView()`: its pinned screen position makes the
 result depend on the starting scroll offset. Position ordinary content, then assert that its
 heading and content are visible before capture.
+
+After setup clicks, choose the pointer position explicitly before composing a scene. Scrolling
+can move a different hover target under a stationary pointer; hover scenes should hover deliberately.
