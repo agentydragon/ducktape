@@ -836,9 +836,9 @@ flowchart TD
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     APP_NATIVE_RESUME_SURFACE[Approved: retain explicit resume UI; clarify wake-off affordance] --> APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume]
-    APP_NATIVE_RESUME_CUTOVER[Dispatched: explicit resume through runner tunnel]
-    APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
-    APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
+    APP_NATIVE_RESUME_ROLLOUT[Verify rollout: app resumes through runner tunnel]
+    APP_NATIVE_RESUME_ROLLOUT --> PROXY_START_METHODS_DISPATCHER_ONLY
+    APP_NATIVE_RESUME_ROLLOUT --> GATEWAY_WRAPPER_RETIRE
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
     SANDBOX_IDLE_EXPIRY --> IDLE_SUSPEND_UI_DRIVE[Operator: drive auto-suspend and send-to-resume in staging]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
@@ -1168,16 +1168,15 @@ admission before any wake, lost-response retry, and observable outcome. Decide w
 only to a Ready Sandbox or may also wake a suspended one; the existing Sandbox resume API is a
 distinct control. Do not add a new RPC or broaden wake grants before this contract is reviewed.
 
-### `APP_NATIVE_RESUME_CUTOVER` — route explicit app resume through the runner tunnel
+### `APP_NATIVE_RESUME_ROLLOUT` — verify direct Runner resume callers are deployed
 
-**Dispatched; operator-approved, 2026-10-16. Independent of Go unification.** Preserve the explicit
-**Resume harness** button and existing retained-spec/setup checks. The app already has the Thread's
-Sandbox name; `RunnerDirectory` resolves its current UID and owner. Call Runner `ResumeSession`
-through the reverse tunnel with the same complete identity metadata as tunneled `ListSessions`,
-without the Gateway Session registry lookup. This does not wake a suspended Sandbox or make
-wake-on-send mandatory. Verify the actual proxy path and pin the app image in testing and staging
-before deleting the legacy Gateway receiver. Durable Dispatcher resume remains a separate design
-question, not a prerequisite for this approved migration.
+**Implementation merged in #10709; remaining gate is deployment verification.** Verify every app
+replica in testing and staging runs an image containing the direct `Runner.ResumeSession` path
+before deleting the legacy Gateway receiver. The app resolves the Sandbox UID and owner through
+`RunnerDirectory` and sends complete identity metadata through the reverse tunnel. Preserve the
+explicit **Resume harness** action; it does not wake a suspended Sandbox. Delete this node after
+recording the deployed image evidence in the wrapper-retirement PR. Durable Dispatcher resume is a
+separate design question.
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
 
@@ -1291,16 +1290,16 @@ No refactor is open here.
 ## 12. The Runner Gateway serves the runner's own service
 
 Target and decisions: [History Service plan](history_service.md#decided-operator-2026-10-10-pdt)
-(Runner Gateway shape, Session specs). Today `RunnerGateway` wraps every `Runner` call with a
-Session registry, spec assembly, readiness checks and seals; these nodes move each job to its owner
-until the gateway is the `Connect` listener plus a proxy of `Runner` with per-method authorization.
+(Runner Gateway shape, Session specs). The remaining legacy `RunnerGateway` API wraps session
+creation, resume and inventory with a Session registry. Commands already use Dispatcher and typed
+Runner RPCs. Retire those wrappers and their registry so the gateway serves `Connect` and proxies
+`Runner` with per-method authorization.
 
 ```mermaid
 flowchart TD
-    RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
-    GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
+    RUNNER_COMMAND_RPCS[Rollout gate: remove DeliverCommand after old Gateway callers retire]
     GATEWAY_WRAPPER_RETIRE[In progress: remove legacy Gateway wrappers]
-    APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
+    APP_NATIVE_RESUME_ROLLOUT --> GATEWAY_WRAPPER_RETIRE
     GATEWAY_DATABASE_DROP[Approved: drop Gateway database and its CNPG resources after rollout]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
@@ -1317,7 +1316,7 @@ node is removed. This does not remove the separate destination-authority decisio
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
-**Needs policy revision for the approved direct app Runner `ResumeSession` caller; do not revoke that path. Blocked on the Dispatcher-only app image rollout, `APP_NATIVE_RESUME_CUTOVER`,
+**Needs policy revision for the approved direct app Runner `ResumeSession` caller; do not revoke that path. Blocked on the Dispatcher-only app image rollout, `APP_NATIVE_RESUME_ROLLOUT`,
 `GATEWAY_WRAPPER_RETIRE`,
 with their caller images pinned in both environments.** Today
 the gateway's runner proxy (`runner_gateway/runner_proxy.py`) lets every configured caller account call
@@ -1331,12 +1330,12 @@ that have them. Order: every other caller has moved to the Dispatcher, then the 
 
 ### `RUNNER_COMMAND_RPCS` — `DeliverCommand` goes once nothing calls it
 
-**Blocked on `GATEWAY_WRAPPER_RETIRE`; operator, 2026-10-13 PDT: one RPC per command rather than one
-taking a union.** The runner serves `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`,
+**Blocked only on deployment of Gateway images containing #10716 in both environments; independent
+of the remaining wrapper removal.** One RPC per command rather than one taking a union is approved. The runner serves `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`,
 `InterruptTurn` and `StopRunnerSession` beside `DeliverCommand`, and the proxy admits every method of
 `Runner` (it builds its method set from the service descriptor). Current Dispatcher callers use the
-per-operation RPCs. This PR removes Gateway `SubmitCommand`, the only current path to
-`DeliverCommand`; retain the latter while already-published Gateway images can call it, then remove it
+per-operation RPCs. Gateway `SubmitCommand`, the last production path to
+`DeliverCommand`, is removed in merged #10716; retain the latter while already-published Gateway images can call it, then remove it
 after that pinned-image gate is clear. Then `DeliverCommand`, `Command` as a request type and
 `DeliverCommandRequest`/`DeliverCommandResponse` are deleted from `runner_control.proto` once no
 pinned caller image sends it (the VM guest's runner wheel is a reader of the new RPCs, not a caller).
@@ -1345,10 +1344,9 @@ migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — delete the legacy Gateway wrappers
 
-**Partially dispatched; operator-approved, 2026-10-16.** The SubmitCommand retirement PR removes that
-method and its request/response types; production app and Notifications already use Dispatcher.
-Meaningful test callers move to the per-operation Runner RPCs and wrapper-only tests/client helpers
-are removed. The remaining wrappers stay gated independently. Once `APP_NATIVE_RESUME_CUTOVER` is deployed, remove Gateway `ResumeSession`, `CreateSession`,
+**In progress; wrapper/registry worker, 2026-10-16.** `SubmitCommand` and its wire/client surface
+are already removed by #10716. Remaining work:
+Once `APP_NATIVE_RESUME_ROLLOUT` is deployed, remove Gateway `ResumeSession`, `CreateSession`,
 `ListSessions` and `BatchGetSessionSandboxes` after verifying remaining pinned/external callers.
 Retire their test fixtures and wire helpers; keep Runner inventory, the reverse tunnel and proxy.
 The app's Gateway API target still powers its System health probe: migrate that probe before
