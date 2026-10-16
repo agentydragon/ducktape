@@ -406,8 +406,21 @@ def test_exit_status_preserves_review_and_test_failures_but_not_diagnostic_drift
     assert _exit_status() == exit_code
 
 
-def test_unstarted_command_is_reported_without_discarding_observed_runs(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    ("run_count", "unavailable_indexes", "launcher_exit", "observed_count"),
+    [
+        pytest.param(3, (1,), 19, 2, id="failed-launcher-among-passing-runs"),
+        pytest.param(2, (1,), 0, 1, id="missing-invocation-after-zero-exit"),
+        pytest.param(2, (0, 1), 19, 0, id="all-attempts-have-no-invocation"),
+    ],
+)
+def test_unstarted_commands_are_reported_without_discarding_observations(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    run_count: int,
+    unavailable_indexes: tuple[int, ...],
+    launcher_exit: int,
+    observed_count: int,
 ) -> None:
     commands: list[tuple[str, ...]] = []
 
@@ -416,16 +429,20 @@ def test_unstarted_command_is_reported_without_discarding_observed_runs(
         match words:
             case ("bbr", "test", *_):
                 commands.append(words)
-                if len(commands) == 2:
-                    return subprocess.CompletedProcess(command, 19, "", "remote runner unavailable")
-                return subprocess.CompletedProcess(command, 0, "", "")
+                index = len(commands) - 1
+                returncode = launcher_exit if index in unavailable_indexes else 0
+                return subprocess.CompletedProcess(command, returncode, "", "remote runner unavailable")
             case ("bbapi", "target", invocation, "--json", *_):
-                failed_invocation = commands[1][2].removeprefix("--invocation_id=")
-                if invocation == failed_invocation:
+                invocation_index = next(
+                    index
+                    for index, words in enumerate(commands)
+                    if words[2].removeprefix("--invocation_id=") == invocation
+                )
+                if invocation_index in unavailable_indexes:
                     return subprocess.CompletedProcess(command, 1, "", "Error: invocation not found")
                 payload = {"targetGroups": [{"targets": [_test_row("//ui:visual", seconds=9.0)]}]}
                 return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
-            case ("bbapi", "artifact", "list", _, "--json"):
+            case ("bbapi", "artifact", "list", invocation, "--json"):
                 return subprocess.CompletedProcess(
                     command,
                     0,
@@ -442,19 +459,25 @@ def test_unstarted_command_is_reported_without_discarding_observed_runs(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr("devinfra.pr_visuals.determinism.load_manifest", lambda _: _manifest("list.png"))
-    monkeypatch.setattr(sys, "argv", ["determinism", "--runs", "3", "//ui:visual"])
+    monkeypatch.setattr(sys, "argv", ["determinism", "--runs", str(run_count), "//ui:visual"])
 
     assert _exit_status() == 1
 
     output = capsys.readouterr().out
-    failed_command = commands[1]
-    invocation = failed_command[2].removeprefix("--invocation_id=")
-    assert len(commands) == 3
-    assert "# Visual determinism over 2 observed runs" in output
-    assert "3 commands were attempted; 2 produced BuildBuddy invocations." in output
-    assert "All 1 image(s) reproduced identically in every run." in output
-    assert f"`{invocation}`: BuildBuddy has no invocation record; bbr exited 19." in output
-    assert "Command: `bbr test " + " ".join(failed_command[2:]) + "`" in output
+    assert len(commands) == run_count
+    assert f"# Visual determinism over {observed_count} observed runs" in output
+    assert f"{run_count} commands were attempted; {observed_count} produced BuildBuddy invocations." in output
+    if observed_count >= 2:
+        assert "All 1 image(s) reproduced identically in every run." in output
+    else:
+        assert f"Insufficient observed runs: {observed_count}; at least 2 are required" in output
+        assert "reproduced identically" not in output
+
+    for index in unavailable_indexes:
+        failed_command = commands[index]
+        invocation = failed_command[2].removeprefix("--invocation_id=")
+        assert f"`{invocation}`: BuildBuddy has no invocation record; bbr exited {launcher_exit}." in output
+        assert "Command: `bbr test " + " ".join(failed_command[2:]) + "`" in output
 
 
 if __name__ == "__main__":
