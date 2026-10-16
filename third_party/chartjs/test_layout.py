@@ -88,10 +88,7 @@ async def test_chart_layout_is_repeatable_across_updates_and_resize(
         page.on("pageerror", lambda error: page_errors.append(str(error)))
         await page.goto(f"{layout_fixture_server}/?width={host_width}", wait_until="load")
         await page.wait_for_function(
-            """({width}) => window.chartProbe?.drawCount > 0
-                && window.chartProbe.lastDrawnWidth === width
-                && window.chartProbe.lastDrawnHeight === 250""",
-            arg={"width": host_width},
+            "state => window.chartProbe?.hasDrawnAfter(state)", arg={"previousCount": 0, "expectedWidth": host_width}
         )
 
         async def checkpoint(stage: str) -> Checkpoint:
@@ -110,18 +107,17 @@ async def test_chart_layout_is_repeatable_across_updates_and_resize(
 
         async def wait_for_draw(previous_count: int, expected_width: int | None = None) -> None:
             await page.wait_for_function(
-                """({previousCount, expectedWidth}) => {
-                    const probe = window.chartProbe;
-                    if (!probe || probe.drawCount <= previousCount) return false;
-                    return expectedWidth === null || probe.lastDrawnWidth === expectedWidth;
-                }""",
+                "state => window.chartProbe.hasDrawnAfter(state)",
                 arg={"previousCount": previous_count, "expectedWidth": expected_width},
             )
 
-        async def update() -> None:
-            previous_count = await page.evaluate("() => window.chartProbe.drawCount")
-            await page.evaluate("() => window.chartProbe.update()")
-            await wait_for_draw(previous_count)
+        async def change(
+            stage: str, operation: str, argument: JsonValue = None, *, expected_width: int | None = None
+        ) -> Checkpoint:
+            previous_count = TypeAdapter(int).validate_python(await page.evaluate("() => window.chartProbe.drawCount"))
+            await page.evaluate(operation, argument)
+            await wait_for_draw(previous_count, expected_width)
+            return await checkpoint(stage)
 
         def assert_same(first: Checkpoint, second: Checkpoint, stage: str) -> None:
             assert first.sha256 == second.sha256, (
@@ -133,62 +129,41 @@ async def test_chart_layout_is_repeatable_across_updates_and_resize(
             )
 
         initial = await checkpoint("initial")
-        await update()
-        after_update = await checkpoint("after-update")
+        after_update = await change("after-update", "() => window.chartProbe.update()")
         assert_same(initial, after_update, "explicit no-op update")
 
-        draw_count = await page.evaluate("() => window.chartProbe.drawCount")
-        await page.evaluate("width => window.chartProbe.setHostWidth(width)", host_width + 100)
-        await wait_for_draw(draw_count, host_width + 100)
-        widened = await checkpoint("widened")
+        widened = await change(
+            "widened",
+            "width => window.chartProbe.setHostWidth(width)",
+            host_width + 100,
+            expected_width=host_width + 100,
+        )
         assert widened.sha256 != initial.sha256, f"{case_name} resize did not change canvas pixels"
 
-        draw_count = await page.evaluate("() => window.chartProbe.drawCount")
-        await page.evaluate("width => window.chartProbe.setHostWidth(width)", host_width)
-        await wait_for_draw(draw_count, host_width)
-        restored_width = await checkpoint("restored-width")
+        restored_width = await change(
+            "restored-width", "width => window.chartProbe.setHostWidth(width)", host_width, expected_width=host_width
+        )
         assert_same(initial, restored_width, "restore after ResizeObserver resize")
 
-        draw_count = await page.evaluate("() => window.chartProbe.drawCount")
-        await page.evaluate("() => window.chartProbe.setDatasetActive(true)")
-        await wait_for_draw(draw_count)
-        active = await checkpoint("dataset-active")
+        active = await change("dataset-active", "() => window.chartProbe.setDatasetActive(true)")
         assert active.sha256 != initial.sha256, f"{case_name} active dataset style did not change canvas pixels"
 
-        draw_count = await page.evaluate("() => window.chartProbe.drawCount")
-        await page.evaluate("() => window.chartProbe.update('active')")
-        await wait_for_draw(draw_count)
-        repeated_active = await checkpoint("dataset-active-repeat")
+        repeated_active = await change("dataset-active-repeat", "() => window.chartProbe.update('active')")
         assert_same(active, repeated_active, "repeated active-state update")
 
-        draw_count = await page.evaluate("() => window.chartProbe.drawCount")
-        await page.evaluate("() => window.chartProbe.setDatasetActive(false)")
-        await wait_for_draw(draw_count)
-        restored_active = await checkpoint("dataset-inactive")
+        restored_active = await change("dataset-inactive", "() => window.chartProbe.setDatasetActive(false)")
         assert_same(initial, restored_active, "restore after dataset hover")
 
-        draw_count = await page.evaluate("() => window.chartProbe.drawCount")
-        await page.evaluate("() => window.chartProbe.setBarValue(3, 25)")
-        await wait_for_draw(draw_count)
-        changed_data = await checkpoint("changed-data")
+        changed_data = await change("changed-data", "() => window.chartProbe.setBarValue(3, 25)")
         assert changed_data.sha256 != initial.sha256, f"{case_name} data change did not change canvas pixels"
 
-        draw_count = await page.evaluate("() => window.chartProbe.drawCount")
-        await page.evaluate("() => window.chartProbe.setBarValue(3, 10)")
-        await wait_for_draw(draw_count)
-        restored_data = await checkpoint("restored-data")
+        restored_data = await change("restored-data", "() => window.chartProbe.setBarValue(3, 10)")
         assert_same(initial, restored_data, "restore after data change")
 
-        draw_count = await page.evaluate("() => window.chartProbe.drawCount")
-        await page.evaluate("() => window.chartProbe.setLineBorderWidth(4)")
-        await wait_for_draw(draw_count)
-        changed_border = await checkpoint("border-width-4")
+        changed_border = await change("border-width-4", "() => window.chartProbe.setLineBorderWidth(4)")
         assert changed_border.sha256 != initial.sha256, f"{case_name} line-width change did not change canvas pixels"
 
-        draw_count = await page.evaluate("() => window.chartProbe.drawCount")
-        await page.evaluate("() => window.chartProbe.setLineBorderWidth(2)")
-        await wait_for_draw(draw_count)
-        restored_border = await checkpoint("restored-border-width")
+        restored_border = await change("restored-border-width", "() => window.chartProbe.setLineBorderWidth(2)")
         assert_same(initial, restored_border, "restore after line-width change")
 
         assert not page_errors, f"{case_name} browser errors: {page_errors}"

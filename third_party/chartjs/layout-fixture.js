@@ -19,6 +19,13 @@ window.chartProbe = {
   get lastDrawnWidth() {
     return probe.lastDrawnWidth;
   },
+  hasDrawnAfter({ previousCount, expectedWidth }) {
+    return (
+      probe.drawCount > previousCount &&
+      probe.lastDrawnHeight === 250 &&
+      (expectedWidth === null || probe.lastDrawnWidth === expectedWidth)
+    );
+  },
   snapshot() {
     const { chart } = probe;
     const rect = chart.canvas.getBoundingClientRect();

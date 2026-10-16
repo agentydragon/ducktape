@@ -5,8 +5,8 @@
          const meta = this._cachedMeta;
          const dataset = meta.dataset;
 -        const border = dataset.options && dataset.options.borderWidth || 0;
-+        const options = this.resolveDatasetElementOptions(dataset.active ? 'active' : 'default');
-+        const border = this.options.showLine ? options.borderWidth || 0 : 0;
++        const options = this.options.showLine && this.resolveDatasetElementOptions(dataset.active ? 'active' : 'default');
++        const border = options && options.borderWidth || 0;
          const data = meta.data || [];
          if (!data.length) {
              return border;
@@ -17,8 +17,8 @@
          const meta = this._cachedMeta;
          const dataset = meta.dataset;
 -        const border = dataset.options && dataset.options.borderWidth || 0;
-+        const options = this.resolveDatasetElementOptions(dataset.active ? 'active' : 'default');
-+        const border = this.options.showLine ? options.borderWidth || 0 : 0;
++        const options = this.options.showLine && this.resolveDatasetElementOptions(dataset.active ? 'active' : 'default');
++        const border = options && options.borderWidth || 0;
          const data = meta.data || [];
          if (!data.length) {
              return border;
