@@ -400,6 +400,23 @@ func (c testCatalog) ListSandboxes(context.Context) ([]SandboxSnapshot, error) {
 func (testCatalog) Changes() <-chan struct{}        { return nil }
 func (testCatalog) WaitSynced(context.Context) bool { return true }
 
+type growingCatalog struct{ sandboxes []SandboxSnapshot }
+
+func (c *growingCatalog) GetSandbox(_ context.Context, name string) (SandboxSnapshot, bool, error) {
+	for _, sandbox := range c.sandboxes {
+		if sandbox.Name == name {
+			return sandbox, true, nil
+		}
+	}
+	return SandboxSnapshot{}, false, nil
+}
+
+func (c *growingCatalog) ListSandboxes(context.Context) ([]SandboxSnapshot, error) {
+	return c.sandboxes, nil
+}
+func (*growingCatalog) Changes() <-chan struct{}        { return nil }
+func (*growingCatalog) WaitSynced(context.Context) bool { return true }
+
 type testWake struct{}
 
 func (testWake) WakeForSend(context.Context, string, string, func(int64) error) (bool, error) {
@@ -448,6 +465,39 @@ func (l *unreliableLease) StillOwns(ctx context.Context, owner Owner) (bool, err
 func (l *countingLease) Acquire(ctx context.Context, name, uid string) (*Owner, error) {
 	l.calls++
 	return l.testLease.Acquire(ctx, name, uid)
+}
+
+func TestWorkerAcquiresNewSandboxWithoutRenewingExistingOwner(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+	newUID := "00000000-0000-4000-8000-000000000071"
+	catalog := &growingCatalog{sandboxes: []SandboxSnapshot{{Name: "sandbox-existing", UID: sandboxUID}}}
+	leases := &countingLease{testLease: testLease{store: store}}
+	worker := &DeliveryWorker{Store: store, Catalog: catalog, Leases: leases}
+	worker.init()
+	defer worker.queue.ShutDown()
+	if err := worker.reconcile(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if leases.calls != 1 {
+		t.Fatalf("initial lease acquisitions = %d, want 1", leases.calls)
+	}
+	catalog.sandboxes = append(catalog.sandboxes, SandboxSnapshot{Name: "sandbox-new", UID: newUID})
+	if err := worker.reconcile(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, owned := worker.ownerFor(newUID); !owned {
+		t.Fatal("new Sandbox has no owner after catalog reconciliation")
+	}
+	if leases.calls != 2 {
+		t.Fatalf("catalog reconciliation made %d lease acquisitions, want 2", leases.calls)
+	}
+	if err := worker.reconcile(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if leases.calls != 2 {
+		t.Fatalf("unchanged catalog renewed a lease: %d acquisitions", leases.calls)
+	}
 }
 
 type retryRunner struct {
