@@ -7,6 +7,7 @@ const probe = {
   lastDrawnHeight: null,
   lastDrawnWidth: null,
   chart: null,
+  modeCalls: [],
 };
 
 window.chartProbe = {
@@ -84,6 +85,19 @@ window.chartProbe = {
       meta.controller.removeHoverStyle(meta.dataset, meta.index, undefined);
       probe.chart.update("none");
     }
+  },
+  updateWithModeFunction() {
+    probe.modeCalls = [];
+    probe.chart.update(({ datasetIndex }) => {
+      probe.modeCalls.push(datasetIndex);
+      return datasetIndex === 1 ? "active" : "none";
+    });
+  },
+  modeFunctionCalledOncePerDataset() {
+    return (
+      probe.modeCalls.length === probe.chart.data.datasets.length &&
+      new Set(probe.modeCalls).size === probe.chart.data.datasets.length
+    );
   },
   update(mode = "none") {
     probe.chart.update(mode);
