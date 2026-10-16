@@ -35,7 +35,6 @@ from cluster.cdk8s.agentplane import (
     actions,
     database,
     egress,
-    electric,
     history_service,
     notifications,
     runner_gateway,
@@ -90,6 +89,7 @@ class App(Construct):
         id: str,
         env: Environment,
         *,
+        electric: ServiceRef | None,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         service_cluster_ip: str | None = None,
@@ -101,6 +101,7 @@ class App(Construct):
     ) -> None:
         super().__init__(scope, id)
         self.env = env
+        self.electric = electric
         self.placement = placement
         self.registry_secret_name = registry_secret_name
         self.service_cluster_ip = service_cluster_ip
@@ -202,7 +203,11 @@ class App(Construct):
                 "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
                 "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
             ),
-            env_name(Settings, "electric_url"): EnvValue.from_value(electric.service(namespace).url),
+            **(
+                {env_name(Settings, "electric_url"): EnvValue.from_value(self.electric.url)}
+                if self.electric is not None
+                else {}
+            ),
             env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
             env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.env.app.hostname}"),
             env_name(OIDCSettings, "client_id"): self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
@@ -338,7 +343,7 @@ class App(Construct):
                 # still requires its own configured operator authenticator;
                 # network reachability grants no review authority.
                 actions.service(namespace).egress(),
-                electric.service(namespace).egress(),
+                *([self.electric.egress()] if self.electric is not None else []),
                 database.egress(namespace),
             ],
         )

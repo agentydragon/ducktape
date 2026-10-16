@@ -42,6 +42,7 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
     assert not any(
         doc["kind"] == "Deployment" and doc["metadata"]["name"] == fixture_chart.SESSION_DISPATCHER for doc in docs
     )
+    assert not any(doc["kind"] == "Deployment" and doc["metadata"]["name"] == "electric" for doc in docs)
     for workload, migration in {
         "actions": "agentplane-action-service-migrate",
         "app": "agentplane-app-migrate",
@@ -101,6 +102,9 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
 
     endpoint = f"{fixture_chart.SESSION_DISPATCHER}.{fixture_chart.NAMESPACE}.svc.cluster.local:{fixture_chart.DISPATCHER_PORT}"
     app = _resource(docs, "Deployment", "app")
+    assert not any(
+        entry["name"] == "AGENTPLANE_ELECTRIC_URL" for entry in app["spec"]["template"]["spec"]["containers"][0]["env"]
+    )
     assert f"--session-dispatcher-target={endpoint}" in app["spec"]["template"]["spec"]["containers"][0]["args"]
     app_env = app["spec"]["template"]["spec"]["containers"][0]["env"]
     assert any(

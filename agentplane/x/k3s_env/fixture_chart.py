@@ -33,7 +33,6 @@ from cluster.cdk8s.agentplane import (
     app as app_component,
     command_sandbox,
     egress,
-    electric,
     history_service,
     llm_ingress,
     notifications,
@@ -101,9 +100,6 @@ def objects(
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
     fixture_database.add_database(chart, env, node_ip=node_ip)
-    electric.Electric(
-        chart, "electric", env, placement=None, service_cluster_ip="None", container_env=kube_api_env, memory_limit=None
-    )
     llm_ingress.LlmIngress(
         chart,
         "llm-ingress",
@@ -194,6 +190,7 @@ def objects(
         chart,
         "app",
         env,
+        electric=None,
         placement=None,
         registry_secret_name=None,
         service_cluster_ip="None",

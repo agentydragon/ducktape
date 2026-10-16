@@ -125,6 +125,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         chart,
         "app",
         env,
+        electric=electric.service(env.namespace),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
         service_cluster_ip=None,
