@@ -2954,7 +2954,7 @@ data:
           `aiquota.reset_credits`; it cannot read raw provider bodies or other tenants. Check
           current egress rules before either request; no auth token or raw provider payload
           belongs in a public repo. The `finance-agent` sandbox
-          preset grants `aiquota-read` and `aiquota-history` to new sandboxes;
+          preset grants `aiquota-read`, which covers both routes, to new sandboxes;
           verify the actual live `/v1/rules` before using either route. A minimal
           read-only history probe is `SELECT count() FROM aiquota.aiquota_windows` via
           GET with URL-encoded `query=`.
@@ -3102,7 +3102,6 @@ data:
           - google-readonly
           - activitywatch-read
           - aiquota-read
-          - aiquota-history
           - haku-mailbox
           - github-clone
           - github-agentydragon-agent
@@ -3131,7 +3130,6 @@ data:
           - basic
           - packages
           - aiquota-read
-          - aiquota-history
           - forgejo-finance-agent
           - github-agentydragon-agent
           - github-clone
@@ -8423,7 +8421,6 @@ spec:
     - google-readonly
     - activitywatch-read
     - aiquota-read
-    - aiquota-history
     - haku-mailbox
     - coinbase
     - plaid-diagnostics
@@ -8462,7 +8459,6 @@ spec:
     - google-readonly
     - activitywatch-read
     - aiquota-read
-    - aiquota-history
     - haku-mailbox
     - coinbase
     - plaid-diagnostics
@@ -9343,34 +9339,6 @@ spec:
       method: schemeToken
       scheme: Bearer
 ---
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: aiquota-read
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: egress
-      hosts:
-        - aiquota.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /v1/**
-      credentialRef:
-        name: aiquota-read
-    - type: egress
-      hosts:
-        - aiquota-api.cli-proxy-api.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /v1/quotas
-        - /v1/providers/*/raw
-      clusterInternal: true
-      credentialRef:
-        name: aiquota-read
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -9460,10 +9428,30 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
-  name: aiquota-history
+  name: aiquota-read
   namespace: agentplane-staging
 spec:
   rules:
+    - type: egress
+      hosts:
+        - aiquota.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /v1/**
+      credentialRef:
+        name: aiquota-read
+    - type: egress
+      hosts:
+        - aiquota-api.cli-proxy-api.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /v1/quotas
+        - /v1/providers/*/raw
+      clusterInternal: true
+      credentialRef:
+        name: aiquota-read
     - type: egress
       hosts:
         - clickhouse.clickhouse.svc.cluster.local

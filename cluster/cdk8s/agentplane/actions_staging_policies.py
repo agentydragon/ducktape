@@ -36,7 +36,6 @@ from cluster.cdk8s.agentplane.egress import (
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.egress_staging_credentials import (
     ACTIVITYWATCH_READ_POLICY,
-    AIQUOTA_HISTORY_POLICY,
     AIQUOTA_READ_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
@@ -728,7 +727,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             GOOGLE_READONLY_POLICY,
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
-            AIQUOTA_HISTORY_POLICY,
             HAKU_MAILBOX_POLICY,
             access.COINBASE_POLICY,
             access.PLAID_DIAGNOSTICS_POLICY,
@@ -754,7 +752,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             GOOGLE_READONLY_POLICY,
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
-            AIQUOTA_HISTORY_POLICY,
             HAKU_MAILBOX_POLICY,
             access.COINBASE_POLICY,
             access.PLAID_DIAGNOSTICS_POLICY,

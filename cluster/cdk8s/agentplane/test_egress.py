@@ -28,7 +28,6 @@ from cluster.cdk8s.agentplane.egress import (
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import (
     ACTIVITYWATCH_READ_POLICY,
-    AIQUOTA_HISTORY_POLICY,
     AIQUOTA_READ_POLICY,
     FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
@@ -232,7 +231,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             ACTIVITYWATCH_READ_POLICY,
             AGENTPLANE_TESTING_POLICY,
             AIQUOTA_READ_POLICY,
-            AIQUOTA_HISTORY_POLICY,
+            client.AIQUOTA_HISTORY_CREDENTIALS,
             HAKU_MAILBOX_POLICY,
             agent_access_profiles.COINBASE_POLICY,
             PLAID_PGWEB_CREDENTIAL,
@@ -492,29 +491,26 @@ if __name__ == "__main__":
     pytest_bazel.main()
 
 
-def test_aiquota_history_is_read_only_and_not_public(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
+def test_aiquota_read_is_read_only_and_not_public(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     for name in ("finance-agent", "haku"):
-        assert AIQUOTA_HISTORY_POLICY in config["sandbox_presets"][name]["policy_sets"]
-    assert AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"]["public-coder"]["policy_sets"]
-    policy = _by_name(docs, "PolicySet", AIQUOTA_HISTORY_POLICY)
-    assert policy["spec"]["rules"] == [
-        {
-            "type": "egress",
-            "hosts": [client.HTTP.fqdn],
-            "clusterInternal": True,
-            "methods": ["GET"],
-            "paths": ["/"],
-            "credentialRef": {"name": client.AIQUOTA_HISTORY_CREDENTIALS},
-        }
-    ]
+        assert AIQUOTA_READ_POLICY in config["sandbox_presets"][name]["policy_sets"]
+    assert AIQUOTA_READ_POLICY not in config["sandbox_presets"]["public-coder"]["policy_sets"]
+    quota = _by_name(docs, "PolicySet", AIQUOTA_READ_POLICY)
+    assert {
+        "type": "egress",
+        "hosts": [client.HTTP.fqdn],
+        "clusterInternal": True,
+        "methods": ["GET"],
+        "paths": ["/"],
+        "credentialRef": {"name": client.AIQUOTA_HISTORY_CREDENTIALS},
+    } in quota["spec"]["rules"]
     credential = _by_name(docs, "EgressCredential", client.AIQUOTA_HISTORY_CREDENTIALS)
     assert credential["spec"]["source"] == {
         "secretRef": {"name": client.AIQUOTA_HISTORY_CREDENTIALS, "key": client.PASSWORD_KEY}
     }
     assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "basicPassword"}]
-    quota = _by_name(docs, "PolicySet", AIQUOTA_READ_POLICY)
     assert any(
         rule.get("clusterInternal")
         and rule.get("hosts") == ["aiquota-api.cli-proxy-api.svc.cluster.local"]
