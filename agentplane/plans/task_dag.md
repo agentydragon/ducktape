@@ -1493,7 +1493,14 @@ items below; this direction does not authorize runtime changes.
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: durable queue or direct admission]
     DISPATCHER_GATEWAY_TOPOLOGY_DESIGN[Decision: Dispatcher and Gateway topology]
-    DISPATCHER_GATEWAY_UNIFY[Conditional: implement reviewed co-location or merger]
+    DELIVERY_UNIFICATION_SCOPE_DECISION[Decision: one Go process scope]
+    DELIVERY_GO_PROTOCOL_AUTH[Go proto and auth foundation]
+    DELIVERY_GO_GATEWAY[Go tunnel and connection role]
+    DELIVERY_GO_DISPATCHER[Go durable queue and delivery role]
+    DELIVERY_GO_LEGACY_WRAPPER[Conditional: port still-live Gateway wrapper]
+    DELIVERY_GO_INTEGRATION[One process, image and cdk8s deployment]
+    DELIVERY_UNIFIED_CUTOVER[Atomic cutover and recovery verification]
+    DELIVERY_OLD_RUNTIME_RETIRE[Retire obsolete runtime objects]
     RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
@@ -1505,8 +1512,16 @@ flowchart LR
     RUNNER_DELIVERY_INGRESS_ACCEPTANCE[Candidate: test queued delivery and flush with real ingress, without History]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a narrow CNPG-free K3s integration tier]
     K3S_VM_IMAGE[Blocked: build a real VM fixture, section 10]
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_GATEWAY_TOPOLOGY_DESIGN
-    DISPATCHER_GATEWAY_TOPOLOGY_DESIGN -. if unification selected .-> DISPATCHER_GATEWAY_UNIFY
+    DISPATCHER_GATEWAY_TOPOLOGY_DESIGN -. if one Go process selected .-> DELIVERY_UNIFICATION_SCOPE_DECISION
+    DELIVERY_UNIFICATION_SCOPE_DECISION --> DELIVERY_GO_PROTOCOL_AUTH
+    DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_GATEWAY
+    DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_DISPATCHER
+    DELIVERY_GO_PROTOCOL_AUTH -. if wrapper remains at cutover .-> DELIVERY_GO_LEGACY_WRAPPER
+    DELIVERY_GO_GATEWAY --> DELIVERY_GO_INTEGRATION
+    DELIVERY_GO_DISPATCHER --> DELIVERY_GO_INTEGRATION
+    DELIVERY_GO_LEGACY_WRAPPER -. if port selected .-> DELIVERY_GO_INTEGRATION
+    DELIVERY_GO_INTEGRATION --> DELIVERY_UNIFIED_CUTOVER
+    DELIVERY_UNIFIED_CUTOVER --> DELIVERY_OLD_RUNTIME_RETIRE
     RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state use remains .-> RUNNER_LIST_SESSIONS_RETIRE
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     HARNESS_IDENTITY_DESIGN -. if a store ID enters the destination .-> DELIVERY_DESTINATION_CONTRACT
@@ -1574,12 +1589,12 @@ the PostgreSQL-backed queue and does not imply that the Dispatcher database can 
 
 ### `DISPATCHER_GATEWAY_TOPOLOGY_DESIGN` — decide where delivery and runner connection roles live
 
-**Candidate decision; depends on `DISPATCHER_PERSISTENCE_MODEL_DESIGN`.** Since current delivery
+**Candidate decision, independent of `DISPATCHER_PERSISTENCE_MODEL_DESIGN`.** Since current delivery
 crosses both Dispatcher and Gateway in sequence, compare separate services, co-location in one
 deployment/process with distinct APIs and state
 ownership, and a genuinely merged service. Trace all actual interlocutors and credentials, not just
 the sequential Dispatcher-to-Gateway delivery path. Compare failure domains, replica routing,
-rollout, authorization, recovery and scaling under the selected persistence model. “Merge” must say
+rollout, authorization, recovery and scaling with today's PostgreSQL queue retained. “Merge” must say
 whether it changes API, deployment or state owner; these are independent choices.
 
 **Concrete candidate for review:** one deployment/process serves separate Dispatcher sender API,
@@ -1591,29 +1606,100 @@ per-Sandbox control Service and its EndpointSlice cannot disappear from co-locat
 [delivery design note](../docs/runner_delivery_and_harness_design.md#delivery-service-and-persistence-alternatives)
 details the credential, Kubernetes permission and failure-domain tradeoffs. Compare measured benefit
 with coupled worker/stream restarts and verify cross-replica routing and recovery before choosing.
-The reviewed persistence model and legacy wrapper/registry retirement gates remain separate; this
+The legacy wrapper/registry retirement gates and destination authority work remain separate; this
 node authorizes no deployment or service change.
 
-### `DISPATCHER_GATEWAY_UNIFY` — implement only a reviewed topology change
+### `DELIVERY_UNIFICATION_SCOPE_DECISION` — approve the language and deployment boundary
 
-**Conditional on `DISPATCHER_GATEWAY_TOPOLOGY_DESIGN` selecting unification.** Specify whether the
-change co-locates deployments, joins processes/APIs, or changes state ownership. For a co-located
-deployment, retain separately authenticated Dispatcher sender, per-Sandbox proxy and runner Connect
-surfaces; App/Notification live reads and controller Quiesce must remain available without acquiring
-send authority. Preserve durable queue admission, its delivery Lease and database-generation fence,
-the runner connection Lease and EndpointSlice, and cross-replica routing when the queue owner does
-not hold that runner's stream. Inventory the app, Notification, controller, egress-sidecar and pinned
-runner clients before migrating any Service, audience, token or network rule. Stage receiver and
-caller rollout, then verify two-replica failover, queue recovery and runner reconnection before
-retiring old endpoints. Review the combined Pod's Kubernetes permissions and failure domain. Do not
-remove the legacy wrapper, registry or either database as an incidental part of co-location: each
-has its own caller and data gates. This node is independent of destination-address and generalized
-sender-grant implementation. **History prerequisite:** before unification, verify that neither
-Dispatcher nor Gateway depends on History Service. Both are free of runtime History clients, calls
-and configuration in the audited 2026-10-15 tree; runner-to-History ingress ACK and app/Notification
-History reads are separate paths. If either service gains a dependency before this node starts,
-remove it through a specific reviewed task first. This verified prerequisite does not create a
-History-removal task now.
+**Conditional on topology review selecting a single process.** Decide explicitly whether the target
+is a full Go Dispatcher plus Gateway, a Python co-location, or a staged Gateway-only Go rewrite.
+Recommend one Go service to avoid a disposable Python merged entry point and two runtime cutovers,
+but a full Dispatcher port is extra scope beyond the earlier Gateway-only Go idea. The Go path below
+is conditional on that approval. It retains the existing queue, wire contracts, distinct
+authenticated listeners and state owners; it does not decide direct admission, destination authority,
+registry retirement or a new sender policy. Record the selected Deployment/listener/Service shape and
+rollback boundary so implementation nodes have a stable target.
+
+### `DELIVERY_GO_PROTOCOL_AUTH` — generate Go APIs and shared authentication
+
+**Depends on `DELIVERY_UNIFICATION_SCOPE_DECISION` selecting Go.** Add Go proto/gRPC generation for
+Dispatcher, Gateway wrapper and Sandbox destination types alongside the existing runner/control Go
+protos. Implement reusable TokenReview principal validation with separate Dispatcher, Gateway and
+runner-control audiences and method allowlists; preserve the current App/Notification sender and
+narrower wake lists, controller-only Quiesce, the Gateway proxy's current non-Quiesce caller
+allowlist, and authenticated runner identity. Prove wrong audience, wrong Pod/ServiceAccount and
+controller submission to Dispatcher are rejected. This is a
+library/protocol foundation, not a deployed API or broadened grant.
+
+### `DELIVERY_GO_GATEWAY` — port connection holder and proxy behavior
+
+**Depends on `DELIVERY_GO_PROTOCOL_AUTH`; independently dispatchable from the queue port.** Port
+`RunnerControl.Connect`, tunnel framing/heartbeats, holder epochs, connection Lease watch/write,
+EndpointSlice writes and per-Sandbox proxy routing. Preserve `Runner.ListSessions`, controller
+`Quiesce`, runner method policy, reconnect and stale-holder fences. A worker on another replica must
+still route through `<sandbox>-control`; do not replace the EndpointSlice with an in-process pointer.
+Compare behavior and failure recovery with the Python Gateway under two replicas.
+
+### `DELIVERY_GO_DISPATCHER` — port durable admission and queue recovery
+
+**Depends on `DELIVERY_GO_PROTOCOL_AUTH`; independently dispatchable from the Gateway port.** Choose
+a Go PostgreSQL driver and map the existing schema/transactions for `dispatch`, `session_opening`,
+`sandbox_ownership` and `wake_attempt`, including NOTIFY/listener wakeups, idempotency, per-Session
+ordering, queue cap, stop/cancel, watch/list/status, wake-on-accept, delivery Lease plus database
+generation fence, owner crash recovery and lost-response retry with the same ID. Retain existing
+database/rows and the rule that a full request is stored before acceptance or wake; do not add a
+direct mode. Verify parity against a real PostgreSQL database and the current runner contract,
+including queued work surviving process replacement and replacement Sandbox UID fencing.
+
+### `DELIVERY_GO_LEGACY_WRAPPER` — preserve any Gateway wrapper still in use
+
+**Conditional on wrapper callers remaining at the unified cutover; depends on the Go foundation.**
+Port `RunnerGateway` wrapper methods and its `sandbox_commands` Session registry to Go without
+changing the existing database schema or losing rows. Audit App native resume, tests, external and
+pinned callers before deciding whether this port is required. The alternative is completing the
+separately reviewed `GATEWAY_WRAPPER_RETIRE` before cutover; merely planning retirement is not enough
+to omit a live interface. Neither choice forces `GATEWAY_SESSION_REGISTRY_RETIRE` or a database drop.
+
+### `DELIVERY_GO_INTEGRATION` — one process and deployment, separate front doors
+
+**Depends on both Go role ports and on the wrapper port if still needed.** Wire a single process and
+image with distinct authenticated Dispatcher sender, Gateway API/proxy and runner `Connect`
+listeners. Keep the current PostgreSQL queue and registry databases, migration init containers and
+Secrets. In cdk8s, make one Deployment/ServiceAccount with reviewed union RBAC and per-listener
+NetworkPolicy, while retaining `agentplane-session-dispatcher` and `agentplane-runner-gateway` as
+logical Service names and existing token audiences. Both Services select the unified Pods; the
+runner-control port and per-Sandbox control EndpointSlices still target the holder replica. Update
+image build/publish automation, chart wiring, config producers, readiness, resource/grace settings,
+and service docs. Inventory App/Notification clients, controller Quiesce target, runner egress route,
+saved SandboxTemplates and pinned VM wheel; preserve their wire/endpoint contract or put an explicit
+runner-image/template migration before cutover. Test a two-replica deployment shape and caller
+permission matrix. No old and new writers run together in this implementation test.
+
+### `DELIVERY_UNIFIED_CUTOVER` — switch owners without losing admitted work
+
+**Depends on `DELIVERY_GO_INTEGRATION`; operational cutover is separately reviewed.** Recheck the
+operator's prerequisite that neither service depends on History: the 2026-10-15 entrypoints,
+settings, chart and runtime call paths have no History client/call/config, while runner ingress and
+app/Notification History reads are separate. If this changes, remove that direct service dependency
+through a reviewed node before rollout. With a brief outage allowed, stop old Dispatcher acceptance
+and workers and old Gateway `Connect`, fence/expire their delivery and connection Leases, then move
+both stable Services to ready unified replicas; never let old and new writers share the queue or
+connection records. Remove the old Deployments in this fenced switch, not after new writers start.
+Preserve all queued rows and command IDs. Verify previously accepted work
+recovers, lost-response same-ID retry, runner reconnect from an existing Pod and VM, App/Notification
+live reads, controller Quiesce, UID replacement, owner/holder on different replicas and failover.
+Rollback to old images against unchanged schema/rows if the new path fails; do not clear databases
+or claim History can reconstruct runner storage. Record exact cutover and recovery evidence.
+
+### `DELIVERY_OLD_RUNTIME_RETIRE` — remove only superseded runtime objects
+
+**Depends on verified cutover.** Remove obsolete Deployment definitions, single-purpose ConfigMaps,
+service accounts/RBAC, network policies, projected inter-service Gateway token and image automation
+entries once no running or saved client needs them. Keep the two stable public Service names as front
+doors, the per-Sandbox control Services/EndpointSlices, database roles/migrations and live wrapper
+interfaces while they still have callers. Legacy alias retirement, Gateway wrapper/registry cleanup
+and data-drop nodes remain independently gated. Search code, BUILD, chart, image automation, docs,
+CI and pinned VM artifacts for references before deleting definitions.
 
 ### `RUNNER_INVENTORY_AUTHORITY_DESIGN` — distinguish live runner state from retained inventory
 

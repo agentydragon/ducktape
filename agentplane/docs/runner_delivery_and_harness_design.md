@@ -273,6 +273,69 @@ v0 Dispatcher service trust must remain limited to App and Notification. A truly
 owner would require additional decisions beyond co-location. Measure the saved hop/operational cost
 and test multi-replica owner/holder mismatch and crash recovery before choosing a deployment merge.
 
+### Implementation candidate: one Go delivery service
+
+**Scope for operator review, not an approved rewrite.** The useful merger is one Go process and
+Deployment with separate Dispatcher sender, Gateway proxy/wrapper, and runner `Connect` gRPC listeners.
+It keeps the existing PostgreSQL Dispatcher queue and `sandbox_commands` registry while their
+independent retirement gates are open. A Gateway-only Go rewrite followed by a Python co-location
+would require two protocol/runtime cutovers; a Python merged entry point would be thrown away by a
+later Go rewrite. A single Go target avoids those intermediate deployments, but ports substantially
+more than the originally discussed Gateway-only rewrite: Dispatcher SQL transactions, wakeups,
+per-Sandbox ownership and recovery, as well as Gateway's tunnel and connection records. The operator
+must explicitly choose that expanded language scope. This topology work has no dependency on the
+separate direct-admission question; this candidate retains the current queue.
+
+The repository already has `rules_go`, Go gRPC generation for runner/control messages and a Go
+Sandbox Controller using Kubernetes clients. The Dispatcher, Gateway wrapper and Sandbox destination
+protos still need generated Go libraries. A Go implementation needs an explicit PostgreSQL driver and
+transaction mapping; copying the Python SQLAlchemy models is not enough. Preserve the existing
+`session_dispatcher` rows and idempotency keys (`dispatch`, `session_opening`, `sandbox_ownership`,
+`wake_attempt`) and the `sandbox_commands` registry until its readers/writers are gone. Retain their
+current database roles and run only additive migrations if the Go implementation truly needs them;
+an applied migration is immutable. Port the wrapper while it remains in use, or make its _completed_
+retirement an explicit prerequisite to omitting that port. Neither registry deletion nor either
+database drop is part of the merger.
+
+Keep the current `agentplane-session-dispatcher` and `agentplane-runner-gateway` Service names and
+token audiences as two logical front doors to the unified Pods. Use distinct, authenticated
+Dispatcher sender, Gateway API/proxy and runner-control listeners; retain method-level allowlists:
+App and Notification alone may submit to Dispatcher v0, the existing narrower wake allowlist still
+applies, controller alone may Quiesce, and runner `Connect` still requires its runner audience and
+Pod/ServiceAccount proof. The current Gateway proxy admits its configured callers for non-Quiesce
+Runner methods; tightening that policy is separate from co-location. Network ingress must reflect
+each listener rather than granting every Gateway caller the Dispatcher sender surface. A combined
+ServiceAccount needs the union of the two current
+Kubernetes permissions, with a reviewed namespace-bounded RBAC and network-policy diff. Local
+in-process shortcuts are optional, not part of the required merger: a Dispatcher worker on replica A
+must still reach a connection held by replica B through `<sandbox>-control`. Keep separate delivery
+ownership Leases and database generation fencing, connection Leases and EndpointSlices, and the
+current lost-reply/idempotent-retry behavior.
+
+The two stable Service names also let already-running Pod/VM egress sidecars reconnect after a brief
+cutover outage without requiring a new baked-in runner endpoint. Preserve the runner `Connect` wire
+contract and audience for this cutover; confirm the pinned VM runner wheel and saved
+SandboxTemplates still dial the retained name. If a protocol change proves necessary, it is a
+separate incompatible runner-image/template migration with an explicit retirement inventory before
+the old endpoint can disappear. A Service alias is routing to the new owner, not a second legacy
+implementation. Per-Sandbox control Services and EndpointSlices remain because replicas can differ.
+
+Build the Go Gateway tunnel/auth/connection role and Go Dispatcher queue role as separate reviewable
+changes, with a shared proto/auth foundation; test each against the current wire and stored-state
+contracts before integrating one process and image. Integration owns the combined listeners,
+configuration, migration init containers, cdk8s Deployment, both retained Services, both database
+Secrets, policies, image publishing and caller settings. Do not run old and new writers concurrently
+against the same queue or connection records: stop old acceptance/workers and `Connect`, allow their
+leases to expire or prove a fenced handoff, then point both Services to healthy unified replicas.
+An accepted request remains in PostgreSQL and is recovered with the same ID after the outage.
+Rollback must use the old binaries against the unchanged schema and retained rows, never clear the
+queue. Test a pre-cutover queued request, unknown delivery response, cross-replica holder/worker,
+runner reconnect, UID replacement, controller Quiesce and app/Notification live reads. Remove the
+two old Deployments as part of the fenced cutover so they cannot race the new writers; recheck that
+neither service has acquired a History dependency. Only after the unified path is stable should
+old images/config/RBAC and obsolete inter-service token
+projection be removed; legacy wrapper, registry and database retirement remain separate work.
+
 For persistence, compare the current durable queue with direct runner admission:
 
 | Concern                                 | Dispatcher queue                                                                                                                                        | Direct admission RPC                                                                                                                                              |
