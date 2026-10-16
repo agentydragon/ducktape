@@ -9,6 +9,7 @@ go_library(
         "//agentplane/policy_controller",
         "//agentplane/sandbox_controller",
         "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/lease",
         "@io_k8s_api//coordination/v1:coordination",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",

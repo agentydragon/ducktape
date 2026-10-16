@@ -101,7 +101,7 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 		Status: sandboxapi.SandboxStatus{
 			OperatingMode: sandboxapi.OperatingModeRunning,
 			Incarnation:   &sandboxapi.Incarnation{Name: testPod, UID: testPodUID},
-			Conditions:    []metav1.Condition{{Type: sandboxRunning, Status: metav1.ConditionTrue, Reason: "Ready"}},
+			Conditions:    []metav1.Condition{{Type: sandboxapi.ConditionRunning, Status: metav1.ConditionTrue, Reason: "Ready"}},
 		},
 	}
 	controller := true
@@ -109,7 +109,7 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testPod, Namespace: testNamespace, UID: types.UID(testPodUID),
 			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxKind,
+				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind,
 				Name: testSandbox, UID: types.UID(queueSandboxUID), Controller: &controller,
 			}},
 		},
@@ -122,7 +122,7 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 	kube := kubernetesfake.NewSimpleClientset(pod)
 	gateway, err := New(Config{
 		Namespace: testNamespace, CallerAccounts: []auth.Account{{Namespace: "apps", Name: "app"}},
-		HolderName: "runner-gateway-0", HolderIP: "127.0.0.1", ProxyPort: 8080,
+		HolderName: "runner-gateway-0", HolderIP: "127.0.0.1", ProxyPort: sandboxapi.ControlServicePort,
 		ControlTiming: ControlTiming{
 			HeartbeatInterval: time.Second, LivenessTimeout: 10 * time.Second,
 			LeaseTouchInterval: 5 * time.Second, MaximumAge: time.Minute,

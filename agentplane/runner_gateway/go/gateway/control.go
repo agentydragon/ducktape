@@ -7,6 +7,7 @@ import (
 	"time"
 
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -128,7 +129,7 @@ func (s *runnerControlServer) Connect(stream grpc.BidiStreamingServer[runnercont
 	lastFrame := started
 	lastTouch := started
 	lastFrameAt := started.UTC()
-	var facts *runnerFacts
+	var facts *sandboxlease.RunnerFacts
 	urgent := false
 	heartbeats := time.NewTicker(timing.HeartbeatInterval)
 	defer heartbeats.Stop()
@@ -147,11 +148,12 @@ func (s *runnerControlServer) Connect(stream grpc.BidiStreamingServer[runnercont
 			switch frame := result.frame.GetFrame().(type) {
 			case *runnercontrolpb.RunnerFrame_Heartbeat:
 				if frame.Heartbeat.GetFacts() != nil {
-					next, err := parseRunnerFacts(frame.Heartbeat.GetFacts())
+					nextValue, err := sandboxlease.FromProto(frame.Heartbeat.GetFacts())
 					if err != nil {
 						return status.Error(codes.InvalidArgument, "runner sent invalid facts")
 					}
-					if facts == nil || facts.quiesceStage != next.quiesceStage || facts.bootstrap != next.bootstrap || facts.setupsRunning != next.setupsRunning {
+					next := &nextValue
+					if facts == nil || facts.Stage != next.Stage || facts.Bootstrap != next.Bootstrap || facts.SetupsRunning != next.SetupsRunning {
 						urgent = true
 					}
 					facts = next
@@ -228,25 +230,5 @@ func receiveFirstFrame(
 		return nil, context.DeadlineExceeded
 	}
 }
-
-func parseRunnerFacts(message *runnercontrolpb.RunnerFacts) (*runnerFacts, error) {
-	facts := &runnerFacts{
-		quiesceStage:  message.GetQuiesceStage(),
-		bootstrap:     message.GetBootstrap(),
-		setupsRunning: message.GetSetupsRunning(),
-	}
-	if _, err := facts.annotations(); err != nil {
-		return nil, err
-	}
-	if timestamp := message.GetIdleSince(); timestamp != nil {
-		if err := timestamp.CheckValid(); err != nil {
-			return nil, err
-		}
-		facts.idleSince = timePointer(timestamp.AsTime())
-	}
-	return facts, nil
-}
-
-func timePointer(value time.Time) *time.Time { return &value }
 
 var _ runnercontrolpb.RunnerControlServer = (*runnerControlServer)(nil)

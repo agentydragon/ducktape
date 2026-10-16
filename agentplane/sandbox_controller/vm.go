@@ -45,7 +45,7 @@ func (r *Reconciler) launcher(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		return nil, nil
 	}
 	var pods corev1.PodList
-	if err := r.List(ctx, &pods, client.InNamespace(sandbox.Namespace), client.MatchingLabels{SandboxLabel: sandbox.Name}); err != nil {
+	if err := r.List(ctx, &pods, client.InNamespace(sandbox.Namespace), client.MatchingLabels{sandboxapi.SandboxLabel: sandbox.Name}); err != nil {
 		return nil, err
 	}
 	live := slices.DeleteFunc(pods.Items, func(p corev1.Pod) bool {

@@ -79,7 +79,7 @@ func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *sandboxapi.Sand
 
 // owned is the metadata of an object named after the Sandbox and labeled with it.
 func owned(sandbox *sandboxapi.Sandbox) metav1.ObjectMeta {
-	return metav1.ObjectMeta{Name: sandbox.Name, Namespace: sandbox.Namespace, Labels: map[string]string{SandboxLabel: sandbox.Name}}
+	return metav1.ObjectMeta{Name: sandbox.Name, Namespace: sandbox.Namespace, Labels: map[string]string{sandboxapi.SandboxLabel: sandbox.Name}}
 }
 
 // createOwned creates obj controlled by the Sandbox. An AlreadyExists is a concurrent create, and

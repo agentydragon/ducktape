@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -136,7 +137,7 @@ func TestSandboxOwnsAControlServiceBeforeAnyRunnerConnects(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
 	var service corev1.Service
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + ControlServiceSuffix}, &service); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxapi.ControlServiceSuffix}, &service); err != nil {
 		t.Fatal(err)
 	}
 	if !metav1.IsControlledBy(&service, getSandbox(t, c)) {
@@ -149,8 +150,8 @@ func TestSandboxOwnsAControlServiceBeforeAnyRunnerConnects(t *testing.T) {
 
 func TestControlServiceTheGatewayCreatedIsKept(t *testing.T) {
 	created := &corev1.Service{ObjectMeta: metav1.ObjectMeta{
-		Namespace: namespace, Name: sandboxName + ControlServiceSuffix,
-		OwnerReferences: []metav1.OwnerReference{{APIVersion: "agentplane.allegedly.works/v1alpha1", Kind: "Sandbox", Name: sandboxName, UID: "uid-sandbox"}},
+		Namespace: namespace, Name: sandboxName + sandboxapi.ControlServiceSuffix,
+		OwnerReferences: []metav1.OwnerReference{{APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: sandboxName, UID: "uid-sandbox"}},
 	}, Spec: corev1.ServiceSpec{ClusterIP: corev1.ClusterIPNone}}
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"), created)
 	reconcileOnce(t, r)

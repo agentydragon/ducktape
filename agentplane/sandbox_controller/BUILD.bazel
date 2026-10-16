@@ -11,7 +11,6 @@ go_library(
         "identity.go",
         "launch.go",
         "quiescer.go",
-        "runner_facts.go",
         "state_volume.go",
         "vm.go",
         "workspace.go",
@@ -26,6 +25,8 @@ go_library(
         "//agentplane/proto:runner_control_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/lease",
+        "//agentplane/sandboxes/runnerclient",
         "@io_k8s_api//coordination/v1:coordination",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/equality",
@@ -46,9 +47,6 @@ go_library(
         "@io_k8s_sigs_controller_runtime//pkg/reconcile",
         "@io_k8s_sigs_controller_runtime//pkg/scheme",
         "@io_kubevirt_api//core/v1:core",
-        "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//credentials/insecure",
-        "@org_golang_google_grpc//metadata",
     ],
 )
 
@@ -59,7 +57,6 @@ go_test(
         "identity_test.go",
         "launch_test.go",
         "quiescer_test.go",
-        "runner_facts_test.go",
         "state_volume_test.go",
         "vm_test.go",
         "workspace_test.go",
@@ -68,6 +65,7 @@ go_test(
     deps = [
         "//agentplane/policy_controller",
         "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/lease",
         "@io_k8s_api//coordination/v1:coordination",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/equality",

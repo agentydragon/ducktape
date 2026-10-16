@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "lease",
+    srcs = ["facts.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/lease",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = ["//agentplane/proto:runner_control_go_proto"],
+)
+
+go_test(
+    name = "lease_test",
+    srcs = ["facts_test.go"],
+    embed = [":lease"],
+    deps = [
+        "//agentplane/proto:runner_control_go_proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)

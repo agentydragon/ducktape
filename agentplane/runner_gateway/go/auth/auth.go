@@ -5,6 +5,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"google.golang.org/grpc/codes"
@@ -78,7 +79,7 @@ func (r *Resolver) Resolve(ctx context.Context) (Principal, error) {
 	if err != nil {
 		return Principal{}, status.Error(codes.Unavailable, "workload authentication unavailable")
 	}
-	if review == nil || !review.Status.Authenticated || !contains(review.Status.Audiences, r.audience) {
+	if review == nil || !review.Status.Authenticated || !slices.Contains(review.Status.Audiences, r.audience) {
 		return Principal{}, status.Error(codes.Unauthenticated, "invalid workload bearer")
 	}
 	parts := strings.Split(review.Status.User.Username, ":")
@@ -112,15 +113,6 @@ func (r *Resolver) RequireAccount(ctx context.Context, allowed map[Account]struc
 		return Principal{}, status.Error(codes.PermissionDenied, "service caller not allowed")
 	}
 	return principal, nil
-}
-
-func contains(values []string, value string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
-	}
-	return false
 }
 
 func oneClaim(values authenticationv1.ExtraValue) (string, bool) {

@@ -28,7 +28,7 @@ func sandboxObject() *sandboxapi.Sandbox {
 			SuspendedBy:               &suspendedBy,
 			SuspendedAtWakeGeneration: &suspendedAt,
 			Conditions: []metav1.Condition{{
-				Type: "Ready", Status: metav1.ConditionFalse, Reason: "Stopped", Message: "idle",
+				Type: sandboxapi.ConditionReady, Status: metav1.ConditionFalse, Reason: "Stopped", Message: "idle",
 			}},
 		},
 	}

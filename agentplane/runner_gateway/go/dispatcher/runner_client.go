@@ -3,17 +3,14 @@ package dispatcher
 import (
 	"context"
 	"errors"
-	"os"
-	"strings"
 	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	controlpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/runnerclient"
 )
 
 // ProxyRunner dials the per-Sandbox control Service for each call. A new
@@ -31,38 +28,23 @@ type ProxyRunner struct {
 func (r *ProxyRunner) target(sandbox string) string {
 	template := r.TargetTemplate
 	if template == "" {
-		template = "{sandbox}-control.{namespace}.svc:8080"
+		template = sandboxapi.ControlServiceTargetTemplate()
 	}
-	target := strings.ReplaceAll(template, "{sandbox}", sandbox)
-	return strings.ReplaceAll(target, "{namespace}", r.Namespace)
+	return runnerclient.ExpandTarget(template, sandbox, r.Namespace)
 }
 
 func (r *ProxyRunner) withClient(ctx context.Context, sandbox SandboxSnapshot, call func(context.Context, controlpb.RunnerClient) error) error {
 	if r.Timeout <= 0 {
 		return errors.New("runner request timeout must be positive")
 	}
-	data, err := os.ReadFile(r.TokenFile)
-	if err != nil {
-		return err
-	}
-	token := strings.TrimSpace(string(data))
-	if token == "" {
-		return errors.New("runner proxy token is empty")
-	}
 	if sandbox.Name == "" || sandbox.UID == "" || sandbox.Namespace == "" || sandbox.Namespace != r.Namespace {
 		return errors.New("complete in-namespace Sandbox identity is required for runner proxy")
 	}
-	conn, err := grpc.NewClient(r.target(sandbox.Name), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
-	defer cancel()
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+token,
-		"x-agentplane-sandbox", sandbox.Name, "x-agentplane-sandbox-uid", sandbox.UID,
-		"x-agentplane-sandbox-owner-namespace", sandbox.Namespace, "x-agentplane-sandbox-owner-name", sandbox.Name))
-	return call(ctx, controlpb.NewRunnerClient(conn))
+	return runnerclient.WithClient(ctx, runnerclient.Config{
+		Target: r.target(sandbox.Name), TokenFile: r.TokenFile, Timeout: r.Timeout,
+		SandboxName: sandbox.Name, SandboxUID: sandbox.UID, SandboxNamespace: sandbox.Namespace,
+		DisableRetry: true, ReplaceOutgoingMetadata: true,
+	}, call)
 }
 
 func (r *ProxyRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *runnerpb.SessionSpec, setupScript *string) error {

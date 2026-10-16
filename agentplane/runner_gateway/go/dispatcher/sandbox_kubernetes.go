@@ -7,6 +7,7 @@ import (
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	toolscache "k8s.io/client-go/tools/cache"
@@ -112,13 +113,9 @@ func sandboxSnapshot(object *sandboxapi.Sandbox) (SandboxSnapshot, error) {
 		view.Incarnation = object.Status.Incarnation.UID
 	}
 	ready, stopped := false, false
-	for _, condition := range object.Status.Conditions {
-		if condition.Type != "Ready" {
-			continue
-		}
+	if condition := meta.FindStatusCondition(object.Status.Conditions, sandboxapi.ConditionReady); condition != nil {
 		view.ReadyDetail = fmt.Sprintf("Ready=%s/%s: %s", condition.Status, condition.Reason, condition.Message)
 		ready, stopped = condition.Status == metav1.ConditionTrue, condition.Reason == "Stopped"
-		break
 	}
 	if !ready {
 		view.Blocker = "sandbox_not_ready"
@@ -148,10 +145,8 @@ func (k *KubernetesSandboxes) WakeForSend(ctx context.Context, name, uid string,
 		if !object.Spec.WakeOnSend {
 			return false, nil
 		}
-		for _, condition := range object.Status.Conditions {
-			if condition.Type == "Running" && condition.Reason == "Quiescing" {
-				return false, ErrWakeQuiescing
-			}
+		if condition := meta.FindStatusCondition(object.Status.Conditions, sandboxapi.ConditionRunning); condition != nil && condition.Reason == "Quiescing" {
+			return false, ErrWakeQuiescing
 		}
 		mode := object.Status.OperatingMode
 		if mode == "" {

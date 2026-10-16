@@ -214,7 +214,7 @@ marker names the incarnation it was entered in:
   [Reopening a sealed journal](#reopening-a-sealed-journal) decides how.
 - **Outside the runner.** Runner facts on the Lease are valid only while its `pod-uid` names the incarnation:
   the gateway's `accept()` (`connection_records.py`) rebuilds the Lease with only `pod-uid` and `runner-boot-id` on every
-  accepted connection, and the controller's `readRunnerFacts` (`runner_facts.go`) accepts facts only while `pod-uid`
+  accepted connection, and the controller's shared Lease facts decoder (`sandboxes/lease/facts.go`) accepts facts only while `pod-uid`
   equals the incarnation, so a stale `Quiesced` is never read for the new one. The controller's `quiescedIncarnation` is compared with
   the current `status.incarnation`; after a resume they differ, which is what makes the new
   incarnation unquiesced there as well.

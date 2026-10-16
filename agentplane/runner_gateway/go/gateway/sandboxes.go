@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -18,10 +19,6 @@ import (
 )
 
 const (
-	sandboxKind      = "Sandbox"
-	sandboxLabel     = "agentplane.allegedly.works/sandbox"
-	sandboxRunning   = "Running"
-	sandboxQuiesced  = "Quiesced"
 	sandboxVMIAPIVer = "kubevirt.io/v1"
 	sandboxVMIKind   = "VirtualMachineInstance"
 	phaseRunning     = "Running"
@@ -91,13 +88,11 @@ func unavailable(err error) error {
 func sandboxPhase(resource *sandboxapi.Sandbox) string {
 	runningReason := ""
 	sealed := false
-	for _, condition := range resource.Status.Conditions {
-		if condition.Type == sandboxRunning {
-			runningReason = condition.Reason
-		}
-		if condition.Type == sandboxQuiesced && condition.Status == metav1.ConditionTrue {
-			sealed = true
-		}
+	if running := meta.FindStatusCondition(resource.Status.Conditions, sandboxapi.ConditionRunning); running != nil {
+		runningReason = running.Reason
+	}
+	if quiesced := meta.FindStatusCondition(resource.Status.Conditions, sandboxapi.ConditionQuiesced); quiesced != nil && quiesced.Status == metav1.ConditionTrue {
+		sealed = true
 	}
 	incarnated := resource.Status.Incarnation != nil
 	if resource.DeletionTimestamp != nil && !resource.DeletionTimestamp.IsZero() {
@@ -178,21 +173,15 @@ func podIsReadyForSandbox(pod *corev1.Pod, sandbox sandboxView) bool {
 	if !ready {
 		return false
 	}
-	controllers := make([]metav1.OwnerReference, 0, 1)
-	for _, owner := range pod.OwnerReferences {
-		if owner.Controller != nil && *owner.Controller {
-			controllers = append(controllers, owner)
-		}
-	}
-	if len(controllers) != 1 {
+	owner := metav1.GetControllerOf(pod)
+	if owner == nil {
 		return false
 	}
-	owner := controllers[0]
-	if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.Kind == sandboxKind {
+	if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.Kind == sandboxapi.SandboxKind {
 		return owner.Name == sandbox.identity.Name && string(owner.UID) == sandbox.identity.UID
 	}
 	return owner.APIVersion == sandboxVMIAPIVer && owner.Kind == sandboxVMIKind &&
-		pod.Labels[sandboxLabel] == sandbox.identity.Name
+		pod.Labels[sandboxapi.SandboxLabel] == sandbox.identity.Name
 }
 
 func (r *sandboxReader) runnerPeer(ctx context.Context, principal auth.Principal) (SandboxIdentity, string, error) {
@@ -209,23 +198,17 @@ func (r *sandboxReader) runnerPeer(ctx context.Context, principal auth.Principal
 	if string(pod.UID) != principal.PodUID || pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero() {
 		return SandboxIdentity{}, "", status.Error(codes.Unauthenticated, "invalid workload bearer")
 	}
-	controllers := make([]metav1.OwnerReference, 0, 1)
-	for _, owner := range pod.OwnerReferences {
-		if owner.Controller != nil && *owner.Controller {
-			controllers = append(controllers, owner)
-		}
-	}
-	if len(controllers) != 1 {
+	owner := metav1.GetControllerOf(pod)
+	if owner == nil {
 		return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 	}
-	owner := controllers[0]
 	sandboxName := owner.Name
 	if owner.APIVersion == sandboxVMIAPIVer && owner.Kind == sandboxVMIKind {
-		sandboxName = pod.Labels[sandboxLabel]
+		sandboxName = pod.Labels[sandboxapi.SandboxLabel]
 		if sandboxName == "" {
 			return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 		}
-	} else if owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxKind {
+	} else if owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxapi.SandboxKind {
 		return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 	}
 	view, err := r.get(ctx, sandboxName)

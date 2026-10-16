@@ -9,6 +9,7 @@ import (
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -30,31 +31,6 @@ import (
 )
 
 const (
-	Running = "Running"
-	// True while the incarnation Pod, a VM's virt-launcher Pod included, is Ready: the workload's own
-	// readiness, which says nothing of whether the runner has connected to the Runner Gateway.
-	WorkloadReady = "WorkloadReady"
-	// True while the incarnation's runner holds a live connection to the Runner Gateway, read from the
-	// Gateway's Lease for the Sandbox.
-	RunnerConnected = "RunnerConnected"
-	// True once the Sandbox's bootstrap has run to success, or when it has none; a Sandbox-lifetime
-	// fact the connected runner republishes at each connect. False with `BootstrapFailed` when the
-	// bootstrap failed or was interrupted, which is terminal. Unknown while the runner reports none,
-	// which does not hold `Ready`. Absent from a controller not configured with Leases.
-	Bootstrapped = "Bootstrapped"
-	// True when the Sandbox can take work: WorkloadReady, RunnerConnected and no False Bootstrapped. The
-	// lifecycle phase is separate.
-	Ready = "Ready"
-	// Set True on a deleting Sandbox once its runner has sealed every Session and the ingress has
-	// acknowledged each seal; nothing of the Sandbox is deleted before, unless no runner ever connected.
-	Quiesced = "Quiesced"
-	// On the Pod or the VirtualMachine and its VMI and virt-launcher Pod, the state PVC, the
-	// ServiceAccount and the PolicyBinding: the Sandbox they belong to.
-	SandboxLabel = "agentplane.allegedly.works/sandbox"
-	// On the Runner Gateway's Lease for each Sandbox: selects the connection Leases among the namespace's.
-	ConnectionLabel = "agentplane.allegedly.works/runner-connection"
-	// On the Runner Gateway's Lease for a Sandbox: the Pod UID of the runner that last connected.
-	PodUIDAnnotation = "agentplane.allegedly.works/pod-uid"
 	// Seals a deleted Sandbox's Sessions, then deletes its Pod or VM; the state PVC goes by garbage
 	// collection once the Sandbox does.
 	StateVolumeFinalizer = "agentplane.allegedly.works/state-volume"
@@ -255,7 +231,7 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		}
 		if blocked.retryAfter == 0 {
 			meta.SetStatusCondition(&sandbox.Status.Conditions, metav1.Condition{
-				Type: Quiesced, Status: metav1.ConditionTrue, Reason: "Quiesced", Message: blocked.message, ObservedGeneration: sandbox.Generation,
+				Type: sandboxapi.ConditionQuiesced, Status: metav1.ConditionTrue, Reason: "Quiesced", Message: blocked.message, ObservedGeneration: sandbox.Generation,
 			})
 		}
 		return w, blocked, nil
@@ -286,14 +262,14 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 // Gateway records on the Sandbox's Lease, or "" if none ever did.
 func (r *Reconciler) connectedRunner(ctx context.Context, sandbox *sandboxapi.Sandbox) (string, error) {
 	lease, err := r.runnerLease(ctx, sandbox)
-	return lease.Annotations[PodUIDAnnotation], err
+	return lease.Annotations[sandboxlease.PodUIDAnnotation], err
 }
 
 // runnerLease reads the Lease the Runner Gateway writes for the Sandbox's runner connection; it is
 // empty if no runner ever connected.
 func (r *Reconciler) runnerLease(ctx context.Context, sandbox *sandboxapi.Sandbox) (coordinationv1.Lease, error) {
 	var lease coordinationv1.Lease
-	err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + "-runner"}, &lease)
+	err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + sandboxlease.RunnerLeaseSuffix}, &lease)
 	return lease, client.IgnoreNotFound(err)
 }
 
@@ -334,12 +310,12 @@ func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *sandboxapi.Sandbo
 	if err != nil {
 		return nil, err
 	}
-	facts, err := readRunnerFacts(&lease, runner)
+	facts, err := sandboxlease.DecodeFacts(lease.Name, lease.Annotations, runner)
 	if err != nil {
 		return nil, err
 	}
 	switch {
-	case facts.Bootstrap == BootstrapRunning:
+	case facts.Bootstrap == sandboxlease.BootstrapRunning:
 		return &unready{reason: "SuspendPending", message: "the Sandbox's bootstrap is running; the suspend waits for it"}, nil
 	case facts.SetupsRunning:
 		return &unready{reason: "SuspendPending", message: "a Session's setup is running; the suspend waits for it"}, nil
@@ -361,12 +337,12 @@ func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, r
 	if err != nil {
 		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
-	facts, err := readRunnerFacts(&lease, runner)
+	facts, err := sandboxlease.DecodeFacts(lease.Name, lease.Annotations, runner)
 	if err != nil {
 		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
 	switch facts.Stage {
-	case QuiesceQuiesced:
+	case sandboxlease.QuiesceQuiesced:
 		sandbox.Status.QuiescedIncarnation = &runner
 		sandbox.Status.QuiesceAttempt = nil
 		return &unready{reason: "Quiescing", message: "the runner has quiesced every Session"}, nil
@@ -595,7 +571,7 @@ func withSandboxLabel(labels map[string]string, sandbox *sandboxapi.Sandbox) map
 	if labels == nil {
 		labels = map[string]string{}
 	}
-	labels[SandboxLabel] = sandbox.Name
+	labels[sandboxapi.SandboxLabel] = sandbox.Name
 	return labels
 }
 
@@ -606,7 +582,7 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 	if pod := w.incarnation(); pod != nil {
 		status.Incarnation = &sandboxapi.Incarnation{Name: pod.Name, UID: string(pod.UID)}
 	}
-	condition := metav1.Condition{Type: Running, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
+	condition := metav1.Condition{Type: sandboxapi.ConditionRunning, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	switch {
 	case blocked != nil:
 		condition.Reason, condition.Message = blocked.reason, blocked.message
@@ -641,7 +617,7 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 			ready = bootstrapped
 		}
 	}
-	ready.Type = Ready
+	ready.Type = sandboxapi.ConditionReady
 	meta.SetStatusCondition(&status.Conditions, ready)
 	result := ctrl.Result{RequeueAfter: earliest(blocked.retryAfterOrZero(), recheck)}
 	if equality.Semantic.DeepEqual(status, &sandbox.Status) {
@@ -663,7 +639,7 @@ func earliest(a, b time.Duration) time.Duration {
 // otherwise it carries the reason `running` gives, or `PodNotReady` when everything runs but the Pod
 // is not Ready.
 func workloadReadyCondition(sandbox *sandboxapi.Sandbox, running metav1.Condition, incarnation *corev1.Pod) metav1.Condition {
-	condition := metav1.Condition{Type: WorkloadReady, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation, Reason: running.Reason, Message: running.Message}
+	condition := metav1.Condition{Type: sandboxapi.ConditionWorkloadReady, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation, Reason: running.Reason, Message: running.Message}
 	if running.Status != metav1.ConditionTrue {
 		return condition
 	}
@@ -681,20 +657,20 @@ func workloadReadyCondition(sandbox *sandboxapi.Sandbox, running metav1.Conditio
 // counts and a brief drop does not. It also says when to look again, since no watch event marks time:
 // the moment a live connection would lapse, and a lapsed one, which a renewal revives silently.
 func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *sandboxapi.Sandbox, workload metav1.Condition, incarnation *corev1.Pod) (metav1.Condition, time.Duration, error) {
-	condition := metav1.Condition{Type: RunnerConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
+	condition := metav1.Condition{Type: sandboxapi.ConditionRunnerConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	if workload.Status != metav1.ConditionTrue {
 		condition.Reason, condition.Message = "WorkloadNotReady", "the incarnation is not Ready"
 		return condition, 0, nil
 	}
 	var lease coordinationv1.Lease
-	if err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + "-runner"}, &lease); err != nil {
+	if err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + sandboxlease.RunnerLeaseSuffix}, &lease); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return condition, 0, err
 		}
 		condition.Reason, condition.Message = "NeverConnected", "no runner has connected"
 		return condition, 0, nil
 	}
-	if runner := lease.Annotations[PodUIDAnnotation]; runner == "" || runner != string(incarnation.UID) {
+	if runner := lease.Annotations[sandboxlease.PodUIDAnnotation]; runner == "" || runner != string(incarnation.UID) {
 		condition.Reason, condition.Message = "AwaitingRunner", fmt.Sprintf("the runner that connected last is not Pod %s's", incarnation.Name)
 		return condition, 0, nil
 	}
@@ -716,34 +692,34 @@ func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *sand
 // runner published on its Lease. A Sandbox without one is bootstrapped. A runner that has reported
 // nothing leaves the condition Unknown, since one that predates the fact never will.
 func (r *Reconciler) bootstrappedCondition(ctx context.Context, sandbox *sandboxapi.Sandbox, incarnation *corev1.Pod) (metav1.Condition, error) {
-	condition := metav1.Condition{Type: Bootstrapped, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
+	condition := metav1.Condition{Type: sandboxapi.ConditionBootstrapped, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	if sandbox.Spec.Bootstrap == "" {
 		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "NoBootstrap", "the Sandbox has no bootstrap"
 		return condition, nil
 	}
-	var facts RunnerFacts
+	var facts sandboxlease.RunnerFacts
 	if incarnation != nil {
 		lease, err := r.runnerLease(ctx, sandbox)
 		if err != nil {
 			return condition, err
 		}
-		if facts, err = readRunnerFacts(&lease, string(incarnation.UID)); err != nil {
+		if facts, err = sandboxlease.DecodeFacts(lease.Name, lease.Annotations, string(incarnation.UID)); err != nil {
 			return condition, err
 		}
 	}
 	switch facts.Bootstrap {
-	case BootstrapNone:
+	case sandboxlease.BootstrapNone:
 		condition.Status = metav1.ConditionUnknown
 		condition.Reason, condition.Message = "BootstrapNotReported", "the runner has not reported its bootstrap"
-	case BootstrapRunning:
+	case sandboxlease.BootstrapRunning:
 		condition.Reason, condition.Message = "BootstrapRunning", "the bootstrap is running"
-	case BootstrapSucceeded:
+	case sandboxlease.BootstrapSucceeded:
 		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "BootstrapSucceeded", "the bootstrap ran to success"
-	case BootstrapFailed:
+	case sandboxlease.BootstrapFailed:
 		condition.Reason, condition.Message = "BootstrapFailed", "the bootstrap failed and never runs again; the Sandbox is to be replaced"
-	case BootstrapInterrupted:
+	case sandboxlease.BootstrapInterrupted:
 		condition.Reason, condition.Message = "BootstrapFailed", "the bootstrap was interrupted and never runs again; the Sandbox is to be replaced"
-	case BootstrapStateUnrecognised:
+	case sandboxlease.BootstrapStateUnrecognised:
 		condition.Reason, condition.Message = "BootstrapStateUnrecognised", "the runner reports a bootstrap state this controller does not know"
 	}
 	return condition, nil
@@ -808,7 +784,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return out
 	})
 	bySandboxLabel := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
-		name, ok := obj.GetLabels()[SandboxLabel]
+		name, ok := obj.GetLabels()[sandboxapi.SandboxLabel]
 		if !ok {
 			return nil
 		}
@@ -831,9 +807,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &sandboxapi.Sandbox{}),
 		builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
 			previous, current := e.ObjectOld.(*coordinationv1.Lease), e.ObjectNew.(*coordinationv1.Lease)
-			return previous.Annotations[PodUIDAnnotation] != current.Annotations[PodUIDAnnotation] ||
+			return previous.Annotations[sandboxlease.PodUIDAnnotation] != current.Annotations[sandboxlease.PodUIDAnnotation] ||
 				leaseTransitions(previous) != leaseTransitions(current) ||
-				runnerFactsChanged(previous, current)
+				sandboxlease.FactsChanged(previous.Annotations, current.Annotations)
 		}}))
 	if r.KubeVirt {
 		setup = setup.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)

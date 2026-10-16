@@ -7,7 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -23,17 +24,8 @@ import (
 )
 
 const (
-	connectionLabel           = "agentplane.allegedly.works/runner-connection"
-	connectionEpochAnnotation = "agentplane.allegedly.works/connection-epoch"
-	podUIDAnnotation          = "agentplane.allegedly.works/pod-uid"
-	runnerBootIDAnnotation    = "agentplane.allegedly.works/runner-boot-id"
-	quiesceStageAnnotation    = "agentplane.allegedly.works/quiesce-stage"
-	idleSinceAnnotation       = "agentplane.allegedly.works/idle-since"
-	bootstrapAnnotation       = "agentplane.allegedly.works/bootstrap"
-	setupsRunningAnnotation   = "agentplane.allegedly.works/setups-running"
-	controlPortName           = "grpc"
-	endpointSliceManager      = "agentplane-runner-gateway"
-	leaseDurationSeconds      = int32(30)
+	endpointSliceManager = "agentplane-runner-gateway"
+	leaseDurationSeconds = int32(30)
 )
 
 type connectionHolder struct {
@@ -62,7 +54,7 @@ func newConnectionRecords(
 }
 
 func (r *connectionRecords) accept(ctx context.Context, sandbox SandboxIdentity, podUID, bootID string) (uint64, error) {
-	leaseName := sandbox.Name + "-runner"
+	leaseName := sandbox.Name + sandboxlease.RunnerLeaseSuffix
 	var epoch uint64
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		current, err := r.coordination.Leases(r.namespace).Get(ctx, leaseName, metav1.GetOptions{})
@@ -86,8 +78,8 @@ func (r *connectionRecords) accept(ctx context.Context, sandbox SandboxIdentity,
 			TypeMeta: metav1.TypeMeta{APIVersion: "coordination.k8s.io/v1", Kind: "Lease"},
 			ObjectMeta: metav1.ObjectMeta{
 				Name: leaseName, Namespace: r.namespace,
-				Labels:          map[string]string{connectionLabel: "true"},
-				Annotations:     map[string]string{podUIDAnnotation: podUID, runnerBootIDAnnotation: bootID},
+				Labels:          map[string]string{sandboxlease.ConnectionLabel: "true"},
+				Annotations:     map[string]string{sandboxlease.PodUIDAnnotation: podUID, sandboxlease.RunnerBootIDAnnotation: bootID},
 				OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(sandbox)},
 			},
 			Spec: coordinationv1.LeaseSpec{
@@ -123,9 +115,9 @@ func (r *connectionRecords) renew(
 	sandbox SandboxIdentity,
 	epoch uint64,
 	seenAt time.Time,
-	facts *runnerFacts,
+	facts *sandboxlease.RunnerFacts,
 ) error {
-	name := sandbox.Name + "-runner"
+	name := sandbox.Name + sandboxlease.RunnerLeaseSuffix
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		lease, err := r.coordination.Leases(r.namespace).Get(ctx, name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
@@ -142,12 +134,12 @@ func (r *connectionRecords) renew(
 		if lease.Annotations == nil {
 			lease.Annotations = make(map[string]string)
 		}
-		for _, key := range []string{quiesceStageAnnotation, idleSinceAnnotation, bootstrapAnnotation, setupsRunningAnnotation} {
+		for _, key := range []string{sandboxlease.QuiesceStageAnnotation, sandboxlease.IdleSinceAnnotation, sandboxlease.BootstrapAnnotation, sandboxlease.SetupsRunningAnnotation} {
 			delete(lease.Annotations, key)
 		}
 		lease.Spec.RenewTime = &metav1.MicroTime{Time: seenAt.UTC()}
 		if facts != nil {
-			annotations, err := facts.annotations()
+			annotations, err := facts.Annotations()
 			if err != nil {
 				return err
 			}
@@ -165,7 +157,7 @@ func (r *connectionRecords) renew(
 }
 
 func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox SandboxIdentity, epoch uint64) error {
-	name := sandbox.Name + "-control"
+	name := sandbox.Name + sandboxapi.ControlServiceSuffix
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		current, err := r.discovery.EndpointSlices(r.namespace).Get(ctx, name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
@@ -174,7 +166,7 @@ func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox S
 			return err
 		}
 		if current != nil && ownsSandbox(current.OwnerReferences, sandbox.UID) {
-			if currentEpoch, err := strconv.ParseUint(current.Annotations[connectionEpochAnnotation], 10, 64); err == nil && currentEpoch >= epoch {
+			if currentEpoch, err := strconv.ParseUint(current.Annotations[sandboxlease.ConnectionEpochAnnotation], 10, 64); err == nil && currentEpoch >= epoch {
 				return nil
 			}
 		}
@@ -188,7 +180,7 @@ func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox S
 					"kubernetes.io/service-name":             name,
 					"endpointslice.kubernetes.io/managed-by": endpointSliceManager,
 				},
-				Annotations:     map[string]string{connectionEpochAnnotation: strconv.FormatUint(epoch, 10)},
+				Annotations:     map[string]string{sandboxlease.ConnectionEpochAnnotation: strconv.FormatUint(epoch, 10)},
 				OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(sandbox)},
 			},
 			AddressType: discoveryv1.AddressTypeIPv4,
@@ -197,7 +189,7 @@ func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox S
 				Conditions: discoveryv1.EndpointConditions{Ready: &ready},
 			}},
 			Ports: []discoveryv1.EndpointPort{{
-				Name: stringPointer(controlPortName), Port: &port, Protocol: protocolPointer(corev1.ProtocolTCP),
+				Name: stringPointer(sandboxapi.ControlServicePortName), Port: &port, Protocol: protocolPointer(corev1.ProtocolTCP),
 			}},
 		}
 		if current == nil {
@@ -213,76 +205,34 @@ func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox S
 func sandboxOwnerReference(sandbox SandboxIdentity) metav1.OwnerReference {
 	controller, blockOwnerDeletion := false, false
 	return metav1.OwnerReference{
-		APIVersion: "agentplane.allegedly.works/v1alpha1", Kind: "Sandbox", Name: sandbox.Name, UID: types.UID(sandbox.UID),
+		APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: sandbox.Name, UID: types.UID(sandbox.UID),
 		Controller: &controller, BlockOwnerDeletion: &blockOwnerDeletion,
 	}
 }
 
 func ownsSandbox(references []metav1.OwnerReference, uid string) bool {
-	return len(references) == 1 && references[0].Kind == "Sandbox" && string(references[0].UID) == uid
+	return len(references) == 1 && references[0].Kind == sandboxapi.SandboxKind && string(references[0].UID) == uid
 }
 
 func stringPointer(value string) *string                     { return &value }
 func int32Pointer(value int32) *int32                        { return &value }
 func protocolPointer(value corev1.Protocol) *corev1.Protocol { return &value }
 
-type runnerFacts struct {
-	quiesceStage  runnercontrolpb.RunnerFacts_QuiesceStage
-	bootstrap     runnercontrolpb.RunnerFacts_Bootstrap
-	idleSince     *time.Time
-	setupsRunning bool
-}
-
-func (f runnerFacts) annotations() (map[string]string, error) {
-	annotations := make(map[string]string)
-	switch f.quiesceStage {
-	case runnercontrolpb.RunnerFacts_QUIESCE_STAGE_UNSPECIFIED:
-	case runnercontrolpb.RunnerFacts_QUIESCE_STAGE_DRAINING:
-		annotations[quiesceStageAnnotation] = "draining"
-	case runnercontrolpb.RunnerFacts_QUIESCE_STAGE_FLUSHING:
-		annotations[quiesceStageAnnotation] = "flushing"
-	case runnercontrolpb.RunnerFacts_QUIESCE_STAGE_QUIESCED:
-		annotations[quiesceStageAnnotation] = "quiesced"
-	default:
-		return nil, fmt.Errorf("unknown runner quiesce stage %d", f.quiesceStage)
-	}
-	switch f.bootstrap {
-	case runnercontrolpb.RunnerFacts_BOOTSTRAP_UNSPECIFIED:
-	case runnercontrolpb.RunnerFacts_BOOTSTRAP_RUNNING:
-		annotations[bootstrapAnnotation] = "running"
-	case runnercontrolpb.RunnerFacts_BOOTSTRAP_SUCCEEDED:
-		annotations[bootstrapAnnotation] = "succeeded"
-	case runnercontrolpb.RunnerFacts_BOOTSTRAP_FAILED:
-		annotations[bootstrapAnnotation] = "failed"
-	case runnercontrolpb.RunnerFacts_BOOTSTRAP_INTERRUPTED:
-		annotations[bootstrapAnnotation] = "interrupted"
-	default:
-		return nil, fmt.Errorf("unknown runner bootstrap state %d", f.bootstrap)
-	}
-	if f.idleSince != nil {
-		annotations[idleSinceAnnotation] = f.idleSince.UTC().Format(time.RFC3339Nano)
-	}
-	if f.setupsRunning {
-		annotations[setupsRunningAnnotation] = "true"
-	}
-	return annotations, nil
-}
-
 func watchConnectionLeases(ctx context.Context, client coordinationclient.CoordinationV1Interface, namespace string, local *connections) error {
 	listWatch := &cache.ListWatch{
 		ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
-			options.LabelSelector = connectionLabel + "=true"
+			options.LabelSelector = sandboxlease.ConnectionLabel + "=true"
 			return client.Leases(namespace).List(ctx, options)
 		},
 		WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
-			options.LabelSelector = connectionLabel + "=true"
+			options.LabelSelector = sandboxlease.ConnectionLabel + "=true"
 			return client.Leases(namespace).Watch(ctx, options)
 		},
 	}
 	informer := cache.NewSharedIndexInformer(listWatch, &coordinationv1.Lease{}, 0, cache.Indexers{})
 	leaseUID := func(object any) (string, uint64) {
 		lease, ok := object.(*coordinationv1.Lease)
-		if !ok || lease.Spec.LeaseTransitions == nil || len(lease.OwnerReferences) != 1 || lease.OwnerReferences[0].Kind != "Sandbox" {
+		if !ok || lease.Spec.LeaseTransitions == nil || len(lease.OwnerReferences) != 1 || lease.OwnerReferences[0].Kind != sandboxapi.SandboxKind {
 			return "", 0
 		}
 		return string(lease.OwnerReferences[0].UID), uint64(*lease.Spec.LeaseTransitions)

@@ -60,7 +60,7 @@ func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *sandboxapi.
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        StateVolumeName(sandbox.Name),
 				Namespace:   sandbox.Namespace,
-				Labels:      map[string]string{SandboxLabel: sandbox.Name},
+				Labels:      map[string]string{sandboxapi.SandboxLabel: sandbox.Name},
 				Annotations: map[string]string{StateVolumeRecordAnnotation: string(encoded)},
 			},
 			Spec: *template.Spec.StateVolume.Claim.DeepCopy(),

@@ -27,6 +27,7 @@ import (
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 )
 
 func main() {
@@ -64,7 +65,7 @@ func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontrol
 	if err := kubevirtv1.AddToScheme(scheme); err != nil {
 		return err
 	}
-	labelled, err := labels.NewRequirement(sandboxcontroller.SandboxLabel, selection.Exists, nil)
+	labelled, err := labels.NewRequirement(sandboxapi.SandboxLabel, selection.Exists, nil)
 	if err != nil {
 		return err
 	}
@@ -89,7 +90,7 @@ func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontrol
 		ctrl.Log.WithName("sandbox-controller").Info("KubeVirt's API is not served: VM Sandboxes stay unready")
 	}
 	// Only the Runner Gateway's connection Leases, not the leader election Lease.
-	connection, err := labels.NewRequirement(sandboxcontroller.ConnectionLabel, selection.Equals, []string{"true"})
+	connection, err := labels.NewRequirement(sandboxlease.ConnectionLabel, selection.Equals, []string{"true"})
 	if err != nil {
 		return err
 	}

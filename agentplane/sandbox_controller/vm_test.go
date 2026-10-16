@@ -155,7 +155,7 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 	if !vmRunning(vm) {
 		t.Errorf("VM run strategy = %v, want Always", vm.Spec.RunStrategy)
 	}
-	if labels := vm.Spec.Template.ObjectMeta.Labels; labels[SandboxLabel] != sandboxName || labels["app.kubernetes.io/name"] != "test-runner-vm" {
+	if labels := vm.Spec.Template.ObjectMeta.Labels; labels[sandboxapi.SandboxLabel] != sandboxName || labels["app.kubernetes.io/name"] != "test-runner-vm" {
 		t.Errorf("VMI template labels = %v; the VMI and its virt-launcher Pod need the Sandbox label", labels)
 	}
 	state := volume(vm, "state")
@@ -202,7 +202,7 @@ func TestVMSandboxIsReadyWhenItsLauncherPodIsReady(t *testing.T) {
 	}
 	setPodReady(t, c, launcher, corev1.ConditionTrue)
 	reconcileOnce(t, r)
-	if got := getCondition(t, c, WorkloadReady); got.Status != metav1.ConditionTrue {
+	if got := getCondition(t, c, sandboxapi.ConditionWorkloadReady); got.Status != metav1.ConditionTrue {
 		t.Errorf("WorkloadReady = %s/%s with a Ready launcher, want True", got.Status, got.Reason)
 	}
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "NeverConnected" {
@@ -351,7 +351,7 @@ func TestWorkspaceVolumeIsAPVCOfTheSandboxAttachedToTheVM(t *testing.T) {
 	if pvc == nil {
 		t.Fatal("no workspace PVC")
 	}
-	if !metav1.IsControlledBy(pvc, getSandbox(t, c)) || pvc.Labels[SandboxLabel] != sandboxName {
+	if !metav1.IsControlledBy(pvc, getSandbox(t, c)) || pvc.Labels[sandboxapi.SandboxLabel] != sandboxName {
 		t.Errorf("workspace PVC owners %v, labels %v; the Sandbox must own it and the cache select it by label", pvc.OwnerReferences, pvc.Labels)
 	}
 	if pvc.OwnerReferences[0].BlockOwnerDeletion == nil || *pvc.OwnerReferences[0].BlockOwnerDeletion {

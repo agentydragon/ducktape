@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 )
 
 type accountFlags []auth.Account
@@ -67,8 +68,8 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 	flags.StringVar(&c.RunnerTokenFile, "runner-token-file", "", "projected Gateway audience token for cross-replica Runner calls")
 	flags.StringVar(&c.Kubeconfig, "kubeconfig", "", "Kubernetes client config; defaults to in-cluster credentials")
 	flags.StringVar(&c.ListenAddress, "listen-address", ":8080", "gRPC listen address for Dispatcher, Runner proxy and runner Connect")
-	flags.IntVar(&c.ProxyPort, "proxy-port", 8080, "port advertised in each Sandbox control EndpointSlice")
-	flags.StringVar(&c.RunnerControlTargetTemplate, "runner-control-target-template", "{sandbox}-control.{namespace}.svc:8080", "target or target template the Dispatcher uses for each Sandbox runner proxy")
+	flags.IntVar(&c.ProxyPort, "proxy-port", sandboxapi.ControlServicePort, "port advertised in each Sandbox control EndpointSlice")
+	flags.StringVar(&c.RunnerControlTargetTemplate, "runner-control-target-template", sandboxapi.ControlServiceTargetTemplate(), "target or target template the Dispatcher uses for each Sandbox runner proxy")
 	flags.StringVar(&c.DispatcherAudience, "dispatcher-audience", "", "Dispatcher caller TokenReview audience")
 	flags.StringVar(&c.GatewayAudience, "gateway-audience", "", "Gateway caller TokenReview audience")
 	flags.StringVar(&c.RunnerAudience, "runner-audience", "", "runner Connect TokenReview audience")

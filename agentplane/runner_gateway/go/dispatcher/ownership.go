@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -18,7 +19,6 @@ const (
 	LeaseRenewInterval    = 10 * time.Second
 	leaseConflictAttempts = 5
 	leaseLabel            = "agentplane.allegedly.works/session-dispatcher-owner"
-	sandboxAPIVersion     = "agentplane.allegedly.works/v1alpha1"
 )
 
 // LeaseOperations is implemented by the typed Kubernetes Lease client.
@@ -47,7 +47,7 @@ func leaseOwns(lease *coordinationv1.Lease, sandboxUID string) bool {
 		return false
 	}
 	ref := lease.OwnerReferences[0]
-	return ref.Kind == "Sandbox" && string(ref.UID) == sandboxUID
+	return ref.Kind == sandboxapi.SandboxKind && string(ref.UID) == sandboxUID
 }
 
 func sameAcquisition(written, fresh *coordinationv1.Lease, sandboxUID, holder string) bool {
@@ -76,7 +76,7 @@ func (l *OwnershipLeases) Acquire(ctx context.Context, sandboxName, sandboxUID s
 				ObjectMeta: metav1.ObjectMeta{
 					Name: name, Namespace: l.Namespace, Labels: map[string]string{leaseLabel: "true"},
 					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: sandboxAPIVersion, Kind: "Sandbox", Name: sandboxName,
+						APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: sandboxName,
 						UID: types.UID(sandboxUID), Controller: &falseValue, BlockOwnerDeletion: &falseValue,
 					}},
 				},

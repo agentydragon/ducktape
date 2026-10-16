@@ -132,7 +132,7 @@ func (r *Reconciler) ensureWorkspaceVolume(ctx context.Context, sandbox *sandbox
 		}
 		pvc = &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
 			Name: WorkspaceVolumeName(sandbox.Name), Namespace: sandbox.Namespace,
-			Labels:      map[string]string{SandboxLabel: sandbox.Name},
+			Labels:      map[string]string{sandboxapi.SandboxLabel: sandbox.Name},
 			Annotations: map[string]string{WorkspaceRecordAnnotation: string(encoded)},
 		}, Spec: *workspace.Claim.DeepCopy()}
 		if err := controllerutil.SetControllerReference(sandbox, pvc, r.Scheme(), controllerutil.WithBlockOwnerDeletion(false)); err != nil {

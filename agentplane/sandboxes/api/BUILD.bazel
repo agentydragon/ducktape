@@ -4,6 +4,7 @@ load("//devinfra/go:controller_gen.bzl", "controller_crds", "controller_deepcopy
 go_library(
     name = "api",
     srcs = [
+        "constants.go",
         "doc.go",
         "scheme.go",
         "types.go",

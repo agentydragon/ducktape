@@ -22,7 +22,7 @@ func sandboxOperatingMode(s *sandboxapi.Sandbox) sandboxapi.OperatingMode {
 
 // sessionsQuiesced reports whether every Session was sealed.
 func sandboxSessionsQuiesced(s *sandboxapi.Sandbox) bool {
-	return meta.IsStatusConditionTrue(s.Status.Conditions, Quiesced)
+	return meta.IsStatusConditionTrue(s.Status.Conditions, sandboxapi.ConditionQuiesced)
 }
 
 // quiescedIncarnation reports whether uid is the incarnation whose runner sealed every Session.
@@ -34,6 +34,6 @@ func sandboxQuiescedIncarnation(s *sandboxapi.Sandbox, uid string) bool {
 // runner that has entered lameduck refuses every Session for good, so a Sandbox resumed meanwhile
 // still waits for the quiesce to finish and replaces the incarnation, as for one resumed after it.
 func sandboxQuiescing(s *sandboxapi.Sandbox) bool {
-	running := meta.FindStatusCondition(s.Status.Conditions, Running)
+	running := meta.FindStatusCondition(s.Status.Conditions, sandboxapi.ConditionRunning)
 	return running != nil && running.Reason == "Quiescing"
 }

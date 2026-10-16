@@ -45,7 +45,7 @@ func TestStateVolumeRejectsUnrecordedOwnedClaimWithoutReplacingData(t *testing.T
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      StateVolumeName(sandbox.Name),
-			Labels:    map[string]string{SandboxLabel: sandbox.Name},
+			Labels:    map[string]string{sandboxapi.SandboxLabel: sandbox.Name},
 		},
 		Spec: *template.Spec.StateVolume.Claim.DeepCopy(),
 	}

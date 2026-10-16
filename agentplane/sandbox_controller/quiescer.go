@@ -3,14 +3,10 @@ package sandboxcontroller
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/runnerclient"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
@@ -35,39 +31,31 @@ type Quiescer interface {
 // GatewayQuiescer calls `Runner.Quiesce` through the Runner Gateway's proxy, at the Sandbox's own
 // control Service, which names the replica holding its runner connection.
 type GatewayQuiescer struct {
-	// Target is a template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`.
+	// Target is a template of `{sandbox}` and `{namespace}`, typically
+	// sandboxapi.ControlServiceTargetTemplate.
 	Target string
 	// TokenFile is the projected ServiceAccount token the gateway accepts from this controller.
 	TokenFile string
 }
 
 func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox) (QuiesceResult, error) {
-	// Projected tokens rotate: read it for every call.
-	token, err := os.ReadFile(g.TokenFile)
+	target := runnerclient.ExpandTarget(g.Target, sandbox.Name, sandbox.Namespace)
+	var response *runnerpb.QuiesceResponse
+	called := false
+	err := runnerclient.WithClient(ctx, runnerclient.Config{
+		Target: target, TokenFile: g.TokenFile, Timeout: quiesceTimeout,
+		SandboxName: sandbox.Name, SandboxUID: string(sandbox.UID), SandboxNamespace: sandbox.Namespace,
+	}, func(ctx context.Context, client runnercontrolpb.RunnerClient) error {
+		called = true
+		var err error
+		response, err = client.Quiesce(ctx, &runnerpb.QuiesceRequest{})
+		return err
+	})
 	if err != nil {
+		if called {
+			return QuiesceResult{}, fmt.Errorf("quiescing %s through %s: %w", sandbox.Name, target, err)
+		}
 		return QuiesceResult{}, err
-	}
-	target := strings.NewReplacer("{sandbox}", sandbox.Name, "{namespace}", sandbox.Namespace).Replace(g.Target)
-	// A connection for this call alone: a replica that no longer holds the runner answers UNAVAILABLE,
-	// and the retry resolves the control Service again.
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return QuiesceResult{}, err
-	}
-	defer conn.Close()
-	ctx, cancel := context.WithTimeout(ctx, quiesceTimeout)
-	defer cancel()
-	ctx = metadata.AppendToOutgoingContext(
-		ctx,
-		"authorization", "Bearer "+strings.TrimSpace(string(token)),
-		"x-agentplane-sandbox", sandbox.Name,
-		"x-agentplane-sandbox-uid", string(sandbox.UID),
-		"x-agentplane-sandbox-owner-namespace", sandbox.Namespace,
-		"x-agentplane-sandbox-owner-name", sandbox.Name,
-	)
-	response, err := runnercontrolpb.NewRunnerClient(conn).Quiesce(ctx, &runnerpb.QuiesceRequest{})
-	if err != nil {
-		return QuiesceResult{}, fmt.Errorf("quiescing %s through %s: %w", sandbox.Name, target, err)
 	}
 	return quiesceResult(response), nil
 }

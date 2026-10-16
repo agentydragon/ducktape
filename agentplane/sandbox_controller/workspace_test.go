@@ -283,7 +283,7 @@ func TestOwnedUnrecordedWorkspaceIsNeverAdoptedOnFirstStart(t *testing.T) {
 	controller := true
 	claim := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
 		Namespace: namespace, Name: WorkspaceVolumeName(sandboxName), UID: "unrecorded-claim",
-		OwnerReferences: []metav1.OwnerReference{{APIVersion: sandboxapi.GroupVersion.String(), Kind: "Sandbox", Name: sandboxName, UID: "uid-sandbox", Controller: &controller}},
+		OwnerReferences: []metav1.OwnerReference{{APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: sandboxName, UID: "uid-sandbox", Controller: &controller}},
 	}}
 	r, c := newReconciler(t, true, workspaceTemplate("vm", sandboxapi.RawDiskImage), claim)
 	reconcileOnce(t, r)
@@ -359,7 +359,7 @@ func TestSealedSuspendedSandboxCanDeleteDespiteChangedWorkspaceLayout(t *testing
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
 	sandbox := getSandbox(t, c)
-	meta.SetStatusCondition(&sandbox.Status.Conditions, metav1.Condition{Type: Quiesced, Status: metav1.ConditionTrue, Reason: "Quiesced", Message: "sealed before suspend", LastTransitionTime: metav1.NewTime(testNow)})
+	meta.SetStatusCondition(&sandbox.Status.Conditions, metav1.Condition{Type: sandboxapi.ConditionQuiesced, Status: metav1.ConditionTrue, Reason: "Quiesced", Message: "sealed before suspend", LastTransitionTime: metav1.NewTime(testNow)})
 	if err := c.Status().Update(context.Background(), sandbox); err != nil {
 		t.Fatal(err)
 	}
