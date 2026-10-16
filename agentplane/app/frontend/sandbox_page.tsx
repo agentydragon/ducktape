@@ -50,6 +50,7 @@ import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
 import { RawSwitch } from "./raw_switch";
 import { SandboxConsole } from "./sandbox_console";
 import {
+  hasVmConsole,
   containerStatuses,
   podIp,
   podPhase,
@@ -304,7 +305,6 @@ export function SandboxPage({
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const tab: Tab = isTab(requestedTab) ? requestedTab : DEFAULT_TAB;
   const [error, setError] = useState<string | null>(null);
   const [creatingSession, setCreatingSession] = useState(false);
   const [pendingOpen, setPendingOpen] = useState<PendingOpen | null>(() => {
@@ -337,10 +337,18 @@ export function SandboxPage({
 
   const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, includeArchived), `Sandbox ${name}`);
   const sandbox: SandboxView | null = live.snapshot?.sandbox ?? null;
+  const vmConsoleAvailable = hasVmConsole(sandbox);
+  const tab: Tab =
+    isTab(requestedTab) && (requestedTab !== "console" || vmConsoleAvailable) ? requestedTab : DEFAULT_TAB;
   const threadListing = live.snapshot?.threads ?? [];
   const threadsUnavailable = Array.isArray(threadListing) ? null : threadListing.code;
   const threads = Array.isArray(threadListing) ? threadListing : [];
   const ready = sandboxReady(sandbox);
+  useEffect(() => {
+    if (requestedTab === "console" && sandbox !== null && !vmConsoleAvailable) {
+      setSearchParams({}, { replace: true });
+    }
+  }, [requestedTab, sandbox, setSearchParams, vmConsoleAvailable]);
   // History's retained Thread projection, keyed by its Session ID.
   const threadBySession: Record<string, ThreadView> = Object.fromEntries(threads.map((thread) => [thread.id, thread]));
   const pendingSessionId = pendingOpen?.sessionId;
@@ -629,7 +637,7 @@ export function SandboxPage({
           <Tabs.Tab value="egress">Egress</Tabs.Tab>
           <Tabs.Tab value="policy">Policies</Tabs.Tab>
           <Tabs.Tab value="status">Status</Tabs.Tab>
-          <Tabs.Tab value="console">Console</Tabs.Tab>
+          {vmConsoleAvailable && <Tabs.Tab value="console">Console</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value="egress" pt="sm">
           <EgressSection name={name} bindings={live.snapshot?.bindings ?? null} />
@@ -643,9 +651,11 @@ export function SandboxPage({
         <Tabs.Panel value="status" pt="sm">
           {sandbox && <StatusView sandbox={sandbox} />}
         </Tabs.Panel>
-        <Tabs.Panel value="console" pt="sm">
-          {tab === "console" && <SandboxConsole sandbox={name} />}
-        </Tabs.Panel>
+        {vmConsoleAvailable && (
+          <Tabs.Panel value="console" pt="sm">
+            {tab === "console" && <SandboxConsole sandbox={name} />}
+          </Tabs.Panel>
+        )}
         <Tabs.Panel value="sessions" pt="sm">
           <Stack>
             {threadsUnavailable && (

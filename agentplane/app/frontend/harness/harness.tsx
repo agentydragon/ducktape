@@ -2972,6 +2972,19 @@ const visualHarness = {
     window.location.hash = route;
     mount(<App />);
   },
+  asVmSandbox(name: string): void {
+    const sandbox = SANDBOXES.find((candidate) => candidate.name === name);
+    if (!sandbox?.pod) throw new Error(`Sandbox ${name} has no running Pod fixture`);
+    sandbox.pod.owner_references = [
+      {
+        api_version: "kubevirt.io/v1",
+        kind: "VirtualMachineInstance",
+        name,
+        uid: `${sandbox.uid}-vmi`,
+        controller: true,
+      },
+    ];
+  },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);
   },

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SandboxView } from "./client";
-import { sandboxReady, sandboxSummary } from "./sandbox_status";
+import { hasVmConsole, sandboxReady, sandboxSummary } from "./sandbox_status";
 
 const UID = "00000000-0000-4000-8000-000000000001";
 
@@ -27,6 +27,35 @@ function sandbox(conditions: { type: string; status: string }[]): SandboxView {
     },
   };
 }
+
+describe("a Sandbox exposes the VM console only for a VMI-backed incarnation", () => {
+  it("distinguishes its own Pod from a KubeVirt launcher Pod", () => {
+    const podSandbox = sandbox([{ type: "Ready", status: "True" }]);
+    const vmSandbox = {
+      ...podSandbox,
+      pod: {
+        name: "test-sandbox-launcher",
+        namespace: "agentplane-test",
+        uid: "vmi-launcher-pod",
+        deleting: false,
+        node_name: "test-node",
+        owner_references: [
+          {
+            api_version: "kubevirt.io/v1",
+            kind: "VirtualMachineInstance",
+            name: "test-sandbox",
+            uid: "vmi-uid",
+            controller: true,
+          },
+        ],
+        status: { phase: "Running" },
+      },
+    } satisfies SandboxView;
+    expect(hasVmConsole(podSandbox)).toBe(false);
+    expect(hasVmConsole(vmSandbox)).toBe(true);
+    expect(hasVmConsole({ ...podSandbox, pod: null })).toBe(false);
+  });
+});
 
 describe("a Sandbox is ready when the Sandbox Controller says so", () => {
   it("reads its own Ready condition, whatever Pod hosts the runner", () => {

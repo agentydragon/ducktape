@@ -68,6 +68,16 @@ export function podIp(sandbox: SandboxView): string | null {
   return rawString(sandbox.pod?.status?.podIP);
 }
 
+/** Whether the current Sandbox incarnation is the VMI-backed Pod whose serial console is available. */
+export function hasVmConsole(sandbox: SandboxView | null): boolean {
+  return (
+    sandbox?.pod?.owner_references.some(
+      (owner) =>
+        owner.controller && owner.kind === "VirtualMachineInstance" && owner.api_version.startsWith("kubevirt.io/")
+    ) ?? false
+  );
+}
+
 /** The Sandbox Controller's reported running mode and `Ready` condition; no caller reads into the incarnation. */
 export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
   return (

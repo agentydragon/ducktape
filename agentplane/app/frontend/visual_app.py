@@ -75,6 +75,9 @@ class AgentplaneFixture:
         await self.page.evaluate("route => window.agentplaneVisual.mountApp(route)", route)
         await expect(self.page.locator("#app > *").first).to_be_attached()
 
+    async def as_vm_sandbox(self, name: str) -> None:
+        await self.page.evaluate("name => window.agentplaneVisual.asVmSandbox(name)", name)
+
     async def mount_thread(self, thread_id: str) -> None:
         await self.mount_app(f"/threads/{thread_id}")
 
