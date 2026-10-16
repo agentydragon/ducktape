@@ -66,13 +66,17 @@ def test_outbound_requests_serialize_camel_case_except_user_input_fields() -> No
     }
 
 
-def test_thread_start_names_developer_instructions_only_when_it_has_them() -> None:
-    start = functools.partial(driver.thread_start, "r1", cwd="/w", model="m", effort="low", base_instructions="Base.")
+def test_thread_start_overrides_only_the_instructions_supplied_by_the_caller() -> None:
+    start = functools.partial(driver.thread_start, "r1", cwd="/w", model="m", effort="low")
     bare = json.loads(start().model_dump_json(by_alias=True))
+    assert "baseInstructions" not in bare["params"]
     assert "developerInstructions" not in bare["params"]
     instructed = json.loads(start(instructions="Stand by.").model_dump_json(by_alias=True))
+    assert "baseInstructions" not in instructed["params"]
     assert instructed["params"]["developerInstructions"] == "Stand by."
-    assert instructed["params"]["baseInstructions"] == "Base."
+    overridden = json.loads(start(base_instructions="Base.").model_dump_json(by_alias=True))
+    assert overridden["params"]["baseInstructions"] == "Base."
+    assert "developerInstructions" not in overridden["params"]
 
 
 @pytest.mark.parametrize(

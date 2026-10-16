@@ -46,7 +46,7 @@ def command(
     binary: str,
     *,
     model: str,
-    system_prompt: str,
+    system_prompt: str | None = None,
     session_name: str,
     tools: tuple[str, ...],
     resume_id: str | None = None,
@@ -77,9 +77,7 @@ def command(
         "--setting-sources=",
         # With no --mcp-config, this also excludes MCP servers configured on disk.
         "--strict-mcp-config",
-        # Replaces Claude Code's default system prompt.
-        "--system-prompt",
-        system_prompt,
+        *(["--system-prompt", system_prompt] if system_prompt is not None else []),
         # A preset session title stops Claude's separate title-generating model call.
         "--name",
         session_name,

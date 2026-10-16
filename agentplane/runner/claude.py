@@ -42,7 +42,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # The launch every Session gets; its standing instructions are added at initialize.
-SYSTEM_PROMPT = "You are a concise test assistant. Follow user requests using the available tools."
 SESSION_NAME = "agentplane"
 TOOLS = ("Bash", "Edit", "Read")
 MAX_RETRIES = 2
@@ -81,7 +80,6 @@ class ClaudeAdapter(HarnessAdapter):
             *scenarios.command(
                 str(self.launch.binary),
                 model=self.session.record.model,
-                system_prompt=SYSTEM_PROMPT,
                 session_name=SESSION_NAME,
                 tools=TOOLS,
                 resume_id=resume_id,

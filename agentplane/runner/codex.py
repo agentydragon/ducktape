@@ -33,7 +33,6 @@ if TYPE_CHECKING:
     from agentplane.runner.session import Frame, Session
 
 # The launch every thread gets; Session instructions are its developer instructions.
-BASE_INSTRUCTIONS = "You are a concise test assistant. Follow user requests using the available tools."
 CLIENT_NAME = "agentplane"
 MAX_RETRIES = 2
 
@@ -61,9 +60,7 @@ class CodexAdapter(HarnessAdapter):
         self.session = session
         self.launch = launch
         self._thread_id = session.record.native_session_id or ""
-        self.harness = facade.CodexHarness(
-            session, request_prefix="agentplane", client_name=CLIENT_NAME, base_instructions=BASE_INSTRUCTIONS
-        )
+        self.harness = facade.CodexHarness(session, request_prefix="agentplane", client_name=CLIENT_NAME)
         self._adapter_id = str(uuid4())
         # Codex chooses the model in turn/start. A received ChangeModel remains here until a
         # subsequent user command actually starts a turn using it.

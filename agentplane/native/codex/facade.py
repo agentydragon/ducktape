@@ -27,10 +27,10 @@ class CodexHarness:
     """Codex-native JSON-RPC operations over an append-only transport."""
 
     def __init__(
-        self, transport: NativeTransport, *, request_prefix: str, client_name: str, base_instructions: str
+        self, transport: NativeTransport, *, request_prefix: str, client_name: str, base_instructions: str | None = None
     ) -> None:
         """`client_name` goes in `initialize`'s `clientInfo`; `base_instructions` replaces Codex's
-        coding-agent policy in every thread this facade starts."""
+        coding-agent policy in every thread this facade starts only when supplied."""
         self.transport = transport
         self._client_name = client_name
         self._base_instructions = base_instructions

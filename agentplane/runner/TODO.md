@@ -1,5 +1,11 @@
 # TODO — Agentplane runner
 
+## Decide whether Agentplane should own a base prompt
+
+Runners preserve the harness's default base prompt and add platform and Session instructions.
+Consider an explicit Agentplane base prompt if a production workflow needs one; evaluate it across
+the supported harnesses and model routes before replacing their defaults.
+
 ## Check whether an interrupted-turn test depends on when Claude flushes its transcript
 
 `native/claude/test_turns.py::test_resume_after_an_interrupted_partial_turn_replays_only_completed_model_history`

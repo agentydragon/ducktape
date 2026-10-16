@@ -29,7 +29,7 @@ def thread_start(
     cwd: str,
     model: str,
     effort: str,
-    base_instructions: str,
+    base_instructions: str | None = None,
     persist: bool = False,
     config: dict[str, Any] | None = None,
     instructions: str = "",
@@ -37,6 +37,7 @@ def thread_start(
 ) -> wire.ThreadStartRequest:
     """`config` adds per-thread `config.toml` keys; app-server layers them over its own configuration.
 
+    `base_instructions` replaces the harness's base prompt only when supplied.
     `instructions` becomes the thread's developer instructions, which the app-server keeps with the
     thread, so a `thread/resume` does not restate them. Empty sends no key for them. `dynamic_tools`
     declares the driver's own tools; it requires `initialize(experimental_api=True)` first.
@@ -50,7 +51,6 @@ def thread_start(
             # Non-resume probes do not need a stored rollout, thread title, or session history.
             ephemeral=not persist,
             model=model,
-            # Replaces the broad default coding-agent policy in recorded model requests.
             base_instructions=base_instructions,
             developer_instructions=instructions or None,
             config={"model_reasoning_effort": effort, **(config or {})},
