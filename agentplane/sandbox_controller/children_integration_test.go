@@ -47,6 +47,9 @@ func TestChildApplyOwnershipAndDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	environment := &envtest.Environment{BinaryAssetsDirectory: filepath.Dir(asset), CRDDirectoryPaths: []string{crds}, ErrorIfCRDPathMissing: true}
+	// Kubernetes defaults selector-less headless Services to dual-stack. Configure both
+	// families so their defaulted fields also pass validation on later drift updates.
+	environment.ControlPlane.GetAPIServer().Configure().Set("service-cluster-ip-range", "10.0.0.0/24,fd00::/108")
 	config, err := environment.Start()
 	if err != nil {
 		t.Fatal(err)
