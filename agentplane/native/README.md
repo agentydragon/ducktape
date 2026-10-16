@@ -42,14 +42,14 @@ Shared workspace and trace fixtures live in `native/conftest.py`, and the model 
 
 Each test module documents its assertions. The main scenarios covered are:
 
-| Scenario                        | Claude Code                                                                                  | Codex app-server                                                                                                 |
-| ------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Turns and resume                | [turns](claude/test_turns.py), [compaction](claude/test_compaction.py)                       | [turns](codex/test_turns.py), [instructions](codex/test_instructions.py), [compaction](codex/test_compaction.py) |
-| Input and control during a turn | [queued input and interrupt](claude/test_active_turn.py)                                     | [joined input, steer and interrupt](codex/test_active_turn.py)                                                   |
-| Upstream connection loss        | [retry fallback and exhaustion](claude/test_connection_loss.py)                              | [retry notices and exhaustion](codex/test_connection_loss.py)                                                    |
-| Tools and MCP                   | [tool round trips](claude/test_tools.py), [driver-hosted tools](claude/test_driver_tools.py) | [tool round trips](codex/test_tools.py), [dynamic tools](codex/test_dynamic_tools.py)                            |
-| Hook decisions                  | [PreToolUse allow/deny](claude/test_hooks.py)                                                | [PreToolUse allow/deny](codex/test_hooks.py)                                                                     |
-| Native children                 | [Agent lifecycle and follow-up](claude/test_tools.py)                                        | [v1 spawn/wait](codex/test_tools.py), [v2 persisted discovery](codex/test_v2_discovery.py)                       |
+| Scenario                        | Claude Code                                                                                               | Codex app-server                                                                                                 |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Turns and resume                | [turns](claude/test_turns.py), [compaction](claude/test_compaction.py)                                    | [turns](codex/test_turns.py), [instructions](codex/test_instructions.py), [compaction](codex/test_compaction.py) |
+| Input and control during a turn | [queued input and interrupt](claude/test_active_turn.py)                                                  | [joined input, steer and interrupt](codex/test_active_turn.py)                                                   |
+| Upstream connection loss        | [retry fallback and exhaustion](claude/test_connection_loss.py)                                           | [retry notices and exhaustion](codex/test_connection_loss.py)                                                    |
+| Tools and MCP                   | [tool round trips](claude/test_tools.py), [driver-hosted tools](claude/test_driver_tools.py)              | [tool round trips](codex/test_tools.py), [dynamic tools](codex/test_dynamic_tools.py)                            |
+| Hook decisions                  | [PreToolUse allow/deny](claude/test_hooks.py)                                                             | [PreToolUse allow/deny](codex/test_hooks.py)                                                                     |
+| Native children                 | [Agent lifecycle and follow-up](claude/test_tools.py)                                                     | [v1 spawn/wait](codex/test_tools.py), [v2 persisted discovery](codex/test_v2_discovery.py)                       |
 | Root identity and multiplexing  | [first-input identity](claude/test_root_identity.py), [one root per process](claude/test_multiplexing.py) | [two root threads over one app-server](codex/test_multiplexing.py)                                               |
 
 On Claude Code 2.1.252, an inbound `user` frame carrying a different `session_id` gets a lifecycle
