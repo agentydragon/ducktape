@@ -548,6 +548,31 @@ describe("foldSessionEvents", () => {
     expect(folded.map((item) => item.kind)).toEqual(["tool-run"]);
   });
 
+  it("drops child rows whose parent tool call is not among the loaded events", () => {
+    // Only the newest page of a long session may be loaded, so the parent `tool_use` can be absent.
+    const folded = foldSessionEvents([
+      event(1, "assistant", {
+        type: "assistant",
+        parent_tool_use_id: "agent-hidden",
+        message: {
+          content: [
+            { type: "text", text: "HIDDEN_ORPHAN_CHILD_MESSAGE" },
+            { type: "tool_use", id: "orphan-read", name: "Read", input: { file_path: "test_viewer.py" } },
+          ],
+        },
+      }),
+      event(2, "user", {
+        type: "user",
+        parent_tool_use_id: "agent-hidden",
+        message: {
+          content: [{ type: "tool_result", tool_use_id: "orphan-read", content: "HIDDEN_ORPHAN_TOOL_OUTPUT" }],
+        },
+      }),
+    ]);
+
+    expect(folded).toEqual([]);
+  });
+
   it("renders only a parentless sidechain explicitly left in the transcript", () => {
     const folded = foldSessionEvents([
       event(1, "assistant", {
