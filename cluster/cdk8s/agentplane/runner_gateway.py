@@ -2,7 +2,7 @@
 
 from typing import cast
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ContainerResources,
@@ -152,6 +152,20 @@ class RunnerGateway(Construct):
             purpose="control stream to the Runner Gateway",
         )
         egress.add_runner_egress_network_policy(self, policy=RUNNER_CONTROL_POLICY, endpoint=control)
+
+        # CLEANUP: remove after the Go serving Kustomization has adopted these resources.
+        # The root retains the stable Services and prunes the stopped Python Deployment/config.
+        for resource in (ApiObject.of(node) for node in self.node.find_all() if ApiObject.is_api_object(node)):
+            if resource.kind not in {"Service", "Deployment", "ConfigMap"}:
+                resource.add_json_patch(
+                    JsonPatch.add(
+                        "/metadata/annotations",
+                        {
+                            **resource.to_json()["metadata"].get("annotations", {}),
+                            "kustomize.toolkit.fluxcd.io/prune": "disabled",
+                        },
+                    )
+                )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         namespace = self.env.namespace

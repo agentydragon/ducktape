@@ -2074,6 +2074,8 @@ immutable: false
 apiVersion: v1
 kind: ServiceAccount
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: runner-gateway
   namespace: agentplane-staging
 automountServiceAccountToken: true
@@ -2202,6 +2204,8 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: runner-gateway
   namespace: agentplane-staging
 spec:
@@ -2213,6 +2217,8 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: agentplane-staging-runner-gateway-token-reviewer
 rules:
   - apiGroups:
@@ -2225,6 +2231,8 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: agentplane-staging-runner-gateway-token-reviewer
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -2239,6 +2247,8 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: runner-gateway
   namespace: agentplane-staging
 rules:
@@ -2280,6 +2290,8 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: runner-gateway
   namespace: agentplane-staging
 roleRef:
@@ -2297,6 +2309,8 @@ kind: CiliumNetworkPolicy
 metadata:
   name: runner-gateway
   namespace: agentplane-staging
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   egress:
     - toEndpoints:
@@ -2361,6 +2375,8 @@ kind: EgressCredential
 metadata:
   name: agentplane-runner-control
   namespace: agentplane-staging
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   description: The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's control stream to the Runner Gateway. It conveys no other authority.
   source:
@@ -2376,6 +2392,8 @@ kind: PolicySet
 metadata:
   name: runner-control
   namespace: agentplane-staging
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   rules:
     - type: egress
@@ -2394,6 +2412,8 @@ kind: CiliumNetworkPolicy
 metadata:
   name: runner-gateway-runner-control-proxy
   namespace: agentplane-staging
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   egress:
     - toEndpoints:
