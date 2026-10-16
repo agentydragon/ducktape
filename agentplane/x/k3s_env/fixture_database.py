@@ -10,6 +10,7 @@ from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -79,7 +80,6 @@ def add_database(scope: Construct, env: Environment) -> Construct:
     _database_secret(db_scope, env, role="app", database="app", password=app_password, async_uri=True)
     for role in _ROLES:
         _database_secret(db_scope, env, role=role, database=role, password=_password())
-    _database_secret(db_scope, env, role="electric", database="app", password=_password())
 
     bootstrap = ConfigMap(
         db_scope,
@@ -106,7 +106,7 @@ def add_database(scope: Construct, env: Environment) -> Construct:
         .key("password")
         .env_value(db_scope, "postgres-bootstrap-password"),
     }
-    for role in ("app", *_ROLES, "electric"):
+    for role in ("app", *_ROLES):
         env_variables[f"AGENTPLANE_DB_PASSWORD_{role.upper()}"] = (
             SecretRef(namespace=env.namespace, name=f"postgres-{role.replace('_', '-')}")
             .key("password")
@@ -126,6 +126,7 @@ def add_database(scope: Construct, env: Environment) -> Construct:
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(100)), memory=MemoryResources(request=Size.mebibytes(256))
         ),
+        security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
     )
     container.mount(
         "/docker-entrypoint-initdb.d", Volume.from_config_map(db_scope, "bootstrap-volume", bootstrap, name="bootstrap")

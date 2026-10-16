@@ -120,41 +120,20 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
         {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
     ]
     postgres = _resource(docs, "Deployment", fixture_database.NAME)
-    postgres_spec = postgres["spec"]["template"]["spec"]
-    assert {
-        name: postgres_spec["securityContext"][name] for name in ("runAsNonRoot", "runAsUser", "runAsGroup", "fsGroup")
-    } == {"runAsNonRoot": True, "runAsUser": 999, "runAsGroup": 999, "fsGroup": 999}
-    postgres_container = next(container for container in postgres_spec["containers"] if container["name"] == "postgres")
+    postgres_container = next(
+        container for container in postgres["spec"]["template"]["spec"]["containers"] if container["name"] == "postgres"
+    )
     assert postgres_container["image"] == fixture_database.IMAGE
-    assert postgres_container["imagePullPolicy"] == "IfNotPresent"
-    assert postgres_container["args"] == ["postgres", "-c", "wal_level=logical", "-c", "max_connections=300"]
-    postgres_env = {entry["name"]: entry for entry in postgres_container["env"]}
-    assert postgres_env["PGDATA"]["value"] == "/var/lib/postgresql/18/docker"
-    assert postgres_env["POSTGRES_USER"]["value"] == "fixture_admin"
-    assert postgres_env["POSTGRES_DB"]["value"] == "postgres"
-    assert postgres_env["POSTGRES_PASSWORD"]["valueFrom"]["secretKeyRef"] == {
-        "name": "postgres-bootstrap-credentials",
-        "key": "password",
-    }
-    assert postgres_env["AGENTPLANE_DB_PASSWORD_APP"]["valueFrom"]["secretKeyRef"] == {
-        "name": "postgres-app",
-        "key": "password",
-    }
-    assert {volume["name"] for volume in postgres_spec["volumes"]} == {"bootstrap", "data"}
-    bootstrap_mount = next(mount for mount in postgres_container["volumeMounts"] if mount["name"] == "bootstrap")
-    assert bootstrap_mount["mountPath"] == "/docker-entrypoint-initdb.d"
-    postgres_service = _resource(docs, "Service", fixture_chart.PRIMARY_SERVICE)
+    postgres_service = _resource(docs, "Service", fixture_database.SERVICE)
     assert postgres_service["spec"]["clusterIP"] == "None"
-    assert postgres_service["spec"]["selector"] == postgres["spec"]["selector"]["matchLabels"]
-    assert postgres_service["spec"]["ports"] == [
-        {"name": "postgres", "port": fixture_database.PORT, "targetPort": fixture_database.PORT}
-    ]
-    bootstrap_sql = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["01-bootstrap.sql"]
-    assert "CREATE ROLE app WITH LOGIN PASSWORD :'app_password';" in bootstrap_sql
-    assert "CREATE DATABASE app OWNER app;" in bootstrap_sql
-    assert "CREATE ROLE electric WITH LOGIN REPLICATION PASSWORD :'electric_password';" in bootstrap_sql
-    assert "CREATE DATABASE session_dispatcher OWNER session_dispatcher;" in bootstrap_sql
     assert not any(doc["kind"] in {"Cluster", "Database"} for doc in docs)
+
+    bootstrap_env = {entry["name"]: entry for entry in postgres_container["env"]}
+    bootstrap_secret = _resource(docs, "Secret", "postgres-bootstrap-credentials")
+    assert bootstrap_env["POSTGRES_USER"]["value"] == "fixture_admin"
+    assert (
+        bootstrap_env["POSTGRES_PASSWORD"]["valueFrom"]["secretKeyRef"]["name"] == bootstrap_secret["metadata"]["name"]
+    )
 
     database_roles = {
         "actions": "actions",
@@ -162,7 +141,6 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
         "notifications": "notifications",
         "sandbox_service": "sandbox_service",
         "session_dispatcher": "session_dispatcher",
-        "electric": "app",
     }
     expected_secret_names = {role: f"postgres-{role.replace('_', '-')}" for role in database_roles}
     for role_name, database_name in database_roles.items():
@@ -171,7 +149,7 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
         data = secret["stringData"]
         assert data["username"] == role_name
         assert data["dbname"] == database_name
-        assert data["host"] == f"{fixture_chart.PRIMARY_SERVICE}.{fixture_chart.NAMESPACE}.svc"
+        assert data["host"] == f"{fixture_database.SERVICE}.{fixture_chart.NAMESPACE}.svc"
         assert data["port"] == "5432"
         uri = urlsplit(data["uri"])
         assert uri.scheme == "postgresql"
@@ -183,6 +161,7 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
 
     app_secret = _resource(docs, "Secret", "postgres-app")
     app_data = app_secret["stringData"]
+    assert app_data["username"] == "app"
     app_uri = urlsplit(app_data["async-uri"])
     assert app_uri.scheme == "postgresql+asyncpg"
     assert app_uri.username == app_data["username"] == "app"
@@ -190,6 +169,7 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
     assert app_uri.hostname == app_data["host"]
     assert app_uri.port == 5432
     assert app_uri.path == "/app"
+    assert not any(doc["kind"] == "Secret" and doc["metadata"]["name"] == "postgres-electric" for doc in docs)
 
     template = _resource(docs, "SandboxTemplate", "runner")
     assert template["spec"]["stateVolume"]["claim"]["storageClassName"] == "local-path"

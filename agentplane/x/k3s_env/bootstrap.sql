@@ -17,5 +17,4 @@ CREATE DATABASE sandbox_service OWNER sandbox_service;
 \getenv session_dispatcher_password AGENTPLANE_DB_PASSWORD_SESSION_DISPATCHER
 CREATE ROLE session_dispatcher WITH LOGIN PASSWORD :'session_dispatcher_password';
 CREATE DATABASE session_dispatcher OWNER session_dispatcher;
-\getenv electric_password AGENTPLANE_DB_PASSWORD_ELECTRIC
-CREATE ROLE electric WITH LOGIN REPLICATION PASSWORD :'electric_password';
+CREATE ROLE electric;

@@ -53,7 +53,6 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
 
 NAMESPACE = testing.ENV.namespace
-PRIMARY_SERVICE = "postgres-primary"
 RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
 GO_RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset"
