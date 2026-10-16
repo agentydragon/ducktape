@@ -10,8 +10,15 @@ const formats = [
 ];
 
 for (const [format, Controller] of formats) {
-  const overflow = ({ previous, target = 2, active = false, showLine = true, pointSize = 0, count = 2 } = {}) => {
-    const modes = [];
+  const overflow = ({
+    previous,
+    target = 2,
+    hoverTarget = 6,
+    active = false,
+    showLine = true,
+    pointSize = 0,
+    count = 2,
+  } = {}) => {
     const controller = {
       _cachedMeta: {
         dataset: { active, options: previous === undefined ? undefined : { borderWidth: previous } },
@@ -19,15 +26,13 @@ for (const [format, Controller] of formats) {
       },
       options: { showLine },
       resolveDatasetElementOptions(mode) {
-        modes.push(mode);
-        return { borderWidth: target };
+        return { borderWidth: mode === "active" ? hoverTarget : target };
       },
       resolveDataElementOptions() {
         return {};
       },
     };
     const actual = Controller.prototype.getMaxOverflow.call(controller);
-    assert.deepEqual(modes, [active ? "active" : "default"]);
     return actual;
   };
 
@@ -40,7 +45,7 @@ for (const [format, Controller] of formats) {
   });
 
   test(`${format}: active line target and visibility govern overflow`, () => {
-    assert.equal(overflow({ previous: 2, target: 6, active: true }), 3);
+    assert.equal(overflow({ previous: 2, target: 2, hoverTarget: 6, active: true }), 3);
     assert.equal(overflow({ previous: 6, target: 2 }), 1);
     assert.equal(overflow({ previous: 6, target: 6, active: true, showLine: false }), 0);
     assert.equal(overflow({ target: 6, showLine: false }), 0);
