@@ -49,7 +49,7 @@ def test_generated_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
     )
     dispatcher_service = services[render.SESSION_DISPATCHER]
     dispatcher_port = next(port for port in dispatcher_service["spec"]["ports"] if port["name"] == "grpc")
-    dispatcher_listener = next(port for port in container["ports"] if port["name"] == "dispatcher")
+    dispatcher_listener = next(port for port in container["ports"] if port["name"] == "grpc")
     assert dispatcher_service["spec"]["clusterIP"] == "None"
     assert dispatcher_service["spec"]["selector"] == gateway["spec"]["selector"]["matchLabels"]
     assert dispatcher_port["port"] == dispatcher_port["targetPort"] == dispatcher_listener["containerPort"]

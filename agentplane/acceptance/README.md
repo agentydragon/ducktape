@@ -97,7 +97,7 @@ command checkpoint or interrupted setup; deterministic coverage for those bounda
 
 These probes target the unified Go Runner Gateway after its fenced cutover. The Dispatcher
 Service remains `session-dispatcher:8080`; replica operations target the `runner-gateway`
-Deployment, and direct Pod probes use its Dispatcher listener on `8081`.
+Deployment, and direct Pod probes use the shared gRPC listener on `8080`.
 
 The `queue` case checks authenticated submission to a stopped Sandbox, durable queueing, and
 runner admission after an explicit start. It uses a fixture Sandbox and the testing app's workload

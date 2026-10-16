@@ -51,17 +51,23 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset"
 _RUNNER_TOKEN_FILE = "/var/run/secrets/agentplane-runner-gateway/token"
-_DISPATCHER_PORT = 8081
+_GRPC_PORT = 8080
 
 
 def dispatcher_service(namespace: str) -> ServiceRef:
-    """Keep the sender's DNS and Service port; target the Go-only Dispatcher listener."""
+    """Keep the sender's DNS and Service port; target the shared Go listener."""
     return ServiceRef(
         name=session_dispatcher.NAME,
         port=Port(name="grpc", number=8080),
         pods=runner_gateway.service(namespace).pods,
-        target_port=_DISPATCHER_PORT,
+        target_port=_GRPC_PORT,
     )
+
+
+def runner_control_service(namespace: str) -> ServiceRef:
+    """Keep the runner-facing Service port while sharing the Go gRPC listener."""
+    control = runner_gateway.runner_control(namespace)
+    return ServiceRef(name=control.name, port=control.port, pods=control.pods, target_port=_GRPC_PORT)
 
 
 def _account(account: ServiceAccountRef) -> str:
@@ -76,14 +82,23 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
     in their current Flux owner, while the Go workload belongs to a dependent one.
     """
     proxy = runner_gateway.service(env.namespace)
-    control = runner_gateway.runner_control(env.namespace)
+    control = runner_control_service(env.namespace)
     dispatcher = dispatcher_service(env.namespace)
     k8s.KubeService(
         scope,
         "runner-gateway-service",
         metadata=k8s.ObjectMeta(name=proxy.name, namespace=env.namespace, labels=proxy.labels),
         spec=k8s.ServiceSpec(
-            selector=proxy.pods.selector, ports=[proxy.port.k8s_service_port(), control.port.k8s_service_port()]
+            selector=proxy.pods.selector,
+            ports=[
+                proxy.port.k8s_service_port(),
+                k8s.ServicePort(
+                    name=control.port.name,
+                    port=control.port.number,
+                    target_port=k8s.IntOrString.from_number(control.pod_port),
+                    protocol="TCP",
+                ),
+            ],
         ),
     )
     k8s.KubeService(
@@ -107,7 +122,7 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
 
 
 class GoRunnerGateway(Construct):
-    """One workload with three authenticated listeners; the root retains its Services."""
+    """One workload with three authenticated services on one listener; the root retains its Services."""
 
     def __init__(
         self,
@@ -128,7 +143,7 @@ class GoRunnerGateway(Construct):
 
         namespace = env.namespace
         proxy = runner_gateway.service(namespace)
-        control = runner_gateway.runner_control(namespace)
+        control = runner_control_service(namespace)
         dispatcher = dispatcher_service(namespace)
         own_account = ServiceAccountRef(namespace=namespace, name=runner_gateway.NAME)
         # A delivery worker may run on a different replica from the holder. It calls
@@ -167,11 +182,7 @@ class GoRunnerGateway(Construct):
                 "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": database_url,
                 "AGENTPLANE_RUNNER_GATEWAY_POD_IP": EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
             },
-            ports=[
-                proxy.port.container_port(),
-                Port(name="dispatcher", number=_DISPATCHER_PORT).container_port(),
-                control.port.container_port(),
-            ],
+            ports=[proxy.port.container_port()],
             readiness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(

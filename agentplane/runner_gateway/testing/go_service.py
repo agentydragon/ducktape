@@ -1,12 +1,10 @@
-"""Run the unified Go Runner Gateway against a fake API server and PostgreSQL."""
+"""Run the unified Go Runner Gateway against a supplied Kubernetes API and PostgreSQL."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import subprocess
-import tempfile
 from collections.abc import AsyncIterator, Awaitable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -25,7 +23,6 @@ from agentplane.runner.reconnect import StreamTiming
 from agentplane.runner.runner import Runner
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.fake_apiserver import FakeApiServer, TokenVerdict
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -39,13 +36,6 @@ _MIGRATOR_BINARY = (
     "agentplane/runner_gateway/go/migrations/cmd/runner-gateway-queue-migrate_/runner-gateway-queue-migrate"
 )
 _RUNNER_TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.05, backoff_max_s=0.5)
-
-
-def _free_ports(count: int) -> tuple[int, ...]:
-    ports: set[int] = set()
-    while len(ports) < count:
-        ports.add(pick_free_port())
-    return tuple(ports)
 
 
 def _wire_database_url(database_url: str) -> str:
@@ -78,21 +68,15 @@ def _migrate(database_url: str, log_path: Path) -> None:
 class GoService:
     """Addresses and process controls for one full unified Go Gateway process."""
 
-    fake: FakeApiServer
-    namespace: str
-    runner_audience: str
     process: asyncio.subprocess.Process
-    proxy_port: int
-    dispatcher_target: str
-    proxy_target: str
-    control_target: str
+    target: str
     log_path: Path
 
     def gateway_client(
         self, token_file: Path, *, request_timeout_s: float = 20, lifecycle_timeout_s: float = 310
     ) -> SandboxControlClient:
         return SandboxControlClient(
-            control_target=self.proxy_target,
+            control_target=self.target,
             token_file=token_file,
             request_timeout_s=request_timeout_s,
             lifecycle_timeout_s=lifecycle_timeout_s,
@@ -103,28 +87,6 @@ class GoService:
             raise RuntimeError(
                 f"Go Runner Gateway exited with {self.process.returncode}; see undeclared output {self.log_path}"
             )
-
-    async def wait_connected(self, sandbox_uid: str, *, timeout_s: float = 15) -> None:
-        """Wait for the Go process to accept the native Runner stream and persist its Lease."""
-
-        def connected() -> bool:
-            return any(
-                reference.get("uid") == sandbox_uid
-                for lease in self.fake.objects["leases"].values()
-                for reference in lease.get("metadata", {}).get("ownerReferences", [])
-            )
-
-        deadline = asyncio.get_running_loop().time() + timeout_s
-        while not connected():
-            await self._check_process()
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                raise TimeoutError(f"Go Runner Gateway did not record Runner Lease for Sandbox {sandbox_uid}")
-            try:
-                async with asyncio.timeout(min(0.1, remaining)):
-                    await self.fake.wait_for(connected)
-            except TimeoutError:
-                pass
 
     async def wait_for_runner(
         self, client: SandboxControlClient, destination: SandboxDestination, *, timeout_s: float = 15
@@ -146,27 +108,12 @@ class GoService:
 
     @asynccontextmanager
     async def connected_runner(
-        self,
-        runner: Runner,
-        *,
-        token: str,
-        account: ServiceAccountRef,
-        pod_name: str,
-        pod_uid: str,
-        sandbox_uid: str,
-        proxy_client: SandboxControlClient,
-        destination: SandboxDestination,
+        self, runner: Runner, *, token: str, proxy_client: SandboxControlClient, destination: SandboxDestination
     ) -> AsyncIterator[None]:
         """Connect a native Python Runner to this Go process and wait for proxy readiness."""
-        self.fake.tokens[token] = TokenVerdict(
-            username=f"system:serviceaccount:{account.namespace}:{account.name}",
-            pod_name=pod_name,
-            pod_uid=pod_uid,
-            audiences=(self.runner_audience,),
-        )
         client = runner_control.RunnerControlClient(
             runner_control.RunnerService(runner),
-            target=self.control_target,
+            target=self.target,
             bearer=token,
             timing=_RUNNER_TIMING,
             adopt_incarnation=runner.adopt_incarnation,
@@ -174,7 +121,6 @@ class GoService:
             facts_changed=runner.facts_changed,
         )
         async with background(client.run(), name="native Runner to Go Gateway"):
-            await self.wait_connected(sandbox_uid)
             await self.wait_for_runner(proxy_client, destination)
             yield
 
@@ -225,16 +171,14 @@ async def _wait_health(service: GoService, target: str, *, timeout_s: float) -> 
 
 
 async def _wait_ready(service: GoService, *, timeout_s: float) -> None:
-    targets = (service.dispatcher_target, service.proxy_target, service.control_target)
     deadline = asyncio.get_running_loop().time() + timeout_s
     while True:
         await service._check_process()
         try:
-            for target in targets:
-                remaining = deadline - asyncio.get_running_loop().time()
-                if remaining <= 0:
-                    raise TimeoutError
-                await _wait_health(service, target, timeout_s=remaining)
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise TimeoutError
+            await _wait_health(service, service.target, timeout_s=remaining)
             return
         except ConnectionError, grpc.aio.AioRpcError, TimeoutError:
             remaining = deadline - asyncio.get_running_loop().time()
@@ -247,7 +191,7 @@ async def _wait_ready(service: GoService, *, timeout_s: float) -> None:
 
 @asynccontextmanager
 async def go_service(
-    fake: FakeApiServer,
+    kubeconfig: Path,
     *,
     database_url: str,
     namespace: str,
@@ -261,74 +205,46 @@ async def go_service(
 ) -> AsyncIterator[GoService]:
     """Migrate the supplied database, then run the full Go Gateway using production flags.
 
-    The fake Kubernetes API and PostgreSQL clone are owned by the caller. The migration runner
+    The Kubernetes API and PostgreSQL clone are owned by the caller. The migration runner
     performs the same Alembic-to-Goose handoff used by the deployed process, before its server
-    starts. All three public listeners bind loopback ports, while the Go Dispatcher is configured
-    to reach the Go proxy through its actual proxy listener.
+    starts. All three gRPC services share a loopback listener, including the Dispatcher
+    calling the Runner proxy.
     """
-    work_dir = tempfile.TemporaryDirectory(prefix="agentplane-go-service-")
-    try:
-        migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
-        await asyncio.to_thread(_migrate, database_url, migration_log)
+    migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
+    await asyncio.to_thread(_migrate, database_url, migration_log)
 
-        proxy_port, dispatcher_port, control_port = _free_ports(3)
-        work_path = Path(work_dir.name)
-        kubeconfig = work_path / "kubeconfig.json"
-        kubeconfig.write_text(
-            json.dumps(
-                {
-                    "apiVersion": "v1",
-                    "kind": "Config",
-                    "clusters": [{"name": "fake", "cluster": {"server": f"http://127.0.0.1:{fake.port}"}}],
-                    "contexts": [{"name": "fake", "context": {"cluster": "fake", "user": "fake"}}],
-                    "current-context": "fake",
-                    "users": [{"name": "fake", "user": {}}],
-                }
-            )
+    port = pick_free_port()
+    binary = get_required_path(own_repo_rlocation(_GATEWAY_BINARY))
+    log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
+    arguments = [
+        str(binary),
+        f"--sandbox-namespace={namespace}",
+        f"--runner-token-file={runner_proxy_token_file}",
+        f"--kubeconfig={kubeconfig}",
+        f"--listen-address=127.0.0.1:{port}",
+        f"--proxy-port={port}",
+        f"--runner-control-target-template=127.0.0.1:{port}",
+        f"--dispatcher-audience={dispatcher_audience}",
+        f"--gateway-audience={gateway_audience}",
+        f"--runner-audience={runner_audience}",
+        *(f"--dispatcher-caller={account.namespace}/{account.name}" for account in dispatcher_callers),
+        *(f"--gateway-caller={account.namespace}/{account.name}" for account in gateway_callers),
+    ]
+    environment = {
+        **os.environ,
+        "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_database_url(database_url),
+        "AGENTPLANE_RUNNER_GATEWAY_POD_NAME": "runner-gateway-test",
+        # Kubernetes rejects loopback EndpointSlice addresses. This advertised test address
+        # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
+        "AGENTPLANE_RUNNER_GATEWAY_POD_IP": "192.0.2.10",
+    }
+    with log_path.open("wb") as log_file:
+        process = await asyncio.create_subprocess_exec(
+            *arguments, env=environment, stdout=log_file, stderr=subprocess.STDOUT
         )
-        binary = get_required_path(own_repo_rlocation(_GATEWAY_BINARY))
-        log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
-        arguments = [
-            str(binary),
-            f"--sandbox-namespace={namespace}",
-            f"--runner-token-file={runner_proxy_token_file}",
-            f"--kubeconfig={kubeconfig}",
-            f"--proxy-listen-address=127.0.0.1:{proxy_port}",
-            f"--dispatcher-listen-address=127.0.0.1:{dispatcher_port}",
-            f"--control-listen-address=127.0.0.1:{control_port}",
-            f"--proxy-port={proxy_port}",
-            f"--runner-control-target-template=127.0.0.1:{proxy_port}",
-            f"--dispatcher-audience={dispatcher_audience}",
-            f"--gateway-audience={gateway_audience}",
-            f"--runner-audience={runner_audience}",
-            *(f"--dispatcher-caller={account.namespace}/{account.name}" for account in dispatcher_callers),
-            *(f"--gateway-caller={account.namespace}/{account.name}" for account in gateway_callers),
-        ]
-        environment = {
-            **os.environ,
-            "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_database_url(database_url),
-            "AGENTPLANE_RUNNER_GATEWAY_POD_NAME": "runner-gateway-test",
-            "AGENTPLANE_RUNNER_GATEWAY_POD_IP": "127.0.0.1",
-        }
-        with log_path.open("wb") as log_file:
-            process = await asyncio.create_subprocess_exec(
-                *arguments, env=environment, stdout=log_file, stderr=subprocess.STDOUT
-            )
-            service = GoService(
-                fake=fake,
-                namespace=namespace,
-                runner_audience=runner_audience,
-                process=process,
-                proxy_port=proxy_port,
-                dispatcher_target=f"127.0.0.1:{dispatcher_port}",
-                proxy_target=f"127.0.0.1:{proxy_port}",
-                control_target=f"127.0.0.1:{control_port}",
-                log_path=log_path,
-            )
-            try:
-                await _wait_ready(service, timeout_s=startup_timeout_s)
-                yield service
-            finally:
-                await service.stop()
-    finally:
-        work_dir.cleanup()
+        service = GoService(process=process, target=f"127.0.0.1:{port}", log_path=log_path)
+        try:
+            await _wait_ready(service, timeout_s=startup_timeout_s)
+            yield service
+        finally:
+            await service.stop()

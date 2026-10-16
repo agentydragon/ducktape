@@ -32,3 +32,17 @@ py_library(
         "@pypi//kubernetes_asyncio",
     ],
 )
+
+py_library(
+    name = "api_server",
+    srcs = ["api_server.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane:subjects",
+        "//agentplane/sandboxes:inventory",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+    ],
+)

@@ -15,5 +15,9 @@ go_library(
 go_binary(
     name = "server",
     embed = [":server_lib"],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
     visibility = ["//agentplane/testing:__pkg__"],
 )

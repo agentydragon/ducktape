@@ -42,8 +42,7 @@ func TestUnifiedGatewayConfigAcceptsHostProcessTargetsAndBoundsProxyPort(t *test
 		"--sandbox-namespace=agentplane", "--runner-token-file=/tmp/runner-token",
 		"--dispatcher-audience=dispatcher", "--gateway-audience=gateway", "--runner-audience=runner",
 		"--dispatcher-caller=agentplane/notifications", "--gateway-caller=agentplane/app",
-		"--proxy-listen-address=127.0.0.1:41001", "--dispatcher-listen-address=127.0.0.1:41002",
-		"--control-listen-address=127.0.0.1:41003", "--proxy-port=42000",
+		"--listen-address=127.0.0.1:41001", "--proxy-port=42000",
 		"--runner-control-target-template=127.0.0.1:41001",
 		"--kubeconfig=/tmp/fake-kubeconfig",
 	}

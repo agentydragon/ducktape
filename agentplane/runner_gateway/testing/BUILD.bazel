@@ -37,7 +37,6 @@ py_library(
         "//agentplane/runner:control",
         "//agentplane/runner:reconnect",
         "//agentplane/runner_gateway:client",
-        "//agentplane/testing:fake_apiserver",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",

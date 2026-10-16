@@ -133,8 +133,8 @@ func (g *Gateway) RegisterProxy(server *grpc.Server) {
 	runnercontrolpb.RegisterRunnerServer(server, &runnerProxy{gateway: g})
 }
 
-// RegisterRunnerControl serves the runner-initiated bidirectional connection on its own gRPC
-// listener, so the network policy can admit only the egress proxy there.
+// RegisterRunnerControl serves the runner-initiated bidirectional connection, authenticated
+// with the Runner audience independently of the other services on this gRPC server.
 func (g *Gateway) RegisterRunnerControl(server *grpc.Server) {
 	runnercontrolpb.RegisterRunnerControlServer(server, &runnerControlServer{gateway: g})
 }

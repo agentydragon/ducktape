@@ -45,8 +45,7 @@ type config struct {
 	PodName, PodIP                                      string
 	RunnerTokenFile                                     string
 	Kubeconfig                                          string
-	ProxyListenAddress, DispatcherListenAddress         string
-	ControlListenAddress                                string
+	ListenAddress                                       string
 	ProxyPort                                           int
 	RunnerControlTargetTemplate                         string
 	DispatcherAudience, GatewayAudience, RunnerAudience string
@@ -67,9 +66,7 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 	flags.StringVar(&c.Namespace, "sandbox-namespace", "", "namespace of Agentplane Sandboxes")
 	flags.StringVar(&c.RunnerTokenFile, "runner-token-file", "", "projected Gateway audience token for cross-replica Runner calls")
 	flags.StringVar(&c.Kubeconfig, "kubeconfig", "", "Kubernetes client config; defaults to in-cluster credentials")
-	flags.StringVar(&c.ProxyListenAddress, "proxy-listen-address", ":8080", "Runner proxy gRPC listen address")
-	flags.StringVar(&c.DispatcherListenAddress, "dispatcher-listen-address", ":8081", "Dispatcher gRPC listen address")
-	flags.StringVar(&c.ControlListenAddress, "control-listen-address", ":8082", "runner Connect gRPC listen address")
+	flags.StringVar(&c.ListenAddress, "listen-address", ":8080", "gRPC listen address for Dispatcher, Runner proxy and runner Connect")
 	flags.IntVar(&c.ProxyPort, "proxy-port", 8080, "port advertised in each Sandbox control EndpointSlice")
 	flags.StringVar(&c.RunnerControlTargetTemplate, "runner-control-target-template", "{sandbox}-control.{namespace}.svc:8080", "target or target template the Dispatcher uses for each Sandbox runner proxy")
 	flags.StringVar(&c.DispatcherAudience, "dispatcher-audience", "", "Dispatcher caller TokenReview audience")
@@ -108,7 +105,7 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 	if c.Namespace == "" || c.DispatcherDatabaseURL == "" || c.PodName == "" || c.PodIP == "" || c.RunnerTokenFile == "" ||
 		c.DispatcherAudience == "" || c.GatewayAudience == "" || c.RunnerAudience == "" ||
 		len(c.DispatcherCallers) == 0 || len(c.GatewayCallers) == 0 || c.QueueCap < 1 || c.WatchLease <= 0 || c.RunnerTimeout <= 0 ||
-		c.ProxyListenAddress == "" || c.DispatcherListenAddress == "" || c.ControlListenAddress == "" || c.ProxyPort < 1 || c.ProxyPort > 65535 ||
+		c.ListenAddress == "" || c.ProxyPort < 1 || c.ProxyPort > 65535 ||
 		c.RunnerControlTargetTemplate == "" {
 		return config{}, errors.New("Runner Gateway identity, policy, database and positive timeout settings are required")
 	}

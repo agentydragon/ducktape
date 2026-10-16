@@ -22,10 +22,16 @@ func main() {
 }
 
 func run() (resultErr error) {
-	assets := flag.String("assets", "", "directory containing kube-apiserver, etcd, and kubectl")
-	crds := flag.String("crds", "", "directory containing CRD YAML or JSON files to install")
-	kubeconfig := flag.String("kubeconfig", "", "path to create the kubeconfig after the API server is ready")
-	flag.Parse()
+	flags := flag.NewFlagSet("envtest", flag.ContinueOnError)
+	assets := flags.String("assets", "", "directory containing kube-apiserver, etcd, and kubectl")
+	crds := flags.String("crds", "", "directory containing CRD YAML or JSON files to install")
+	kubeconfig := flags.String("kubeconfig", "", "path to create the kubeconfig after the API server is ready")
+	if err := flags.Parse(os.Args[1:]); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected positional arguments")
+	}
 	if *assets == "" {
 		return fmt.Errorf("--assets is required")
 	}
