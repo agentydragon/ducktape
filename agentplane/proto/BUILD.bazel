@@ -51,7 +51,6 @@ proto_library(
     name = "runner_control_proto",
     srcs = ["runner_control.proto"],
     deps = [
-        ":command_proto",
         ":event_log_proto",
         ":grpc_tunnel_proto",
         ":runner_proto",

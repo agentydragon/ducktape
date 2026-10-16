@@ -149,15 +149,13 @@ async def test_every_call_reaches_the_runner_with_its_request_and_response_intac
         listed = await stub.ListSessions(runner_pb2.ListSessionsRequest(), metadata=metadata())
         assert [(row.session_id, row.last_cursor) for row in listed.sessions] == [("test-session", 7)]
 
-        delivering = asyncio.ensure_future(
-            stub.DeliverCommand(
-                runner_control_pb2.DeliverCommandRequest(session_id="test-session", command=COMMAND),
-                metadata=metadata(),
-            )
+        request = runner_control_pb2.SubmitInputRequest(
+            session_id="test-session", command_id=COMMAND.command_id, text=COMMAND.submit_input.text
         )
-        delivered = await runner.next(runner_control_pb2.DeliverCommandRequest)
-        assert (delivered.request.session_id, delivered.request.command) == ("test-session", COMMAND)
-        delivered.outcome.set_result(runner_control_pb2.DeliverCommandResponse(admission=admitted))
+        delivering = asyncio.ensure_future(stub.SubmitInput(request, metadata=metadata()))
+        delivered = await runner.next(runner_control_pb2.SubmitInputRequest)
+        assert delivered.request == request
+        delivered.outcome.set_result(runner_control_pb2.SubmitInputResponse(admission=admitted))
         assert (await delivering).admission == admitted
 
 

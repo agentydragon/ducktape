@@ -40,11 +40,7 @@ py_library(
 py_library(
     name = "commands",
     srcs = ["commands.py"],
-    deps = [
-        ":driver",
-        "//agentplane/proto:command_pb2",
-        "@pypi//protobuf",
-    ],
+    deps = [":driver"],
 )
 
 py_library(
@@ -126,7 +122,6 @@ py_library(
     srcs = ["driver.py"],
     deps = [
         ":gateway",
-        "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",

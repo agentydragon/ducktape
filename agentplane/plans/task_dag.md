@@ -1280,7 +1280,6 @@ with per-method authorization; commands use Dispatcher and typed Runner RPCs.
 
 ```mermaid
 flowchart TD
-    RUNNER_COMMAND_RPCS[Candidate: remove unused DeliverCommand]
     GATEWAY_WRAPPER_RETIRE[In progress: remove legacy Gateway wrappers]
     GATEWAY_DATABASE_DROP[Approved: drop Gateway database and its CNPG resources after rollout]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
@@ -1302,21 +1301,6 @@ configured caller account invoke the Runner methods allowed by policy, except `Q
 Review the per-method policy for `OpenSession` and other start-or-continue-work methods against the
 Dispatcher-only command boundary and the approved app resume path. Do not revoke app resume as part of
 retiring the Gateway Session wrapper.
-
-### `RUNNER_COMMAND_RPCS` — `DeliverCommand` goes once nothing calls it
-
-**In progress; caller rollout verified 2026-10-16.** Testing and staging Gateway replicas run the
-#10716 image (`4693fc9`), with all replicas updated and available and no old Pods. Independent
-of the remaining wrapper removal. One RPC per command rather than one taking a union is approved. The runner serves `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`,
-`InterruptTurn` and `StopRunnerSession` beside `DeliverCommand`, and the proxy admits every method of
-`Runner` (it builds its method set from the service descriptor). Current Dispatcher callers use the
-per-operation RPCs. Gateway `SubmitCommand`, the last production path to
-`DeliverCommand`, is removed in merged #10716; retain the latter while already-published Gateway images can call it, then remove it
-after that pinned-image gate is clear. Then `DeliverCommand`, `Command` as a request type and
-`DeliverCommandRequest`/`DeliverCommandResponse` are deleted from `runner_control.proto` once no
-pinned caller image sends it (the VM guest's runner wheel is a reader of the new RPCs, not a caller).
-The journal's `CommandAdmitted` event keeps storing the `Command` message, so stored history needs no
-migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — remove Gateway Session wrappers and registry runtime
 

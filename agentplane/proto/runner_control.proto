@@ -5,7 +5,6 @@ syntax = "proto3";
 
 package agentplane.proto.runner_control;
 
-import "agentplane/proto/command.proto";
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/grpc_tunnel.proto";
 import "agentplane/proto/runner.proto";
@@ -36,13 +35,9 @@ service Runner {
   // and seal every journal at its final cursor. Idempotent: a repeat returns the same cursors with
   // each Session's current `flushed`, so teardown repeats it until every Session is flushed.
   rpc Quiesce(agentplane.proto.runner.QuiesceRequest) returns (agentplane.proto.runner.QuiesceResponse);
-  // Admit a command, or return its admission if it is already journaled with the same payload, even
-  // after its harness stopped or its journal was sealed; redelivery is therefore safe. The same
-  // `command_id` with another payload fails with `ALREADY_EXISTS`.
-  rpc DeliverCommand(DeliverCommandRequest) returns (DeliverCommandResponse);
-  // One RPC per command, each admitting exactly as `DeliverCommand` does: the same `command_id`
-  // with the same payload returns the existing admission, and under another operation or payload
-  // it fails with `ALREADY_EXISTS`, so a `command_id` is unique across all of them.
+  // One RPC per command: the same `command_id` with the same operation and payload returns the
+  // existing admission, and under another operation or payload it fails with `ALREADY_EXISTS`.
+  // A `command_id` is unique across these operations.
   rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
   rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
   rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
@@ -139,16 +134,6 @@ message ResumeSessionRequest {
 
 message ResumeSessionResponse {
   agentplane.proto.runner.Attached attached = 1;
-}
-
-message DeliverCommandRequest {
-  string session_id = 1;
-  agentplane.proto.command.Command command = 2;
-}
-
-message DeliverCommandResponse {
-  // The runner journal's CommandAdmitted entry for the command.
-  agentplane.proto.event_log.EventEntry admission = 1;
 }
 
 // The command RPCs' responses each carry the runner journal's CommandAdmitted entry for the command.

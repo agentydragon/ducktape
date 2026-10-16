@@ -34,7 +34,6 @@ service Runner {
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
   rpc Quiesce(runner.QuiesceRequest) returns (runner.QuiesceResponse);
-  rpc DeliverCommand(DeliverCommandRequest) returns (DeliverCommandResponse); // old Gateway images
   rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
   rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
   rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
@@ -67,22 +66,10 @@ message Welcome {
   string incarnation_uid = 3;         // the Pod UID the connection authenticated as
 }
 
-// The runner deduplicates on `command.command_id` within a session, so redelivery is safe.
-message DeliverCommandRequest {
-  string session_id = 1;
-  agentplane.proto.command.Command command = 2;
-}
-
-message DeliverCommandResponse {
-  // The runner journal's CommandAdmitted entry, with its cursor. Fresh or already journaled.
-  agentplane.proto.event_log.EventEntry admission = 1;
-}
-
-// Dispatcher uses one RPC per command; `DeliverCommand` remains for already-published Gateway images.
-// Each RPC takes `session_id`, `command_id` and its own
-// fields (`text`, `model`, `effort`, `turn_id`; none for a stop) and answering with `admission` as
-// above. A `command_id` is unique across all of them and `DeliverCommand`: the same id under
-// another operation or payload fails `ALREADY_EXISTS`.
+// Dispatcher uses one RPC per command. Each takes `session_id`, `command_id` and its own fields
+// (`text`, `model`, `effort`, `turn_id`; none for a stop), returning the journal admission. A
+// `command_id` is unique across the operations: the same ID under another operation or payload
+// fails `ALREADY_EXISTS`.
 
 message Heartbeat {
   reserved 1;
@@ -115,9 +102,9 @@ message RunnerFacts {
 - **Later streams bind to the epoch.** Every RPC other than `Connect` carries the connection epoch
   from `Welcome` in metadata and is refused once that epoch is superseded.
 - **Message size.** gRPC's default 4 MiB per message.
-- **Admissions are facts.** A `DeliverCommand` answer reports the runner journal. Re-delivering a
-  command already journaled with the same payload returns its existing `CommandAdmitted` entry,
-  which the runner already guarantees by deduplicating on `command_id`. The service never infers
+- **Admissions are facts.** A per-operation RPC answer reports the runner journal. Repeating an
+  operation already journaled with the same payload returns its existing `CommandAdmitted` entry,
+  which the runner guarantees by deduplicating on `command_id`. The service never infers
   admission from a stream write, a heartbeat or HTTP/2 flow-control progress. Which refusals are
   terminal for a submission is the Dispatcher's decision, not the control stream's; today none is,
   and a refusal leaves it pending. See [Dispatcher admission and runner result](thread_layering.md#dispatcher-admission-runner-result).
@@ -416,7 +403,6 @@ calling RPC's deadline, like command deliveries, and a reconnect replays none of
 | App explicit resume            | `ResumeSession`                                    |
 | Teardown sealing               | `Quiesce`, repeated until every Session is flushed |
 | Dispatcher command delivery    | Matching per-operation Runner RPC                  |
-| Old Gateway images             | `DeliverCommand`                                   |
 
 The VM experiment's runtime acceptance drives the guest runner directly through a port-forward and
 moves with the selected VM control path.
@@ -551,10 +537,6 @@ payload before replying. A repeated operation with the same ID and payload retur
 `CommandAdmitted` entry; reuse of an ID for another operation or payload is rejected. Dispatcher
 tracks delivery status, while History exposes the Runner's journal after it is pushed.
 
-`DeliverCommand` remains in the Runner service only so already-published Gateway images can finish
-their old protocol. Current Dispatcher code does not call it. It follows the same journal and
-deduplication rules as the per-operation methods and can be removed after the pinned Gateway image
-gate is clear.
 
 ## Heartbeat and liveness
 

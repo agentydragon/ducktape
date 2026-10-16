@@ -1,5 +1,5 @@
 """The runner's `Runner` service, called through its control stream by a stand-in Runner Gateway:
-delivered commands are admitted once and answered from the journal, refusals carry their status,
+typed command operations are admitted once and answered from the journal, refusals carry their status,
 lifecycle calls start a harness only when they say so, and a lost connection is replaced by a fresh
 one."""
 
@@ -14,14 +14,7 @@ import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from agentplane.grpc.tunnel import local_server
-from agentplane.proto import (
-    command_pb2,
-    event_log_pb2,
-    event_pb2,
-    runner_control_pb2,
-    runner_control_pb2_grpc,
-    runner_pb2,
-)
+from agentplane.proto import event_log_pb2, event_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.runner.config import ClaudeLaunch, RunnerConfig
 from agentplane.runner.control import RunnerControlClient, RunnerService
 from agentplane.runner.harness_process import HarnessProcess
@@ -146,12 +139,8 @@ async def dial(runner: Runner, gateway: Gateway) -> AsyncIterator[Callable[[], A
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-def deliver(session_id: str, command: command_pb2.Command) -> runner_control_pb2.DeliverCommandRequest:
-    return runner_control_pb2.DeliverCommandRequest(session_id=session_id, command=command)
-
-
-def submit(command_id: str, text: str = "test input") -> command_pb2.Command:
-    return command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=text))
+def submit(session_id: str, command_id: str, text: str = "test input") -> runner_control_pb2.SubmitInputRequest:
+    return runner_control_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text)
 
 
 def acknowledge_sealed_sessions(runner: Runner) -> None:
@@ -174,11 +163,11 @@ async def test_a_redelivered_command_is_admitted_once_and_answered_from_the_jour
 ) -> None:
     service = await dial()
     first, second = await asyncio.gather(
-        service.DeliverCommand(deliver(RUNNING, submit("test-input"))),
-        service.DeliverCommand(deliver(RUNNING, submit("test-input"))),
+        service.SubmitInput(submit(RUNNING, "test-input")), service.SubmitInput(submit(RUNNING, "test-input"))
     )
     assert first == second
-    assert first.admission.event.command_admitted.command == submit("test-input")
+    admitted = first.admission.event.command_admitted.command
+    assert (admitted.command_id, admitted.submit_input.text) == ("test-input", "test input")
     assert (await runner.sessions[RUNNING].journal.admitted_entry("test-input")) == first.admission
     assert gateway.control.authorizations == ["Bearer test-placeholder"]
 
@@ -268,7 +257,7 @@ async def test_a_redelivery_after_the_harness_ended_is_answered_with_the_origina
 ) -> None:
     # The gateway settles a submission whose answer was lost only by delivering it again.
     service = await dial()
-    first = await service.DeliverCommand(deliver(RUNNING, submit("test-input")))
+    first = await service.SubmitInput(submit(RUNNING, "test-input"))
     session = runner.sessions[RUNNING]
     if ending == "stopped":
         assert session.process is not None
@@ -276,19 +265,19 @@ async def test_a_redelivery_after_the_harness_ended_is_answered_with_the_origina
     else:
         await service.Quiesce(runner_pb2.QuiesceRequest())
     assert not session.running
-    assert await service.DeliverCommand(deliver(RUNNING, submit("test-input"))) == first
+    assert await service.SubmitInput(submit(RUNNING, "test-input")) == first
 
 
 async def test_refusals_carry_their_status(dial: Callable[[], Awaitable[Service]]) -> None:
     service = await dial()
-    await service.DeliverCommand(deliver(RUNNING, submit("test-conflict", "first")))
+    await service.SubmitInput(submit(RUNNING, "test-conflict", "first"))
     refused = [
-        await refusal(service.DeliverCommand(deliver(session_id, command)))
-        for session_id, command in [
-            (RUNNING, submit("test-conflict", "different")),
-            (STOPPED, submit("test-stopped")),
-            ("test-unknown-session", submit("test-unknown")),
-            (RUNNING, command_pb2.Command(command_id="test-invalid")),
+        await refusal(service.SubmitInput(request))
+        for request in [
+            submit(RUNNING, "test-conflict", "different"),
+            submit(STOPPED, "test-stopped"),
+            submit("test-unknown-session", "test-unknown"),
+            runner_control_pb2.SubmitInputRequest(session_id=RUNNING, text="missing command ID"),
         ]
     ]
     assert refused == [
@@ -308,7 +297,7 @@ async def test_a_lost_connection_is_replaced_by_a_fresh_one(
     else:
         gateway.control.silences = 1
     service = await dial()
-    assert (await service.DeliverCommand(deliver(RUNNING, submit("test-after-reconnect")))).HasField("admission")
+    assert (await service.SubmitInput(submit(RUNNING, "test-after-reconnect"))).HasField("admission")
     hellos, peers = gateway.control.hellos, gateway.control.peers
     assert len(hellos) == 2
     # One runner process: the same boot ID, over a new HTTP/2 connection.
@@ -411,7 +400,7 @@ async def test_a_quiesce_waits_for_the_admission_under_way_and_a_delivery_after_
     monkeypatch.setattr(runner, "quiesce", counted_quiesce)
     service = await dial()
     async with asyncio.timeout(10):
-        before = asyncio.ensure_future(service.DeliverCommand(deliver(RUNNING, submit("test-before-seal"))))
+        before = asyncio.ensure_future(service.SubmitInput(submit(RUNNING, "test-before-seal")))
         await admitting.wait()
         sealed = await service.Quiesce(runner_pb2.QuiesceRequest())
         assert int(sealed.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
@@ -420,7 +409,7 @@ async def test_a_quiesce_waits_for_the_admission_under_way_and_a_delivery_after_
         )
         repeated = await service.Quiesce(runner_pb2.QuiesceRequest())
         assert repeated.stage == sealed.stage
-        after = asyncio.create_task(refusal(service.DeliverCommand(deliver(RUNNING, submit("test-after-seal")))))
+        after = asyncio.create_task(refusal(service.SubmitInput(submit(RUNNING, "test-after-seal"))))
         unblocked.set()
         admitted, refused = await asyncio.gather(before, after)
         await service.ListSessions(runner_pb2.ListSessionsRequest())

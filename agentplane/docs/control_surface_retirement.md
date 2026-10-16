@@ -26,9 +26,9 @@ for live Runner calls.
 
 The Gateway-specific `CreateSession`, `ResumeSession`, `ListSessions` and
 `BatchGetSessionSandboxes` wrappers are removed. The Runner methods remain because they have current
-callers. `Runner.DeliverCommand` remains only for compatibility with already-published images until
-its own pinned-image gate is clear. History's Session Event archive and the Dispatcher queue are
-independent state owners.
+callers. Command admission and delivery use Session Dispatcher and the per-operation Runner RPCs;
+the journal's `CommandAdmitted` history still stores the shared `Command` message. History's Session
+Event archive and the Dispatcher queue are independent state owners.
 
 ## Retained database migration gate
 

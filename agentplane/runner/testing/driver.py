@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 import grpc
 import pytest
 
-from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, runner_control_pb2, runner_pb2
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.runner import Runner
 from agentplane.runner.testing.gateway import Gateway, dialing
@@ -60,16 +60,41 @@ class SessionFollow:
         """The last source-local cursor read; a later follow continues after it."""
         return self._cursor
 
-    async def command(self, command: command_pb2.Command) -> None:
-        """Deliver `command` and return once the runner admitted it."""
+    async def submit_input(self, command_id: str, text: str) -> None:
+        """Submit text and return once the runner admitted it."""
         runner = await self._gateway.control.runner()
-        await runner.DeliverCommand(
-            runner_control_pb2.DeliverCommandRequest(session_id=self.attached.session_id, command=command)
+        await runner.SubmitInput(
+            runner_control_pb2.SubmitInputRequest(session_id=self.attached.session_id, command_id=command_id, text=text)
+        )
+
+    async def interrupt_turn(self, command_id: str, turn_id: str) -> None:
+        runner = await self._gateway.control.runner()
+        await runner.InterruptTurn(
+            runner_control_pb2.InterruptTurnRequest(
+                session_id=self.attached.session_id, command_id=command_id, turn_id=turn_id
+            )
+        )
+
+    async def change_model(self, command_id: str, model: str) -> None:
+        runner = await self._gateway.control.runner()
+        await runner.ChangeModel(
+            runner_control_pb2.ChangeModelRequest(
+                session_id=self.attached.session_id, command_id=command_id, model=model
+            )
+        )
+
+    async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
+        runner = await self._gateway.control.runner()
+        await runner.ChangeReasoningEffort(
+            runner_control_pb2.ChangeReasoningEffortRequest(
+                session_id=self.attached.session_id, command_id=command_id, effort=effort
+            )
         )
 
     async def stop_runner_session(self, command_id: str) -> None:
-        await self.command(
-            command_pb2.Command(command_id=command_id, stop_runner_session=command_pb2.StopRunnerSession())
+        runner = await self._gateway.control.runner()
+        await runner.StopRunnerSession(
+            runner_control_pb2.StopRunnerSessionRequest(session_id=self.attached.session_id, command_id=command_id)
         )
 
     async def next_entry(self) -> event_log_pb2.EventEntry:

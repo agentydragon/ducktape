@@ -226,14 +226,6 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
         return await self._quiesce(context, request.if_idle_since if request.HasField("if_idle_since") else None)
 
     @override
-    async def DeliverCommand(
-        self, request: runner_control_pb2.DeliverCommandRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.DeliverCommandResponse:
-        return runner_control_pb2.DeliverCommandResponse(
-            admission=await self._deliver(request.session_id, request.command, context)
-        )
-
-    @override
     async def SubmitInput(
         self, request: runner_control_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.SubmitInputResponse:
