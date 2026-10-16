@@ -1301,8 +1301,6 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
     NOTIFICATION_GATEWAY_TARGET_READER_RETIRE[Blocked: remove unused Notifications setting after manifest rollout]
-    DISPATCHER_OPENING_ATTACHED_READ_RETIRE[Candidate: unmap the retired snapshot]
-    DISPATCHER_OPENING_ATTACHED_READ_RETIRE -->|Unmapped-reader image Ready in testing and staging| DISPATCHER_OPENING_ATTACHED_COLUMN_DROP[Blocked: drop the retired snapshot column]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[In progress: remove legacy Gateway wrappers]
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
@@ -1330,20 +1328,12 @@ Delete the accepted-unused `RunnerGatewaySettings.target` field and its stale se
 Unknown settings are forbidden, so do not remove the reader before all deployed manifests stop
 supplying the key. This cleanup is independent of Gateway API-wrapper retirement.
 
-### `DISPATCHER_OPENING_ATTACHED_READ_RETIRE` — stop selecting the unused opening snapshot column
-
-**Candidate; rollout verified 2026-10-16 UTC.** All Dispatcher replicas run
-`devel-20261016020159-6ec9015`, testing 1/1 and staging 2/2 Ready with current observed generations;
-the source includes #10675 and no longer writes `attached`. The
-protobuf field is reserved and the writer is gone; the nullable ORM mapping remains and ordinary
-Dispatcher reads still select it. Unmap the field after that rollout. #10699 permits a retained
-physical column to be absent from the runtime metadata, so no deferred mapping is needed. Wait for
-the unmapped-reader image in both environments before dropping the column, because migration runs
-before old pods drain during a rolling deployment.
-
 ### `DISPATCHER_OPENING_ATTACHED_COLUMN_DROP` — drop the unused opening snapshot column
 
-**Blocked on** `DISPATCHER_OPENING_ATTACHED_READ_RETIRE` reaching both testing and staging. In a
+**Blocked on the image with the unmapped `SessionOpening.attached` field being Ready in both
+testing and staging.** The writer-free `devel-20261016020159-6ec9015` rollout was verified
+2026-10-16 UTC (testing 1/1, staging 2/2); this permits removing the ORM mapping, not the physical
+column while old readers remain. In a
 separate PR, add a migration to drop `session_opening.attached`.
 Preserve each opening's Session ID, Sandbox identity, state, reason and timestamps.
 
