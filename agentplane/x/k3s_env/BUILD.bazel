@@ -6,7 +6,7 @@ load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shar
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
-# Manual only: it downloads k3s at run time and runs it as root.
+# Manual only: it runs k3s as root.
 
 # The runner image the `runner` SandboxTemplate names, built by Bazel from the runner and its two
 # pinned native harnesses at the paths the template passes (`/bin/claude`, `/bin/codex`). It has
