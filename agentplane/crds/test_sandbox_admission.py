@@ -1,7 +1,7 @@
 """Exercise the generated Sandbox schemas through Kubernetes admission, including CEL."""
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
@@ -36,15 +36,15 @@ async def _create(
     if not valid:
         with pytest.raises(ApiException) as rejected:
             await api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body)
-        assert rejected.value.status == 422, f"{name}: {rejected.value.status}: {rejected.value.body}"
+        assert rejected.value.status == 422, f"{name}: {rejected.value.status}: {rejected.value.body!r}"
         return None
-    return await api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body)
+    return cast(dict[str, Any], await api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body))
 
 
 async def test_generated_sandbox_crds_admit_same_values() -> None:
     async with kubernetes_apiserver() as server:
         core = k8s_client.CoreV1Api(server.api)
-        await core.create_namespace({"metadata": {"name": NAMESPACE}})
+        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE)))
         api = k8s_client.CustomObjectsApi(server.api)
 
         for index, (pod, vm, valid) in enumerate(
@@ -115,15 +115,14 @@ async def test_generated_sandbox_crds_admit_same_values() -> None:
         assert sandbox["spec"]["running"] is False
         assert sandbox["spec"]["wakeOnSend"] is False
         assert sandbox["spec"]["wakeGeneration"] == 0
-        for index, spec in enumerate(
-            [
-                {"template": ""},
-                {"template": "opaque", "wakeGeneration": -1},
-                {"template": "opaque", "policySets": ["same", "same"]},
-                {"template": "opaque", "bootstrap": "x" * 65537},
-            ]
-        ):
-            await _create(api, "sandboxes", f"invalid-{index}", spec, False)
+        invalid_sandbox_specs: list[dict[str, Any]] = [
+            {"template": ""},
+            {"template": "opaque", "wakeGeneration": -1},
+            {"template": "opaque", "policySets": ["same", "same"]},
+            {"template": "opaque", "bootstrap": "x" * 65537},
+        ]
+        for index, sandbox_spec in enumerate(invalid_sandbox_specs):
+            await _create(api, "sandboxes", f"invalid-{index}", sandbox_spec, False)
         await _create(api, "sandboxes", "n" * 64, {"template": "opaque"}, False)
 
         with_status = deepcopy(sandbox)
@@ -132,7 +131,7 @@ async def test_generated_sandbox_crds_admit_same_values() -> None:
             await api.replace_namespaced_custom_object_status(
                 GROUP, VERSION, NAMESPACE, "sandboxes", "defaulted", with_status
             )
-        assert rejected.value.status == 422, rejected.value.body
+        assert rejected.value.status == 422, repr(rejected.value.body)
 
         with_status["status"]["suspendedAtWakeGeneration"] = 0
         await api.replace_namespaced_custom_object_status(

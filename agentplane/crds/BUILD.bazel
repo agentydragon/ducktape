@@ -79,9 +79,9 @@ py_test(
 
 py_test(
     name = "test_sandbox_admission",
-    size = "medium",
     srcs = ["test_sandbox_admission.py"],
     deps = [
+        "//:conftest",
         "//agentplane/testing:kubernetes_apiserver",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
