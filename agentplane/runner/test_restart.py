@@ -23,7 +23,6 @@ from agentplane.proto import event_pb2, runner_control_pb2, runner_pb2
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.store import StateOwner
 from agentplane.runner.testing import events, launches
-from agentplane.runner.testing.commands import submit_input
 from agentplane.runner.testing.driver import RunnerDriver, refusal
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
@@ -223,10 +222,10 @@ async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement
     command_id = "fenced-replacement"
     first_runner = await start_runner(test_debug_checkpoint=("after-dispatch-planned", command_id))
     first = await driver.attach("writer-handoff-1", spec=spec)
-    await submit_input(first, "handoff-seed", "Reply with exactly: HANDOFF_SEED_OK")
+    await first.submit_input("handoff-seed", "Reply with exactly: HANDOFF_SEED_OK")
     await model.reply(await model.request(), Text("HANDOFF_SEED_OK"))
     await first.until(events.turn_completed)
-    await submit_input(first, command_id, "Reply with exactly: HANDOFF_REPLACEMENT_OK")
+    await first.submit_input(command_id, "Reply with exactly: HANDOFF_REPLACEMENT_OK")
     await first.until(events.is_kind("command_admitted"))
     checkpoint = await first.until(events.is_kind("debug_checkpoint"))
     harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
@@ -334,7 +333,7 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
     """A successor cannot dispatch while the killed runner's native harness awaits upstream."""
     first_runner = await start_runner()
     first = await driver.attach("writer-handoff-active", spec=spec)
-    await submit_input(first, "active-before-crash", "Reply with exactly: ACTIVE_FENCE_OK")
+    await first.submit_input("active-before-crash", "Reply with exactly: ACTIVE_FENCE_OK")
     active_request = await model.request()
     assert active_request.user_texts[-1] == "Reply with exactly: ACTIVE_FENCE_OK"
     await model.hold(active_request)
@@ -354,7 +353,7 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
 
     # Once the old group is fenced, a replacement owns the same state volume and can dispatch.
     replacement = await driver.attach("writer-handoff-successor", spec=spec)
-    await submit_input(replacement, "successor-input", "Reply with exactly: SUCCESSOR_FENCE_OK")
+    await replacement.submit_input("successor-input", "Reply with exactly: SUCCESSOR_FENCE_OK")
     successor_request = await model.request()
     assert successor_request.user_texts[-1] == "Reply with exactly: SUCCESSOR_FENCE_OK"
     assert model.request_count == 2
@@ -372,7 +371,7 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
 ) -> None:
     first_runner = await start_runner()
     first = await driver.attach("restart-1", spec=spec)
-    await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
+    await first.submit_input("input-1", "Reply with exactly: SEED_OK")
     request = await model.request()
     await model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
@@ -386,7 +385,7 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     assert lost.cursor < started.cursor
     assert started.event.harness_started.resumed
     assert not events.of_kind(second.seen, "turn_completed")
-    await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
+    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
     assert request.assistant_texts == ["SEED_OK"]
@@ -409,7 +408,7 @@ async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps
 
     async def seed_and_stop(session_id: str, suffix: str) -> tuple[int, str]:
         session = await driver.attach(session_id, spec=spec)
-        await submit_input(session, f"{suffix}-seed", f"Reply with exactly: {suffix}_SEED_OK")
+        await session.submit_input(f"{suffix}-seed", f"Reply with exactly: {suffix}_SEED_OK")
         await model.reply(await model.request(), Text(f"{suffix}_SEED_OK"))
         await session.until(events.turn_completed)
         (started,) = events.of_kind(session.seen, "harness_started")
@@ -434,7 +433,7 @@ async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps
     pending_started = await pending.until(events.is_kind("harness_started"))
     assert pending_started.event.harness_started.resumed
     assert pending_started.origin.source_id == pending_source_id
-    await submit_input(pending, "pending-after-wake-input", "Reply with exactly: PENDING_RESUMED_OK")
+    await pending.submit_input("pending-after-wake-input", "Reply with exactly: PENDING_RESUMED_OK")
     pending_request = await model.request()
     assert pending_request.user_texts == [
         "Reply with exactly: PENDING_SEED_OK",
@@ -452,7 +451,7 @@ async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps
     dormant_started = await dormant.until(events.is_kind("harness_started"))
     assert dormant_started.event.harness_started.resumed
     assert dormant_started.origin.source_id == dormant_source_id
-    await submit_input(dormant, "dormant-after-wake-input", "Reply with exactly: DORMANT_RESUMED_OK")
+    await dormant.submit_input("dormant-after-wake-input", "Reply with exactly: DORMANT_RESUMED_OK")
     dormant_request = await model.request()
     assert dormant_request.user_texts == [
         "Reply with exactly: DORMANT_SEED_OK",
@@ -486,11 +485,11 @@ async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
     # Both native harnesses make a durable resume point only after one completed turn. This is the
     # normal target for a later command and keeps the crash test about command recovery, not a
     # harness's first-thread bootstrap contract.
-    await submit_input(first, "seed-before-retry", "Reply with exactly: RETRY_SEED_OK")
+    await first.submit_input("seed-before-retry", "Reply with exactly: RETRY_SEED_OK")
     seed_request = await model.request()
     await model.reply(seed_request, Text("RETRY_SEED_OK"))
     await first.until(events.turn_completed)
-    await submit_input(first, command_id, "Reply with exactly: RETRIED_ONCE_OK")
+    await first.submit_input(command_id, "Reply with exactly: RETRIED_ONCE_OK")
     await first.until(events.is_kind("command_admitted"))
     debug = await first.until(events.is_kind("debug_checkpoint"))
     assert (debug.event.debug_checkpoint.name, debug.event.debug_checkpoint.command_id) == (
@@ -535,12 +534,12 @@ async def test_codex_acceptance_before_confirmation_crash_replays_input_with_ori
     first_runner = await start_runner(test_debug_checkpoint=("before-user-message-confirmed", command_id))
     first = await driver.attach("codex-accepted-before-confirmation", spec=spec)
 
-    await submit_input(first, "seed-before-acceptance-crash", "Reply with exactly: ACCEPTANCE_SEED_OK")
+    await first.submit_input("seed-before-acceptance-crash", "Reply with exactly: ACCEPTANCE_SEED_OK")
     seed_request = await model.request()
     await model.reply(seed_request, Text("ACCEPTANCE_SEED_OK"))
     await first.until(events.turn_completed)
 
-    await submit_input(first, command_id, target_text)
+    await first.submit_input(command_id, target_text)
     await first.until(events.is_kind("command_admitted"))
     checkpoint = await first.until(events.is_kind("debug_checkpoint"))
     assert (checkpoint.event.debug_checkpoint.name, checkpoint.event.debug_checkpoint.command_id) == (
@@ -617,11 +616,11 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
     # native confirmation gate, then crash after its atomic command/Event commit.
     first_runner = await start_runner(test_debug_checkpoint=("after-terminal-outcome", command_id))
     first = await driver.attach("restart-effect-1", spec=spec)
-    await submit_input(first, "seed-before-effect", "Reply with exactly: EFFECT_SEED_OK")
+    await first.submit_input("seed-before-effect", "Reply with exactly: EFFECT_SEED_OK")
     seed_request = await model.request()
     await model.reply(seed_request, Text("EFFECT_SEED_OK"))
     await first.until(events.turn_completed)
-    await submit_input(first, command_id, "Reply with exactly: EFFECT_REPLAY_OK")
+    await first.submit_input(command_id, "Reply with exactly: EFFECT_REPLAY_OK")
     await first.until(events.is_kind("command_admitted"))
     # Claude's confirmation correlation is its first response-side `message_start`, unlike
     # Codex's turn-start acknowledgement. Feed the real upstream response before waiting for the
@@ -678,7 +677,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_a_new_incarnation_resumes(
     empty workspace, and the native harness resumes from what the state directory holds."""
     first_runner = await start_runner(home=tmp_path / "first-home")
     first = await driver.attach("sigterm-1", spec=spec)
-    await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
+    await first.submit_input("input-1", "Reply with exactly: SEED_OK")
     seed = await model.request()
     await model.reply(seed, Text("SEED_OK"))
     await first.until(events.turn_completed)
@@ -703,7 +702,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_a_new_incarnation_resumes(
     started = await second.until(events.is_kind("harness_started"))
     assert started.event.harness_started.resumed
     assert not events.of_kind(second.seen, "harness_lost")
-    await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
+    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
     assert request.assistant_texts == ["SEED_OK"]
@@ -725,7 +724,7 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
 ) -> None:
     first_runner = await start_runner()
     first = await driver.attach("cut-off-reasoning-1", spec=spec)
-    await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
+    await first.submit_input("input-1", "Reply with exactly: SEED_OK")
     await model.hold_after_first_delta(await model.request(), Reasoning("CUT_OFF_THOUGHT"))
     cut_off = (await first.until(events.is_kind("item_started"))).event.item_started.item_id
     await first.until(events.is_kind("text_delta"))
@@ -740,7 +739,7 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
     assert [(item.item_id, item.disposition) for item in reconciled.event.conversation_reconciled.items] == [
         (cut_off, event_pb2.RECOVERY_DISPOSITION_ABSENT)
     ]
-    await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
+    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert request.reasoning_texts == []
     await model.reply(request, Text("RESUMED_OK"))

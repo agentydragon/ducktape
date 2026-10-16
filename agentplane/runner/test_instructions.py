@@ -9,7 +9,6 @@ import pytest_bazel
 
 from agentplane.proto import runner_pb2
 from agentplane.runner.testing import events, launches
-from agentplane.runner.testing.commands import submit_input
 from agentplane.runner.testing.driver import RunnerDriver, refusal
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 
@@ -33,7 +32,7 @@ async def test_a_session_without_instructions_sends_only_the_platform_ones(
     driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     session = await driver.attach("no-instructions-1", spec=spec)
-    await submit_input(session, "input-1", "Reply with exactly: PLAIN_OK")
+    await session.submit_input("input-1", "Reply with exactly: PLAIN_OK")
     request = await model.request()
     assert "Wren" not in request.system_text
     assert launches.PLATFORM_INSTRUCTIONS in request.system_text
@@ -76,7 +75,7 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     first = await driver.attach("instructions-1", spec=with_instructions(spec, INSTRUCTIONS))
-    await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
+    await first.submit_input("input-1", "Reply with exactly: SEED_OK")
     request = await model.request()
     assert INSTRUCTIONS in request.system_text
     await model.reply(request, Text("SEED_OK"))
@@ -94,7 +93,7 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     assert second.attached.spec == first.attached.spec
     started = await second.until(events.is_kind("harness_started"))
     assert started.event.harness_started.resumed
-    await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
+    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert INSTRUCTIONS in request.system_text
     await model.reply(request, Text("RESUMED_OK"))

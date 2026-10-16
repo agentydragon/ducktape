@@ -13,7 +13,6 @@ import pytest_bazel
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.testing import events
-from agentplane.runner.testing.commands import submit_input
 from agentplane.runner.testing.driver import RunnerDriver, running
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
@@ -108,7 +107,7 @@ async def test_native_history_and_resume_resources(
             session = await driver.attach(session_id, spec=spec)
             started = await session.until(events.is_kind("harness_started"))
             for index in range(history_size):
-                await submit_input(session, f"input-{index}", inputs[index])
+                await session.submit_input(f"input-{index}", inputs[index])
                 request = await model.request()
                 assert request.user_texts == inputs[: index + 1]
                 assert request.assistant_texts == outputs[:index]
@@ -124,7 +123,7 @@ async def test_native_history_and_resume_resources(
             session = await driver.attach(session_id, spec=spec, after_cursor=cursor)
             started = await session.until(events.is_kind("harness_started"))
             assert started.event.harness_started.resumed
-            await submit_input(session, "resumed-input", inputs[-1])
+            await session.submit_input("resumed-input", inputs[-1])
             request = await model.request()
             assert request.user_texts == inputs
             assert request.assistant_texts == outputs[:-1]
