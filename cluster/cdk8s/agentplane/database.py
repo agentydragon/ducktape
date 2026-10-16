@@ -113,15 +113,13 @@ class Db(Construct):
                     for role in _ROLE_NAMES
                 ]
                 + [
-                    # Remove this tombstone after both environments report the role absent.
-                    ClusterSpecManagedRoles(name="sandbox_commands", ensure=ClusterSpecManagedRolesEnsure.ABSENT),
                     ClusterSpecManagedRoles(
                         name=_ELECTRIC_ROLE,
                         ensure=ClusterSpecManagedRolesEnsure.PRESENT,
                         login=True,
                         replication=True,
                         password_secret=ClusterSpecManagedRolesPasswordSecret(name="postgres-electric"),
-                    ),
+                    )
                 ]
             ),
         )

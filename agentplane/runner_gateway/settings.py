@@ -31,11 +31,6 @@ class Settings(YamlFileSettings):
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     kubeconfig: Path | None = None
-    # Old Pod configs may still supply this while the migration init container uses the same config.
-    # The serving process no longer opens the database; physical retirement is a later rollout gate.
-    commands_database_url: str | None = Field(
-        default=None, description="Legacy database URL accepted during rollout; not used by the serving process."
-    )
     runner_control_audience: str = Field(
         default=RUNNER_CONTROL_AUDIENCE,
         description="Audience of the Pod tokens the egress proxy substitutes on runner control stream connections.",

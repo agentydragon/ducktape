@@ -1310,7 +1310,7 @@ with per-method authorization; commands use Dispatcher and typed Runner RPCs.
 ```mermaid
 flowchart TD
     GATEWAY_WRAPPER_RETIRE[In progress: remove legacy Gateway wrappers]
-    GATEWAY_DATABASE_DROP --> GATEWAY_DATABASE_DROP_CLEANUP[Blocked: remove migration artifacts after database drop]
+    GATEWAY_DATABASE_DROP --> GATEWAY_DATABASE_DROP_CLEANUP[In progress: retire migration artifacts; verify deployed cleanup]
     GATEWAY_DATABASE_DROP[Approved: drop Gateway database and its CNPG resources after rollout]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
@@ -1340,21 +1340,21 @@ and `BatchGetSessionSandboxes`, plus the partial `SessionRegistry`, its ORM mapp
 database access. Test callers use Runner RPCs and Dispatcher operations. Keep live Runner inventory,
 the reverse tunnel and proxy, controller Quiesce, standard gRPC health, and the app's Gateway target
 for its System health probe. The direct app `Runner.ResumeSession` rollout is already verified; keep
-that explicitly approved caller. Manifests may continue supplying the legacy optional serving setting
-through rollout; delete its reader only in `GATEWAY_DATABASE_DROP`. Preserve runner-native state,
+that explicitly approved caller. The database drop removed the legacy serving setting from manifests;
+remove its now-unused reader in `GATEWAY_DATABASE_DROP_CLEANUP`. Preserve runner-native state,
 History and the independent Dispatcher queue. Do not port the registry into Go. Roll the registry-free
 Gateway image to all replicas in testing and staging before the separate database drop.
 
 ### `GATEWAY_DATABASE_DROP` — remove Gateway's database and CNPG-managed resources
 
 **Approved data-drop scope, 2026-10-16. The operator accepts a brief outage while the
-registry-free Gateway image rolls out; its rollout no longer blocks this drop. Separate PR, merged
-by the operator.** Drop the `session` table by dropping its
-`sandbox_commands` database; old Gateway images may fail until replaced by the registry-free image. Remove its CNPG `Database` resource,
-managed role, generated credentials/Secret, migration init container, database URL manifest setting,
-and obsolete migration/image publication wiring. Verify the CNPG Database reclaim policy and actual
-SQL database/role deletion rather than assuming pruning the CR deletes the data. After manifests
-without the setting have reconciled, delete the remaining settings reader and migration sources.
+registry-free Gateway image rolls out; its rollout no longer blocks this drop.** The merged database
+drop removes the `sandbox_commands` CNPG `Database` resource, generated credentials/Secret, migration
+init container, and database URL manifest setting. The cleanup PR removes the optional serving
+setting reader, migration sources, image target/publication/automation, pins, and stale fixture/docs.
+Verify the CNPG Database reclaim policy and actual SQL database/role deletion rather than assuming
+pruning the CR deletes the data. Testing and staging SQL checks confirmed the database and role are
+absent; this cleanup removes the temporary `ensure: absent` role tombstone.
 
 The CNPG **Cluster `postgres` is shared** with app, Actions, Egress, Notifications, History and
 Dispatcher (`cluster/cdk8s/agentplane/database.py`); retain that Cluster, operator and storage.
@@ -1362,14 +1362,17 @@ This node removes Gateway's logical database and associated CNPG resources, not 
 data. No database rename is needed. `DELIVERY_GO_RETIREMENT_REBASE` then rebases the Go implementation
 onto this completed retirement before the unified Go PR may merge.
 
-### `GATEWAY_DATABASE_DROP_CLEANUP` — remove retired migration artifacts and role tombstone
+### `GATEWAY_DATABASE_DROP_CLEANUP` — retire migration artifacts; verify deployed cleanup
 
-**Blocked on verified `GATEWAY_DATABASE_DROP` reconciliation in testing and staging.** Verify the
-SQL `sandbox_commands` database and role are absent, and no Gateway Pod still has a migration init
-container or database URL. Remove the `ensure: absent` role tombstone, optional legacy settings
-reader, `runner_gateway/commands` migration sources, migration image publication and automation,
-and stale database documentation. Preserve the shared PostgreSQL Cluster and Dispatcher migrations.
-Remove both retirement nodes once the drop and cleanup are complete.
+**In progress.** This cleanup removes the optional legacy settings reader, the entire
+`runner_gateway/commands` migration package and its tests, the old migration image target and
+publication/automation/pins, and stale fixture and database documentation. It also removes the
+temporary CNPG role tombstone after testing and staging SQL checks confirmed that the retired
+database and role are absent. It preserves the shared PostgreSQL Cluster and Dispatcher migrations.
+
+Keep this node open until live testing and staging checks confirm that the old generated Secret and
+migration init container are gone and no deployed configuration still supplies the retired setting.
+A merged source change alone does not establish rollout state.
 
 ## Scope and retirement of stale gates
 
@@ -1449,9 +1452,10 @@ loss is terminal for runner-owned state; there is no requirement to reconstruct 
 History, and this does not imply separately retained History was also lost. Cover per-Session ordering,
 cancellation, duplicate opens, sender and replica failure, and retries. Runner-local persistence
 protects work only after the runner has committed admission; it does not accept work while that runner
-is absent. Inventory all database owners before making any CNPG claim: the shared cluster also serves `app`, `sandbox_commands`,
-`sandbox_service`, `actions`, `egress`, `notifications` and the Dispatcher; Indexing has a separate
-PostgreSQL dependency.
+is absent. Inventory all database owners before making any CNPG claim: current manifests declare the
+shared cluster databases `app`, `sandbox_service`, `actions`, `egress`, `notifications` and the
+Dispatcher; testing and staging SQL checks confirmed that `sandbox_commands` and its role are absent.
+Indexing has a separate PostgreSQL dependency.
 
 **Recommendation for review:** preserve the queue's durable acceptance and wake-to-deliver contract.
 If a direct mode is considered, keep it a separate online-only contract with explicit idempotent

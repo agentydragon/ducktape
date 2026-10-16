@@ -50,12 +50,7 @@ IMAGES = {
     "policy_controller": ("//agentplane/policy_controller:image", "agentplane/policy_controller/image"),
     "runner": ("//agentplane/x/k3s_env:runner_image", "agentplane/x/k3s_env/runner_image"),
     "runner_gateway": ("//agentplane/runner_gateway:image", "agentplane/runner_gateway/image"),
-    "runner_gateway_migrate": (
-        "//agentplane/runner_gateway/commands:migration_image",
-        "agentplane/runner_gateway/commands/migration_image",
-    ),
     "sandbox_controller": ("//agentplane/sandbox_controller:image", "agentplane/sandbox_controller/image"),
-    "sandbox_service": ("//agentplane/sandbox_service:image", "agentplane/sandbox_service/image"),
     "session_dispatcher": ("//agentplane/session_dispatcher:image", "agentplane/session_dispatcher/image"),
     "session_dispatcher_migrate": (
         "//agentplane/session_dispatcher:migration_image",

@@ -46,8 +46,9 @@ recovery use the requested Sandbox, Kubernetes state, and runner control RPCs. S
 [`store.py`](../session_dispatcher/store.py).
 
 The Gateway owns the runner's long-lived control connection and routes calls to the replica holding
-that connection. It does not persist Dispatcher commands or read the historical `sandbox_commands`
-Session table, which remains only until its separate rollout-gated database drop. The runner journals admitted commands on its state volume. The History Service
+that connection. It does not persist Dispatcher commands or read the retired `sandbox_commands`
+Session table. The CNPG database resource is absent from current manifests; physical database and
+role absence remains an operator verification gate. The runner journals admitted commands on its state volume. The History Service
 receives runner journals and serves retained events and folded Thread views, but these are separate
 service boundaries rather than a Dispatcher dependency:
 
@@ -359,9 +360,10 @@ was also lost. Any direct-admission mode is online-only and never wakes a suspen
 delivery remains the mode that may retain work and wake-to-deliver. If assessing a useful deployment
 without CNPG, explicitly inventory which other stateful services can be omitted or given another
 persistence owner; runner-local persistence cannot accept work while the runner is absent. Removing
-Dispatcher PostgreSQL alone does not remove CNPG. The current shared-CNPG databases are `app`,
-`sandbox_commands`, `sandbox_service`, `actions`, `egress`, `notifications` and `session_dispatcher`;
-the Indexing service also has a separate PostgreSQL dependency. See the
+Dispatcher PostgreSQL alone does not remove CNPG. Current manifests declare the shared-CNPG databases
+`app`, `sandbox_service`, `actions`, `egress`, `notifications` and `session_dispatcher`; testing and
+staging SQL checks confirmed the retired `sandbox_commands` database and role are absent. The
+Indexing service also has a separate PostgreSQL dependency. See the
 [service database inventory](../README.md#system-overview).
 
 The decision should recommend one of: retain the separate queue; change its boundary/placement while

@@ -291,11 +291,6 @@
       "test": "//agentplane/runner_gateway/...",
       "registry": "forgejo"
     },
-    "agentplane-runner-gateway-migrate": {
-      "target": "//agentplane/runner_gateway/commands:migration_image",
-      "test": "//agentplane/runner_gateway/...",
-      "registry": "forgejo"
-    },
     "agentplane-notification-service": {
       "target": "//agentplane/notification_service:image",
       "test": "//agentplane/notification_service/...",
