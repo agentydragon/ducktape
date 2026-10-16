@@ -249,7 +249,13 @@ def _round_trip(connection: Connection) -> None:
     assert connection.scalars(text("SELECT request_id FROM action_event")).all() == [CURRENT_SOURCE_REQUEST]
     assert connection.scalars(text("SELECT request_id FROM action_decision")).all() == [CURRENT_SOURCE_REQUEST]
 
-    assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
+    # These two migration-owned columns remain in the database until the separately gated drop.
+    # The exact schema check must report only those known, unmapped leftovers.
+    drift = compare_metadata(MigrationContext.configure(connection), Base.metadata)
+    assert {(item[0], item[2], item[3].name) for item in drift} == {
+        ("remove_column", "action_execution", "reconciliation_source"),
+        ("remove_column", "action_execution", "reconciled_by"),
+    }
 
 
 async def test_migration_round_trip_preserves_carried_data_and_matches_metadata(engine: AsyncEngine) -> None:

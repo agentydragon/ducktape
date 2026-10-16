@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import inspect, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
@@ -159,10 +159,10 @@ async def test_late_completion_from_the_original_executor_reconciles_the_unknown
     async with make_sessionmaker(engine)() as session:
         execution = await session.scalar(select(ExecutionRow).where(ExecutionRow.request_id == request_id))
     assert execution is not None
-    assert {"reconciliation_source", "reconciled_by"} <= set(ExecutionRow.__table__.columns.keys())
-    unloaded = inspect(execution).unloaded
-    assert {"reconciliation_source", "reconciled_by"} <= unloaded
-    assert "reconciled_at" not in unloaded
+    selected_columns = {column.key for column in select(ExecutionRow).selected_columns}
+    assert {"reconciliation_source", "reconciled_by"}.isdisjoint(selected_columns)
+    assert "reconciled_at" in selected_columns
+    assert execution.reconciled_at is not None
 
 
 async def test_late_completion_with_a_different_lease_token_is_rejected(store: ActionStore) -> None:
