@@ -29,17 +29,11 @@ from util.bazel.runfiles import get_required_path
 logger = logging.getLogger(__name__)
 
 K3S_VERSION = "v1.33.4+k3s1"
-IMAGE_REGISTRY = "git.allegedly.works/ducktape-ci"
 CNPG_MANIFEST_URL = "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.0/cnpg-1.30.0.yaml"
 # Electric exits until history-service's migration has created its publication; its restart back-off reaches 5 min.
 DEPLOY_TIMEOUT_SECONDS = 480
 # k3s's default Pod CIDR.
 POD_CIDR = "10.42.0.0/16"
-
-
-def image_ref(name: str) -> str:
-    repository = "runner" if name == "runner" else "agentplane-" + name.replace("_", "-")
-    return f"{IMAGE_REGISTRY}/{repository}:unset"
 
 
 def run(*command: str, check: bool = True, input_text: str | None = None) -> str:
@@ -118,14 +112,10 @@ class K3s:
                 "--disable-kube-proxy",
                 "--flannel-backend=host-gw",
                 "--disable-network-policy",
-                "--kube-apiserver-arg",
-                "feature-gates=ImageVolume=true",
                 "--node-ip",
                 self.node_ip,
                 "--kubelet-arg",
                 f"cluster-dns={self.node_ip}",
-                "--kubelet-arg",
-                "feature-gates=ImageVolume=true",
             ],
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -180,7 +170,8 @@ class K3s:
         for reference in references:
             layout = get_required_path(reference.read_text().strip())
             name = reference.stem.removesuffix("_layout")
-            tag = image_ref(name)
+            repository = "runner" if name == "runner" else "agentplane-" + name.replace("_", "-")
+            tag = f"git.allegedly.works/ducktape-ci/{repository}:unset"
             index = json.loads((layout / "index.json").read_text())
             for descriptor in index["manifests"]:
                 descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = tag

@@ -57,8 +57,13 @@ the individual UID and namespace effects have not yet been separated. An upstrea
 a similar startup abort after a Bun update, but does not establish the cause here:
 [Anthropic issue 92749](https://github.com/anthropics/claude-code/issues/92749).
 
-The individual Claude UID/namespace comparisons and Kubernetes image-volume compatibility test are
-still pending. Conventional Nix environment compatibility, a full coding task, cold/warm layer
+The Pod comparison did not launch the workload in the disposable `v1.33.4+k3s1` K3s stack, which
+used containerd `v2.0.5-k3s2`. With `ImageVolume=true` on the API server and kubelet, both OCI images
+were present and the API accepted the Pod, but containerd repeatedly failed container spec creation
+with `failed to generate spec: failed to mkdir "": mkdir : no such file or directory`; the Pod
+remained Pending with `CreateContainerError`. This records a failure in this test stack, not a
+general claim about Kubernetes image volumes. No runtime upgrade or alternate Pod mechanism is part
+of this spike. Conventional Nix environment compatibility, a full coding task, cold/warm layer
 preparation timing, and production packaging remain open. This prototype makes no production VMM,
 image-layout, or isolation certification decision.
 

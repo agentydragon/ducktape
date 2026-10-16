@@ -996,18 +996,20 @@ boots the digest-pinned ELF kernel and mounts separate read-only tools and harne
 The guest's Bash and pinned Codex `--version` probes pass; the same probe records a Claude 2.1.252
 SIGABRT in the uid-107 mount-namespace child, while the exact binary succeeds on the full host and
 in the guest chroot as root without that namespace. The UID and namespace effects still need to be
-separated. Measured artifacts are a 1.9 MB base
-initramfs, 7.2 MB tools SquashFS, and 168.9 MB harness SquashFS (the source Bash OCI layer tar is
-22.3 MB). A focused k3s image-volume test is in progress; full coding work, Nix-root compatibility,
-true cache-cold preparation, and guest-only boot latency remain unproven.
+separated. Measured artifacts are a 1.9 MB base initramfs, 7.2 MB tools SquashFS, and 168.9 MB
+harness SquashFS (the source Bash OCI layer tar is 22.3 MB). A disposable K3s `v1.33.4+k3s1` Pod
+with ImageVolume enabled was accepted by the API but containerd `v2.0.5-k3s2` failed container
+spec creation (`failed to mkdir ""`); no Pod image-volume execution is established. Full coding
+work, Nix-root compatibility, true cache-cold preparation, and guest-only boot latency remain
+unproven.
 
 Candidate layout to carry into the design review: keep stage-one init and runner control outside the
 tools root; mount the per-template tools image read-only; give the workspace and harness homes
 explicit writable mounts, use tmpfs for `/tmp`, and provide only the required `/proc` and `/dev/null`
 paths to the child. Reuse that filesystem contract in Pods by mounting the same tools image beside
 the runner image, with workspace and persistent session state on separate volumes. The guest's
-distinct mounts work in the local probe; Pod image-volume support and Claude's failure cause still
-need resolution before selection.
+distinct mounts work in the local probe; the tested K3s runtime did not create a Pod with an image
+volume, and Claude's child-context abort remains unexplained.
 
 The spike exits when those update boundaries and startup measurements are documented alongside a
 bounded compatibility contract and a production DAG proposal. After the design decision, either
