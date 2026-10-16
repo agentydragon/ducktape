@@ -373,10 +373,10 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 
 	wrongIncarnation := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
 		"authorization", "Bearer app-token",
-		sandboxHeader, testSandbox,
-		sandboxUIDHeader, "sandbox-uid-old",
-		sandboxOwnerNamespaceHeader, testNamespace,
-		sandboxOwnerNameHeader, testSandbox,
+		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
+		sandboxapi.RunnerProxySandboxUIDMetadataKey, "sandbox-uid-old",
+		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, testNamespace,
+		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, testSandbox,
 	))
 	_, err = client.ListSessions(wrongIncarnation, &runnerpb.ListSessionsRequest{})
 	if status.Code(err) != codes.NotFound {
@@ -385,10 +385,10 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 
 	wrongOwner := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
 		"authorization", "Bearer app-token",
-		sandboxHeader, testSandbox,
-		sandboxUIDHeader, testSandboxUID,
-		sandboxOwnerNamespaceHeader, testNamespace,
-		sandboxOwnerNameHeader, "another-sandbox",
+		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
+		sandboxapi.RunnerProxySandboxUIDMetadataKey, testSandboxUID,
+		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, testNamespace,
+		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, "another-sandbox",
 	))
 	_, err = client.ListSessions(wrongOwner, &runnerpb.ListSessionsRequest{})
 	if status.Code(err) != codes.NotFound {
@@ -397,9 +397,9 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 
 	incompleteIdentity := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
 		"authorization", "Bearer app-token",
-		sandboxHeader, testSandbox,
-		sandboxOwnerNamespaceHeader, testNamespace,
-		sandboxOwnerNameHeader, testSandbox,
+		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
+		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, testNamespace,
+		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, testSandbox,
 	))
 	_, err = client.ListSessions(incompleteIdentity, &runnerpb.ListSessionsRequest{})
 	if status.Code(err) != codes.InvalidArgument {
@@ -632,10 +632,10 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 func callerContext(token string) context.Context {
 	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
 		"authorization", "Bearer "+token,
-		sandboxHeader, testSandbox,
-		sandboxUIDHeader, testSandboxUID,
-		sandboxOwnerNamespaceHeader, testNamespace,
-		sandboxOwnerNameHeader, testSandbox,
+		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
+		sandboxapi.RunnerProxySandboxUIDMetadataKey, testSandboxUID,
+		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, testNamespace,
+		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, testSandbox,
 	))
 }
 

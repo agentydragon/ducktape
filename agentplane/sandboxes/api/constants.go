@@ -13,6 +13,11 @@ const (
 	ConditionReady           = "Ready"
 	ConditionQuiesced        = "Quiesced"
 
+	RunnerProxySandboxMetadataKey               = "x-agentplane-sandbox"
+	RunnerProxySandboxUIDMetadataKey            = "x-agentplane-sandbox-uid"
+	RunnerProxySandboxOwnerNamespaceMetadataKey = "x-agentplane-sandbox-owner-namespace"
+	RunnerProxySandboxOwnerNameMetadataKey      = "x-agentplane-sandbox-owner-name"
+
 	ControlServiceSuffix   = "-control"
 	ControlServicePortName = "grpc"
 	ControlServicePort     = 8080

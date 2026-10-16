@@ -9,6 +9,7 @@ import (
 	"time"
 
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -67,10 +68,10 @@ func WithClient(ctx context.Context, config Config, call func(context.Context, r
 	defer cancel()
 	metadataPairs := []string{
 		"authorization", "Bearer " + token,
-		"x-agentplane-sandbox", config.SandboxName,
-		"x-agentplane-sandbox-uid", config.SandboxUID,
-		"x-agentplane-sandbox-owner-namespace", config.SandboxNamespace,
-		"x-agentplane-sandbox-owner-name", config.SandboxName,
+		sandboxapi.RunnerProxySandboxMetadataKey, config.SandboxName,
+		sandboxapi.RunnerProxySandboxUIDMetadataKey, config.SandboxUID,
+		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, config.SandboxNamespace,
+		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, config.SandboxName,
 	}
 	if config.ReplaceOutgoingMetadata {
 		ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(metadataPairs...))

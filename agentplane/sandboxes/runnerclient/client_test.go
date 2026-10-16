@@ -45,10 +45,10 @@ func TestWithClientRefreshesTokenAndCreatesConnectionPerCall(t *testing.T) {
 			if !ok || len(md.Get("authorization")) != 1 || md.Get("authorization")[0] != "Bearer "+token || md.Get("trace-id") != nil {
 				t.Errorf("outgoing metadata = %v", md)
 			}
-			if len(md.Get("x-agentplane-sandbox")) != 1 || md.Get("x-agentplane-sandbox")[0] != config.SandboxName ||
-				len(md.Get("x-agentplane-sandbox-uid")) != 1 || md.Get("x-agentplane-sandbox-uid")[0] != config.SandboxUID ||
-				len(md.Get("x-agentplane-sandbox-owner-namespace")) != 1 || md.Get("x-agentplane-sandbox-owner-namespace")[0] != config.SandboxNamespace ||
-				len(md.Get("x-agentplane-sandbox-owner-name")) != 1 || md.Get("x-agentplane-sandbox-owner-name")[0] != config.SandboxName {
+			if len(md.Get(sandboxapi.RunnerProxySandboxMetadataKey)) != 1 || md.Get(sandboxapi.RunnerProxySandboxMetadataKey)[0] != config.SandboxName ||
+				len(md.Get(sandboxapi.RunnerProxySandboxUIDMetadataKey)) != 1 || md.Get(sandboxapi.RunnerProxySandboxUIDMetadataKey)[0] != config.SandboxUID ||
+				len(md.Get(sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey)) != 1 || md.Get(sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey)[0] != config.SandboxNamespace ||
+				len(md.Get(sandboxapi.RunnerProxySandboxOwnerNameMetadataKey)) != 1 || md.Get(sandboxapi.RunnerProxySandboxOwnerNameMetadataKey)[0] != config.SandboxName {
 				t.Errorf("Sandbox identity metadata = %v", md)
 			}
 			return nil

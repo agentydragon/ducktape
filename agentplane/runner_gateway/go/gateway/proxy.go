@@ -7,19 +7,17 @@ import (
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-const (
-	sandboxHeader               = "x-agentplane-sandbox"
-	sandboxUIDHeader            = "x-agentplane-sandbox-uid"
-	sandboxOwnerNamespaceHeader = "x-agentplane-sandbox-owner-namespace"
-	sandboxOwnerNameHeader      = "x-agentplane-sandbox-owner-name"
-)
-
-var identityHeaders = []string{sandboxUIDHeader, sandboxOwnerNamespaceHeader, sandboxOwnerNameHeader}
+var identityMetadataKeys = []string{
+	sandboxapi.RunnerProxySandboxUIDMetadataKey,
+	sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey,
+	sandboxapi.RunnerProxySandboxOwnerNameMetadataKey,
+}
 
 type runnerProxy struct {
 	runnercontrolpb.UnimplementedRunnerServer
@@ -39,23 +37,24 @@ func (p *runnerProxy) connection(ctx context.Context, controllerOnly bool) (*run
 		return nil, err
 	}
 	metadata, _ := metadata.FromIncomingContext(ctx)
-	names := metadata.Get(sandboxHeader)
+	names := metadata.Get(sandboxapi.RunnerProxySandboxMetadataKey)
 	if len(names) != 1 || names[0] == "" {
-		return nil, status.Error(codes.InvalidArgument, "exactly one x-agentplane-sandbox header is required")
+		return nil, status.Errorf(codes.InvalidArgument, "exactly one %s header is required", sandboxapi.RunnerProxySandboxMetadataKey)
 	}
-	values := make(map[string][]string, len(identityHeaders))
-	for _, header := range identityHeaders {
-		values[header] = metadata.Get(header)
+	values := make(map[string][]string, len(identityMetadataKeys))
+	for _, key := range identityMetadataKeys {
+		values[key] = metadata.Get(key)
 	}
-	for _, header := range identityHeaders {
-		if len(values[header]) != 1 || values[header][0] == "" {
+	for _, key := range identityMetadataKeys {
+		if len(values[key]) != 1 || values[key][0] == "" {
 			return nil, status.Error(codes.InvalidArgument, "Sandbox UID and owner headers must each appear exactly once")
 		}
 	}
 	view, err := g.sandboxes.destination(ctx, &sandboxespb.SandboxDestination{
-		Sandbox: names[0], SandboxUid: values[sandboxUIDHeader][0],
+		Sandbox: names[0], SandboxUid: values[sandboxapi.RunnerProxySandboxUIDMetadataKey][0],
 		Owner: &sandboxespb.ServiceAccount{
-			Namespace: values[sandboxOwnerNamespaceHeader][0], Name: values[sandboxOwnerNameHeader][0],
+			Namespace: values[sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey][0],
+			Name:      values[sandboxapi.RunnerProxySandboxOwnerNameMetadataKey][0],
 		},
 	}, false)
 	if err != nil {

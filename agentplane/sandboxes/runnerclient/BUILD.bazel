@@ -7,6 +7,7 @@ go_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:runner_control_go_proto",
+        "//agentplane/sandboxes/api",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//metadata",
