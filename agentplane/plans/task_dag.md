@@ -238,7 +238,7 @@ flowchart TD
     NATIVE_SUBAGENT_EXPOSURE -. if multiple Sessions share a harness .-> RUNNER_HARNESS_OBJECTS_DESIGN
     NATIVE_SUBAGENT_EXPOSURE -. the native-child boundary it informs .-> MULTIAGENT_MODEL
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
-    GATEWAY_SESSION_REGISTRY_RETIRE[Blocked: retire the registry, section 12] -. related .-> NATIVE_SUBAGENT_EXPOSURE
+    GATEWAY_WRAPPER_RETIRE -. related .-> NATIVE_SUBAGENT_EXPOSURE
 ```
 
 ### `MULTIAGENT_MODEL` — shared identity and authority vocabulary
@@ -400,13 +400,10 @@ child IDs and parent links accompany them, and whether any child can be addresse
 independently. Forwarded text alone does not establish attachable Agentplane child Sessions; do not
 enable the flag in the runner until its actual behavior and the desired projection are reviewed.
 
-**Also in scope: retire the remnants of the dictated model.** The refactor moved Session declaration to
-the runner, but the old shape is still load-bearing: `GATEWAY_SESSION_REGISTRY_RETIRE` records that
-`session_registry.py` and its rows survive because Gateway `ResumeSession` still reads them, and that
-production Dispatcher-opened Sessions are therefore refused by the app's direct-resume path. Treat that
-registry and any caller still asking something other than the runner which Sessions exist as this
-evaluation's cleanup list — find them as part of the exploration, not as a separate dispatch, and record
-each as its own node or as an exit criterion here.
+**Also in scope: keep Session identity runner-owned.** The Python Gateway Session wrappers and partial
+registry runtime are being removed under `GATEWAY_WRAPPER_RETIRE`; the app now calls the runner's
+identity-fenced `ResumeSession` through the proxy. The historical `session` table remains until the
+separate rollout-gated database drop. Do not treat that table as the source of live Session identity.
 
 ## 4. VM environment phases
 
@@ -831,7 +828,7 @@ flowchart TD
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
-    GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
+    GATEWAY_WRAPPER_RETIRE[In progress: retire Gateway wrappers, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
@@ -1277,10 +1274,9 @@ No refactor is open here.
 ## 12. The Runner Gateway serves the runner's own service
 
 Target and decisions: [History Service plan](history_service.md#decided-operator-2026-10-10-pdt)
-(Runner Gateway shape, Session specs). The remaining legacy `RunnerGateway` API wraps session
-creation, resume and inventory with a Session registry. Commands already use Dispatcher and typed
-Runner RPCs. Retire those wrappers and their registry so the gateway serves `Connect` and proxies
-`Runner` with per-method authorization.
+(Runner Gateway shape, Session specs). The Python Gateway Session wrappers and partial registry
+runtime are being removed. The Gateway serves `Connect` and proxies the runner's `Runner` service
+with per-method authorization; commands use Dispatcher and typed Runner RPCs.
 
 ```mermaid
 flowchart TD
@@ -1290,9 +1286,6 @@ flowchart TD
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
-    GATEWAY_SESSION_REGISTRY_RETIRE[Blocked: remove registry code and roll out]
-    GATEWAY_WRAPPER_RETIRE --> GATEWAY_SESSION_REGISTRY_RETIRE
-    GATEWAY_SESSION_REGISTRY_RETIRE --> GATEWAY_DATABASE_DROP
 ```
 
 The [completed control-surface audit](../docs/control_surface_retirement.md) records protobuf,
@@ -1302,20 +1295,17 @@ node is removed. This does not remove the separate destination-authority decisio
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
-**Needs policy revision for the approved direct app Runner `ResumeSession` caller; do not revoke that path. Blocked on the Dispatcher-only app image rollout, `GATEWAY_WRAPPER_RETIRE`,
-with their caller images pinned in both environments.** Today
-the gateway's runner proxy (`runner_gateway/runner_proxy.py`) lets every configured caller account call
-every runner method except `Quiesce` and `Seal`, and the gateway wrapper calls `OpenSession` too. The
-bound on a suspend waiting for setups (`SuspendPending`, `SANDBOX_IDLE_EXPIRY`) holds only if nothing
-but the Dispatcher can open a Session or send work, so the proxy's per-method policy authorizes
-`OpenSession` and the other start-or-continue-work methods (`SubmitInput`, `ResumeSession`,
-`ChangeModel` and `ChangeReasoningEffort`, which start a stopped harness; operator, 2026-10-13 PDT) for
-the Dispatcher's account alone. `InterruptTurn`, `StopRunnerSession` and the reads stay open to the callers
-that have them. Order: every other caller has moved to the Dispatcher, then the policy narrows.
+**Needs policy revision; preserve the explicitly approved direct app `Runner.ResumeSession` caller.**
+The app caller rollout is verified: testing and staging run #10716's image, which includes #10709's
+direct Runner resume change. The runner proxy (`runner_gateway/runner_proxy.py`) currently lets each
+configured caller account invoke the Runner methods allowed by policy, except `Quiesce` and `Seal`.
+Review the per-method policy for `OpenSession` and other start-or-continue-work methods against the
+Dispatcher-only command boundary and the approved app resume path. Do not revoke app resume as part of
+retiring the Gateway Session wrapper.
 
 ### `RUNNER_COMMAND_RPCS` — `DeliverCommand` goes once nothing calls it
 
-**Candidate; caller rollout verified 2026-10-16.** Testing and staging Gateway replicas run the
+**In progress; caller rollout verified 2026-10-16.** Testing and staging Gateway replicas run the
 #10716 image (`4693fc9`), with all replicas updated and available and no old Pods. Independent
 of the remaining wrapper removal. One RPC per command rather than one taking a union is approved. The runner serves `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`,
 `InterruptTurn` and `StopRunnerSession` beside `DeliverCommand`, and the proxy admits every method of
@@ -1328,26 +1318,18 @@ pinned caller image sends it (the VM guest's runner wheel is a reader of the new
 The journal's `CommandAdmitted` event keeps storing the `Command` message, so stored history needs no
 migration and `Command` stays as that event's field type.
 
-### `GATEWAY_WRAPPER_RETIRE` — delete the legacy Gateway wrappers
+### `GATEWAY_WRAPPER_RETIRE` — remove Gateway Session wrappers and registry runtime
 
 **In progress; wrapper/registry worker, 2026-10-16.** `SubmitCommand` and its wire/client surface
-are already removed by #10716. Remaining work:
-The app caller rollout is verified; remove Gateway `ResumeSession`, `CreateSession`,
-`ListSessions` and `BatchGetSessionSandboxes` after verifying remaining pinned/external callers.
-Retire their test fixtures and wire helpers; keep Runner inventory, the reverse tunnel and proxy.
-The app's Gateway API target still powers its System health probe: migrate that probe before
-removing its channel/configuration. Remove strict settings from manifests before deleting readers.
-
-### `GATEWAY_SESSION_REGISTRY_RETIRE` — remove Gateway registry code and database access
-
-**Blocked on `GATEWAY_WRAPPER_RETIRE`.** `CreateSession` writes the `session` table;
-`ResumeSession` validates against it; `BatchGetSessionSandboxes` reads it.
-After those methods and their callers are gone, remove `SessionRegistry`, the ORM mapping and
-serving-process database access. Keep a transitional optional settings reader only while existing
-manifests still supply its key; its deletion belongs to `GATEWAY_DATABASE_DROP`. Roll the
-registry-free Gateway image to all replicas in testing and staging before dropping the database.
-Preserve runner-native state, History and the independent Dispatcher queue. Do not port this
-registry into Go.
+are removed by #10716. This change removes Gateway `ResumeSession`, `CreateSession`, `ListSessions`
+and `BatchGetSessionSandboxes`, plus the partial `SessionRegistry`, its ORM mapping and serving-process
+database access. Test callers use Runner RPCs and Dispatcher operations. Keep live Runner inventory,
+the reverse tunnel and proxy, controller Quiesce, standard gRPC health, and the app's Gateway target
+for its System health probe. The direct app `Runner.ResumeSession` rollout is already verified; keep
+that explicitly approved caller. Manifests may continue supplying the legacy optional serving setting
+through rollout; delete its reader only in `GATEWAY_DATABASE_DROP`. Preserve runner-native state,
+History and the independent Dispatcher queue. Do not port the registry into Go. Roll the registry-free
+Gateway image to all replicas in testing and staging before the separate database drop.
 
 ### `GATEWAY_DATABASE_DROP` — remove Gateway's database and CNPG-managed resources
 
@@ -1655,9 +1637,8 @@ can evolve independently. This node does not expose process placement or select 
 harnesses per runner.
 
 This implementation can make a central Session-to-Sandbox placement lookup unnecessary for command
-delivery. `GATEWAY_WRAPPER_RETIRE` still needs its separate app native-resume outcome and external/
-pinned-caller audit; `GATEWAY_SESSION_REGISTRY_RETIRE` still needs every registry reader/writer gone
-and its caller rollout. Only then may the separate operator-approved `GATEWAY_DATABASE_DROP` proceed.
+delivery. `GATEWAY_WRAPPER_RETIRE` removes the Python registry runtime, but the registry-free receiver
+image still must roll out before the separate operator-approved `GATEWAY_DATABASE_DROP` proceeds.
 Neither the destination design nor this node deletes retained History or the Kubernetes
 UID-to-connection locator.
 

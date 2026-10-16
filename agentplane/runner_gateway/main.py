@@ -8,45 +8,32 @@ from typing import cast
 
 import grpc
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.background_task import background
 from agentplane.grpc.serving import add_health, serving
 from agentplane.proto import runner_control_pb2_grpc
-from agentplane.runner_gateway import runner_proxy
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
 from agentplane.runner_gateway.destinations import DestinationResolver
-from agentplane.runner_gateway.grpc_api import Resources, add_service
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming, RunnerControlService
-from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.runner_gateway.runner_proxy import Resources, RunnerProxy
 from agentplane.runner_gateway.settings import Settings
 from agentplane.sandboxes.reader import SandboxReader
 from agentplane.service_process import configure_logging, kubernetes_configuration, until_terminated
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
-# The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.
-# gazelle:include_dep @pypi//asyncpg
 # The control servicer stub names its messages; mypy reads stubs only from direct deps.
 # gazelle:include_dep //agentplane/proto:runner_control_pb2
 # gazelle:include_dep @pypi//protobuf
 
 
-def database_engine(url: str) -> AsyncEngine:
-    return create_async_engine(make_url(url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2)
-
-
 @asynccontextmanager
-async def gateway(
-    settings: Settings, api: k8s_client.ApiClient, server: grpc.aio.Server, commands_engine: AsyncEngine
-) -> AsyncIterator[Resources]:
-    """Serve `RunnerGateway` on `server`, and runner control stream connections on their own listener."""
+async def gateway(settings: Settings, api: k8s_client.ApiClient, server: grpc.aio.Server) -> AsyncIterator[Resources]:
+    """Serve the Runner proxy and control stream listener; no command database is opened here."""
     core = k8s_client.CoreV1Api(api)
     custom_objects = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api))
     sandboxes = SandboxReader(namespace=settings.sandbox_namespace, core_v1=core, custom_objects=custom_objects)
-    sessions = SessionRegistry(commands_engine)
     destinations = DestinationResolver(sandboxes, core)
     leases = ConnectionLeases()
     timing = ControlTiming()
@@ -62,28 +49,13 @@ async def gateway(
     )
     resources = Resources(
         principals=principals,
-        sessions=sessions,
-        control=control,
-        destinations=destinations,
-        admission_timeout_s=settings.admission_timeout_s,
         caller_accounts=settings.caller_accounts,
-        lifecycle_timeout_s=settings.lifecycle_timeout_s,
+        sandboxes=sandboxes,
+        destinations=destinations,
+        control=control,
+        sandbox_controller_account=settings.sandbox_controller_account,
     )
-    add_service(resources, server)
-    server.add_generic_rpc_handlers(
-        (
-            runner_proxy.RunnerProxy(
-                runner_proxy.Resources(
-                    principals=principals,
-                    caller_accounts=settings.caller_accounts,
-                    sandboxes=sandboxes,
-                    destinations=destinations,
-                    control=control,
-                    sandbox_controller_account=settings.sandbox_controller_account,
-                )
-            ),
-        )
-    )
+    server.add_generic_rpc_handlers((RunnerProxy(resources),))
     if settings.port == settings.runner_control_port:
         raise ValueError("gRPC and runner control stream ports must differ")
     # A separate listener, so the network fence can admit the egress proxy to it and nothing else.
@@ -125,11 +97,9 @@ async def serve(settings: Settings) -> None:
         k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
         AsyncExitStack() as stack,
     ):
-        commands_engine = database_engine(settings.commands_database_url)
-        stack.push_async_callback(commands_engine.dispose)
         server = grpc.aio.server()
         add_health(server)
-        await stack.enter_async_context(gateway(settings, api, server, commands_engine))
+        await stack.enter_async_context(gateway(settings, api, server))
         await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))
         await until_terminated()
 

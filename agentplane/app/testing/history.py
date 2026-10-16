@@ -4,19 +4,15 @@ from typing import override
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.database_updates import Channel
-from agentplane.app.testing.replication_source import Placements
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.models import Thread
 from agentplane.app.threads.summaries import Summaries
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import notify
-
-# Aliased: the gateway's Session row, beside SQLAlchemy sessions.
-from agentplane.runner_gateway.commands.db import Session as GatewaySession
 
 SANDBOX_NAMESPACE = "test-history-sandbox-namespace"
 
@@ -29,18 +25,6 @@ def fixture_session_id(sandbox: str, session_id: str) -> UUID:
         return uuid5(NAMESPACE_URL, sandbox + "/" + session_id)
 
 
-async def register_gateway_session(engine: AsyncEngine, session_id: UUID, *, sandbox: str) -> None:
-    """Register the Session with the Runner Gateway, which shares the test's history database, unless
-    a Runner Gateway already did."""
-    async with async_sessionmaker(engine).begin() as session:
-        if await session.get(GatewaySession, session_id) is None:
-            session.add(
-                GatewaySession(
-                    id=session_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name=sandbox, sandbox_uid=None
-                )
-            )
-
-
 class SeededEventLogStore(EventLogStore):
     """Opens a fixture's Session in the history database as well; every read is production."""
 
@@ -49,15 +33,11 @@ class SeededEventLogStore(EventLogStore):
         engine: AsyncEngine,
         *,
         history: History | None,
-        gateway: AsyncEngine | Placements,
         history_reader: HistoryServiceClient,
         summaries: Summaries,
     ) -> None:
-        # None where a Runner Gateway shares the history database and registers its Sessions itself.
         self.engine = engine
         self.history = history
-        # The gateway's database (shared with history in service-database tests) or a fake gateway's map.
-        self.gateway = gateway
         self.reader = history_reader
         super().__init__(engine, history_reader=history_reader, summaries=summaries)
 
@@ -70,15 +50,10 @@ class SeededEventLogStore(EventLogStore):
         return public_id
 
     async def register(self, sandbox: str, session_id: str) -> UUID:
-        """Register a fixture's Session as running in `sandbox`, as a Runner Gateway would; a non-UUID
-        `session_id` is an alias."""
+        """Open a fixture Session in History; a non-UUID `session_id` is a stable test alias."""
         public_id = fixture_session_id(sandbox, session_id)
         if self.history is not None:
             await self.history.open(public_id, sandbox_name=sandbox)
-            if isinstance(self.gateway, Placements):
-                self.gateway.sandboxes[public_id] = sandbox
-            else:
-                await register_gateway_session(self.gateway, public_id, sandbox=sandbox)
         return public_id
 
     async def seed(self, sandbox: str, session_id: str) -> UUID:

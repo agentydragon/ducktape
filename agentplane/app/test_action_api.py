@@ -75,7 +75,7 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, policy_binding, sandbox
 from agentplane.subjects import ServiceAccountRef
@@ -152,7 +152,7 @@ def db_url(action_api_template: PostgresDatabaseTemplate, database_clones: Datab
 async def review(
     db_url: str,
     inventory: SandboxAccess,
-    gateway: RunnerGatewayClient,
+    gateway: SandboxControlClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     database_updates: WakeupListener,
@@ -392,11 +392,7 @@ async def review(
             if operator_connection == "disabled"
             else FederatedOperatorActions(federation, oidc, downstream_http),
             event_logs=SeededEventLogStore(
-                replica_engine,
-                history=history,
-                gateway=history.engine,
-                history_reader=history_client,
-                summaries=replica_summaries,
+                replica_engine, history=history, history_reader=history_client, summaries=replica_summaries
             ),
             content=ContentStore(replica_engine, history_reader=history_client),
             # Never started: nothing served here listens; the replica shares only the operator sessions.

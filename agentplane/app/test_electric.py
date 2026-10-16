@@ -26,7 +26,7 @@ from starlette.types import Message
 from agentplane.app.database_updates import Channel
 from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, ElectricProxy, electric_proxy, router
 from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.view.content import ContentStore, ThreadScope
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
@@ -66,7 +66,7 @@ class Unfolded:
 @pytest.fixture
 async def unfolded(event_logs: SeededEventLogStore, history: History) -> Unfolded:
     sandbox = f"{SANDBOX}-{uuid4().hex[:8]}"
-    source = ReplicationSource(Placements())
+    source = ReplicationSource()
     for index in range(3):
         item_id = f"item-{index}"
         source.append(

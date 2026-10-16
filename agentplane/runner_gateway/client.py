@@ -1,22 +1,14 @@
-"""gRPC clients for Gateway Session placement and the per-Sandbox Runner control proxy."""
+"""gRPC client for the Runner proxy reached through each Sandbox's control Service."""
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from uuid import UUID
 
-import grpc
 from google.protobuf.message import Message
 
-from agentplane.grpc.calls import bearer, call_unary, dial
-from agentplane.proto import (
-    runner_control_pb2,
-    runner_control_pb2_grpc,
-    runner_gateway_pb2,
-    runner_gateway_pb2_grpc,
-    runner_pb2,
-)
+from agentplane.grpc.calls import call_unary, dial
+from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
-from agentplane.runner_gateway import wire
 from agentplane.runner_gateway.runner_proxy import (
     SANDBOX_HEADER,
     SANDBOX_OWNER_NAME_HEADER,
@@ -41,24 +33,6 @@ class SandboxControlClient:
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
         self.lifecycle_timeout_s = lifecycle_timeout_s
-
-    async def held_unary[T](
-        self,
-        destination: SandboxDestination,
-        call: Callable[[runner_gateway_pb2_grpc.RunnerGatewayAsyncStub], Callable[..., Awaitable[T]]],
-        request: Message,
-        *,
-        timeout_s: float | None = None,
-    ) -> T:
-        async with dial(
-            self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
-        ) as channel:
-            return await call_unary(
-                call(runner_gateway_pb2_grpc.RunnerGatewayStub(channel)),
-                request,
-                token_file=self.token_file,
-                timeout_s=timeout_s or self.request_timeout_s,
-            )
 
     def runner(self, destination: SandboxDestination) -> SandboxRunner:
         return SandboxRunner(self, destination)
@@ -97,34 +71,6 @@ class SandboxControlClient:
         return list(response.sessions)
 
 
-class RunnerGatewayClient:
-    def __init__(
-        self, channel: grpc.aio.Channel, *, token_file: Path, request_timeout_s: float, control: SandboxControlClient
-    ) -> None:
-        self.stub: runner_gateway_pb2_grpc.RunnerGatewayAsyncStub = runner_gateway_pb2_grpc.RunnerGatewayStub(channel)
-        self.token_file = token_file
-        self.request_timeout_s = request_timeout_s
-        self.control = control
-
-    async def metadata(self) -> tuple[tuple[str, str], ...]:
-        return await bearer(self.token_file)
-
-    async def unary[T](
-        self, call: Callable[..., Awaitable[T]], request: Message, *, timeout_s: float | None = None
-    ) -> T:
-        return await call_unary(
-            call, request, token_file=self.token_file, timeout_s=timeout_s or self.request_timeout_s
-        )
-
-    async def session_sandboxes(self, session_ids: set[str]) -> list[runner_gateway_pb2.SessionSandbox]:
-        """Where each Session the gateway registered among `session_ids` runs."""
-        request = runner_gateway_pb2.BatchGetSessionSandboxesRequest(session_ids=sorted(session_ids))
-        return list((await self.unary(self.stub.BatchGetSessionSandboxes, request)).sessions)
-
-    def runner(self, destination: SandboxDestination) -> SandboxRunner:
-        return self.control.runner(destination)
-
-
 class SandboxRunner:
     """One Sandbox's runner, reached through the replica holding its connection."""
 
@@ -135,16 +81,17 @@ class SandboxRunner:
     async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
         return await self.control.list_sessions(self.destination)
 
-    async def create(
-        self, *, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> runner_gateway_pb2.CreateSessionResponse:
-        """Open the Session the caller minted `session_id` for; a retry passes the same ID and inputs."""
-        return await self.control.held_unary(
-            self.destination,
-            lambda stub: stub.CreateSession,
-            wire.create_proto(self.destination, session_id, spec, setup_script),
-            timeout_s=self.control.lifecycle_timeout_s,
+    async def open_session(
+        self, *, session_id: str | UUID, spec: runner_pb2.SessionSpec, setup_script: str | None = None
+    ) -> runner_pb2.Attached:
+        """Open a Runner Session directly; its retry contract is owned by the Runner."""
+        request = runner_control_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec)
+        if setup_script is not None:
+            request.setup_script = setup_script
+        response = await self.control.runner_unary(
+            self.destination, lambda stub: stub.OpenSession, request, timeout_s=self.control.lifecycle_timeout_s
         )
+        return response.attached
 
     async def resume(self, session_id: str) -> runner_pb2.Attached:
         """Resume a stopped harness on the Runner holding this Sandbox's connection."""

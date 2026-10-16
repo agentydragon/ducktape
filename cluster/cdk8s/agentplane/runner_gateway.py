@@ -1,5 +1,4 @@
-"""The Runner Gateway: Sessions, commands and the runner control stream. Its command admission schema migrates
-before Pod startup."""
+"""The Runner Gateway proxy and control stream; its legacy schema still migrates before Pod startup."""
 
 from typing import cast
 
@@ -84,8 +83,8 @@ class RunnerGateway(Construct):
         callers: dict[ServiceAccountRef, Pods],
         sandbox_controller: tuple[ServiceAccountRef, Pods],
     ) -> None:
-        """`callers` are the Session API's clients and their Pods; `sandbox_controller` is the one caller
-        of `Runner.Quiesce`."""
+        """`callers` are services using the proxied Runner API; `sandbox_controller` alone may call
+        `Runner.Quiesce`."""
         super().__init__(scope, id)
         self.env = env
         endpoint = service(env.namespace)
@@ -108,7 +107,7 @@ class RunnerGateway(Construct):
                 "runner_control_port": control.pod_port,
             },
             path="/etc/agentplane-runner-gateway/config.yaml",
-            supplied=[("commands_database_url",), ("pod_ip",)],
+            supplied=[("pod_ip",)],
         )
         commands_database = (
             SecretRef(namespace=env.namespace, name="postgres-sandbox-commands")
@@ -122,9 +121,8 @@ class RunnerGateway(Construct):
             container="runner-gateway",
             image=f"{_IMAGE}:unset",
             env_variables={
-                env_name(Settings, "commands_database_url"): commands_database,
                 # Where the Sandbox control Services this replica writes point (runner_control.md).
-                env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
+                env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP)
             },
             ports=[endpoint.port.container_port(), control.port.container_port()],
             readiness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=3, period_seconds=10),

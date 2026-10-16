@@ -138,9 +138,9 @@ Threads. The Runner Gateway takes no part in discovery: it routes commands and l
 and a read-only child receives neither.
 
 Scope is every native session the runner observes in its container, not only children of Sessions
-created through Agentplane (operator, 2026-10-10 PDT): the container is Agentplane's, and whatever
-runs in it got there through Agentplane transitively. A native root nobody created through
-`CreateSession` is declared like a child, as an unparented Session with no spec, and nothing
+opened through Agentplane (operator, 2026-10-10 PDT): the container is Agentplane's, and whatever
+runs in it got there through Agentplane transitively. A native root not opened through
+Agentplane is declared like a child, as an unparented Session with no spec, and nothing
 filters it out as foreign.
 
 This does not require adding an Agentplane-specific declaration API to Claude Code or Codex. Their
@@ -181,8 +181,9 @@ is insufficient to advertise an exhaustive live-native snapshot.
 ### Identity and declaration
 
 Use the same declaration model for roots and children. A root's Session ID is the UUID its client
-minted for `CreateSession`; the runner mints a UUID for each child it discovers. Either way the ID
-is the Session's public identity on the ingress, and the History Service's index learns it from the
+chooses for the current `OpenSession` request (formerly supplied through the Gateway's
+`CreateSession` wrapper); the runner mints a UUID for each child it discovers. Either way the ID is
+the Session's public identity on the ingress, and the History Service's index learns it from the
 announcement. The proposed harness-minted-root flow below separates requesting creation from
 observing a native conversation. Persist an opaque Agentplane logical ID and its native binding before publication.
 Use the canonical logical identity direction in the layering plan; do not require existing root
@@ -506,27 +507,26 @@ unresolved record, not guessed identity or automatic retry of old work.
 
 #### Root creation and today's service IDs
 
-`RunnerGateway.CreateSession` accepts a client-minted UUID as both public and runner Session ID, then
-records its Sandbox placement. The app's current opening path is Session Dispatcher `OpenSession`;
-repository search found no production caller of Gateway `CreateSession`. The runner is authoritative
-for its retained execution state, the Gateway registry records only the placements it registers, and
-History records a Session after its ingress accepts Events. These surfaces do not form one complete
-Session inventory. See the [control-surface audit](../docs/control_surface_retirement.md).
+Before the wrapper retirement, `RunnerGateway.CreateSession` accepted a client-minted UUID as both
+public and runner Session ID, then recorded its Sandbox placement. The current opening path is
+Session Dispatcher `OpenSession`; the Gateway method and registry runtime have been removed. The
+runner is authoritative for its retained execution state, while History records a Session after its
+ingress accepts Events. See the [control-surface audit](../docs/control_surface_retirement.md).
 
-The native-root design does not yet choose which opening authority should reserve a root ID or how
-that ID is bound to confirmed native creation. The example sequence below assumes direct Gateway
-`CreateSession` and remains a proposal, not a current app path. Review the opening authority and
-placement identity before implementing it; a harness-minted root ID would need to bind to the public
-Session ID without treating a preselected `Open.session_id` as proof of native creation.
+The native-root design does not yet choose how the Session Dispatcher and Runner should reserve a
+root ID or bind it to confirmed native creation. The example sequence below predates the current
+Dispatcher `OpenSession` path and is a proposal, not a current app path. Review the opening contract
+and identity before implementing it; a harness-minted root ID would need to bind to the public
+Session ID without treating a preselected `OpenSession.session_id` as proof of native creation.
 
 The concrete root sequences are:
 
 1. The app submits an authorized Sandbox request through Kubernetes and follows controller readiness.
-2. **If direct Gateway opening remains the selected authority,** the client calls `CreateSession`
-   with a fresh UUID, harness spec and override mask. The service passes the UUID and launch intent
-   to the runner, which accepts/reserves a logical root and execution owner. A retry carries the
-   same UUID; whether the runner started it is read from retained runner state and confirmed by
-   history as available. An announcement is not launch success.
+2. The client calls Session Dispatcher `OpenSession` with a fresh UUID and complete harness spec;
+   the Dispatcher passes the request to Runner `OpenSession` through the proxy. A future native-root
+   contract must decide how that ID and launch intent reserve a logical root and execution owner.
+   A retry carries the same UUID; whether the runner started it is read from retained runner state
+   and confirmed by history as available. An announcement is not launch success.
 3. **Codex:** initialize the app-server; send `thread/start`; commit the returned thread ID as
    the native binding before reporting root readiness. No client-selected native thread ID is
    required. First user input subsequently uses `turn/start` with its own command ID.
@@ -541,7 +541,7 @@ Omitting Claude's ID override is a later optional mode, gated by the no-input de
 experiment described above. Clients need not choose native IDs, but a uniform client API does
 not require both harnesses to mint them. Do not block the first read-only child slice on changing
 root allocation. If first input is bundled with creation in a future API, journal it once as described
-above; do not silently add such a field or a synthetic prompt to today's `CreateSession`.
+above; do not silently add such a field or a synthetic prompt to today's `OpenSession`.
 
 #### Codex v2: spawn, observation, and recovery
 

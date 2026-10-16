@@ -27,14 +27,14 @@ class Settings(YamlFileSettings):
         description="The Sandbox controller's account, the one caller of the proxied `Runner.Quiesce`; "
         "its tokens carry `token_audience`. Without it nobody may seal or quiesce through the proxy.",
     )
-    admission_timeout_s: float = Field(default=15, gt=0, le=60)
-    lifecycle_timeout_s: float = Field(default=300, gt=0)
     log_levels: LogLevels
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     kubeconfig: Path | None = None
-    commands_database_url: str = Field(
-        min_length=1, description="The `sandbox_commands` database holding the Runner Gateway Session registry."
+    # Old Pod configs may still supply this while the migration init container uses the same config.
+    # The serving process no longer opens the database; physical retirement is a later rollout gate.
+    commands_database_url: str | None = Field(
+        default=None, description="Legacy database URL accepted during rollout; not used by the serving process."
     )
     runner_control_audience: str = Field(
         default=RUNNER_CONTROL_AUDIENCE,

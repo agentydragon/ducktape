@@ -6,24 +6,11 @@ package(
 )
 
 py_library(
-    name = "sessions",
-    srcs = ["sessions.py"],
-    deps = [
-        "//agentplane/runner_gateway/commands:db",
-        "//agentplane/sandboxes/testing:kubernetes",
-        "//agentplane/testing:fake_apiserver",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "grpc_service",
     srcs = ["grpc_service.py"],
     deps = [
-        "//agentplane/grpc:calls",
         "//agentplane/grpc:serving",
         "//agentplane/runner_gateway:client",
-        "//agentplane/runner_gateway:grpc_api",
         "//agentplane/runner_gateway:runner_proxy",
         "@pypi//grpcio",
     ],
@@ -47,11 +34,9 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/runner_gateway:connection_records",
         "//agentplane/runner_gateway:destinations",
-        "//agentplane/runner_gateway:grpc_api",
         "//agentplane/runner_gateway:lifecycle_control",
-        "//agentplane/runner_gateway:session_registry",
+        "//agentplane/runner_gateway:runner_proxy",
         "//agentplane/workload_auth:principal",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -89,9 +74,9 @@ py_library(
         "//agentplane/runner:control",
         "//agentplane/runner:reconnect",
         "//agentplane/runner_gateway:connection_records",
-        "//agentplane/runner_gateway:grpc_api",
         "//agentplane/runner_gateway:lifecycle_control",
         "//agentplane/runner_gateway:runner_control",
+        "//agentplane/runner_gateway:runner_proxy",
         "//agentplane/sandboxes:reader",
         "//agentplane/workload_auth:principal",
         "@pypi//grpcio",
@@ -115,9 +100,7 @@ py_library(
         "//agentplane/testing:fake_apiserver",
         "//agentplane/workload_auth:principal",
         "//util:kubernetes",
-        "//util/testing:sqlalchemy_engines",
         "@pypi//anyio",
-        "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
     ],
 )
@@ -130,14 +113,12 @@ py_library(
         ":grpc_service",
         ":resources",
         "//agentplane:subjects",
-        "//agentplane/grpc:calls",
         "//agentplane/runner",
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway:destinations",
-        "//agentplane/runner_gateway:grpc_api",
+        "//agentplane/runner_gateway:runner_proxy",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
-        "//util/testing:sqlalchemy_engines",
         "@pypi//kubernetes_asyncio",
     ],
 )

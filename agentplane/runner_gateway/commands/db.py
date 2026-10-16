@@ -1,25 +1,18 @@
-"""The Runner Gateway's own schema, in the `sandbox_commands` database: its Session registry.
+"""Migration metadata for the retired Runner Gateway Session registry table.
 
-Session history lives in another database, keyed by the same public Session ID with no foreign key.
+Serving code no longer reads or writes this table. It remains in migration metadata until the
+registry-free image has rolled out and a separate approved database-retirement migration lands.
 """
 
-from uuid import UUID
+import sqlalchemy as sa
+from sqlalchemy import MetaData, Table
 
-from sqlalchemy import String
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
-
-class Base(DeclarativeBase):
-    pass
-
-
-class Session(Base):
-    """A public Session in one Sandbox incarnation, which is also the runner's Session ID."""
-
-    __tablename__ = "session"
-
-    id: Mapped[UUID] = mapped_column(primary_key=True)
-    sandbox_namespace: Mapped[str] = mapped_column(String)
-    sandbox_name: Mapped[str] = mapped_column(String)
-    # Absent for imported Sessions whose original Sandbox UID was not retained in app history.
-    sandbox_uid: Mapped[UUID | None]
+metadata = MetaData()
+Table(
+    "session",
+    metadata,
+    sa.Column("id", sa.Uuid(), primary_key=True, nullable=False),
+    sa.Column("sandbox_namespace", sa.String(), nullable=False),
+    sa.Column("sandbox_name", sa.String(), nullable=False),
+    sa.Column("sandbox_uid", sa.Uuid(), nullable=True),
+)

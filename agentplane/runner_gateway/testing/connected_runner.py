@@ -8,18 +8,16 @@ from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.grpc.calls import dial
 from agentplane.runner.runner import Runner
-from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.destinations import DestinationResolver
-from agentplane.runner_gateway.grpc_api import Resources
+from agentplane.runner_gateway.runner_proxy import Resources
 from agentplane.runner_gateway.testing.control_listener import control_plane, dialing, wait_connected
-from agentplane.runner_gateway.testing.grpc_service import gateway_client, service
+from agentplane.runner_gateway.testing.grpc_service import service
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandboxes.testing.kubernetes import ACCOUNT, POD_UID, SANDBOX, SANDBOX_UID, SandboxCluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
-from util.testing.sqlalchemy_engines import postgres_async_engine
 
 _RUNNER_AUDIENCE = "test-app-runner-control"
 _RUNNER_TOKEN = "test-app-runner-token"
@@ -31,11 +29,10 @@ async def authenticated_runner_gateway(
     runner: Runner,
     token_file: Path,
     *,
-    database_url: str,
     manager: ServiceAccountRef | None = None,
     token: str = "test-app-gateway-token",
     audience: str = "test-app-runner-gateway",
-) -> AsyncIterator[RunnerGatewayClient]:
+) -> AsyncIterator[SandboxControlClient]:
     """The Runner Gateway over `cluster`, with `runner` connected over the control stream."""
     manager = manager or ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-app")
     await asyncio.to_thread(token_file.write_text, token)
@@ -45,15 +42,15 @@ async def authenticated_runner_gateway(
         pod_uid="test-app-pod-uid",
         audiences=(audience,),
     )
-    async with postgres_async_engine(database_url) as engine:
-        resources = build_resources(
-            engine,
-            principals=cluster.build_principal_resolver(audience),
-            destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
-            caller_accounts=frozenset({manager}),
+    resources = build_resources(
+        principals=cluster.build_principal_resolver(audience),
+        destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
+        caller_accounts=frozenset({manager}),
+    )
+    async with runner_connected(cluster, resources, runner), service(resources) as target:
+        yield SandboxControlClient(
+            control_target=target, token_file=token_file, request_timeout_s=20, lifecycle_timeout_s=310
         )
-        async with runner_connected(cluster, resources, runner), service(resources) as target, dial(target) as channel:
-            yield gateway_client(channel, token_file, control_target=target)
 
 
 @asynccontextmanager

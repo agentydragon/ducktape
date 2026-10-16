@@ -409,14 +409,14 @@ silently. Only the replica holding the runner's stream calls the runner: callers
 ([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Calls are bounded by the
 calling RPC's deadline, like command deliveries, and a reconnect replays none of them.
 
-| Runner Gateway caller   | Control operation                                  |
-| ----------------------- | -------------------------------------------------- |
-| `ListSessions` RPC      | `ListSessions`                                     |
-| `CreateSession`         | `OpenSession` with the client's ID                 |
-| `ResumeSession`         | `ResumeSession`                                    |
-| `Teardown` sealing      | `Quiesce`, repeated until every Session is flushed |
-| Dispatcher command RPCs | Matching per-operation Runner RPC                  |
-| Old Gateway images      | `DeliverCommand`                                   |
+| Caller/path                    | Control operation                                  |
+| ------------------------------ | -------------------------------------------------- |
+| App and Notification inventory | `ListSessions`                                     |
+| Session Dispatcher opening     | `OpenSession` with the admitted Session ID         |
+| App explicit resume            | `ResumeSession`                                    |
+| Teardown sealing               | `Quiesce`, repeated until every Session is flushed |
+| Dispatcher command delivery    | Matching per-operation Runner RPC                  |
+| Old Gateway images             | `DeliverCommand`                                   |
 
 The VM experiment's runtime acceptance drives the guest runner directly through a port-forward and
 moves with the selected VM control path.
@@ -473,7 +473,7 @@ the harness ever holds it.
 The audience is distinct from the Runner Gateway's (`agentplane-runner-gateway`) and from
 the shared `agentplane-egress` audience that the LLM ingress and Action Service receive, so none of
 those recipients can replay a token they saw as a runner connection, and a control token cannot
-call the Runner Gateway API.
+call the Gateway's public Runner proxy.
 
 The route is part of every runner template, and its network rules are not policy a launch selects,
 so no Sandbox can be cut off from its own control plane.

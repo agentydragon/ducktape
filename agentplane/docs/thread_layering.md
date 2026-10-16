@@ -1,8 +1,8 @@
 # Thread, runner, and harness layering
 
 Status: **cross-layer design under review.** The app opens Sessions and submits commands through
-Session Dispatcher; History owns retained Session/Thread views; Runner Gateway exposes a partial
-legacy placement registry and authorized live runner operations. The materialized Thread projection and Electric-backed
+Session Dispatcher; History owns retained Session/Thread views; Runner Gateway owns the reverse
+control stream and authorized live Runner proxy. The materialized Thread projection and Electric-backed
 conversation sync described in [Thread view synchronization](thread_view_sync.md) are implemented;
 remaining acceptance gates are in [conversation acceptance](../debug/conversation_acceptance.md).
 This document covers identity, durability, command handling and presentation, while the
@@ -107,12 +107,13 @@ Raw evidence; the projection does not change runner Events or command admission.
 One Sandbox can host multiple Threads. A Thread may resume through several harness
 processes on that Sandbox. Current runner storage calls its durable, resumable container
 a “session”; it already spans process restarts. That existing name does not establish
-the target product Thread/incarnation relationship. The Gateway registry maps Sessions it
-registered to Sandbox incarnations; production app openings use Dispatcher and do not populate it.
-History separately records the writer's namespace and name. App commands use the Thread's stored
-Sandbox name and send it to Dispatcher, which records the current Sandbox UID without checking the
-Session's earlier association. The complete Session-to-incarnation authority across opens, commands
-and resume remains under review in the [control-surface audit](control_surface_retirement.md).
+the target product Thread/incarnation relationship. The historical Gateway registry table never
+covered Dispatcher-opened Sessions and has no current serving reader or writer; its removal is a
+separate rollout-gated database change. History separately records the writer's namespace and name.
+App commands use the Thread's stored Sandbox name and send it to Dispatcher, which records the current
+Sandbox UID without checking the Session's earlier association. The complete Session-to-incarnation
+authority across opens, commands and resume remains under review in the
+[control-surface audit](control_surface_retirement.md).
 
 A Thread is a view/fold of one durable logical Session's Event log, with its own
 operator-set presentation; it is not a second execution source. Its id is the client-minted public

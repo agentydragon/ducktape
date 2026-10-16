@@ -5,11 +5,11 @@ a runner's pushed journal; its first copy waits for the test to release the `ope
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Iterable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import override
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, uuid5
 
 import grpc
 
@@ -20,8 +20,6 @@ from agentplane.proto import (
     event_pb2,
     runner_control_pb2,
     runner_control_pb2_grpc,
-    runner_gateway_pb2,
-    runner_gateway_pb2_grpc,
     runner_pb2,
 )
 
@@ -37,37 +35,16 @@ class Opened:
     replay: asyncio.Event = field(default_factory=asyncio.Event)
 
 
-@dataclass
-class Placements:
-    """Where each Session a test opened runs: what the Runner Gateway's registry would answer."""
-
-    sandboxes: dict[UUID, str] = field(default_factory=dict)
-
-    def get(self, session_ids: Iterable[str]) -> list[runner_gateway_pb2.SessionSandbox]:
-        wanted = set(session_ids)
-        return self._matching(lambda session_id, _: str(session_id) in wanted)
-
-    def _matching(self, keep: Callable[[UUID, str], bool]) -> list[runner_gateway_pb2.SessionSandbox]:
-        return [
-            runner_gateway_pb2.SessionSandbox(session_id=str(session_id), sandbox=sandbox)
-            for session_id, sandbox in self.sandboxes.items()
-            if keep(session_id, sandbox)
-        ]
-
-
 class ReplicationSource:
-    """One runner's Session; `gateway` admits its commands and answers where Sessions run from `placements`."""
+    """One scripted Runner Session whose operations append admissions to retained history."""
 
-    def __init__(self, placements: Placements) -> None:
-        self.placements = placements
+    def __init__(self) -> None:
         self.session_id = uuid5(NAMESPACE_URL, SANDBOX + "/" + SESSION)
-        placements.sandboxes[self.session_id] = SANDBOX
         self.entries: list[event_log_pb2.EventEntry] = []
         self.attached = runner_pb2.Attached(
             session_id=SESSION, spec=SPEC, harness_state=runner_pb2.HARNESS_STATE_RUNNING
         )
         self.opened: asyncio.Queue[Opened] = asyncio.Queue()
-        self.gateway = Gateway(self)
         self.runner = Runner(self)
         self._appended = asyncio.Event()
 
@@ -112,24 +89,8 @@ class ReplicationSource:
 
 
 def add_replication_source(source: ReplicationSource, server: grpc.aio.Server) -> None:
-    """Registers placement reads at Gateway and command/list RPCs at the Runner proxy."""
-    runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(source.gateway, server)
+    """Registers the scripted Runner service used by the app's control proxy client."""
     runner_control_pb2_grpc.add_RunnerServicer_to_server(source.runner, server)
-
-
-class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
-    """The Runner Gateway's retained Session-placement reads."""
-
-    def __init__(self, source: ReplicationSource) -> None:
-        self.source = source
-
-    @override
-    async def BatchGetSessionSandboxes(
-        self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.BatchGetSessionSandboxesResponse:
-        return runner_gateway_pb2.BatchGetSessionSandboxesResponse(
-            sessions=self.source.placements.get(request.session_ids)
-        )
 
 
 class Runner(runner_control_pb2_grpc.RunnerServicer):

@@ -11,8 +11,8 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   and an MCP endpoint over OAuth.
-- [Runner Gateway](runner_gateway/README.md): the runner control stream, a legacy partial Session
-  placement registry and authorized live runner access.
+- [Runner Gateway](runner_gateway/README.md): the runner control stream and authorized live Runner
+  proxy.
 - [Session Dispatcher](session_dispatcher/README.md): the durable command queue and delivery state
   between senders and Sandbox runners.
 - [History Service](history_service/README.md): retained Session history, read by the
@@ -77,7 +77,7 @@ flowchart LR
     end
 
     browser -->|HTTPS requests| app
-    app --> gw
+    app -->|gRPC health + tunneled Runner RPCs| gw
     app --> dispatcher
     app --> hs
     app --> notif
@@ -108,7 +108,7 @@ flowchart LR
     egress --> llm
 
     click app href "app/api.py" "Integration app API"
-    click gw href "proto/runner_gateway.proto" "Runner Gateway API"
+    click gw href "docs/runner_control.md" "Runner control stream and proxy"
     click hs href "proto/history_service.proto" "History Service API"
     click notif href "notification_service/api.py" "Notification Service API"
     click actions href "action_service/api.py" "Action Service API"
@@ -289,7 +289,7 @@ policy. LiteLLM is a separate hop behind LLM ingress; only that service holds th
 The service nodes above link to their definitions in renderers that support Mermaid node links.
 These direct links are also available in Markdown views that do not:
 
-- gRPC: [Runner Gateway](proto/runner_gateway.proto), [RunnerControl and tunneled Runner RPCs](proto/runner_control.proto), [RunnerIngress](proto/runner_ingress.proto), [Session Dispatcher](proto/session_dispatcher.proto), and [History Service](proto/history_service.proto).
+- gRPC: [RunnerControl](proto/runner_control.proto), [tunneled Runner RPCs](proto/runner.proto), [RunnerIngress](proto/runner_ingress.proto), [Session Dispatcher](proto/session_dispatcher.proto), and [History Service](proto/history_service.proto). The Runner Gateway also serves standard gRPC health and proxies the Runner service over each outbound control stream.
 - HTTP and streaming APIs: [Integration app](app/api.py), [Electric proxy](app/electric.py), [Action Service](action_service/api.py), [Notification Service](notification_service/api.py), [LLM ingress](llm_ingress/app.py), and [Git index](indexing/app.py).
 - Controllers and egress: [Sandbox Controller](sandbox_controller/controller.go), [Policy Controller](policy_controller/controller.go), [central egress proxy](egress/addon.py), [sidecar](egress/sidecar.py), and [platform routes](egress/platform_routes.py).
 
@@ -309,20 +309,19 @@ source are retired; the History Service retains its database and authored histor
   the `RunnerControl` stream they dial to the Runner Gateway, routed per Sandbox by its `<sandbox>-control` Service and
   `<sandbox>-runner` Lease ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
-  `sandbox_commands` (the Runner Gateway's Session registry for sessions opened through its direct
-  `CreateSession` API; it does not cover Dispatcher openings), `sandbox_service` (Session history,
+  `sandbox_commands` (a retained legacy Session registry schema with no serving reader or writer),
+  `sandbox_service` (Session history,
   written by the History Service), `actions`, `egress`, `notifications` and `session_dispatcher`.
   The History Service retains the existing `sandbox_service` database; no database or authored
   history is removed with the Sandbox Service Deployment. The history and Dispatcher databases are drawn.
 - **Sandbox lifecycle and runner control.** The app writes requested Sandbox state and operator
   grants to Kubernetes; the Sandbox Controller reconciles resources and owns status. The Session
   Dispatcher owns production Session openings and durable command admission/delivery state. The
-  Runner Gateway owns the runner control stream, a legacy partial Session placement registry and
-  authorized live runner access. The app reads current runner inventory and explicitly resumes a
-  retained harness through the Sandbox control Service, with the Runner Proxy checking the live
-  Sandbox name, UID and owner. The legacy Gateway Resume RPC still depends on its partial registry;
-  its retirement remains gated on external and pinned callers. The controller holds deletion until
-  the runner has sealed its Sessions through the Gateway.
+  Runner Gateway owns the runner control stream and authorized live runner access. The app reads
+  current runner inventory and explicitly resumes a retained harness through the Sandbox control
+  Service, with the Runner Proxy checking the live Sandbox name, UID and owner. Its historical
+  `sandbox_commands.session` table remains until a separate rollout-gated database drop. The
+  controller holds deletion until the runner has sealed its Sessions through the Gateway.
 
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
 [`docs/`](docs/).

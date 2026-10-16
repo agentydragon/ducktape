@@ -33,12 +33,7 @@ not redesign storage, the History Service, or policy.
   gateway's runner proxy and records `status.quiescedIncarnation` on any quiesce and sets `Quiesced` on a deleting Sandbox only (`finalize`), beside the older sealed names. It
   reads the connection Lease's facts. `Ready` is `WorkloadReady` AND `RunnerConnected`. `QuiesceResponse.stage` has
   one reader, the controller.
-- **Runner Gateway** (`runner_gateway/`): the `RunnerControl.Connect` listener and the proxy of the runner's `Runner`
-  service. It creates, per Sandbox, a Lease (holder, epoch, liveness) and an EndpointSlice pointing at the holding
-  replica (`connection_records.py`), owned by the Sandbox, and writes the runner's published quiesce stage and bootstrap result onto the Lease. It no longer creates the `<sandbox>-control` Service
-  (its `services` RBAC rule stays until the controller's image is pinned). It still wraps `Runner` with the legacy Session registry (written only by direct `CreateSession`), readiness checks
-  (`destinations.py`) and a database, and its API promises that session and command RPCs never provision, resume or
-  wake a Sandbox.
+- **Runner Gateway** (`runner_gateway/`): the `RunnerControl.Connect` listener and proxy of the runner's `Runner` service. It writes per-Sandbox Leases and EndpointSlices; it does not create the `<sandbox>-control` Service (its `services` RBAC rule stays until the controller's image is pinned). The Gateway-specific Session API and registry runtime are removed. The historical `sandbox_commands.session` table remains only until the separate rollout-gated database drop.
 - **Integration app** (`app/`): submits Sandbox desired state and operator-owned grants through the
   Kubernetes API, reads Sandbox views, and attaches the output-only VM console. It acts as the
   requesting operator; the Sandbox Controller owns status and reconciled resources.

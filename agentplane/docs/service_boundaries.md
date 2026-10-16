@@ -54,18 +54,16 @@ presentation state and projections, but those must not become hidden sources of 
   the Runner Gateway for placement, and uses each Sandbox's Runner Proxy for UID/owner-fenced live
   inventory and explicit native resume. Resume keeps the Thread's History-backed name as a routing
   key, then verifies the current runner's retained Session and spec before calling
-  `Runner.ResumeSession`; it does not read the Gateway registry. The legacy Gateway Resume RPC
-  remains separately gated on external and pinned callers. The app reads Session history and Threads
+  `Runner.ResumeSession`; it does not read a Gateway registry. The app reads Session history and Threads
   from the History Service. See the [control-surface audit](control_surface_retirement.md).
 - **Sandbox Controller:** reconciles requested Sandbox state into ServiceAccounts, Pods or VMs,
   state volumes and controller-owned grants. It owns `Sandbox.status`, including quiescing facts,
   and asks the Runner Gateway to seal Sessions before stopping or deleting a runner.
-- **Runner Gateway:** runner control stream, verified destination bindings, a legacy partial Session
-  placement registry, the per-Sandbox Runner Proxy and read-only Sandbox inventory. Only its direct
-  `CreateSession` writes the registry; Dispatcher openings are absent. The app uses the proxy for
-  live inventory and native resume. Its command wrapper and redundant live operations remain on the
-  retirement path after callers migrate; the Dispatcher owns sender-facing durable command admission
-  and delivery state.
+- **Runner Gateway:** runner control stream, verified destination bindings, the per-Sandbox Runner
+  Proxy and read-only Sandbox inventory. It does not own Session records or command admission. The
+  app and Dispatcher use the proxy for live Runner RPCs; the Dispatcher owns sender-facing durable
+  command admission and delivery state. The legacy `sandbox_commands.session` table is retained only
+  for the separate rollout-gated database drop.
 - **History Service:** the Session Event archive, the ingress runners push their journals to, the
   Thread fold of each Session, and the read API over both. It retains the existing `sandbox_service`
   PostgreSQL database and its authored history.
@@ -78,29 +76,28 @@ presentation state and projections, but those must not become hidden sources of 
 
 `app/threads/` owns only the app's Thread metadata, projections, and browser-facing composition. Its
 session adapter uses the History Service; it does not own Sandbox reconciliation or connect directly
-to runners. Thread identities never enter Runner Gateway APIs.
+to runners. Thread identities do not travel in Runner control-stream metadata.
 
 ## Session access without the app
 
-The Runner Gateway resolves explicit session destinations and distinguishes available, unavailable,
-and permanently removed destinations without querying the app. The Session Dispatcher owns durable
-sender-facing command admission and delivery state, and uses the Gateway's runner proxy to reach the
-runner. The Gateway still exposes a legacy command-admission wrapper while its retirement is gated
-on caller migration. The Sandbox Controller reconciles each submitted desired state and uses
-the Gateway's runner proxy for quiescing; neither service depends on the app process to continue its work.
-Notification-triggered wake and durable acceptance for offline destinations are separate features
-with their own rollout gates. Do not create another runner-command queue as a side effect of a
-service-boundary change.
+The Runner Gateway authenticates proxy callers, resolves the current Sandbox and runner connection,
+and routes Runner RPCs to the replica holding the outbound stream. The app and Notification service
+use it for live Runner inventory; the app uses it for explicit native resume; the Sandbox Controller
+uses it for quiesce. The Session Dispatcher owns durable sender-facing command admission and delivery.
+No backend needs the app process to keep serving these operations.
+
+The Gateway-specific Session API and registry runtime are removed. The historical sandbox_commands.session
+table remains only through its separate rollout-gated database drop. Notification-triggered wake and
+durable acceptance for offline destinations are separate features with their own rollout gates. Do not
+create another runner-command queue as a side effect of a service-boundary change.
 
 Runner journals remain durable on runner state volumes. Runners push them to the History Service,
 whose Session Event archive outlives the runner volume; the app reads history from that archive and
 keeps its UI projections.
 
-The Runner Gateway and other backend components expose their own APIs; the app retains its
-browser-facing HTTP API. The Runner Gateway is the only production server of the runner control
-stream. It does not proxy runner outbound model, Actions, or egress traffic. Administrative and test
-exceptions must be explicit; there is no production direct-runner fallback in the app or
-notifications.
+The Runner Gateway is the only production server of the runner control stream. It does not proxy
+runner outbound model, Actions, or egress traffic. Administrative and test exceptions must be explicit;
+there is no production direct-runner fallback in the app or notifications.
 
 ## Existing staging data
 
@@ -133,8 +130,8 @@ state and operator grants through the Kubernetes API as the requesting operator;
 Controller reconciles `spec` and owns `status`.
 
 Shared read-only Sandbox projections may be used by the app, notifications and Runner Gateway. They
-carry no create/delete/grant/session authority. Gateway and History protobuf/client types remain
-service-owned APIs; there is no Sandbox Service API or client.
+carry no create/delete/grant/session authority. RunnerControl and History protobuf/client types remain
+service-owned APIs; the Gateway-specific Session API and the Sandbox Service API have no client here.
 
 Thread launch defaults live in the app's configured preset catalog and are selected by the preset
 label on a Sandbox. The shared Sandbox creation request has no per-Sandbox Session defaults. The

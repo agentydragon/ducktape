@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
-import grpc
 import httpx
 import pytest
 from kubernetes_asyncio.client import CoreV1Api
@@ -30,7 +29,6 @@ from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.dispatcher import RunnerProxyBackedDispatcher
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.replication_source import Placements
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.history_watch import HistoryWatch
@@ -39,7 +37,6 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.fixtures import service_database_template
@@ -53,7 +50,7 @@ from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 # The bridge tests run one script against a local runner over both harnesses; those fixtures live
 # with the runner.
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
-from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.testing.backend import Endpoint, backend
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import (
@@ -135,15 +132,8 @@ def summaries(history_client: HistoryServiceClient) -> Summaries:
 
 
 @pytest.fixture
-def store(engine: AsyncEngine, summaries: Summaries, gateway: RunnerGatewayClient) -> ThreadStore:
+def store(engine: AsyncEngine, summaries: Summaries) -> ThreadStore:
     return ThreadStore(engine, summaries)
-
-
-@pytest.fixture
-def gateway_registry(history: History) -> AsyncEngine | Placements:
-    """Where fixture Sessions are registered with the Runner Gateway: the service database here, which
-    the gateway shares; browser tests answer from a fake gateway's map instead."""
-    return history.engine
 
 
 @pytest.fixture
@@ -153,12 +143,10 @@ def event_logs(
     history_client: HistoryServiceClient,
     summaries: Summaries,
     register_attached_sessions: bool,
-    gateway_registry: AsyncEngine | Placements,
 ) -> SeededEventLogStore:
     return SeededEventLogStore(
         engine,
         history=None if register_attached_sessions else history,
-        gateway=gateway_registry,
         history_reader=history_client,
         summaries=summaries,
     )
@@ -200,19 +188,13 @@ async def database_updates(
 
 @pytest.fixture
 async def replica(
-    db_url: str, event_logs: SeededEventLogStore, history_client: HistoryServiceClient, gateway: RunnerGatewayClient
+    db_url: str, event_logs: SeededEventLogStore, history_client: HistoryServiceClient
 ) -> AsyncIterator[Replica]:
     async with managed_async_engine(connect(db_url)) as engine:
         summaries = Summaries(history_client)
         yield Replica(
             ThreadStore(engine, summaries),
-            SeededEventLogStore(
-                engine,
-                history=event_logs.history,
-                gateway=event_logs.gateway,
-                history_reader=history_client,
-                summaries=summaries,
-            ),
+            SeededEventLogStore(engine, history=event_logs.history, history_reader=history_client, summaries=summaries),
             OperatorSessionStore(engine),
         )
 
@@ -256,9 +238,9 @@ def core_v1() -> FakeCoreV1Api:
 
 
 @pytest.fixture
-def runners(live_index: LiveIndex, gateway: RunnerGatewayClient) -> RunnerDirectory:
+def runners(live_index: LiveIndex, gateway: SandboxControlClient) -> RunnerDirectory:
     """The runners `live_index` shows, dialled on a port nothing listens on."""
-    return RunnerDirectory(live_index, gateway.control)
+    return RunnerDirectory(live_index, gateway)
 
 
 @pytest.fixture
@@ -280,16 +262,10 @@ def bridge(
 
 @pytest.fixture
 def gateway_endpoint(
-    custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, tmp_path: Path, service_history_db_url: str
+    custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, tmp_path: Path
 ) -> Iterator[Endpoint]:
-    with backend(custom_objects, core_v1, tmp_path / "sandbox-token", database_url=service_history_db_url) as endpoint:
+    with backend(custom_objects, core_v1, tmp_path / "sandbox-token") as endpoint:
         yield endpoint
-
-
-@pytest.fixture
-async def gateway_channel(gateway_endpoint: Endpoint) -> AsyncIterator[grpc.aio.Channel]:
-    async with dial(gateway_endpoint.target) as channel:
-        yield channel
 
 
 @pytest.fixture
@@ -304,8 +280,8 @@ def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> S
 
 
 @pytest.fixture
-def gateway(gateway_endpoint: Endpoint, gateway_channel: grpc.aio.Channel) -> RunnerGatewayClient:
-    return gateway_endpoint.gateway(gateway_channel)
+def gateway(gateway_endpoint: Endpoint) -> SandboxControlClient:
+    return gateway_endpoint.client()
 
 
 # The agent's credential, and what a test client carries: the app's other one is an OIDC session

@@ -15,9 +15,9 @@ from agentplane.runner import control as runner_control
 from agentplane.runner.reconnect import StreamTiming
 from agentplane.runner.runner import Runner
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionRecords
-from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming, RunnerControlService
+from agentplane.runner_gateway.runner_proxy import Resources
 from agentplane.sandboxes.reader import SandboxReader
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 

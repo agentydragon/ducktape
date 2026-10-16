@@ -14,18 +14,17 @@ import grpc
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.grpc.tunnel import TunnelCaller, relay
 from agentplane.proto import grpc_tunnel_pb2, runner_control_pb2, runner_pb2
-from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.testing.auth import CALLER_TOKEN
-from agentplane.runner_gateway.testing.grpc_service import connect, service
+from agentplane.runner_gateway.testing.grpc_service import service
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.runner_gateway.testing.runner_control import (
     OTHER_REPLICA,
@@ -35,7 +34,6 @@ from agentplane.runner_gateway.testing.runner_control import (
     connected,
     serve_replica_control,
 )
-from agentplane.runner_gateway.testing.sessions import register_on_fake_sandbox
 from agentplane.sandboxes.testing.kubernetes import DESTINATION, SANDBOX_UID, SandboxCluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
@@ -44,7 +42,7 @@ from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 
 CALLER_AUDIENCE = "test-runner-gateway-lifecycle"
 CALLER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-caller")
-SPEC: dict[str, object] = {"harness": "HARNESS_CLAUDE", "cwd": "/test-workspace/{session_id}", "model": "test-model"}
+SPEC = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/test-workspace/{session_id}", model="test-model")
 
 
 @dataclass
@@ -58,7 +56,7 @@ class Replica:
 
 @pytest.fixture
 def replica(
-    cluster: SandboxCluster, engine: AsyncEngine, leases: ConnectionLeases
+    cluster: SandboxCluster, leases: ConnectionLeases
 ) -> Callable[[ConnectionHolder], AbstractAsyncContextManager[Replica]]:
     """Start a replica; replicas share the cluster and the database."""
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
@@ -73,7 +71,6 @@ def replica(
         control = LifecycleControl(leases)
         resources = replace(
             build_resources(
-                engine,
                 principals=cluster.build_principal_resolver(CALLER_AUDIENCE),
                 destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
                 caller_accounts=frozenset({CALLER}),
@@ -107,11 +104,9 @@ async def other(replica: Callable[[ConnectionHolder], AbstractAsyncContextManage
 
 
 @pytest.fixture
-async def public_id(engine: AsyncEngine) -> UUID:
-    """A Session registered on the fake cluster's Sandbox."""
-    public_id = uuid4()
-    await register_on_fake_sandbox(engine, public_id)
-    return public_id
+def public_id() -> UUID:
+    """A Session identifier returned by the scripted Runner."""
+    return uuid4()
 
 
 @asynccontextmanager
@@ -122,8 +117,11 @@ async def runner_on(replica: Replica) -> AsyncIterator[ScriptedRunner]:
         yield runner
 
 
-def client(token_file: Path, target: str, *, control_target: str) -> AbstractAsyncContextManager[RunnerGatewayClient]:
-    return connect(target, token_file, control_target=control_target)
+@asynccontextmanager
+async def client(token_file: Path, control_target: str) -> AsyncIterator[SandboxControlClient]:
+    yield SandboxControlClient(
+        control_target=control_target, token_file=token_file, request_timeout_s=20, lifecycle_timeout_s=310
+    )
 
 
 async def test_tunnel_send_preserves_grpc_status_and_detail() -> None:
@@ -188,14 +186,14 @@ async def test_tunnel_preserves_upstream_status_metadata() -> None:
     assert tuple(failed.value.trailing_metadata() or ()) == tuple(metadata)
 
 
-async def test_a_create_whose_harness_failed_is_confirmed_and_started_on_retry(
-    holder: Replica, other: Replica, token_file: Path
+async def test_runner_open_retry_after_setup_failure_returns_the_attached_session(
+    holder: Replica, token_file: Path
 ) -> None:
-    # The caller's own target is the other replica; the control Service names the holder.
-    async with runner_on(holder) as runner, client(token_file, other.api, control_target=holder.api) as service:
+    # An identical Open retry reaches the replica that holds the Sandbox connection.
+    async with runner_on(holder) as runner, client(token_file, holder.api) as service:
         sandbox = service.runner(DESTINATION)
         requested = uuid4()
-        first = asyncio.create_task(sandbox.create(session_id=requested, spec=SPEC))
+        first = asyncio.create_task(sandbox.open_session(session_id=requested, spec=SPEC))
         opened = await runner.next(runner_control_pb2.OpenSessionRequest)
         session_id = opened.request.session_id
         # A harness that failed to launch.
@@ -204,28 +202,27 @@ async def test_a_create_whose_harness_failed_is_confirmed_and_started_on_retry(
             await first
         # The runner created the Session and could not start it; asked again it confirms it and
         # starts its harness.
-        retried = asyncio.create_task(sandbox.create(session_id=requested, spec=SPEC))
+        retried = asyncio.create_task(sandbox.open_session(session_id=requested, spec=SPEC))
         confirmed = await runner.next(runner_control_pb2.OpenSessionRequest)
         assert (confirmed.request.session_id, confirmed.request.spec) == (session_id, opened.request.spec)
         confirmed.outcome.set_result(
             runner_control_pb2.OpenSessionResponse(attached=attached(session_id, runner_pb2.HARNESS_STATE_RUNNING))
         )
         response = await retried
-    assert response.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-    assert response.attached.session_id == response.session_id
-    assert session_id == response.session_id == str(requested)
+    assert response.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+    assert response.session_id == session_id == str(requested)
 
 
-async def test_a_created_running_session_is_not_resumed(holder: Replica, token_file: Path) -> None:
-    async with runner_on(holder) as runner, client(token_file, holder.api, control_target=holder.api) as service:
-        creating = asyncio.create_task(service.runner(DESTINATION).create(session_id=uuid4(), spec=SPEC))
+async def test_runner_open_on_a_running_session_returns_without_resuming(holder: Replica, token_file: Path) -> None:
+    async with runner_on(holder) as runner, client(token_file, holder.api) as service:
+        creating = asyncio.create_task(service.runner(DESTINATION).open_session(session_id=uuid4(), spec=SPEC))
         await runner.open()
         # Waiting on a resume would never return.
-        assert (await creating).attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+        assert (await creating).harness_state == runner_pb2.HARNESS_STATE_RUNNING
 
 
 async def test_listing_and_resuming_go_over_the_channel(holder: Replica, public_id: UUID, token_file: Path) -> None:
-    async with runner_on(holder) as runner, client(token_file, holder.api, control_target=holder.api) as service:
+    async with runner_on(holder) as runner, client(token_file, holder.api) as service:
         sandbox = service.runner(DESTINATION)
         runner.sessions[str(public_id)] = runner_pb2.SessionSummary(session_id=str(public_id), last_cursor=7)
         assert [(row.session_id, row.last_cursor) for row in await sandbox.list_sessions()] == [(str(public_id), 7)]
@@ -244,9 +241,9 @@ async def test_a_replica_without_the_connection_refuses_before_acting(
 ) -> None:
     # A control Service still naming the other replica, as during a roll: the caller's retry resolves
     # the control Service again.
-    async with runner_on(holder) as runner, client(token_file, other.api, control_target=other.api) as caller:
+    async with runner_on(holder) as runner, client(token_file, other.api) as caller:
         with pytest.raises(ServiceError) as refused:
-            await caller.runner(DESTINATION).create(session_id=uuid4(), spec=SPEC)
+            await caller.runner(DESTINATION).open_session(session_id=uuid4(), spec=SPEC)
         assert refused.value.code == grpc.StatusCode.UNAVAILABLE
     assert not runner.received
 
@@ -260,9 +257,9 @@ async def test_a_superseded_connection_calls_nothing(holder: Replica, other: Rep
 
 
 async def test_a_lost_connection_fails_its_call(holder: Replica, token_file: Path) -> None:
-    async with client(token_file, holder.api, control_target=holder.api) as service:
+    async with client(token_file, holder.api) as service:
         async with runner_on(holder) as runner:
-            creating = asyncio.create_task(service.runner(DESTINATION).create(session_id=uuid4(), spec=SPEC))
+            creating = asyncio.create_task(service.runner(DESTINATION).open_session(session_id=uuid4(), spec=SPEC))
             await runner.next(runner_control_pb2.OpenSessionRequest)
         with pytest.raises(ServiceError) as lost:
             await creating

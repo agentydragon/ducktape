@@ -14,7 +14,6 @@ import grpc
 import httpx
 import pytest
 import pytest_bazel
-from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import update
 from sqlalchemy.engine import make_url
@@ -203,13 +202,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 transport=httpx.ASGITransport(app=action_api), base_url="http://actions.test"
             ) as action_http,
             authenticated_runner_gateway(
-                cluster,
-                runner,
-                token_file,
-                database_url=sandbox_service_db_url,
-                manager=delegate,
-                token="delegate-token",
-                audience="test-notifications",
+                cluster, runner, token_file, manager=delegate, token="delegate-token", audience="test-notifications"
             ) as remote,
             ingest(sandbox_service_db_url, runner),
             history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
@@ -228,7 +221,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 namespace=cluster.inventory.namespace,
                 caller_accounts=frozenset({delegate}),
                 token_audience="test-notifications",
-                runner_control_target=remote.control.control_target,
+                runner_control_target=remote.control_target,
                 runner_token_file=runner_token_file,
                 request_timeout_s=10,
                 host="127.0.0.1",
@@ -245,7 +238,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 source,
                 cluster.inventory,
                 github=None,
-                control=remote.control,
+                control=remote,
                 history=history,
                 dispatcher=dispatcher,
                 notice_debounce=NoticeDebounceSettings(quiet_seconds=0),
@@ -264,7 +257,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     sandbox_uid=SANDBOX_UID,
                 )
                 native = remote.runner(destination)
-                session_id = (await native.create(session_id=uuid4(), spec=MessageToDict(spec))).session_id
+                session_id = (await native.open_session(session_id=uuid4(), spec=spec)).session_id
                 native_session = runner.sessions[session_id]
 
                 async def history_caught_up() -> None:

@@ -11,14 +11,13 @@ from pathlib import Path
 from typing import cast
 from uuid import UUID
 
-import grpc
 from anyio.from_thread import start_blocking_portal
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.testing.control_listener import control_plane, wait_connected
-from agentplane.runner_gateway.testing.grpc_service import gateway_client, service
+from agentplane.runner_gateway.testing.grpc_service import service
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
@@ -26,7 +25,6 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import fake_apiserver
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
-from util.testing.sqlalchemy_engines import postgres_async_engine
 
 TOKEN = "test-consumer-runner-gateway-token"
 AUDIENCE = "test-consumer-runner-gateway"
@@ -70,25 +68,21 @@ class Endpoint:
     control_target: str
     wait_connected: Callable[[UUID], None]
 
-    def gateway(self, channel: grpc.aio.Channel) -> RunnerGatewayClient:
-        """The gateway's client over `channel`, which a test opens to `target`."""
-        return gateway_client(channel, self.token_file, control_target=self.target)
+    def client(self) -> SandboxControlClient:
+        """The Runner proxy client reached through the test's local control Service."""
+        return SandboxControlClient(
+            control_target=self.target, token_file=self.token_file, request_timeout_s=20, lifecycle_timeout_s=310
+        )
 
 
 @contextmanager
-def backend(
-    custom_objects: FakeCustomObjectsApi, core: FakeCoreV1Api, token_file: Path, *, database_url: str
-) -> Iterator[Endpoint]:
+def backend(custom_objects: FakeCustomObjectsApi, core: FakeCoreV1Api, token_file: Path) -> Iterator[Endpoint]:
     token_file.write_text(TOKEN)
     custom = cast(CustomObjectsClient, custom_objects)
     core_api = cast(k8s_client.CoreV1Api, core)
     inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core_api)
-    with (
-        start_blocking_portal() as portal,
-        portal.wrap_async_context_manager(postgres_async_engine(database_url)) as engine,
-    ):
+    with start_blocking_portal() as portal:
         resources = build_resources(
-            engine,
             principals=principals(AUDIENCE),
             destinations=DestinationResolver(inventory, core_api),
             caller_accounts=frozenset({MANAGER}),

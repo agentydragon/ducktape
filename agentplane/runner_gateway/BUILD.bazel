@@ -30,12 +30,9 @@ py_library(
     srcs = ["client.py"],
     deps = [
         ":runner_proxy",
-        ":wire",
         "//agentplane/grpc:calls",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
-        "//agentplane/proto:runner_gateway_pb2",
-        "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandboxes_pb2",
         "@pypi//grpcio",
@@ -72,26 +69,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "session_registry",
-    srcs = ["session_registry.py"],
-    deps = [
-        "//agentplane/proto:runner_gateway_pb2",
-        "//agentplane/runner_gateway/commands:db",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "session_lifecycle",
-    srcs = ["session_lifecycle.py"],
-    deps = [
-        "//agentplane/proto:runner_pb2",
-        "@pypi//protobuf",
-    ],
-)
-
 py_test(
     name = "test_runner_control",
     size = "medium",
@@ -116,39 +93,20 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_session_registry",
-    size = "medium",
-    srcs = ["test_session_registry.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":session_registry",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
         ":connection_records",
-        ":session_registry",
         "//agentplane/runner/testing:failure_journal",
         "//agentplane/runner/testing:fixtures",
-        "//agentplane/runner_gateway/commands:conftest",
         "//agentplane/runner_gateway/testing:auth",
         "//agentplane/sandboxes/testing:fake_inventory",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
-        "//util/testing:postgres_fixtures",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -189,37 +147,14 @@ oci_image(
 )
 
 py_library(
-    name = "grpc_api",
-    srcs = ["grpc_api.py"],
-    deps = [
-        ":destinations",
-        ":lifecycle_control",
-        ":session_lifecycle",
-        ":session_registry",
-        "//agentplane/grpc:servicer",
-        "//agentplane/proto:runner_control_pb2",
-        "//agentplane/proto:runner_gateway_pb2",
-        "//agentplane/proto:runner_gateway_pb2_grpc",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:sandboxes_pb2",
-        "//agentplane/sandboxes:errors",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "main",
     srcs = ["main.py"],
     deps = [
         ":connection_records",
         ":destinations",
-        ":grpc_api",
         ":lifecycle_control",
         ":runner_control",
         ":runner_proxy",
-        ":session_registry",
         ":settings",
         "//agentplane:background_task",
         "//agentplane:service_process",
@@ -229,11 +164,9 @@ py_library(
         "//agentplane/sandboxes:reader",
         "//agentplane/workload_auth:principal",
         "//util:kubernetes",
-        "@pypi//asyncpg",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -276,7 +209,6 @@ py_test(
         "//agentplane/runner_gateway/testing:grpc_service",
         "//agentplane/runner_gateway/testing:resources",
         "//agentplane/runner_gateway/testing:runner_control",
-        "//agentplane/runner_gateway/testing:sessions",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
         "@pypi//grpcio",
@@ -284,44 +216,6 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_grpc_api",
-    size = "medium",
-    srcs = ["test_grpc_api.py"],
-    deps = [
-        ":client",
-        ":conftest",
-        ":connection_records",
-        ":destinations",
-        ":grpc_api",
-        ":lifecycle_control",
-        ":runner_control",
-        ":wire",
-        "//:conftest",
-        "//agentplane:sandbox_resource",
-        "//agentplane:subjects",
-        "//agentplane/grpc:calls",
-        "//agentplane/proto:runner_control_pb2",
-        "//agentplane/proto:runner_gateway_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:sandboxes_pb2",
-        "//agentplane/runner_gateway/testing:auth",
-        "//agentplane/runner_gateway/testing:grpc_service",
-        "//agentplane/runner_gateway/testing:resources",
-        "//agentplane/runner_gateway/testing:runner_control",
-        "//agentplane/runner_gateway/testing:sessions",
-        "//agentplane/sandboxes/testing:kubernetes",
-        "//agentplane/testing:fake_apiserver",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -342,7 +236,7 @@ py_test(
         ":client",
         ":conftest",
         ":destinations",
-        ":grpc_api",
+        ":runner_proxy",
         "//:conftest",
         "//agentplane/grpc:calls",
         "//agentplane/proto:command_pb2",
@@ -366,23 +260,7 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
         "@pypi//tenacity",
-    ],
-)
-
-py_test(
-    name = "test_session_lifecycle",
-    size = "medium",
-    srcs = ["test_session_lifecycle.py"],
-    deps = [
-        ":conftest",
-        ":session_lifecycle",
-        "//:conftest",
-        "//agentplane/proto:runner_pb2",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -413,30 +291,6 @@ py_test(
         "//agentplane/sandboxes/testing:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "wire",
-    srcs = ["wire.py"],
-    deps = [
-        "//agentplane/proto:runner_gateway_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:sandboxes_pb2",
-        "@pypi//protobuf",
-    ],
-)
-
-py_test(
-    name = "test_wire",
-    srcs = ["test_wire.py"],
-    deps = [
-        ":conftest",
-        ":wire",
-        "//:conftest",
-        "//agentplane/sandboxes/testing:kubernetes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

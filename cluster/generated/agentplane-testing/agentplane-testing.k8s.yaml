@@ -2119,11 +2119,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
-            - name: AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-sandbox-commands
             - name: AGENTPLANE_RUNNER_GATEWAY_POD_IP
               valueFrom:
                 fieldRef:
