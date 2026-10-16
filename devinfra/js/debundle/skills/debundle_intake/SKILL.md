@@ -5,7 +5,8 @@ description: Turn `debundle modules propose` output into named, dispatchable see
 
 # Debundle Intake
 
-@references/docs/bug_reproductions.md
+If debundle tooling blocks the task, follow
+`references/docs/bug_reproductions.md` before working around it.
 
 Use this role after `debundle_plan_work` has produced planner output. Intake
 translates certified structural proposals into work packets for lane workers.
@@ -18,7 +19,7 @@ Shared CLI workflows land here so proposal/batch semantics stay in one place:
 Read other bundled references as needed:
 
 - `references/workflow.md` for handoffs and scratch-state conventions
-- `references/README.md` for the crate pitch + Comments
+- `references/README.md` for the crate overview
 - `references/module_shape.md` for destination and cohesion heuristics
 
 ## Inputs

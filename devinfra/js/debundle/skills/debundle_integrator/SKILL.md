@@ -5,7 +5,8 @@ description: Integrate multiple debundle lane-worker branches through a validate
 
 # Debundle Integrator
 
-@references/docs/bug_reproductions.md
+If debundle tooling blocks the task, follow
+`references/docs/bug_reproductions.md` before working around it.
 
 Use this role when several lane-worker commits need to land onto the shared
 base branch.
@@ -18,7 +19,7 @@ Shared CLI workflows land here for gate and `--dry-run` behavior:
 Read other bundled references as needed:
 
 - `references/workflow.md` for orchestration and failure routing
-- `references/README.md` for the crate pitch + Comments
+- `references/README.md` for the crate overview
 
 ## Inputs
 

@@ -9,7 +9,8 @@ description: >-
 
 # Debundle Stabilize
 
-@references/docs/bug_reproductions.md
+If debundle tooling blocks the task, follow
+`references/docs/bug_reproductions.md` before working around it.
 @references/docs/cli.md
 @references/docs/selectors.md
 

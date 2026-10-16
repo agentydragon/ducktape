@@ -5,7 +5,8 @@ description: Coordinate a generic AI-driven debundling loop across intake, lane 
 
 # Debundle Orchestrator
 
-@references/docs/bug_reproductions.md
+If debundle tooling blocks the task, follow
+`references/docs/bug_reproductions.md` before working around it.
 
 Use this role to keep an AI-driven debundling loop moving. The orchestrator
 routes work between specialist roles and owns project-adapter details.
@@ -18,22 +19,11 @@ same command semantics:
 
 Read other bundled references as needed:
 
-- `references/workflow.md` for the shared multi-agent workflow
-- `references/README.md` for the crate pitch + Comments
+- `references/workflow.md` for the adapter contract, round loop, state, and failure routing
+- `references/README.md` for the crate overview
 - `references/docs/bazel_integration.md` for the `debundle_pipeline` rule and profiling targets
 - `references/module_shape.md` for when to route to architect or lane workers
 - `references/docs/selectors.md` for the bar selector-stabilization work must meet
-
-## Adapter Contract
-
-Before dispatching work, collect:
-
-- `<debundle-target>` and graph-refresh command
-- `<graph>`, `<modules-dir>`, `<emitted-js-root>`, source root if available
-- gate, regen, uniqueness-check, and optional smoke-test commands
-- project conventions/taxonomy docs
-- architecture notes and reorg recommendation paths
-- worktree policy, base branch, commit/push policy, and scratch paths
 
 ## Role Routing
 
@@ -54,55 +44,3 @@ Do not absorb specialist work when it becomes substantial. If you are reading
 many source bodies, dispatch intake. If you are redesigning module shape,
 dispatch the architect. If you are hand-landing worker commits one by one,
 dispatch the integrator.
-
-## Round Loop
-
-1. Refresh the debundle outputs, manifest, and owner graph.
-2. Run `debundle modules propose` and `debundle graph-summary` to update
-   progress metrics. Use `graph-summary --include-proposals` only when
-   proposal and diagnostic counts are needed.
-3. For structural-selector cleanup, run `selector-debt` with module grouping,
-   choose high-yield buckets, and decide whether missing support should become
-   Ducktape tooling work before asking humans or workers to hand-edit many
-   selectors. Do not dispatch work whose expected output is a pile of manually
-   maintained exact generated bodies.
-4. Ask intake for dispatchable seeds. `landable_today: true` is graph readiness;
-   workers still prove selectors and run the edit gate through `modules apply`.
-   See `references/docs/cli.md` § Claiming fresh proposals.
-5. Dispatch independent lane workers and any reorg/naming/doc cleanup work.
-6. Integrate green worker branches in batches.
-7. Rerun gate, regen, and adapter smoke tests as required.
-8. Update queues, architecture notes, and durable project conventions.
-
-Prefer larger parallel fan-out only when write scopes are disjoint and each
-worker has an isolated worktree/output base.
-
-## State
-
-Track work by stable owner IDs and binding IDs, not only generated proposal
-IDs. Maintain:
-
-- inflight assignments
-- landed assignments
-- failed/blocker diagnostics
-- graph/build command that produced the current evidence
-- progress metrics such as residual owners, patch-stream members, named module
-  fraction, selector-debt totals, grouped selector-debt buckets, and largest
-  remaining generated files
-
-## Failure Policy
-
-- Environment failure: find one working command, then broadcast it.
-- Stale graph: refresh evidence before reassigning blame.
-- Gate failure: read structured cycle/report output before bisection.
-- Split atomic unit: expand one lane to cover the whole unit or redispatch as
-  a coordinated task.
-- Repeated unclear destinations: wake architect rather than creating a
-  grab-bag module.
-
-## Boundaries
-
-- Do not modify the upstream/source bundle in reverse-engineering workflows.
-- Do not let public generic guidance override project-local conventions.
-- Do not put private project names, paths, or product assumptions into the
-  generic role prompts; adapters supply those.

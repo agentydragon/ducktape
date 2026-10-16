@@ -5,7 +5,8 @@ description: Apply one scoped debundle module-assignment or reorganization task 
 
 # Debundle Lane Worker
 
-@references/docs/bug_reproductions.md
+If debundle tooling blocks the task, follow
+`references/docs/bug_reproductions.md` before working around it.
 
 Use this role for one scoped implementation assignment: a seed cluster from
 intake, a binding-patch/residual cohort, or a firm reorganization task from
@@ -21,7 +22,7 @@ atom-split recovery:
 Read other bundled references as needed:
 
 - `references/workflow.md` for role boundaries and failure routing
-- `references/README.md` for the crate pitch + Comments
+- `references/README.md` for the crate overview
 - `references/module_shape.md` for seam and layer-ownership heuristics
 
 ## Inputs
@@ -77,33 +78,9 @@ propose` and `modules apply` so each sees only the graph chunk's mapped
 
 ## Boundary Heuristics
 
-A good module has a coherent reason to exist: stable public surface, internal
-references dominating external references, clear layer ownership, or multiple
-meaningful consumers. Member count alone is not the rule.
-
-Tiny modules are a smell — try to fold them. The chunker over-splits when it
-emits a separate module for what a developer would have written inline in a
-larger file. Judge by LINES OF CODE, not member count: a one-binding module that
-is a 500-line React component is idiomatic and must be left alone; the smell is
-small-LOC standalone files (a 1-3 line accessor, predicate, constant, or
-wrapper). Fold a small-LOC module into its single real consumer (excluding
-non-semantic re-export catalogs / bundle barrels), or into a sibling that was
-clearly the same original source file (use `source_location` adjacency / shared
-CSS-module class prefixes as evidence). Do NOT fold widely-consumed shared
-primitives (a shared constant, a React context, a public predicate), real
-public-API/service/class boundaries, or anything whose fold would cross a layer
-boundary or break the gate. See `references/module_shape.md`.
-
-Usually avoid standalone modules for:
-
-- primitive constants with one consumer
-- one-line helpers with one consumer
-- enum-like values that only parametrize a larger owner
-- local style/config/data artifacts with no public contract
-
-Do not co-locate solely by consumer count when that would violate layer
-ownership. Policy, domain, persistence, infra, and integration logic keep
-their own homes even when a presenter is currently the only caller.
+Use `references/module_shape.md` for seam, tiny-module, and layer-ownership
+decisions. Apply the target project's conventions to the source and graph
+before choosing a destination.
 
 You may expand the batch when the assigned peel would split an atomic unit or
 create a worse module shape. You may also skip assigned items when their

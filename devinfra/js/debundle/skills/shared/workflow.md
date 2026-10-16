@@ -51,20 +51,31 @@ tooling rather than hand-maintaining exact long bodies across many modules.
 2. Run `debundle modules propose` and `graph-summary` for aggregate
    graph metrics. Use `graph-summary --include-proposals` only when
    proposal and diagnostic counts are needed.
-3. Ask intake for dispatchable seeds.
-4. Dispatch independent lane workers and any architect/naming/doc cleanup work.
-5. Integrate green worker branches in batches.
-6. Rerun gate, regen, and adapter smoke tests as required.
-7. Update queues, architecture notes, and durable project conventions.
+3. For selector cleanup, run `selector-debt` with module grouping. Route
+   repeated synthesis gaps to Ducktape tooling rather than asking workers to
+   maintain exact generated bodies.
+4. Ask intake for dispatchable seeds. `landable_today: true` is graph
+   readiness; workers still prove selectors and run the edit gate.
+5. Dispatch independent lane workers and any architect/naming/doc cleanup work.
+6. Integrate green worker branches in batches.
+7. Rerun gate, regen, and adapter smoke tests as required.
+8. Update queues, architecture notes, and durable project conventions.
 
 Track work by stable owner IDs and binding IDs, not only generated proposal
 IDs. Proposal IDs may renumber after each integration.
+
+Track inflight, landed, and blocked assignments; the graph/build command
+that produced the evidence; and progress metrics such as residual owners,
+patch-stream members, named module fraction, selector debt, and largest
+remaining generated files.
 
 ## Isolation
 
 Writing agents should use isolated git worktrees and isolated build output
 bases. Read-only agents may inspect the main checkout. Integrators are the
 exception: they operate deliberately on the shared integration branch.
+Do not modify the upstream bundle during reverse-engineering work. Project
+conventions take precedence over generic guidance.
 
 ## Failure Routing
 

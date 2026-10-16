@@ -24,7 +24,9 @@ truth** for which symbols belong where and what they are called. Consequences:
 - **The debundler is itself a living target** — when a new bundle shape exposes a
   missing capability, extend it, reproducing the failure minimally first.
 
-@docs/bug_reproductions.md
+When debundle tooling blocks a task, follow
+<docs/bug_reproductions.md> before working around it. Keep private source out
+of public bug reports and fixtures.
 
 ## Performance Profiling
 

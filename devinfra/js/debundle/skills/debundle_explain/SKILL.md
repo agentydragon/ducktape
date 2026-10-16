@@ -9,7 +9,8 @@ description: >-
 
 # Debundle Explain
 
-@references/docs/bug_reproductions.md
+If debundle tooling blocks the task, follow
+`references/docs/bug_reproductions.md` before working around it.
 
 Use this skill to answer a software-behavior question from the debundled code
 and leave the spec covering the code needed to answer it. Search for a matching

@@ -9,7 +9,8 @@ description: >
 
 # Debundle Mint Names
 
-@references/docs/bug_reproductions.md
+If debundle tooling blocks the task, follow
+`references/docs/bug_reproductions.md` before working around it.
 
 Assign descriptive names to unrenamed symbols in any debundle spec.
 
