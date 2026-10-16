@@ -96,3 +96,10 @@ status and dependencies. Keep their links and decisions consistent when changing
 - Check graph nodes/edges, cycles, linked anchors and duplicated outcomes before publishing a DAG
   refactor. Explain material gate removals; do not bury unresolved security or migration risks as
   “over-conservative” merely to shorten the list.
+
+## Virtualized browser review scenes
+
+`data-layout-settled=true` covers mounted rows; off-screen rows may still retain loading-height
+estimates. For repeatable scrolled screenshots, establish the same measured content before scene
+interactions. Keep unmeasured-row and delayed-content behavior covered separately; do not hide
+scroll drift by masking screenshots or weakening reader-position assertions.
