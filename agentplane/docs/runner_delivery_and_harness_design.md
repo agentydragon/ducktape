@@ -141,15 +141,13 @@ Session registry. That wrapper's retirement is separate from selecting an execut
 Dispatcher's proxy path. The registry cannot validate Sessions opened directly by Dispatcher because
 only Gateway `CreateSession` writes it; its remaining native-resume reader has its own migration gate.
 
-**Public destination under renewed review (operator, 2026-10-15):** every submission must name the
-exact Sandbox UID and Agentplane Session ID. The operator is reconsidering whether a persisted
-harness store ID belongs in the caller's address at all. One candidate is public
-`(Sandbox UID, Session ID)` with the runner durably mapping the Session to its private store and
-native ID; the other exposes a store ID only if a real caller choice requires it. Queue and retry the
-selected full address, locate the exact Sandbox, and let queued delivery wake only that target. Once
-the runner is reachable, it is authoritative for whether that Session (and any selected public store) exists; an unknown target is a
-terminal delivery failure, not a reason to search other Sandboxes, create a Session, or substitute a
-same-name replacement. This lets offline delivery rely on the caller's destination tuple rather
+**Approved public destination (operator, 2026-10-15):** every submission names the exact
+`(Sandbox UID, Agentplane Session ID)`. Store, native-ID and process routing are runner-private;
+the caller does not choose a store. Queue and retry that full address, locate the exact Sandbox,
+and let queued delivery wake only that target. Once the runner is reachable, it is authoritative
+for whether that Session exists; an unknown target is a terminal delivery failure, not a reason to
+search other Sandboxes, create a Session, or substitute a same-name replacement. This lets offline
+delivery rely on the caller's destination tuple rather
 than a central Session-to-Sandbox placement registry. The Kubernetes UID-to-live-connection or
 workload routing function remains separate from any session placement registry.
 
@@ -160,8 +158,8 @@ acceptance is a different outcome from Runner admission; name each stage explici
 present the queued receipt as proof that the runner admitted or the harness consumed the command.
 
 The API representation and resolver remain open: decide whether the request carries a Kubernetes
-namespace/name locator alongside UID or resolves by UID, and whether any store ID is public.
-Do not claim live Session membership can be verified while the runner is unavailable. Authenticate
+namespace/name locator alongside UID or resolves by UID. Do not claim live Session membership can
+be verified while the runner is unavailable. Authenticate
 and authorize the sender before waking; preserve the UID identity fence, command idempotency and
 outcome semantics. Direct admission, if selected, remains online-only and never wakes; only the
 queued mode owns wake-to-deliver.
@@ -186,7 +184,7 @@ Review these alternatives without preselecting centralization:
 **Reviewable candidate:** use sender preflight for source access, readable errors and early
 membership where the runner is reachable; make Dispatcher bind the authenticated sender and exact
 Sandbox UID before accepting queued work; make the Gateway proxy enforce the same UID and owner
-against Kubernetes immediately before forwarding; let the runner decide current Session/store
+against Kubernetes immediately before forwarding; let the runner decide current Session
 membership. The execution fence must receive the persisted expected UID, not a new name-only lookup.
 The admission and execution checks are separate: early feedback cannot replace the identity fence.
 
@@ -208,7 +206,7 @@ before delayed wake or execution. The DAG tracks this as
 The candidate has distinct outcomes. A missing or changed UID or wrong owner denies before any wake
 and again before forwarding if changed later. A temporarily unavailable runner
 may leave an otherwise authorized queued command waiting; it cannot prove Session membership until
-the runner returns. An available runner's unknown Session/store is terminal for that command. A lost
+the runner returns. An available runner's unknown Session is terminal for that command. A lost
 reply from direct runner admission is unknown: resolve or retry the same command ID against retained
 runner storage. Loss of that storage ends runner-owned state; History is not a reconstruction source.
 
@@ -218,8 +216,7 @@ authoritative UID-to-object resolver that works during suspension and rejects am
 matches. Either representation must persist enough information to re-resolve the _same_ object and
 must never promote name-only discovery to an execution address. If the runner alone selects a store,
 its durable Session-to-store mapping must survive restart and a retry must not pick a different
-store. An exposed store ID would additionally fence that choice; its need and representation belong
-to `HARNESS_IDENTITY_DESIGN`. Neither address chooses one versus several harnesses or stores per runner.
+store. The public address does not choose one versus several harnesses or stores per runner.
 
 The decision must separately state: source/subscription authorization; destination namespace, name, UID
 and owner validation; current Session membership; permission to send; and the execution-time fence.
@@ -296,9 +293,11 @@ transaction mapping; copying the Python SQLAlchemy models is not enough. Preserv
 `session_dispatcher` rows and idempotency keys (`dispatch`, `session_opening`, `sandbox_ownership`,
 `wake_attempt`) and the `sandbox_commands` registry until its readers/writers are gone. Retain their
 current database roles and run only additive migrations if the Go implementation truly needs them;
-an applied migration is immutable. Port the wrapper while it remains in use, or make its _completed_
-retirement an explicit prerequisite to omitting that port. Neither registry deletion nor either
-database drop is part of the merger.
+an applied migration is immutable. The app's explicit native Resume action stays on Gateway through
+the unified cutover, so the Go service must port that live wrapper and registry behavior. Audit and
+port any other wrapper method still used by external or pinned callers. Canonicalizing explicit
+resume inside the unified service is later work; neither registry deletion nor either database drop
+is part of the merger.
 
 Keep the current `agentplane-session-dispatcher` and `agentplane-runner-gateway` Service names and
 token audiences as two logical front doors to the unified Pods. Use distinct, authenticated
@@ -337,7 +336,9 @@ runner reconnect, UID replacement, controller Quiesce and app/Notification live 
 two old Deployments as part of the fenced cutover so they cannot race the new writers; recheck that
 neither service has acquired a History dependency. Only after the unified path is stable should
 old images/config/RBAC and obsolete inter-service token
-projection be removed; legacy wrapper, registry and database retirement remain separate work.
+projection be removed. The explicit Resume action and Gateway path remain available at cutover;
+later canonicalization of resume, wrapper retirement, registry retirement and database deletion
+are separate work.
 
 For persistence, compare the current durable queue with direct runner admission:
 
@@ -462,11 +463,11 @@ discoverable or read-only do not establish that one process can host multiple in
 interactive Sessions. Use the separate Codex and Claude characterization evidence before evaluating
 either alternative. These are design options, not implementation authorization.
 
-**Approved process boundary; public store address reopened (operator, 2026-10-15):** process
+**Approved public address and process boundary (operator, 2026-10-15):** process
 allocation and routing are internal to the runner. Neither a PID nor a process incarnation belongs
 in a durable public address, and there is no public `create Session on process` operation or refusal.
-The simpler candidate is `(Sandbox UID, Agentplane Session ID)`, with store/native/process mapping
-private to the runner. An exposed store ID remains an option only if callers need to choose a store.
+The public destination is `(Sandbox UID, Agentplane Session ID)`, with store/native/process mapping
+private to the runner; no public store field is needed.
 Creating a Session can select its harness kind while the runner manages a default store per kind;
 that is a candidate policy, not a settled one-versus-many store/process choice. An adapter may
 arrange one Codex app-server process per store or the current Claude stream-json process per root
@@ -475,9 +476,9 @@ process per store and shared-store concurrent safety remain open.
 
 Current [`SessionSpec`](../proto/runner.proto) already selects Claude or Codex and has no store
 selector; the adapters create `CODEX_HOME` or `CLAUDE_CONFIG_DIR` under the Session's runner-owned
-directory. No production in-repo caller currently chooses either directory. That supports trying a
-private default-store policy first, subject to the external/pinned-caller audit, without proving a
-public store API can never be useful.
+directory. No production in-repo caller currently chooses either directory. A private default-store
+policy remains a candidate; future store-management needs can be considered separately without
+putting a store ID in the current Session destination.
 
 The Sandbox UID must identify the exact incarnation; namespace/name may be a locator, but its wire
 syntax and UID resolver are open. A runner-owned store ID names one durable lineage and is never
@@ -488,9 +489,9 @@ without promoting a same-name Sandbox replacement.
 
 **Recommended creation contract for review, not an approved ID-allocation decision:** keep
 client-chosen, globally unique public IDs for client-created root Sessions. The exact `(Sandbox UID,
-Session ID)` and creation spec are the idempotency key; if a public store is selected, its ID also
-enters that key. A retry with the same address and spec returns the same opening; reuse of the public
-ID with another Sandbox, store or spec conflicts. The runner first durably reserves the public ID
+Session ID)` and creation spec are the idempotency key. A retry with the same address and spec
+returns the same opening; reuse of the public ID with another Sandbox or spec conflicts. The runner
+first durably reserves the public ID
 and its chosen private store binding, then asks the adapter to create a native Session,
 then durably records the harness-chosen native ID before reporting a completed opening. A queued
 opening is only acceptance; it does not assert native creation. Store a stable public-to-native
@@ -537,7 +538,7 @@ The `NATIVE_SUBAGENT_EXPOSURE` lane decides which children to project and whethe
 controllable; this identity contract does not presume Claude root multiplexing from the bounded
 single-root stream-json evidence or select one versus several processes per store.
 
-When a runner is reachable, a missing public Session (or explicitly selected public store) is a
+When a runner is reachable, a missing public Session is a
 terminal unknown-target result; no other store, process or same-name replacement is searched. When suspended
 or unreachable, queued acceptance cannot prove live membership and keeps the exact tuple until
 delivery. Loss of runner storage ends runner-owned state; retained History is not a native store or
@@ -568,9 +569,8 @@ Neither process policy belongs in the public address or requires one process per
 Claude mode could change the evidence later.
 
 Neither result decides how many processes or stores a Runner should use, whether concurrent Sessions
-may safely write one store, or which native children can be controlled. The public store-ID question
-remains open; these tests do not
-authorize runtime changes.
+may safely write one store, or which native children can be controlled. The approved public address
+does not settle those internal allocation questions; these tests do not authorize runtime changes.
 
 ## Runner delivery acceptance without History
 

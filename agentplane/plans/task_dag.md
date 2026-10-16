@@ -832,7 +832,7 @@ flowchart TD
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     APP_NATIVE_RESUME_SURFACE[Approved: retain explicit resume UI; clarify wake-off affordance] --> APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume]
-    APP_NATIVE_RESUME_CONTRACT --> APP_NATIVE_RESUME_CUTOVER[Blocked: migrate direct native resume]
+    APP_NATIVE_RESUME_CONTRACT --> APP_NATIVE_RESUME_CUTOVER[Blocked: migrate direct native resume after unification]
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
@@ -1157,18 +1157,20 @@ resume available and do not erase the suspended indicator or turn on wake permis
 
 ### `APP_NATIVE_RESUME_CONTRACT` — specify durable explicit native resume
 
-**Decision before implementation.** ADR D4 makes Dispatcher the sole starter of runner work, but
-the retained explicit native-resume button still bypasses it. Specify a durable Dispatcher
-operation, including caller-chosen retry ID, full destination/UID authority, authorization,
+**Decision before implementation.** The explicit native-resume button may keep using Gateway
+through the unified-service cutover. Its later canonicalization makes Dispatcher the sole starter
+of runner work. Specify a durable Dispatcher operation, including caller-chosen retry ID, full
+destination/UID authority, authorization,
 admission before any wake, lost-response retry, and observable outcome. Decide whether it applies
 only to a Ready Sandbox or may also wake a suspended one; the existing Sandbox resume API is a
 distinct control. Do not add a new RPC or broaden wake grants before this contract is reviewed.
 
 ### `APP_NATIVE_RESUME_CUTOVER` — migrate the app's explicit native-resume path
 
-**Blocked on `APP_NATIVE_RESUME_CONTRACT`.** Land the reviewed Dispatcher receiver and pin it
-before changing the app caller. Preserve the **Resume harness** action, retained native
-identity/history, suspended-state indication and ordinary retries. If the reviewed UX also adds a
+**Blocked on `APP_NATIVE_RESUME_CONTRACT` and verified `DELIVERY_UNIFIED_CUTOVER`.** Keep the
+existing Gateway path through unification; then land the reviewed Dispatcher receiver inside the
+unified service and pin it before changing the app caller. Preserve the **Resume harness** action,
+retained native identity/history, suspended-state indication and ordinary retries. If the reviewed UX also adds a
 Thread-page manual Sandbox wake button, use the separately authorized Sandbox resume path; do not
 label a native-harness call as Sandbox wake. Verify the new app image in testing and staging and
 external/pinned callers before narrowing Gateway authorization or deleting its legacy receiver.
@@ -1528,14 +1530,14 @@ flowchart LR
     DELIVERY_GO_PROTOCOL_AUTH[Go proto and auth foundation]
     DELIVERY_GO_GATEWAY[Go tunnel and connection role]
     DELIVERY_GO_DISPATCHER[Go durable queue and delivery role]
-    DELIVERY_GO_LEGACY_WRAPPER[Conditional: port still-live Gateway wrapper]
+    DELIVERY_GO_LEGACY_WRAPPER[Required: port live Gateway resume wrapper]
     DELIVERY_GO_INTEGRATION[One process, image and cdk8s deployment]
     DELIVERY_UNIFIED_CUTOVER[Atomic cutover and recovery verification]
     DELIVERY_OLD_RUNTIME_RETIRE[Retire obsolete runtime objects]
     RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
-    HARNESS_IDENTITY_DESIGN[Decision: public store exposure and private mapping]
+    HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     RUNNER_STORE_SESSION_IDENTITY[Candidate: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
@@ -1547,17 +1549,18 @@ flowchart LR
     DELIVERY_UNIFICATION_SCOPE_DECISION --> DELIVERY_GO_PROTOCOL_AUTH
     DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_GATEWAY
     DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_DISPATCHER
-    DELIVERY_GO_PROTOCOL_AUTH -. if wrapper remains at cutover .-> DELIVERY_GO_LEGACY_WRAPPER
+    DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_LEGACY_WRAPPER
     DELIVERY_GO_GATEWAY --> DELIVERY_GO_INTEGRATION
     DELIVERY_GO_DISPATCHER --> DELIVERY_GO_INTEGRATION
-    DELIVERY_GO_LEGACY_WRAPPER -. if port selected .-> DELIVERY_GO_INTEGRATION
+    DELIVERY_GO_LEGACY_WRAPPER --> DELIVERY_GO_INTEGRATION
     DELIVERY_GO_INTEGRATION --> DELIVERY_UNIFIED_CUTOVER
+    DELIVERY_UNIFIED_CUTOVER --> APP_NATIVE_RESUME_CUTOVER
     DELIVERY_UNIFIED_CUTOVER --> DELIVERY_OLD_RUNTIME_RETIRE
     RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state use remains .-> RUNNER_LIST_SESSIONS_RETIRE
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
-    HARNESS_IDENTITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
     NATIVE_SUBAGENT_EXPOSURE -. child identity evidence informs .-> HARNESS_IDENTITY_DESIGN
+    HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
     K3S_VM_IMAGE -. real VM path prerequisite .-> CNPG_FREE_K3S_INTEGRATION_TIER
@@ -1701,18 +1704,19 @@ fencing). The Go port still needs equivalent tests against its implementation. K
 `agentplane/acceptance:test_dispatcher_deployed` manual for deployed replica failover; do not add it
 to default CI.
 
-### `DELIVERY_GO_LEGACY_WRAPPER` — preserve any Gateway wrapper still in use
+### `DELIVERY_GO_LEGACY_WRAPPER` — preserve Gateway resume through unification
 
-**Conditional on wrapper callers remaining at the unified cutover; depends on the Go foundation.**
-Port `RunnerGateway` wrapper methods and its `sandbox_commands` Session registry to Go without
-changing the existing database schema or losing rows. Audit App native resume, tests, external and
-pinned callers before deciding whether this port is required. The alternative is completing the
-separately reviewed `GATEWAY_WRAPPER_RETIRE` before cutover; merely planning retirement is not enough
-to omit a live interface. Neither choice forces `GATEWAY_SESSION_REGISTRY_RETIRE` or a database drop.
+**Required after the Go foundation; the app's explicit Resume path stays on Gateway for this
+cutover.** Port live `RunnerGateway.ResumeSession` behavior and its `sandbox_commands` Session
+registry to Go without changing the existing database schema or losing rows. Audit the other
+wrapper methods, tests, external and pinned callers and port each method still live at cutover;
+an in-repository caller inventory does not cover external clients. The later
+`APP_NATIVE_RESUME_CUTOVER` and `GATEWAY_WRAPPER_RETIRE` remain separate from the merger, as do
+`GATEWAY_SESSION_REGISTRY_RETIRE` and database deletion.
 
 ### `DELIVERY_GO_INTEGRATION` — one process and deployment, separate front doors
 
-**Depends on both Go role ports and on the wrapper port if still needed.** Wire a single process and
+**Depends on both Go role ports and the live-wrapper port.** Wire a single process and
 image with distinct authenticated Dispatcher sender, Gateway API/proxy and runner `Connect`
 listeners. Keep the current PostgreSQL queue and registry databases, migration init containers and
 Secrets. In cdk8s, make one Deployment/ServiceAccount with reviewed union RBAC and per-listener
@@ -1770,13 +1774,14 @@ journal reads are command-outcome evidence, not inventory.
 
 ### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign destination validation and send permission
 
-**Candidate authority decision; public store component reopened by operator, 2026-10-15.** Require
-submissions to carry the exact Sandbox UID and Agentplane Session ID; include a persisted store ID
-only if the identity review finds a real caller need to choose a store. Persist the selected complete
-address, command ID and payload before reporting queued
+**Candidate authority decision; public destination approved by operator, 2026-10-15.** Require
+submissions to carry the exact `(Sandbox UID, Agentplane Session ID)`; store/native/process mapping
+is runner-private and no public store field is needed. Persist the complete address, command ID and
+payload before reporting queued
 acceptance or initiating wake, then retain it across caller/Dispatcher restart and Sandbox boot. The
 durable queue receipt is distinct from later Runner admission. Queue that tuple, locate the exact
-Sandbox, and let queued delivery wake only that target. The reachable runner rejects an unknown Session/store as a terminal outcome;
+Sandbox, and let queued delivery wake only that target. The reachable runner rejects an unknown
+Session as a terminal outcome;
 it must not search other Sandboxes, create a Session, or fall back to a same-name replacement. Offline
 queue admission does not claim to verify live Session membership and does not need a central
 Session-to-Sandbox placement registry. Keep Kubernetes UID-to-live-connection/workload routing
@@ -1788,15 +1793,15 @@ intentional layered model. Keep source/subscription authorization separate from 
 owner/membership validation, send permission and the execution-time fence. Trace Notification
 subscriptions, all command senders, Dispatcher UID checks and Gateway proxy resolution. Preserve
 authentication and authorization before wake, command idempotency and outcome semantics. The exact
-address representation remains open: namespace/name plus UID or UID-based Sandbox resolution, and
-whether a store ID is public. UID fences identity but does not authorize a caller.
+locator representation remains open: namespace/name plus UID or UID-based Sandbox resolution.
+UID fences identity but does not authorize a caller.
 V0 may trust only App and Notification to authorize their users; general send grants and queued-work
 revocation are deferred to `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`. Evaluate owner changes,
 TOCTOU/replacement, unavailable or suspended runners, reader
 subscriptions versus command submission, terminal unknown-target outcomes and narrow credentials.
 
-**Recommendation for review:** implement no runtime change before the public address is selected.
-Preserve existing checks until each layer's authority and denial semantics are approved; a source-read
+**Recommendation for review:** implement no runtime change before the destination authority and
+locator are selected. Preserve existing checks until each layer's authority and denial semantics are approved; a source-read
 subscription must not silently grant sending or waking. Question: which boundary rejects stale or
 unauthorized destinations, what locator and authorization proof does it require, and which checks are
 early feedback versus execution authority? No centralization choice is made here.
@@ -1810,20 +1815,20 @@ runners and unknown Sessions before implementation.
 
 ### `DELIVERY_DESTINATION_CONTRACT` — carry and enforce the reviewed destination
 
-**Blocked on `DELIVERY_DESTINATION_AUTHORITY_DESIGN` and the public address decision in
-`HARNESS_IDENTITY_DESIGN`.** After approval, migrate the app and
-Notification senders and the Dispatcher request/queue/retry shape to one caller-supplied full
-destination with exact Sandbox UID and public Session ID, plus store ID only if selected. Persist the exact destination, command ID
+**Blocked on `DELIVERY_DESTINATION_AUTHORITY_DESIGN`; the public destination is approved.** After
+the authority and locator are reviewed, migrate the app and Notification senders and the Dispatcher
+request/queue/retry shape to one caller-supplied full
+destination with exact Sandbox UID and public Session ID. Persist the exact destination, command ID
 and payload before a queued receipt or wake;
 do not reconstruct an expected UID from a Sandbox name. Make the chosen admission authority reject
 senders outside the v0 App/Notification trust boundary; only separately allowed callers may wake.
-Make the execution boundary fence the same UID and owner before forwarding. A reachable runner rejects unknown
-Session/store targets terminally; unavailable runners cannot prove membership at queue acceptance.
+Make the execution boundary fence the same UID and owner before forwarding. A reachable runner
+rejects unknown Session targets terminally; unavailable runners cannot prove membership at queue acceptance.
 Keep direct mode online-only with no wake and same-ID resolution after a lost reply. Validate
 replacement, owner change, wrong destination, suspension, duplicate retry, runner storage
 loss and staged caller/receiver rollout, including pinned images. A private runner store mapping
-can evolve independently; a chosen public store component requires the matching runner support at
-cutover. This node does not expose process placement or select one versus several harnesses per runner.
+can evolve independently. This node does not expose process placement or select one versus several
+harnesses per runner.
 
 This implementation can make a central Session-to-Sandbox placement lookup unnecessary for command
 delivery. `GATEWAY_WRAPPER_RETIRE` still needs its separate app native-resume outcome and external/
@@ -1853,13 +1858,13 @@ Update runner platform instructions and other prompts alongside the reviewed CLI
 **Deliverable:** an approved command and JSON contract with explicit authorization, error, stream,
 wait and cancellation behavior. This is design only; no CLI, prompt or API change is authorized.
 
-### `HARNESS_IDENTITY_DESIGN` — decide public store exposure and private Session mapping
+### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 
-**Process boundary approved; public store component reopened (operator, 2026-10-15).** Compare
-public `(Sandbox UID, Agentplane Session ID)` with an address that also exposes a persisted store ID.
-Require a concrete caller need before adding that routing dimension: the runner can instead map a
-public Session durably to a private store/native ID, selecting a default store by requested harness
-kind. Namespace/name may locate the Sandbox, but request syntax and UID resolver are undecided.
+**Public destination and process boundary approved (operator, 2026-10-15).** The public address is
+`(Sandbox UID, Agentplane Session ID)` with no store field. The runner maps a public Session durably
+to its private store/native ID; selecting a default store by requested harness kind remains a
+candidate policy. Namespace/name may locate the Sandbox, but request syntax and UID resolver are
+undecided.
 Process allocation/routing stays internal; there is no create-Session-on-process API or refusal.
 Process incarnations may be diagnostic objects, never durable addresses. Neither the number of
 stores/processes per Runner, at-most-one process per store nor shared-store concurrent safety is
@@ -1867,8 +1872,8 @@ selected.
 
 **Recommendation for review, not approved ID allocation:** retain client-chosen globally unique
 public IDs for client-created root Sessions, bound to one Sandbox UID, immutable creation spec and
-selected store (runner-private unless exposure is chosen). Reserve the
-public ID durably before native creation; map it durably to the harness-chosen native ID before
+runner-private selected store. Reserve the public ID durably before native creation; map it durably
+to the harness-chosen native ID before
 reporting a completed opening. An identical retry resolves by public ID, while reuse against a
 different destination/spec conflicts. A queued opening is not proof of native creation. If native
 creation succeeds but its ID is lost before mapping commits, inspect native store evidence or a
@@ -1880,8 +1885,7 @@ Define runner-owned store create/reuse without ID recycling, Session open/resume
 versus per-Session options, store retirement and explicitly authorized data deletion. Persist store harness type and exact Sandbox UID
 binding; process death and Sandbox suspension do not delete data. Moving a store to another Sandbox
 requires a new binding and authorization. Until proven safe, prevent concurrent writes to one store.
-A reachable runner returns a terminal missing-target outcome for the public Session or any selected
-public store; offline
+A reachable runner returns a terminal missing-target outcome for the public Session; offline
 queued acceptance cannot prove membership. Native child IDs are harness-chosen: if exposed, register
 stable runner-chosen public mappings with store and parent identity before publication, and separate visibility
 from independent control. Use `NATIVE_SUBAGENT_EXPOSURE` for which children to project and the merged
@@ -1895,14 +1899,15 @@ one-versus-many store or shared-store safety decision is made here.
 
 Feed the reviewed process-diagnostic shape into
 [`RUNNER_HARNESS_OBJECTS_DESIGN`](#runner_harness_objects_design--decide-process-diagnostics-and-placement-policy).
-The public address choice precedes destination migration; private runner mapping can be implemented
-independently. This decision does not block Dispatcher/Gateway Go unification planning. A unified
-service may preserve today's wire first and consume the selected public address later. Neither
+The approved public address lets destination migration proceed once its authority and locator are
+reviewed; private runner mapping can be implemented independently. This decision does not block
+Dispatcher/Gateway Go unification planning. A unified service may preserve today's wire first and
+consume the approved public address later. Neither
 design node authorizes runtime changes.
 
 ### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping
 
-**Requires review of the private mapping contract, not a public store-ID decision; independent of
+**Requires review of the private mapping contract; independent of
 Go unification.** Add runner-owned durable store IDs, exact Sandbox
 UID binding, public Session
 reservations and native-ID mappings using a new migration rather than editing landed state formats.
