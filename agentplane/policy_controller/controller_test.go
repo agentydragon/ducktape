@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -204,6 +205,69 @@ func TestNativeBindingSubjectUIDChangeReplacesGrant(t *testing.T) {
 	}
 	if len(newNames) != 2 {
 		t.Fatalf("new subject RoleBindings = %v", newNames)
+	}
+}
+
+type missingOnceReader struct {
+	client.Reader
+	key    client.ObjectKey
+	missed bool
+}
+
+func (r *missingOnceReader) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if !r.missed && key == r.key {
+		r.missed = true
+		return apierrors.NewNotFound(schema.GroupResource{Group: rbacv1.GroupName, Resource: "rolebindings"}, key.Name)
+	}
+	return r.Reader.Get(ctx, key, obj, opts...)
+}
+
+type trackingApplyClient struct {
+	client.Client
+	applyCalls int
+}
+
+func (c *trackingApplyClient) Apply(ctx context.Context, configuration runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
+	c.applyCalls++
+	return c.Client.Apply(ctx, configuration, opts...)
+}
+
+func TestNativeCreateRaceDoesNotAdoptForeignBinding(t *testing.T) {
+	r, c := newReconciler(t, nil, namespaceReader, nodeReader)
+	reconcileOnce(t, r)
+	var bindings rbacv1.RoleBindingList
+	if err := c.List(context.Background(), &bindings); err != nil {
+		t.Fatal(err)
+	}
+	wanted := bindings.Items[0].DeepCopy()
+	wanted.Name = "racing-foreign-binding"
+	wanted.UID = ""
+	wanted.ResourceVersion = ""
+	wanted.ManagedFields = nil
+	wanted.CreationTimestamp = metav1.Time{}
+	foreign := wanted.DeepCopy()
+	foreign.Labels = map[string]string{"owner": "foreign"}
+	foreign.Annotations = map[string]string{"owner": "foreign"}
+	foreign.Subjects[0].Name = "foreign-account"
+	if err := c.Create(context.Background(), foreign); err != nil {
+		t.Fatal(err)
+	}
+	tracker := &trackingApplyClient{Client: c}
+	r.Client = tracker
+	r.APIReader = &missingOnceReader{Reader: c, key: client.ObjectKeyFromObject(wanted)}
+
+	if err := r.applyNative(context.Background(), wanted); !apierrors.IsAlreadyExists(err) {
+		t.Fatalf("applyNative error = %v, want AlreadyExists after the name claim race", err)
+	}
+	if tracker.applyCalls != 0 {
+		t.Fatalf("apply was called %d times after exclusive create lost the race", tracker.applyCalls)
+	}
+	var after rbacv1.RoleBinding
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(foreign), &after); err != nil {
+		t.Fatal(err)
+	}
+	if after.Labels["owner"] != "foreign" || after.Subjects[0].Name != "foreign-account" {
+		t.Fatalf("foreign binding changed during create race: %+v", after)
 	}
 }
 

@@ -136,6 +136,10 @@ func TestAPIServerApplyDriftRevocationIdentityAndForeignCollision(t *testing.T) 
 		t.Fatal(err)
 	}
 	waitForCachedRoleRef(t, cached, replacement.Namespace, replacement.Name, "replacement-reader")
+	if _, err := r.Reconcile(ctx, reconcileRequest(binding.Name)); err == nil {
+		t.Fatal("reconcile did not request a retry after deleting the immutable roleRef mismatch")
+	}
+	waitForCachedNotFound(t, cached, &rbacv1.RoleBinding{}, client.ObjectKeyFromObject(replacement))
 	if _, err := r.Reconcile(ctx, reconcileRequest(binding.Name)); err != nil {
 		t.Fatal(err)
 	}

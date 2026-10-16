@@ -207,7 +207,13 @@ func (r *Reconciler) converge(ctx context.Context, bindingName string, desired m
 	}
 	for key, obj := range actual {
 		if wanted, ok := want[key]; ok {
-			if sameIdentity(obj, wanted) && sameRoleRef(obj, wanted) {
+			if sameIdentity(obj, wanted) {
+				if !sameRoleRef(obj, wanted) {
+					if err := r.deleteNative(ctx, obj); err != nil {
+						return err
+					}
+					return fmt.Errorf("deleted %T %s to replace its immutable roleRef; retry to create the replacement", obj, client.ObjectKeyFromObject(obj))
+				}
 				if matches(obj, wanted) {
 					delete(want, key)
 				}
@@ -298,6 +304,12 @@ func (r *Reconciler) applyNative(ctx context.Context, wanted client.Object) erro
 		if !apierrors.IsNotFound(err) {
 			return err
 		}
+		// Claim the name with an exclusive create before applying it. If another actor wins after
+		// the read, AlreadyExists returns an error; the next reconcile checks the winner uncached.
+		existing = wanted.DeepCopyObject().(client.Object)
+		if err := r.Create(ctx, existing); err != nil {
+			return fmt.Errorf("claiming native binding name %s: %w", client.ObjectKeyFromObject(wanted), err)
+		}
 	} else {
 		if !matchesIdentity(existing, wanted) {
 			return fmt.Errorf("refusing to adopt foreign %T %s", existing, client.ObjectKeyFromObject(wanted))
@@ -307,13 +319,14 @@ func (r *Reconciler) applyNative(ctx context.Context, wanted client.Object) erro
 			if err := r.deleteNative(ctx, existing); err != nil {
 				return err
 			}
+			return fmt.Errorf("deleted %T %s to replace its immutable roleRef; retry to create the replacement", existing, client.ObjectKeyFromObject(wanted))
 		}
 	}
 
 	var configuration any
 	switch obj := wanted.(type) {
 	case *rbacv1.RoleBinding:
-		configuration = applyrbacv1.RoleBinding(obj.Name, obj.Namespace).
+		applyConfiguration := applyrbacv1.RoleBinding(obj.Name, obj.Namespace).
 			WithAPIVersion(rbacv1.GroupName + "/v1").
 			WithKind("RoleBinding").
 			WithNamespace(obj.Namespace).
@@ -321,14 +334,22 @@ func (r *Reconciler) applyNative(ctx context.Context, wanted client.Object) erro
 			WithAnnotations(obj.Annotations).
 			WithRoleRef(applyrbacv1.RoleRef().WithAPIGroup(obj.RoleRef.APIGroup).WithKind(obj.RoleRef.Kind).WithName(obj.RoleRef.Name)).
 			WithSubjects(applyrbacv1.Subject().WithKind("ServiceAccount").WithNamespace(obj.Subjects[0].Namespace).WithName(obj.Subjects[0].Name))
+		if existing.GetUID() != "" {
+			applyConfiguration.WithUID(existing.GetUID()).WithResourceVersion(existing.GetResourceVersion())
+		}
+		configuration = applyConfiguration
 	case *rbacv1.ClusterRoleBinding:
-		configuration = applyrbacv1.ClusterRoleBinding(obj.Name).
+		applyConfiguration := applyrbacv1.ClusterRoleBinding(obj.Name).
 			WithAPIVersion(rbacv1.GroupName + "/v1").
 			WithKind("ClusterRoleBinding").
 			WithLabels(obj.Labels).
 			WithAnnotations(obj.Annotations).
 			WithRoleRef(applyrbacv1.RoleRef().WithAPIGroup(obj.RoleRef.APIGroup).WithKind(obj.RoleRef.Kind).WithName(obj.RoleRef.Name)).
 			WithSubjects(applyrbacv1.Subject().WithKind("ServiceAccount").WithNamespace(obj.Subjects[0].Namespace).WithName(obj.Subjects[0].Name))
+		if existing.GetUID() != "" {
+			applyConfiguration.WithUID(existing.GetUID()).WithResourceVersion(existing.GetResourceVersion())
+		}
+		configuration = applyConfiguration
 	default:
 		return fmt.Errorf("unsupported native binding type %T", wanted)
 	}
