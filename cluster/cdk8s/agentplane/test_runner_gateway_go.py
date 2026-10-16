@@ -17,6 +17,7 @@ from cluster.cdk8s.agentplane import (
     session_dispatcher,
     staging,
 )
+from cluster.cdk8s.secret_ref import SecretRef
 
 
 def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -30,6 +31,9 @@ def _go_objects() -> list[dict[str, Any]]:
         ServiceAccountRef(namespace=env.namespace, name=app.NAME): app.service(env.namespace).pods,
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods,
     }
+    database_url = (
+        SecretRef(namespace=env.namespace, name="postgres-session-dispatcher").key("uri").env_value(chart, "database")
+    )
     runner_gateway_go.GoRunnerGateway(
         chart,
         "runner-gateway",
@@ -37,6 +41,7 @@ def _go_objects() -> list[dict[str, Any]]:
         dispatcher_callers=callers,
         gateway_callers=callers,
         wake_callers=frozenset(callers),
+        database_url=database_url,
         sandbox_controller=(
             ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME),
             sandbox_controller.pods(env.namespace),
@@ -97,7 +102,14 @@ def test_goose_job_name_follows_pinned_image_digest() -> None:
     digest = "a" * 64
     image = f"git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate@sha256:{digest}"
     chart = Chart(Cdk8sTesting.app(), "migration", disable_resource_name_hashes=True)
-    migration = runner_gateway_go.QueueMigration(chart, "migration", staging.ENV, image=image)
+    database_url = (
+        SecretRef(namespace=staging.ENV.namespace, name="postgres-session-dispatcher")
+        .key("uri")
+        .env_value(chart, "database")
+    )
+    migration = runner_gateway_go.QueueMigration(
+        chart, "migration", staging.ENV, image=image, database_url=database_url
+    )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     job = _resource(docs, "Job", "runner-gateway-queue-migrate-aaaaaaaaaaaa")
     assert migration.name == job["metadata"]["name"]
@@ -115,6 +127,7 @@ def test_goose_job_name_follows_pinned_image_digest() -> None:
             "migration",
             staging.ENV,
             image=image.replace("@sha256:" + digest, ":latest"),
+            database_url=database_url,
         )
 
 

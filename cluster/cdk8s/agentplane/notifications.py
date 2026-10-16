@@ -57,6 +57,7 @@ class Notifications(Construct):
         id: str,
         env: Environment,
         *,
+        database_url: EnvValue,
         actions: ServiceRef,
         gateway: ServiceRef,
         gateway_audience: str,
@@ -91,12 +92,7 @@ class Notifications(Construct):
             service_account_name=NAME,
             namespace=env.namespace,
         )
-        variables = {
-            "AGENTPLANE_NOTIFICATIONS_DATABASE_URL": SecretRef(namespace=env.namespace, name="postgres-notifications")
-            .key("uri")
-            .env_value(self, "database"),
-            **(container_env or {}),
-        }
+        variables = {"AGENTPLANE_NOTIFICATIONS_DATABASE_URL": database_url, **(container_env or {})}
         github = env.notifications_github
         supplied: list[tuple[str, ...]] = [("database_url",)]
         if github is not None:

@@ -5,6 +5,7 @@ from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
     CpuResources,
+    EnvValue,
     MemoryResources,
     Role,
     RoleBinding,
@@ -25,7 +26,6 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
@@ -52,6 +52,7 @@ class SessionDispatcher(Construct):
         id: str,
         env: Environment,
         *,
+        database_url: EnvValue,
         callers: dict[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef] = frozenset(),
         runner_gateway: ServiceRef,
@@ -90,11 +91,6 @@ class SessionDispatcher(Construct):
             },
             path="/etc/agentplane-session-dispatcher/config.yaml",
             supplied=[("database_url",)],
-        )
-        database_url = (
-            SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
-            .key("uri")
-            .env_value(self, "database")
         )
         workload = add_service_workload(
             self,

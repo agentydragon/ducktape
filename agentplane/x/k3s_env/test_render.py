@@ -145,28 +145,22 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
     expected_secret_names = {role: f"postgres-{role.replace('_', '-')}" for role in database_roles}
     for role_name, database_name in database_roles.items():
         secret = _resource(docs, "Secret", expected_secret_names[role_name])
-        assert secret["type"] == "kubernetes.io/basic-auth"
         data = secret["stringData"]
-        assert data["username"] == role_name
-        assert data["dbname"] == database_name
-        assert data["host"] == f"{fixture_database.SERVICE}.{fixture_chart.NAMESPACE}.svc"
-        assert data["port"] == "5432"
         uri = urlsplit(data["uri"])
         assert uri.scheme == "postgresql"
-        assert uri.username == data["username"]
+        assert uri.username == role_name
         assert uri.password == data["password"]
-        assert uri.hostname == data["host"]
+        assert uri.hostname == f"{fixture_database.SERVICE}.{fixture_chart.NAMESPACE}.svc"
         assert uri.port == 5432
         assert uri.path == f"/{database_name}"
 
     app_secret = _resource(docs, "Secret", "postgres-app")
     app_data = app_secret["stringData"]
-    assert app_data["username"] == "app"
     app_uri = urlsplit(app_data["async-uri"])
     assert app_uri.scheme == "postgresql+asyncpg"
-    assert app_uri.username == app_data["username"] == "app"
+    assert app_uri.username == "app"
     assert app_uri.password == app_data["password"]
-    assert app_uri.hostname == app_data["host"]
+    assert app_uri.hostname == f"{fixture_database.SERVICE}.{fixture_chart.NAMESPACE}.svc"
     assert app_uri.port == 5432
     assert app_uri.path == "/app"
     assert not any(doc["kind"] == "Secret" and doc["metadata"]["name"] == "postgres-electric" for doc in docs)

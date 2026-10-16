@@ -7,6 +7,7 @@ generate_manifests (writes them to disk) and the tests (synthesize them in memor
 from __future__ import annotations
 
 from cdk8s import App, Chart
+from cdk8s_plus_34 import EnvValue
 from constructs import Construct
 
 from agentplane.subjects import ServiceAccountRef
@@ -29,6 +30,7 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.secret_ref import SecretRef
 
 
 class Namespace(Construct):
@@ -58,6 +60,39 @@ def environment_chart(app: App, env: Environment) -> Chart:
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
     database.Db(chart, "db", env)
+    app_credentials = database.postgres(env).app_secret
+    app_database_env = {
+        "AGENTPLANE_DB_USER": app_credentials.key("username").env_value(chart, "postgres-app-user-ref"),
+        "AGENTPLANE_DB_PASSWORD": app_credentials.key("password").env_value(chart, "postgres-app-password-ref"),
+        "AGENTPLANE_DB_HOST": app_credentials.key("host").env_value(chart, "postgres-app-host-ref"),
+        "AGENTPLANE_DB_PORT": app_credentials.key("port").env_value(chart, "postgres-app-port-ref"),
+        "AGENTPLANE_DB_NAME": app_credentials.key("dbname").env_value(chart, "postgres-app-dbname-ref"),
+    }
+    app_database_url = EnvValue.from_value(
+        "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
+        "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
+    )
+    actions_database_url = (
+        SecretRef(namespace=env.namespace, name="postgres-actions").key("uri").env_value(chart, "actions-database-url")
+    )
+    egress_database_url = (
+        SecretRef(namespace=env.namespace, name="postgres-egress").key("uri").env_value(chart, "egress-database-url")
+    )
+    history_database_url = (
+        SecretRef(namespace=env.namespace, name="postgres-sandbox-service")
+        .key("uri")
+        .env_value(chart, "history-database-url")
+    )
+    notifications_database_url = (
+        SecretRef(namespace=env.namespace, name="postgres-notifications")
+        .key("uri")
+        .env_value(chart, "notifications-database-url")
+    )
+    dispatcher_database_url = (
+        SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
+        .key("uri")
+        .env_value(chart, "session-dispatcher-database-url")
+    )
     electric.Electric(
         chart, "electric", env, placement=node_scheduling.HIL_OVH, service_cluster_ip=None
     ).add_platform_resources()
@@ -73,6 +108,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         chart,
         "egress",
         env,
+        database_url=egress_database_url,
         runners=runner_sandbox.pods(env.namespace),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
@@ -95,6 +131,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         chart,
         "session-dispatcher",
         env,
+        database_url=dispatcher_database_url,
         callers=dispatcher_callers,
         wake_callers=env.wake_caller_accounts,
         runner_gateway=runner_gateway.service(env.namespace),
@@ -115,6 +152,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         chart,
         "history-service",
         env,
+        database_url=history_database_url,
         # The app reads Threads; the Notification Service reads command receipts.
         callers=app_caller | notifications_caller,
         placement=node_scheduling.HIL_OVH,
@@ -126,10 +164,12 @@ def environment_chart(app: App, env: Environment) -> Chart:
         "app",
         env,
         electric=electric.service(env.namespace),
+        database_url=app_database_url,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
         service_cluster_ip=None,
         runner_control_target=runner_gateway.control_target(env.namespace),
+        container_env=app_database_env,
     ).add_platform_resources()
     runner_sandbox.RunnerSandbox(
         chart,
@@ -154,6 +194,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         chart,
         "actions",
         env,
+        database_url=actions_database_url,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
         service_cluster_ip=None,
@@ -162,6 +203,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         chart,
         "notifications",
         env,
+        database_url=notifications_database_url,
         actions=actions.service(env.namespace),
         gateway=runner_gateway.service(env.namespace),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,

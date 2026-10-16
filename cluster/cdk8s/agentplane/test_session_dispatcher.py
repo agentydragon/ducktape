@@ -1,5 +1,6 @@
 """Dispatcher wake eligibility is limited to the approved app and notification senders."""
 
+import re
 from typing import Any, cast
 
 import pytest
@@ -10,6 +11,7 @@ from more_itertools import one
 from agentplane.crd_group import GROUP
 from cluster.cdk8s.agentplane import app, notifications, runner_gateway, session_dispatcher, staging, testing
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
+from util.settings_contract import env_name
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
@@ -164,6 +166,34 @@ def test_app_config_omits_retired_dispatcher_session_opening_flag(
 
     assert "session_dispatcher_open_sessions" not in app_config(testing.ENV.namespace)
     assert "session_dispatcher_open_sessions" not in app_config(staging.ENV.namespace)
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_app_database_credentials_precede_url_in_workload_and_migration(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    deployment = one(
+        doc
+        for doc in agentplane_manifests[namespace]
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == app.NAME
+    )
+    pod = deployment["spec"]["template"]["spec"]
+    containers = [
+        one(container for container in pod["containers"] if container["name"] == "app"),
+        one(container for container in pod["initContainers"] if container["name"] == "migrate"),
+    ]
+    database_url_name = env_name(app.Settings, "database_url")
+
+    for container in containers:
+        variables = container["env"]
+        positions = {variable["name"]: index for index, variable in enumerate(variables)}
+        database_url = one(variable for variable in variables if variable["name"] == database_url_name)
+        references = set(re.findall(r"\$\(([^)]+)\)", database_url.get("value", "")))
+
+        assert references <= positions.keys()
+        assert all(positions[reference] < positions[database_url_name] for reference in references)
+        if namespace == staging.ENV.namespace:
+            assert references
 
 
 if __name__ == "__main__":

@@ -99,6 +99,30 @@ def objects(
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
     fixture_database.add_database(chart, env)
+    app_database_url = (
+        SecretRef(namespace=NAMESPACE, name="postgres-app").key("async-uri").env_value(chart, "app-database-url")
+    )
+    actions_database_url = (
+        SecretRef(namespace=NAMESPACE, name="postgres-actions").key("uri").env_value(chart, "actions-database-url")
+    )
+    egress_database_url = (
+        SecretRef(namespace=NAMESPACE, name="postgres-egress").key("uri").env_value(chart, "egress-database-url")
+    )
+    history_database_url = (
+        SecretRef(namespace=NAMESPACE, name="postgres-sandbox-service")
+        .key("uri")
+        .env_value(chart, "history-database-url")
+    )
+    notifications_database_url = (
+        SecretRef(namespace=NAMESPACE, name="postgres-notifications")
+        .key("uri")
+        .env_value(chart, "notifications-database-url")
+    )
+    dispatcher_database_url = (
+        SecretRef(namespace=NAMESPACE, name="postgres-session-dispatcher")
+        .key("uri")
+        .env_value(chart, "session-dispatcher-database-url")
+    )
     llm_ingress.LlmIngress(
         chart,
         "llm-ingress",
@@ -119,6 +143,7 @@ def objects(
         chart,
         "egress",
         env,
+        database_url=egress_database_url,
         runners=runner_sandbox.pods(env.namespace),
         agent_api_service=agent_api,
         litellm_host="litellm.allegedly.works" if litellm_key is not None else None,
@@ -141,9 +166,6 @@ def objects(
     dispatcher_callers = app_caller | notifications_caller
     control = runner_gateway_go.runner_control_service(NAMESPACE, port=Port(name="grpc", number=8080))
     runner_gateway_go.add_stable_services(chart, env, cluster_ip="None", control=control)
-    migration_database = (
-        SecretRef(namespace=NAMESPACE, name="postgres-session-dispatcher").key("uri").env_value(chart, "goose-database")
-    )
     runner_gateway_go.GoRunnerGateway(
         chart,
         "runner-gateway-go",
@@ -151,6 +173,7 @@ def objects(
         dispatcher_callers=dispatcher_callers,
         gateway_callers=dispatcher_callers,
         wake_callers=env.wake_caller_accounts,
+        database_url=dispatcher_database_url,
         sandbox_controller=(
             ServiceAccountRef(namespace=NAMESPACE, name=sandbox_controller.NAME),
             sandbox_controller.pods(NAMESPACE),
@@ -160,7 +183,7 @@ def objects(
             name="goose-migrate",
             image=GO_QUEUE_MIGRATOR_IMAGE,
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            env_variables={"DATABASE_URL": migration_database},
+            env_variables={"DATABASE_URL": dispatcher_database_url},
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(25)), memory=MemoryResources(request=Size.mebibytes(64))
             ),
@@ -176,6 +199,7 @@ def objects(
         chart,
         "history-service",
         env,
+        database_url=history_database_url,
         callers=app_caller | notifications_caller,
         placement=None,
         registry_secret_name=None,
@@ -190,6 +214,7 @@ def objects(
         "app",
         env,
         electric=None,
+        database_url=app_database_url,
         placement=None,
         registry_secret_name=None,
         service_cluster_ip="None",
@@ -234,6 +259,7 @@ def objects(
         chart,
         "actions",
         env,
+        database_url=actions_database_url,
         placement=None,
         registry_secret_name=None,
         service_cluster_ip="None",
@@ -247,6 +273,7 @@ def objects(
         chart,
         "notifications",
         env,
+        database_url=notifications_database_url,
         actions=actions.service(NAMESPACE),
         gateway=runner_gateway.service(NAMESPACE),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,

@@ -71,7 +71,6 @@ from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredentia
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
@@ -623,6 +622,7 @@ class Egress(Construct):
         id: str,
         env: Environment,
         *,
+        database_url: EnvValue,
         runners: Pods,
         agent_api_service: ServiceRef | None = None,
         litellm_host: str | None = None,
@@ -638,6 +638,7 @@ class Egress(Construct):
         """`runners` are the runner Pods, which the proxy admits."""
         super().__init__(scope, id)
         self.env = env
+        self.database_url = database_url
         self.proxy = proxy(env.namespace)
         self.agent_api = agent_api_service or agent_api(env.namespace)
         self.admin = admin(env.namespace)
@@ -804,12 +805,6 @@ class Egress(Construct):
             name="upstream-ca",
         )
 
-        # The managed role's connection URI, which database.py mints.
-        database_url = SecretRef(namespace=self.env.namespace, name="postgres-egress").key("uri")
-        migrate_env = {
-            env_name(MigrationSettings, "database_url"): database_url.env_value(self, "postgres-egress-secret")
-        }
-
         workload = add_service_workload(
             self,
             self.env,
@@ -829,10 +824,7 @@ class Egress(Construct):
                 upstream_ca_file=f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}",
                 token_audience=WORKLOAD_TOKEN_AUDIENCE,
             ),
-            env_variables={
-                env_name(Settings, "database_url"): database_url.env_value(self, "postgres-egress-secret-proxy"),
-                **self.container_env,
-            },
+            env_variables={env_name(Settings, "database_url"): self.database_url, **self.container_env},
             ports=[
                 self.proxy.port.container_port(),
                 self.admin.port.container_port(),
@@ -848,7 +840,7 @@ class Egress(Construct):
             migrate=migrate_init_container(
                 f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
                 name="migrate",
-                env_variables=migrate_env,
+                env_variables={env_name(MigrationSettings, "database_url"): self.database_url},
                 image_pull_policy=self.migrate_pull_policy,
                 memory_limit=self.migrate_memory_limit,
             ),
