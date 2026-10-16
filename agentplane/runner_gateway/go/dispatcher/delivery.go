@@ -21,6 +21,8 @@ var (
 	ErrWakeSuperseded  = errors.New("wake ownership or queued request was superseded")
 )
 
+const deliveryWorkerCount = 4
+
 type wakeLimitedError struct{ retryAfter time.Duration }
 
 func (e wakeLimitedError) Error() string {
@@ -122,7 +124,7 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 	defer unsubscribe()
 	// A queue key is a Session ID, so even with multiple workers an opening
 	// and its commands cannot be delivered concurrently in this process.
-	for range 4 {
+	for range deliveryWorkerCount {
 		go w.runQueue(ctx)
 	}
 	renew := true
@@ -134,13 +136,16 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 		}
 		if err := w.reconcile(ctx, renew); err != nil {
 			w.Logger.Warn("dispatcher delivery reconciliation unavailable; retrying", "error", err)
-		} else if renew {
-			recovered = true
-			if w.Ready != nil {
-				ready.Do(func() { close(w.Ready) })
+			renew = true
+		} else {
+			if renew {
+				recovered = true
+				if w.Ready != nil {
+					ready.Do(func() { close(w.Ready) })
+				}
 			}
+			renew = false
 		}
-		renew = false
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -154,7 +159,16 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 	}
 }
 
-func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) error {
+func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result error) {
+	// A partial scan or failed renewal cannot leave an old token available to
+	// independently running queue workers. The next successful renewal restores it.
+	defer func() {
+		if result != nil {
+			w.mu.Lock()
+			clear(w.owners)
+			w.mu.Unlock()
+		}
+	}()
 	sandboxes, err := w.Catalog.ListSandboxes(ctx)
 	if err != nil {
 		return err
@@ -241,6 +255,14 @@ func (w *DeliveryWorker) ownerFor(uid string) (Owner, bool) {
 	return owner, okay
 }
 
+func (w *DeliveryWorker) forgetOwner(uid string, owner Owner) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.owners[uid] == owner {
+		delete(w.owners, uid)
+	}
+}
+
 func (w *DeliveryWorker) enqueue(sessionID string) {
 	w.mu.Lock()
 	until := w.retryAfter[sessionID]
@@ -315,6 +337,11 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) e
 	owner, okay := w.ownerFor(uid)
 	if !okay {
 		return nil
+	}
+	current, err := w.Leases.StillOwns(ctx, owner)
+	if err != nil || !current {
+		w.forgetOwner(uid, owner)
+		return err
 	}
 	if opening != nil {
 		ready, err := w.prepareOpening(ctx, opening, sandbox, owner)

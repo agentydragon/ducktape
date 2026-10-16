@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/workqueue"
 )
 
 const sandboxUID = "00000000-0000-4000-8000-000000000001"
@@ -424,6 +425,26 @@ type countingLease struct {
 	calls int
 }
 
+type unreliableLease struct {
+	testLease
+	failRenew bool
+	live      bool
+}
+
+func (l *unreliableLease) Acquire(ctx context.Context, name, uid string) (*Owner, error) {
+	if l.failRenew {
+		return nil, errors.New("Lease API unavailable")
+	}
+	return l.testLease.Acquire(ctx, name, uid)
+}
+
+func (l *unreliableLease) StillOwns(ctx context.Context, owner Owner) (bool, error) {
+	if !l.live {
+		return false, nil
+	}
+	return l.testLease.StillOwns(ctx, owner)
+}
+
 func (l *countingLease) Acquire(ctx context.Context, name, uid string) (*Owner, error) {
 	l.calls++
 	return l.testLease.Acquire(ctx, name, uid)
@@ -434,31 +455,89 @@ type retryRunner struct {
 	calls int
 }
 
+type recordingDelayQueue struct {
+	workqueue.TypedRateLimitingInterface[string]
+	delays []time.Duration
+}
+
+func (q *recordingDelayQueue) AddAfter(_ string, delay time.Duration) {
+	q.delays = append(q.delays, delay)
+}
+
 func TestWorkerRetainsBackoffAcrossUncertainReplies(t *testing.T) {
 	worker := &DeliveryWorker{}
 	worker.init()
 	defer worker.queue.ShutDown()
+	recorded := &recordingDelayQueue{TypedRateLimitingInterface: worker.queue}
+	worker.queue = recorded
 	for attempt, delay := range []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second} {
-		before := time.Now()
 		state, reason := worker.deliveryFailure("session", "command", sandboxUID, "pod-1", "submit_input",
 			status.Error(codes.Unavailable, "uncertain reply"))
-		after := time.Now()
 		if state != QueueState || reason != "delivery_unavailable" {
 			t.Fatalf("attempt %d: %s %s", attempt+1, state, reason)
 		}
 		if got := worker.limiter.NumRequeues("session"); got != attempt+1 {
 			t.Fatalf("attempt %d: limiter count %d", attempt+1, got)
 		}
-		worker.mu.Lock()
-		due := worker.retryAfter["session"]
-		worker.mu.Unlock()
-		if due.Before(before.Add(delay)) || due.After(after.Add(delay)) {
-			t.Fatalf("attempt %d: due %s outside expected %s delay", attempt+1, due, delay)
+		if got := recorded.delays[attempt]; got != delay {
+			t.Fatalf("attempt %d: queued delay %s, want %s", attempt+1, got, delay)
 		}
 	}
 	worker.clearRetry("session")
 	if got := worker.limiter.NumRequeues("session"); got != 0 {
 		t.Fatalf("terminal settlement retained %d attempts", got)
+	}
+}
+
+func TestWorkerRequiresFreshLeaseBeforeDelivery(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+	if _, err := store.Enqueue(ctx, "fenced-session", "sandbox-fenced", sandboxUID, input("worker-input", "hello"), nil); err != nil {
+		t.Fatal(err)
+	}
+	runner := &retryRunner{}
+	leases := &unreliableLease{testLease: testLease{store: store}, live: true}
+	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
+		Name: "sandbox-fenced", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
+	}}, Wake: testWake{}, Leases: leases, Runner: runner}
+	worker.init()
+	defer worker.queue.ShutDown()
+	if err := worker.reconcile(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	leases.failRenew = true
+	if err := worker.reconcile(ctx, true); err == nil {
+		t.Fatal("renewal should fail")
+	}
+	if err := worker.processSession(ctx, "fenced-session"); err != nil {
+		t.Fatal(err)
+	}
+	leases.failRenew = false
+	if err := worker.reconcile(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	leases.live = false
+	if err := worker.processSession(ctx, "fenced-session"); err != nil {
+		t.Fatal(err)
+	}
+	runner.mu.Lock()
+	calls := runner.calls
+	runner.mu.Unlock()
+	if calls != 0 {
+		t.Fatalf("stale Lease allowed %d Runner calls", calls)
+	}
+	leases.live = true
+	if err := worker.reconcile(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.processSession(ctx, "fenced-session"); err != nil {
+		t.Fatal(err)
+	}
+	runner.mu.Lock()
+	calls = runner.calls
+	runner.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("fresh Lease made %d Runner calls, want 1", calls)
 	}
 }
 
