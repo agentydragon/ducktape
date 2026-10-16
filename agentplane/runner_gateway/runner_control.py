@@ -280,8 +280,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                     task.cancel()
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 logger.info(
-                    "Runner control stream tasks stopped: epoch=%d context_cancelled=%s last_frame_age_s=%.3f "
-                    "tasks=%s",
+                    "Runner control stream tasks stopped: epoch=%d context_cancelled=%s last_frame_age_s=%.3f tasks=%s",
                     epoch,
                     context.cancelled(),
                     loop.time() - last_frame,
