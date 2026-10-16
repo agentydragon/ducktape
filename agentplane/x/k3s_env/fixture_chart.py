@@ -53,7 +53,6 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
 
 NAMESPACE = testing.ENV.namespace
-PRIMARY_SERVICE = "postgres-primary"
 RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
 GO_RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset"
@@ -99,7 +98,7 @@ def objects(
     app = Testing.app()
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
-    fixture_database.add_database(chart, env, node_ip=node_ip)
+    fixture_database.add_database(chart, env)
     llm_ingress.LlmIngress(
         chart,
         "llm-ingress",

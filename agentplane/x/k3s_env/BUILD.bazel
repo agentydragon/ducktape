@@ -5,9 +5,6 @@ load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-# gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
-# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
-
 # Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
 # Manual only: it downloads k3s at run time and runs it as root.
 
@@ -77,6 +74,7 @@ _IMAGES = {
     "notification_service": "//agentplane/notification_service:image",
     "notification_service_migrate": "//agentplane/notification_service:migration_image",
     "policy_controller": "//agentplane/policy_controller:image",
+    "postgres": "@postgres_18_linux_amd64",
     "runner": ":runner_image",
     "runner_gateway_go": "//agentplane/runner_gateway:go_image",
     "runner_gateway_queue_migrate": "//agentplane/runner_gateway/go/migrations:image",
@@ -114,6 +112,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":fixture_chart",
+        ":fixture_database",
         "//:conftest",
         "@pypi//pytest_bazel",
     ],
@@ -231,13 +230,11 @@ py_library(
 py_library(
     name = "fixture_database",
     srcs = ["fixture_database.py"],
+    data = ["bootstrap.sql"],
     deps = [
-        "//cluster/cdk8s:cnpg",
-        "//cluster/cdk8s/agentplane:database",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/agentplane:environment",
-        "//cluster/cdk8s/providers/cnpg:cluster",
-        "//cluster/cdk8s/providers/cnpg:cnpg_database",
-        "//cluster/cdk8s/providers/cnpg:database",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 import pytest_bazel
 
-from agentplane.x.k3s_env import fixture_chart
+from agentplane.x.k3s_env import fixture_chart, fixture_database
 
 
 def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -119,28 +119,37 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
     assert _resource(docs, "ClusterRole", f"{fixture_chart.NAMESPACE}-runner-gateway-token-reviewer")["rules"] == [
         {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
     ]
-    cluster = _resource(docs, "Cluster", "postgres")
-    assert cluster["spec"]["storage"]["storageClass"] == "local-path"
-    assert cluster["spec"]["managed"]["services"]["additional"][0]["serviceTemplate"]["spec"]["clusterIP"] == "None"
-    assert cluster["spec"]["bootstrap"]["initdb"] == {"database": "app", "owner": "app"}
+    postgres = _resource(docs, "Deployment", fixture_database.NAME)
+    postgres_container = next(
+        container for container in postgres["spec"]["template"]["spec"]["containers"] if container["name"] == "postgres"
+    )
+    assert postgres_container["image"] == fixture_database.IMAGE
+    postgres_service = _resource(docs, "Service", fixture_database.SERVICE)
+    assert postgres_service["spec"]["clusterIP"] == "None"
+    assert not any(doc["kind"] in {"Cluster", "Database"} for doc in docs)
+
+    bootstrap_env = {entry["name"]: entry for entry in postgres_container["env"]}
+    bootstrap_secret = _resource(docs, "Secret", "postgres-bootstrap-credentials")
+    assert bootstrap_env["POSTGRES_USER"]["value"] == "fixture_admin"
+    assert (
+        bootstrap_env["POSTGRES_PASSWORD"]["valueFrom"]["secretKeyRef"]["name"] == bootstrap_secret["metadata"]["name"]
+    )
+
     database_roles = {
         "actions": "actions",
         "egress": "egress",
         "notifications": "notifications",
         "sandbox_service": "sandbox_service",
         "session_dispatcher": "session_dispatcher",
-        "electric": "app",
     }
-    managed_roles = {role["name"]: role["passwordSecret"]["name"] for role in cluster["spec"]["managed"]["roles"]}
     expected_secret_names = {role: f"postgres-{role.replace('_', '-')}" for role in database_roles}
-    assert managed_roles == expected_secret_names
     for role_name, database_name in database_roles.items():
         secret = _resource(docs, "Secret", expected_secret_names[role_name])
         assert secret["type"] == "kubernetes.io/basic-auth"
         data = secret["stringData"]
         assert data["username"] == role_name
         assert data["dbname"] == database_name
-        assert data["host"] == f"{fixture_chart.PRIMARY_SERVICE}.{fixture_chart.NAMESPACE}.svc"
+        assert data["host"] == f"{fixture_database.SERVICE}.{fixture_chart.NAMESPACE}.svc"
         assert data["port"] == "5432"
         uri = urlsplit(data["uri"])
         assert uri.scheme == "postgresql"
@@ -149,6 +158,18 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
         assert uri.hostname == data["host"]
         assert uri.port == 5432
         assert uri.path == f"/{database_name}"
+
+    app_secret = _resource(docs, "Secret", "postgres-app")
+    app_data = app_secret["stringData"]
+    assert app_data["username"] == "app"
+    app_uri = urlsplit(app_data["async-uri"])
+    assert app_uri.scheme == "postgresql+asyncpg"
+    assert app_uri.username == app_data["username"] == "app"
+    assert app_uri.password == app_data["password"]
+    assert app_uri.hostname == app_data["host"]
+    assert app_uri.port == 5432
+    assert app_uri.path == "/app"
+    assert not any(doc["kind"] == "Secret" and doc["metadata"]["name"] == "postgres-electric" for doc in docs)
 
     template = _resource(docs, "SandboxTemplate", "runner")
     assert template["spec"]["stateVolume"]["claim"]["storageClassName"] == "local-path"
