@@ -29,8 +29,8 @@ from cdk8s_plus_34 import (
     Role,
     RoleBinding,
     RolePolicyRule,
-    Service,
     ServiceAccount,
+    k8s,
 )
 from constructs import Construct
 
@@ -68,8 +68,46 @@ def _account(account: ServiceAccountRef) -> str:
     return f"{account.namespace}/{account.name}"
 
 
+def add_stable_services(scope: Construct, env: Environment) -> None:
+    """Root-owned Services retain their names while the new Go workload is gated on migration.
+
+    Call this in the existing environment chart only during the fenced cutover, after
+    its Python Gateway and Dispatcher constructs have been removed. The Services stay
+    in their current Flux owner, while the Go workload belongs to a dependent one.
+    """
+    proxy = runner_gateway.service(env.namespace)
+    control = runner_gateway.runner_control(env.namespace)
+    dispatcher = dispatcher_service(env.namespace)
+    k8s.KubeService(
+        scope,
+        "runner-gateway-service",
+        metadata=k8s.ObjectMeta(name=proxy.name, namespace=env.namespace, labels=proxy.labels),
+        spec=k8s.ServiceSpec(
+            selector=proxy.pods.selector, ports=[proxy.port.k8s_service_port(), control.port.k8s_service_port()]
+        ),
+    )
+    k8s.KubeService(
+        scope,
+        "session-dispatcher-service",
+        metadata=k8s.ObjectMeta(
+            name=dispatcher.name, namespace=env.namespace, labels={"app.kubernetes.io/name": dispatcher.name}
+        ),
+        spec=k8s.ServiceSpec(
+            selector=dispatcher.pods.selector,
+            ports=[
+                k8s.ServicePort(
+                    name=dispatcher.port.name,
+                    port=dispatcher.port.number,
+                    target_port=k8s.IntOrString.from_number(dispatcher.pod_port),
+                    protocol="TCP",
+                )
+            ],
+        ),
+    )
+
+
 class GoRunnerGateway(Construct):
-    """One pod role, three authenticated listeners, two stable client Services."""
+    """One workload with three authenticated listeners; the root retains its Services."""
 
     def __init__(
         self,
@@ -142,17 +180,7 @@ class GoRunnerGateway(Construct):
             ),
             termination_grace=Duration.seconds(60),
             replica_profile=initial_replicas,
-        )
-        Service(
-            self,
-            "dispatcher-service",
-            metadata=ApiObjectMetadata(
-                name=session_dispatcher.NAME,
-                namespace=namespace,
-                labels={"app.kubernetes.io/name": session_dispatcher.NAME},
-            ),
-            selector=workload.deployment,
-            ports=[dispatcher.service_port()],
+            create_service=False,
         )
         workload.project_tokens(
             "runner-gateway-token",
@@ -229,10 +257,11 @@ _MIGRATOR_RE = re.compile(
 
 
 class QueueMigration(Construct):
-    """A digest-coupled Goose Job, rendered in its own Flux Kustomization at cutover.
+    """A digest-coupled Goose Job for the existing Agentplane root Kustomization.
 
-    The Job is not an init container. The serving Kustomization must depend on the
-    migration Kustomization's completed-Job health check before it reconciles.
+    The root owns PostgreSQL and its Secret, so it also owns this Job and checks
+    its completion. A separate Go serving Kustomization depends on that root.
+    This construct is not instantiated until the fenced cutover is reviewed.
     """
 
     def __init__(self, scope: Construct, id: str, env: Environment, *, image: str) -> None:

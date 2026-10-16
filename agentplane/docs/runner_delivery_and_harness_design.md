@@ -318,13 +318,25 @@ separate incompatible runner-image/template migration with an explicit retiremen
 the old endpoint can disappear. A Service alias is routing to the new owner, not a second legacy
 implementation. Per-Sandbox control Services and EndpointSlices remain because replicas can differ.
 
-Build the Go Gateway tunnel/auth/connection role and Go Dispatcher queue role as separate reviewable
-changes, with a shared proto/auth foundation; test each against the current wire and stored-state
-contracts before integrating one process and image. Integration owns the combined listeners,
-configuration, migration init containers, cdk8s Deployment, both retained Services, both database
-Secrets, policies, image publishing and caller settings. Do not run old and new writers concurrently
-against the same queue or connection records: stop old acceptance/workers and `Connect`, allow their
-leases to expire or prove a fenced handoff, then point both Services to healthy unified replicas.
+Build the Go Gateway tunnel/auth/connection role and Go Dispatcher queue role with a shared proto/auth
+foundation; test each against the current wire and stored-state contracts before integrating one
+process and image. Integration owns the combined listeners, configuration, dedicated Goose Job,
+cdk8s Deployment, both retained Services, Dispatcher database Secret, policies, image publishing and
+caller settings. Publish Go serving and queue-migrator images under distinct slots so the Python
+image pins cannot start the Go binary before the fenced cutover. The existing Agentplane root Flux
+Kustomization owns CNPG, its Secret, stable Services and the digest-named migration Job; check the
+Job's completion in that root. A separate Kustomization owns only the new Go serving workload and
+depends on the root. This ordering has no cycle and does not transfer CNPG/PVC ownership. Keep the
+Job's full image digest and digest-derived name in the same reviewed manifest; leave a completed Job
+until the next digest replaces it. Stage any other Flux ownership move with the old object's
+`prune: disabled` annotation and verify its UID survives adoption.
+
+Do not run old and new writers concurrently against the same queue or connection records. In the
+first GitOps stage, set old Python Dispatcher and Gateway replicas to zero and verify their Pods and
+workers have stopped. In the second stage, remove those Deployments and init containers, point the
+retained Services at the Go Pod labels, apply the Goose Job, and let the Go serving Kustomization
+reconcile only after root health confirms Job completion. Allow delivery and connection leases to
+expire or prove a fenced handoff; then verify ready unified replicas.
 An accepted request remains in PostgreSQL and is recovered with the same ID after the outage.
 Rollback must use the old binaries against the unchanged schema and retained rows, never clear the
 queue. Test a pre-cutover queued request, unknown delivery response, cross-replica holder/worker,

@@ -93,9 +93,10 @@ def add_service_workload(
     annotations: dict[str, str] | None = None,
     image_pull_policy: ImagePullPolicy = ImagePullPolicy.IF_NOT_PRESENT,
     tolerate_control_plane: bool = False,
+    create_service: bool = True,
 ) -> ServiceWorkload:
-    """`serves` are the ports of the one Service in front of the Pods, which share its name and
-    labels with the ServiceAccount, Deployment and PDB. Mount volumes into the returned container."""
+    """`serves` identify the Pod ports and shared name/labels. Normally build their Service here;
+    a separately reconciled Service can instead use the same refs. Mount into the returned container."""
     name = one({ref.name for ref in serves})
     labels = one({ref.pods for ref in serves}).selector
     replicas = replica_profile or env.replicas
@@ -137,13 +138,14 @@ def add_service_workload(
     # With the database (cnpg_conventions R5).
     pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=tolerate_control_plane)
     pod_policy.harden(deployment)
-    Service(
-        scope,
-        "service",
-        metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=labels),
-        selector=deployment,
-        ports=[ref.service_port() for ref in serves],
-    )
+    if create_service:
+        Service(
+            scope,
+            "service",
+            metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=labels),
+            selector=deployment,
+            ports=[ref.service_port() for ref in serves],
+        )
     if replicas.pdb_min_available is not None:
         k8s.KubePodDisruptionBudget(
             scope,
