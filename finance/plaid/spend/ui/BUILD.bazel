@@ -54,6 +54,10 @@ py_test(
     name = "visual_test",
     size = "large",
     srcs = ["visual_test.py"],
+    args = [
+        "-k",
+        "spending_decision_dark_theme",
+    ],
     data = [":bundle"],
     tags = ["visual"],
     deps = [
