@@ -1301,6 +1301,7 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
     NOTIFICATION_GATEWAY_TARGET_READER_RETIRE[Blocked: remove unused Notifications setting after manifest rollout]
+    DISPATCHER_OPENING_ATTACHED_COLUMN_DROP[Blocked: drop snapshot after unmapped reader rollout]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[In progress: remove legacy Gateway wrappers]
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
