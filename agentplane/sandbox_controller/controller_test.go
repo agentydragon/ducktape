@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -40,10 +41,10 @@ var (
 	pvcKey     = client.ObjectKey{Namespace: namespace, Name: StateVolumeName(sandboxName)}
 )
 
-func testTemplate(image string) *SandboxTemplate {
-	return &SandboxTemplate{
+func testTemplate(image string) *sandboxapi.SandboxTemplate {
+	return &sandboxapi.SandboxTemplate{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: templateName},
-		Spec: SandboxTemplateSpec{
+		Spec: sandboxapi.SandboxTemplateSpec{
 			Pod: &corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/name": "test-runner"}},
 				Spec: corev1.PodSpec{Containers: []corev1.Container{{
@@ -52,7 +53,7 @@ func testTemplate(image string) *SandboxTemplate {
 					VolumeMounts: []corev1.VolumeMount{{Name: "state", MountPath: "/state"}},
 				}}},
 			},
-			StateVolume: StateVolume{Name: "state", Layout: VolumeLayout{Type: DirectoryTree}, Claim: corev1.PersistentVolumeClaimSpec{
+			StateVolume: sandboxapi.StateVolume{Name: "state", Layout: sandboxapi.VolumeLayout{Type: sandboxapi.DirectoryTree}, Claim: corev1.PersistentVolumeClaimSpec{
 				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 				Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{
 					corev1.ResourceStorage: resource.MustParse("1Gi"),
@@ -68,7 +69,7 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	if err := AddToScheme(scheme); err != nil {
+	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	if err := policycontroller.AddToScheme(scheme); err != nil {
@@ -77,15 +78,15 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	if err := kubevirtv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	sandbox := &Sandbox{
+	sandbox := &sandboxapi.Sandbox{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-sandbox"},
-		Spec:       SandboxSpec{Template: templateName, Running: running},
+		Spec:       sandboxapi.SandboxSpec{Template: templateName, Running: running},
 	}
 	// A tracker without managed fields: the fake client's default one cannot convert KubeVirt's
 	// uint64 fields.
 	tracker := clienttesting.NewObjectTracker(scheme, serializer.NewCodecFactory(scheme).UniversalDecoder())
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjectTracker(tracker).WithObjects(append(objects, sandbox)...).
-		WithStatusSubresource(&Sandbox{}, &kubevirtv1.VirtualMachineInstance{}).
+		WithStatusSubresource(&sandboxapi.Sandbox{}, &kubevirtv1.VirtualMachineInstance{}).
 		WithInterceptorFuncs(interceptor.Funcs{Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 			// The API server assigns a PVC UID on creation; the fake tracker does not.
 			if _, claim := obj.(*corev1.PersistentVolumeClaim); claim && obj.GetUID() == "" {
@@ -103,9 +104,9 @@ func reconcileOnce(t *testing.T, r *Reconciler) {
 	}
 }
 
-func getSandbox(t *testing.T, c client.Client) *Sandbox {
+func getSandbox(t *testing.T, c client.Client) *sandboxapi.Sandbox {
 	t.Helper()
-	var sandbox Sandbox
+	var sandbox sandboxapi.Sandbox
 	if err := c.Get(context.Background(), sandboxKey, &sandbox); err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +442,7 @@ func TestStartResolvesTheTemplateAsItIsThen(t *testing.T) {
 	reconcileOnce(t, r)
 
 	template := testTemplate("test-image:v2")
-	var current SandboxTemplate
+	var current sandboxapi.SandboxTemplate
 	if err := c.Get(context.Background(), client.ObjectKeyFromObject(template), &current); err != nil {
 		t.Fatal(err)
 	}
@@ -554,7 +555,7 @@ type fakeQuiescer struct {
 	before func()
 }
 
-func (f *fakeQuiescer) Quiesce(context.Context, *Sandbox) (QuiesceResult, error) {
+func (f *fakeQuiescer) Quiesce(context.Context, *sandboxapi.Sandbox) (QuiesceResult, error) {
 	f.calls++
 	if f.before != nil {
 		f.before()
@@ -656,7 +657,7 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 		t.Fatal("the state PVC went in the same step as the Pod, while the Pod could still be writing")
 	}
 	reconcileOnce(t, r)
-	var sandbox Sandbox
+	var sandbox sandboxapi.Sandbox
 	if err := c.Get(context.Background(), sandboxKey, &sandbox); !apierrors.IsNotFound(err) {
 		t.Fatalf("Sandbox still present after its finalizer's work: %v", err)
 	}
@@ -693,7 +694,7 @@ func TestDeletionLeavesAStateVolumeTheSandboxDoesNotOwn(t *testing.T) {
 	if getPod(t, c) != nil {
 		t.Error("a Sandbox that never ran was started to seal")
 	}
-	var sandbox Sandbox
+	var sandbox sandboxapi.Sandbox
 	if err := c.Get(context.Background(), sandboxKey, &sandbox); !apierrors.IsNotFound(err) {
 		t.Fatalf("a Sandbox with nothing to seal or delete is still present: %v", err)
 	}
@@ -956,7 +957,7 @@ func TestFailedQuiesceAttemptStatusWriteDoesNotCallRunner(t *testing.T) {
 	conflict := apierrors.NewConflict(runtimeschema.GroupResource{Group: "agentplane.allegedly.works", Resource: "sandboxes"}, sandboxName, errors.New("stale resource version"))
 	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
 		SubResourceUpdate: func(ctx context.Context, c client.Client, name string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-			if sandbox, ok := obj.(*Sandbox); ok && sandbox.Status.QuiesceAttempt != nil {
+			if sandbox, ok := obj.(*sandboxapi.Sandbox); ok && sandbox.Status.QuiesceAttempt != nil {
 				return conflict
 			}
 			return c.SubResource(name).Update(ctx, obj, opts...)
@@ -1091,11 +1092,11 @@ func TestDeletingASuspendedSealedSandboxAsksNoRunner(t *testing.T) {
 func TestAnIdleSuspendedSandboxStopsUntilItsWakeGenerationIsBumped(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	if got := getSandbox(t, c).Status.OperatingMode; got != OperatingModeRunning {
+	if got := getSandbox(t, c).Status.OperatingMode; got != sandboxapi.OperatingModeRunning {
 		t.Fatalf("operating mode = %s, want Running", got)
 	}
 	suspended := getSandbox(t, c)
-	idle, generation := SuspendedByIdle, suspended.Spec.WakeGeneration
+	idle, generation := sandboxapi.SuspendedByIdle, suspended.Spec.WakeGeneration
 	suspended.Status.SuspendedBy, suspended.Status.SuspendedAtWakeGeneration = &idle, &generation
 	if err := c.Status().Update(context.Background(), suspended); err != nil {
 		t.Fatal(err)
@@ -1104,7 +1105,7 @@ func TestAnIdleSuspendedSandboxStopsUntilItsWakeGenerationIsBumped(t *testing.T)
 	if getPod(t, c) != nil {
 		t.Fatal("an idle-suspended Sandbox kept its Pod")
 	}
-	if got := getSandbox(t, c).Status.OperatingMode; got != OperatingModeSuspended {
+	if got := getSandbox(t, c).Status.OperatingMode; got != sandboxapi.OperatingModeSuspended {
 		t.Errorf("operating mode = %s, want Suspended", got)
 	}
 	woken := getSandbox(t, c)
@@ -1116,7 +1117,7 @@ func TestAnIdleSuspendedSandboxStopsUntilItsWakeGenerationIsBumped(t *testing.T)
 	if getPod(t, c) == nil {
 		t.Fatal("a bumped wake generation did not start the Sandbox")
 	}
-	if got := getSandbox(t, c).Status.OperatingMode; got != OperatingModeRunning {
+	if got := getSandbox(t, c).Status.OperatingMode; got != sandboxapi.OperatingModeRunning {
 		t.Errorf("operating mode = %s, want Running", got)
 	}
 }
@@ -1124,7 +1125,7 @@ func TestAnIdleSuspendedSandboxStopsUntilItsWakeGenerationIsBumped(t *testing.T)
 func TestAStoppedSandboxIsSuspended(t *testing.T) {
 	r, c := newReconciler(t, false, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	if got := getSandbox(t, c).Status.OperatingMode; got != OperatingModeSuspended {
+	if got := getSandbox(t, c).Status.OperatingMode; got != sandboxapi.OperatingModeSuspended {
 		t.Errorf("operating mode = %s, want Suspended", got)
 	}
 }

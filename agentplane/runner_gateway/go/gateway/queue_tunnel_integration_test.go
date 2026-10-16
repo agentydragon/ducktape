@@ -17,6 +17,7 @@ import (
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/dispatcher"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -24,11 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
 )
 
@@ -99,21 +96,20 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sandbox := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": sandboxAPIVersion, "kind": sandboxKind,
-		"metadata": map[string]any{"name": testSandbox, "namespace": testNamespace, "uid": queueSandboxUID},
-		"status": map[string]any{
-			"operatingMode": modeRunning,
-			"incarnation":   map[string]any{"name": testPod, "uid": testPodUID},
-			"conditions":    []any{map[string]any{"type": sandboxRunning, "status": "True", "reason": "Ready"}},
+	sandbox := &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Name: testSandbox, Namespace: testNamespace, UID: queueSandboxUID},
+		Status: sandboxapi.SandboxStatus{
+			OperatingMode: sandboxapi.OperatingModeRunning,
+			Incarnation:   &sandboxapi.Incarnation{Name: testPod, UID: testPodUID},
+			Conditions:    []metav1.Condition{{Type: sandboxRunning, Status: metav1.ConditionTrue, Reason: "Ready"}},
 		},
-	}}
+	}
 	controller := true
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testPod, Namespace: testNamespace, UID: types.UID(testPodUID),
 			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: sandboxAPIVersion, Kind: sandboxKind,
+				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxKind,
 				Name: testSandbox, UID: types.UID(queueSandboxUID), Controller: &controller,
 			}},
 		},
@@ -122,12 +118,7 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 			Type: corev1.PodReady, Status: corev1.ConditionTrue,
 		}}},
 	}
-	objects := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
-		sandboxesGVR: "SandboxList",
-	})
-	if _, err := objects.Resource(sandboxesGVR).Namespace(testNamespace).Create(ctx, sandbox, metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
+	objects := newSandboxClient(t, sandbox)
 	kube := kubernetesfake.NewSimpleClientset(pod)
 	gateway, err := New(Config{
 		Namespace: testNamespace, CallerAccounts: []auth.Account{{Namespace: "apps", Name: "app"}},

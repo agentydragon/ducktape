@@ -16,14 +16,19 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/dispatcher"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/gateway"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"k8s.io/client-go/dynamic"
+	metameta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func kubernetesConfig(c config) (*rest.Config, error) {
@@ -54,6 +59,13 @@ func accountNamespaces(accounts []auth.Account, extra *auth.Account) []string {
 		result = append(result, name)
 	}
 	return result
+}
+
+func sandboxRESTMapper() metameta.RESTMapper {
+	mapper := metameta.NewDefaultRESTMapper([]schema.GroupVersion{sandboxapi.GroupVersion})
+	mapper.Add(sandboxapi.GroupVersion.WithKind("Sandbox"), metameta.RESTScopeNamespace)
+	mapper.Add(sandboxapi.GroupVersion.WithKind("SandboxTemplate"), metameta.RESTScopeNamespace)
+	return mapper
 }
 
 func waitForListener(ctx context.Context, hub *dispatcher.WatchHub, failed <-chan error) error {
@@ -90,7 +102,19 @@ func serve(ctx context.Context, c config) error {
 	if err != nil {
 		return err
 	}
-	objects, err := dynamic.NewForConfig(config)
+	scheme := runtime.NewScheme()
+	if err := sandboxapi.AddToScheme(scheme); err != nil {
+		return err
+	}
+	mapper := sandboxRESTMapper()
+	objects, err := client.New(config, client.Options{Scheme: scheme, Mapper: mapper})
+	if err != nil {
+		return err
+	}
+	inventory, err := cache.New(config, cache.Options{
+		Scheme: scheme, Mapper: mapper,
+		DefaultNamespaces: map[string]cache.Config{c.Namespace: {}},
+	})
 	if err != nil {
 		return err
 	}
@@ -105,7 +129,7 @@ func serve(ctx context.Context, c config) error {
 		return fmt.Errorf("Dispatcher PostgreSQL unavailable: %w", err)
 	}
 	store := dispatcher.NewStore(db, c.QueueCap)
-	catalog, err := dispatcher.NewKubernetesSandboxes(objects, c.Namespace)
+	catalog, err := dispatcher.NewKubernetesSandboxes(inventory, objects, c.Namespace)
 	if err != nil {
 		return err
 	}
@@ -135,10 +159,7 @@ func serve(ctx context.Context, c config) error {
 	defer cancel()
 	failed := make(chan error, 6)
 	go func() {
-		catalog.Run(ctx)
-		if ctx.Err() == nil {
-			failed <- errors.New("Sandbox informer stopped")
-		}
+		reportUnexpected(ctx, failed, "Sandbox cache", inventory.Start(ctx))
 	}()
 	if !catalog.WaitSynced(ctx) {
 		return errors.New("Sandbox inventory did not synchronize")

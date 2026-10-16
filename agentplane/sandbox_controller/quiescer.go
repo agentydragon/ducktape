@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -28,7 +29,7 @@ type QuiesceResult struct {
 
 // Quiescer asks a Sandbox's runner to seal every Session.
 type Quiescer interface {
-	Quiesce(ctx context.Context, sandbox *Sandbox) (QuiesceResult, error)
+	Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox) (QuiesceResult, error)
 }
 
 // GatewayQuiescer calls `Runner.Quiesce` through the Runner Gateway's proxy, at the Sandbox's own
@@ -40,7 +41,7 @@ type GatewayQuiescer struct {
 	TokenFile string
 }
 
-func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *Sandbox) (QuiesceResult, error) {
+func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox) (QuiesceResult, error) {
 	// Projected tokens rotate: read it for every call.
 	token, err := os.ReadFile(g.TokenFile)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,7 +25,7 @@ func TestStateVolumeCreationRecordsLayoutAndBindsIdentity(t *testing.T) {
 	if err := json.Unmarshal([]byte(pvc.Annotations[StateVolumeRecordAnnotation]), &record); err != nil {
 		t.Fatal(err)
 	}
-	want := VolumeLayout{Type: DirectoryTree}
+	want := sandboxapi.VolumeLayout{Type: sandboxapi.DirectoryTree}
 	if !equality.Semantic.DeepEqual(record.Layout, want) {
 		t.Fatalf("recorded layout = %#v, want %#v", record.Layout, want)
 	}
@@ -74,7 +75,7 @@ func TestStateVolumeRestartRecoversCreationRecordBeforeStarting(t *testing.T) {
 	failure := errors.New("controller interrupted before binding persistence")
 	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
 		SubResourceUpdate: func(ctx context.Context, c client.Client, name string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-			if sandbox, ok := obj.(*Sandbox); ok && sandbox.Status.Volumes != nil {
+			if sandbox, ok := obj.(*sandboxapi.Sandbox); ok && sandbox.Status.Volumes != nil {
 				return failure
 			}
 			return c.SubResource(name).Update(ctx, obj, opts...)
@@ -90,7 +91,7 @@ func TestStateVolumeRestartRecoversCreationRecordBeforeStarting(t *testing.T) {
 	restarted := *r
 	restarted.Client = c
 	reconcileOnce(t, &restarted)
-	if got := getSandbox(t, c).Status.Volumes.State; got.UID != string(pvc.UID) || got.Layout.Type != DirectoryTree {
+	if got := getSandbox(t, c).Status.Volumes.State; got.UID != string(pvc.UID) || got.Layout.Type != sandboxapi.DirectoryTree {
 		t.Fatalf("recovered state binding = %#v", got)
 	}
 	if getPod(t, c) == nil {
@@ -106,7 +107,7 @@ func TestStateVolumeMismatchRetainsPVCAndRefusesResume(t *testing.T) {
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
 
-	template.Spec.StateVolume.Layout = VolumeLayout{Type: RawDiskImage, Filesystem: "ext4"}
+	template.Spec.StateVolume.Layout = sandboxapi.VolumeLayout{Type: sandboxapi.RawDiskImage, Filesystem: "ext4"}
 	replaceTemplate(t, c, template)
 	setRunning(t, c, true)
 	reconcileOnce(t, r)
@@ -163,13 +164,13 @@ func TestStateVolumeRejectsUnsupportedLayoutDeclarations(t *testing.T) {
 			template := testTemplate("test-image:v1")
 			switch change {
 			case "omitted layout":
-				template.Spec.StateVolume.Layout = VolumeLayout{}
+				template.Spec.StateVolume.Layout = sandboxapi.VolumeLayout{}
 			case "raw disk image":
-				template.Spec.StateVolume.Layout = VolumeLayout{Type: RawDiskImage, Filesystem: "ext4"}
+				template.Spec.StateVolume.Layout = sandboxapi.VolumeLayout{Type: sandboxapi.RawDiskImage, Filesystem: "ext4"}
 			case "block filesystem":
-				template.Spec.StateVolume.Layout = VolumeLayout{Type: BlockFilesystem, Filesystem: "ext4"}
+				template.Spec.StateVolume.Layout = sandboxapi.VolumeLayout{Type: sandboxapi.BlockFilesystem, Filesystem: "ext4"}
 			case "filesystem on DirectoryTree":
-				template.Spec.StateVolume.Layout = VolumeLayout{Type: DirectoryTree, Filesystem: "ext4"}
+				template.Spec.StateVolume.Layout = sandboxapi.VolumeLayout{Type: sandboxapi.DirectoryTree, Filesystem: "ext4"}
 			case "Block claim":
 				mode := corev1.PersistentVolumeBlock
 				template.Spec.StateVolume.Claim.VolumeMode = &mode

@@ -45,6 +45,8 @@ For backend operations, this forbids:
 A shared helper belongs in an independently owned package. Backend records belong to their backend
 owner; a shared database server does not make private tables a supported API. The app can retain
 presentation state and projections, but those must not become hidden sources of backend authority.
+The Sandbox and SandboxTemplate Go API types and scheme live in [`sandboxes/api`](../sandboxes/api/types.go),
+so backend readers and the controller share the same typed Kubernetes contract.
 
 ## Ownership
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -20,7 +21,7 @@ const WorkspaceRecordAnnotation = "agentplane.allegedly.works/workspace-record"
 // recover without interpreting contents from the current template.
 // +kubebuilder:object:generate=false
 type workspaceRecord struct {
-	Layout VolumeLayout                     `json:"layout"`
+	Layout sandboxapi.VolumeLayout          `json:"layout"`
 	Claim  corev1.PersistentVolumeClaimSpec `json:"claim"`
 }
 
@@ -35,7 +36,7 @@ func claimMode(spec corev1.PersistentVolumeClaimSpec) corev1.PersistentVolumeMod
 	return *spec.VolumeMode
 }
 
-func validateWorkspace(template *SandboxTemplate) *unready {
+func validateWorkspace(template *sandboxapi.SandboxTemplate) *unready {
 	w := template.Spec.WorkspaceVolume
 	if w == nil {
 		return nil
@@ -44,13 +45,13 @@ func validateWorkspace(template *SandboxTemplate) *unready {
 		return layoutMismatch("workspace volume name is empty or conflicts with the state volume")
 	}
 	switch w.Layout.Type {
-	case DirectoryTree:
+	case sandboxapi.DirectoryTree:
 		if w.Layout.Filesystem != "" || claimMode(w.Claim) != corev1.PersistentVolumeFilesystem {
 			return layoutMismatch("DirectoryTree requires a Filesystem claim and no filesystem field")
 		}
-	case RawDiskImage, BlockFilesystem:
+	case sandboxapi.RawDiskImage, sandboxapi.BlockFilesystem:
 		mode := corev1.PersistentVolumeFilesystem
-		if w.Layout.Type == BlockFilesystem {
+		if w.Layout.Type == sandboxapi.BlockFilesystem {
 			mode = corev1.PersistentVolumeBlock
 		}
 		if w.Layout.Filesystem != "ext4" || claimMode(w.Claim) != mode {
@@ -88,7 +89,7 @@ func validateWorkspace(template *SandboxTemplate) *unready {
 		return layoutMismatch("template defines the managed workspace attachment itself")
 	}
 	disk := slices.ContainsFunc(instance.Domain.Devices.Disks, func(d kubevirtv1.Disk) bool { return d.Name == w.Name && d.Disk != nil })
-	if w.Layout.Type == DirectoryTree {
+	if w.Layout.Type == sandboxapi.DirectoryTree {
 		if slices.ContainsFunc(instance.Domain.Devices.Disks, func(d kubevirtv1.Disk) bool { return d.Name == w.Name }) {
 			return layoutMismatch("DirectoryTree attaches to a VM through virtiofs, not a disk")
 		}
@@ -98,13 +99,13 @@ func validateWorkspace(template *SandboxTemplate) *unready {
 	return nil
 }
 
-func (r *Reconciler) ensureWorkspaceVolume(ctx context.Context, sandbox *Sandbox, template *SandboxTemplate) (*unready, error) {
+func (r *Reconciler) ensureWorkspaceVolume(ctx context.Context, sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate) (*unready, error) {
 	workspace := template.Spec.WorkspaceVolume
 	pvc, err := r.claim(ctx, sandbox, WorkspaceVolumeName(sandbox.Name))
 	if err != nil {
 		return nil, err
 	}
-	var binding *WorkspaceBinding
+	var binding *sandboxapi.WorkspaceBinding
 	if sandbox.Status.Volumes != nil {
 		binding = sandbox.Status.Volumes.Workspace
 	}
@@ -162,13 +163,13 @@ func (r *Reconciler) ensureWorkspaceVolume(ctx context.Context, sandbox *Sandbox
 	if pvc.UID == "" {
 		return layoutMismatch("workspace claim has no UID"), nil
 	}
-	current := &WorkspaceBinding{Name: pvc.Name, UID: string(pvc.UID), Layout: recorded.Layout}
+	current := &sandboxapi.WorkspaceBinding{Name: pvc.Name, UID: string(pvc.UID), Layout: recorded.Layout}
 	if binding != nil && !equality.Semantic.DeepEqual(binding, current) {
 		return layoutMismatch("workspace claim identity or layout differs from the recorded binding"), nil
 	}
 	if binding == nil {
 		if sandbox.Status.Volumes == nil {
-			sandbox.Status.Volumes = &SandboxVolumes{}
+			sandbox.Status.Volumes = &sandboxapi.SandboxVolumes{}
 		}
 		sandbox.Status.Volumes.Workspace = current
 		// Persist the identity before a workload can start; a status conflict leaves the PVC intact.
