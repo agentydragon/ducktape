@@ -2735,27 +2735,15 @@ exploration before crossing the relevant phase.
 
 ## What this design does not solve
 
-- **Intentional cyclic init semantics.** If the original chunk
-  _relied_ on partial-eval state during a cyclic load (a rare
-  but legal pattern), the input is inherently un-debundle-able
-  into clean ESM modules. The realizability gate would surface
-  the cycle; the resolution is to leave that subset of bindings
-  as residual rather than fight ESM semantics.
 - **Choosing module boundaries.** The debundler executes the
   spec; it does not author it. Higher-level analysis tools
   (React component detection, big-string clustering, scrambled-
   identifier statistics) help the human author write better
   specs, but the spec is still chosen by humans.
-- **Identifier readability and cross-chunk imports.** Spec-assigned
-  readable names apply to the defining logical module and its intra-chunk
-  imports. When that binding is already part of its chunk's public export
-  surface, lowering retains the old export and adds the readable name as a
-  second export of the same binding. Processed named-import consumers may use
-  that alias and rename only the import local through `RenameLedger`; unsafe
-  collisions and nested capture conservatively keep the original import.
-  External chunks, dynamic imports and namespace imports continue to use the
-  legacy export name. This is an emission compatibility rule, not a scheduling
-  rewrite.
+
+Cycle handling is described in § Cycle resolution, and the emitted naming
+contract is in <../SPEC.md>
+§ Readable names and the chunk public surface.
 
 ## File references
 

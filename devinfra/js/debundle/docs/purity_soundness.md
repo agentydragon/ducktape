@@ -249,43 +249,12 @@ Cycle-breaking behaviour is pinned in <../e2e/object_plain_data_calls_test.rs>.
 
 Soundness per entry:
 
-- `Object.keys(O)` — ECMA-262 §20.1.2.17 calls `ToObject(O)` (no
-  coercion on an object), then `EnumerableOwnPropertyNames(O, "key")`.
-  The latter calls `[[OwnPropertyKeys]]` (for an ordinary plain
-  object: returns the integer-index keys then string keys in insertion
-  order, no user code) and per-key `[[GetOwnProperty]]` to check
-  `[[Enumerable]]` — also a structural read with no user code on a
-  fresh plain literal / PlainData binding.
-
-- `Object.values(O)` / `Object.entries(O)` — same as `keys` but
-  additionally call `[[Get]]` on each own key. For an ordinary
-  plain-data receiver every own key resolves to a data property
-  ($\Rightarrow$ no accessor fires). PlainData receivers carry the
-  same guarantee by the chunk-wide write scan (`PlainDataWriteScanner`
-  rejects any `Object.defineProperty(X, …)` /
-  `Object.setPrototypeOf(X, …)` that could install an accessor
-  post-init).
-
-- `Object.freeze(O)` — ECMA-262 §20.1.2.6 calls
-  `SetIntegrityLevel(O, "frozen")` which sets `[[Extensible]]` to
-  false and rewrites each own property descriptor to non-configurable
-  (and non-writable for data properties). No `[[Get]]` is performed,
-  no user code fires. The mutation is on the just-allocated literal
-  (for the literal form) or on a binding whose only producer/consumer
-  is the chunk being debundled (for the PlainData form), so it cannot
-  perturb user-observable state outside the call.
-
-- `Object.fromEntries(I)` — ECMA-262 §20.1.2.7 invokes
-  `I[@@iterator]()`. For a fresh `Array` literal with no spread, that
-  resolves to the built-in Array iterator, which `[[Get]]`s indices
-  `0..length` (own data properties on a fresh array, no user code) and
-  stops. Each yielded entry must itself be a 2-element Array literal
-  whose `[0]/[1]` reads are own data properties (gated by
-  `is_fresh_entry_array_for_from_entries`). Both gates together rule
-  out the "non-iterable argument throws TypeError" path that breaks
-  purity for arbitrary arg shapes (the throw is observable). For a
-  PlainData Object binding the call would throw, so PlainData shapes
-  are admitted only for the non-fromEntries methods.
+| Method                                  | ECMA-262 operation and reason it is safe under the receiver gate                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Object.keys(O)`                        | §20.1.2.17: `ToObject(O)` needs no coercion for an object; `EnumerableOwnPropertyNames` uses `[[OwnPropertyKeys]]` and `[[GetOwnProperty]]`. Ordinary plain objects return their own keys and descriptors without user code.                                                                                                                                                      |
+| `Object.values(O)`, `Object.entries(O)` | Like `keys`, then `[[Get]]` for each own key. Every key is a data property on a fresh literal or admitted PlainData binding; `PlainDataWriteScanner` rejects later accessor installation through `Object.defineProperty` or `Object.setPrototypeOf`.                                                                                                                              |
+| `Object.freeze(O)`                      | §20.1.2.6: `SetIntegrityLevel` clears `[[Extensible]]` and makes own descriptors non-configurable (data properties also non-writable), without `[[Get]]` or user code. The mutated literal is fresh, or the admitted PlainData binding has no observable consumer outside the chunk.                                                                                              |
+| `Object.fromEntries(I)`                 | §20.1.2.7: `I[@@iterator]()` uses the built-in iterator only for a fresh, spread-free array. Each entry must be a fresh two-element array with data properties at `[0]` and `[1]` (`is_fresh_entry_array_for_from_entries`). These gates also exclude the observable TypeError for a non-iterable argument. PlainData Object bindings are excluded because they are not iterable. |
 
 Out of scope (not admitted; flagged for follow-up review):
 

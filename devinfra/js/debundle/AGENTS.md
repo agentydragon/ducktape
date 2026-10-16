@@ -144,7 +144,7 @@ inputs and author decisions only — analysis provenance (`evidence`, `confidenc
 
 **Deviation** from STYLE.md ("every field needs a reader"; provenance belongs in
 `#` comments): the spec's `note:` fields are a ratified exemption, because the
-rewriters drop `#` comments (<README.md> → "Comments").
+rewriters drop `#` comments (<docs/spec_editing.md> § Comments and notes).
 
 ## Spec structure
 

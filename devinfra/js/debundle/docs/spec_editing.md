@@ -233,15 +233,11 @@ mounts `<X />`. Move `X` into that consumer's YAML.
 
 ### Commenting `anonymous_statements:` entries
 
-Each `anonymous_statements:` entry accepts an optional `comment:`
-**or** `note:` field — both are `Option<String>`, both are
-preserved on round-trip. The materializer resolves statements from
-`match:` and emits `comment:` immediately before the matched statement
-in generated JS; `note:` remains YAML metadata. Graph-backed CLI
-checks resolve the same selector against source and map the matched
-statement back to the owner graph, so the spec stays selector-based.
-For what to put in `comment:` vs. `note:`, see <../README.md> →
-"Comments".
+Each `anonymous_statements:` entry can carry the `comment:` and `note:` fields
+described below. The materializer resolves `source_match` and emits the comment
+above the matched statement. Graph-backed CLI checks resolve the same selector
+against source and map the matched statement back to the owner graph, so the
+spec stays selector-based.
 
 ```yaml
 anonymous_statements:
@@ -274,9 +270,8 @@ debundle modules merge --dry-run --target runtime/plugins runtime/widgets
 debundle modules merge --target runtime/plugins runtime/widgets
 ```
 
-Source-module `comment:` content is concatenated into the target's
-module-level `comment:` with a `--- from <source>:` divider when
-sources have non-empty comments.
+Source-module comments and notes are composed as described in
+§ Comments and notes below.
 
 The realizability gate runs against the post-merge partition before
 the YAML splice fires — pass `--graph <owner_graph.json>` so the
@@ -285,10 +280,35 @@ would create cross-module cycles; `--dry-run` runs the gate without
 writing. Use `--no-verify` to skip the gate (e.g. during multi-step
 refactors where an intermediate state is intentionally invalid).
 
-## Workflow: authoring `comment:` fields
+## Comments and notes
 
-Module YAMLs and binding annotations carry the same optional `comment:` field as
-`anonymous_statements:` entries (see above):
+Module YAMLs, binding annotations, and `anonymous_statements:` entries accept
+optional `comment:` and `note:` strings. `comment:` survives rebuilds and emits
+into generated JS: a module comment at the top of its file, a binding comment
+above its owner statement, and an anonymous-statement comment above its matched
+statement. An empty comment emits nothing. Claimed declarators of one
+`var`/`let`/`const` list emit as separate statements, each with its own comment;
+bindings of one destructuring declarator share a statement, with their comments
+stacked in pattern order.
+
+Use `comment:` to explain intent, invariants, and module relationships. Keep
+debt rationale, provenance, owner IDs, and source-call trivia in non-emitting
+`note:` (or omit them). Both fields survive YAML rewrites; `#` YAML comments do
+not, because the rewriters re-emit the files without them. Per-binding metadata
+belongs under `annotations.<export_name>`, which also accepts `purity`, `effect`,
+`pure_members`, and `no_sync_callback_members`.
+
+On `modules merge`, non-empty source-module comments join the target comment
+with `--- from <source>:` dividers. The command adds `merged from: <sources>`
+provenance to the target's module-level `note:`, composing with any existing
+note. `bindings assign` carries a binding's annotations when moving it and
+keeps a drained source module if its module-level `comment:` is present,
+including an explicit empty string.
+
+### Workflow: authoring `comment:` fields
+
+Module YAMLs and binding annotations use the same fields as
+`anonymous_statements:` entries:
 
 ```yaml
 # Module YAML
@@ -330,18 +350,6 @@ debundle modules comment runtime/foo --edit
 
 `<sym>` accepts minified or readable; `<module>` is the module path
 relative to `$DEBUNDLE_MODULES`.
-
-Move semantics:
-
-- `bindings assign` carries a binding's `annotations.<export_name>` entry with
-  the binding as it moves between modules.
-- `bindings assign` auto-deletes a drained source module only when its
-  module-level `comment:` is empty/absent.
-- `modules merge` concatenates source-module comments into the target's
-  module-level `comment:` (with a `--- from <source>:` divider) when
-  sources have non-empty comments, and records `merged from: <sources>`
-  provenance in the target's module-level `note:` (see <../README.md> →
-  "Comments").
 
 Anonymous-statement comments have no CLI; author them in YAML.
 

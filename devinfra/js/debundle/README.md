@@ -96,7 +96,7 @@ Cheat sheet of the most-used commands:
   source without a graph. Both modes show raw `body[N]` indices and byte/line
   ranges; snippets are bounded by default. Use `--view raw` for original text.
 - `debundle bindings comment <sym>` / `debundle modules comment <module>` —
-  edit `comment:` fields (see "Comments" below).
+  edit `comment:` fields (see <docs/spec_editing.md> § Comments and notes).
 
 ## Getting started
 
@@ -158,41 +158,9 @@ profile with `perf_wrapper.sh`: <docs/bazel_integration.md>.
 
 ## Comments
 
-Module YAMLs, binding annotations, and `anonymous_statements:` entries
-may carry an optional `comment:` field for reverse-engineering
-annotations; these emit into generated JS on every rebuild, so RE
-notes survive `debundle run` invocations. The same places also accept
-`note:`: YAML-only scratch metadata that never emits (debt rationale,
-provenance; `modules merge` writes its `merged from: <sources>` provenance into
-the module-level `note:`, composing with any existing note, and concatenates
-source-module `comment:` fields into the target's with a `--- from <source>:`
-divider). Per-binding
-metadata belongs under `annotations.<export_name>` and may include `comment`,
-`note`, `purity`, `effect`, `pure_members`, or
-`no_sync_callback_members`. Edit module and member comments via
-`debundle bindings comment` / `debundle modules comment`. See
-`docs/spec_editing.md` → "Workflow: authoring `comment:` fields" for the
-YAML schema, worked CLI examples, and the comment/`note:` move semantics.
-
-A module-top `comment:` emits at the top of the generated module file,
-an annotation `comment:` immediately above the binding's owner statement, and
-an anonymous-statement `comment:` immediately above the matched statement; an
-empty `comment:` emits nothing. Claimed declarators of one `var`/`let`/`const`
-list are emitted as one statement each, so each comment sits above its own
-declarator; bindings of a single destructuring declarator share its statement,
-and their comments stack above it in pattern order.
-
-`comment:` text is part of debundle's readability surface — the point of
-the tool is to turn minified chunks into legible code, so use comments to
-explain intent, invariants, and module relationships. Keep provenance,
-owner IDs, and source-call trivia in `note:` (or omit them), not in
-emitted `comment:` text.
-
-**Do not use `#` YAML comments in spec files.** The rewriters (`bindings
-assign`, `synthesize --apply`, `modules merge`, …) re-emit the YAML and drop
-every `#` comment, so any `#` annotation is silently lost on the next automated
-edit. Anything that must persist belongs in a schema field — `comment:`
-(emitting) or `note:` (non-emitting) — which the rewriters preserve explicitly.
+Use `comment:` for annotations emitted into generated JS and `note:` for
+YAML-only authoring metadata. The schema, emission and move semantics, and
+CLI examples live in <docs/spec_editing.md> § Comments and notes.
 
 ## Conditionally-correct optimizations
 
@@ -218,15 +186,6 @@ strength, override reporting and the unchecked residual: `docs/design.md` →
 
 ## Readable names across chunks
 
-A spec-assigned member name (`name:` on a member or a binding in
-`source_matches[].bindings`) is used for the emitted logical-module binding and
-its intra-chunk imports. For a named binding that was already exported by its
-source chunk, the chunk entry also exports that same live binding under the
-readable name while retaining the original minified export name. Imports from
-processed chunks can then use the readable export and a readable local alias.
-
-This is additive for compatibility: chunks outside the processed set, dynamic
-imports, and namespace imports continue to find the original public export.
-Imports are left in their original form if the readable local would collide with
-another binding or be captured by a nested binding. Unnamed targets are not
-naturalized by this pass.
+The emitted binding, chunk exports, and cross-chunk import behavior for
+spec-assigned names are specified in <SPEC.md> § Readable names and the chunk
+public surface.

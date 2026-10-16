@@ -553,15 +553,12 @@ regen command, not by hand-editing generated output.
 
 ## Comments
 
-The `comment:` / `note:` schema (which levels carry them, what emits into
-generated JS vs. stays YAML-only, the no-`#`-comments rule, and the
-`modules merge` composition) is documented once in <../README.md> →
-"Comments"; the editing workflow in `spec_editing.md` → "Workflow:
-authoring `comment:` fields". The CLI surface is `bindings comment` /
-`modules comment` — binding edits address `annotations.<name>.comment` for
+The `comment:` / `note:` schema, emission and move semantics, and editing
+workflow are in <spec_editing.md> § Comments and notes. The CLI surface is
+`bindings comment` / `modules comment` — binding edits address
+`annotations.<name>.comment` for
 both member and source-match bindings; module edits address the top-level
-`comment:`. Non-emitting
-`note:` fields are YAML-authored metadata that the rewriters preserve.
+`comment:`. Non-emitting `note:` fields are YAML-authored metadata.
 
 ## Out of scope
 
