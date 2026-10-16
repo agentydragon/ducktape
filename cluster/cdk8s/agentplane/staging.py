@@ -601,8 +601,7 @@ def agentplane_staging(
         ENV.namespace,
         artifact,
         description=ENV.flux_description,
-        # CLEANUP: resume after the testing Go delivery cutover passes acceptance.
-        suspend=True,
+        suspend=False,
         wait=None,
         timeout="10m",
         # This one Kustomization owns the CNPG Cluster's PVCs; pruning on

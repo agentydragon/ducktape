@@ -36,7 +36,7 @@ Goose Job. Its dependent delivery Kustomization owns the pinned Go serving workl
 only after the current migration completes. Serving never migrates on startup. Image discovery
 does not advance the reviewed serving/migration release pair automatically.
 
-The activation configuration releases testing and keeps staging suspended. Merge it only after
-the old writers are fenced. Use the [fenced rollout procedure](../docs/go_delivery_rollout.md) to stop
+The activation configuration releases both roots. Merge staging activation only after testing
+acceptance and staging's old writers are fenced. Use the [fenced rollout procedure](../docs/go_delivery_rollout.md) to stop
 old writers, preserve queued work, activate testing and then staging, and verify reconnect and
 replica recovery. Both environments retain `Recreate` through acceptance.

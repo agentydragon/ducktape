@@ -6,11 +6,14 @@ workload, its account, RBAC and policies. The serving dependency checks the root
 generation, Ready condition, suspension state and exact migration Job identity. An earlier
 healthy root cannot admit a new serving release before its migration is accepted.
 
-The testing activation configuration releases testing's root; staging remains suspended until
-testing acceptance and a separate activation review. Merge activation only after the old writers
-are fenced and the staged artifacts are verified. The preceding staging configuration holds both
-roots while existing Python workloads continue running. Release suspension in reviewed source,
-rather than relying on an imperative resume that GitOps can overwrite.
+The activation configuration releases both environment roots. Merge staging activation only after
+testing acceptance, staging's backup/restore preflight and writer fence, and verification of the
+staged artifacts. Until that activation merges, staging remains suspended in deployed source.
+Release suspension in reviewed source, rather than relying on an imperative resume that GitOps can
+overwrite.
+
+Testing is disposable: the operator waived its preservation and manual writer-fence gates. This
+exception does not apply to staging or establish testing acceptance.
 
 ## Preparation
 

@@ -4069,7 +4069,7 @@ spec:
     kind: ExternalArtifact
     name: agentplane-staging
     namespace: ducktape-flux
-  suspend: true
+  suspend: false
   timeout: 10m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

@@ -1412,25 +1412,27 @@ wrapper/registry retirement is complete.
 
 ### `GATEWAY_GO_ROLLOUT_CONFIG` — publish images and wire migration readiness into Flux
 
-**In review, operator-selected work, 2026-10-16 UTC.** Preparation
+**Configuration merged; environment cutover remains, 2026-10-16 UTC.** Preparation
 [#10785](https://github.com/agentydragon/ducktape/pull/10785) protects Gateway resources before their
-Flux ownership handoff and adds Go image discovery. It must merge and reconcile first. The stacked
+Flux ownership handoff and adds Go image discovery. The merged
 [#10786](https://github.com/agentydragon/ducktape/pull/10786) pins the published Go server and Goose digests, keeps database/Secrets/stable Services
 and the migration Job under the root, and gates a separate Go serving Kustomization on that exact
-completed migration. Both roots remain suspended in the staged configuration; publication is not
-activation. The Python serving implementations were already removed; this branch removes their
+completed migration. Testing activation is merged; staging activation is separately in review.
+The Python serving implementations were already removed; the configuration removes their
 remaining deployment/configuration sources and image automation, retaining historical Alembic
 handoff fixtures. See the [rollout procedure](../docs/go_delivery_rollout.md).
 
 Live preflight on 2026-10-16 found both environments running Python and both Dispatcher databases
 at `0007_drop_opening_attached`. That read-only preflight is not backup/restore or cutover acceptance.
-Review activation separately and preserve the explicit root holds until the old writers are stopped.
+Staging still requires its backup/restore preflight and writer fence before activation.
 
 ### `DELIVERY_UNIFIED_CUTOVER` — switch owners without losing admitted work
 
-**A separate draft activation change releases only testing; live cutover is not started.**
-Merge/reconcile #10785 and #10786, verify the staged artifacts, complete backup/restore preflight
-and stop/delete both Python Deployments before reviewing activation. Staging remains held.
+**Testing activation #10787 is merged; staging activation is in review.** Testing preservation
+and manual writer-fence gates were waived by the operator; testing acceptance remains unverified.
+Before merging staging activation, verify testing acceptance and staged artifacts, complete staging's
+backup/restore preflight and stop/delete both staging Python Deployments. Staging remains held
+until that activation merges. The testing-only waiver does not apply to staging.
 Recheck the
 operator's prerequisite that neither service depends on History: the 2026-10-15 entrypoints,
 settings, chart and runtime call paths have no History client/call/config, while runner ingress and
