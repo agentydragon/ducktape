@@ -993,6 +993,7 @@ py_test(
     ],
     requires_docker = True,
     shard_count = 16,
+    tags = ["visual"],
     deps = [
         ":conftest",
         "//:conftest",

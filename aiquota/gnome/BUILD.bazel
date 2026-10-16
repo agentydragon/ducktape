@@ -42,6 +42,7 @@ py_test(
         "//gnome/test_image:gnome_shell_test",
     ],
     requires_docker = True,
+    tags = ["visual"],
     deps = [
         "//:conftest",
         "//aiquota/testing:quota_fixtures",
