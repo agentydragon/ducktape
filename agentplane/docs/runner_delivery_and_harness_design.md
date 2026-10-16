@@ -480,8 +480,14 @@ selected here.
 
 The [test capability index](../native/README.md#behavioral-coverage) and its linked modules
 record what the pinned binaries do in scripted scenarios. Codex's test demonstrates two root
-threads over one app-server; Claude's current suite covers one root session and does not characterize
-multiple roots in one process. The Claude multiplexing investigation remains held in the task DAG.
+threads over one app-server. The pinned Claude Code 2.1.252 test shows that a candidate `session_id`
+on an inbound `user` frame does not route to a concurrent second root: its lifecycle receipt names
+the process's selected root, and it queues while that root is active. Separate Claude processes
+with distinct workdirs and config
+directories can make concurrent model requests with different model settings; interrupting one
+process leaves the other's request usable. Different credentials, sharing one config directory
+across processes, and concurrent multi-process crash recovery remain untested. The existing
+single-session `--resume` tests cover restart of one root in a new process.
 
 Neither test result decides whether one runner process should serve multiple Agentplane Sessions or
 how a harness, persisted store, native Session and public Session should be addressed. Those remain

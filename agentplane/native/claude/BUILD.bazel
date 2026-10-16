@@ -230,6 +230,29 @@ py_test(
 )
 
 py_test(
+    name = "test_multiplexing",
+    size = "medium",
+    srcs = ["test_multiplexing.py"],
+    data = ["@claude_code_cli_linux_x64//:claude"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":wire",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/claude/testing:anthropic_sse",
+        "//agentplane/native/claude/testing:harness",
+        "//agentplane/native/claude/testing:messages",
+        "//agentplane/native/claude/testing:model",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_tools",
     size = "medium",
     srcs = ["test_tools.py"],

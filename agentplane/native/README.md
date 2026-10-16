@@ -50,12 +50,17 @@ Each test module documents its assertions. The main scenarios covered are:
 | Tools and MCP                   | [tool round trips](claude/test_tools.py), [driver-hosted tools](claude/test_driver_tools.py) | [tool round trips](codex/test_tools.py), [dynamic tools](codex/test_dynamic_tools.py)                            |
 | Hook decisions                  | [PreToolUse allow/deny](claude/test_hooks.py)                                                | [PreToolUse allow/deny](codex/test_hooks.py)                                                                     |
 | Native children                 | [Agent lifecycle and follow-up](claude/test_tools.py)                                        | [v1 spawn/wait](codex/test_tools.py), [v2 persisted discovery](codex/test_v2_discovery.py)                       |
-| Root identity and multiplexing  | [first-input identity](claude/test_root_identity.py); multiple roots remain uncharacterized  | [two root threads over one app-server](codex/test_multiplexing.py)                                               |
+| Root identity and multiplexing  | [first-input identity](claude/test_root_identity.py), [one root per process](claude/test_multiplexing.py) | [two root threads over one app-server](codex/test_multiplexing.py)                                               |
 
-The Claude suite exercises one stream-json root session at a time. The Codex multiplexing test
-characterizes two independently controlled root threads; its module documents the pinned source and
-the untested crash-recovery boundary. Neither suite decides whether Agentplane should change its
-process or Session model. The open design question is in
+On Claude Code 2.1.252, an inbound `user` frame carrying a different `session_id` gets a lifecycle
+receipt for the process's root and stays queued while that root is active; it does not start a
+concurrent model request for the candidate ID. Two separately launched processes, each with its own
+workdir and config directory, can hold concurrent requests, use separate model settings, and keep
+one process's interrupt from cancelling the other's request. Different credentials, multiple
+processes sharing one config directory, and concurrent multi-process crash recovery remain untested.
+The Codex multiplexing test characterizes two independently controlled root threads; its pinned
+source references and untested crash-recovery boundary are in that module. Neither suite decides
+whether Agentplane should change its process or Session model. The open design question is in
 [runner delivery and harness identity](../docs/runner_delivery_and_harness_design.md#harness-process-store-and-session-identity).
 
 The [protocol roster](docs/protocol_roster.md) lists the protocol surfaces used or left unused by

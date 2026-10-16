@@ -153,6 +153,12 @@ class ClaudeRun:
         frame = await self._claude().submit(text)
         return ClaudeInput(frame, events)
 
+    async def send_frame(self, frame: wire.UserInput) -> ClaudeInput:
+        """Send a constructed user frame verbatim for bounded protocol probes."""
+        events = self.events()
+        await self._native().send(frame)
+        return ClaudeInput(frame, events)
+
     async def send_many(self, texts: list[str]) -> list[ClaudeInput]:
         events = [self.events() for _ in texts]
         frames = await self._claude().submit_many(texts)

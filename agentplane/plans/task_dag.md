@@ -352,7 +352,8 @@ does not grant history read, messaging, credentials or execution of another prin
 
 **Conditional design decision; operator, 2026-10-15 PDT.** Evaluate exposing running harnesses as
 explicit runner objects with Session-to-harness associations. Use the merged Codex multi-thread test
-and the held Claude question alongside `HARNESS_IDENTITY_DESIGN` and `NATIVE_SUBAGENT_EXPOSURE`; do
+and Claude's single-root-per-process characterization alongside `HARNESS_IDENTITY_DESIGN` and
+`NATIVE_SUBAGENT_EXPOSURE`; do
 not assume one Agentplane Session is one process, one persisted store, or one native conversation, or
 that every discovered child is independently controllable.
 
@@ -1506,7 +1507,6 @@ flowchart LR
     RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
-    CLAUDE_STREAM_SESSION_MULTIPLEXING[Held: Claude sessions per process]
     HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
@@ -1526,7 +1526,6 @@ flowchart LR
     RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state use remains .-> RUNNER_LIST_SESSIONS_RETIRE
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     HARNESS_IDENTITY_DESIGN -. if a store ID enters the destination .-> DELIVERY_DESTINATION_CONTRACT
-    CLAUDE_STREAM_SESSION_MULTIPLEXING -. this lane's findings inform .-> HARNESS_IDENTITY_DESIGN
     NATIVE_SUBAGENT_EXPOSURE -. child identity evidence informs .-> HARNESS_IDENTITY_DESIGN
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
@@ -1800,21 +1799,6 @@ Update runner platform instructions and other prompts alongside the reviewed CLI
 **Deliverable:** an approved command and JSON contract with explicit authorization, error, stream,
 wait and cancellation behavior. This is design only; no CLI, prompt or API change is authorized.
 
-### `CLAUDE_STREAM_SESSION_MULTIPLEXING` — characterize multiple sessions over Claude stream-json
-
-**Held; user direction, 2026-10-15 UTC.** Keep this independent root-session question held until
-separately released. The current scripted suite exercises one root stream-json session at a time; it
-does not establish whether multiple independently interactive roots are supported or impossible.
-Native-child discovery and visibility remain a separate question under
-`NATIVE_SUBAGENT_EXPOSURE`.
-
-If released, determine whether the pinned Claude CLI can host multiple independently interactive
-native Sessions over one stream-json process. The current adapter launches with one `--session-id`,
-routes input/control over one stream and has no Agentplane session selector. Characterize frame
-routing, concurrency/isolation, cancellation scope, per-Session options/auth/workdir/config data, and
-failure/restart/`--resume` behavior from pinned-version evidence or a bounded real-binary test. Report
-unknowns without turning absence from the current driver into an upstream limitation.
-
 ### `HARNESS_IDENTITY_DESIGN` — decide address, process, store and native Session identities
 
 **Candidate decision.** Compare today's Sandbox UID plus Agentplane public Session ID with an opaque
@@ -1835,10 +1819,11 @@ shared-store isolation/concurrency questions and prevents mixed Codex/Claude Ses
 Sandbox/Runner. A Runner restart creates a new process incarnation even when the store is reused.
 Migration flexibility mildly favors multiple-harness support because restricting to one later is
 easier than introducing process/store identity and routing later; this does not settle the choice.
-Use the merged Codex multi-thread result in the [harness test index](../native/README.md#behavioral-coverage),
-the held Claude root-session question, and child-identity evidence from `NATIVE_SUBAGENT_EXPOSURE`
-to distinguish native child visibility from multiple independently interactive Sessions before
-recommending either arrangement.
+Use the merged Codex multi-thread result and Claude's single-root-per-process characterization in
+the [harness test index](../native/README.md#behavioral-coverage), plus child-identity evidence from
+`NATIVE_SUBAGENT_EXPOSURE`, to distinguish native child visibility from multiple independently
+interactive Sessions before recommending either arrangement. Claude's test uses separate config
+stores; concurrent processes sharing a store and distinct credentials remain untested.
 
 Keep creation idempotency separate from address identity: define operation keys, retries after a lost
 creation response, and durable mapping/crash recovery when the native ID is assigned after opening.
@@ -1849,8 +1834,8 @@ retain the current public Session identity until evidence justifies another addr
 stable opaque address and mapping rules cover several native Sessions in one store without conflating
 identity and create-idempotency? No schema or migration is proposed.
 
-Feed the merged Codex multi-thread test, held Claude root-session question and reviewed identity
-alternatives into [`RUNNER_HARNESS_OBJECTS_DESIGN`](#runner_harness_objects_design--expose-running-harnesses-separately-from-sessions).
+Feed the merged Codex multi-thread test, Claude's single-root-per-process characterization and
+reviewed identity alternatives into [`RUNNER_HARNESS_OBJECTS_DESIGN`](#runner_harness_objects_design--expose-running-harnesses-separately-from-sessions).
 Keep unresolved child identity and visibility under `NATIVE_SUBAGENT_EXPOSURE`. The harness-object
 decision must state which lifecycle, options, status, auth and cancellation belong to a process
 incarnation, persisted store and logical/native Session; neither design node authorizes runtime
