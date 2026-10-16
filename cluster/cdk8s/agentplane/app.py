@@ -246,7 +246,6 @@ class App(Construct):
                 port=self.service.pod_port,
             ),
             env_variables={**env, env_name(Settings, "runner_gateway_control_target"): control_target},
-            ports=[self.service.port.container_port()],
             readiness=http_probe("/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(

@@ -118,7 +118,6 @@ class HistoryService(Construct):
             container="history-service",
             image=f"{_IMAGE}:unset",
             env_variables={env_name(Settings, "database_url"): database_url, **(container_env or {})},
-            ports=[endpoint.port.container_port(), ingress.port.container_port()],
             readiness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(

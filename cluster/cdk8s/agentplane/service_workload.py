@@ -81,11 +81,11 @@ def add_service_workload(
     serves: list[ServiceRef],
     container: str,
     image: str,
-    ports: list[ContainerPort],
     readiness: Probe,
     liveness: Probe,
     resources: ContainerResources,
     termination_grace: Duration,
+    extra_ports: list[ContainerPort] | None = None,
     replica_profile: ReplicaProfile | None = None,
     args: list[str] | None = None,
     env_variables: dict[str, EnvValue] | None = None,
@@ -102,6 +102,10 @@ def add_service_workload(
     a separately reconciled Service can instead use the same refs. Mount into the returned container."""
     name = one({ref.name for ref in serves})
     labels = one({ref.pods for ref in serves}).selector
+    # Several Service ports may target one listener; keep its first name.
+    ports: dict[int, ContainerPort] = {}
+    for ref in serves:
+        ports.setdefault(ref.pod_port, ref.container_port())
     replicas = replica_profile or env.replicas
     # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; every service calls
     # TokenReview as itself.
@@ -135,7 +139,7 @@ def add_service_workload(
         image_pull_policy=image_pull_policy,
         args=args,
         env_variables=env_variables,
-        ports=ports,
+        ports=[*ports.values(), *(extra_ports or [])],
         readiness=readiness,
         liveness=liveness,
         resources=resources,

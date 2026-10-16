@@ -203,7 +203,6 @@ class GoRunnerGateway(Construct):
                 "AGENTPLANE_RUNNER_GATEWAY_POD_IP": EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
                 **(container_env or {}),
             },
-            ports=[proxy.port.container_port()],
             readiness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(

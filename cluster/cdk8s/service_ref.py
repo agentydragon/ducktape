@@ -96,6 +96,9 @@ class ServiceRef(_Service):
     def pod_port(self) -> int:
         return self.port.number if self.target_port is None else self.target_port
 
+    def container_port(self) -> ContainerPort:
+        return Port(name=self.port.name, number=self.pod_port).container_port()
+
     def service_port(self) -> ServicePort:
         """This port on the Service, targeting the Pods' port."""
         return ServicePort(name=self.port.name, port=self.port.number, target_port=self.pod_port, protocol=Protocol.TCP)

@@ -868,14 +868,14 @@ spec:
             periodSeconds: 30
           name: proxy
           ports:
+            - containerPort: 8082
+              name: http
+              protocol: TCP
             - containerPort: 8888
               name: proxy
               protocol: TCP
             - containerPort: 8081
               name: admin
-              protocol: TCP
-            - containerPort: 8082
-              name: agent-api
               protocol: TCP
           readinessProbe:
             failureThreshold: 3

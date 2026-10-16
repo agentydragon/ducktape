@@ -17,14 +17,12 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ConfigMap,
-    ContainerPort,
     ContainerResources,
     Cpu,
     CpuResources,
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
-    Protocol,
     Role,
     RoleBinding,
     RolePolicyRule,
@@ -825,11 +823,7 @@ class Egress(Construct):
                 token_audience=WORKLOAD_TOKEN_AUDIENCE,
             ),
             env_variables={env_name(Settings, "database_url"): self.database_url, **self.container_env},
-            ports=[
-                self.proxy.port.container_port(),
-                self.admin.port.container_port(),
-                ContainerPort(name="agent-api", number=self.agent_api.pod_port, protocol=Protocol.TCP),
-            ],
+            extra_ports=[self.admin.container_port()],
             readiness=http_probe("/healthz", port=self.admin.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/livez", port=self.admin.pod_port, initial_delay_seconds=30, period_seconds=30),
             resources=ContainerResources(

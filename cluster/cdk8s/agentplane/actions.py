@@ -259,7 +259,6 @@ class Actions(Construct):
             image_pull_policy=self.image_pull_policy,
             args=cli_args(Settings, host="0.0.0.0", port=self.service.pod_port),
             env_variables=env,
-            ports=[self.service.port.container_port()],
             readiness=http_probe(
                 "/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10, timeout_seconds=5
             ),

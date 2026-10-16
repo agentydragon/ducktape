@@ -66,7 +66,7 @@ class PolicyController(Construct):
             image=f"{_IMAGE}:unset",
             args=[f"--policy-namespace={namespace}", f"--subject-namespaces={namespace}"],
             env_variables=dict(container_env or {}),
-            ports=[endpoint.port.container_port(), Port(name="health", number=_HEALTH_PORT).container_port()],
+            extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
             readiness=http_probe("/readyz", port=_HEALTH_PORT, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=_HEALTH_PORT, initial_delay_seconds=10, period_seconds=30),
             resources=ContainerResources(

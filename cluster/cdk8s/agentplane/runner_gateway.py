@@ -118,7 +118,6 @@ class RunnerGateway(Construct):
                 # Where the Sandbox control Services this replica writes point (runner_control.md).
                 env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP)
             },
-            ports=[endpoint.port.container_port(), control.port.container_port()],
             readiness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(

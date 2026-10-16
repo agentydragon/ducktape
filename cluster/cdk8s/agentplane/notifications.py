@@ -135,7 +135,6 @@ class Notifications(Construct):
             container="notifications",
             image=f"{_IMAGE}:unset",
             env_variables=variables,
-            ports=[endpoint.port.container_port()],
             readiness=http_probe("/readyz", port=8080, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=8080, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
