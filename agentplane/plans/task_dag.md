@@ -25,9 +25,9 @@ are authorized by this handoff. The following change is implemented on a review 
 its published-head checks passed when checked for this handoff. Recheck GitHub before resuming.
 Rai merges every PR by hand; do not merge or enable auto-merge.
 
-| Open PR / exact reviewed head                                               | Scope                                       | Remaining gate                                                                                                   |
-| --------------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [#10734](https://github.com/agentydragon/ducktape/pull/10734), `39522ca3ab` | 8 GiB VM guest and testing admission limits | Review/merge/reconcile; actual launcher resources, guest memory and representative build/test acceptance.        |
+| Open PR / exact reviewed head                                               | Scope                                       | Remaining gate                                                                                            |
+| --------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| [#10734](https://github.com/agentydragon/ducktape/pull/10734), `39522ca3ab` | 8 GiB VM guest and testing admission limits | Review/merge/reconcile; actual launcher resources, guest memory and representative build/test acceptance. |
 
 This PR also edits this DAG. When rebasing it after this handoff, preserve the current status,
 remaining gates and Sandbox trust-boundary decision; do not restore its older planning snapshot.
@@ -650,7 +650,6 @@ The shared Python interpreter layers and matched lifecycle comparison are implem
 belongs in [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
 Preserve assertions and timeouts. The expensive lifecycle workflow stays **manual-only**;
 automatic triggers require a separate reviewed change. Language rewrites require Rai's decision.
-
 
 ### `K3S_BUNDLED_SERVICES_SPIKE` — measure a less isolated control plane in real k3s
 
@@ -1414,7 +1413,7 @@ wrapper/registry retirement is complete.
 
 ### `GATEWAY_GO_ROLLOUT_CONFIG` — publish images and wire migration readiness into Flux
 
-**Blocked on image pins and migration-gated Flux wiring; rollout not started.** The Go implementation
+**Blocked on published, pinned images; rollout not started.** The Go implementation
 is merged, but live charts still use Python pins. Use the existing root Flux owner for CNPG,
 database/Secrets and stable Gateway/Dispatcher Services. Add the full-digest-named Goose Job there
 with an explicit completion health check; put only the new Go serving workload in a separate
