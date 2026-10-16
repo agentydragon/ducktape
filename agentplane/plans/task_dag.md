@@ -1315,9 +1315,8 @@ flowchart TD
     CONTROL_SURFACE_RETIREMENT_AUDIT[Assigned: audit RPCs, fields and arguments against the intended paths]
     CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_INVENTORY_AUTHORITY_DESIGN
     RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state caller remains .-> RUNNER_LIST_SESSIONS_RETIRE[Conditional: retire Runner.ListSessions]
-    CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPENING_ATTACHED_RETIRE[Candidate: remove the unused persisted opening snapshot]
-    DISPATCHER_OPENING_ATTACHED_RETIRE -->|Writer-free Dispatcher image Ready in testing and staging| DISPATCHER_OPENING_ATTACHED_READ_RETIRE[Blocked: stop selecting the retired snapshot]
-    DISPATCHER_OPENING_ATTACHED_READ_RETIRE -->|Deferred-reader image Ready in testing and staging| DISPATCHER_OPENING_ATTACHED_COLUMN_DROP[Blocked: drop the retired snapshot column]
+    DISPATCHER_OPENING_ATTACHED_READ_RETIRE[Blocked: unmap the retired snapshot after writer rollout]
+    DISPATCHER_OPENING_ATTACHED_READ_RETIRE -->|Unmapped-reader image Ready in testing and staging| DISPATCHER_OPENING_ATTACHED_COLUMN_DROP[Blocked: drop the retired snapshot column]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: retire redundant Gateway APIs; preserve registry for current resume checks]
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
@@ -1380,26 +1379,19 @@ removing the runner method/messages and helpers via normal generation. The Gatew
 even if a narrowly justified runner live read remains; record that decision and remove this conditional
 node if so.
 
-### `DISPATCHER_OPENING_ATTACHED_RETIRE` — remove the unused opening snapshot from the API and writer
-
-**Candidate; identified by `CONTROL_SURFACE_RETIREMENT_AUDIT`.** The Dispatcher copies the runner's
-`OpenSession` snapshot into `SessionOpening` and its database row. The app's HTTP response forwards
-the protobuf shape, but the pinned app image reads only opening state and reason; the frontend type
-had an unused `attached` property. The only semantic consumer was the acceptance client, now moved to
-History's Thread projection. Remove the response field and stop persisting the snapshot, while
-keeping its database mapping until the writer-free Dispatcher image is Ready in both environments.
-
 ### `DISPATCHER_OPENING_ATTACHED_READ_RETIRE` — stop selecting the unused opening snapshot column
 
-**Blocked on** `DISPATCHER_OPENING_ATTACHED_RETIRE` reaching both testing and staging. Defer the
-mapped column while retaining it in metadata; Dispatcher reads otherwise select every mapped column.
-Wait for the deferred-reader image in both environments before dropping the column, because the
-migration runs before old pods drain during a rolling deployment.
+**Blocked on the writer-free Dispatcher image from #10675 being Ready in testing and staging.** The
+protobuf field is reserved and the writer is gone; the nullable ORM mapping remains and ordinary
+Dispatcher reads still select it. Unmap the field after that rollout. #10699 permits a retained
+physical column to be absent from the runtime metadata, so no deferred mapping is needed. Wait for
+the unmapped-reader image in both environments before dropping the column, because migration runs
+before old pods drain during a rolling deployment.
 
 ### `DISPATCHER_OPENING_ATTACHED_COLUMN_DROP` — drop the unused opening snapshot column
 
 **Blocked on** `DISPATCHER_OPENING_ATTACHED_READ_RETIRE` reaching both testing and staging. In a
-separate PR, add a migration to drop `session_opening.attached` and remove the deferred mapping.
+separate PR, add a migration to drop `session_opening.attached`.
 Preserve each opening's Session ID, Sandbox identity, state, reason and timestamps.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy

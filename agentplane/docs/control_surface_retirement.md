@@ -45,11 +45,13 @@ acceptance client's `wait_for_session_admission`; acceptance now reads the folde
 model, harness and cursor state. Runner `Attached` remains used by runner control and History and is
 unrelated to this response snapshot.
 
-Remove the `SessionOpening` response field and stop writing or echoing the snapshot. Keep the
-nullable database mapping through the writer-free rollout. Then defer its ORM load and wait for
-that reader-free image in both environments before dropping the column by a separate migration;
-the migration starts before old pods drain in a rolling deployment. Opening identity, state, reason
-and timestamps remain.
+#10675 reserved the `SessionOpening` response field and stopped writing or echoing the snapshot.
+The nullable `session_opening.attached` ORM mapping remains until the writer-free Dispatcher image is
+Ready in testing and staging. Then unmap it, wait for the unmapped-reader image in both environments,
+and drop the physical column in a separate migration. #10699 allows the unused column to remain in
+the database while absent from runtime metadata; a deferred ORM mapping is no longer required.
+Migration starts before old pods drain in a rolling deployment. Opening identity, state, reason and
+timestamps remain.
 
 ## Reviewed surfaces with distinct semantics
 
