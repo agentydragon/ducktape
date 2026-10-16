@@ -88,6 +88,7 @@ py_library(
         "//agentplane/runner_gateway:client",
         "//agentplane/sandboxes:inventory",
         "//agentplane/sandboxes/testing:fake_inventory",
+        "//util/testing:undeclared_outputs",
         "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//httpx",

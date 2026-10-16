@@ -5,6 +5,7 @@ The replay gate holds actual Electric/reconciliation response bytes without rewr
 """
 
 import asyncio
+import logging
 import multiprocessing
 import signal
 import socket
@@ -18,7 +19,7 @@ from multiprocessing.process import BaseProcess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import uvicorn
@@ -55,6 +56,7 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
 from agentplane.subjects import ServiceAccountRef
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
@@ -194,20 +196,40 @@ def _run(
     sandbox_present: bool,
     replay_after: int | None,
     electric_url: str | None,
+    electric_log_path: Path | None,
 ) -> None:
-    asyncio.run(
-        _serve(
-            database_url,
-            service_port,
-            history_target,
-            history_token_file,
-            connection,
-            frontend_directory,
-            sandbox_present,
-            replay_after,
-            electric_url,
+    electric_logger = logging.getLogger("agentplane.app.electric")
+    previous_level = electric_logger.level
+    previous_propagate = electric_logger.propagate
+    handler = None
+    if electric_log_path is not None:
+        # Preserve ElectricProxy's existing upstream timings without enabling app-wide INFO logs.
+        handler = logging.FileHandler(electric_log_path, encoding="utf-8")
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        electric_logger.addHandler(handler)
+        electric_logger.setLevel(logging.INFO)
+        electric_logger.propagate = False
+    try:
+        asyncio.run(
+            _serve(
+                database_url,
+                service_port,
+                history_target,
+                history_token_file,
+                connection,
+                frontend_directory,
+                sandbox_present,
+                replay_after,
+                electric_url,
+            )
         )
-    )
+    finally:
+        if handler is not None:
+            electric_logger.removeHandler(handler)
+            handler.close()
+            electric_logger.setLevel(previous_level)
+            electric_logger.propagate = previous_propagate
 
 
 async def _serve(
@@ -389,6 +411,11 @@ async def app_process(
 ) -> AsyncIterator[AppProcess]:
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe()
+    electric_log_path = (
+        undeclared_outputs_dir() / f"electric-proxy-{uuid4().hex}.log"
+        if frontend_directory is not None and electric_url is not None
+        else None
+    )
     process = context.Process(
         target=_run,
         args=(
@@ -401,6 +428,7 @@ async def app_process(
             sandbox_present,
             replay_after,
             electric_url,
+            electric_log_path,
         ),
     )
     process.start()
