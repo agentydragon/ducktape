@@ -36,23 +36,6 @@ cpio_archive(
     out = "base-initramfs.cpio",
 )
 
-pkg_files(
-    name = "codex_harness_file",
-    srcs = [
-        "@agentplane_codex_cli_linux_x64//:codex_binary",
-        "@agentplane_codex_cli_linux_x64//:codex_bwrap",
-    ],
-    attributes = pkg_attributes(
-        gid = 0,
-        mode = "0755",
-        uid = 0,
-    ),
-    renames = {
-        "@agentplane_codex_cli_linux_x64//:codex_binary": "tools/opt/bin/codex",
-        "@agentplane_codex_cli_linux_x64//:codex_bwrap": "tools/opt/codex-resources/bwrap",
-    },
-)
-
 # The first tools layer is only Bash plus the dynamic runtime closure resolved by Debian. It is a
 # separate OCI filesystem so the probe can add a real shell without pulling in a full distribution.
 oci_image(
@@ -67,21 +50,16 @@ oci_layout_rloc(
     image = ":tools_image",
 )
 
-cpio_archive(
-    name = "local_vm_initramfs",
-    srcs = [
-        ":boot_init_file",
-        ":codex_harness_file",
-    ],
-    out = "local-vm-initramfs.cpio",
-)
-
 py_binary(
     name = "local_vm_probe",
     srcs = ["local_vm.py"],
     data = [
-        ":local_vm_initramfs",
+        ":base_initramfs",
+        ":tools_rootfs",
         "//devinfra/firecracker:firecracker_layer",
+        "@agentplane_codex_cli_linux_x64//:codex_binary",
+        "@agentplane_codex_cli_linux_x64//:codex_bwrap",
+        "@claude_code_cli_linux_x64//:claude",
         "@firecracker_vmlinux_6_1_128//file",
     ],
     main = "local_vm.py",

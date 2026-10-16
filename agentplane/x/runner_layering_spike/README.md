@@ -2,29 +2,30 @@
 
 This package is a bounded experiment for `RUNNER_IMAGE_LAYERING_DESIGN`. It asks what can stay in
 the booted runner environment, what must live in a separately updated tools filesystem, and what a
-real Codex process needs when its child filesystem starts almost empty.
+real pinned Codex process needs when its child filesystem starts almost empty.
 
 The prototype builds independent boot, harness, and tools inputs:
 
 - `base_initramfs`: the guest's small PID 1 initializer;
 - `tools_rootfs`: a separately built Debian Trixie OCI filesystem containing Bash and its runtime
   dependencies;
-- the pinned static Codex executable and bwrap are staged as a separate file set;
-- `local_vm_initramfs`: one CPIO archive containing PID 1 and the harness payload for the local
-  Firecracker probe. The base initializer and harness files remain independent build inputs.
+- the pinned Codex, bwrap, and Claude executables are staged into a separate harness filesystem;
+- the local Firecracker guest receives the small PID 1 CPIO plus two separate, read-only SquashFS
+  drives for tools and harness files.
 
-The initializer stays outside the chroot. The runner's test-only `child_exec` fence creates a user,
-mount, and PID namespace, makes its root read-only, then bind-mounts the workspace and
-session-specific Codex home and mounts `/proc`, `/dev/null`, and a small temporary filesystem. It
-execs the real pinned Codex binary from `/opt/bin/codex`, beside the separately staged
-`/opt/codex-resources/bwrap` payload expected by the Codex distribution. Runner state and the runner
-process stay outside that child root.
+The guest initializer stays outside the child chroot. It mounts the tools drive at `/tools`, the
+harness drive at `/tools/opt`, then supplies writable tmpfs homes, workspace, and `/tmp`, plus
+read-only child procfs. The child runs as uid/gid 107 from `/tools`; the harness files remain
+independently packaged under `/opt`. The runner integration test separately creates a sparse child
+root under user and mount namespaces, keeps runner state outside it, and checks that a child cannot
+read a runner-only sentinel.
 
 The focused `//agentplane/runner:test_restart` scenario runs the pinned Codex binary from the sparse
 child root, completes and resumes a conversation after killing the native harness process, then
 executes `printf SPARSE_ROOT_TOOL_OK` through Codex's shell tool using only the separate Bash tools
-rootfs. The command output is asserted by the test. The child cannot read a runner-only sentinel,
-and killing the child does not stop the runner.
+rootfs. The command output is asserted by the test. The local VM probe separately runs Bash and
+Codex from the two mounted filesystems; guest PID 1 remains alive after both exit. Its Claude probe
+currently aborts in the guest, and the parent records that failure so it remains inspectable.
 
 ## Current limits
 
@@ -34,30 +35,37 @@ official [Firecracker CI artifact bucket](https://s3.amazonaws.com/spec.ccfc.min
 so the probe does not depend on the host kernel's image format. The kernel is an experiment input,
 not a production kernel choice.
 
-The local VM probe boots with 1 GiB guest RAM, runs `codex --version` inside the sparse chroot, and
-confirms the guest's parent init remains alive after Codex exits. The additional memory is required
-because the pinned static Codex executable alone is about 285 MB and the initramfs also holds the
-kernel's reserved memory. The CPIO generator now emits parent directories explicitly; the kernel
-initramfs extractor did not create nested directories that were absent from the archive.
+The local VM probe boots with 1 GiB guest RAM, mounts the tools and harness filesystems read-only,
+runs Bash and `codex --version`, and confirms guest PID 1 remains alive after those child processes
+exit. The additional memory is required because the pinned static Codex executable alone is about
+285 MB and the guest also holds the kernel's reserved memory. The CPIO generator emits parent
+directories explicitly because the kernel initramfs extractor does not create nested directories
+that are absent from the archive.
 
-Measured outputs are 1,913,348 bytes for `base_initramfs`, 22,277,632 bytes for the Bash OCI layer
-tar, and 287,783,968 bytes for `local_vm_initramfs`. The tools-root target has no dependency path
-from `local_vm_initramfs` in Bazel. A warm BuildBuddy build of the base and tools targets took 5.577 s
-(3.90 s critical path). Three fresh guest launches under `perf stat --repeat 3 -- bb run ...`
-averaged 2.231 ± 0.066 s wall time with warm build artifacts; this includes Bazel's local-run
-overhead, so it is not a guest-only boot number. The first local materialization of the VM target
-took 24.776 s Bazel elapsed while downloading the 287.8 MB initramfs. Attempts to force a cache miss
-still showed action-cache hits, so a true cold build time is not claimed.
+Measured outputs from the current probe are 1,913,348 bytes for `base_initramfs`, 7,168,000 bytes
+for the tools SquashFS, and 168,894,464 bytes for the harness SquashFS. The source Bash OCI layer
+tar is 22,277,632 bytes. These are compressed artifact sizes, not unpacked guest memory or cold
+build-time measurements. The Codex binary makes the harness layer the largest artifact. Earlier
+combined-initramfs measurements are superseded by these separate-disk outputs.
 
-Claude remains a separate dynamic-linking case; its glibc loader closure has not been tested in this
-child. Conventional Debian and Nix environment compatibility, a full coding task, cold/warm layer
-preparation timings, and production packaging remain open. This prototype makes no production VMM,
+Claude 2.1.252 prints its Bun runtime information, then aborts with SIGABRT when invoked as
+`--version` inside the guest chroot, even though the Debian tools root contains its glibc loader and
+libraries. The exact same pinned executable exits successfully with `--version` from the full host
+root and from the guest chroot as root without the child uid or mount namespace. It aborts in the
+uid-107 child with a new mount namespace. This narrows the problem to that child execution context;
+the individual UID and namespace effects have not yet been separated. An upstream report describes
+a similar startup abort after a Bun update, but does not establish the cause here:
+[Anthropic issue 92749](https://github.com/anthropics/claude-code/issues/92749).
+
+The individual Claude UID/namespace comparisons and Kubernetes image-volume compatibility test are
+still pending. Conventional Nix environment compatibility, a full coding task, cold/warm layer
+preparation timing, and production packaging remain open. This prototype makes no production VMM,
 image-layout, or isolation certification decision.
 
 No production runner image, Kubernetes resource, Sandbox, VM, or cluster state is changed here. The
 spike does not select Firecracker over KubeVirt, define an arbitrary-rootfs support contract, or
-claim complete filesystem isolation. The child namespace is a feasibility probe; it does not replace
-the production process, cgroup, network, and syscall policy.
+claim complete filesystem isolation. The child namespace is a feasibility probe; it does not
+replace the production process, cgroup, network, and syscall policy.
 
 ## Commands
 

@@ -76,6 +76,7 @@ _IMAGES = {
     "oauth_fixture": "//agentplane/action_service/testing:oauth_mcp_server_image",
     "policy_controller": "//agentplane/policy_controller:image",
     "runner": ":runner_image",
+    "runner_tools": "//agentplane/x/runner_layering_spike:tools_image",
     "runner_gateway": "//agentplane/runner_gateway:image",
     "sandbox_controller": "//agentplane/sandbox_controller:image",
     "session_dispatcher": "//agentplane/session_dispatcher:image",

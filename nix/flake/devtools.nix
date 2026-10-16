@@ -57,6 +57,9 @@ let
     # Anthropic CLI (`ant`): Claude API / Managed Agents control plane, for
     # running `ant beta:*` (haku/runtime/x/managed_agent/self_hosted). Not included in the BuildBuddy Remote Runner toolset.
     ducktapePkgs.anthropic-cli
+    # Materialize the runner-layering spike's read-only tools and harness filesystems for its
+    # local Firecracker probe; this is not used by Bazel actions or CI.
+    pkgs.squashfsTools
   ]
   ++ [
     # llvm-addr2line: drop-in for GNU addr2line used by `perf report` for

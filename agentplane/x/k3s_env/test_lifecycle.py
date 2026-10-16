@@ -3,6 +3,7 @@
 No model is involved. One stack serves every test in the file; each test makes and removes its own Sandbox.
 """
 
+import json
 from collections.abc import AsyncIterator, Iterator
 from http import HTTPStatus
 
@@ -16,7 +17,7 @@ from agentplane.app.sandbox_models import NewSandbox, SandboxView
 from agentplane.app.testing.client import Client
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.x.k3s_env import render
-from agentplane.x.k3s_env.stack import Stack, running_stack
+from agentplane.x.k3s_env.stack import Stack, image_ref, running_stack
 
 TRANSITION_SECONDS = 300.0
 STATE_FILE = "/state/lifecycle-marker"
@@ -97,6 +98,42 @@ async def test_create_reaches_running(stack: Stack, client: Client) -> None:
     assert view.operating_mode is OperatingMode.RUNNING
     assert view.pod is not None
     assert int(exec_in_sandbox(stack, view, "id -u").strip()) > 0
+
+
+def test_pod_image_volume_runs_bash_from_the_separate_tools_image(stack: Stack) -> None:
+    """The v1.33 k3s/containerd fixture can mount the tools OCI image beside a runner image."""
+    name = "layer-tools-volume"
+    pod = {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {"name": name, "namespace": render.NAMESPACE},
+        "spec": {
+            "restartPolicy": "Never",
+            "containers": [
+                {
+                    "name": "runner",
+                    "image": image_ref("runner"),
+                    "imagePullPolicy": "Never",
+                    "command": ["/bin/sh", "-c"],
+                    "args": ["set -eu; /tools/usr/bin/bash -c 'printf POD_TOOLS_LAYER_OK'"],
+                    "securityContext": {"runAsNonRoot": True, "runAsUser": 1000, "runAsGroup": 1000},
+                    "volumeMounts": [{"name": "tools", "mountPath": "/tools", "readOnly": True}],
+                }
+            ],
+            "volumes": [
+                {"name": "tools", "image": {"reference": image_ref("runner_tools"), "pullPolicy": "IfNotPresent"}}
+            ],
+        },
+    }
+    stack.k3s.kubectl("apply", "-f", "-", input_text=json.dumps(pod))
+    ready = stack.k3s.kubectl(
+        "wait", "--for=condition=Ready", f"pod/{name}", "-n", render.NAMESPACE, "--timeout=120s", check=False
+    )
+    if "condition met" not in ready:
+        details = stack.k3s.kubectl("describe", f"pod/{name}", "-n", render.NAMESPACE, check=False)
+        raise AssertionError(f"Pod with a separate tools image did not become Ready: {ready}\n{details}")
+    logs = stack.k3s.kubectl("logs", f"pod/{name}", "-n", render.NAMESPACE)
+    assert "POD_TOOLS_LAYER_OK" in logs, logs
 
 
 async def test_bootstrap_script_runs_in_the_sandbox(stack: Stack, client: Client) -> None:
