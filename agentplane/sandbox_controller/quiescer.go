@@ -16,7 +16,7 @@ import (
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 )
 
-// quiesceTimeout bounds one Seal call; stopping harnesses can take a while, and Seal is idempotent, so
+// quiesceTimeout bounds one Quiesce call; stopping harnesses can take a while, and Quiesce is idempotent, so
 // a call that runs out of time is repeated.
 const quiesceTimeout = 30 * time.Second
 
@@ -61,6 +61,9 @@ func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbo
 		ctx,
 		"authorization", "Bearer "+strings.TrimSpace(string(token)),
 		"x-agentplane-sandbox", sandbox.Name,
+		"x-agentplane-sandbox-uid", string(sandbox.UID),
+		"x-agentplane-sandbox-owner-namespace", sandbox.Namespace,
+		"x-agentplane-sandbox-owner-name", sandbox.Name,
 	)
 	response, err := runnercontrolpb.NewRunnerClient(conn).Quiesce(ctx, &runnerpb.QuiesceRequest{})
 	if err != nil {

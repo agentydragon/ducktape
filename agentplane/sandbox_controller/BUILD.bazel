@@ -17,7 +17,10 @@ go_library(
         "workspace.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sandbox_controller",
-    visibility = ["//agentplane/sandbox_controller:__subpackages__"],
+    visibility = [
+        "//agentplane/runner_gateway/go/gateway:__pkg__",  # keep: controller-to-Gateway protocol test
+        "//agentplane/sandbox_controller:__subpackages__",
+    ],
     deps = [
         "//agentplane/policy_controller",
         "//agentplane/proto:runner_control_go_proto",

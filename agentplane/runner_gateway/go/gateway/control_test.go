@@ -15,6 +15,7 @@ import (
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/dispatcher"
+	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -409,13 +410,38 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		t.Fatalf("ordinary caller must not Quiesce the runner: %v", err)
 	}
 
+	controllerTokenFile := filepath.Join(t.TempDir(), "controller-token")
+	if err := os.WriteFile(controllerTokenFile, []byte("controller-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	quiescer := sandboxcontroller.GatewayQuiescer{Target: proxyListener.Addr().String(), TokenFile: controllerTokenFile}
+	destination := &sandboxcontroller.Sandbox{ObjectMeta: metav1.ObjectMeta{
+		Name: testSandbox, Namespace: testNamespace, UID: types.UID(testSandboxUID),
+	}}
+	staleDestination := destination.DeepCopy()
+	staleDestination.UID = types.UID("replaced-sandbox-uid")
+	staleCtx, cancelStale := context.WithTimeout(context.Background(), 5*time.Second)
+	_, staleErr := quiescer.Quiesce(staleCtx, staleDestination)
+	cancelStale()
+	if status.Code(staleErr) != codes.NotFound {
+		t.Fatalf("controller Quiesce accepted a replaced Sandbox: %v", staleErr)
+	}
+
 	controllerCall := make(chan error, 1)
 	go func() {
-		_, callErr := client.Quiesce(callerContext("controller-token"), &runnerpb.QuiesceRequest{})
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		result, callErr := quiescer.Quiesce(ctx, destination)
+		if callErr == nil && result.Quiescing {
+			callErr = status.Error(codes.Internal, "controller did not observe the runner's completed Quiesce")
+		}
 		controllerCall <- callErr
 	}()
 	quiesceCall := receiveTunnelCall(t, runnerStream)
-	quiesced, err := proto.Marshal(&runnerpb.QuiesceResponse{})
+	if quiesceCall.GetMethod() != "/agentplane.proto.runner_control.Runner/Quiesce" {
+		t.Fatalf("controller call did not reach the runner's Quiesce method: %v", quiesceCall)
+	}
+	quiesced, err := proto.Marshal(&runnerpb.QuiesceResponse{Stage: runnerpb.QuiesceStage_QUIESCE_STAGE_QUIESCED})
 	if err != nil {
 		t.Fatal(err)
 	}
