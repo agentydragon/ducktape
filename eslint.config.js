@@ -98,6 +98,15 @@ export default [
 
   js.configs.recommended,
 
+  // Test-only script executed with add_init_script in a browser page.
+  {
+    files: ["finance/plaid/spend/ui/spend-chart-order-probe.js"],
+    languageOptions: {
+      parserOptions: { ecmaVersion: "latest", sourceType: "script" },
+      globals: browserGlobals,
+    },
+  },
+
   // ── All TypeScript files ───────────────────────────────────────────────
   {
     files: tsFiles,

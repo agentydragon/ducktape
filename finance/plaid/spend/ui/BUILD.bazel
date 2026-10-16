@@ -59,6 +59,7 @@ spa_bundle(
 py_test(
     name = "visual_test",
     size = "large",
+    args = ["-k", "spending_chart_order_probe"],
     srcs = ["visual_test.py"],
     data = [
         "spend-chart-order-probe.js",
