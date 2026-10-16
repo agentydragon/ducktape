@@ -120,22 +120,10 @@ def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
     assert not direct.reasoning_efforts
 
 
-def test_same_slug_on_different_accounts_keeps_distinct_limits() -> None:
-    shared_slugs = [
-        (google, antigravity)
-        for google in GEMINI_ROUTES
-        for antigravity in ANTIGRAVITY_ROUTES
-        if google.model.id == antigravity.model.id
-    ]
-    assert shared_slugs
-    for google, antigravity in shared_slugs:
-        assert google.model.limits is not None
-        assert antigravity.model.limits is not None
-        assert google.model.limits != antigravity.model.limits
-        assert (
-            model_entry(google)["model_info"]["max_output_tokens"]
-            != model_entry(antigravity)["model_info"]["max_output_tokens"]
-        )
+def test_flash_lite_remains_direct_google_only() -> None:
+    flash_lite = [route for route in GEMINI_ROUTES if route.model.id == "gemini-3.5-flash-lite"]
+    assert [route.id for route in flash_lite] == ["google/goog-generate/gemini-3.5-flash-lite"]
+    assert all(route.model.id != "gemini-3.5-flash-lite" for route in ANTIGRAVITY_ROUTES)
 
 
 @pytest.mark.parametrize("publish_limits", [False, True])
