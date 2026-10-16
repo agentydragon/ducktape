@@ -47,6 +47,10 @@ def _go_objects() -> list[dict[str, Any]]:
 
 def test_go_gateway_preserves_services_and_fences_listener_ingress() -> None:
     docs = _go_objects()
+    root = Chart(Cdk8sTesting.app(), "root-services", disable_resource_name_hashes=True)
+    runner_gateway_go.add_stable_services(root, staging.ENV)
+    root_docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(root))
+    assert not [doc for doc in docs if doc["kind"] == "Service"]
     deployment = _resource(docs, "Deployment", runner_gateway.NAME)
     pod = deployment["spec"]["template"]["spec"]
     container = one(c for c in pod["containers"] if c["name"] == "runner-gateway")
@@ -61,13 +65,16 @@ def test_go_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert f"--gateway-caller={staging.ENV.namespace}/{runner_gateway.NAME}" in container["args"]
     assert "--wake-caller=" + staging.ENV.namespace + "/" + app.NAME in container["args"]
     assert "initContainers" not in pod
-    assert _resource(docs, "Service", runner_gateway.NAME)["spec"]["ports"] == [
+    assert _resource(root_docs, "Service", runner_gateway.NAME)["spec"]["ports"] == [
         {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080},
         {"name": "runner-control", "port": 8082, "protocol": "TCP", "targetPort": 8082},
     ]
-    assert _resource(docs, "Service", session_dispatcher.NAME)["spec"]["ports"] == [
+    assert _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]["ports"] == [
         {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8081}
     ]
+    assert _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]["selector"] == {
+        "app.kubernetes.io/name": runner_gateway.NAME
+    }
     policy = _resource(docs, "CiliumNetworkPolicy", runner_gateway.NAME.removeprefix("agentplane-"))["spec"]
     ingress = {
         (endpoint["matchLabels"].get("app.kubernetes.io/name"), port["port"])
