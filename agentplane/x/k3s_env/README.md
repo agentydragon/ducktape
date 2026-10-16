@@ -52,8 +52,47 @@ or expensive rerun were needed. New quiesce behavior still needs its own focused
 
 ## Lifecycle measurements
 
-These profiles and outcomes describe the earlier Python Gateway/Dispatcher fixture. They predate
-the Go fixture composition above and are not image-size or lifecycle measurements for the Go images.
+The 2026-10-14 and 2026-10-15 entries below describe the earlier Python Gateway/Dispatcher
+fixture. Since then, this fixture moved to the Go Gateway/Dispatcher, shared typed service
+constructs, one plain PostgreSQL instance, and a pinned K3s binary; Electric and the browser
+frontend remain outside this test. The 2026-10-16 profile measures the current Go fixture. These
+are separate runs, not a matched comparison or an estimate of steady-state CI speedup.
+
+### Current Go fixture, 2026-10-16
+
+The model-free lifecycle suite passed all four tests on RBE at source revision
+`585b95435357252be2e5af4a5327e58c1805b8a5`. A temporary `cProfile` wrapper around
+`pytest_bazel.main()` wrote `lifecycle.prof` and a pstats summary to undeclared test outputs. The
+instrumentation-only delta was SHA-256
+`e76552aad56e45fb142edb37db2bc187d096b7177582c35591520a494df142db`; it was removed after this
+run and is not part of this change.
+
+Command: `bbr --invocation-id-file=/tmp/k3s-go-profile.invocation test --test_output=all --nocache_test_results //agentplane/x/k3s_env:test_lifecycle`.
+[BuildBuddy invocation](https://app.buildbuddy.io/invocation/c0dcc3d3-223e-4954-b1a3-5d1bcd4ad0cd)
+records the successful uncached test action and publishes `test.log`, `test.xml`, `k3s.log`,
+`lifecycle.prof`, and `lifecycle_profile.txt` as test outputs.
+
+| Measurement | Result |
+| ----------- | -----: |
+| BuildBuddy invocation elapsed | 442.216 s |
+| Bazel test target | 368.5 s |
+| Pytest session | 293.006 s |
+| cProfile total | 294.819 s |
+| `K3s.import_images` cumulative | 148.406 s |
+| `K3s.start` cumulative | 20.923 s |
+| `K3s.kubectl` cumulative, 50 calls | 70.889 s |
+
+`import_images` is the dominant phase isolated by this profile. Within it, `tarfile.add` accounts
+for 73.064 s of cumulative streaming time, which includes pipe I/O and backpressure and is not CPU
+packing cost. The `Popen.wait` call accounts for 75.300 s after the input stream reaches EOF; this is
+only the post-stream tail, not total containerd import/unpack time, which overlaps streaming.
+`K3s.start` includes k3s startup and node readiness. The aggregate `kubectl` time includes setup,
+Deployment waits, and later test operations, so Deployment readiness was not separately isolated.
+`running_stack` accumulated 233.106 s while its generator executed setup and teardown; it excludes
+time paused at the yielded fixture and is not wall-clock fixture lifetime.
+
+This is one profiled run. The older Python fixture timings below do not provide a matched baseline
+for this Go fixture.
 
 ### OCI-layout streaming, 2026-10-14
 
