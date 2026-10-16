@@ -111,7 +111,7 @@ func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontrol
 	if err != nil {
 		return err
 	}
-	reconciler := &sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt, Quiescer: quiescer, Leases: mgr.GetClient(), Now: time.Now}
+	reconciler := &sandboxcontroller.Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: kubeVirt, Quiescer: quiescer, Leases: mgr.GetClient(), Now: time.Now}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return err
 	}

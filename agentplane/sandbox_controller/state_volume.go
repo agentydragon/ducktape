@@ -9,9 +9,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const StateVolumeRecordAnnotation = "agentplane.allegedly.works/state-volume-record"
@@ -52,26 +49,8 @@ func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *sandboxapi.
 		if err != nil || blocked != nil {
 			return blocked, err
 		}
-		encoded, err := json.Marshal(stateVolumeRecord{Layout: template.Spec.StateVolume.Layout})
-		if err != nil {
-			return nil, err
-		}
-		pvc = &corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        StateVolumeName(sandbox.Name),
-				Namespace:   sandbox.Namespace,
-				Labels:      map[string]string{sandboxapi.SandboxLabel: sandbox.Name},
-				Annotations: map[string]string{StateVolumeRecordAnnotation: string(encoded)},
-			},
-			Spec: *template.Spec.StateVolume.Claim.DeepCopy(),
-		}
-		if err := controllerutil.SetControllerReference(sandbox, pvc, r.Scheme(), controllerutil.WithBlockOwnerDeletion(false)); err != nil {
-			return nil, err
-		}
-		if err := r.Create(ctx, pvc); err != nil && !apierrors.IsAlreadyExists(err) {
-			return nil, err
-		}
-		pvc, err = r.stateVolume(ctx, sandbox)
+		pvc, err = r.createClaim(ctx, sandbox, StateVolumeName(sandbox.Name), template.Spec.StateVolume.Claim,
+			StateVolumeRecordAnnotation, stateVolumeRecord{Layout: template.Spec.StateVolume.Layout})
 		if err != nil {
 			return nil, err
 		}

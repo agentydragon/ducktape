@@ -95,7 +95,7 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 			}
 			return c.Create(ctx, obj, opts...)
 		}}).Build()
-	return &Reconciler{Client: c, KubeVirt: true, Quiescer: &fakeQuiescer{}, Leases: c, Now: func() time.Time { return testNow }}, c
+	return &Reconciler{Client: c, Objects: c, KubeVirt: true, Quiescer: &fakeQuiescer{}, Leases: c, Now: func() time.Time { return testNow }}, c
 }
 
 func reconcileOnce(t *testing.T, r *Reconciler) {
@@ -903,7 +903,7 @@ func TestFailedQuiesceWaitsAcrossNoStageEventsAndControllerRestart(t *testing.T)
 
 	// A controller restart and the status event from the attempt write both see the persisted deadline.
 	afterRestart := &fakeQuiescer{result: QuiesceResult{Quiescing: true}}
-	restarted := &Reconciler{Client: c, KubeVirt: true, Quiescer: afterRestart, Leases: c, Now: func() time.Time { return now }}
+	restarted := &Reconciler{Client: c, Objects: c, KubeVirt: true, Quiescer: afterRestart, Leases: c, Now: func() time.Time { return now }}
 	// A resume followed by another suspend continues this same runner's quiesce operation; it does not
 	// make a new request intent that reopens the per-incarnation retry budget.
 	setRunning(t, c, true)

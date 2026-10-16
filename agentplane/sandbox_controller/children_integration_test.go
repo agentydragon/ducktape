@@ -1,0 +1,239 @@
+package sandboxcontroller
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+	"time"
+
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/bazelbuild/rules_go/go/runfiles"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
+	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
+)
+
+func eventually(t *testing.T, check func() bool) {
+	t.Helper()
+	if err := wait.PollUntilContextTimeout(context.Background(), 10*time.Millisecond, 30*time.Second, true,
+		func(context.Context) (bool, error) { return check(), nil }); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Exercise real SSA field ownership and filtered manager watches, which the fake client cannot model.
+func TestChildApplyOwnershipAndDrift(t *testing.T) {
+	asset, err := runfiles.Rlocation("envtest_kubernetes_linux_amd64/kube-apiserver")
+	if err != nil {
+		t.Fatal(err)
+	}
+	crds, err := runfiles.Rlocation("_main/agentplane/crds/manifests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	environment := &envtest.Environment{BinaryAssetsDirectory: filepath.Dir(asset), CRDDirectoryPaths: []string{crds}, ErrorIfCRDPathMissing: true}
+	config, err := environment.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := environment.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policycontroller.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const ns = "child-ssa"
+	selector, err := labels.Parse(sandboxapi.SandboxLabel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := ctrl.NewManager(config, ctrl.Options{
+		Scheme: scheme, Metrics: metricsserver.Options{BindAddress: "0"},
+		Cache: cache.Options{DefaultNamespaces: map[string]cache.Config{ns: {}}, ByObject: map[client.Object]cache.ByObject{
+			&corev1.ServiceAccount{}: {Label: selector}, &policycontroller.PolicyBinding{}: {Label: selector},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects, err := client.New(config, client.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	r := &Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), Leases: mgr.GetClient(), Now: time.Now}
+	if err := r.SetupWithManager(mgr); err != nil {
+		t.Fatal(err)
+	}
+	if err := objects.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}); err != nil {
+		t.Fatal(err)
+	}
+	template := &sandboxapi.SandboxTemplate{ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: ns}, Spec: sandboxapi.SandboxTemplateSpec{
+		Pod: &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: RunnerContainer, Image: "example.invalid/runner:v1"}}}},
+		StateVolume: sandboxapi.StateVolume{Name: "state", Layout: sandboxapi.VolumeLayout{Type: sandboxapi.DirectoryTree}, Claim: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources:   corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}},
+		}},
+	}}
+	if err := objects.Create(ctx, template); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- mgr.Start(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
+	key := types.NamespacedName{Namespace: ns, Name: "sandbox"}
+	foreign := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: ns}}
+	if err := objects.Create(ctx, foreign); err != nil {
+		t.Fatal(err)
+	}
+	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: ns}, Spec: sandboxapi.SandboxSpec{
+		Template: template.Name, Running: true, PolicySets: []string{"desired-grant"}, Bootstrap: "echo desired",
+	}}
+	if err := objects.Create(ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool {
+		var current sandboxapi.Sandbox
+		if objects.Get(ctx, key, &current) != nil {
+			return false
+		}
+		for _, condition := range current.Status.Conditions {
+			if condition.Type == sandboxapi.ConditionRunning && condition.Reason == "ServiceAccountConflict" {
+				return true
+			}
+		}
+		return false
+	})
+	if err := objects.Get(ctx, key, &corev1.Pod{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("foreign ServiceAccount allowed a Pod: %v", err)
+	}
+	if err := objects.Delete(ctx, foreign); err != nil {
+		t.Fatal(err)
+	}
+	if err := objects.Get(ctx, key, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	sandbox.Annotations = map[string]string{"retry": "after-foreign-account-removal"}
+	if err := objects.Update(ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool { return objects.Get(ctx, key, &corev1.Pod{}) == nil })
+	var account corev1.ServiceAccount
+	if err := objects.Get(ctx, key, &account); err != nil {
+		t.Fatal(err)
+	}
+	if err := objects.Patch(ctx, &account, client.RawPatch(types.MergePatchType, []byte(`{"metadata":{"labels":{"agentplane.allegedly.works/use-action-service":"false","unrelated":"keep"}}}`))); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool {
+		return objects.Get(ctx, key, &account) == nil && account.Labels[ActionCallerLabel] == "true" && account.Labels["unrelated"] == "keep"
+	})
+	var launch corev1.ConfigMap
+	launchKey := types.NamespacedName{Namespace: ns, Name: LaunchConfigMapName(key.Name)}
+	if err := objects.Get(ctx, launchKey, &launch); err != nil {
+		t.Fatal(err)
+	}
+	wantLaunch := launch.Data[LaunchFile]
+	launch.Data = map[string]string{LaunchFile: "wrong", "unrelated": "keep"}
+	if err := objects.Update(ctx, &launch); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool {
+		return objects.Get(ctx, launchKey, &launch) == nil && launch.Data[LaunchFile] == wantLaunch && launch.Data["unrelated"] == "keep"
+	})
+	version := launch.ResourceVersion
+	if blocked, err := r.ensureLaunch(ctx, sandbox); blocked != nil || err != nil {
+		t.Fatalf("unchanged launch apply: %v, %v", blocked, err)
+	}
+	if err := objects.Get(ctx, launchKey, &launch); err != nil || launch.ResourceVersion != version {
+		t.Fatalf("unchanged apply wrote ConfigMap: version %s -> %s, error %v", version, launch.ResourceVersion, err)
+	}
+	var binding policycontroller.PolicyBinding
+	if err := objects.Get(ctx, key, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if err := objects.Patch(ctx, &binding, client.RawPatch(types.MergePatchType, []byte(`{"spec":{"policySets":["wrong"],"expiresAt":"2099-01-01T00:00:00Z"}}`))); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool {
+		return objects.Get(ctx, key, &binding) == nil && len(binding.Spec.PolicySets) == 1 && binding.Spec.PolicySets[0] == "desired-grant" && binding.Spec.ExpiresAt == nil
+	})
+	var service corev1.Service
+	serviceKey := types.NamespacedName{Namespace: ns, Name: key.Name + sandboxapi.ControlServiceSuffix}
+	if err := objects.Get(ctx, serviceKey, &service); err != nil {
+		t.Fatal(err)
+	}
+	if err := objects.Patch(ctx, &service, client.RawPatch(types.MergePatchType, []byte(`{"spec":{"selector":{"wrong":"pod"},"ports":[{"port":8080,"targetPort":1234,"protocol":"TCP","name":"wrong"}]}}`))); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool {
+		return objects.Get(ctx, serviceKey, &service) == nil && len(service.Spec.Selector) == 0 && len(service.Spec.Ports) == 1 && service.Spec.Ports[0].Name == sandboxapi.ControlServicePortName && service.Spec.Ports[0].TargetPort.IntVal == sandboxapi.ControlServicePort
+	})
+	if err := objects.Get(ctx, key, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	sandbox.Spec.PolicySets = nil
+	if err := objects.Update(ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool { return apierrors.IsNotFound(objects.Get(ctx, key, &policycontroller.PolicyBinding{})) })
+	for _, test := range []struct {
+		name, reason string
+		foreign client.Object
+	}{
+		{"foreign-launch", "ConfigMapConflict", &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "foreign-launch-launch", Namespace: ns}}},
+		{"foreign-binding", "PolicyBindingConflict", &policycontroller.PolicyBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "foreign-binding", Namespace: ns},
+			Spec: policycontroller.PolicyBindingSpec{Subject: policycontroller.ServiceAccountRef{Namespace: ns, Name: "foreign-binding"}, PolicySets: []string{"foreign-grant"}},
+		}},
+		{"foreign-service", "ServiceConflict", &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "foreign-service-control", Namespace: ns}, Spec: corev1.ServiceSpec{ClusterIP: corev1.ClusterIPNone}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := objects.Create(ctx, test.foreign); err != nil {
+				t.Fatal(err)
+			}
+			other := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: test.name, Namespace: ns}, Spec: sandboxapi.SandboxSpec{Template: template.Name, Running: true, PolicySets: []string{"desired-grant"}}}
+			if err := objects.Create(ctx, other); err != nil {
+				t.Fatal(err)
+			}
+			otherKey := client.ObjectKeyFromObject(other)
+			eventually(t, func() bool {
+				if objects.Get(ctx, otherKey, other) != nil {
+					return false
+				}
+				for _, condition := range other.Status.Conditions {
+					if condition.Type == sandboxapi.ConditionRunning && condition.Reason == test.reason {
+						return true
+					}
+				}
+				return false
+			})
+			if err := objects.Get(ctx, otherKey, &corev1.Pod{}); !apierrors.IsNotFound(err) {
+				t.Fatalf("foreign child allowed a Pod: %v", err)
+			}
+		})
+	}
+}

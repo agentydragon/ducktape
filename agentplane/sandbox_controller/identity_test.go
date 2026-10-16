@@ -148,7 +148,7 @@ func TestSandboxOwnsAControlServiceBeforeAnyRunnerConnects(t *testing.T) {
 	}
 }
 
-func TestControlServiceTheGatewayCreatedIsKept(t *testing.T) {
+func TestControlServiceTheGatewayCreatedIsReconciled(t *testing.T) {
 	created := &corev1.Service{ObjectMeta: metav1.ObjectMeta{
 		Namespace: namespace, Name: sandboxName + sandboxapi.ControlServiceSuffix,
 		OwnerReferences: []metav1.OwnerReference{{APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: sandboxName, UID: "uid-sandbox"}},
@@ -159,7 +159,7 @@ func TestControlServiceTheGatewayCreatedIsKept(t *testing.T) {
 	if err := c.Get(context.Background(), client.ObjectKeyFromObject(created), &service); err != nil {
 		t.Fatal(err)
 	}
-	if len(service.Spec.Ports) != 0 {
-		t.Errorf("Service ports = %v, want the gateway's Service untouched", service.Spec.Ports)
+	if len(service.Spec.Ports) != 1 || service.Spec.Ports[0].Port != ControlServicePort {
+		t.Errorf("Service ports = %v, want the control port", service.Spec.Ports)
 	}
 }

@@ -36,6 +36,10 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace and, of the kinds
   it creates, to objects carrying the Sandbox label.
 
+Ordinary child resources use narrow server-side apply updates after an uncached ownership
+check. Creation is exclusive, so a same-name collision cannot adopt a foreign resource. PVCs
+retain their creation records and are never reapplied from a changed template.
+
 ## Running
 
 Every Agentplane environment runs it from `cluster/cdk8s/agentplane/sandbox_controller.py`, which
@@ -78,8 +82,9 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   change; a gate would make every Sandbox depend on every reader, optional ones included.
 - **Gotcha:** agent-sandbox's `Sandbox`, which the cluster installs for other workloads, makes
   `kubectl get sandboxes` resolve to either kind; name ours as `sandboxes.agentplane.allegedly.works`.
-- Tests drive `Reconcile` against controller-runtime's fake client, so which events enqueue which
-  Sandbox is not covered, nor anything KubeVirt does: the tests create VMIs and launcher Pods by
-  hand.
+- Unit tests drive `Reconcile` against controller-runtime's fake client. The child-resource
+  integration test runs the manager against an `envtest` API server to cover filtered-cache
+  collisions, SSA ownership and drift correction. KubeVirt behavior is not simulated: unit
+  tests create VMIs and launcher Pods by hand.
 - **Gotcha:** the fake client's default managed-fields tracker panics on KubeVirt's `uint64`
   fields, so the tests build it on a plain object tracker.

@@ -9,10 +9,8 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const WorkspaceRecordAnnotation = "agentplane.allegedly.works/workspace-record"
@@ -126,27 +124,9 @@ func (r *Reconciler) ensureWorkspaceVolume(ctx context.Context, sandbox *sandbox
 		if binding != nil {
 			return layoutMismatch("the recorded workspace claim is missing"), nil
 		}
-		encoded, err := json.Marshal(want)
+		pvc, err = r.createClaim(ctx, sandbox, WorkspaceVolumeName(sandbox.Name), workspace.Claim, WorkspaceRecordAnnotation, want)
 		if err != nil {
 			return nil, err
-		}
-		pvc = &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
-			Name: WorkspaceVolumeName(sandbox.Name), Namespace: sandbox.Namespace,
-			Labels:      map[string]string{sandboxapi.SandboxLabel: sandbox.Name},
-			Annotations: map[string]string{WorkspaceRecordAnnotation: string(encoded)},
-		}, Spec: *workspace.Claim.DeepCopy()}
-		if err := controllerutil.SetControllerReference(sandbox, pvc, r.Scheme(), controllerutil.WithBlockOwnerDeletion(false)); err != nil {
-			return nil, err
-		}
-		if err := r.Create(ctx, pvc); err != nil {
-			// Re-read an AlreadyExists rather than admitting a potentially foreign concurrent claim.
-			if !apierrors.IsAlreadyExists(err) {
-				return nil, err
-			}
-			pvc, err = r.claim(ctx, sandbox, pvc.Name)
-			if err != nil {
-				return nil, err
-			}
 		}
 	}
 	if pvc == nil {

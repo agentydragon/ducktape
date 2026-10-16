@@ -3862,6 +3862,7 @@ rules:
       - list
       - watch
       - create
+      - patch
   - apiGroups:
       - ""
     resources:
@@ -3871,6 +3872,7 @@ rules:
       - list
       - watch
       - create
+      - patch
   - apiGroups:
       - ""
     resources:
@@ -3880,7 +3882,7 @@ rules:
       - list
       - watch
       - create
-      - update
+      - patch
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -3890,7 +3892,7 @@ rules:
       - list
       - watch
       - create
-      - update
+      - patch
       - delete
   - apiGroups:
       - coordination.k8s.io

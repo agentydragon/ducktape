@@ -4,15 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -57,24 +54,10 @@ func (r *Reconciler) ensureLaunch(ctx context.Context, sandbox *sandboxapi.Sandb
 	if err != nil {
 		return nil, err
 	}
-	desired := map[string]string{LaunchFile: string(content)}
-	configMap := &corev1.ConfigMap{ObjectMeta: owned(sandbox)}
-	configMap.Name = LaunchConfigMapName(sandbox.Name)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(configMap), configMap); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return nil, err
-		}
-		configMap.Data = desired
-		return nil, r.createOwned(ctx, sandbox, configMap)
-	}
-	if !metav1.IsControlledBy(configMap, sandbox) {
-		return &unready{reason: "ConfigMapConflict", message: fmt.Sprintf("ConfigMap %s exists and is not this Sandbox's", configMap.Name)}, nil
-	}
-	if maps.Equal(configMap.Data, desired) {
-		return nil, nil
-	}
-	configMap.Data = desired
-	return nil, r.Update(ctx, configMap)
+	return r.applyOwned(ctx, sandbox,
+		corev1ac.ConfigMap(LaunchConfigMapName(sandbox.Name), sandbox.Namespace).
+			WithLabels(map[string]string{SandboxLabel: sandbox.Name}).
+			WithData(map[string]string{LaunchFile: string(content)}), "ConfigMapConflict")
 }
 
 // withLaunch mounts the Sandbox's launch ConfigMap into the template's runner container.

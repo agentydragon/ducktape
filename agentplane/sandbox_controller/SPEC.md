@@ -83,6 +83,12 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   starts only means its early requests are refused.
 - A ServiceAccount or `PolicyBinding` of the Sandbox's name that it does not own starts nothing.
 
+## Control Service
+
+Every Sandbox has a headless, selector-less `<sandbox>-control` Service on the Runner Gateway
+control port. The controller repairs its managed fields; the Gateway owns its EndpointSlice.
+A foreign same-name Service blocks new workload starts.
+
 ## Launch
 
 - Every Sandbox gets a ConfigMap `<sandbox>-launch`, owned by it, holding its namespace, name, UID

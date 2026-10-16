@@ -58,6 +58,8 @@ const (
 // +kubebuilder:object:generate=false
 type Reconciler struct {
 	client.Client
+	// Uncached reads establish ownership even when a child lacks the cache's label.
+	Objects client.Reader
 	// Whether the cluster serves KubeVirt's API. Without it VM Sandboxes stay unready and Pod
 	// Sandboxes are unaffected.
 	KubeVirt bool
@@ -144,8 +146,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.ensureControlService(ctx, &sandbox); err != nil {
+	if serviceGate, err := r.ensureControlService(ctx, &sandbox); err != nil {
 		return ctrl.Result{}, err
+	} else if gate == nil {
+		gate = serviceGate
 	}
 	if launchGate, err := r.ensureLaunch(ctx, &sandbox); err != nil {
 		return ctrl.Result{}, err
@@ -384,7 +388,7 @@ func (r *Reconciler) stateVolume(ctx context.Context, sandbox *sandboxapi.Sandbo
 // claim is the PVC of that name in the Sandbox's namespace, or nil.
 func (r *Reconciler) claim(ctx context.Context, sandbox *sandboxapi.Sandbox, name string) (*corev1.PersistentVolumeClaim, error) {
 	var pvc corev1.PersistentVolumeClaim
-	if err := r.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: name}, &pvc); err != nil {
+	if err := r.Objects.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: name}, &pvc); err != nil {
 		return nil, client.IgnoreNotFound(err)
 	}
 	return &pvc, nil
