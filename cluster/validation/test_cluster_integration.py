@@ -161,7 +161,7 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
 ) -> None:
     """Managed agents get the same labeled namespace readers as the static identities.
 
-    Only active Namespace manifests participate. Shared policy emits labels,
+    Locally rendered, non-parked Namespace manifests participate. Shared policy emits labels,
     static bindings, and catalog/default entries; namespace dependencies stay explicit.
     """
     metadata_label = "rbac.ducktape.io/agent-readable-metadata"
@@ -175,11 +175,11 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         if labels.get(logs_label) == "true":
             expected.add((namespace.name, "agent-readable-namespace-logs"))
 
-    # Props is separately sourced and absent live; parked workloads are suspended.
-    # Match static Haku's live scope through active, local Flux builds only.
-    active_resources = cluster.flux_kust_resources(repo_root)
+    # A reconciliation hold leaves namespace Roles and bindings deployed. Parked and
+    # separately sourced workloads remain outside this local authorization inventory.
+    retained_resources = cluster.flux_kust_resources(repo_root, include_suspended=True)
     namespace_owners: dict[str, set[str]] = {}
-    for owner, resources in active_resources.items():
+    for owner, resources in retained_resources.items():
         for resource in resources:
             if resource.kind != "Namespace":
                 continue
@@ -358,8 +358,12 @@ def bootstrap_resources(k8s_dir: Path) -> list[K8sResource]:
 def agent_permission_resources(
     cluster: ParsedCluster, bootstrap_resources: list[K8sResource], repo_root: Path
 ) -> list[K8sResource]:
-    # Active, rendered resources only.
-    resources = [resource for group in cluster.flux_kust_resources(repo_root).values() for resource in group]
+    # Suspension stops reconciliation, not the grants already present in a retained namespace.
+    resources = [
+        resource
+        for group in cluster.flux_kust_resources(repo_root, include_suspended=True).values()
+        for resource in group
+    ]
     resources.extend(bootstrap_resources)
     return resources
 
