@@ -6276,6 +6276,7 @@ rules:
     verbs:
       - create
       - delete
+      - patch
   - apiGroups:
       - rbac.authorization.k8s.io
     resourceNames:
@@ -6323,6 +6324,7 @@ rules:
     verbs:
       - create
       - delete
+      - patch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

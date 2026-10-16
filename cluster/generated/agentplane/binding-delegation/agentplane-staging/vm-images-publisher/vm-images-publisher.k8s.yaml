@@ -10,9 +10,10 @@ rules:
       - rolebindings
     verbs:
       - create
+      - delete
       - get
       - list
-      - delete
+      - patch
   - apiGroups:
       - rbac.authorization.k8s.io
     resources:

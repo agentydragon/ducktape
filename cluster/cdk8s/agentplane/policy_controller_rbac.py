@@ -90,7 +90,9 @@ class PolicyControllerRbac(Construct):
                     resources=["rolebindings", "clusterrolebindings", "roles", "clusterroles"],
                     verbs=["get", "list", "watch"],
                 ),
-                k8s.PolicyRule(api_groups=[_RBAC], resources=["clusterrolebindings"], verbs=["create", "delete", "patch"]),
+                k8s.PolicyRule(
+                    api_groups=[_RBAC], resources=["clusterrolebindings"], verbs=["create", "delete", "patch"]
+                ),
                 *(
                     [
                         k8s.PolicyRule(

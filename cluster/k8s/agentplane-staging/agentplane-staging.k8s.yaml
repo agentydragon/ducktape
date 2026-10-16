@@ -6727,6 +6727,7 @@ rules:
     verbs:
       - create
       - delete
+      - patch
   - apiGroups:
       - rbac.authorization.k8s.io
     resourceNames:
@@ -6782,6 +6783,7 @@ rules:
     verbs:
       - create
       - delete
+      - patch
   - apiGroups:
       - rbac.authorization.k8s.io
     resourceNames:
