@@ -13,7 +13,8 @@ pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testi
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-async def _hover_notification_drawer_scrollbar(page: Page) -> None:
+async def _hover_notification_drawer(page: Page) -> None:
+    # The menu can mount this ScrollArea under the pointer without dispatching pointerenter.
     await page.mouse.move(0, 0)
     scroll_area = page.get_by_role("dialog").locator(".mantine-ScrollArea-root")
     await scroll_area.hover()
@@ -133,7 +134,7 @@ async def test_thread_notifications_mobile_menu(view: VisualPage, app: Agentplan
     await view.capture(name="thread_notifications_mobile_menu")
     await page.get_by_role("menuitem", name="Notifications").click()
     await expect(page.get_by_text("2 awaiting notice", exact=False)).to_be_visible()
-    await _hover_notification_drawer_scrollbar(page)
+    await _hover_notification_drawer(page)
     await view.capture(name="thread_notifications_mobile_drawer")
 
 
@@ -148,7 +149,7 @@ async def test_sandbox_notifications_mobile_menu(view: VisualPage, app: Agentpla
     await page.get_by_role("menuitem", name="Notifications").click()
     await expect(page.get_by_text("Session s-2")).to_be_visible()
 
-    await _hover_notification_drawer_scrollbar(page)
+    await _hover_notification_drawer(page)
     await view.capture(name="sandbox_notifications_mobile_drawer")
 
 
