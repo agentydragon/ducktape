@@ -102,6 +102,7 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
             throw new Error("Unknown retained operation");
         }
         if (result.kind === "archived_admission") store.acknowledge(value.command, result.admission);
+        else if (result.kind === "interrupt_result") store.acknowledgeInterrupt(value.command, result.result);
         else store.acknowledgeDispatch(value.command, result.dispatch);
         settle(null);
       } catch (reason) {
@@ -123,7 +124,7 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
   // a lost reply because the Dispatcher deduplicates by command ID.
   useEffect(() => {
     for (const value of store.getSnapshot().commands)
-      if (value.admission === null && value.dispatch === null) void deliver(value);
+      if (value.admission === null && value.dispatch === null && !value.interruptResult) void deliver(value);
   }, [deliver, store]);
   useEffect(() => {
     const redeliverFailed = () => {
@@ -131,6 +132,7 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
         if (
           value.admission === null &&
           value.dispatch === null &&
+          !value.interruptResult &&
           (!value.attempted || errors.has(value.command.commandId))
         )
           void deliver(value);
@@ -208,12 +210,12 @@ function subject(operation: string): CommandSubject {
 function progressStage(
   outcome: string | null,
   admitted: boolean,
-  dispatch?: LocalCommand["dispatch"],
+  receipt?: LocalCommand["dispatch"] | LocalCommand["interruptResult"],
   issue?: CommandIssue
 ): CommandStage {
   if (outcome === "effected" || outcome === "failed" || outcome === "noop") return outcome;
   if (admitted) return "admitted";
-  switch (dispatch?.state) {
+  switch (receipt?.state) {
     case "DELIVERY_STATE_QUEUED_IN_DISPATCHER":
       return "queued";
     case "DELIVERY_STATE_DELIVERING_TO_RUNNER":
@@ -437,10 +439,11 @@ function LocalControlRows({
           const operation = value.command.operation;
           const admitted = value.admission !== null;
           const settled =
-            value.dispatch !== null &&
-            !["DELIVERY_STATE_QUEUED_IN_DISPATCHER", "DELIVERY_STATE_DELIVERING_TO_RUNNER"].includes(
-              value.dispatch.state
-            );
+            Boolean(value.interruptResult) ||
+            (value.dispatch !== null &&
+              !["DELIVERY_STATE_QUEUED_IN_DISPATCHER", "DELIVERY_STATE_DELIVERING_TO_RUNNER"].includes(
+                value.dispatch.state
+              ));
           const issue = errors.get(value.command.commandId);
           return (
             <ControlCommandFrame key={value.command.commandId} id={value.command.commandId}>
@@ -455,13 +458,15 @@ function LocalControlRows({
                         : "Shut down harness"}
                 </Text>
                 <CommandOutcome
-                  stage={progressStage(null, admitted, value.dispatch, issue)}
+                  stage={progressStage(null, admitted, value.dispatch ?? value.interruptResult, issue)}
                   subject={subject(operation.case ?? "")}
-                  reason={admitted ? undefined : (value.dispatch?.reason ?? issue?.message)}
+                  reason={
+                    admitted ? undefined : (value.dispatch?.reason ?? value.interruptResult?.reason ?? issue?.message)
+                  }
                   local
                   unsent={!value.attempted}
                 />
-                {!admitted && !settled && value.dispatch === null && (
+                {!admitted && !settled && value.dispatch === null && !value.interruptResult && (
                   <Button
                     size="xs"
                     variant="subtle"

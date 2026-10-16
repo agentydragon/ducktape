@@ -872,6 +872,16 @@ class ArchivedCommandAdmission(BaseModel):
 CommandSubmissionResponse = Annotated[DispatchedCommand | ArchivedCommandAdmission, Field(discriminator="kind")]
 
 
+class InterruptResultSubmission(BaseModel):
+    kind: Literal["interrupt_result"] = "interrupt_result"
+    result: dict[str, object]
+
+
+InterruptSubmissionResponse = Annotated[
+    InterruptResultSubmission | ArchivedCommandAdmission, Field(discriminator="kind")
+]
+
+
 class CommandIdBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     command_id: str = Field(alias="commandId", min_length=1)
@@ -1017,10 +1027,10 @@ async def stop_runner_session(
     return DispatchedCommand(dispatch=MessageToDict(response.dispatch))
 
 
-@threads.post("/{thread_id}/interrupt-turn", response_model=CommandSubmissionResponse)
+@threads.post("/{thread_id}/interrupt-turn", response_model=InterruptSubmissionResponse)
 async def interrupt_turn(
     store: Store, content: Content, bridge: runner_bridge.Bridge, thread_id: UUID, body: InterruptTurnBody
-) -> DispatchedCommand | ArchivedCommandAdmission:
+) -> InterruptResultSubmission | ArchivedCommandAdmission:
     target = await _submission_target(
         store,
         content,
@@ -1039,15 +1049,7 @@ async def interrupt_turn(
         )
     except TimeoutError as error:
         raise runner_bridge.DispatcherRequestTimeoutError(body.command_id) from error
-    # HTTP presentation retains receipt fields, but this transient result has no durable Dispatch.
-    return DispatchedCommand(
-        dispatch={
-            "commandId": body.command_id,
-            "sessionId": str(thread_id),
-            "sandbox": target.sandbox,
-            **MessageToDict(response),
-        }
-    )
+    return InterruptResultSubmission(result=MessageToDict(response))
 
 
 @threads.get("/{thread_id}/commands/{command_id}/dispatch")

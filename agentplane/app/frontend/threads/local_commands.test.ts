@@ -71,6 +71,29 @@ it("retains ahead-of-prefix HTTP admission evidence until matching replay takes 
   expect(new LocalCommands("thread").getSnapshot().commands).toEqual([]);
 });
 
+it("retains an immediate interrupt result without recording a durable Dispatch", () => {
+  const interrupted = create(CommandSchema, {
+    commandId: "interrupt-1",
+    operation: { case: "interruptTurn", value: { turnId: "turn-1" } },
+  });
+  const store = new LocalCommands("thread");
+  store.remember(interrupted);
+  store.acknowledgeInterrupt(interrupted, {
+    state: "DELIVERY_STATE_NO_OP",
+    reason: "turn already ended",
+    admission: null,
+  });
+
+  const retained = new LocalCommands("thread").getSnapshot().commands[0];
+  expect(retained.dispatch).toBeNull();
+  expect(retained.interruptResult).toEqual({
+    state: "DELIVERY_STATE_NO_OP",
+    reason: "turn already ended",
+    admission: null,
+  });
+  expect(store.markAttempted(interrupted.commandId)).toBe(false);
+});
+
 it("does not resurrect local input when replay wins the race with its HTTP response", () => {
   const store = new LocalCommands("thread");
   store.remember(COMMAND);

@@ -280,8 +280,16 @@ export interface DispatchReceipt {
   admission: EventEntry | null;
 }
 
+export interface InterruptResult {
+  state: string;
+  reason?: string;
+  admission: EventEntry | null;
+}
+
 export type CommandSubmission =
-  { kind: "archived_admission"; admission: EventEntry } | { kind: "dispatch"; dispatch: DispatchReceipt };
+  | { kind: "archived_admission"; admission: EventEntry }
+  | { kind: "dispatch"; dispatch: DispatchReceipt }
+  | { kind: "interrupt_result"; result: InterruptResult };
 
 function dispatchReceipt(value: unknown): DispatchReceipt {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -305,6 +313,24 @@ function dispatchReceipt(value: unknown): DispatchReceipt {
     reason: row.reason as string | undefined,
     updatedAt: row.updatedAt as string | undefined,
     admission,
+  };
+}
+
+function interruptResult(value: unknown): InterruptResult {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Session Dispatcher returned an invalid interrupt result");
+  }
+  const row = value as Record<string, unknown>;
+  if (typeof row.state !== "string" || (row.reason !== undefined && typeof row.reason !== "string")) {
+    throw new Error("Session Dispatcher returned an invalid interrupt state or reason");
+  }
+  return {
+    state: row.state,
+    reason: row.reason as string | undefined,
+    admission:
+      row.admission === undefined || row.admission === null
+        ? null
+        : fromJson(EventEntrySchema, row.admission as JsonValue),
   };
 }
 
@@ -334,6 +360,7 @@ async function commandSubmission(
   try {
     const value = data as Record<string, unknown>;
     if (value.kind === "dispatch") return { kind: "dispatch", dispatch: dispatchReceipt(value.dispatch) };
+    if (value.kind === "interrupt_result") return { kind: "interrupt_result", result: interruptResult(value.result) };
     if (value.kind === "archived_admission")
       return { kind: "archived_admission", admission: fromJson(EventEntrySchema, value.admission as JsonValue) };
     throw new Error("App returned an unrecognized command submission kind");

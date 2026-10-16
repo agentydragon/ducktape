@@ -1,7 +1,15 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, commandDispatch, submitInput, CommandSubmissionRefused, HttpError, threadObservations } from "./client";
+import {
+  api,
+  commandDispatch,
+  interruptTurn,
+  submitInput,
+  CommandSubmissionRefused,
+  HttpError,
+  threadObservations,
+} from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";
 
 afterEach(() => {
@@ -115,6 +123,29 @@ it("accepts a durable queued Dispatch separately from a runner admission receipt
         admission: null,
       },
     });
+  } finally {
+    api.eject(middleware);
+  }
+});
+
+it("keeps a transient interrupt result distinct from a durable Dispatch", async () => {
+  const paths: string[] = [];
+  const middleware = {
+    onRequest({ request }: { request: Request }) {
+      paths.push(new URL(request.url, "https://app.invalid").pathname);
+      return Response.json({
+        kind: "interrupt_result",
+        result: { state: "DELIVERY_STATE_NO_OP", reason: "turn already ended" },
+      });
+    },
+  };
+  api.use(middleware);
+  try {
+    await expect(interruptTurn("thread", "interrupt-id", "turn-id")).resolves.toEqual({
+      kind: "interrupt_result",
+      result: { state: "DELIVERY_STATE_NO_OP", reason: "turn already ended", admission: null },
+    });
+    expect(paths).toEqual(["/threads/thread/interrupt-turn"]);
   } finally {
     api.eject(middleware);
   }

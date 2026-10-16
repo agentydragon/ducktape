@@ -772,6 +772,10 @@ async def _interrupt_and_recover(http: httpx.AsyncClient, runner: Runner, thread
                 f"/threads/{thread_id}/stop-runner-session", json={"commandId": "interrupt-for-recovery"}
             )
         assert response.status_code == 200, response.text
+        if mode == "interrupt":
+            assert response.json()["kind"] == "interrupt_result"
+            assert response.json()["result"]["state"] == "DELIVERY_STATE_RUNNER_ADMITTED"
+            assert "dispatch" not in response.json()
     expected = "TURN_STATUS_PROCESS_LOST" if mode == "kill" else "TURN_STATUS_INTERRUPTED"
     await _stored_events(
         http,

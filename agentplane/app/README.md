@@ -131,7 +131,8 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 Any app replica accepts typed `submit-input`, `change-model`, `change-reasoning-effort`,
 `stop-runner-session`, and `interrupt-turn` requests under `/threads/{id}/`, each with a stable
 command id. The required `session_dispatcher_target` calls the matching generated Session Dispatcher
-RPC, which stores durable operations and returns their `Dispatch`, or immediately delivers an interrupt. A Dispatcher
+RPC. Durable operations return their stored `Dispatch`; `InterruptTurn` returns its immediate
+result without a queue row. A Dispatcher
 failure is returned to the caller; the app has no direct Runner Gateway command path. An exact retry
 already present in the History archive returns its `CommandAdmitted` entry without another service
 call. Otherwise the browser keeps Retry and never Cancel after an unconfirmed result, because the
