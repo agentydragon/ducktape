@@ -1,6 +1,7 @@
 # gazelle:resolve py _pytest.fixtures @pypi//pytest
 """Testing utility libraries."""
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_testonly = True)
@@ -291,6 +292,10 @@ py_test(
 py_library(
     name = "visual_capture",
     srcs = ["visual_capture.py"],
+    data = [
+        "capture-diagnostics.js",
+        ":capture_diagnostics_js",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":frontend_visual",
@@ -302,6 +307,12 @@ py_library(
         "@pypi//playwright",
         "@pypi//pydantic",
     ],
+)
+
+js_library(
+    name = "capture_diagnostics_js",
+    testonly = True,
+    srcs = ["capture-diagnostics.js"],
 )
 
 py_library(

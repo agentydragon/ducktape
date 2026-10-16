@@ -20,7 +20,7 @@ from more_itertools import one
 from playwright.async_api import BrowserContext, Locator, Page, Playwright, Route
 from pydantic import JsonValue, TypeAdapter
 
-from util.bazel.runfiles import get_required_path
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.frontend_visual import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.page_capture import (
     WAIT_TIMEOUT_MS,
@@ -65,6 +65,13 @@ async def _playwright_trace(
             if active_error is None:
                 raise
             active_error.add_note(f"Could not save Playwright trace to {trace_path}: {trace_error!r}")
+
+
+# Keep the browser-side snapshot in a linted JS file. It records geometry and selection positions,
+# never page text, input values, URLs, or accessible names.
+_CAPTURE_DIAGNOSTICS_JS = get_required_path(own_repo_rlocation("util/testing/capture-diagnostics.js")).read_text(
+    encoding="utf-8"
+)
 
 
 _PATHS_BY_URL = TypeAdapter(dict[str, str])
@@ -206,15 +213,43 @@ class VisualPage:
             status = await self.page.evaluate(_FONT_STATUS_JS, self.expected_font_family)
             if status != "loaded":
                 raise AssertionError(f"{name}: {self.expected_font_family} font did not load ({status})")
+        if (
+            target is None
+            and self.devtools_viewport is not None
+            and not full_page
+            and scale == "device"
+            and animations != "allow"
+        ):
+            raise ValueError("DevTools captures require animations to be pinned before mount")
+        if target is not None and (count := await target.count()) != 1:
+            raise ValueError(f"{name}: screenshot target must match exactly one element, got {count}")
+        page_diagnostics = (
+            await target.evaluate(_CAPTURE_DIAGNOSTICS_JS)
+            if target is not None
+            else await self.page.evaluate(_CAPTURE_DIAGNOSTICS_JS)
+        )
         if target is not None:
             screenshot = await screenshot_locator(self.page, target, context=name, scale=scale, animations=animations)
         elif self.devtools_viewport is not None and not full_page and scale == "device":
-            if animations != "allow":
-                raise ValueError("DevTools captures require animations to be pinned before mount")
             screenshot = await self.devtools_viewport.screenshot()
         else:
             screenshot = await self.page.screenshot(full_page=full_page, scale=scale, animations=animations)
         await self.check(context=name)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        diagnostics_path = self.output_dir / f"{name}.capture.json"
+        with diagnostics_path.open("x", encoding="utf-8") as stream:
+            json.dump(
+                {
+                    "capture_name": name,
+                    "sample": "before_screenshot",
+                    "scale": scale,
+                    "full_page": full_page,
+                    **page_diagnostics,
+                },
+                stream,
+                indent=2,
+            )
+            stream.write("\n")
         return publish_review_png(
             screenshot, output_dir=self.output_dir, title=self.title, name=f"{name}.png", label=label or name
         )

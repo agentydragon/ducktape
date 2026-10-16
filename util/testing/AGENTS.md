@@ -1,0 +1,5 @@
+- Construct `VisualPage` before navigation so it records errors from page load.
+- Captures check render and network health; tests own application readiness and interactions.
+- Tests using the session-scoped `playwright_driver` must use `pytest.mark.asyncio(loop_scope="session")`; auto mode alone runs them on a function loop and can hang browser startup.
+- `.capture.json` sidecars are diagnostic outputs, not visual-review assets or baselines.
+- Put nontrivial injected browser scripts in linted `.js` files and declare their runfiles; don't embed them in Python.
