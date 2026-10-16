@@ -448,8 +448,7 @@ def agentplane_testing(
         ENV.namespace,
         artifact,
         description=ENV.flux_description,
-        # CLEANUP: release only after the fenced Go delivery cutover is approved.
-        suspend=True,
+        suspend=False,
         wait=None,
         timeout="10m",
         # This one Kustomization owns the CNPG Cluster's PVCs; pruning on

@@ -6,10 +6,11 @@ workload, its account, RBAC and policies. The serving dependency checks the root
 generation, Ready condition, suspension state and exact migration Job identity. An earlier
 healthy root cannot admit a new serving release before its migration is accepted.
 
-The rollout configuration suspends both environment roots. Publishing it does not activate Go:
-existing Python workloads continue running until the coordinated cutover. Resume testing first;
-staging remains held until testing acceptance. Source suspension must be released in a reviewed
-activation change, rather than relying on an imperative resume that GitOps can overwrite.
+The testing activation configuration releases testing's root; staging remains suspended until
+testing acceptance and a separate activation review. Merge activation only after the old writers
+are fenced and the staged artifacts are verified. The preceding staging configuration holds both
+roots while existing Python workloads continue running. Release suspension in reviewed source,
+rather than relying on an imperative resume that GitOps can overwrite.
 
 ## Preparation
 
@@ -17,7 +18,7 @@ activation change, rather than relying on an imperative resume that GitOps can o
    live Gateway account, RBAC, policies and staging PDB for
    `kustomize.toolkit.fluxcd.io/prune: disabled`. The two Services and database keep their root
    owner throughout. Record their UIDs and the root's applied artifact revision.
-2. Merge the staged rollout configuration. Confirm both roots are suspended and each delivery
+2. Before merging the activation change, merge the staged rollout configuration. Confirm both roots are suspended and each delivery
    Kustomization is blocked by its root. Inspect each root and serving ExternalArtifact to ensure
    the staged manifests and pinned images are available before releasing suspension.
 3. Recheck the published serving/migration digests in `cluster/cdk8s/agentplane/runner_gateway_go.py`.

@@ -3839,7 +3839,7 @@ spec:
     kind: ExternalArtifact
     name: agentplane-testing
     namespace: ducktape-flux
-  suspend: true
+  suspend: false
   timeout: 10m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

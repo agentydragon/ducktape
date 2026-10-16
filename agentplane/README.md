@@ -14,7 +14,7 @@ an MCP approval gateway for any MCP-capable LLM product.
 - [Runner Gateway](runner_gateway/README.md): one Go process serving the runner control stream,
   authorized live Runner proxy and [Session Dispatcher](session_dispatcher/README.md) durable queue.
   The [staged rollout](docs/go_delivery_rollout.md) gates serving on a root-owned queue migration;
-  environment roots remain suspended until the fenced activation.
+  testing activates first, with staging held for its acceptance.
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
 - [Runner](runner/README.md) and [native drivers](native/README.md): run Claude Code or Codex in a

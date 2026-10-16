@@ -1415,7 +1415,7 @@ wrapper/registry retirement is complete.
 **In review, operator-selected work, 2026-10-16 UTC.** Preparation
 [#10785](https://github.com/agentydragon/ducktape/pull/10785) protects Gateway resources before their
 Flux ownership handoff and adds Go image discovery. It must merge and reconcile first. The stacked
-cutover branch pins the published Go server and Goose digests, keeps database/Secrets/stable Services
+[#10786](https://github.com/agentydragon/ducktape/pull/10786) pins the published Go server and Goose digests, keeps database/Secrets/stable Services
 and the migration Job under the root, and gates a separate Go serving Kustomization on that exact
 completed migration. Both roots remain suspended in the staged configuration; publication is not
 activation. The Python serving implementations were already removed; this branch removes their
@@ -1428,7 +1428,10 @@ Review activation separately and preserve the explicit root holds until the old 
 
 ### `DELIVERY_UNIFIED_CUTOVER` — switch owners without losing admitted work
 
-**Blocked on `GATEWAY_GO_ROLLOUT_CONFIG`; operational cutover is separately reviewed.** Recheck the
+**A separate draft activation change releases only testing; live cutover is not started.**
+Merge/reconcile #10785 and #10786, verify the staged artifacts, complete backup/restore preflight
+and stop/delete both Python Deployments before reviewing activation. Staging remains held.
+Recheck the
 operator's prerequisite that neither service depends on History: the 2026-10-15 entrypoints,
 settings, chart and runtime call paths have no History client/call/config, while runner ingress and
 app/Notification History reads are separate. If this changes, remove that direct service dependency
