@@ -98,7 +98,15 @@ def render_session(
         except AssertionError, TimeoutError, RuntimeError:
             session.save_log(undeclared_outputs_dir() / "startup.shell.log")
             raise
-        yield session, output_dir
+        try:
+            yield session, output_dir
+        finally:
+            try:
+                session.save_log(undeclared_outputs_dir() / "session.shell.log")
+            except Exception as error:
+                (undeclared_outputs_dir() / "session-shell-log-capture-error.txt").write_text(
+                    f"{type(error).__name__}: {error}\n"
+                )
 
 
 def _string_reply(reply: bytes) -> str:
