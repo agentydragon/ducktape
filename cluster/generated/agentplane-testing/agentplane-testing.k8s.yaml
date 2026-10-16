@@ -779,82 +779,6 @@ spec:
             - port: "8080"
               protocol: TCP
 ---
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: agentplane-egress-root-ca
-  namespace: agentplane-testing
-spec:
-  commonName: agentplane-egress-root-ca
-  duration: 87600h
-  isCA: true
-  issuerRef:
-    kind: ClusterIssuer
-    name: cluster-ca-bootstrap
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  renewBefore: 8760h
-  secretName: agentplane-testing-egress-ca
-  secretTemplate:
-    annotations:
-      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager
-      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager
----
-apiVersion: trust.cert-manager.io/v1alpha1
-kind: Bundle
-metadata:
-  name: agentplane-testing-egress-ca
-spec:
-  sources:
-    - useDefaultCAs: true
-    - secret:
-        key: ca.crt
-        name: cluster-root-ca-secret
-    - secret:
-        key: tls.crt
-        name: agentplane-testing-egress-ca
-  target:
-    additionalFormats:
-      pkcs12:
-        key: ca-certificates.p12
-    configMap:
-      key: ca-certificates.crt
-      metadata:
-        annotations:
-          description: Trust bundle for agentplane-testing runner HTTPS traffic intercepted by the egress proxy
-    namespaceSelector:
-      matchExpressions:
-        - key: kubernetes.io/metadata.name
-          operator: In
-          values:
-            - agentplane-testing
----
-apiVersion: trust.cert-manager.io/v1alpha1
-kind: Bundle
-metadata:
-  name: agentplane-testing-egress-upstream-ca
-spec:
-  sources:
-    - useDefaultCAs: true
-    - configMap:
-        key: ca.crt
-        name: kube-root-ca.crt
-  target:
-    configMap:
-      key: ca-certificates.crt
-      metadata:
-        annotations:
-          description: "Trust bundle the agentplane-testing egress proxy verifies destinations with: public roots plus this cluster's CA"
-    namespaceSelector:
-      matchExpressions:
-        - key: kubernetes.io/metadata.name
-          operator: In
-          values:
-            - agentplane-testing
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -1152,140 +1076,6 @@ spec:
   selector:
     cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
   type: ClusterIP
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: egress
-  namespace: agentplane-testing
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            k8s:cnpg.io/cluster: postgres
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "5432"
-              protocol: TCP
-    - toEntities:
-        - kube-apiserver
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: egress
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: llm-ingress
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: actions
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: notifications
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/instance: forgejo
-            app.kubernetes.io/name: forgejo
-            k8s:io.kubernetes.pod.namespace: forgejo
-      toPorts:
-        - ports:
-            - port: "3000"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: ollama
-            k8s:io.kubernetes.pod.namespace: ollama
-      toPorts:
-        - ports:
-            - port: "11435"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: litellm
-            k8s:io.kubernetes.pod.namespace: litellm
-      toPorts:
-        - ports:
-            - port: "4000"
-              protocol: TCP
-    - toEntities:
-        - remote-node
-        - host
-      toPorts:
-        - ports:
-            - port: "8123"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            k8s-app: kube-dns
-            k8s:io.kubernetes.pod.namespace: kube-system
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: ANY
-          rules:
-            dns:
-              - matchPattern: "*"
-    - toEntities:
-        - world
-        - remote-node
-        - host
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP
-            - port: "80"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: egress
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-        - matchLabels:
-            app.kubernetes.io/name: sandbox
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8888"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: app
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8081"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: egress
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
@@ -1666,6 +1456,216 @@ spec:
         - /*/*.git/git-upload-pack
         - /*/*/info/refs
         - /*/*/git-upload-pack
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: agentplane-egress-root-ca
+  namespace: agentplane-testing
+spec:
+  commonName: agentplane-egress-root-ca
+  duration: 87600h
+  isCA: true
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-ca-bootstrap
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  renewBefore: 8760h
+  secretName: agentplane-testing-egress-ca
+  secretTemplate:
+    annotations:
+      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager
+      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: agentplane-testing-egress-ca
+spec:
+  sources:
+    - useDefaultCAs: true
+    - secret:
+        key: ca.crt
+        name: cluster-root-ca-secret
+    - secret:
+        key: tls.crt
+        name: agentplane-testing-egress-ca
+  target:
+    additionalFormats:
+      pkcs12:
+        key: ca-certificates.p12
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: Trust bundle for agentplane-testing runner HTTPS traffic intercepted by the egress proxy
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - agentplane-testing
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: agentplane-testing-egress-upstream-ca
+spec:
+  sources:
+    - useDefaultCAs: true
+    - configMap:
+        key: ca.crt
+        name: kube-root-ca.crt
+  target:
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: "Trust bundle the agentplane-testing egress proxy verifies destinations with: public roots plus this cluster's CA"
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - agentplane-testing
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress
+  namespace: agentplane-testing
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: postgres
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: egress
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: llm-ingress
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: actions
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: notifications
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/instance: forgejo
+            app.kubernetes.io/name: forgejo
+            k8s:io.kubernetes.pod.namespace: forgejo
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: ollama
+            k8s:io.kubernetes.pod.namespace: ollama
+      toPorts:
+        - ports:
+            - port: "11435"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: litellm
+            k8s:io.kubernetes.pod.namespace: litellm
+      toPorts:
+        - ports:
+            - port: "4000"
+              protocol: TCP
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "8123"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - world
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: egress
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+        - matchLabels:
+            app.kubernetes.io/name: sandbox
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: app
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: egress
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -2556,6 +2556,39 @@ spec:
     cdk8s.io/metadata.addr: agentplane-history-service-deployment-c83c36d1
   type: ClusterIP
 ---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: agentplane-runner-ingress
+  namespace: agentplane-testing
+spec:
+  description: The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's pushes to the History Service ingress. It conveys no other authority.
+  source:
+    projectedWorkloadToken:
+      audience: agentplane-runner-ingress
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: runner-ingress
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: egress
+      hosts:
+        - history-service.agentplane-testing.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /agentplane.proto.runner_ingress.RunnerIngress/Push
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-runner-ingress
+---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -2612,39 +2645,6 @@ spec:
             - port: "8081"
               protocol: TCP
 ---
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
-  name: agentplane-runner-ingress
-  namespace: agentplane-testing
-spec:
-  description: The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's pushes to the History Service ingress. It conveys no other authority.
-  source:
-    projectedWorkloadToken:
-      audience: agentplane-runner-ingress
-  targets:
-    - header: Authorization
-      method: schemeToken
-      scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: runner-ingress
-  namespace: agentplane-testing
-spec:
-  rules:
-    - type: egress
-      hosts:
-        - history-service.agentplane-testing.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /agentplane.proto.runner_ingress.RunnerIngress/Push
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-runner-ingress
----
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -2663,25 +2663,6 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: egress
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: forgejo-images-creds
-  namespace: agentplane-testing
-spec:
-  dataFrom:
-    - extract:
-        key: forgejo-images-creds
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: kubernetes-forgejo-images-secret-store
-  target:
-    name: forgejo-images-creds
-    template:
-      mergePolicy: Merge
-      type: kubernetes.io/dockerconfigjson
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -3205,6 +3186,25 @@ subjects:
     name: app
     namespace: agentplane-testing
 ---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: agentplane-testing
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -3340,102 +3340,6 @@ metadata:
   name: runner
   namespace: agentplane-testing
 automountServiceAccountToken: false
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: runner
-  namespace: agentplane-testing
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            k8s-app: kube-dns
-            k8s:io.kubernetes.pod.namespace: kube-system
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: egress
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8888"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: agentplane-runner
-  ingress:
-    - {}
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: platform-route-clients
-  namespace: agentplane-testing
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: history-service
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8081"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: agentplane-runner
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: platform-route-control
-  namespace: agentplane-testing
-spec:
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: runner-gateway
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: platform-route-ingress
-  namespace: agentplane-testing
-spec:
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: history-service
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8081"
-              protocol: TCP
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -4166,6 +4070,102 @@ spec:
     layout:
       type: RawDiskImage
       filesystem: ext4
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: runner
+  namespace: agentplane-testing
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: egress
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-runner
+  ingress:
+    - {}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: platform-route-clients
+  namespace: agentplane-testing
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: runner-gateway
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: history-service
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-runner
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: platform-route-control
+  namespace: agentplane-testing
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: runner-gateway
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: platform-route-ingress
+  namespace: agentplane-testing
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: history-service
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
 ---
 apiVersion: v1
 kind: ServiceAccount
