@@ -799,7 +799,6 @@ flowchart TD
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     SANDBOX_IDLE_EXPIRY[Candidate: suspend idle Sandboxes] -. related .-> AGENT_RESUME_NOTICE
-    QUIESCE_RESPONSE_FIELDS_RETIRE[Candidate: controller rollout complete; delete obsolete response fields]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
@@ -1083,17 +1082,6 @@ does not supervise these, so who would report them (the harness adapters, the VM
 Test an attached terminal that detaches, a background process that outlives a turn, and a runner
 restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
-### `QUIESCE_RESPONSE_FIELDS_RETIRE` — delete the legacy wire seal list
-
-**Candidate; controller-reader rollout completed by #10615.** Testing runs the
-`agentplane-sandbox-controller` image tagged `...-287c8ce` at 1/1 ready, and staging runs the same
-image at 2/2 ready. Remove the obsolete `sessions` field and rollout-era optional-stage contract
-from `runner.proto`, reserve its field number, and update proxy and runner fixtures. The runner's
-internal `quiesce()` result and ingress tests still use `SessionSeal`; give that internal result an
-appropriate non-wire representation before deleting the unused protobuf message. Preserve
-seal/cursor/flush assertions and generate bindings normally. Verify all remaining references before
-deletion; do not remove journal seal evidence or its separate retained-data gate.
-
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
 **Unscheduled.** The History Service folds `idle_since` into `SessionSummary` (the turn and harness
@@ -1216,28 +1204,25 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 
 ```mermaid
 flowchart TD
-    ACTION_EXECUTION_AUDIT_WRITER_RETIRE[In flight: stop writing execution reconciliation attribution]
+    ACTION_EXECUTION_AUDIT_COLUMNS_READ_RETIRE[Candidate: stop selecting unused reconciliation columns]
     ACTION_EXECUTION_AUDIT_COLUMNS_DROP[Blocked: drop retired execution reconciliation columns]
-    ACTION_EXECUTION_AUDIT_WRITER_RETIRE -->|Writer-free Action Service image applied in both environments| ACTION_EXECUTION_AUDIT_COLUMNS_DROP
+    ACTION_EXECUTION_AUDIT_COLUMNS_READ_RETIRE -->|Deferred-reader image Ready in testing and staging| ACTION_EXECUTION_AUDIT_COLUMNS_DROP
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
 ```
 
-### `ACTION_EXECUTION_AUDIT_WRITER_RETIRE` — stop writing reconciliation attribution
+### `ACTION_EXECUTION_AUDIT_COLUMNS_READ_RETIRE` — stop selecting unused reconciliation columns
 
-**In flight, worker, 2026-10-15 UTC.** The operator selected removal rather than exposing new audit
-fields. Remove the late-completion assignments, their single-member enum and test-only assertions;
-keep `reconciled_at`, which is already part of the Execution view. Keep the two unused database
-columns mapped until the next node's migration: the current staging Action Service has 2/2 ready pods
-and testing has 1/1, all on `devel-20261015015811-721cab8`, whose source still writes both fields.
-The Action Service migration runner verifies schema against ORM metadata, so mapping removal and the
-column-drop migration must land together only after the writer-free image has replaced those pods in
-both environments.
+**Candidate; the writer-free Action Service image `devel-20261015233822-b8b2ba1` is Ready in testing
+(1/1) and staging (2/2), 2026-10-15 UTC.** The ORM still selects both unused columns by default.
+Mark them deferred while retaining their mappings, then wait for that image in both environments
+before dropping them. This read-removal rollout keeps existing replicas compatible while the
+migration runner still requires exact schema/model agreement.
 
 ### `ACTION_EXECUTION_AUDIT_COLUMNS_DROP` — drop retired reconciliation columns
 
-**Blocked on** `ACTION_EXECUTION_AUDIT_WRITER_RETIRE` reaching both testing and staging. In a
+**Blocked on** `ACTION_EXECUTION_AUDIT_COLUMNS_READ_RETIRE` reaching both testing and staging. In a
 separate PR, add a new migration that drops `reconciliation_source` and `reconciled_by`, then remove
-their ORM mappings. Preserve `reconciled_at` and the late-completion behavior.
+their deferred ORM mappings. Preserve `reconciled_at` and the late-completion behavior.
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
@@ -1296,6 +1281,8 @@ flowchart TD
     CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_INVENTORY_AUTHORITY_DESIGN
     RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state caller remains .-> RUNNER_LIST_SESSIONS_RETIRE[Conditional: retire Runner.ListSessions]
     CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPENING_ATTACHED_RETIRE[Candidate: remove the unused persisted opening snapshot]
+    DISPATCHER_OPENING_ATTACHED_RETIRE -->|Writer-free Dispatcher image Ready in testing and staging| DISPATCHER_OPENING_ATTACHED_READ_RETIRE[Blocked: stop selecting the retired snapshot]
+    DISPATCHER_OPENING_ATTACHED_READ_RETIRE -->|Deferred-reader image Ready in testing and staging| DISPATCHER_OPENING_ATTACHED_COLUMN_DROP[Blocked: drop the retired snapshot column]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: retire redundant Gateway APIs; preserve registry for current resume checks]
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
@@ -1358,17 +1345,27 @@ removing the runner method/messages and helpers via normal generation. The Gatew
 even if a narrowly justified runner live read remains; record that decision and remove this conditional
 node if so.
 
-### `DISPATCHER_OPENING_ATTACHED_RETIRE` — remove the unused persisted opening snapshot
+### `DISPATCHER_OPENING_ATTACHED_RETIRE` — remove the unused opening snapshot from the API and writer
 
-**Candidate; identified by `CONTROL_SURFACE_RETIREMENT_AUDIT`.** `SessionOpening.attached` is written
-from the successful runner `OpenSession` response and persisted in the Dispatcher's
-`session_opening.attached` column. The app and frontend expose its shape, but no production reader
-uses it; the only app-side reader is the test helper `wait_for_session_admission`. The field is a
-last opening snapshot, not a live inventory or a source of retained Thread history. Confirm no
-external or pinned client depends on it, then remove the proto/OpenAPI shape and test-helper fallback
-together. Review whether any operational use justifies retaining the stored snapshot; if not, remove
-the column with a new migration after the reader rollout, preserving each opening's Session ID,
-Sandbox identity, state, reason and timestamps.
+**Candidate; identified by `CONTROL_SURFACE_RETIREMENT_AUDIT`.** The Dispatcher copies the runner's
+`OpenSession` snapshot into `SessionOpening` and its database row. The app's HTTP response forwards
+the protobuf shape, but the pinned app image reads only opening state and reason; the frontend type
+had an unused `attached` property. The only semantic consumer was the acceptance client, now moved to
+History's Thread projection. Remove the response field and stop persisting the snapshot, while
+keeping its database mapping until the writer-free Dispatcher image is Ready in both environments.
+
+### `DISPATCHER_OPENING_ATTACHED_READ_RETIRE` — stop selecting the unused opening snapshot column
+
+**Blocked on** `DISPATCHER_OPENING_ATTACHED_RETIRE` reaching both testing and staging. Defer the
+mapped column while retaining it in metadata; Dispatcher reads otherwise select every mapped column.
+Wait for the deferred-reader image in both environments before dropping the column, because the
+migration runs before old pods drain during a rolling deployment.
+
+### `DISPATCHER_OPENING_ATTACHED_COLUMN_DROP` — drop the unused opening snapshot column
+
+**Blocked on** `DISPATCHER_OPENING_ATTACHED_READ_RETIRE` reaching both testing and staging. In a
+separate PR, add a migration to drop `session_opening.attached` and remove the deferred mapping.
+Preserve each opening's Session ID, Sandbox identity, state, reason and timestamps.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
@@ -1500,7 +1497,6 @@ flowchart LR
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
     CLAUDE_STREAM_SESSION_MULTIPLEXING[Held: Claude sessions per process]
     HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
-    HTTP_JSON_FACADE_TOOLING_SPIKE[In flight: prove gRPC-Gateway integration]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
     RUNNER_DELIVERY_INGRESS_ACCEPTANCE[Candidate: test queued delivery and flush with real ingress, without History]
@@ -1514,7 +1510,6 @@ flowchart LR
     CLAUDE_STREAM_SESSION_MULTIPLEXING -. this lane's findings inform .-> HARNESS_IDENTITY_DESIGN
     NATIVE_SUBAGENT_EXPOSURE -. child identity evidence informs .-> HARNESS_IDENTITY_DESIGN
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
-    HTTP_JSON_FACADE_TOOLING_SPIKE --> SERVICE_API_TRANSPORT_MIGRATIONS
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
     K3S_VM_IMAGE -. real VM path prerequisite .-> CNPG_FREE_K3S_INTEGRATION_TIER
 ```
@@ -1664,23 +1659,9 @@ and its caller rollout. Only then may the separate operator-approved `GATEWAY_DA
 Neither the destination design nor this node deletes retained History or the Kubernetes
 UID-to-connection locator.
 
-### `HTTP_JSON_FACADE_TOOLING_SPIKE` — prove upstream grpc-gateway integration with Bazel
-
-**In flight; PR [#10662](https://github.com/agentydragon/ducktape/pull/10662).** Under
-`agentplane/x/grpc_gateway/`, prove the upstream `go_proto_compiler` path using `go_proto_library`:
-generate Go at Bazel build time, without checked-in generated source or custom packaging rules. A
-bounded unary method and server-streaming watch exercise ProtoJSON/query mapping, Authorization
-propagation and actual service rejection, unary status mapping versus terminal stream errors,
-`Grpc-Timeout` propagation, and HTTP-to-gRPC cancellation. Keep full duplex on native gRPC; reconnect,
-resume and durable subscriptions remain application-owned.
-
-Exit when the Bazel test passes on RBE and review confirms the spike stays isolated from production
-APIs, deployments and authorization decisions. Until then, keep this node in flight; report any
-BuildBuddy connectivity blocker in the PR.
-
 ### `SERVICE_API_TRANSPORT_MIGRATIONS` — stage service and interface migrations independently
 
-**Blocked on `HTTP_JSON_FACADE_TOOLING_SPIKE` and a reviewed contract for each service.** Move
+**Blocked on a reviewed contract for each service.** Move
 internal service interfaces to gRPC and expose their generated HTTP/JSON facades incrementally, one
 service/interface at a time. Each migration needs its own caller inventory, authorization and
 behavior-preservation review, tests, rollout and rollback plan. Do not turn the approved direction

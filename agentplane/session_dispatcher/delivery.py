@@ -12,7 +12,7 @@ from kubernetes_asyncio.client import ApiException
 from sqlalchemy.exc import SQLAlchemyError
 from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception_type, wait_exponential
 
-from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.proto import event_log_pb2
 from agentplane.sandbox_resource import Sandbox
 from agentplane.sandboxes.errors import (
     SandboxModeUnknownError,
@@ -551,14 +551,14 @@ class Delivery:
                 return
             self._clear_retry(key)
             try:
-                attached = await self.runner.open_session(
+                await self.runner.open_session(
                     opening.sandbox_name, opening.session_id, opening.spec, opening.setup_script
                 )
             except grpc.aio.AioRpcError as error:
                 await self._refuse_opening(opening, incarnation, owner, error)
                 return
             self._attempts.pop(key, None)
-            await self._settle_opening(opening, owner, DeliveryState.RUNNER_ADMITTED, attached=attached)
+            await self._settle_opening(opening, owner, DeliveryState.RUNNER_ADMITTED)
         finally:
             self._delivering.discard(opening.session_id)
             self._changed.set()
@@ -588,22 +588,11 @@ class Delivery:
                 )
 
     async def _settle_opening(
-        self,
-        opening: SessionOpening,
-        owner: SandboxOwner,
-        to: DeliveryState,
-        *,
-        reason: str | None = None,
-        attached: runner_pb2.Attached | None = None,
+        self, opening: SessionOpening, owner: SandboxOwner, to: DeliveryState, *, reason: str | None = None
     ) -> None:
         await self._retry_storage(
             lambda: self.store.settle_opening(
-                opening.session_id,
-                owner=owner,
-                from_states={DeliveryState.DELIVERING_TO_RUNNER},
-                to=to,
-                reason=reason,
-                attached=attached,
+                opening.session_id, owner=owner, from_states={DeliveryState.DELIVERING_TO_RUNNER}, to=to, reason=reason
             )
         )
 

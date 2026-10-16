@@ -59,7 +59,6 @@ py_library(
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:runner_pb2",
         "//agentplane/sandboxes:errors",
         "//agentplane/sandboxes:inventory",
         "@pypi//grpcio",

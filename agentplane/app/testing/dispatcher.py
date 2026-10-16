@@ -74,8 +74,6 @@ class GatewayBackedDispatcher(SessionDispatcherClient):
         opening = session_dispatcher_pb2.SessionOpening(
             session_id=created.session_id, sandbox=sandbox, state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
         )
-        if created.HasField("attached"):
-            opening.attached.CopyFrom(created.attached)
         self.openings[created.session_id] = opening
         return opening
 

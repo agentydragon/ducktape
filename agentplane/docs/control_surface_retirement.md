@@ -34,6 +34,23 @@ the current UID, without checking the Session's prior association. The latter re
 contract to review; History's namespace/name is not an incarnation identity. Preserve the Gateway
 UID/owner checks and do not infer a prior association from a same-name Sandbox.
 
+## `SessionOpening.attached`
+
+`SessionOpening.attached` was copied from the runner's `OpenSession` response into the Dispatcher
+row and echoed by `GetSessionOpening`. The app allowlist also includes Notifications, but no
+Notification code calls this RPC; the app and frontend use opening state and reason, and the current
+testing and staging app images (`devel-20261015233545-b8b2ba1`, Ready 1/1 and 2/2) have no production
+read of `attached`. The frontend's optional field was unused. The only semantic reader was the
+acceptance client's `wait_for_session_admission`; acceptance now reads the folded History Thread for
+model, harness and cursor state. Runner `Attached` remains used by runner control and History and is
+unrelated to this response snapshot.
+
+Remove the `SessionOpening` response field and stop writing or echoing the snapshot. Keep the
+nullable database mapping through the writer-free rollout. Then defer its ORM load and wait for
+that reader-free image in both environments before dropping the column by a separate migration;
+the migration starts before old pods drain in a rolling deployment. Opening identity, state, reason
+and timestamps remain.
+
 ## Reviewed surfaces with distinct semantics
 
 - Dispatcher per-operation methods are sender-facing durable admission and delivery-state reads;
@@ -72,7 +89,9 @@ The Session-control configuration paths also have distinct readers:
   the identity contract is resolved. `Command` remains shared by Dispatcher storage and the runner's
   `CommandAdmitted` event; retiring `DeliverCommand` does not retire the message. No other
   control-path field in the inspected `sandboxes`, `runner_gateway`, `session_dispatcher`,
-  `history_service`, and `runner_control` schemas was confirmed safe to remove.
+  `history_service`, and `runner_control` schemas was confirmed safe to remove. `SessionOpening.attached`
+  is the exception described above; the other inspected fields remain live or require a separate
+  caller/identity decision.
 
 Before `CONTROL_SURFACE_RETIREMENT_AUDIT` is complete, trace field producers/readers and deployment
 config for any newly identified candidate across generated clients, fixtures, guest wheels and stored

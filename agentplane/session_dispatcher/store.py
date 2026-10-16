@@ -370,7 +370,6 @@ class DispatchStore:
                 setup_script=setup_script,
                 state=DeliveryState.QUEUED_IN_DISPATCHER,
                 reason=None,
-                attached=None,
                 created_at=now,
                 updated_at=now,
             )
@@ -570,7 +569,6 @@ class DispatchStore:
         from_states: Collection[DeliveryState],
         to: DeliveryState,
         reason: str | None = None,
-        attached: runner_pb2.Attached | None = None,
     ) -> SessionOpening | None:
         """Move an opening out of one of `from_states`; None when it is in none of them."""
         async with self.sessions.begin() as session:
@@ -586,7 +584,7 @@ class DispatchStore:
             )
             if opening is None:
                 return None
-            opening.state, opening.reason, opening.attached = to, reason, attached
+            opening.state, opening.reason = to, reason
             opening.updated_at = datetime.now(UTC)
             await notify(session, Channel.DISPATCH)
             return opening

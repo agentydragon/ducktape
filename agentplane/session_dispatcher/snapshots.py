@@ -54,8 +54,6 @@ def describe_opening(row: SessionOpening) -> session_dispatcher_pb2.SessionOpeni
         state=_STATES[row.state],
         reason=row.reason,
     )
-    if row.attached is not None:
-        opening.attached.CopyFrom(row.attached)
     opening.created_at.FromDatetime(row.created_at)
     opening.updated_at.FromDatetime(row.updated_at)
     return opening

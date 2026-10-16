@@ -933,7 +933,6 @@ async def test_a_session_is_opened_before_its_commands_once_the_sandbox_is_ready
     set_sandbox(cluster, ready=True)
     await wait_for(store, "first", DeliveryState.RUNNER_ADMITTED)
     assert runner[0].calls == [("OpenSession", SESSION), ("SubmitInput", "first")]
-    assert (await store.get_opening(SESSION)).attached is not None
 
 
 async def test_a_lost_opening_reply_is_resolved_by_an_identical_retry(
@@ -944,7 +943,6 @@ async def test_a_lost_opening_reply_is_resolved_by_an_identical_retry(
     await open_session(store, sandboxes)
     await wait_for_opening(store, DeliveryState.RUNNER_ADMITTED)
     assert runner[0].calls == [("OpenSession", SESSION), ("OpenSession", SESSION)]
-    assert (await store.get_opening(SESSION)).attached is not None
 
 
 @pytest.mark.parametrize("conflict", ["spec", "setup_script"])

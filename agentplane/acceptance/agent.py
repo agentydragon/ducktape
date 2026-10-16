@@ -140,9 +140,9 @@ class Agent:
         session_id = uuid4()
         async for attempt in runner_startup_retries():
             with attempt:
-                attachment = await client.create_session(sandbox, session_id, overrides=MessageToDict(spec))
-                thread = await client.thread(UUID(attachment.attached.session_id))
-                return cls(client, thread_id=thread.id, cursor=attachment.last_cursor)
+                await client.create_session(sandbox, session_id, overrides=MessageToDict(spec))
+                thread = await client.wait_for_thread_projection(session_id, timeout_s=RUNNER_ANSWERS_SECONDS)
+                return cls(client, thread_id=thread.id, cursor=0)
         raise AssertionError("unreachable: reraise=True either returns an agent or raises")
 
     async def run(self, prompt: str) -> Turn:

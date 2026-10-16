@@ -546,7 +546,6 @@ it("opens the client-minted Session ID returned by the opening", async () => {
       sessionId: publicId,
       sandbox: "startup-test",
       state: "DELIVERY_STATE_RUNNER_ADMITTED",
-      attached: { sessionId: publicId },
     });
   });
   const onOpenThread = await render(sessions);

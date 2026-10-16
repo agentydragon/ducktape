@@ -68,13 +68,9 @@ class _StreamDroppedError(Exception):
 
 @dataclass(frozen=True)
 class Attachment:
-    """What an admitted Session opening answers: its runner snapshot, when available."""
+    """The runner's snapshot returned by a direct resume."""
 
     attached: runner_pb2.Attached
-
-    @property
-    def last_cursor(self) -> int:
-        return self.attached.last_cursor
 
 
 class Client:
@@ -179,7 +175,7 @@ class Client:
         *,
         overrides: dict[str, object] | None = None,
         setup_script: str | None = None,
-    ) -> Attachment:
+    ) -> None:
         """Open a Session from configured preset defaults plus proto-JSON overrides.
 
         Retrying with the same Session ID and overrides answers the same Session.
@@ -214,17 +210,12 @@ class Client:
         *,
         opening: session_dispatcher_pb2.SessionOpening,
         timeout_s: float = REQUEST_SECONDS,
-    ) -> Attachment:
+    ) -> None:
         """Wait for the runner admission behind an already accepted Session opening."""
         deadline = time.monotonic() + timeout_s
         while True:
             if opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED:
-                attached = (
-                    opening.attached
-                    if opening.HasField("attached")
-                    else runner_pb2.Attached(session_id=opening.session_id)
-                )
-                return Attachment(attached)
+                return
             if opening.state in (
                 session_dispatcher_pb2.DELIVERY_STATE_FAILED,
                 session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
@@ -234,6 +225,24 @@ class Client:
                 raise TimeoutError(f"Session opening {opening.session_id} remained {opening.state}: {opening.reason}")
             await asyncio.sleep(0.2)
             opening = await self.session_opening(name, session_id)
+
+    async def wait_for_thread_feed(self, thread_id: UUID, *, timeout_s: float) -> ThreadView:
+        """Wait until History has folded the runner's first feed announcement into the Thread."""
+        deadline = time.monotonic() + timeout_s
+        while True:
+            try:
+                thread = await self.thread(thread_id)
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code != HTTPStatus.NOT_FOUND:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"Thread {thread_id} was not projected within {timeout_s:g}s") from error
+            else:
+                if thread.feed_status is not None:
+                    return thread
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"Thread {thread_id} received no runner feed within {timeout_s:g}s")
+            await asyncio.sleep(0.2)
 
     async def wait_for_thread_projection(self, thread_id: UUID, *, timeout_s: float) -> ThreadView:
         """Wait for History's projection after runner admission; only a missing row is retried."""

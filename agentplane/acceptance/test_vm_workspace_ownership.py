@@ -34,11 +34,8 @@ async def _run_setup(
     setup_script: str,
 ) -> tuple[str, str]:
     spec = runner_pb2.SessionSpec(harness=harness, cwd=cwd, model=model, reasoning_effort="low")
-    attachment = await client.create_session(
-        sandbox_name, session_id, overrides=MessageToDict(spec), setup_script=setup_script
-    )
-    thread_id = UUID(attachment.attached.session_id)
-    await client.wait_for_thread_projection(thread_id, timeout_s=BOUND_SECONDS)
+    await client.create_session(sandbox_name, session_id, overrides=MessageToDict(spec), setup_script=setup_script)
+    thread_id = session_id
 
     stdout, stderr = bytearray(), bytearray()
     async with asyncio.timeout(BOUND_SECONDS):

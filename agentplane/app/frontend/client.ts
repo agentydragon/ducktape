@@ -61,7 +61,6 @@ export type SessionOpening = {
   sandbox: string;
   state: string;
   reason?: string;
-  attached?: Attached;
 };
 export type Harness = components["schemas"]["Harness"];
 export type ModelOption = components["schemas"]["ModelOption"];

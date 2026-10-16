@@ -186,9 +186,7 @@ message SessionOpening {
   string sandbox_uid = 3;
   DeliveryState state = 4;
   optional string reason = 5;
-  // The runner's snapshot of the opened Session, absent when the runner already had it and confirmed it
-  // by listing.
-  optional agentplane.proto.runner.Attached attached = 6;
+  reserved 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
 }

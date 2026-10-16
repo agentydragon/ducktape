@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import time
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest_bazel
 
 from agentplane.acceptance.agent import RUNNER_ANSWERS_SECONDS, Agent
 from agentplane.acceptance.conftest import SANDBOX_READY_SECONDS, Sandboxes, wait_until_running
 from agentplane.app.testing.client import Client
-from agentplane.proto import runner_pb2, session_dispatcher_pb2
+from agentplane.proto import session_dispatcher_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode
 
@@ -52,20 +52,15 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
         opening.sandbox,
         opening.created_at,
     )
-    first = await client.wait_for_session_admission(
-        view.name, first_id, opening=opening, timeout_s=RUNNER_ANSWERS_SECONDS
-    )
-    assert (first.attached.spec.harness, first.attached.spec.model, first.attached.spec.reasoning_effort) == (
-        runner_pb2.HARNESS_CODEX,
+    await client.wait_for_session_admission(view.name, first_id, opening=opening, timeout_s=RUNNER_ANSWERS_SECONDS)
+    first = await client.wait_for_thread_feed(first_id, timeout_s=RUNNER_ANSWERS_SECONDS)
+    assert (first.harness, first.model, first.reasoning_effort) == (
+        Harness.CODEX,
         preset.session_defaults.model,
         preset.session_defaults.reasoning_effort,
     )
-    # The Runner Gateway prepends its configured platform guidance to every session. The explicit
-    # Session instructions remain the exact final block and are not stored on the Sandbox.
-    assert first.attached.spec.instructions.rsplit("\n\n", 1)[-1] == INSTRUCTIONS
 
-    thread = await client.wait_for_thread_projection(UUID(first.attached.session_id), timeout_s=RUNNER_ANSWERS_SECONDS)
-    agent = Agent(client, thread_id=thread.id, cursor=first.last_cursor)
+    agent = Agent(client, thread_id=first.id, cursor=first.last_cursor)
     turn = await agent.run(
         "Use a shell tool to read /state/workspaces/.agentplane-public-coder-ready, then briefly report its exact content."
     )
@@ -107,18 +102,20 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     assert resumed.uid == view.uid
     assert resumed.pod is not None
     assert resumed.pod.uid != previous_incarnation
-    suspended_attachment = await client.wait_for_session_admission(
+    await client.wait_for_session_admission(
         view.name, suspended_id, opening=suspended_opening, timeout_s=RUNNER_ANSWERS_SECONDS
     )
-    await client.wait_for_thread_projection(
-        UUID(suspended_attachment.attached.session_id), timeout_s=RUNNER_ANSWERS_SECONDS
-    )
+    await client.wait_for_thread_projection(suspended_id, timeout_s=RUNNER_ANSWERS_SECONDS)
 
-    inherited = await client.create_session(view.name, uuid4())
+    inherited_id = uuid4()
+    await client.create_session(view.name, inherited_id)
+    inherited = await client.wait_for_thread_feed(inherited_id, timeout_s=RUNNER_ANSWERS_SECONDS)
     local_model = "acceptance-local-model-override"
-    local = await client.create_session(view.name, uuid4(), overrides={"model": local_model})
-    assert inherited.attached.spec.model == preset.session_defaults.model
-    assert local.attached.spec.model == local_model
+    local_id = uuid4()
+    await client.create_session(view.name, local_id, overrides={"model": local_model})
+    local = await client.wait_for_thread_feed(local_id, timeout_s=RUNNER_ANSWERS_SECONDS)
+    assert inherited.model == preset.session_defaults.model
+    assert local.model == local_model
 
 
 if __name__ == "__main__":

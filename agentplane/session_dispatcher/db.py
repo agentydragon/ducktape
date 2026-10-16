@@ -68,6 +68,7 @@ class SessionOpening(Base):
     setup_script: Mapped[str | None]
     state: Mapped[DeliveryState] = mapped_column(StringBackedStrEnumColumn(DeliveryState))
     reason: Mapped[str | None]
+    # CLEANUP(added 2026-10-15): Drop after writer-free Session Dispatcher images are Ready in testing and staging.
     attached: Mapped[runner_pb2.Attached | None] = mapped_column(ProtobufColumn(runner_pb2.Attached))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

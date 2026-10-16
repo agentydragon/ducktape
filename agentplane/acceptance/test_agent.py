@@ -11,10 +11,10 @@ import pytest
 import pytest_bazel
 
 from agentplane.acceptance import conftest as fixtures
-from agentplane.acceptance.agent import Agent
+from agentplane.acceptance.agent import RUNNER_ANSWERS_SECONDS, Agent
 from agentplane.acceptance.conftest import SandboxNotReadyError, suspend_and_delete
 from agentplane.app.live import SandboxesSnapshot
-from agentplane.app.testing.client import Attachment, Client
+from agentplane.app.testing.client import Client
 from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 from agentplane.sandbox_resource import OperatingMode
 
@@ -113,11 +113,7 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
         "runner is not listening", request=request, response=httpx.Response(503, request=request)
     )
     client = create_autospec(Client, instance=True)
-    client.create_session.side_effect = [
-        unavailable,
-        Attachment(runner_pb2.Attached(session_id="00000000-0000-4000-8000-000000000001", last_cursor=7)),
-    ]
-    client.thread.return_value = Mock(id=UUID("00000000-0000-4000-8000-000000000001"))
+    client.create_session.side_effect = [unavailable, None]
 
     await Agent.open(client, sandbox="test-sandbox", harness=runner_pb2.HARNESS_CODEX, model="test-model")
 
@@ -126,7 +122,7 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
     assert first.args[0] == "test-sandbox"
     assert isinstance(first.args[1], UUID)
     assert first.kwargs["overrides"]["model"] == "test-model"
-    client.thread.assert_awaited_once_with(UUID("00000000-0000-4000-8000-000000000001"))
+    client.wait_for_thread_projection.assert_awaited_once_with(first.args[1], timeout_s=RUNNER_ANSWERS_SECONDS)
 
 
 @pytest.mark.parametrize("status", [409, 500, 502])
