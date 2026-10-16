@@ -30,9 +30,8 @@ _CLUSTER_NAME = "postgres"
 
 # The logical databases services own on the shared Cluster; the initdb-owned
 # "app"/trajectory database needs no Database/role of its own.
-# `sandbox_commands` holds the Runner Gateway's command admission; `sandbox_service` is the
-# History Service's database, still under its old name: renaming it moves the data.
-_ROLE_NAMES = ["actions", "egress", "notifications", "sandbox_commands", "sandbox_service", "session_dispatcher"]
+# `sandbox_service` is the History Service database; renaming it moves the data.
+_ROLE_NAMES = ["actions", "egress", "notifications", "sandbox_service", "session_dispatcher"]
 _ELECTRIC_ROLE = "electric"
 
 
@@ -114,13 +113,15 @@ class Db(Construct):
                     for role in _ROLE_NAMES
                 ]
                 + [
+                    # Remove this tombstone after both environments report the role absent.
+                    ClusterSpecManagedRoles(name="sandbox_commands", ensure=ClusterSpecManagedRolesEnsure.ABSENT),
                     ClusterSpecManagedRoles(
                         name=_ELECTRIC_ROLE,
                         ensure=ClusterSpecManagedRolesEnsure.PRESENT,
                         login=True,
                         replication=True,
                         password_secret=ClusterSpecManagedRolesPasswordSecret(name="postgres-electric"),
-                    )
+                    ),
                 ]
             ),
         )
@@ -133,9 +134,5 @@ class Db(Construct):
                 cluster=DatabaseSpecCluster(name=cluster.name),
                 name=role,
                 owner=role,
-                # CLEANUP(added 2026-10-11): Delete the exception once `sandbox_commands` is renamed in
-                #   place for the Runner Gateway; removing its Database then must not drop the renamed data.
-                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN
-                if role == "sandbox_commands"
-                else DatabaseSpecDatabaseReclaimPolicy.DELETE,
+                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.DELETE,
             )
