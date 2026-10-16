@@ -1334,9 +1334,10 @@ Gateway image to all replicas in testing and staging before the separate databas
 
 ### `GATEWAY_DATABASE_DROP` — remove Gateway's database and CNPG-managed resources
 
-**Approved data-drop scope, 2026-10-16; blocked on the registry-free Gateway rollout in both
-environments. Separate PR, merged by the operator.** Drop the `session` table by dropping its
-`sandbox_commands` database once all readers/writers are gone. Remove its CNPG `Database` resource,
+**Approved data-drop scope, 2026-10-16. The operator accepts a brief outage while the
+registry-free Gateway image rolls out; its rollout no longer blocks this drop. Separate PR, merged
+by the operator.** Drop the `session` table by dropping its
+`sandbox_commands` database; old Gateway images may fail until replaced by the registry-free image. Remove its CNPG `Database` resource,
 managed role, generated credentials/Secret, migration init container, database URL manifest setting,
 and obsolete migration/image publication wiring. Verify the CNPG Database reclaim policy and actual
 SQL database/role deletion rather than assuming pruning the CR deletes the data. After manifests
