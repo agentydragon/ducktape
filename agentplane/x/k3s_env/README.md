@@ -72,15 +72,15 @@ Command: `bbr --invocation-id-file=/tmp/k3s-go-profile.invocation test --test_ou
 records the successful uncached test action and publishes `test.log`, `test.xml`, `k3s.log`,
 `lifecycle.prof`, and `lifecycle_profile.txt` as test outputs.
 
-| Measurement | Result |
-| ----------- | -----: |
-| BuildBuddy invocation elapsed | 442.216 s |
-| Bazel test target | 368.5 s |
-| Pytest session | 293.006 s |
-| cProfile total | 294.819 s |
-| `K3s.import_images` cumulative | 148.406 s |
-| `K3s.start` cumulative | 20.923 s |
-| `K3s.kubectl` cumulative, 50 calls | 70.889 s |
+| Measurement                        |    Result |
+| ---------------------------------- | --------: |
+| BuildBuddy invocation elapsed      | 442.216 s |
+| Bazel test target                  |   368.5 s |
+| Pytest session                     | 293.006 s |
+| cProfile total                     | 294.819 s |
+| `K3s.import_images` cumulative     | 148.406 s |
+| `K3s.start` cumulative             |  20.923 s |
+| `K3s.kubectl` cumulative, 50 calls |  70.889 s |
 
 `import_images` is the dominant phase isolated by this profile. Within it, `tarfile.add` accounts
 for 73.064 s of cumulative streaming time, which includes pipe I/O and backpressure and is not CPU
