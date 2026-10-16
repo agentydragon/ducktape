@@ -169,9 +169,6 @@ class SandboxRunner:
             destination=sandboxes_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
         )
         response = await self.control.held_unary(
-            self.destination,
-            lambda stub: stub.ResumeSession,
-            request,
-            timeout_s=self.control.lifecycle_timeout_s,
+            self.destination, lambda stub: stub.ResumeSession, request, timeout_s=self.control.lifecycle_timeout_s
         )
         return response.attached

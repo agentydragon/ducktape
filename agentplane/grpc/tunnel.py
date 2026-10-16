@@ -187,9 +187,7 @@ async def relay(call: grpc_tunnel_pb2.Call, server: grpc.aio.Channel) -> grpc_tu
         passthrough: grpc.aio.UnaryUnaryMultiCallable[bytes, bytes] = server.unary_unary(call.method)
         response = await passthrough(call.request, timeout=timeout)
     except grpc.aio.AioRpcError as error:
-        reply = grpc_tunnel_pb2.Reply(
-            call_id=call.call_id, code=error.code().value[0], details=error.details() or ""
-        )
+        reply = grpc_tunnel_pb2.Reply(call_id=call.call_id, code=error.code().value[0], details=error.details() or "")
         for key, value in error.trailing_metadata() or ():
             item = reply.trailing_metadata.add(key=key)
             if isinstance(value, bytes):

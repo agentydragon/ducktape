@@ -163,9 +163,7 @@ async def test_tunnel_end_marks_unanswered_call_as_outcome_unknown() -> None:
 
 async def test_tunnel_preserves_upstream_status_metadata() -> None:
     metadata = grpc.aio.Metadata(("x-runner-detail", "preserved"), ("x-runner-bin", bytes((0, 255))))
-    upstream = grpc.aio.AioRpcError(
-        grpc.StatusCode.UNAVAILABLE, grpc.aio.Metadata(), metadata, "runner unavailable"
-    )
+    upstream = grpc.aio.AioRpcError(grpc.StatusCode.UNAVAILABLE, grpc.aio.Metadata(), metadata, "runner unavailable")
 
     class FailingRunnerCall:
         async def __call__(self, *_args: object, **_kwargs: object) -> bytes:
