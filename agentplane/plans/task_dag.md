@@ -396,6 +396,12 @@ Two things this must settle rather than assume: the characterization matrix in
 discovered child has no Sandbox, so read-only addressability depends on `THREAD_READ_POLICY_DESIGN`
 and `THREAD_CREATE_POLICY` — a child is not "just another Session" for authorization purposes.
 
+**Evidence TODO:** Characterize the pinned Claude CLI's reported `--forward-subagent-text` flag:
+whether it is accepted, what text/events it forwards and to which stream, whether stable native
+child IDs and parent links accompany them, and whether any child can be addressed or controlled
+independently. Forwarded text alone does not establish attachable Agentplane child Sessions; do not
+enable the flag in the runner until its actual behavior and the desired projection are reviewed.
+
 **Also in scope: retire the remnants of the dictated model.** The refactor moved Session declaration to
 the runner, but the old shape is still load-bearing: `GATEWAY_SESSION_REGISTRY_RETIRE` records that
 `session_registry.py` and its rows survive because Gateway `ResumeSession` still reads them, and that
