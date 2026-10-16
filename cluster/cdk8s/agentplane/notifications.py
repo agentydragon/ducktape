@@ -87,7 +87,6 @@ class Notifications(Construct):
                     "token_file": "/var/run/secrets/notifications/actions",
                 },
                 "runner_gateway": {
-                    "target": f"{gateway.fqdn}:{gateway.port.number}",
                     "control_target": gateway_control_target,
                     "token_file": "/var/run/secrets/notifications/gateway",
                 },

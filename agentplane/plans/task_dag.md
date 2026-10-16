@@ -1300,9 +1300,7 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 ```mermaid
 flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
-    NOTIFICATION_GATEWAY_TARGET_MANIFEST_RETIRE[Candidate: remove unused Notifications API target]
     NOTIFICATION_GATEWAY_TARGET_READER_RETIRE[Blocked: remove unused Notifications setting after manifest rollout]
-    NOTIFICATION_GATEWAY_TARGET_MANIFEST_RETIRE -->|Manifest-free image Ready in testing and staging| NOTIFICATION_GATEWAY_TARGET_READER_RETIRE
     DISPATCHER_OPENING_ATTACHED_READ_RETIRE[Candidate: unmap the retired snapshot]
     DISPATCHER_OPENING_ATTACHED_READ_RETIRE -->|Unmapped-reader image Ready in testing and staging| DISPATCHER_OPENING_ATTACHED_COLUMN_DROP[Blocked: drop the retired snapshot column]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
@@ -1322,20 +1320,12 @@ HTTP/client, settings, deployment and guest-wheel consumers. Live `Runner.ListSe
 needed by app archive/native resume and Notification membership, so its conditional retirement
 node is removed. This does not remove the separate destination-authority decision in section 16.
 
-### `NOTIFICATION_GATEWAY_TARGET_MANIFEST_RETIRE` — remove the unused Gateway API target
-
-**Candidate; rollout verified 2026-10-16 UTC.** All Notification replicas run
-`devel-20261016020216-6ec9015`, testing 1/1 and staging 2/2 Ready with current observed generations.
-That source accepts an omitted `target` and has no runtime reader. Both live
-`notifications-settings` ConfigMaps still supply the target; its Python field cannot be removed yet.
-`RunnerGatewaySettings.target` is optional and unread by Notification runtime, but
-`cluster/cdk8s/agentplane/notifications.py` still emits `runner_gateway.target`. Remove that
-manifest value and verify the resulting image/config rollout in both environments. Keep the
-per-Sandbox `control_target`, token and request timeout used for live membership checks.
-
 ### `NOTIFICATION_GATEWAY_TARGET_READER_RETIRE` — reject the removed setting
 
-**Blocked on `NOTIFICATION_GATEWAY_TARGET_MANIFEST_RETIRE` being Ready in both environments.**
+**Blocked on manifests without `runner_gateway.target` being reconciled in testing and staging.**
+The accepting Notification image `devel-20261016020216-6ec9015` was verified Ready on all replicas
+2026-10-16 UTC (testing 1/1, staging 2/2), permitting manifest removal. Verify both live
+`notifications-settings` ConfigMaps omit the key before deleting its strict settings reader.
 Delete the accepted-unused `RunnerGatewaySettings.target` field and its stale settings test/docs.
 Unknown settings are forbidden, so do not remove the reader before all deployed manifests stop
 supplying the key. This cleanup is independent of Gateway API-wrapper retirement.

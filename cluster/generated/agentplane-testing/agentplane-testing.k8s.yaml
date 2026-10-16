@@ -5295,7 +5295,6 @@ data:
       url: http://actions.agentplane-testing.svc.cluster.local:8080
       token_file: /var/run/secrets/notifications/actions
     runner_gateway:
-      target: runner-gateway.agentplane-testing.svc.cluster.local:8080
       control_target: "{sandbox}-control.{namespace}.svc:8080"
       token_file: /var/run/secrets/notifications/gateway
     history_service:
