@@ -4,6 +4,11 @@ A process that runs one native harness per session, Claude Code or Codex, and ex
 through one protocol, over the control stream and Event ingress it dials. The contract is in <SPEC.md>; the wire definition is
 [`agentplane/proto/runner.proto`](../proto/runner.proto).
 
+The deployment renders `platform_instructions.j2` with concrete service URLs; the runner appends
+the Sandbox/Session notification destination and caller's assignment. Keep the standing prompt to
+platform orientation and essential constraints. Detailed workflows live behind the independent
+services' `/llms.txt` indexes, so every Sandbox runtime can discover the deployed guides on demand.
+
 ```sh
 bbr test //agentplane/runner/...
 ```

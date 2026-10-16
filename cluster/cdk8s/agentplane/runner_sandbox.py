@@ -11,7 +11,6 @@ so image-pins/ covers them too.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any
 
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
@@ -51,9 +50,6 @@ _WORKSPACE_VOLUME_NAME = "workspace"
 _WORKSPACE_DIR = f"{_STATE_DIR}/workspaces"
 _BUILDBUDDY_SECRET = "buildbuddy-api-key"
 _BUILDBUDDY_MOUNT = "/run/buildbuddy"
-KUBERNETES_ADMIN_INSTRUCTIONS = (
-    Path(__file__).with_name("kubernetes_admin_instructions.md").read_text(encoding="utf-8").strip()
-)
 # The deployment-wide instructions every Session starts with, as a ConfigMap the runner container mounts.
 _PLATFORM_INSTRUCTIONS_CONFIG_MAP = "runner-platform-instructions"
 _PLATFORM_INSTRUCTIONS_KEY = "platform-instructions.md"
@@ -66,12 +62,11 @@ _LAUNCH_FILE = "/run/agentplane/sandbox/launch.json"
 def platform_instructions(env: Environment) -> str:
     """The complete deployment-wide prompt: shared guidance with this environment's service URLs."""
     actions_service = actions.service(env.namespace)
-    shared = render_platform_instructions(
+    return render_platform_instructions(
         egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",
         actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
         notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
     )
-    return f"{shared}\n\n{KUBERNETES_ADMIN_INSTRUCTIONS}"
 
 
 def pods(namespace: str) -> Pods:
