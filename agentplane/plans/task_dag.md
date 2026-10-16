@@ -1300,7 +1300,6 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 ```mermaid
 flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
-    NOTIFICATION_GATEWAY_TARGET_READER_RETIRE[Blocked: remove unused Notifications setting after manifest rollout]
     DISPATCHER_OPENING_ATTACHED_COLUMN_DROP[Blocked: drop snapshot after unmapped reader rollout]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[In progress: remove legacy Gateway wrappers]
@@ -1318,16 +1317,6 @@ The [completed control-surface audit](../docs/control_surface_retirement.md) rec
 HTTP/client, settings, deployment and guest-wheel consumers. Live `Runner.ListSessions` remains
 needed by app archive/native resume and Notification membership, so its conditional retirement
 node is removed. This does not remove the separate destination-authority decision in section 16.
-
-### `NOTIFICATION_GATEWAY_TARGET_READER_RETIRE` — reject the removed setting
-
-**Blocked on manifests without `runner_gateway.target` being reconciled in testing and staging.**
-The accepting Notification image `devel-20261016020216-6ec9015` was verified Ready on all replicas
-2026-10-16 UTC (testing 1/1, staging 2/2), permitting manifest removal. Verify both live
-`notifications-settings` ConfigMaps omit the key before deleting its strict settings reader.
-Delete the accepted-unused `RunnerGatewaySettings.target` field and its stale settings test/docs.
-Unknown settings are forbidden, so do not remove the reader before all deployed manifests stop
-supplying the key. This cleanup is independent of Gateway API-wrapper retirement.
 
 ### `DISPATCHER_OPENING_ATTACHED_COLUMN_DROP` — drop the unused opening snapshot column
 

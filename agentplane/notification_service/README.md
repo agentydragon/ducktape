@@ -45,8 +45,7 @@ unknown keys fail startup. Environment variables override YAML using `__` for ne
 Configuration changes require a service restart.
 
 `actions` contains `url` and `token_file`; `runner_gateway` uses `control_target` and `token_file`
-for per-Sandbox runner live-state checks. Its optional API `target` is accepted but unused while the
-deployment setting is retired. `history_service` and `session_dispatcher` each contain a `target` and
+for per-Sandbox runner live-state checks. `history_service` and `session_dispatcher` each contain a `target` and
 `token_file` (`request_timeout_s` is optional for both). The Dispatcher setting is required. Each service checks its own token audience,
 so each token file holds a token projected for that service. Token paths refer to rotating projected ServiceAccount tokens, not static secrets. Actions rereads its
 token file for each request. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed

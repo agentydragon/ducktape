@@ -17,11 +17,7 @@ from agentplane.notification_service.settings import (
 
 BLOCKS: dict[str, object] = {
     "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
-    "runner_gateway": {
-        "target": "gateway:8080",
-        "control_target": "{sandbox}-control.{namespace}.test:8080",
-        "token_file": "/tokens/gateway",
-    },
+    "runner_gateway": {"control_target": "{sandbox}-control.{namespace}.test:8080", "token_file": "/tokens/gateway"},
     "history_service": {"target": "history:8080", "token_file": "/tokens/history"},
 }
 
@@ -35,7 +31,6 @@ actions:
   url: http://actions
   token_file: /tokens/actions
 runner_gateway:
-  target: gateway:8080
   control_target: "{sandbox}-control.{namespace}.test:8080"
   token_file: /tokens/gateway
 history_service:
@@ -67,7 +62,6 @@ notice_debounce:
     assert settings.notice_debounce == NoticeDebounceSettings(quiet_seconds=3, max_wait_seconds=15)
     assert str(settings.actions.url) == "http://actions/"
     assert settings.actions.token_file == Path("/tokens/actions")
-    assert settings.runner_gateway.target == "gateway:8080"
     assert settings.session_dispatcher == SessionDispatcherSettings(
         target="dispatcher:8080", token_file=Path("/tokens/dispatcher"), request_timeout_s=15
     )
@@ -87,14 +81,6 @@ notice_debounce:
         file.write("unknown_setting: true\n")
     with pytest.raises(ValidationError, match="Extra inputs"):
         Settings(_cli_parse_args=False)
-
-
-def test_unused_gateway_api_target_is_optional_during_rollout(settings_file: Path) -> None:
-    settings_file.write_text(settings_file.read_text().replace("  target: gateway:8080\n", ""))
-
-    settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
-
-    assert settings.runner_gateway.target is None
 
 
 def test_dispatcher_configuration_is_required_and_complete(settings_file: Path) -> None:
