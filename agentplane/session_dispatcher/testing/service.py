@@ -14,6 +14,9 @@ from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.session_dispatcher import main as dispatcher_main
 from agentplane.session_dispatcher.settings import Settings
 
+# gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep @pypi//grpcio
+
 type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
 

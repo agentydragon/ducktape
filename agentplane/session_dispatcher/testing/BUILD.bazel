@@ -40,7 +40,9 @@ py_library(
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/session_dispatcher:main",
         "//agentplane/session_dispatcher:settings",
+        "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
         "@pypi//pytest",
     ],
 )
