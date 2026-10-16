@@ -224,8 +224,9 @@ class TestingNamespaceResourceLimits(Construct):
         # The LimitRange supplies defaults for containers that omit them (the CNPG
         # postgres container declares none); its mutations are applied before quota validation.
         # No per-container minimum: KubeVirt's virt-launcher helper containers request 1m CPU
-        # and 1M memory. The 4Gi container max also caps VM size: KubeVirt v1.8.2 gave a 2Gi
-        # guest's compute container a 4632Mi limit here, which this LimitRange rejected.
+        # and 1M memory. KubeVirt adds launcher overhead to guest requests and, in this
+        # quota-limited namespace, derives a memory limit at twice the resulting request.
+        # Leave room for an 8Gi guest and its helpers; aggregate quota still bounds the namespace.
         k8s.KubeResourceQuota(
             self,
             "resourcequota",
@@ -233,7 +234,7 @@ class TestingNamespaceResourceLimits(Construct):
             spec=k8s.ResourceQuotaSpec(
                 hard={
                     "requests.cpu": k8s.Quantity.from_string("4"),
-                    "requests.memory": k8s.Quantity.from_string("8Gi"),
+                    "requests.memory": k8s.Quantity.from_string("16Gi"),
                     "limits.cpu": k8s.Quantity.from_string("18"),
                     "limits.memory": k8s.Quantity.from_string("28Gi"),
                     "requests.storage": k8s.Quantity.from_string("80Gi"),
@@ -248,7 +249,7 @@ class TestingNamespaceResourceLimits(Construct):
                 limits=[
                     k8s.LimitRangeItem(
                         type="Container",
-                        max={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
+                        max={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("24Gi")},
                         default={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("512Mi")},
                         default_request={
                             "cpu": k8s.Quantity.from_string("100m"),
@@ -257,7 +258,7 @@ class TestingNamespaceResourceLimits(Construct):
                     ),
                     k8s.LimitRangeItem(
                         type="Pod",
-                        max={"cpu": k8s.Quantity.from_string("4"), "memory": k8s.Quantity.from_string("8Gi")},
+                        max={"cpu": k8s.Quantity.from_string("4"), "memory": k8s.Quantity.from_string("24Gi")},
                     ),
                 ]
             ),
