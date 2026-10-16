@@ -16067,5 +16067,217 @@
         "head_sha": "fbcb1f4240eb13d8d6c891ddebdc47003a95490e"
       }
     }
-  ]
+  ],
+  "fleet_repeat_evidence": {
+    "scope": "Two separate five-run executions of all 25 visual-review test targets; compare only PNGs declared in visual-review.json. Diagnostic captures are excluded.",
+    "captured_at_utc": "2026-10-16T07:01:37Z",
+    "runs": [
+      {
+        "label": "five-run-before-notification-scrollbar-readiness-fix",
+        "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/38859478755",
+        "source_commit": "e2bd5b1fbdf7a8da5acc1f67f348ce89d6faa668",
+        "runs_expected": 5,
+        "runs_completed": 5,
+        "targets_per_run": 25,
+        "all_test_targets_passed_each_run": true,
+        "manifests_per_run": 41,
+        "declared_review_pngs_per_run": 588,
+        "diagnostic_pngs_excluded_per_run": 36,
+        "manifest_membership_equal_across_runs": true,
+        "review_asset_membership_equal_across_runs": true,
+        "byte_identical_review_pngs_across_all_runs": 587,
+        "nonreproducible_review_pngs": 1,
+        "comparison_failed": true,
+        "comparison_method": "For each manifest record, parse its asset paths; match each to exactly one test.outputs/<path>.png artifact with the same target label; compare full bytestream URIs. Review set comes only from manifest membership. Other PNG outputs are diagnostic and excluded.",
+        "variance_assets": [
+          {
+            "asset": "//agentplane/app/frontend:visual_notifications|thread_notifications_mobile_drawer.png",
+            "variants": [
+              {
+                "runs": [
+                  "run1",
+                  "run2",
+                  "run3",
+                  "run5"
+                ],
+                "run_count": 4,
+                "digest": "a2db69687794c979e1fbf62b09a1a6129f4863f3a1bc8f62f4bd49b0bdc45087",
+                "byte_size": 309975,
+                "uri": "bytestream://remote.buildbuddy.io/blobs/a2db69687794c979e1fbf62b09a1a6129f4863f3a1bc8f62f4bd49b0bdc45087/309975"
+              },
+              {
+                "runs": [
+                  "run4"
+                ],
+                "run_count": 1,
+                "digest": "0cc5c9221c90f2339ea653ff16778216235110bbde7e8603d9a9307479042ad4",
+                "byte_size": 309030,
+                "uri": "bytestream://remote.buildbuddy.io/blobs/0cc5c9221c90f2339ea653ff16778216235110bbde7e8603d9a9307479042ad4/309030"
+              }
+            ]
+          }
+        ],
+        "invocations": [
+          {
+            "run": "run1",
+            "invocation_id": "1b2d4efa-c3a3-41e0-b572-4066dcc6264e",
+            "url": "https://app.buildbuddy.io/invocation/1b2d4efa-c3a3-41e0-b572-4066dcc6264e"
+          },
+          {
+            "run": "run2",
+            "invocation_id": "7ec066cf-3406-412c-8765-2e3c411ce4d2",
+            "url": "https://app.buildbuddy.io/invocation/7ec066cf-3406-412c-8765-2e3c411ce4d2"
+          },
+          {
+            "run": "run3",
+            "invocation_id": "0c305341-d170-4a45-957d-fb50e317fce8",
+            "url": "https://app.buildbuddy.io/invocation/0c305341-d170-4a45-957d-fb50e317fce8"
+          },
+          {
+            "run": "run4",
+            "invocation_id": "0d323db9-f75a-40ec-a5ab-96a101ee4312",
+            "url": "https://app.buildbuddy.io/invocation/0d323db9-f75a-40ec-a5ab-96a101ee4312"
+          },
+          {
+            "run": "run5",
+            "invocation_id": "d76b9eaf-454f-4078-aa30-e5cc93b2a321",
+            "url": "https://app.buildbuddy.io/invocation/d76b9eaf-454f-4078-aa30-e5cc93b2a321"
+          }
+        ],
+        "visual_observation": "Side-by-side review of the single varying thread notifications drawer image shows a scrollbar difference.",
+        "included_followup_fix": null
+      },
+      {
+        "label": "five-run-after-notification-scrollbar-readiness-fix",
+        "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/38862459578",
+        "source_commit": "a327faf620b193affc159cb6ad1a6348a0a3b45c",
+        "runs_expected": 5,
+        "runs_completed": 5,
+        "targets_per_run": 25,
+        "all_test_targets_passed_each_run": true,
+        "manifests_per_run": 41,
+        "declared_review_pngs_per_run": 588,
+        "diagnostic_pngs_excluded_per_run": 36,
+        "manifest_membership_equal_across_runs": true,
+        "review_asset_membership_equal_across_runs": true,
+        "byte_identical_review_pngs_across_all_runs": 585,
+        "nonreproducible_review_pngs": 3,
+        "comparison_failed": true,
+        "comparison_method": "For each run, parse all review manifests and map each declared asset to exactly one PASSED test.outputs/<path>.png artifact with the same target label. Compare full bytestream URIs. Manifest membership defines the review set; PNG outputs not declared in a manifest are diagnostic and excluded.",
+        "variance_assets": [
+          {
+            "asset": "//finance/plaid/spend/ui:visual_test|dashboard-dark-390-exceeded.png",
+            "variants": [
+              {
+                "runs": [
+                  "run1",
+                  "run2",
+                  "run4",
+                  "run5"
+                ],
+                "run_count": 4,
+                "digest": "1cc50f51d1562fb4f8445e7bc1af84c79687d4f20cc268aa43f46f2547106c95",
+                "byte_size": 216591,
+                "uri": "bytestream://remote.buildbuddy.io/blobs/1cc50f51d1562fb4f8445e7bc1af84c79687d4f20cc268aa43f46f2547106c95/216591"
+              },
+              {
+                "runs": [
+                  "run3"
+                ],
+                "run_count": 1,
+                "digest": "153e4dcb7cbb3256451a6492910003c9de4f482e801db59efdbfa4b20ce3f966",
+                "byte_size": 216582,
+                "uri": "bytestream://remote.buildbuddy.io/blobs/153e4dcb7cbb3256451a6492910003c9de4f482e801db59efdbfa4b20ce3f966/216582"
+              }
+            ]
+          },
+          {
+            "asset": "//finance/plaid/spend/ui:visual_test|dashboard-dark-390-warning.png",
+            "variants": [
+              {
+                "runs": [
+                  "run1",
+                  "run2",
+                  "run4",
+                  "run5"
+                ],
+                "run_count": 4,
+                "digest": "05f5de1b6f6bb788169e9ee44cb8bb1d1b34be593ee233e9c1b2ba483ff93906",
+                "byte_size": 217001,
+                "uri": "bytestream://remote.buildbuddy.io/blobs/05f5de1b6f6bb788169e9ee44cb8bb1d1b34be593ee233e9c1b2ba483ff93906/217001"
+              },
+              {
+                "runs": [
+                  "run3"
+                ],
+                "run_count": 1,
+                "digest": "f52bd6d1ede3f7c9395a48094f61218ad1826dec8e4dda1d9c22828ae0214cd1",
+                "byte_size": 216992,
+                "uri": "bytestream://remote.buildbuddy.io/blobs/f52bd6d1ede3f7c9395a48094f61218ad1826dec8e4dda1d9c22828ae0214cd1/216992"
+              }
+            ]
+          },
+          {
+            "asset": "//finance/plaid/spend/ui:visual_test|dashboard-dark-390.png",
+            "variants": [
+              {
+                "runs": [
+                  "run1",
+                  "run2",
+                  "run4",
+                  "run5"
+                ],
+                "run_count": 4,
+                "digest": "fa43840ac8ad78025bca97f66bde448a3c0d1baa2a6f9fccbc63c849ead97483",
+                "byte_size": 208262,
+                "uri": "bytestream://remote.buildbuddy.io/blobs/fa43840ac8ad78025bca97f66bde448a3c0d1baa2a6f9fccbc63c849ead97483/208262"
+              },
+              {
+                "runs": [
+                  "run3"
+                ],
+                "run_count": 1,
+                "digest": "13e46193bc012f7de054b068c71eee65c180cc90eedcbba7d0f6c67071841a7f",
+                "byte_size": 208252,
+                "uri": "bytestream://remote.buildbuddy.io/blobs/13e46193bc012f7de054b068c71eee65c180cc90eedcbba7d0f6c67071841a7f/208252"
+              }
+            ]
+          }
+        ],
+        "invocations": [
+          {
+            "run": "run1",
+            "invocation_id": "fb05cf44-d822-48fe-8df2-1ca6577df945",
+            "url": "https://app.buildbuddy.io/invocation/fb05cf44-d822-48fe-8df2-1ca6577df945"
+          },
+          {
+            "run": "run2",
+            "invocation_id": "fe50e02d-6a43-4ce7-8a0a-f1b32c64e755",
+            "url": "https://app.buildbuddy.io/invocation/fe50e02d-6a43-4ce7-8a0a-f1b32c64e755"
+          },
+          {
+            "run": "run3",
+            "invocation_id": "ff4f4e09-d20c-4c2b-a08c-8ab3d76dfd4e",
+            "url": "https://app.buildbuddy.io/invocation/ff4f4e09-d20c-4c2b-a08c-8ab3d76dfd4e"
+          },
+          {
+            "run": "run4",
+            "invocation_id": "e522f430-112b-4e4b-a0b0-ffa6d458457e",
+            "url": "https://app.buildbuddy.io/invocation/e522f430-112b-4e4b-a0b0-ffa6d458457e"
+          },
+          {
+            "run": "run5",
+            "invocation_id": "4fb576af-549a-4c2a-bdde-28d9ae0db651",
+            "url": "https://app.buildbuddy.io/invocation/4fb576af-549a-4c2a-bdde-28d9ae0db651"
+          }
+        ],
+        "visual_observation": "Three Spend dashboard PNGs each varied in one of five runs. Their source cause is under investigation; no causal attribution is made here.",
+        "included_followup_fix": {
+          "pr": 10740,
+          "url": "https://github.com/agentydragon/ducktape/pull/10740",
+          "result": "thread_notifications_mobile_drawer.png matched across all five runs"
+        }
+      }
+    ]
+  }
 }
