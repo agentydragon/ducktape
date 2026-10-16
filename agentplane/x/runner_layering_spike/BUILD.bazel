@@ -1,6 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/cpio:defs.bzl", "cpio_archive")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
@@ -36,18 +37,28 @@ cpio_archive(
     out = "base-initramfs.cpio",
 )
 
-# The first tools layer is only Bash plus the dynamic runtime closure resolved by Debian. It is a
-# separate OCI filesystem so the probe can add a real shell without pulling in a full distribution.
+# The workload image extends the Debian tool closure with one workload-owned executable. Keeping
+# that executable in its own OCI layer lets the runner and pinned harness stay independent of it.
+pkg_tar(
+    name = "workload_tool_layer",
+    srcs = ["workload-tool"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+)
+
 oci_image(
-    name = "tools_image",
+    name = "workload_tools_image",
     architecture = "amd64",
     os = "linux",
-    tars = ["@trixie_runner_tools//:flat"],
+    tars = [
+        "@trixie_runner_tools//:flat",
+        ":workload_tool_layer",
+    ],
 )
 
 oci_layout_rloc(
     name = "tools_rootfs",
-    image = ":tools_image",
+    image = ":workload_tools_image",
 )
 
 py_binary(

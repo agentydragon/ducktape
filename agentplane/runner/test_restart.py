@@ -426,7 +426,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     driver: RunnerDriver,
     tmp_path: Path,
 ) -> None:
-    """Pinned Codex runs with an independently built Bash layer and private runner state."""
+    """Pinned Codex runs a workload-image tool and keeps workspace/session state across restart."""
     child_spec = runner_pb2.SessionSpec()
     child_spec.CopyFrom(spec)
     child_spec.cwd = "/workspace"
@@ -442,11 +442,14 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     shutil.copyfile(codex_bwrap, resources_dir / "bwrap")
     (resources_dir / "bwrap").chmod(0o555)
     _extract_oci_rootfs("agentplane/x/runner_layering_spike/tools_rootfs.rloc", child_root)
+    assert (child_root / "usr/local/bin/workload-tool").is_file()
 
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     private_sentinel = state_dir / "runner-private-sentinel"
     private_sentinel.write_text("runner-owned\n")
+    workload_proof = Path(spec.cwd) / "workload-image-proof.txt"
+    assert not workload_proof.exists()
     child_exec = get_required_path(own_repo_rlocation("agentplane/x/runner_layering_spike/child_exec_/child_exec"))
     first_runner = await start_runner(
         codex_binary=child_exec,
@@ -471,6 +474,17 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     fence = fences[0]
     assert fence.event.harness_stderr.text.strip() == "runner-layering: runner-private state remains outside child root"
 
+    await session.submit_input("input-2", "Run the tool installed by the workload image and report its output.")
+    request = await model.request()
+    await model.reply(request, ShellCall("workload-image-tool", "/usr/local/bin/workload-tool"))
+    tool_result = await model.request()
+    (output,) = tool_result.tool_outputs
+    stderr = "\n".join(entry.event.harness_stderr.text for entry in events.of_kind(session.seen, "harness_stderr"))
+    assert "WORKLOAD_IMAGE_TOOL_OK" in output.text, f"tool output: {output.text}\nharness stderr:\n{stderr}"
+    await model.reply(tool_result, Text("WORKLOAD_IMAGE_TOOL_DONE"))
+    tool_done = await session.until(events.turn_completed)
+    assert tool_done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+
     (started,) = events.of_kind(session.seen, "harness_started")
     os.kill(started.event.harness_started.pid, signal.SIGKILL)
     exited = await session.until(events.is_kind("harness_exited"))
@@ -484,28 +498,19 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
         lambda entry: events.is_kind("harness_started")(entry) and entry.event.harness_started.resumed
     )
     assert resumed.cursor > exited.cursor
-    await second.submit_input("input-2", "Reply with exactly: SPARSE_ROOT_RESUME_OK")
+    assert workload_proof.read_text() == "WORKLOAD_IMAGE_TOOL_OK\n"
+    await second.submit_input("input-3", "Reply with exactly: SPARSE_ROOT_RESUME_OK")
     request = await model.request()
     assert request.user_texts == [
         "Reply with exactly: SPARSE_ROOT_TURN_OK",
+        "Run the tool installed by the workload image and report its output.",
         "Reply with exactly: SPARSE_ROOT_RESUME_OK",
     ]
-    assert request.assistant_texts == ["SPARSE_ROOT_TURN_OK"]
+    assert request.assistant_texts == ["SPARSE_ROOT_TURN_OK", "WORKLOAD_IMAGE_TOOL_DONE"]
     await model.reply(request, Text("SPARSE_ROOT_RESUME_OK"))
     done = await second.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
     assert private_sentinel.read_text() == "runner-owned\n"
-
-    await second.submit_input("input-3", "Run the shell tool and report its output.")
-    request = await model.request()
-    await model.reply(request, ShellCall("sparse-shell", "printf SPARSE_ROOT_TOOL_OK"))
-    tool_result = await model.request()
-    (output,) = tool_result.tool_outputs
-    stderr = "\n".join(entry.event.harness_stderr.text for entry in events.of_kind(second.seen, "harness_stderr"))
-    assert "SPARSE_ROOT_TOOL_OK" in output.text, f"tool output: {output.text}\nharness stderr:\n{stderr}"
-    await model.reply(tool_result, Text("SPARSE_ROOT_TOOL_DONE"))
-    tool_done = await second.until(events.turn_completed)
-    assert tool_done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
     await second.stop_runner_session("stop-after-sparse-root-resume")
     await second.drain_until_end()

@@ -27,7 +27,7 @@ Rai merges every PR by hand; do not merge or enable auto-merge.
 
 | Open PR / exact reviewed head                                               | Scope                                       | Remaining gate                                                                                            |
 | --------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| [#10734](https://github.com/agentydragon/ducktape/pull/10734), `39522ca3ab` | 8 GiB VM guest and testing admission limits | Review/merge/reconcile; actual launcher resources, guest memory and representative build/test acceptance. |
+| [#10734](https://github.com/agentydragon/ducktape/pull/10734), `39522ca3ab` | 8 GiB guest and testing limits | Parked pending owner review of the passing workload-image proof; then resume guest/resource acceptance. |
 
 This PR also edits this DAG. When rebasing it after this handoff, preserve the current status,
 remaining gates and Sandbox trust-boundary decision; do not restore its older planning snapshot.
@@ -427,7 +427,7 @@ flowchart LR
     RUNNER_LAYERING_VM --> VM_HARNESS_RESOURCE_LIMITS
     K3S_VM_IMAGE -. optional VM test fixture .-> VM_HARNESS_RESOURCE_LIMITS
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
-    VM_GUEST_MEMORY[In review: 8 GiB guest and testing limits]
+    VM_GUEST_MEMORY[Parked: 8 GiB PR held for workload-image prototype]
     VM_GUEST_BUDGET_DERIVE[Blocked: guest budgets derive from the VM spec]
     VM_GUEST_MEMORY -. the two numbers neither node should author alone .-> VM_GUEST_BUDGET_DERIVE
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
@@ -526,10 +526,12 @@ prerequisite: no client budget inside the guest is workable until the guest has 
 
 ### `VM_GUEST_MEMORY` — size the VM guest for real builds
 
-**In review: [#10734](https://github.com/agentydragon/ducktape/pull/10734); worker stopped.**
+**Parked by operator request, 2026-10-16: keep [#10734](https://github.com/agentydragon/ducktape/pull/10734)
+unchanged and unmerged while the owner reviews the now-passing `RUNNER_LAYERING_SPIKE` workload-image
+proof.**
 The patch requests the approved 8 GiB, retaining one vCPU. It raises testing's aggregate memory
 request quota to 16 GiB and container/Pod limit caps to 24 GiB, retaining the 28 GiB aggregate
-memory limit. It is not on devel and has not established live guest acceptance.
+memory limit. The patch remains unchanged; it has not established live guest acceptance.
 
 After merge/reconciliation, inspect actual launcher requests/limits, namespace usage and node
 capacity: KubeVirt adds overhead and quota-derived limits, not a fixed 240 MiB surcharge. Confirm
@@ -872,7 +874,7 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 flowchart TD
     SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
     RUNNER_IMAGE_LAYERING_DESIGN[Decision: what carries the runner, harnesses and per-template tools]
-    RUNNER_LAYERING_SPIKE[Paused: remaining layering compatibility evidence]
+    RUNNER_LAYERING_SPIKE[In review: workload-image execution prototype]
     RUNNER_LAYERING_SPIKE_EXIT[Blocked: finish update-boundary evidence, measurements and recommendation]
     RUNNER_LAYERING_SPIKE_RETIRE[Blocked: port retained pieces or delete spike after design]
     SANDBOX_GENERIC_SPLIT -. related .-> RUNNER_IMAGE_LAYERING_DESIGN
@@ -953,10 +955,16 @@ runtime we have, and Firecracker is a new runtime added beside it.
 
 ### `RUNNER_LAYERING_SPIKE` — minimal guest, harness and tools-layer evidence
 
-**Paused; worker stopped. Merged experiment, not a production runtime selection.** The prototype proves a
-Codex text turn, shell call through a separate Bash tools OCI layer, native resume after killing the
-harness, runner survival and private-state separation in the RBE test; a local Firecracker guest
-boots the digest-pinned ELF kernel and mounts separate read-only tools and harness SquashFS drives.
+**In review; operator-requested workload-image prototype, 2026-10-16. The remaining compatibility
+evidence is paused.** The merged experiment proves a Codex text turn, shell call through a separate Bash
+tools OCI layer, native resume after killing the harness, runner survival and private-state separation
+in the RBE test; a local Firecracker guest boots the digest-pinned ELF kernel and mounts separate
+read-only tools and harness SquashFS drives. This follow-on adds `workload-tool` in its own OCI tar
+layer and changes the mocked Codex shell call to run it, then check its workspace write after harness
+resume. The focused `bbr test //agentplane/runner:test_restart --test_arg=-k
+--test_arg=sparse_child_root` passed in RBE; the marker remained readable from the persistent workspace
+after the harness was killed and resumed. Production VM layout selection and implementation remain
+open.
 The guest's Bash and pinned Codex `--version` probes pass; the same probe records a Claude 2.1.252
 SIGABRT in the uid-107 mount-namespace child, while the exact binary succeeds on the full host and
 in the guest chroot as root without that namespace. The UID and namespace effects still need to be

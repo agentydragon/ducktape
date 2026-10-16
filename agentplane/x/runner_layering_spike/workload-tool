@@ -1,0 +1,5 @@
+#!/bin/bash
+set -euo pipefail
+
+printf '%s\n' 'WORKLOAD_IMAGE_TOOL_OK' > workload-image-proof.txt
+printf '%s\n' 'WORKLOAD_IMAGE_TOOL_OK'

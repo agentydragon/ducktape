@@ -4,11 +4,11 @@ This package is a bounded experiment for `RUNNER_IMAGE_LAYERING_DESIGN`. It asks
 the booted runner environment, what must live in a separately updated tools filesystem, and what a
 real pinned Codex process needs when its child filesystem starts almost empty.
 
-The prototype builds independent boot, harness, and tools inputs:
+The prototype builds independent boot, harness, and workload-tools inputs:
 
 - `base_initramfs`: the guest's small PID 1 initializer;
-- `tools_rootfs`: a separately built Debian Trixie OCI filesystem containing Bash and its runtime
-  dependencies;
+- `tools_rootfs`: the separate `workload_tools_image` OCI filesystem. Its Debian Trixie Bash/runtime
+  closure and `workload-tool` executable are image layers, separate from the runner and harness;
 - the pinned Codex, bwrap, and Claude executables are staged into a separate harness filesystem;
 - the local Firecracker guest receives the small PID 1 CPIO plus two separate, read-only SquashFS
   drives for tools and harness files.
@@ -21,11 +21,15 @@ root under user and mount namespaces, keeps runner state outside it, and checks 
 read a runner-only sentinel.
 
 The focused `//agentplane/runner:test_restart` scenario runs the pinned Codex binary from the sparse
-child root, completes and resumes a conversation after killing the native harness process, then
-executes `printf SPARSE_ROOT_TOOL_OK` through Codex's shell tool using only the separate Bash tools
-rootfs. The command output is asserted by the test. The local VM probe separately runs Bash and
-Codex from the two mounted filesystems; guest PID 1 remains alive after both exit. Its Claude probe
-currently aborts in the guest, and the parent records that failure so it remains inspectable.
+child root. A mocked model asks Codex to execute `/usr/local/bin/workload-tool` from the independent
+workload image; the test checks its output and the proof file it writes through the workspace mount.
+It then kills the native harness, resumes the same session, and reads that file from the persistent
+workspace. Runner-private state remains outside the child root. The local VM probe separately runs
+Bash and Codex from the two mounted filesystems; guest PID 1 remains alive after both exit. Its Claude
+probe currently aborts in the guest, and the parent records that failure so it remains inspectable.
+
+Production image-selection policy remains open. The test selects the workload image as a separate
+Bazel input while the runner and pinned harness targets remain unchanged.
 
 ## Current limits
 
@@ -42,11 +46,12 @@ exit. The additional memory is required because the pinned static Codex executab
 directories explicitly because the kernel initramfs extractor does not create nested directories
 that are absent from the archive.
 
-Measured outputs from the current probe are 1,913,348 bytes for `base_initramfs`, 7,168,000 bytes
-for the tools SquashFS, and 168,894,464 bytes for the harness SquashFS. The source Bash OCI layer
-tar is 22,277,632 bytes. These are compressed artifact sizes, not unpacked guest memory or cold
-build-time measurements. The Codex binary makes the harness layer the largest artifact. Earlier
-combined-initramfs measurements are superseded by these separate-disk outputs.
+The original probe measured 1,913,348 bytes for `base_initramfs`, 7,168,000 bytes for the tools
+SquashFS, and 168,894,464 bytes for the harness SquashFS. The Bash OCI layer tar was 22,277,632
+bytes. These are compressed artifact sizes, not unpacked guest memory or cold build-time
+measurements; they predate the small workload-tool layer added to the tools image. The Codex binary
+makes the harness layer the largest artifact. Earlier combined-initramfs measurements are
+superseded by these separate-disk outputs.
 
 Claude 2.1.252 prints its Bun runtime information, then aborts with SIGABRT when invoked as
 `--version` inside the guest chroot, even though the Debian tools root contains its glibc loader and
