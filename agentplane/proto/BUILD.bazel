@@ -277,3 +277,39 @@ go_proto_library(
         ":runner_go_proto",
     ],
 )
+
+go_proto_library(
+    name = "sandboxes_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/sandboxes",
+    proto = ":sandboxes_proto",
+)
+
+go_proto_library(
+    name = "session_dispatcher_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/session_dispatcher",
+    proto = ":session_dispatcher_proto",
+    deps = [
+        ":event_log_go_proto",
+        ":runner_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "runner_gateway_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/runner_gateway",
+    proto = ":runner_gateway_proto",
+    deps = [
+        ":command_go_proto",
+        ":event_log_go_proto",
+        ":runner_go_proto",
+        ":sandboxes_go_proto",
+    ],
+)
