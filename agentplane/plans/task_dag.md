@@ -437,7 +437,7 @@ flowchart LR
     RUNNER_LAYERING_VM --> VM_HARNESS_RESOURCE_LIMITS
     K3S_VM_IMAGE -. optional VM test fixture .-> VM_HARNESS_RESOURCE_LIMITS
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
-    VM_GUEST_MEMORY[Candidate: size the VM guest for real builds]
+    VM_GUEST_MEMORY[In progress: size the VM guest for real builds]
     VM_GUEST_BUDGET_DERIVE[Blocked: guest budgets derive from the VM spec]
     VM_GUEST_MEMORY -. the two numbers neither node should author alone .-> VM_GUEST_BUDGET_DERIVE
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
@@ -536,24 +536,18 @@ prerequisite: no client budget inside the guest is workable until the guest has 
 
 ### `VM_GUEST_MEMORY` — size the VM guest for real builds
 
-**Candidate; operator, 2026-10-15 UTC: 8 GiB requested, and one VM per OVH node is acceptable.** Raise
-`runner-vm`'s guest RAM from 1536Mi (`cluster/cdk8s/agentplane/runner_vm.py`, still 1536Mi with
-`cores: 1` as of 2026-10-15) so a `bbr`/Bazelisk client inside the guest has room to compile.
-Acceptance is not "the template says 8 GiB": a Sandbox booted on the new template reports the larger
-`MemTotal` in the guest, and a representative `bbr build` and `bbr test` complete in it without the guest
-OOM killer firing.
+**In progress (coordinator, 2026-10-16 UTC).** The template change requests the operator-approved
+8 GiB guest RAM, retaining one vCPU. Testing admission limits move with it: 16 GiB aggregate memory
+requests, 24 GiB per-container/per-Pod memory limits, and the existing 28 GiB aggregate memory limit.
+KubeVirt adds launcher overhead to the guest request and derives a larger limit in a namespace with
+memory quota; do not estimate launcher cost as a fixed 240 MiB. Inspect the actual launcher request
+and limit, namespace usage and schedulable node capacity after reconciliation.
 
-Know where the ceiling is before choosing the number. A guest of `N` costs the launcher Pod roughly
-`N + 240Mi` (guest RAM plus QEMU, disk helpers and the relay), so an 8 GiB guest needs about 8.25 Gi
-free on a `kubevirt.io/schedulable` node — the 8-core hosts fit one each, the largest host about five.
-Measure current free memory rather than trusting that; the operator accepts one VM per 8-core host.
-Staging carries **no** `ResourceQuota` or `LimitRange` (`TestingNamespaceResourceLimits` is testing-only,
-by design), so nothing refuses an oversized guest here — an unschedulable one just sits `Pending` on
-`Insufficient memory` rather than failing fast, which is also why testing's 4Gi container max and quota
-have to move with the template or the change fails there instead. The guest sees ~10% less than the
-domain is given (1536Mi yields 1383Mi). `cores: 1` is a separate deliberate choice: 8 GiB on one vCPU is
-memory-heavy and compute-starved, and `docs/vm_sandboxes.md` records a 1 vCPU guest reading a workspace
-disk at a fraction of the rate a build would like.
+Remaining acceptance: a Sandbox booted on the new template reports the larger `MemTotal`, and a
+representative `bbr build` and `bbr test` complete inside it without guest OOM. Record the actual
+launcher resources and guest memory in the VM documentation, then remove this node. The manifest
+change alone does not establish that acceptance. One VM per OVH node is operator-approved;
+`cores: 1` remains a separate choice. Staging has no testing-specific ResourceQuota or LimitRange.
 
 ### `VM_GUEST_BUDGET_DERIVE` — derive the guest's cgroup budgets from the VM's memory
 

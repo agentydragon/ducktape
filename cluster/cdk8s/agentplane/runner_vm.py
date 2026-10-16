@@ -92,9 +92,8 @@ class RunnerVmTemplate(Construct):
             labels=labels,
             image=_IMAGE,
             cpu=VirtualMachineSpecTemplateSpecDomainCpu(cores=1),
-            # agentplane-testing's 4Gi container limit caps a guest at about 1.7Gi.
             resources=VirtualMachineSpecTemplateSpecDomainResources(
-                requests={"memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("1536Mi")}
+                requests={"memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("8Gi")}
             ),
             node_selector={"kubevirt.io/schedulable": "true"},
             ports=[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(port=_UNUSED_GUEST_PORT)],

@@ -4694,7 +4694,7 @@ spec:
                 secureBoot: false
           resources:
             requests:
-              memory: 1536Mi
+              memory: 8Gi
         networks:
           - name: default
             pod: {}
