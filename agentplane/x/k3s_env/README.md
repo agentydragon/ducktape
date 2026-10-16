@@ -23,7 +23,8 @@ Service names remain. A Goose init container runs before the Go server container
 Dispatcher database Secret. The
 model-free lifecycle and model smoke tests share [`stack.py`](stack.py), which starts k3s, streams
 the Bazel-built OCI image layouts into containerd, applies the rendered stack and reports Deployment
-readiness.
+readiness. It uses the pinned K3s binary from Bazel runfiles, so lifecycle actions do not download K3s
+at runtime.
 
 The image list includes the Go Runner Gateway and Goose queue migration images. A fast
 [`test_render`](BUILD.bazel) check validates this fixture composition and its endpoint/Service wiring

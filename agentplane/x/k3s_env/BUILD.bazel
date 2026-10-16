@@ -104,6 +104,10 @@ _K3S_TAGS = [
     "requires-network",
 ]
 
+_K3S_BINARY = "@k3s_linux_amd64//file:k3s"
+
+_K3S_BINARY_RLOCATION = "$(rlocationpath " + _K3S_BINARY + ")"
+
 py_test(
     name = "test_render",
     size = "small",
@@ -129,6 +133,7 @@ py_library(
     srcs = ["stack.py"],
     data = [
         "//agentplane/crds",
+        _K3S_BINARY,
     ] + [":" + name + "_layout" for name in _IMAGES],
     deps = [
         ":fixture_chart",
@@ -143,8 +148,14 @@ py_test(
     name = "test_env",
     size = "enormous",
     srcs = ["test_env.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    data = [
+        "@nodejs_linux_amd64//:bin/node",
+        _K3S_BINARY,
+    ],
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "K3S_BINARY_RLOCATION": _K3S_BINARY_RLOCATION,
+    },
     env_inherit = ["LITELLM_QWEN_KEY"],
     exec_properties = _K3S_EXEC_PROPERTIES,
     tags = _K3S_TAGS,
@@ -169,8 +180,14 @@ py_test(
     name = "test_lifecycle",
     size = "enormous",
     srcs = ["test_lifecycle.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    data = [
+        "@nodejs_linux_amd64//:bin/node",
+        _K3S_BINARY,
+    ],
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "K3S_BINARY_RLOCATION": _K3S_BINARY_RLOCATION,
+    },
     exec_properties = _K3S_EXEC_PROPERTIES,
     tags = _K3S_TAGS,
     deps = [

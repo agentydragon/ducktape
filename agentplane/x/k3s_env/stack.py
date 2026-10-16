@@ -29,7 +29,6 @@ from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 
-K3S_VERSION = "v1.33.4+k3s1"
 DEPLOY_TIMEOUT_SECONDS = 480
 # k3s's default Pod CIDR.
 POD_CIDR = "10.42.0.0/16"
@@ -100,9 +99,9 @@ def _archive_json(archive: tarfile.TarFile, name: str, value: object) -> None:
 
 
 class K3s:
-    def __init__(self, work: Path) -> None:
+    def __init__(self, work: Path, binary: Path) -> None:
         self.work = work
-        self.binary = work / "k3s"
+        self.binary = binary
         self.kubeconfig = work / "kubeconfig"
         self.data_dir = Path("/var/lib/k3s-env")
         # The address Pods use to reach host-side processes: the apiserver and the cluster DNS.
@@ -116,9 +115,6 @@ class K3s:
         )
 
     def start(self) -> subprocess.Popen[bytes]:
-        base = f"https://github.com/k3s-io/k3s/releases/download/{K3S_VERSION.replace('+', '%2B')}"
-        run("curl", "-fsSL", "-o", str(self.binary), f"{base}/k3s")
-        run("chmod", "+x", str(self.binary))
         _shadow_kernel_sysctls(self.work)
         self.log_path = Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", self.work)) / "k3s.log"
         log = self.log_path.open("wb")
@@ -323,7 +319,7 @@ def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
     layouts = sorted(get_required_path("_main/agentplane/x/k3s_env").glob("*_layout.rloc"))
 
     work = Path(tempfile.mkdtemp())
-    k3s = K3s(work)
+    k3s = K3s(work, get_required_path(os.environ["K3S_BINARY_RLOCATION"]))
     process = k3s.start()
     try:
         ca_cert, ca_key = _openssl_ca(work)
