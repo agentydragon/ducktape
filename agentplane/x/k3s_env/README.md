@@ -8,6 +8,10 @@ high. Agents can still run it
 directly with `bbr test //agentplane/x/k3s_env:test_lifecycle --test_output=all`. The separate
 `test_env` model smoke remains manual and requires `LITELLM_QWEN_KEY`.
 
+Both targets drive the app's REST/SSE API and omit Electric and the browser frontend. Tests of the
+frontend sync protocol run Electric separately. The database bootstrap still creates the `electric`
+role required by the existing migrations; it does not start an Electric process.
+
 [`fixture_chart.py`](fixture_chart.py) constructs the chart directly
 with shared service constructs and explicit bare-k3s settings. It supplies fixture Secrets,
 headless Services, local-path storage and a test egress CA; the CNPG operator is installed from its

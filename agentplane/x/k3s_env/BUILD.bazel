@@ -210,7 +210,6 @@ py_library(
         "//cluster/cdk8s/agentplane:command_sandbox",
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:egress_credentials",
-        "//cluster/cdk8s/agentplane:electric",
         "//cluster/cdk8s/agentplane:history_service",
         "//cluster/cdk8s/agentplane:llm_ingress",
         "//cluster/cdk8s/agentplane:notifications",

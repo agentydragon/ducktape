@@ -8,6 +8,11 @@ the History Service and synchronizes selected rows and content to the browser th
 Electric endpoints. It also presents Actions, operator decisions and Connection consent.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
+Set `AGENTPLANE_ELECTRIC_URL` to serve the browser frontend and its thread-sync API. Omit it for
+an API-only deployment: REST and SSE remain available, while the SPA, service worker, Electric
+sync routes and Electric health probe are absent. Backend lifecycle and model-smoke fixtures use
+this composition without running Electric.
+
 ## Sandbox lifecycle ownership
 
 The app uses the shared `agentplane/sandboxes` inventory to submit lifecycle requests directly to

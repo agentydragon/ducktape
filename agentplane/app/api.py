@@ -155,7 +155,7 @@ class AppServices:
     oidc: OIDCSettings | None
     reviewer: TokenReviewer | None
     operator_actions: FederatedOperatorActions | None
-    electric: ElectricProxy
+    electric: ElectricProxy | None
     oauth: OAuth | None = field(init=False)
     drain: Drain = field(default_factory=Drain)
 
@@ -1227,7 +1227,7 @@ def create_app(
     presets: PresetCatalog | None = None,
     operator_actions: FederatedOperatorActions | None = None,
     *,
-    electric: ElectricProxy,
+    electric: ElectricProxy | None,
     event_logs: EventLogStore,
     content: ContentStore,
     database_updates: WakeupListener,
@@ -1317,10 +1317,11 @@ def create_app(
         policy_binding_router,
         action_policy_router,
         live_router,
-        electric_router,
         system_router,
     ):
         app.include_router(api_router, dependencies=[Depends(require_caller)])
+    if electric is not None:
+        app.include_router(electric_router, dependencies=[Depends(require_caller)])
     if oidc is not None:
         app.add_middleware(
             OperatorSessionMiddleware,
