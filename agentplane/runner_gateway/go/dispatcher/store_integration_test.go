@@ -451,8 +451,9 @@ func (l *countingLease) Acquire(ctx context.Context, name, uid string) (*Owner, 
 }
 
 type retryRunner struct {
-	mu    sync.Mutex
-	calls int
+	mu        sync.Mutex
+	calls     int
+	commandID string
 }
 
 type recordingDelayQueue struct {
@@ -492,10 +493,10 @@ func TestWorkerRetainsBackoffAcrossUncertainReplies(t *testing.T) {
 func TestWorkerRequiresFreshLeaseBeforeDelivery(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 3)
-	if _, err := store.Enqueue(ctx, "fenced-session", "sandbox-fenced", sandboxUID, input("worker-input", "hello"), nil); err != nil {
+	if _, err := store.Enqueue(ctx, "fenced-session", "sandbox-fenced", sandboxUID, input("fenced-input", "hello"), nil); err != nil {
 		t.Fatal(err)
 	}
-	runner := &retryRunner{}
+	runner := &retryRunner{commandID: "fenced-input"}
 	leases := &unreliableLease{testLease: testLease{store: store}, live: true}
 	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
 		Name: "sandbox-fenced", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
@@ -542,7 +543,11 @@ func TestWorkerRequiresFreshLeaseBeforeDelivery(t *testing.T) {
 }
 
 func (r *retryRunner) Deliver(_ context.Context, sandbox SandboxSnapshot, _ string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
-	if sandbox.UID != sandboxUID || command.GetCommandId() != "worker-input" {
+	wantID := r.commandID
+	if wantID == "" {
+		wantID = "worker-input"
+	}
+	if sandbox.UID != sandboxUID || command.GetCommandId() != wantID {
 		return nil, errors.New("wrong delivery identity")
 	}
 	r.mu.Lock()
