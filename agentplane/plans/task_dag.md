@@ -25,8 +25,8 @@ are authorized by this handoff. The following change is implemented on a review 
 its published-head checks passed when checked for this handoff. Recheck GitHub before resuming.
 Rai merges every PR by hand; do not merge or enable auto-merge.
 
-| Open PR / exact reviewed head                                               | Scope                                       | Remaining gate                                                                                            |
-| --------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Open PR / exact reviewed head                                               | Scope                          | Remaining gate                                                                                          |
+| --------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | [#10734](https://github.com/agentydragon/ducktape/pull/10734), `39522ca3ab` | 8 GiB guest and testing limits | Parked pending owner review of the passing workload-image proof; then resume guest/resource acceptance. |
 
 This PR also edits this DAG. When rebasing it after this handoff, preserve the current status,

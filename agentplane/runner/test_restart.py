@@ -520,17 +520,11 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
         "Reply with exactly: SPARSE_ROOT_RESUME_OK",
         "Run the workload image tool again and report its output.",
     ]
-    assert request.assistant_texts == [
-        "SPARSE_ROOT_TURN_OK",
-        "WORKLOAD_IMAGE_TOOL_DONE",
-        "SPARSE_ROOT_RESUME_OK",
-    ]
+    assert request.assistant_texts == ["SPARSE_ROOT_TURN_OK", "WORKLOAD_IMAGE_TOOL_DONE", "SPARSE_ROOT_RESUME_OK"]
     resumed_call_id = "workload-image-tool-after-resume"
     await model.reply(request, ShellCall(resumed_call_id, "/usr/local/bin/workload-tool"))
     resumed_tool_result = await model.request()
-    (resumed_output,) = [
-        output for output in resumed_tool_result.tool_outputs if output.call_id == resumed_call_id
-    ]
+    (resumed_output,) = [output for output in resumed_tool_result.tool_outputs if output.call_id == resumed_call_id]
     resumed_stderr = "\n".join(
         entry.event.harness_stderr.text for entry in events.of_kind(second.seen, "harness_stderr")
     )
