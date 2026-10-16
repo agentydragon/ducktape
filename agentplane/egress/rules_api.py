@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI, Request
 
+from agentplane.agent_docs import mount_agent_docs
 from agentplane.egress.agent_view import AgentEgressView, agent_view
 from agentplane.egress.policy import Index
 from agentplane.subjects import ServiceAccountRef
@@ -30,6 +31,7 @@ class RulesProjection:
 def create_rules_app(authenticate: WorkloadPrincipalAuthenticator, projection: RulesProjection) -> FastAPI:
     """Create the ordinary destination API; request metadata is never an identity authority."""
     app = FastAPI(title="agentplane-egress-rules")
+    mount_agent_docs(app, package="agentplane/egress")
 
     @app.get(PATH, response_model=AgentEgressView)
     async def rules(request: Request) -> AgentEgressView:

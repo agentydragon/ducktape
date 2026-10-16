@@ -398,6 +398,8 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                     PolicySetSpecRulesMethods.DELETE,
                 ],
                 paths=[
+                    "/llms.txt",
+                    "/docs/agents/**",
                     "/openapi.json",
                     "/v1/sources",
                     "/v1/subscriptions",
@@ -413,6 +415,8 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
                 paths=[
                     "/mcp",
+                    "/llms.txt",
+                    "/docs/agents/**",
                     "/openapi.json",
                     "/v1/action-groups",
                     "/v1/action-groups/**",
@@ -426,7 +430,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 hosts=[agent_api(namespace).fqdn],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/openapi.json", "/v1/rules"],
+                paths=["/llms.txt", "/docs/agents/**", "/openapi.json", "/v1/rules"],
                 credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
             # The API server, inside `basic` rather than behind a policy a launch opts into: every

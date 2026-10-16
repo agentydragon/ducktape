@@ -38,3 +38,9 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "agent_docs",
+    srcs = ["agent_docs.py"],
+    deps = ["@pypi//httpx"],
+)

@@ -1500,6 +1500,8 @@ spec:
         - PATCH
         - DELETE
       paths:
+        - /llms.txt
+        - /docs/agents/**
         - /openapi.json
         - /v1/sources
         - /v1/subscriptions
@@ -1517,6 +1519,8 @@ spec:
         - POST
       paths:
         - /mcp
+        - /llms.txt
+        - /docs/agents/**
         - /openapi.json
         - /v1/action-groups
         - /v1/action-groups/**
@@ -1532,6 +1536,8 @@ spec:
       methods:
         - GET
       paths:
+        - /llms.txt
+        - /docs/agents/**
         - /openapi.json
         - /v1/rules
       clusterInternal: true

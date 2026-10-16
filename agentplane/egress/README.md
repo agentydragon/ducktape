@@ -5,6 +5,9 @@ caller's Pod-bound token, decides the request from the `egress` rules of `Policy
 `PolicyBinding` grants it, and substitutes the real credential. What it guarantees is in <SPEC.md>. How the kinds compose into
 one decision is in <../docs/egress_composition.md>.
 
+The rules API serves [`/llms.txt`](docs/agents/llms.txt) and its linked credential/refusal guide
+under `/docs/agents/`. Update the guide when credential presentation or refusal behavior changes.
+
 ```sh
 bbr test //agentplane/egress/...
 ```

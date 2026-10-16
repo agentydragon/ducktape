@@ -1,0 +1,27 @@
+# Agentplane egress
+
+> Discover your ServiceAccount's effective outbound access and credential presentation without obtaining real credentials.
+
+Use the Egress rules base URL from your platform instructions. Fetch `GET /v1/rules` through the
+configured proxy with `Authorization: Bearer agentplane-credential-agentplane-workload`.
+The response names your authenticated `subject` and effective policies. Their rules provide hosts,
+methods, paths, and any credential's identity, description, exact placeholder, and presentation
+`targets`. A rule without a credential allows access without substituting one.
+
+PolicySets can bundle egress, Action auto-approval and Kubernetes rules; PolicyBindings attach them
+to a ServiceAccount and may expire. The live rules describe effective egress, not every available
+grant. A Session ID, launch preset, or credential name does not establish access.
+
+Preserve the configured proxy and CA trust. Send exact placeholders in their declared presentation;
+never obtain substituted tokens, bypass the proxy, or disable certificate verification. A placeholder
+is inert outside the substitution path. Prefer existing allowed credentials, standing Kubernetes
+permissions, or auto-approved Actions before requesting an Action that needs manual approval.
+
+## Workflows
+
+- [Credentials and refusals](/docs/agents/credentials.md): Read before using an unfamiliar credential or diagnosing a failed proxied call.
+
+## Discovery
+
+- [Effective rules](/v1/rules): Your current destinations, request scopes, credential identities, and presentation targets.
+- [OpenAPI](/openapi.json): Rules response schema.

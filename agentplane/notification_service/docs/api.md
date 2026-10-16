@@ -66,14 +66,12 @@ identity; one event can match multiple subscriptions. Payload content remains pr
 `source.provider` and `event.provider` are required discriminators. Unsupported providers and extra
 fields are rejected. Discovery advertises GitHub only when enabled; OpenAPI describes both supported variants. Inbox cursors, acknowledgement, and runner notices remain provider-neutral.
 
-Platform prompts recommend a short synchronous wait for immediate Actions, subscriptions for approval
-waits or parallel work, and resuming dependent work only after checking authoritative results. They
-include worked subscribe/read/ack examples and the explicit destination identifiers. Automated notices
-are not human instructions; agents acknowledge handled progress explicitly and cancel completed
-subscriptions without withdrawing Actions or retiring the session inbox.
+The platform prompt supplies service URLs, authentication, explicit destination identifiers and
+essential decision rules. The service's [`/llms.txt`](agents/llms.txt) links to agent workflows for
+subscriptions, inbox handling and GitHub. Update those guides when the corresponding behavior changes.
 Prompt changes apply to newly opened sessions; existing runner sessions keep their immutable specs.
 Notices carry only the inbox ID and preparation-time acknowledgement/coverage cursors; retrieval,
-paging, and contiguous-ack instructions live in the standing prompt. Previously prepared notices
+paging, and contiguous-ack instructions live in the served inbox-handling guide. Previously prepared notices
 keep their original text on retries.
 
 ## Persistence and recovery

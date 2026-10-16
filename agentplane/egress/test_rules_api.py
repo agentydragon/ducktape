@@ -13,6 +13,7 @@ from agentplane.egress.conftest import RULES_HOST, SANDBOX_A, SANDBOX_B, TOKEN_A
 from agentplane.egress.policy import Index
 from agentplane.egress.rules_api import PATH, RulesProjection, create_rules_app
 from agentplane.kubernetes_watch import Freshness
+from agentplane.testing.agent_docs import assert_agent_docs
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -29,6 +30,10 @@ async def api(workload_resolver: WorkloadPrincipalResolver) -> AsyncIterator[htt
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=f"http://{RULES_HOST}") as client:
         yield client
+
+
+async def test_agent_docs_without_backend_startup(api: httpx.AsyncClient) -> None:
+    await assert_agent_docs(api)
 
 
 async def test_api_independently_tokenreviews_authorization_and_returns_redacted_rules(

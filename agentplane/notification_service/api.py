@@ -18,6 +18,7 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from agentplane.agent_docs import mount_agent_docs
 from agentplane.notification_service.channels import Channel
 from agentplane.notification_service.models import (
     Acknowledge,
@@ -405,6 +406,7 @@ def create_app(service: Service, principals: WorkloadPrincipalResolver) -> FastA
         },
     )
     app.state.notification_service = service
+    mount_agent_docs(app, package="agentplane/notification_service")
     app.state.workload_authenticator = WorkloadPrincipalAuthenticator(principals)
     app.state.notification_workers = []
     app.include_router(router)

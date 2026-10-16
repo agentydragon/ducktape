@@ -107,6 +107,9 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 ## Upstream address
 
+- The rules API publishes `/llms.txt` and linked Markdown guides under `/docs/agents/` for
+  credential presentation and refusal recovery. They contain no credentials or caller-specific rules;
+  effective access still comes from the authenticated `/v1/rules` view.
 - **A sandbox can read the rules that apply to it**, at
   `http://egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's
   existing HTTP(S) proxy, the same path it uses for every other destination. The answer names the

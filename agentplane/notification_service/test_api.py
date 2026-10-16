@@ -30,6 +30,7 @@ from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.store import Store
 from agentplane.notification_service.testing.store import claimed
+from agentplane.testing.agent_docs import assert_agent_docs
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
 
 PRINCIPAL = WorkloadPrincipal(
@@ -49,6 +50,14 @@ def body(key: str, session_id: str = "session") -> Subscribe:
         idempotency_key=key,
         source=ActionsSource(provider="actions", request_id=uuid4()),
     )
+
+
+async def test_agent_docs_without_backend_startup() -> None:
+    app = create_app(create_autospec(Service, instance=True), create_autospec(WorkloadPrincipalResolver, instance=True))
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://notifications.test"
+    ) as client:
+        await assert_agent_docs(client)
 
 
 async def test_subscription_patch_renews_without_pause(store: Store) -> None:

@@ -6,13 +6,17 @@ Caller-provided provenance never assigns authority. A caller-scoped idempotency 
 once: a repeated key is refused, and the request it named is recovered by looking it up by key,
 never by another submission.
 
+The service publishes an agent overview at `/llms.txt`, linked Markdown workflow guides under
+`/docs/agents/`, and request/response schemas at `/openapi.json`. These static documentation
+surfaces do not require caller admission.
+
 ## Caller admission and Connection authority
 
 **Every** caller is a Kubernetes ServiceAccount carrying the label
 `agentplane.allegedly.works/use-action-service: "true"` in a namespace the service accepts callers
 from, whether it proves that account with a Pod-bound workload token or through an external
-Connection acting as it. Authenticating is not being admitted: an unlabeled account reaches no
-route, so a workload the operator has not named cannot queue Actions for them either. Nothing is
+Connection acting as it. Authenticating is not being admitted: an unlabeled account cannot submit
+Actions, so a workload the operator has not named cannot queue Actions for them either. Nothing is
 admitted before the ServiceAccount watch has synced. The service lists the labeled accounts to the
 operator, which is what a Connection's consent picks from. The
 single operator can inspect Connections, rename them, and unbind them. A Connection's UUID does

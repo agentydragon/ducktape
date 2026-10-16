@@ -136,3 +136,12 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "agent_docs",
+    srcs = ["agent_docs.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//fastapi",
+    ],
+)

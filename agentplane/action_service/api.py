@@ -90,6 +90,7 @@ from agentplane.action_service.service import (
 )
 from agentplane.action_service.store import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
 from agentplane.action_service.updates import ActionUpdateBroker
+from agentplane.agent_docs import mount_agent_docs
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -287,6 +288,7 @@ def create_app(
             yield
 
     app = FastAPI(title="Agentplane Action Service", version="v1", lifespan=lifespan)
+    mount_agent_docs(app, package="agentplane/action_service")
     app.state.action_service = service
     app.state.action_catalog = catalog
     app.state.authenticators = _Authenticators(

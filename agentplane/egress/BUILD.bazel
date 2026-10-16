@@ -470,9 +470,11 @@ py_test(
 py_library(
     name = "rules_api",
     srcs = ["rules_api.py"],
+    data = glob(["docs/agents/**"]),
     deps = [
         ":agent_view",
         ":policy",
+        "//agentplane:agent_docs",
         "//agentplane:subjects",
         "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",
@@ -489,6 +491,7 @@ py_test(
         ":rules_api",
         "//:conftest",
         "//agentplane:kubernetes_watch",
+        "//agentplane/testing:agent_docs",
         "//agentplane/testing:fake_apiserver",
         "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",

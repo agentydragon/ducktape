@@ -16,6 +16,9 @@ confirm retirement. Retirement cancels subscriptions and stops retries but retai
 and notices for normal retention and inspection; it never acknowledges them or rebinds
 an inbox to a replacement Sandbox.
 
+Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked subscription, inbox-handling and
+GitHub workflows served under `/docs/agents/`. Update the guides when those contracts change.
+
 - [API, authorization, persistence and delivery semantics](docs/api.md)
 - [Staging GitHub acceptance record](docs/staging_github_acceptance.md) — live CI/comment delivery and its limits.
 - [Plans and deferred work](../plans/notifications.md)

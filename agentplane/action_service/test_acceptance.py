@@ -6,6 +6,7 @@ import asyncio
 import json
 from datetime import timedelta
 from typing import Any, cast
+from unittest.mock import create_autospec
 from uuid import uuid4
 
 import httpx
@@ -45,6 +46,7 @@ from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
+from agentplane.testing.agent_docs import assert_agent_docs
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
     WorkloadPrincipalRejectedError,
@@ -152,6 +154,11 @@ async def _terminal(client: httpx.AsyncClient, request_id: str, token: str = "wo
             return body
         await asyncio.sleep(0.01)
     raise AssertionError("action request did not reach a terminal state")
+
+
+async def test_agent_docs_without_backend_startup(operator_idp: OperatorIdp) -> None:
+    async with await _client(create_autospec(ActionService, instance=True), operator_idp) as client:
+        await assert_agent_docs(client)
 
 
 async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
