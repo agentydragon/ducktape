@@ -247,7 +247,6 @@ export function SpendingHistoryChart({
         animation: false,
       },
     });
-    queueMicrotask(() => instance.update("none"));
     return () => instance.destroy();
   }, [allowance.currency, chart, transactions]);
 

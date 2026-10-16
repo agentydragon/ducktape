@@ -619,10 +619,14 @@ async def test_chart_transactions_start_before_view_finishes(page: Page, dashboa
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+@pytest.mark.parametrize(("width", "height"), [(390, 844)])
+@pytest.mark.parametrize("probe_repeat", range(20))
 async def test_spending_decision_dark_theme(
-    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int, probe_repeat: int
 ) -> None:
+    if probe_repeat >= 10:
+        session = await page.context.new_cdp_session(page)
+        await session.send("Emulation.setCPUThrottlingRate", {"rate": 4})
     await page.emulate_media(color_scheme="dark")
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -630,21 +634,21 @@ async def test_spending_decision_dark_theme(
     await expect(page.locator("html")).to_have_attribute("data-mantine-color-scheme", "dark")
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    initial = f"dashboard-dark-{width}.png"
+    initial = f"dashboard-dark-{width}-{probe_repeat}.png"
     await view.capture(
         initial.removesuffix(".png"), label=f"{width}px dark theme", full_page=True, animations="disabled"
     )
     await page.get_by_label("Hypothetical flexible purchase").fill("100")
     await page.get_by_text("Pace warning", exact=True).last.wait_for()
     view.errors.assert_none(context="Spend")
-    warning = f"dashboard-dark-{width}-warning.png"
+    warning = f"dashboard-dark-{width}-{probe_repeat}-warning.png"
     await view.capture(
         warning.removesuffix(".png"), label=f"{width}px dark pace warning", full_page=True, animations="disabled"
     )
     await page.get_by_label("Hypothetical flexible purchase").fill("250")
     await page.get_by_text("Over allowance", exact=True).last.wait_for()
     view.errors.assert_none(context="Spend")
-    exceeded = f"dashboard-dark-{width}-exceeded.png"
+    exceeded = f"dashboard-dark-{width}-{probe_repeat}-exceeded.png"
     await view.capture(
         exceeded.removesuffix(".png"), label=f"{width}px dark over allowance", full_page=True, animations="disabled"
     )
