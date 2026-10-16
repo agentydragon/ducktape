@@ -197,9 +197,9 @@ func (r *Reconciler) render(binding *policyapi.PolicyBinding, account *corev1.Se
 
 // converge makes the binding's labeled native bindings exactly `desired`, keyed by name.
 func (r *Reconciler) converge(ctx context.Context, bindingName string, desired map[native]client.Object) error {
-	want := map[string]client.Object{}
+	want := map[client.ObjectKey]client.Object{}
 	for _, obj := range desired {
-		want[obj.GetNamespace()+"/"+obj.GetName()] = obj
+		want[client.ObjectKeyFromObject(obj)] = obj
 	}
 	actual, err := r.natives(ctx, bindingName)
 	if err != nil {
@@ -234,7 +234,7 @@ func (r *Reconciler) converge(ctx context.Context, bindingName string, desired m
 	return nil
 }
 
-func (r *Reconciler) natives(ctx context.Context, bindingName string) (map[string]client.Object, error) {
+func (r *Reconciler) natives(ctx context.Context, bindingName string) (map[client.ObjectKey]client.Object, error) {
 	labels := client.MatchingLabels{ManagedByLabel: FieldManager, PolicyNamespaceLbl: r.PolicyNamespace}
 	index := client.MatchingFields{nativeBindingIndex: bindingName}
 	var roleBindings rbacv1.RoleBindingList
@@ -245,12 +245,12 @@ func (r *Reconciler) natives(ctx context.Context, bindingName string) (map[strin
 	if err := r.List(ctx, &clusterBindings, labels, index); err != nil {
 		return nil, err
 	}
-	out := map[string]client.Object{}
+	out := map[client.ObjectKey]client.Object{}
 	for i := range roleBindings.Items {
-		out[roleBindings.Items[i].Namespace+"/"+roleBindings.Items[i].Name] = &roleBindings.Items[i]
+		out[client.ObjectKeyFromObject(&roleBindings.Items[i])] = &roleBindings.Items[i]
 	}
 	for i := range clusterBindings.Items {
-		out["/"+clusterBindings.Items[i].Name] = &clusterBindings.Items[i]
+		out[client.ObjectKeyFromObject(&clusterBindings.Items[i])] = &clusterBindings.Items[i]
 	}
 	return out, nil
 }
