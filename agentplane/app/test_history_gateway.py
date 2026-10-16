@@ -167,22 +167,47 @@ async def test_stopped_service_never_falls_back_to_reachable_runner(
     assert not runner.sessions
 
 
-async def test_runner_proxy_lists_a_session_without_registry_lookup(
+async def test_runner_proxy_lists_and_resumes_a_session_without_registry_lookup(
     cluster: SandboxCluster,
     live_index: LiveIndex,
     tmp_path: Path,
     runner: Runner,
     spec: runner_pb2.SessionSpec,
+    model: ScriptedModel,
     service_history_db_url: str,
 ) -> None:
     token_file = tmp_path / "gateway-token"
     async with authenticated_runner_gateway(cluster, runner, token_file, database_url=service_history_db_url) as remote:
-        session_id = uuid4()
-        # Create runner state directly, without a Gateway.CreateSession registry row, and exercise
-        # the app's remaining runner read through the proxy.
-        await runner.open_session(str(session_id), spec, None)
+        session_id = str(uuid4())
+        # Create runner state directly, without a Gateway.CreateSession registry row. Exercise the
+        # app's live inventory and ResumeSession through the identity-fenced proxy.
+        session = await runner.open_session(session_id, spec, None)
+        await session.command(
+            command_pb2.Command(command_id="resume-without-registry", submit_input=command_pb2.SubmitInput(text="hi"))
+        )
+        await model.reply(await model.request(), Text("hello"))
+        directory = RunnerDirectory(live_index, remote.control)
+        client = directory.client(SANDBOX)
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                (summary,) = await client.list_sessions()
+                assert summary.session_id == session_id
+                assert not summary.active_turn_id
+        await session.shutdown()
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                (summary,) = await client.list_sessions()
+                assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
 
-        summaries = await RunnerDirectory(live_index, remote.control).client(SANDBOX).list_sessions()
+        attached = await client.resume(session_id)
+        assert attached.session_id == session_id
+        assert attached.spec == summary.spec
+        assert attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+        summaries = await client.list_sessions()
         assert [summary.session_id for summary in summaries] == [str(session_id)]
 
 

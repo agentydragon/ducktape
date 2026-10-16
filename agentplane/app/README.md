@@ -60,9 +60,11 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   fields.
 - Sandbox provisioning uses the shared `agentplane/sandboxes` inventory directly as the requesting
   operator. Session openings and commands use `SessionDispatcherClient`; the Sandbox control client
-  reaches current-incarnation live checks and explicit native resume through the Runner Gateway.
-  The app reads Kubernetes projections for UI updates. Its Gateway placement API client has no
-  production caller after #10622, pending pinned-caller review.
+  reaches current-incarnation live checks and explicit native resume through the per-Sandbox Runner
+  Proxy, carrying the live Sandbox name, UID and owner. Native resume calls the Runner directly and
+  does not consult the legacy Gateway Session registry. The app reads Kubernetes projections for UI
+  updates. Its Gateway placement API client has no production caller after #10622, pending
+  pinned-caller review.
 - `egress_access.py`: egress-policy/binding projections for the UI, and the operator's grants and
   revocations of `PolicyBinding`s, written through the Kubernetes API by the app itself. Bindings remain
   desired-state grants, with expiry/revocation per binding; Flux-owned and Sandbox-controlled bindings

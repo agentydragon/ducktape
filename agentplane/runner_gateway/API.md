@@ -25,18 +25,19 @@ The gateway keeps no Session history; runners push their Events to the
   UUID and an attachment snapshot with it. A `{session_id}` placeholder in a selected `cwd` override
   is expanded to that UUID, just like the stored default cwd. A retry with the same UUID and inputs
   returns the Session again; the runner refuses changed inputs and the gateway refuses another
-  Sandbox; a request without a UUID is invalid. `ResumeSession` accepts the public ID of a Session
-  registered within the pinned Sandbox UID. The UUID does not apply to runner-discovered native
-  child sessions. The app opens new Threads through Session Dispatcher; repository search found no
-  production caller of this Gateway `CreateSession` RPC. Because Gateway `CreateSession` is the
-  registry's only writer, Dispatcher-opened Sessions do not get a registry row. After #10622 the app
-  obtains their Sandbox name from History, but its final `ResumeSession` call still fails the Gateway
-  registry check for those Sessions.
+  Sandbox; a request without a UUID is invalid. The legacy Gateway `ResumeSession` accepts the public
+  ID of a Session registered within the pinned Sandbox UID. The UUID does not apply to
+  runner-discovered native child sessions. The app opens new Threads through Session Dispatcher;
+  repository search found no production caller of this Gateway `CreateSession` RPC. Because Gateway
+  `CreateSession` is the registry's only writer, Dispatcher-opened Sessions do not get a registry row.
 - `CreateSession`'s setup uses the runner's existing idempotence; the Sandbox's bootstrap runs in the runner's first `OpenSession`. The response is the
   native attachment snapshot, not a claim that all setup or a model turn has completed.
 - `ResumeSession`: uses exactly the runner-retained spec, without applying today's
   defaults/instructions or rerunning setup. Missing sessions and failed/interrupted setup are
-  refused.
+  refused. This legacy Gateway wrapper requires a matching public registry row. The app's explicit
+  Resume action instead calls `Runner.ResumeSession` through the Sandbox control Service, carrying
+  the live Sandbox name, UID and owner to the Runner Proxy; its live-list and retained-spec checks
+  do not depend on the Gateway registry.
 - `SubmitCommand`: names the Session's Sandbox incarnation and public Session ID, like
   `ResumeSession`; the gateway refuses a Session not opened in that incarnation, and an incarnation
   that is gone or being torn down. It forwards

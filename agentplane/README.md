@@ -136,7 +136,7 @@ flowchart LR
     sandboxctl[Sandbox Controller]
     k8s[Kubernetes API]
     app -->|session opens + commands| dispatcher
-    app -->|live checks + resume| gateway
+    app -->|per-Sandbox Runner Proxy: live checks + explicit resume| gateway
     dispatcher -->|queued opens + commands| gateway
     sandboxctl -->|Quiesce| gateway
     dispatcher -->|watch + guarded wake| k8s
@@ -318,9 +318,11 @@ source are retired; the History Service retains its database and authored histor
   grants to Kubernetes; the Sandbox Controller reconciles resources and owns status. The Session
   Dispatcher owns production Session openings and durable command admission/delivery state. The
   Runner Gateway owns the runner control stream, a legacy partial Session placement registry and
-  authorized live runner access. Explicit app resume currently depends on that registry and cannot
-  resolve Dispatcher-opened Sessions; the placement authority and migration are under review. The controller
-  holds deletion until the runner has sealed its Sessions through the Gateway.
+  authorized live runner access. The app reads current runner inventory and explicitly resumes a
+  retained harness through the Sandbox control Service, with the Runner Proxy checking the live
+  Sandbox name, UID and owner. The legacy Gateway Resume RPC still depends on its partial registry;
+  its retirement remains gated on external and pinned callers. The controller holds deletion until
+  the runner has sealed its Sessions through the Gateway.
 
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
 [`docs/`](docs/).

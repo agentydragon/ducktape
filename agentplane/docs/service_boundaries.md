@@ -13,7 +13,8 @@ and shared infrastructure, never services to the app.
 ```mermaid
 flowchart LR
     App[Integration app] --> Kubernetes[Kubernetes API: Sandbox spec and operator grants]
-    App -->|live checks, placement, native resume| Gateway[Runner Gateway]
+    App -->|health probe| Gateway[Runner Gateway]
+    App -->|UID/owner-fenced live checks and native resume| Proxy[Per-Sandbox Runner Proxy]
     App -->|openings and durable commands| Dispatcher[Session Dispatcher]
     Dispatcher -->|delivery through runner proxy| Gateway
     App --> History[History Service]
@@ -26,6 +27,7 @@ flowchart LR
     Controller[Sandbox Controller] --> Kubernetes
     Controller --> Gateway
     Gateway --> Runners[Runners]
+    Proxy --> Runners
 ```
 
 The graph shows ownership direction, not every infrastructure dependency.
@@ -49,18 +51,21 @@ presentation state and projections, but those must not become hidden sources of 
 - **Integration app:** user-facing composition and interaction. As the requesting operator, it writes
   Sandbox `spec` and operator-owned `PolicyBinding` grants through Kubernetes. It reads Sandbox
   projections for the UI, opens Sessions and submits commands through the Session Dispatcher, uses
-  the Runner Gateway for placement and authorized live runner operations, and reads Session history
-  and Threads from the History Service. After #10622, resume routing gets the Sandbox name from the
-  History Thread; the final Gateway `ResumeSession` call still requires a registry row that
-  Dispatcher openings do not create. See the [control-surface audit](control_surface_retirement.md).
+  the Runner Gateway for placement, and uses each Sandbox's Runner Proxy for UID/owner-fenced live
+  inventory and explicit native resume. Resume keeps the Thread's History-backed name as a routing
+  key, then verifies the current runner's retained Session and spec before calling
+  `Runner.ResumeSession`; it does not read the Gateway registry. The legacy Gateway Resume RPC
+  remains separately gated on external and pinned callers. The app reads Session history and Threads
+  from the History Service. See the [control-surface audit](control_surface_retirement.md).
 - **Sandbox Controller:** reconciles requested Sandbox state into ServiceAccounts, Pods or VMs,
   state volumes and controller-owned grants. It owns `Sandbox.status`, including quiescing facts,
   and asks the Runner Gateway to seal Sessions before stopping or deleting a runner.
 - **Runner Gateway:** runner control stream, verified destination bindings, a legacy partial Session
-  placement registry, authorized live runner access, and read-only Sandbox inventory. Only its direct
-  `CreateSession` writes that registry; Dispatcher openings are absent. Its command wrapper and
-  redundant live operations remain on the retirement path after callers migrate; the Dispatcher owns
-  sender-facing durable command admission and delivery state.
+  placement registry, the per-Sandbox Runner Proxy and read-only Sandbox inventory. Only its direct
+  `CreateSession` writes the registry; Dispatcher openings are absent. The app uses the proxy for
+  live inventory and native resume. Its command wrapper and redundant live operations remain on the
+  retirement path after callers migrate; the Dispatcher owns sender-facing durable command admission
+  and delivery state.
 - **History Service:** the Session Event archive, the ingress runners push their journals to, the
   Thread fold of each Session, and the read API over both. It retains the existing `sandbox_service`
   PostgreSQL database and its authored history.

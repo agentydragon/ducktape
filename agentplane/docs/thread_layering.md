@@ -442,7 +442,7 @@ the authoritative transport of history.
 ```mermaid
 sequenceDiagram
     participant A as App
-    participant G as Runner Gateway
+    participant G as Runner Gateway per-Sandbox proxy
     participant HS as History Service
     participant R1 as Old runner
     participant S as Runner state volume
@@ -456,7 +456,7 @@ sequenceDiagram
     HS-->>R2: Acknowledgement {cursor:K}
     R2->>HS: E(K+1) onward
     A->>G: POST /threads/T/resume (explicit native resume)
-    G->>R2: ResumeSession {session_id:T}: stored spec
+    G->>R2: Runner.ResumeSession {session_id:T}: stored spec
     R2->>H: Claude argv --resume native-id, or<br/>Codex method:thread/resume, params:{threadId:native-id}
     H-->>R2: Native initialization/resume response with native-id
     R2->>S: Record evidence, reconcile only proven-safe commands
@@ -465,10 +465,10 @@ sequenceDiagram
 A harness-only crash follows the same evidence rules without replacing the runner.
 An app or History Service outage by itself never triggers native resume. A broken control
 stream or push is not a harness stop. Sharing a Thread id and counter does not prove native continuation.
-The explicit app resume route now gets the Sandbox name from the History Thread and checks the live
-runner, but its final Gateway `ResumeSession` call still requires a registry row. Only Gateway
-`CreateSession` writes the registry, so the route refuses Dispatcher-opened Sessions. See the
-[control-surface audit](control_surface_retirement.md).
+The explicit app resume route gets the Sandbox name from the History Thread and checks the live
+runner's retained Session, setup state and launch spec before calling `Runner.ResumeSession` through
+the Sandbox control Service. The proxy checks the live Sandbox name, UID and owner; this path does
+not use the legacy Gateway registry. See the [control-surface audit](control_surface_retirement.md).
 
 ## Timeline, pending queue, and operational state
 

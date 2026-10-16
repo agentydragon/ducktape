@@ -51,7 +51,7 @@ not redesign storage, the History Service, or policy.
 The current sender path is queued: the app and Notification Service submit per-operation commands to
 Session Dispatcher, which durably records them and delivers after Sandbox readiness. The legacy
 Gateway `SubmitCommand` wrapper has no production sender in this repository. Explicit user-requested
-native resume and live runner reads still use Gateway directly; see the
+native resume and live runner reads use the Runner Proxy through the per-Sandbox control Service; see the
 [control-surface audit](control_surface_retirement.md) for the remaining caller and authorization gates.
 
 ## Where the lines could fall
@@ -451,20 +451,21 @@ accepted, then delivered, or failed with a reason. The runner proxy at the Gatew
 network path to the runner. The selected target is that only Dispatcher starts or continues work
 (`OpenSession`, `ResumeSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`); the controller
 alone calls `Quiesce`; `InterruptTurn`, `StopRunnerSession` and reads stay open to system callers and
-diagnostics. The app's explicit native resume remains a current direct `ResumeSession` caller and is
-not migrated by this decision. Per-method Gateway authorization that restricts start-or-continue work
-to Dispatcher is a rollout gate, tracked in the [control-surface audit](control_surface_retirement.md).
+diagnostics. The app's explicit native resume directly calls `Runner.ResumeSession` through the proxy.
+This remains a direct start-work caller and blocks narrowing that method to Dispatcher alone until
+its method-level authorization has an explicit disposition. Track that gate in the
+[control-surface audit](control_surface_retirement.md).
 
 Target Runner surface after the remaining direct callers and authorization gate are resolved:
 
-| `Runner` method                                       | After the Dispatcher                                                                               |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` | Dispatcher only                                                                                    |
-| `InterruptTurn`, `StopRunnerSession`                  | Dispatcher (senders); direct for system callers; never wake a Sandbox                              |
-| `OpenSession`                                         | Dispatcher only                                                                                    |
-| `ResumeSession`                                       | Dispatcher for command delivery; the app's explicit native resume remains direct pending migration |
-| `Quiesce`                                             | Sandbox Controller only                                                                            |
-| `ListSessions`                                        | direct; reads need no wake                                                                         |
+| `Runner` method                                       | After the Dispatcher                                                                                |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` | Dispatcher only                                                                                     |
+| `InterruptTurn`, `StopRunnerSession`                  | Dispatcher (senders); direct for system callers; never wake a Sandbox                               |
+| `OpenSession`                                         | Dispatcher only                                                                                     |
+| `ResumeSession`                                       | Dispatcher for command delivery; app's explicit user action remains direct through the Runner Proxy |
+| `Quiesce`                                             | Sandbox Controller only                                                                             |
+| `ListSessions`                                        | direct; reads need no wake                                                                          |
 
 A deployment with no Dispatcher is a valid reduced configuration, because the runner, gateway and controller do
 not depend on the Dispatcher. Idle policy is the controller's, so such a Sandbox still suspends when idle, and only

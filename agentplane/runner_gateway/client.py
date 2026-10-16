@@ -12,6 +12,7 @@ from agentplane.grpc.calls import bearer, call_unary, dial
 from agentplane.proto import (
     command_pb2,
     event_log_pb2,
+    runner_control_pb2,
     runner_control_pb2_grpc,
     runner_gateway_pb2,
     runner_gateway_pb2_grpc,
@@ -66,16 +67,24 @@ class SandboxControlClient:
     def runner(self, destination: SandboxDestination) -> SandboxRunner:
         return SandboxRunner(self, destination)
 
-    async def list_sessions(self, destination: SandboxDestination) -> list[runner_pb2.SessionSummary]:
-        """Read live runner inventory through its proxy, fenced to the expected Sandbox identity."""
+    async def runner_unary[T](
+        self,
+        destination: SandboxDestination,
+        call: Callable[[runner_control_pb2_grpc.RunnerAsyncStub], Callable[..., Awaitable[T]]],
+        request: Message,
+        *,
+        timeout_s: float | None = None,
+    ) -> T:
+        """Call a Runner RPC through its control Service, fenced to the expected Sandbox identity."""
         async with dial(
             self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
         ) as channel:
-            response = await call_unary(
-                runner_control_pb2_grpc.RunnerStub(channel).ListSessions,
-                runner_pb2.ListSessionsRequest(),
+            runner: runner_control_pb2_grpc.RunnerAsyncStub = runner_control_pb2_grpc.RunnerStub(channel)
+            return await call_unary(
+                call(runner),
+                request,
                 token_file=self.token_file,
-                timeout_s=self.request_timeout_s,
+                timeout_s=timeout_s or self.request_timeout_s,
                 extra_metadata=(
                     (SANDBOX_HEADER, destination.sandbox),
                     (SANDBOX_UID_HEADER, destination.sandbox_uid),
@@ -83,6 +92,12 @@ class SandboxControlClient:
                     (SANDBOX_OWNER_NAME_HEADER, destination.owner.name),
                 ),
             )
+
+    async def list_sessions(self, destination: SandboxDestination) -> list[runner_pb2.SessionSummary]:
+        """Read live runner inventory through its proxy, fenced to the expected Sandbox identity."""
+        response = await self.runner_unary(
+            destination, lambda stub: stub.ListSessions, runner_pb2.ListSessionsRequest()
+        )
         return list(response.sessions)
 
 
@@ -165,10 +180,10 @@ class SandboxRunner:
 
     async def resume(self, session_id: str) -> runner_pb2.Attached:
         """Resume a stopped harness on the Runner holding this Sandbox's connection."""
-        request = runner_gateway_pb2.ResumeSessionRequest(
-            destination=sandboxes_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
-        )
-        response = await self.control.held_unary(
-            self.destination, lambda stub: stub.ResumeSession, request, timeout_s=self.control.lifecycle_timeout_s
+        response = await self.control.runner_unary(
+            self.destination,
+            lambda stub: stub.ResumeSession,
+            runner_control_pb2.ResumeSessionRequest(session_id=session_id),
+            timeout_s=self.control.lifecycle_timeout_s,
         )
         return response.attached

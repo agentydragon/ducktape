@@ -89,14 +89,14 @@ There are two different Session inventories:
   Session is present in the current runner incarnation. See the
   [History README](../history_service/README.md).
 
-| Consumer                                                | Fact it needs                                                                                                | Present authority and disposition to review                                                                                                                                                                           |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App Thread table, Sandbox filter/search and Thread view | Retained Thread identity, Sandbox association and folded display state, including after Sandbox deletion     | History `FindSessions`/summaries through `ThreadStore` and `Summaries`; keep as retained inventory. `ContentStore` uses summary scope for retained evidence, not live presence.                                       |
-| App archive safety                                      | Whether this Thread's harness is running in the current, ready runner                                        | `api.py` calls `RunnerBridge.list_sessions`; keep a live check or approve an equally authoritative narrower state read. A Pod whose runner is not ready currently blocks archive.                                     |
-| App explicit native resume                              | Current runner's retained Session, recoverable spec and setup state, compared with the History-backed Thread | `RunnerBridge.resume_thread` checks live `ListSessions` before Gateway resume. History's old attachment cannot establish present membership or current spec.                                                          |
-| Notification subscription                               | Session membership in the requested UID/owner Sandbox at subscription time                                   | `Service.subscribe` validates namespace, UID and owner, then calls live `ListSessions`; preserve an equivalent preflight or explicitly revise offline subscription semantics. This read alone is not send permission. |
-| Gateway wrapper and test drivers                        | Gateway wrapper forwards `ListSessions`; runner drivers inspect lifecycle and quiesce behavior               | Audit pinned/external wrapper callers separately; preserve test coverage through any narrower live read. Wrapper retirement does not imply runner-read retirement.                                                    |
-| Notification outcome reconciliation                     | Durable command journal watermark and entries                                                                | History `ReadSessionEvents` is evidence of runner admission/confirmation after an attempt, not destination inventory; its separate outcome design remains open.                                                       |
+| Consumer                                                | Fact it needs                                                                                                | Present authority and disposition to review                                                                                                                                                                                            |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App Thread table, Sandbox filter/search and Thread view | Retained Thread identity, Sandbox association and folded display state, including after Sandbox deletion     | History `FindSessions`/summaries through `ThreadStore` and `Summaries`; keep as retained inventory. `ContentStore` uses summary scope for retained evidence, not live presence.                                                        |
+| App archive safety                                      | Whether this Thread's harness is running in the current, ready runner                                        | `api.py` calls `RunnerBridge.list_sessions`; keep a live check or approve an equally authoritative narrower state read. A Pod whose runner is not ready currently blocks archive.                                                      |
+| App explicit native resume                              | Current runner's retained Session, recoverable spec and setup state, compared with the History-backed Thread | `RunnerBridge.resume_thread` checks live `ListSessions`, then calls `Runner.ResumeSession` through the per-Sandbox proxy with the live Sandbox identity. History's old attachment cannot establish present membership or current spec. |
+| Notification subscription                               | Session membership in the requested UID/owner Sandbox at subscription time                                   | `Service.subscribe` validates namespace, UID and owner, then calls live `ListSessions`; preserve an equivalent preflight or explicitly revise offline subscription semantics. This read alone is not send permission.                  |
+| Gateway wrapper and test drivers                        | Gateway wrapper forwards `ListSessions`; runner drivers inspect lifecycle and quiesce behavior               | Audit pinned/external wrapper callers separately; preserve test coverage through any narrower live read. Wrapper retirement does not imply runner-read retirement.                                                                     |
+| Notification outcome reconciliation                     | Durable command journal watermark and entries                                                                | History `ReadSessionEvents` is evidence of runner admission/confirmation after an attempt, not destination inventory; its separate outcome design remains open.                                                                        |
 
 The app's History reads are appropriate for retained views. No History inventory read can stand in for
 the three current live decisions. A narrower runner state or membership API could replace broad
@@ -139,7 +139,9 @@ The current path has different authority at each step:
 `RunnerGateway`'s older lifecycle and command wrapper checks a full `SandboxDestination` and its
 Session registry. That wrapper's retirement is separate from selecting an execution authority for
 Dispatcher's proxy path. The registry cannot validate Sessions opened directly by Dispatcher because
-only Gateway `CreateSession` writes it; its remaining native-resume reader has its own migration gate.
+only Gateway `CreateSession` writes it. The app's explicit native resume now bypasses that registry
+and calls the Runner through the same identity-fenced per-Sandbox proxy as its live inventory read;
+the legacy Gateway resume reader remains only for external or pinned callers until its retirement gate.
 
 **Approved public destination (operator, 2026-10-15):** every submission names the exact
 `(Sandbox UID, Agentplane Session ID)`. Store, native-ID and process routing are runner-private;
@@ -242,8 +244,9 @@ other live interlocutors. App and Notification call the per-Sandbox proxy for UI
 authenticated `RunnerControl.Connect` stream to a separate Gateway listener through the egress
 sidecar. The holder writes each Sandbox's connection Lease and the EndpointSlice behind its
 `<sandbox>-control` Service; all Gateway replicas watch the Leases. Runner journal ingress goes to
-History, not Gateway. The older `RunnerGateway` wrapper and its Session registry remain until the
-independent caller, native-resume and pinned-image gates are met.
+History, not Gateway. The app's explicit resume uses the per-Sandbox proxy. The older `RunnerGateway`
+wrapper and its Session registry remain until their external/pinned caller and app-image rollout
+gates are met.
 
 **History prerequisite, checked on the 2026-10-15 tree:** neither Dispatcher nor Gateway has a
 runtime History Service client, History RPC call or History configuration edge. Their entry points,
@@ -294,11 +297,10 @@ transaction mapping; copying the Python SQLAlchemy models is not enough. Preserv
 `session_dispatcher` rows and idempotency keys (`dispatch`, `session_opening`, `sandbox_ownership`,
 `wake_attempt`) and the `sandbox_commands` registry until its readers/writers are gone. Retain their
 current database roles and run only additive migrations if the Go implementation truly needs them;
-an applied migration is immutable. The app's explicit native Resume action stays on Gateway through
-the unified cutover, so the Go service must port that live wrapper and registry behavior. Audit and
-port any other wrapper method still used by external or pinned callers. Canonicalizing explicit
-resume inside the unified service is later work; neither registry deletion nor either database drop
-is part of the merger.
+an applied migration is immutable. The app's explicit native Resume action uses `Runner.ResumeSession`
+through the per-Sandbox control proxy, so the unified service must preserve that proxy and Runner
+method. Port the legacy Gateway resume wrapper and registry only if external or pinned callers still
+use them after audit. Neither registry deletion nor either database drop is part of the merger.
 
 Keep the current `agentplane-session-dispatcher` and `agentplane-runner-gateway` Service names and
 token audiences as two logical front doors to the unified Pods. Use distinct, authenticated
@@ -337,9 +339,9 @@ runner reconnect, UID replacement, controller Quiesce and app/Notification live 
 two old Deployments as part of the fenced cutover so they cannot race the new writers; recheck that
 neither service has acquired a History dependency. Only after the unified path is stable should
 old images/config/RBAC and obsolete inter-service token
-projection be removed. The explicit Resume action and Gateway path remain available at cutover;
-later canonicalization of resume, wrapper retirement, registry retirement and database deletion
-are separate work.
+projection be removed. The explicit Resume action continues through the Runner Proxy; any legacy
+Gateway wrapper remains available only as long as external or pinned callers require it. Wrapper
+retirement, registry retirement and database deletion are separate work.
 
 For persistence, compare the current durable queue with direct runner admission:
 

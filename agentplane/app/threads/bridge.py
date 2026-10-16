@@ -96,8 +96,8 @@ class RunnerBridge:
 
         The expectations are the Thread's view of its harness and workspace; None, before any
         runner attachment is folded, leaves nothing to check the retained spec against.
-        The Runner Gateway still verifies the current Sandbox UID and the Session's registered
-        incarnation before attaching.
+        The Runner Proxy verifies the current Sandbox UID and owner before forwarding the attach to
+        the runner, which resumes from its retained Session spec.
         """
         if not await self._event_logs.exists(thread_id):
             raise ThreadNotFoundError(thread_id)
