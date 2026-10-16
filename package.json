@@ -5,6 +5,9 @@
   "type": "module",
   "description": "Ducktape infrastructure monorepo",
   "pnpm": {
+    "patchedDependencies": {
+      "chart.js@4.5.1": "patches/chartjs_line_overflow.patch"
+    },
     "overrides": {
       "esbuild": ">=0.28.0"
     },

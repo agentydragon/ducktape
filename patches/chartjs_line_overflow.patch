@@ -1,5 +1,5 @@
---- dist/chart.js
-+++ dist/chart.js
+--- a/dist/chart.js
++++ b/dist/chart.js
 @@ -885,7 +885,7 @@
   _update(mode) {
          const meta = this._cachedMeta;
@@ -69,8 +69,8 @@
          }
          this.notifyPlugins('afterDatasetsUpdate', {
              mode
---- dist/chart.cjs
-+++ dist/chart.cjs
+--- a/dist/chart.cjs
++++ b/dist/chart.cjs
 @@ -887,7 +887,7 @@
   _update(mode) {
          const meta = this._cachedMeta;
