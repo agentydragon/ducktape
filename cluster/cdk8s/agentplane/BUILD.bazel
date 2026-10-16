@@ -2,7 +2,10 @@
 
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-package(default_visibility = ["//cluster/cdk8s:__pkg__"])
+package(default_visibility = [
+    "//cluster/cdk8s:__pkg__",
+    "//agentplane/x/k3s_env:__pkg__",
+])
 
 py_library(
     name = "db_backups",
@@ -105,6 +108,7 @@ py_library(
     name = "egress",
     srcs = ["egress.py"],
     visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
@@ -391,6 +395,7 @@ py_library(
     name = "actions",
     srcs = ["actions.py"],
     visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
@@ -671,7 +676,7 @@ py_library(
 py_library(
     name = "testing",
     srcs = ["testing.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = ["//cluster/cdk8s:__pkg__", "//agentplane/x/k3s_env:__pkg__"],
     deps = [
         ":actions",
         ":actions_testing_fixtures",
@@ -797,6 +802,7 @@ py_library(
     name = "egress_credentials",
     srcs = ["egress_credentials.py"],
     visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],

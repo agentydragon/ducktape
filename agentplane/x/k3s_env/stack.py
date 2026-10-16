@@ -1,6 +1,6 @@
 """A bare-k3s copy of the `agentplane-testing` stack on one RBE action, for tests to drive.
 
-Starts k3s (no kube-proxy, no Cilium), loads the Bazel-built service images, applies the rewritten
+Starts k3s (no kube-proxy, no Cilium), loads the Bazel-built service images, applies the composed
 manifest and yields the app's address and a token once every Deployment is Available. It fails at the
 first Deployment that does not, with the Pod states and logs of whatever did not start.
 """
@@ -19,11 +19,12 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 from agentplane.acceptance.conftest import AUDIENCE, TESTING_SERVICE_ACCOUNT
-from agentplane.x.k3s_env import render
+from agentplane.x.k3s_env import fixture_chart
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,34 @@ CNPG_MANIFEST_URL = "https://github.com/cloudnative-pg/cloudnative-pg/releases/d
 DEPLOY_TIMEOUT_SECONDS = 480
 # k3s's default Pod CIDR.
 POD_CIDR = "10.42.0.0/16"
+
+
+def _kubevirt_stub_crds() -> list[dict[str, Any]]:
+    """Bare-cluster test stubs for kinds the controller still watches with VM mode disabled."""
+    return [
+        {
+            "apiVersion": "apiextensions.k8s.io/v1",
+            "kind": "CustomResourceDefinition",
+            "metadata": {"name": f"{plural}.kubevirt.io"},
+            "spec": {
+                "group": "kubevirt.io",
+                "scope": "Namespaced",
+                "names": {"kind": kind, "plural": plural, "singular": kind.lower()},
+                "versions": [
+                    {
+                        "name": "v1",
+                        "served": True,
+                        "storage": True,
+                        "schema": {"openAPIV3Schema": {"type": "object", "x-kubernetes-preserve-unknown-fields": True}},
+                    }
+                ],
+            },
+        }
+        for kind, plural in (
+            ("VirtualMachine", "virtualmachines"),
+            ("VirtualMachineInstance", "virtualmachineinstances"),
+        )
+    ]
 
 
 def run(*command: str, check: bool = True, input_text: str | None = None) -> str:
@@ -148,8 +177,8 @@ class K3s:
         ).replace(
             ".:53 {",
             f".:53 {{\n    bind {self.node_ip}\n"
-            f"    rewrite name exact postgres-rw.{render.NAMESPACE}.svc.cluster.local "
-            f"{render.PRIMARY_SERVICE}.{render.NAMESPACE}.svc.cluster.local",
+            f"    rewrite name exact postgres-rw.{fixture_chart.NAMESPACE}.svc.cluster.local "
+            f"{fixture_chart.PRIMARY_SERVICE}.{fixture_chart.NAMESPACE}.svc.cluster.local",
             1,
         )
         self.kubectl(
@@ -161,23 +190,27 @@ class K3s:
             json.dumps({"spec": {"template": {"spec": {"hostNetwork": True, "dnsPolicy": "Default"}}}}),
         )  # fmt: skip
 
-    def import_images(self, references: list[Path]) -> None:
+    def import_images(self, references: list[Path], *, required_images: set[str]) -> None:
         """Stream Bazel OCI layouts to containerd, preserving blob digests and sharing duplicate blobs."""
         if not references:
             raise ValueError("No Bazel OCI layouts found in runfiles")
         manifests = []
         blobs: dict[str, Path] = {}
+        imported_tags: set[str] = set()
         for reference in references:
             layout = get_required_path(reference.read_text().strip())
             name = reference.stem.removesuffix("_layout")
             repository = "runner" if name == "runner" else "agentplane-" + name.replace("_", "-")
             tag = f"git.allegedly.works/ducktape-ci/{repository}:unset"
+            imported_tags.add(tag)
             index = json.loads((layout / "index.json").read_text())
             for descriptor in index["manifests"]:
                 descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = tag
                 manifests.append(descriptor)
             for blob in (layout / "blobs").glob("*/*"):
                 blobs.setdefault(blob.relative_to(layout).as_posix(), blob)
+        if missing := required_images - imported_tags:
+            raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
         print(f"importing {len(references)} OCI layouts with {len(blobs)} distinct blobs")
         with tempfile.TemporaryFile() as output:
             with subprocess.Popen(
@@ -268,21 +301,30 @@ class K3s:
                 "-n", "cnpg-system", "logs", "deploy/cnpg-controller-manager", "--previous", "--tail=25", check=False
             )
         )
-        pods = self.kubectl("get", "pods", "-n", render.NAMESPACE, "-o", "name", check=False).split()
+        pods = self.kubectl("get", "pods", "-n", fixture_chart.NAMESPACE, "-o", "name", check=False).split()
         for pod in pods:
             ready = self.kubectl(
                 "get",
                 pod,
                 "-n",
-                render.NAMESPACE,
+                fixture_chart.NAMESPACE,
                 "-o",
                 "jsonpath={.status.conditions[?(@.type=='Ready')].status}",
                 check=False,
             )
             if ready != "True":
-                logs = self.kubectl("logs", pod, "-n", render.NAMESPACE, "--all-containers", "--tail=40", check=False)
+                logs = self.kubectl(
+                    "logs", pod, "-n", fixture_chart.NAMESPACE, "--all-containers", "--tail=40", check=False
+                )
                 previous = self.kubectl(
-                    "logs", pod, "-n", render.NAMESPACE, "--all-containers", "--previous", "--tail=40", check=False
+                    "logs",
+                    pod,
+                    "-n",
+                    fixture_chart.NAMESPACE,
+                    "--all-containers",
+                    "--previous",
+                    "--tail=40",
+                    check=False,
                 )
                 parts.append(f"--- {pod}\n{logs}\n--- previous\n{previous}")
         return "\n".join(parts)
@@ -317,11 +359,22 @@ class Stack:
     token: str
 
 
+def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
+    return {
+        container["image"]
+        for doc in objects
+        if doc["kind"] == "Deployment"
+        for container in (
+            doc["spec"]["template"]["spec"].get("initContainers", []) + doc["spec"]["template"]["spec"]["containers"]
+        )
+        if container["image"].startswith("git.allegedly.works/ducktape-ci/")
+    }
+
+
 @contextlib.contextmanager
 def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
     """The stack with every Deployment Available. `litellm_key` points LLM traffic at the public LiteLLM;
     None leaves it at the cluster-internal Service, which does not exist here, so no turn can run."""
-    manifest = get_required_path("_main/cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml")
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     layouts = sorted(get_required_path("_main/agentplane/x/k3s_env").glob("*_layout.rloc"))
 
@@ -330,25 +383,20 @@ def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
     process = k3s.start()
     try:
         ca_cert, ca_key = _openssl_ca(work)
-        k3s.import_images(layouts)
-        for crd in crds:
-            k3s.kubectl("apply", "-f", str(crd))
-        k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(render.kubevirt_stub_crds()))
-        k3s.install_cnpg_operator()
-        rewritten = render.rewrite(
-            yaml.safe_load_all(manifest.read_text()),
-            overrides={} if litellm_key is None else {"litellm-key-cheap-experiments": litellm_key},
-            node_ip=k3s.node_ip,
-            external_litellm=litellm_key is not None,
-        )
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
-        extra = render.egress_ca_objects(
+        everything = fixture_chart.objects(
+            node_ip=k3s.node_ip,
             ca_cert=ca_cert,
             ca_key=ca_key,
             system_roots=Path("/etc/ssl/certs/ca-certificates.crt").read_text(),
             cluster_ca=cluster_ca,
+            litellm_key=litellm_key,
         )
-        everything = [*rewritten, *render.extra_namespaces(), *extra]
+        k3s.import_images(layouts, required_images=_deployment_images(everything))
+        for crd in crds:
+            k3s.kubectl("apply", "-f", str(crd))
+        k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(_kubevirt_stub_crds()))
+        k3s.install_cnpg_operator()
         # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
         namespaces = [d for d in everything if d["kind"] == "Namespace"]
         rest = [d for d in everything if d["kind"] != "Namespace"]
@@ -362,7 +410,7 @@ def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
         for name in deployments:
             remaining = max(5, int(deadline - time.monotonic()))
             out = k3s.kubectl(
-                "wait", "--for=condition=Available", f"deployment/{name}", "-n", render.NAMESPACE,
+                "wait", "--for=condition=Available", f"deployment/{name}", "-n", fixture_chart.NAMESPACE,
                 f"--timeout={remaining}s", check=False,
             )  # fmt: skip
             if "condition met" not in out:
@@ -371,11 +419,11 @@ def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
             print(k3s.report())
             raise RuntimeError(f"Deployments not Available: {failed}")
         app_ip = k3s.kubectl(
-            "get", "pod", "-n", render.NAMESPACE, "-l", "app.kubernetes.io/name=app",
+            "get", "pod", "-n", fixture_chart.NAMESPACE, "-l", "app.kubernetes.io/name=app",
             "-o", "jsonpath={.items[0].status.podIP}",
         )  # fmt: skip
         token = k3s.kubectl(
-            "-n", render.NAMESPACE, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
+            "-n", fixture_chart.NAMESPACE, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
         ).strip()
         print("memory:", run("free", "-m"))
         yield Stack(k3s=k3s, base_url=f"http://{app_ip}:8080", token=token)

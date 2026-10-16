@@ -15,6 +15,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpec,
     ClusterSpecAffinity,
     ClusterSpecBootstrap,
+    ClusterSpecEnv,
     ClusterSpecManaged,
     ClusterSpecMonitoring,
     ClusterSpecPlugins,
@@ -41,6 +42,7 @@ class Cluster(_Cluster):
         instances: int,
         image_name: str | None = None,
         bootstrap: ClusterSpecBootstrap | None = None,
+        env: Sequence[ClusterSpecEnv] | None = None,
         affinity: ClusterSpecAffinity | None = None,
         managed: ClusterSpecManaged | None = None,
         postgresql: ClusterSpecPostgresql | None = None,
@@ -64,6 +66,7 @@ class Cluster(_Cluster):
                 probes=probes,
                 monitoring=monitoring,
                 bootstrap=bootstrap,
+                env=env,
                 managed=managed,
             ),
         )
