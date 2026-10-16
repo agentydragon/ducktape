@@ -119,7 +119,6 @@ class Notifications(Construct):
             ),
             termination_grace=Duration.seconds(30),
             migrate=migrate_init_container(f"{_IMAGE}-migrate:unset", name="migrate", env_variables=variables),
-            legacy_service_names=("agentplane-notifications",),
         )
         role_name = NAME.removeprefix("agentplane-")
         Role(

@@ -1445,28 +1445,25 @@ flowchart TD
     AGENTPLANE_LEGACY_RUNTIME_ALIASES_RETIRE[Remove legacy Sandbox DNS and ConfigMap aliases after reader gate]
 ```
 
-The stateless namespace-local naming cleanup is complete. Services, Deployments, ServiceAccounts,
-ConfigMaps, HTTPRoutes, monitors, PodDisruptionBudgets, and remaining safe local network and RBAC
-objects now use names that do not repeat their `agentplane-*` namespace. References and generated
-manifests moved with them. Secret and credential names, PolicySets, database resources, Flux
+The namespace-local rename is in place, while runtime aliases and ConfigMap mirrors remain only for
+verified old readers. Secret and credential names, PolicySets, database resources, Flux
 Kustomization identities, token audiences, and other durable auth or data identities retain their
-established names.
-
-The rename keeps the prior DNS names as Service aliases and mirrors the runner platform-instructions,
-tool-config, and VM-config ConfigMaps at their old names. Persisted Sandbox specs and already-running
-Pods or VMs can retain those references after a template update; the aliases point at the current
-services and config data. Runner Pod labels also keep their prior value so existing incarnations
-remain covered by the network fences.
+established names. Runner Pod labels also keep their prior value so existing incarnations remain
+covered by the network fences.
 
 ### `AGENTPLANE_LEGACY_RUNTIME_ALIASES_RETIRE` — remove old Sandbox runtime references
 
-**Blocked on a read-only rollout inventory showing no running Sandbox Pod or VM, and no persisted
-Sandbox/template spec that can still start an incarnation, references the old Service DNS or
-ConfigMap names.** Do not delete or force-recreate Sandboxes to clear this gate. Once every old
-incarnation and stored spec has naturally moved or gone, remove the legacy Service aliases and the
-three ConfigMap mirrors together with their compatibility tests and reader permissions. Until then,
-they are required runtime compatibility for user-owned Sandbox state, not unfinished canonical
-naming.
+**Partially complete; retain only live-reader compatibility.** The 2026-10-16 read-only inventory
+found no Sandbox CRs in staging or testing and no old Service DNS or ConfigMap references in their
+persisted SandboxTemplates or PodTemplates. Remove independently verified unused aliases rather
+than holding every namespace-local name for one remaining reader.
+
+The staging `claude-ai-forgejo-clone-probe` Pod still reads
+`agentplane-egress.agentplane-staging.svc.cluster.local` and mounts
+`agentplane-sandbox-tool-config`. Keep those two staging resources, the matching basic-policy
+host, and the ConfigMap read grant until that probe's owner moves those references. No matching
+reader exists in testing, so its aliases and mirrors can be removed independently. Do not delete the
+probe or force-recreate user-owned Sandboxes to clear this gate.
 
 ## Scope and retirement of stale gates
 

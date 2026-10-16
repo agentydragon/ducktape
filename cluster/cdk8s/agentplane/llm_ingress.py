@@ -163,14 +163,6 @@ class LlmIngress(Construct):
             selector=deployment,
             ports=[self.service.port.service_port()],
         )
-        # Existing runner Pods have this hostname in their immutable container environment.
-        Service(
-            self,
-            "legacy-service",
-            metadata=ApiObjectMetadata(name="agentplane-llm-ingress", namespace=self.env.namespace),
-            selector=deployment,
-            ports=[self.service.port.service_port()],
-        )
 
     def _add_network_policy(self) -> None:
         # Only central egress can call the workload-authenticated listener. The

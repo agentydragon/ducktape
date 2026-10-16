@@ -95,19 +95,30 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_legacy_sandbox_config_maps_mirror_current_data(
+def test_only_staging_probe_keeps_legacy_tool_config(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
-    """Existing Pod and VM specs keep these names until each incarnation is naturally replaced."""
     docs = agentplane_manifests[namespace]
-    for current_name, legacy_name in (
-        ("runner-platform-instructions", "agentplane-runner-platform-instructions"),
-        ("sandbox-tool-config", "agentplane-sandbox-tool-config"),
-        ("runner-vm-config", "agentplane-runner-vm-config"),
-    ):
-        current = _by_name(docs, "ConfigMap", current_name)
-        compatibility = _by_name(docs, "ConfigMap", legacy_name)
+    legacy_names = {
+        "agentplane-runner-platform-instructions",
+        "agentplane-sandbox-tool-config",
+        "agentplane-runner-vm-config",
+    }
+    legacy_maps = {
+        doc["metadata"]["name"]: doc
+        for doc in docs
+        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] in legacy_names
+    }
+    assert set(legacy_maps) == ({"agentplane-sandbox-tool-config"} if namespace == "agentplane-staging" else set())
+    role = _by_name(docs, "Role", "agentplane-sandbox-tool-config-reader")
+    granted_maps = {resource for rule in role["rules"] for resource in rule["resources"]}
+    expected_grants = {"sandbox-tool-config"}
+    if namespace == "agentplane-staging":
+        current = _by_name(docs, "ConfigMap", "sandbox-tool-config")
+        compatibility = legacy_maps["agentplane-sandbox-tool-config"]
         assert compatibility["data"] == current["data"]
+        expected_grants.add("agentplane-sandbox-tool-config")
+    assert granted_maps == expected_grants
 
     runner = next(template for template in _templates(docs) if template["metadata"]["name"] == "runner")
     volumes = runner["spec"]["pod"]["spec"]["volumes"]

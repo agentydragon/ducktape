@@ -252,7 +252,6 @@ class Actions(Construct):
             # 20s execution drain + 5s forced persistence, with room for HTTP/adapter teardown.
             termination_grace=Duration.seconds(60),
             migrate=migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=env),
-            legacy_service_names=("agentplane-actions",),
             annotations={
                 "secret.reloader.stakater.com/reload": secret_reload,
                 # No configMapGenerator hash rolls the Deployment on settings changes

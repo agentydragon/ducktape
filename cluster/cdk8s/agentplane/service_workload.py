@@ -145,9 +145,8 @@ def add_service_workload(
         selector=deployment,
         ports=[ref.service_port() for ref in serves],
     )
-    # Running Sandbox Pods keep the Service DNS names rendered into their immutable Pod spec.
-    # Keep these explicit aliases pointed at the current Deployment until every old incarnation is
-    # gone; callers should use the short canonical name above when rendering new configuration.
+    # Keep only the explicit aliases still used by a live in-cluster client. New configuration uses
+    # the canonical Service name above.
     for alias in legacy_service_names:
         Service(
             scope,

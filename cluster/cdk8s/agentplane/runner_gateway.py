@@ -139,7 +139,6 @@ class RunnerGateway(Construct):
                 name="migrate-commands",
                 env_variables={"AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL": commands_database},
             ),
-            legacy_service_names=("agentplane-runner-gateway",),
         )
         self._add_rbac(workload.account)
         config.mount_into(workload.container, env=Settings.config_file_env)

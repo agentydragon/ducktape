@@ -171,17 +171,21 @@ def add_tool_config(scope: Construct, env: Environment) -> None:
         metadata=ApiObjectMetadata(name=TOOL_CONFIG_MAP_NAME, namespace=env.namespace),
         data=tool_config_data,
     )
-    legacy_tool_config = ConfigMap(
-        scope,
-        "legacy-sandbox-tool-config",
-        metadata=ApiObjectMetadata(name=_LEGACY_TOOL_CONFIG_MAP_NAME, namespace=env.namespace),
-        data=tool_config_data,
-    )
+    tool_config_resources = [tool_config]
+    if env.namespace == "agentplane-staging":
+        # The live staging probe Pod still mounts this former name.
+        legacy_tool_config = ConfigMap(
+            scope,
+            "legacy-sandbox-tool-config",
+            metadata=ApiObjectMetadata(name=_LEGACY_TOOL_CONFIG_MAP_NAME, namespace=env.namespace),
+            data=tool_config_data,
+        )
+        tool_config_resources.append(legacy_tool_config)
     Role(
         scope,
         "sandbox-tool-config-reader-role",
         metadata=ApiObjectMetadata(name=TOOL_CONFIG_READER_ROLE_NAME, namespace=env.namespace),
-        rules=[RolePolicyRule(resources=[tool_config, legacy_tool_config], verbs=["get"])],
+        rules=[RolePolicyRule(resources=tool_config_resources, verbs=["get"])],
     )
 
 

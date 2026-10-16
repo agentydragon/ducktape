@@ -60,21 +60,27 @@ def _app_default_policies(docs: list[dict[str, Any]]) -> list[str]:
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_legacy_sandbox_service_names_still_target_the_current_workloads(
+def test_staging_probe_egress_alias_targets_the_current_workload(
     agentplane_manifests: dict[str, list[dict[str, Any]]], namespace: str
 ) -> None:
-    """Existing runner specs keep their old DNS names until their Pods or VMs are replaced."""
     docs = agentplane_manifests[namespace]
-    for canonical, legacy in (
-        ("actions", "agentplane-actions"),
-        ("egress", "agentplane-egress"),
-        ("history-service", "agentplane-history-service"),
-        ("llm-ingress", "agentplane-llm-ingress"),
-        ("notifications", "agentplane-notifications"),
-        ("runner-gateway", "agentplane-runner-gateway"),
-    ):
-        current = _by_name(docs, "Service", canonical)
-        compatibility = _by_name(docs, "Service", legacy)
+    legacy_names = {
+        "agentplane-actions",
+        "agentplane-egress",
+        "agentplane-history-service",
+        "agentplane-llm-ingress",
+        "agentplane-notifications",
+        "agentplane-runner-gateway",
+    }
+    aliases = {
+        doc["metadata"]["name"]: doc
+        for doc in docs
+        if doc["kind"] == "Service" and doc["metadata"]["name"] in legacy_names
+    }
+    assert set(aliases) == ({"agentplane-egress"} if namespace == "agentplane-staging" else set())
+    if namespace == "agentplane-staging":
+        current = _by_name(docs, "Service", "egress")
+        compatibility = aliases["agentplane-egress"]
         assert compatibility["spec"]["selector"] == current["spec"]["selector"]
         assert compatibility["spec"]["ports"] == current["spec"]["ports"]
 
@@ -122,11 +128,36 @@ def test_workload_policy_grants_only_the_agent_facing_actions_api(
         if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == BASIC_POLICY
     )
     canonical_host = f"actions.{namespace}.svc.cluster.local"
-    legacy_host = f"agentplane-actions.{namespace}.svc.cluster.local"
     rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule["hosts"])
-    assert legacy_host in rule["hosts"]
+    assert rule["hosts"] == [canonical_host]
     assert rule["paths"], "a rule without paths admits every path on the host"
     assert all(path.startswith(_AGENT_FACING_PREFIXES) for path in rule["paths"])
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_probe_egress_api_host_is_allowed_only_in_staging(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    policy = one(
+        doc
+        for doc in agentplane_manifests[namespace]
+        if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == BASIC_POLICY
+    )
+    hosts = {host for rule in policy["spec"]["rules"] for host in rule.get("hosts", [])}
+    probe_host = f"agentplane-egress.{namespace}.svc.cluster.local"
+    assert (probe_host in hosts) == (namespace == "agentplane-staging")
+    compatibility_hosts = {
+        f"{service}.{namespace}.svc.cluster.local"
+        for service in (
+            "agentplane-actions",
+            "agentplane-egress",
+            "agentplane-history-service",
+            "agentplane-llm-ingress",
+            "agentplane-notifications",
+            "agentplane-runner-gateway",
+        )
+    }
+    assert hosts & compatibility_hosts == ({probe_host} if namespace == "agentplane-staging" else set())
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
