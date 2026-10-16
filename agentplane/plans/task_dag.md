@@ -1300,7 +1300,6 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 ```mermaid
 flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
-    DISPATCHER_OPENING_ATTACHED_COLUMN_DROP[Blocked: drop snapshot after unmapped reader rollout]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[In progress: remove legacy Gateway wrappers]
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
@@ -1317,15 +1316,6 @@ The [completed control-surface audit](../docs/control_surface_retirement.md) rec
 HTTP/client, settings, deployment and guest-wheel consumers. Live `Runner.ListSessions` remains
 needed by app archive/native resume and Notification membership, so its conditional retirement
 node is removed. This does not remove the separate destination-authority decision in section 16.
-
-### `DISPATCHER_OPENING_ATTACHED_COLUMN_DROP` — drop the unused opening snapshot column
-
-**Blocked on the image with the unmapped `SessionOpening.attached` field being Ready in both
-testing and staging.** The writer-free `devel-20261016020159-6ec9015` rollout was verified
-2026-10-16 UTC (testing 1/1, staging 2/2); this permits removing the ORM mapping, not the physical
-column while old readers remain. In a
-separate PR, add a migration to drop `session_opening.attached`.
-Preserve each opening's Session ID, Sandbox identity, state, reason and timestamps.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
