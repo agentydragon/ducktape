@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 from model_catalog.catalog import (
-    ANTIGRAVITY_FLASH_LITE,
     ANTIGRAVITY_PRO,
     GEMINI_FLASH,
     GEMINI_FLASH_LITE,
@@ -22,15 +21,17 @@ OUTPUT_PATH = "model_catalog/claude-wrappers.json"
 
 def _wrapper(
     primary: Route,
-    haiku: Route,
+    haiku: Route | None,
     lane: ModelLaneRoutes,
     *,
     max_context_tokens: int | None = None,
     max_output_tokens: int | None = None,
 ) -> dict[str, str | int]:
-    if primary not in lane.allowed or haiku not in lane.allowed:
-        raise ValueError(f"wrapper selects a route outside its key lane: {primary.id}, {haiku.id}")
-    config: dict[str, str | int] = {"model": primary.id, "haikuModel": haiku.id}
+    if primary not in lane.allowed or (haiku is not None and haiku not in lane.allowed):
+        raise ValueError(f"wrapper selects a route outside its key lane: {primary.id}")
+    config: dict[str, str | int] = {"model": primary.id}
+    if haiku is not None:
+        config["haikuModel"] = haiku.id
     if max_context_tokens is not None:
         config["maxContextTokens"] = max_context_tokens
     if max_output_tokens is not None:
@@ -59,7 +60,7 @@ def claude_wrapper_models() -> dict[str, dict[str, str | int]]:
         ),
         "antigravity-claude": _wrapper(
             ANTIGRAVITY_PRO,
-            ANTIGRAVITY_FLASH_LITE,
+            None,
             KEY_MODEL_LANES["antigravity_client_models"],
             max_context_tokens=1_048_576,
             # Preserve this wrapper's 65,536, independently of account metadata.

@@ -6,11 +6,10 @@
 # Anthropic /v1/messages wire; CLIProxyAPI holds the OAuth session against Google's
 # internal Cloud Code API (cloudcode-pa.googleapis.com), so this key never carries it.
 # WebFetch/WebSearch are disabled: they are Anthropic-hosted server tools a non-Anthropic
-# backend cannot execute. The antigravity-clients team falls back to the flash-lite tier,
-# so a throttled model degrades instead of hard-failing — but only at routing time: a
-# model outside the key's allowlist is refused during auth, before the router sees it, so
-# both names below must be ones the proxy serves and the key admits (ANTIGRAVITY_ROUTES
-# in model_catalog/catalog.py, antigravity_client_models in
+# backend cannot execute. CLIProxyAPI's pinned model registry currently lacks a suitable
+# small Antigravity model, so this paused wrapper does not set a Haiku submodel. Before
+# enabling it, make sure all configured names are served by the proxy and admitted by the
+# key (ANTIGRAVITY_ROUTES in model_catalog/catalog.py, antigravity_client_models in
 # tf/gitops/litellm-keys/main.tf). See ./gateway.nix for the shared wrapper pattern.
 #
 # gemini-pro-agent is Antigravity's Gemini 3.1 Pro (High) slug -- a tier the direct
@@ -26,7 +25,6 @@ import ./gateway.nix { inherit pkgs lib; } "antigravity-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenFile = config.sops.secrets.litellm_antigravity_key.path;
   inherit (models) model;
-  inherit (models) haikuModel;
   disallowedTools = [
     "WebFetch"
     "WebSearch"

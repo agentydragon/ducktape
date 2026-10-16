@@ -369,8 +369,8 @@ data "sops_file" "antigravity_clients_key" {
 resource "litellm_team" "antigravity_clients" {
   team_alias = "antigravity-clients"
   router_settings = {
-    # Keep a fallback to the cheap, high-quota flash-lite tier instead of
-    # hard-failing Claude Code.
+    # No wildcard fallback until the pinned CLIProxyAPI registry exposes a suitable
+    # inexpensive Antigravity model.
     fallbacks = [
       {
         model           = "*"

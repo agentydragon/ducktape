@@ -152,3 +152,11 @@ The latest upstream release checked, v8.0.30, still registers `gemini-3.8-flash-
 and does not register `gemini-3.8-flash-tiered`. Keep 3.8 Flash out of our route
 registry until CLIProxyAPI upstream registers the live ID; then restore it and verify
 the end-to-end Messages route.
+
+The pinned source also does not register the live `gemini-3.5-flash-lite` ID, although
+CLIProxyAPI v8.0.30 does. The Antigravity route is omitted until the source pin and
+deployed image include that support; the separate direct-Gemini route remains.
+The other configured Antigravity route IDs are present in the pinned registry. v8.0.30
+is not a strict superset: it no longer registers `gemini-pro-agent` or
+`gemini-3.1-pro-low`. Reconcile those two routes before upgrading the source pin and
+image. This registry comparison is not a generation test.

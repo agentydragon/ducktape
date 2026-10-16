@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from agentplane.llm_ingress.models import ModelConfig
 from model_catalog.catalog import (
-    ANTIGRAVITY_FLASH_LITE,
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_PRO,
     ANTIGRAVITY_PRO_LOW,
@@ -30,16 +29,10 @@ class HarnessRoutes:
         return tuple(dict.fromkeys((*self.claude, *self.codex)))
 
 
-# Agentplane's hosted Claude and Codex pickers share these five Antigravity routes. The
+# Agentplane's hosted Claude and Codex pickers share these four Antigravity routes. The
 # Claude API adapter is Anthropic Messages; Codex reaches the same upstream through
 # LiteLLM's Responses-to-Messages bridge. Testing offers Claude only its local smoke model.
-_AGENTPLANE_ANTIGRAVITY_ROUTES = (
-    ANTIGRAVITY_OPUS,
-    ANTIGRAVITY_SONNET,
-    ANTIGRAVITY_PRO,
-    ANTIGRAVITY_PRO_LOW,
-    ANTIGRAVITY_FLASH_LITE,
-)
+_AGENTPLANE_ANTIGRAVITY_ROUTES = (ANTIGRAVITY_OPUS, ANTIGRAVITY_SONNET, ANTIGRAVITY_PRO, ANTIGRAVITY_PRO_LOW)
 
 # The Agentplane Codex picker offers Qwen at 256K only; the 128K native route remains
 # available in testing for the live Claude smoke flow.

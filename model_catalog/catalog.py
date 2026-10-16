@@ -382,13 +382,6 @@ _ANTIGRAVITY_SONNET = Model(
     reasoning=True,
     limits=TokenLimits(max_input_tokens=250_000, max_output_tokens=64_000),
 )
-_ANTIGRAVITY_FLASH_LITE_35 = Model(
-    id="gemini-3.5-flash-lite",
-    display_name="Gemini 3.5 Flash Lite",
-    reasoning=False,
-    limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
-)
-
 _ANTIGRAVITY_PRO = Model(
     id="gemini-pro-agent",
     display_name="Gemini 3.1 Pro (High)",
@@ -674,10 +667,11 @@ ANTIGRAVITY_SONNET = Route(
     _ANTIGRAVITY_SONNET, ANTIGRAVITY_MESSAGES, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
 )
 ANTIGRAVITY_PRO = Route(_ANTIGRAVITY_PRO, ANTIGRAVITY_MESSAGES, publish_limits=True)
-ANTIGRAVITY_FLASH_LITE = Route(_ANTIGRAVITY_FLASH_LITE_35, ANTIGRAVITY_MESSAGES, publish_limits=True)
 # TODO: Re-add Gemini 3.8 Flash once CLIProxyAPI's model registry catches up with
 # Antigravity's live `gemini-3.8-flash-tiered` ID. The pinned adapter only registers
 # `gemini-3.8-flash-high`, so requests using the live ID fail provider lookup.
+# TODO: Re-add Antigravity Gemini 3.5 Flash Lite after updating the CLIProxyAPI source
+# pin and image; the current pin does not register it. Upstream v8.0.30 does.
 ANTIGRAVITY_FLASH_IMAGE = Route(
     Model(id="gemini-3.1-flash-image", display_name="Gemini 3.1 Flash Image", reasoning=False), ANTIGRAVITY_MESSAGES
 )
@@ -708,9 +702,7 @@ ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_PRO,
     ANTIGRAVITY_PRO_LOW,
     ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
-    ANTIGRAVITY_FLASH_LITE,
 )
-ANTIGRAVITY_FLASH_LITE_ROUTES = (ANTIGRAVITY_FLASH_LITE,)
 GROQ_CHAT = Upstream(Provider.GROQ, "groq", "chat", supports_function_calling=True)
 # Exact `groq/<id>` input/output entries from the LiteLLM 1.100.1 backup snapshot:
 # https://github.com/BerriAI/litellm/blob/1dba17b10ded12ad0021edb453ba2c54e4637928/litellm/model_prices_and_context_window_backup.json

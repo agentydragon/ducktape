@@ -4,8 +4,6 @@ from dataclasses import dataclass
 
 from model_catalog.catalog import (
     ANTHROPIC_SUBSCRIPTION_ROUTES,
-    ANTIGRAVITY_FLASH_LITE,
-    ANTIGRAVITY_FLASH_LITE_ROUTES,
     ANTIGRAVITY_ROUTES,
     CHATGPT_MESSAGES_ROUTES,
     GEMINI_EMBEDDING_ALIAS,
@@ -38,7 +36,6 @@ EMBEDDING_ROUTES: tuple[Route | RouteAlias, ...] = (
 )
 CHEAP_EXPERIMENTS_ROUTES = (
     *GEMINI_ROUTES,
-    *ANTIGRAVITY_FLASH_LITE_ROUTES,
     *GEMINI_EMBEDDING_ROUTES,
     *MISTRAL_ROUTES,
     *OLLAMA_CHAT_ROUTES,
@@ -77,7 +74,7 @@ KEY_MODEL_LANES = {
     "claude_client_models": ModelLaneRoutes(allowed=ANTHROPIC_SUBSCRIPTION_ROUTES),
     "embedding_client_models": ModelLaneRoutes(allowed=EMBEDDING_ROUTES),
     "gemini_client_models": ModelLaneRoutes(allowed=GEMINI_ROUTES, fallbacks=(GEMINI_FLASH_LITE,)),
-    "antigravity_client_models": ModelLaneRoutes(allowed=ANTIGRAVITY_ROUTES, fallbacks=(ANTIGRAVITY_FLASH_LITE,)),
+    "antigravity_client_models": ModelLaneRoutes(allowed=ANTIGRAVITY_ROUTES),
     "ollama_chat_client_models": ModelLaneRoutes(allowed=OLLAMA_CHAT_ROUTES),
     "cheap_experiments_models": ModelLaneRoutes(allowed=CHEAP_EXPERIMENTS_ROUTES),
     "qwen_client_models": ModelLaneRoutes(
