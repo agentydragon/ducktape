@@ -192,7 +192,9 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 	}
 	for _, sandbox := range sandboxes {
 		if !renew {
-			continue
+			if _, owned := w.ownerFor(sandbox.UID); owned {
+				continue
+			}
 		}
 		owner, err := w.Leases.Acquire(ctx, sandbox.Name, sandbox.UID)
 		if err != nil {
