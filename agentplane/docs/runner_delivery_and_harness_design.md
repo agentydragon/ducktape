@@ -141,8 +141,8 @@ Session registry. That wrapper's retirement is separate from selecting an execut
 Dispatcher's proxy path. The registry cannot validate Sessions opened directly by Dispatcher because
 only Gateway `CreateSession` writes it; its remaining native-resume reader has its own migration gate.
 
-**Approved preferred direction (operator, 2026-10-15):** every submission names its destination as
-the Sandbox UID, an optional persisted harness/store ID, and the Session ID. Queue and retry that
+**Approved destination (operator, 2026-10-15):** every submission names its destination as
+the Sandbox UID, a persisted harness store ID, and the Agentplane Session ID. Queue and retry that
 tuple, locate the exact Sandbox, and let queued delivery wake only that target. Once the runner is
 reachable, it is authoritative for whether that Session/store exists; an unknown target is a
 terminal delivery failure, not a reason to search other Sandboxes, create a Session, or substitute a
@@ -157,7 +157,7 @@ acceptance is a different outcome from Runner admission; name each stage explici
 present the queued receipt as proof that the runner admitted or the harness consumed the command.
 
 The API representation and resolver remain open: decide whether the request carries a Kubernetes
-namespace/name locator alongside UID or resolves by UID, and how an optional store ID is represented.
+namespace/name locator alongside UID or resolves by UID, and how the store ID is represented.
 Do not claim live Session membership can be verified while the runner is unavailable. Authenticate
 and authorize the sender before waking; preserve the UID identity fence, command idempotency and
 outcome semantics. Direct admission, if selected, remains online-only and never wakes; only the
@@ -213,9 +213,9 @@ Two choices remain open. A namespace/name plus mandatory UID request can use the
 namespace-local Kubernetes read and control Service as a locator; a UID-only request needs an
 authoritative UID-to-object resolver that works during suspension and rejects ambiguous or stale
 matches. Either representation must persist enough information to re-resolve the _same_ object and
-must never promote name-only discovery to an execution address. An optional persisted store ID can
-fence a Session within a store, but its wire representation and validation depend on the separate
-`HARNESS_IDENTITY_DESIGN` decision. This lane does not choose one versus several harnesses or stores
+must never promote name-only discovery to an execution address. A persisted store ID fences a
+Session within its store; its wire representation and validation depend on the separate
+`HARNESS_IDENTITY_DESIGN` contract. This tuple does not choose one versus several harnesses or stores
 per runner.
 
 The decision must separately state: source/subscription authorization; destination namespace, name, UID
@@ -459,14 +459,20 @@ discoverable or read-only do not establish that one process can host multiple in
 interactive Sessions. Use the separate Codex and Claude characterization evidence before evaluating
 either alternative. These are design options, not implementation authorization.
 
-Review the existing `Sandbox UID + Agentplane Session ID` address against a candidate opaque address
-whose resolved components are `immutable Sandbox UID + persisted harness-store ID + native Session
-ID within that store`. Decide whether native IDs or client-chosen public IDs are canonical, how a
-public/logical ID maps to native IDs, and whether the API should expose any components or only an
-opaque handle. Evaluate collisions when separate stores return the same native ID, native-child
-discovery, authorization binding, unavailable/suspended lookup, and whether moving a store between
-Sandboxes changes its address or requires a new grant. Do not assume that a store's path is its
-identity or that PID/process identity determines data ownership.
+**Approved identity boundary (operator, 2026-10-15):** the durable public destination is
+`Sandbox UID + persisted harness store ID + Agentplane Session ID`. Process allocation and routing are internal to
+the runner; neither a PID nor a process incarnation is part of the durable address. The public API
+operates on stores and Sessions, not a `create Session on process` call. An adapter may arrange one
+Codex app-server process per store or the current Claude stream-json process per Session without
+exposing those restrictions as public process-allocation errors. Process instances may appear as
+diagnostic objects with hosted Sessions and status. The tuple works with one or several stores and
+processes per Runner; that policy and shared-store concurrency safety remain unsettled.
+
+The Sandbox UID must identify the exact incarnation; namespace/name may be a locator, but its wire
+syntax and UID resolver are open. A store ID names a durable runner-local lineage, not a path or
+process. A public Session ID names a logical Session within that store; native Claude/Codex IDs are
+adapter-owned mappings and may collide across stores. Define authorization binding,
+unavailable/suspended lookup and store movement without promoting a same-name Sandbox replacement.
 
 Creation idempotency is a separate design axis from address identity. Today the caller-chosen public
 Session ID is the retry key to Dispatcher and Runner; the native ID may only be known after the

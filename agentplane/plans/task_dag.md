@@ -1525,7 +1525,7 @@ flowchart LR
     DELIVERY_UNIFIED_CUTOVER --> DELIVERY_OLD_RUNTIME_RETIRE
     RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state use remains .-> RUNNER_LIST_SESSIONS_RETIRE
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
-    HARNESS_IDENTITY_DESIGN -. if a store ID enters the destination .-> DELIVERY_DESTINATION_CONTRACT
+    HARNESS_IDENTITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     NATIVE_SUBAGENT_EXPOSURE -. child identity evidence informs .-> HARNESS_IDENTITY_DESIGN
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
@@ -1719,9 +1719,9 @@ journal reads are command-outcome evidence, not inventory.
 
 ### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign destination validation and send permission
 
-**Candidate decision; preferred destination direction approved by operator, 2026-10-15.** Require
-submissions to carry the complete caller-provided destination tuple: Sandbox UID, optional persisted
-harness/store ID, and Session ID. Persist the tuple, command ID and payload before reporting queued
+**Candidate authority decision; destination tuple approved by operator, 2026-10-15.** Require
+submissions to carry the complete caller-provided destination tuple: Sandbox UID, persisted harness
+store ID, and Agentplane Session ID. Persist the tuple, command ID and payload before reporting queued
 acceptance or initiating wake, then retain it across caller/Dispatcher restart and Sandbox boot. The
 durable queue receipt is distinct from later Runner admission. Queue that tuple, locate the exact
 Sandbox, and let queued delivery wake only that target. The reachable runner rejects an unknown Session/store as a terminal outcome;
@@ -1737,7 +1737,7 @@ owner/membership validation, send permission and the execution-time fence. Trace
 subscriptions, all command senders, Dispatcher UID checks and Gateway proxy resolution. Preserve
 authentication and authorization before wake, command idempotency and outcome semantics. The exact
 address representation remains open: namespace/name plus UID or UID-based Sandbox resolution, and
-the representation of the optional store ID. UID fences identity but does not authorize a caller.
+the representation of the store ID. UID fences identity but does not authorize a caller.
 V0 may trust only App and Notification to authorize their users; general send grants and queued-work
 revocation are deferred to `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`. Evaluate owner changes,
 TOCTOU/replacement, unavailable or suspended runners, reader
@@ -1758,8 +1758,8 @@ runners and unknown Sessions before implementation.
 
 ### `DELIVERY_DESTINATION_CONTRACT` — carry and enforce the reviewed destination
 
-**Blocked on `DELIVERY_DESTINATION_AUTHORITY_DESIGN`; optional
-store addressing also waits for `HARNESS_IDENTITY_DESIGN`.** After approval, migrate the app and
+**Blocked on `DELIVERY_DESTINATION_AUTHORITY_DESIGN` and the durable
+`HARNESS_IDENTITY_DESIGN` contract.** After approval, migrate the app and
 Notification senders and the Dispatcher request/queue/retry shape to one caller-supplied full
 destination. Persist the exact destination, command ID and payload before a queued receipt or wake;
 do not reconstruct an expected UID from a Sandbox name. Make the chosen admission authority reject
@@ -1799,16 +1799,17 @@ Update runner platform instructions and other prompts alongside the reviewed CLI
 **Deliverable:** an approved command and JSON contract with explicit authorization, error, stream,
 wait and cancellation behavior. This is design only; no CLI, prompt or API change is authorized.
 
-### `HARNESS_IDENTITY_DESIGN` — decide address, process, store and native Session identities
+### `HARNESS_IDENTITY_DESIGN` — finish the approved store and Session address contract
 
-**Candidate decision.** Compare today's Sandbox UID plus Agentplane public Session ID with an opaque
-address resolved from immutable Sandbox ID, persisted harness-store ID and native Session ID within
-that store. Treat each process spawn as a distinct process incarnation; PID is insufficient. Ask
-explicitly whether a new process reusing the same persisted store is the same harness, whether native
-IDs or caller-chosen logical IDs are canonical, and how public IDs map to native IDs and discovered
-children. Consider native-ID collisions across stores, store movement, authorization binding,
-unavailable/suspended lookup, and which capabilities/lifecycle belong to each level. Do not assume
-one process equals one Session or that a store path defines identity.
+**Approved direction; remaining contract decisions open (operator, 2026-10-15).** The durable public
+destination is Sandbox UID + persisted harness store ID + Agentplane Session ID. Namespace/name may
+locate the Sandbox, but its exact request syntax and UID resolver are undecided. A store is a durable
+runner-local lineage, not its path or current process. Process allocation/routing is internal to the
+runner: the public API operates on stores and Sessions and has no create-Session-on-process command
+or refusal. A process incarnation changes at each spawn, is not a durable address, and may be exposed
+for diagnostics with hosted Sessions/status. Adapter policy can put Codex's server per store and the
+current Claude process per Session. Neither the number of stores/processes per Runner nor concurrent
+shared-store safety has been selected.
 
 Compare two coherent ownership choices: one fixed harness type and persisted store per Runner with
 process lifecycle coupled to the Runner, or multiple processes and stores per Runner, each able to
