@@ -46,7 +46,6 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
@@ -142,6 +141,7 @@ class GoRunnerGateway(Construct):
         id: str,
         env: Environment,
         *,
+        database_url: EnvValue,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
         gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
@@ -183,9 +183,6 @@ class GoRunnerGateway(Construct):
             *(f"--gateway-caller={_account(account)}" for account in sorted(proxy_callers, key=_account)),
             *(f"--wake-caller={_account(account)}" for account in sorted(wake_callers, key=_account)),
         ]
-        database_url = (
-            SecretRef(namespace=namespace, name="postgres-session-dispatcher").key("uri").env_value(self, "database")
-        )
         # The first Go cutover is a fenced Recreate; restoring RollingUpdate is a
         # separate cleanup after queue and connection recovery have been observed.
         initial_replicas = ReplicaProfile(
@@ -311,7 +308,7 @@ class QueueMigration(Construct):
     This construct is not instantiated until the fenced cutover is reviewed.
     """
 
-    def __init__(self, scope: Construct, id: str, env: Environment, *, image: str) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment, *, image: str, database_url: EnvValue) -> None:
         super().__init__(scope, id)
         match = _MIGRATOR_RE.fullmatch(image)
         if match is None:
@@ -339,11 +336,6 @@ class QueueMigration(Construct):
             enable_service_links=False,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
-        )
-        database_url = (
-            SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
-            .key("uri")
-            .env_value(self, "database")
         )
         job.add_container(
             name="migrate",

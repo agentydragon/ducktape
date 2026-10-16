@@ -91,6 +91,7 @@ class Actions(Construct):
         id: str,
         env: Environment,
         *,
+        database_url: EnvValue,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         service_cluster_ip: str | None = None,
@@ -102,6 +103,7 @@ class Actions(Construct):
     ) -> None:
         super().__init__(scope, id)
         self.env = env
+        self.database_url = database_url
         self.placement = placement
         self.registry_secret_name = registry_secret_name
         self.service_cluster_ip = service_cluster_ip
@@ -222,19 +224,7 @@ class Actions(Construct):
             binding.add_subjects(subject)
 
     def _database_env(self) -> dict[str, EnvValue]:
-        # The managed role's login, which database.py mints.
-        role = SecretRef(namespace=self.env.namespace, name="postgres-actions")
-        return {
-            "AGENTPLANE_ACTIONS_DB_USER": role.key("username").env_value(self, "postgres-actions-user-ref"),
-            "AGENTPLANE_ACTIONS_DB_PASSWORD": role.key("password").env_value(self, "postgres-actions-password-ref"),
-            "AGENTPLANE_ACTIONS_DB_HOST": role.key("host").env_value(self, "postgres-actions-host-ref"),
-            "AGENTPLANE_ACTIONS_DB_PORT": role.key("port").env_value(self, "postgres-actions-port-ref"),
-            "AGENTPLANE_ACTIONS_DB_NAME": role.key("dbname").env_value(self, "postgres-actions-dbname-ref"),
-            env_name(Settings, "database_url"): EnvValue.from_value(
-                "postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)"
-                "@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)"
-            ),
-        }
+        return {env_name(Settings, "database_url"): self.database_url}
 
     def _container_env(self) -> dict[str, EnvValue]:
         env = self._database_env()

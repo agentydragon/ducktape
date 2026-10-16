@@ -22,7 +22,6 @@ from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
@@ -64,6 +63,7 @@ class HistoryService(Construct):
         id: str,
         env: Environment,
         *,
+        database_url: EnvValue,
         callers: dict[ServiceAccountRef, Pods],
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
@@ -111,9 +111,6 @@ class HistoryService(Construct):
         )
         # The History Service writes the `sandbox_service` database, so it connects as that
         # database's owner; its read API's sessions are read-only (main.py).
-        database_url = (
-            SecretRef(namespace=env.namespace, name="postgres-sandbox-service").key("uri").env_value(self, "database")
-        )
         workload = add_service_workload(
             self,
             env,

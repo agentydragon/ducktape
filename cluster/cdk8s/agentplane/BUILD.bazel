@@ -616,8 +616,10 @@ py_library(
         "//agentplane:subjects",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )
@@ -1021,6 +1023,7 @@ py_test(
         ":staging",
         "//:conftest",
         "//agentplane:subjects",
+        "//cluster/cdk8s:secret_ref",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",

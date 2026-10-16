@@ -90,6 +90,7 @@ class App(Construct):
         env: Environment,
         *,
         electric: ServiceRef | None,
+        database_url: EnvValue,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         service_cluster_ip: str | None = None,
@@ -102,6 +103,7 @@ class App(Construct):
         super().__init__(scope, id)
         self.env = env
         self.electric = electric
+        self.database_url = database_url
         self.placement = placement
         self.registry_secret_name = registry_secret_name
         self.service_cluster_ip = service_cluster_ip
@@ -191,18 +193,9 @@ class App(Construct):
 
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
-        postgres_app = database.postgres(self.env).app_secret
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
-            "AGENTPLANE_DB_USER": postgres_app.key("username").env_value(self, "postgres-app-user-ref"),
-            "AGENTPLANE_DB_PASSWORD": postgres_app.key("password").env_value(self, "postgres-app-password-ref"),
-            "AGENTPLANE_DB_HOST": postgres_app.key("host").env_value(self, "postgres-app-host-ref"),
-            "AGENTPLANE_DB_PORT": postgres_app.key("port").env_value(self, "postgres-app-port-ref"),
-            "AGENTPLANE_DB_NAME": postgres_app.key("dbname").env_value(self, "postgres-app-dbname-ref"),
-            env_name(Settings, "database_url"): EnvValue.from_value(
-                "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
-                "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
-            ),
+            env_name(Settings, "database_url"): self.database_url,
             **(
                 {env_name(Settings, "electric_url"): EnvValue.from_value(self.electric.url)}
                 if self.electric is not None
