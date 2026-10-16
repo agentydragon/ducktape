@@ -476,7 +476,7 @@ adapter-owned mappings and may collide across stores. Define authorization bindi
 unavailable/suspended lookup and store movement without promoting a same-name Sandbox replacement.
 
 **Recommended creation contract for review, not an approved ID-allocation decision:** keep
-client-chosen, globally unique public Session IDs, with the exact `(Sandbox UID, store ID, Session
+client-chosen, globally unique public IDs for client-created root Sessions, with the exact `(Sandbox UID, store ID, Session
 ID)` and creation spec as the idempotency key. A retry with the same tuple and spec returns the same
 opening; reuse of the public ID with another store, Sandbox or spec conflicts. The runner first
 durably reserves the public ID and store binding, then asks the adapter to create a native Session,
@@ -512,7 +512,7 @@ open.
 
 Native subagent IDs remain harness-chosen. If a discovered child is exposed as a public Session,
 durably register its native ID with store and parent public Session before publishing it, assigning
-a stable public ID on replay/restart. Parentage, visibility in History/UI and independent control
+a stable runner-chosen public ID on first discovery and reusing it on replay/restart. Parentage, visibility in History/UI and independent control
 are separate: a child may be visible and read-only even when the harness cannot accept direct input
 for it. A child's Sandbox/store lineage does not automatically grant the parent's send permission.
 The `NATIVE_SUBAGENT_EXPOSURE` lane decides which children to project and whether any are

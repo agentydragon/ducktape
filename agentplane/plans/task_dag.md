@@ -1820,7 +1820,7 @@ current Claude process per Session. Neither the number of stores/processes per R
 shared-store safety has been selected.
 
 **Recommendation for review, not approved ID allocation:** retain client-chosen globally unique
-public Session IDs, bound to one Sandbox UID, store ID and immutable creation spec. Reserve the
+public IDs for client-created root Sessions, bound to one Sandbox UID, store ID and immutable creation spec. Reserve the
 public ID durably before native creation; map it durably to the harness-chosen native ID before
 reporting a completed opening. An identical retry resolves by public ID, while reuse against a
 different destination/spec conflicts. A queued opening is not proof of native creation. If native
@@ -1835,7 +1835,7 @@ binding; process death and Sandbox suspension do not delete data. Moving a store
 requires a new binding and authorization. Until proven safe, prevent concurrent writes to one store.
 A reachable runner returns a terminal missing-target outcome for the exact store/Session; offline
 queued acceptance cannot prove membership. Native child IDs are harness-chosen: if exposed, register
-stable public mappings with store and parent identity before publication, and separate visibility
+stable runner-chosen public mappings with store and parent identity before publication, and separate visibility
 from independent control. Use `NATIVE_SUBAGENT_EXPOSURE` for which children to project, and the held
 Claude investigation for process capability; #10677's bounded single-root observation is not a
 proof that Claude can never multiplex. No one-versus-many process/store or shared-store safety
