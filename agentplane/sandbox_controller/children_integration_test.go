@@ -10,6 +10,7 @@ import (
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -125,12 +126,8 @@ func TestChildApplyOwnershipAndDrift(t *testing.T) {
 		if objects.Get(ctx, key, &current) != nil {
 			return false
 		}
-		for _, condition := range current.Status.Conditions {
-			if condition.Type == sandboxapi.ConditionRunning && condition.Reason == "ServiceAccountConflict" {
-				return true
-			}
-		}
-		return false
+		condition := meta.FindStatusCondition(current.Status.Conditions, sandboxapi.ConditionRunning)
+		return condition != nil && condition.Reason == "ServiceAccountConflict"
 	})
 	if err := objects.Get(ctx, key, &corev1.Pod{}); !apierrors.IsNotFound(err) {
 		t.Fatalf("foreign ServiceAccount allowed a Pod: %v", err)
@@ -176,6 +173,13 @@ func TestChildApplyOwnershipAndDrift(t *testing.T) {
 	if err := objects.Get(ctx, launchKey, &launch); err != nil || launch.ResourceVersion != version {
 		t.Fatalf("unchanged apply wrote ConfigMap: version %s -> %s, error %v", version, launch.ResourceVersion, err)
 	}
+	deletedUID := launch.UID
+	if err := objects.Delete(ctx, &launch); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool {
+		return objects.Get(ctx, launchKey, &launch) == nil && launch.UID != deletedUID && launch.Data[LaunchFile] == wantLaunch
+	})
 	var binding policycontroller.PolicyBinding
 	if err := objects.Get(ctx, key, &binding); err != nil {
 		t.Fatal(err)
@@ -229,16 +233,37 @@ func TestChildApplyOwnershipAndDrift(t *testing.T) {
 				if objects.Get(ctx, otherKey, other) != nil {
 					return false
 				}
-				for _, condition := range other.Status.Conditions {
-					if condition.Type == sandboxapi.ConditionRunning && condition.Reason == test.reason {
-						return true
-					}
-				}
-				return false
+				condition := meta.FindStatusCondition(other.Status.Conditions, sandboxapi.ConditionRunning)
+				return condition != nil && condition.Reason == test.reason
 			})
 			if err := objects.Get(ctx, otherKey, &corev1.Pod{}); !apierrors.IsNotFound(err) {
 				t.Fatalf("foreign child allowed a Pod: %v", err)
 			}
 		})
 	}
+	t.Run("template-change-enqueues-sandbox", func(t *testing.T) {
+		changed := template.DeepCopy()
+		changed.ObjectMeta = metav1.ObjectMeta{Name: "repaired-template", Namespace: ns}
+		changed.Spec.Pod.Spec.Containers[0].Name = "missing-runner"
+		if err := objects.Create(ctx, changed); err != nil {
+			t.Fatal(err)
+		}
+		other := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: "template-watch", Namespace: ns}, Spec: sandboxapi.SandboxSpec{Template: changed.Name, Running: true}}
+		if err := objects.Create(ctx, other); err != nil {
+			t.Fatal(err)
+		}
+		otherKey := client.ObjectKeyFromObject(other)
+		eventually(t, func() bool {
+			if objects.Get(ctx, otherKey, other) != nil {
+				return false
+			}
+			condition := meta.FindStatusCondition(other.Status.Conditions, sandboxapi.ConditionRunning)
+			return condition != nil && condition.Reason == "TemplateInvalid"
+		})
+		changed.Spec.Pod.Spec.Containers[0].Name = RunnerContainer
+		if err := objects.Update(ctx, changed); err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, func() bool { return objects.Get(ctx, otherKey, &corev1.Pod{}) == nil })
+	})
 }
