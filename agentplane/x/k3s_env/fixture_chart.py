@@ -183,7 +183,7 @@ def objects(
             name="goose-migrate",
             image=GO_QUEUE_MIGRATOR_IMAGE,
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            env_variables={"DATABASE_URL": dispatcher_database_url},
+            env_variables={"DATABASE_URL": dispatcher_database_url, "PGSSLMODE": EnvValue.from_value("disable")},
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(25)), memory=MemoryResources(request=Size.mebibytes(64))
             ),
