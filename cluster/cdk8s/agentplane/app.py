@@ -194,7 +194,8 @@ class App(Construct):
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
-        return self.container_env | {
+        return {
+            **self.container_env,
             env_name(Settings, "database_url"): self.database_url,
             **(
                 {env_name(Settings, "electric_url"): EnvValue.from_value(self.electric.url)}
