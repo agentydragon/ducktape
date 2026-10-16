@@ -5126,33 +5126,11 @@ spec:
             - --host=0.0.0.0
             - --port=8080
           env:
-            - name: AGENTPLANE_ACTIONS_DB_USER
-              valueFrom:
-                secretKeyRef:
-                  key: username
-                  name: postgres-actions
-            - name: AGENTPLANE_ACTIONS_DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  key: password
-                  name: postgres-actions
-            - name: AGENTPLANE_ACTIONS_DB_HOST
-              valueFrom:
-                secretKeyRef:
-                  key: host
-                  name: postgres-actions
-            - name: AGENTPLANE_ACTIONS_DB_PORT
-              valueFrom:
-                secretKeyRef:
-                  key: port
-                  name: postgres-actions
-            - name: AGENTPLANE_ACTIONS_DB_NAME
-              valueFrom:
-                secretKeyRef:
-                  key: dbname
-                  name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
-              value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-actions
             - name: AGENTPLANE_ACTIONS_READER_ACCOUNTS
               value: '[{"namespace": "agentplane-staging", "name": "notifications"}]'
             - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
@@ -5239,33 +5217,11 @@ spec:
         - name: forgejo-images-creds
       initContainers:
         - env:
-            - name: AGENTPLANE_ACTIONS_DB_USER
-              valueFrom:
-                secretKeyRef:
-                  key: username
-                  name: postgres-actions
-            - name: AGENTPLANE_ACTIONS_DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  key: password
-                  name: postgres-actions
-            - name: AGENTPLANE_ACTIONS_DB_HOST
-              valueFrom:
-                secretKeyRef:
-                  key: host
-                  name: postgres-actions
-            - name: AGENTPLANE_ACTIONS_DB_PORT
-              valueFrom:
-                secretKeyRef:
-                  key: port
-                  name: postgres-actions
-            - name: AGENTPLANE_ACTIONS_DB_NAME
-              valueFrom:
-                secretKeyRef:
-                  key: dbname
-                  name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
-              value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-actions
             - name: AGENTPLANE_ACTIONS_READER_ACCOUNTS
               value: '[{"namespace": "agentplane-staging", "name": "notifications"}]'
             - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
