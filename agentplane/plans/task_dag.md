@@ -811,7 +811,7 @@ flowchart TD
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
-    DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
+    DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     APP_NATIVE_RESUME_SURFACE[Decision: explicit native-resume UI] --> APP_NATIVE_RESUME_CUTOVER[Blocked: remove direct native resume]
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
@@ -1114,17 +1114,15 @@ Dispatch without reading unrelated conversation content. Preserve the distinctio
 queue acceptance, runner admission and harness confirmation. Test duplicate/replayed facts and
 restart. Notification presentation/outcome design remains separate.
 
-### `DISPATCHER_SEND_AUTHORIZATION` — scope which callers may submit work
+### `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE` — replace v0 service trust with scoped sender grants
 
-**Decision.** Current `caller_accounts` admits every configured caller to every Sandbox. Review
-destination/operation authorization for the current app and notification callers;
-agent senders wait for the reviewed multiagent authority contract. Do not confuse send permission
-with wake permission or silently expand the caller allowlist during a cutover. The bounded
-`DELIVERY_DESTINATION_CONTRACT` implementation remains blocked on this decision; existing caller
-cutovers do not silently select policy.
-Coordinate this policy with `DELIVERY_DESTINATION_AUTHORITY_DESIGN`: an expected Sandbox UID proves
-identity, while the sender's permission must be checked before queued admission and again before a
-delayed wake or execution if the grant can change.
+**Deferred TODO; v0 decision does not block delivery design.** Dispatcher may specifically trust the
+App and Notification service identities to act for their users, with wake permission separately
+allowlisted. Do not extend that exception to agents or other services. Design destination- and
+operation-scoped grants, delegated caller proof and the effect of revocation on queued work before
+general senders are admitted. Consider RBAC-backed permissions, but choose the authority with the
+multiagent model. Include authorization before wake and any required execution-time recheck. The
+mandatory Sandbox UID fence is part of `DELIVERY_DESTINATION_CONTRACT`, independent of sender policy.
 
 ### `APP_NATIVE_RESUME_SURFACE` — decide the explicit native-resume UI
 
@@ -1495,6 +1493,7 @@ items below; this direction does not authorize runtime changes.
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: durable queue or direct admission]
     DISPATCHER_GATEWAY_TOPOLOGY_DESIGN[Decision: Dispatcher and Gateway topology]
+    DISPATCHER_GATEWAY_UNIFY[Conditional: implement reviewed co-location or merger]
     RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
@@ -1507,9 +1506,9 @@ flowchart LR
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a narrow CNPG-free K3s integration tier]
     K3S_VM_IMAGE[Blocked: build a real VM fixture, section 10]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_GATEWAY_TOPOLOGY_DESIGN
+    DISPATCHER_GATEWAY_TOPOLOGY_DESIGN -. if unification selected .-> DISPATCHER_GATEWAY_UNIFY
     RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state use remains .-> RUNNER_LIST_SESSIONS_RETIRE
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
-    DISPATCHER_SEND_AUTHORIZATION --> DELIVERY_DESTINATION_CONTRACT
     HARNESS_IDENTITY_DESIGN -. if a store ID enters the destination .-> DELIVERY_DESTINATION_CONTRACT
     CLAUDE_STREAM_SESSION_MULTIPLEXING -. this lane's findings inform .-> HARNESS_IDENTITY_DESIGN
     NATIVE_SUBAGENT_EXPOSURE -. child identity evidence informs .-> HARNESS_IDENTITY_DESIGN
@@ -1583,10 +1582,38 @@ the sequential Dispatcher-to-Gateway delivery path. Compare failure domains, rep
 rollout, authorization, recovery and scaling under the selected persistence model. “Merge” must say
 whether it changes API, deployment or state owner; these are independent choices.
 
-**Recommendation for review:** retain the separate responsibilities unless co-location or merger
-has a measured operational benefit and a bounded ownership contract. Question: what concrete
-operational or code boundary would change, and what behavior would remain independently owned? This
-node does not authorize deployment or service changes.
+**Concrete candidate for review:** one deployment/process serves separate Dispatcher sender API,
+per-Sandbox proxy and runner Connect listeners while retaining the queue database, delivery
+ownership and Gateway connection ownership as distinct state. App/Notification live reads,
+controller Quiesce and runner Connect remain independent Gateway callers; runner journal ingress
+still goes to History. A queue worker and connection holder can be on different replicas, so the
+per-Sandbox control Service and its EndpointSlice cannot disappear from co-location alone. The
+[delivery design note](../docs/runner_delivery_and_harness_design.md#delivery-service-and-persistence-alternatives)
+details the credential, Kubernetes permission and failure-domain tradeoffs. Compare measured benefit
+with coupled worker/stream restarts and verify cross-replica routing and recovery before choosing.
+The reviewed persistence model and legacy wrapper/registry retirement gates remain separate; this
+node authorizes no deployment or service change.
+
+### `DISPATCHER_GATEWAY_UNIFY` — implement only a reviewed topology change
+
+**Conditional on `DISPATCHER_GATEWAY_TOPOLOGY_DESIGN` selecting unification.** Specify whether the
+change co-locates deployments, joins processes/APIs, or changes state ownership. For a co-located
+deployment, retain separately authenticated Dispatcher sender, per-Sandbox proxy and runner Connect
+surfaces; App/Notification live reads and controller Quiesce must remain available without acquiring
+send authority. Preserve durable queue admission, its delivery Lease and database-generation fence,
+the runner connection Lease and EndpointSlice, and cross-replica routing when the queue owner does
+not hold that runner's stream. Inventory the app, Notification, controller, egress-sidecar and pinned
+runner clients before migrating any Service, audience, token or network rule. Stage receiver and
+caller rollout, then verify two-replica failover, queue recovery and runner reconnection before
+retiring old endpoints. Review the combined Pod's Kubernetes permissions and failure domain. Do not
+remove the legacy wrapper, registry or either database as an incidental part of co-location: each
+has its own caller and data gates. This node is independent of destination-address and generalized
+sender-grant implementation. **History prerequisite:** before unification, verify that neither
+Dispatcher nor Gateway depends on History Service. Both are free of runtime History clients, calls
+and configuration in the audited 2026-10-15 tree; runner-to-History ingress ACK and app/Notification
+History reads are separate paths. If either service gains a dependency before this node starts,
+remove it through a specific reviewed task first. This verified prerequisite does not create a
+History-removal task now.
 
 ### `RUNNER_INVENTORY_AUTHORITY_DESIGN` — distinguish live runner state from retained inventory
 
@@ -1626,7 +1653,9 @@ subscriptions, all command senders, Dispatcher UID checks and Gateway proxy reso
 authentication and authorization before wake, command idempotency and outcome semantics. The exact
 address representation remains open: namespace/name plus UID or UID-based Sandbox resolution, and
 the representation of the optional store ID. UID fences identity but does not authorize a caller.
-Evaluate owner/grant revocation, TOCTOU/replacement, unavailable or suspended runners, reader
+V0 may trust only App and Notification to authorize their users; general send grants and queued-work
+revocation are deferred to `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`. Evaluate owner changes,
+TOCTOU/replacement, unavailable or suspended runners, reader
 subscriptions versus command submission, terminal unknown-target outcomes and narrow credentials.
 
 **Recommendation for review:** implement no runtime change from the approved address direction alone.
@@ -1637,23 +1666,23 @@ early feedback versus execution authority? No centralization choice is made here
 
 The [delivery design note](../docs/runner_delivery_and_harness_design.md#destination-checks-and-authority)
 maps the current checks and candidate layered authority. Decide whether namespace/name accompanies
-mandatory UID or an authoritative UID resolver supplies it; identify the credential or delegated
-claim that represents the actual sender, and choose which boundary validates send grants. A broad
-service-account allowlist alone does not answer that question. Set explicit denial and retry rules for
-replacement, revocation, unavailable runners and unknown Sessions before implementation.
+mandatory UID or an authoritative UID resolver supplies it. Keep the authenticated v0 service
+identity separate from the caller-supplied destination and the execution-time UID/owner fence; do
+not treat one as proof of the other. Set explicit denial and retry rules for replacement, unavailable
+runners and unknown Sessions before implementation.
 
 ### `DELIVERY_DESTINATION_CONTRACT` — carry and enforce the reviewed destination
 
-**Blocked on `DELIVERY_DESTINATION_AUTHORITY_DESIGN` and `DISPATCHER_SEND_AUTHORIZATION`; optional
+**Blocked on `DELIVERY_DESTINATION_AUTHORITY_DESIGN`; optional
 store addressing also waits for `HARNESS_IDENTITY_DESIGN`.** After approval, migrate the app and
 Notification senders and the Dispatcher request/queue/retry shape to one caller-supplied full
 destination. Persist the exact destination, command ID and payload before a queued receipt or wake;
 do not reconstruct an expected UID from a Sandbox name. Make the chosen admission authority reject
-unauthorized send/wake, recheck mutable grants before delayed wake/delivery, and make the execution
-boundary fence the same UID and owner before forwarding. A reachable runner rejects unknown
+senders outside the v0 App/Notification trust boundary; only separately allowed callers may wake.
+Make the execution boundary fence the same UID and owner before forwarding. A reachable runner rejects unknown
 Session/store targets terminally; unavailable runners cannot prove membership at queue acceptance.
 Keep direct mode online-only with no wake and same-ID resolution after a lost reply. Validate
-replacement, owner/grant revocation, wrong destination, suspension, duplicate retry, runner storage
+replacement, owner change, wrong destination, suspension, duplicate retry, runner storage
 loss and staged caller/receiver rollout, including pinned images. This node does not select one or
 several harnesses per runner.
 
