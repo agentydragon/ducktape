@@ -29,7 +29,6 @@ Rai merges every PR by hand; do not merge or enable auto-merge.
 | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | [#10705](https://github.com/agentydragon/ducktape/pull/10705), `897acb320f` | Unified Go Runner Gateway, Dispatcher queue, Goose, separate image publication slots and inactive deployment constructs | Review/merge; then image pins, migration/Flux wiring and fenced deployment acceptance below. Live charts still run Python. |
 | [#10734](https://github.com/agentydragon/ducktape/pull/10734), `39522ca3ab` | 8 GiB VM guest and testing admission limits                                                                             | Review/merge/reconcile; actual launcher resources, guest memory and representative build/test acceptance.                  |
-| [#10744](https://github.com/agentydragon/ducktape/pull/10744), `3505c376ce` | Remove failed experimental Pod image-volume probe and record its measured runtime limitation                            | Review/merge; this does not establish Pod layering compatibility.                                                          |
 
 These PRs also edit this DAG. When rebasing them after this handoff, preserve the current status,
 remaining gates and Sandbox trust-boundary decision; do not restore their older planning snapshots.
@@ -904,8 +903,6 @@ flowchart TD
     RUNNER_LAYERING_SPIKE_EXIT[Blocked: finish update-boundary evidence, measurements and recommendation]
     RUNNER_LAYERING_SPIKE_RETIRE[Blocked: port retained pieces or delete spike after design]
     SANDBOX_GENERIC_SPLIT -. related .-> RUNNER_IMAGE_LAYERING_DESIGN
-    RUNNER_LAYERING_PROBE_CLEANUP[In review: remove unusable Pod probe, PR 10744]
-    RUNNER_LAYERING_PROBE_CLEANUP --> RUNNER_LAYERING_SPIKE_EXIT
     RUNNER_LAYERING_SPIKE --> RUNNER_LAYERING_SPIKE_EXIT
     RUNNER_LAYERING_SPIKE_EXIT --> RUNNER_IMAGE_LAYERING_DESIGN
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_SPIKE_RETIRE
@@ -981,12 +978,6 @@ Related to `SANDBOX_GENERIC_SPLIT`: that separates the resource, this separates 
 The disk split and Firecracker are not alternatives to each other: splitting disks is additive on the
 runtime we have, and Firecracker is a new runtime added beside it.
 
-### `RUNNER_LAYERING_PROBE_CLEANUP` — remove the unusable Pod probe
-
-**In review: [#10744](https://github.com/agentydragon/ducktape/pull/10744).** Remove the failed
-experimental image-volume test and its unused configuration, retaining the measured limitation
-in the spike README. Delete this node after merge; Pod layering compatibility remains unproven.
-
 ### `RUNNER_LAYERING_SPIKE` — minimal guest, harness and tools-layer evidence
 
 **Paused; worker stopped. Merged experiment, not a production runtime selection.** The prototype proves a
@@ -996,23 +987,22 @@ boots the digest-pinned ELF kernel and mounts separate read-only tools and harne
 The guest's Bash and pinned Codex `--version` probes pass; the same probe records a Claude 2.1.252
 SIGABRT in the uid-107 mount-namespace child, while the exact binary succeeds on the full host and
 in the guest chroot as root without that namespace. The UID and namespace effects still need to be
-separated. Measured artifacts are a 1.9 MB base
-initramfs, 7.2 MB tools SquashFS, and 168.9 MB harness SquashFS (the source Bash OCI layer tar is
-22.3 MB). The K3s `v1.33.4+k3s1`/containerd `v2.0.5-k3s2` probe finished unsuccessfully: the API
-accepted its Pod, but container spec creation failed with `failed to mkdir ""`, before Bash ran.
-[#10744](https://github.com/agentydragon/ducktape/pull/10744) removes that unusable experimental test,
-its feature toggles and image import, and records the result. Until it merges, devel still contains
-the unsuccessful manual probe. This is evidence about that tested stack, not a universal claim about
-image volumes. Full coding work, Nix-root compatibility, true cache-cold preparation and guest-only
-boot latency remain unproven; no runtime upgrade or further experiment is currently assigned.
+separated. Measured artifacts are a 1.9 MB base initramfs, 7.2 MB tools SquashFS, and 168.9 MB
+harness SquashFS (the source Bash OCI layer tar is 22.3 MB). A disposable K3s `v1.33.4+k3s1` Pod
+with ImageVolume enabled was accepted by the API but containerd `v2.0.5-k3s2` failed container
+spec creation (`failed to mkdir ""`), before Bash ran; no Pod image-volume execution is established.
+This is evidence about that tested stack, not a universal claim about image volumes. Full coding
+work, Nix-root compatibility, true cache-cold preparation and guest-only boot latency remain
+unproven; no runtime upgrade or further experiment is currently assigned.
 
 Candidate layout to carry into the design review: keep stage-one init and runner control outside the
 tools root; mount the per-template tools image read-only; give the workspace and harness homes
 explicit writable mounts, use tmpfs for `/tmp`, and provide only the required `/proc` and `/dev/null`
 paths to the child. Reuse that filesystem contract in Pods by mounting the same tools image beside
 the runner image, with workspace and persistent session state on separate volumes. The guest's
-distinct mounts work in the local probe; Pod compatibility and the Claude child-context abort remain unresolved. Further intra-Sandbox
-hardening is not required by the production contract.
+distinct mounts work in the local probe; the tested K3s runtime did not create a Pod with an image
+volume, and Claude's child-context abort remains unexplained. Further intra-Sandbox hardening is
+not required by the production contract.
 
 The spike exits when those update boundaries and startup measurements are documented alongside a
 bounded compatibility contract and a production DAG proposal. After the design decision, either
