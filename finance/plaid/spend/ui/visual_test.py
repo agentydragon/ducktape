@@ -720,8 +720,8 @@ async def _run_spending_chart_order_probe(page: Page, dashboard_url: str, *, ord
         assert any(event["kind"] == "after-draw" for event in chart_events)
         view.errors.assert_none(context=f"Spend chart order {order}")
     finally:
-        for gate in gates.values():
-            gate.set()
+        for gate_event in gates.values():
+            gate_event.set()
         active_error = sys.exception()
         chart_events = []
         chart_events_error = None
