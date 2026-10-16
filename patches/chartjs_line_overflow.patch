@@ -10,6 +10,14 @@
          const data = meta.data || [];
          if (!data.length) {
              return border;
+@@ -5931,6 +5932,7 @@
+         for(let i = 0, ilen = this.data.datasets.length; i < ilen; i++){
+             const { controller  } = this.getDatasetMeta(i);
+             const reset = !animsDisabled && newControllers.indexOf(controller) === -1;
++            controller.configure();
+             controller.buildOrUpdateElements(reset);
+             minPadding = Math.max(+controller.getMaxOverflow(), minPadding);
+         }
 --- dist/chart.cjs
 +++ dist/chart.cjs
 @@ -2175,7 +2175,8 @@
@@ -22,3 +30,11 @@
          const data = meta.data || [];
          if (!data.length) {
              return border;
+@@ -5933,6 +5934,7 @@
+         for(let i = 0, ilen = this.data.datasets.length; i < ilen; i++){
+             const { controller  } = this.getDatasetMeta(i);
+             const reset = !animsDisabled && newControllers.indexOf(controller) === -1;
++            controller.configure();
+             controller.buildOrUpdateElements(reset);
+             minPadding = Math.max(+controller.getMaxOverflow(), minPadding);
+         }
