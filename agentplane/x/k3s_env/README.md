@@ -1,6 +1,6 @@
 # k3s environment spike
 
-Does the rendered `agentplane-testing` stack come up on a bare k3s in an RBE action (no Cilium, no
+Does the Agentplane testing chart come up on a bare k3s in an RBE action (no Cilium, no
 kube-proxy)? The model-free lifecycle target runs in the separate
 [`Agentplane k3s lifecycle` workflow](../../../.github/workflows/agentplane-k3s-lifecycle.yml), launched explicitly with
 `workflow_dispatch`. It does not run automatically on pull requests or pushes while its cost remains
@@ -8,14 +8,14 @@ high. Agents can still run it
 directly with `bbr test //agentplane/x/k3s_env:test_lifecycle --test_output=all`. The separate
 `test_env` model smoke remains manual and requires `LITELLM_QWEN_KEY`.
 
-`render.py` rewrites the generated manifest for a bare cluster: drops Cilium, Gateway API, Kyverno,
-Prometheus, cert-manager and External Secrets kinds, emulates the ExternalSecrets with random
-Secrets, keeps the CNPG `Cluster` and `Database` objects (the real operator is installed from its release
-manifest), makes Services headless (no kube-proxy means no ClusterIP) and generates the egress CA. In
-this fixture only, the Python Runner Gateway and Session Dispatcher Deployments are replaced with the
-Go Runner Gateway; the stable `runner-gateway` and `session-dispatcher` Service names remain. The
-headless Services and their fixture clients use the shared gRPC listener on port 8080. A Goose init container
-runs before the Go server container and uses the existing Dispatcher database Secret. The
+[`fixture_chart.py`](fixture_chart.py) constructs the chart directly
+with shared service constructs and explicit bare-k3s settings. It supplies fixture Secrets,
+headless Services, local-path storage and a test egress CA; the CNPG operator is installed from its
+release manifest. Unsupported Cilium, Gateway API, Kyverno, Prometheus, cert-manager and External
+Secrets resources are omitted during construction. The chart instantiates the Go Runner Gateway
+directly with one gRPC listener on port 8080; the stable `runner-gateway` and `session-dispatcher`
+Service names remain. A Goose init container runs before the Go server container and uses the
+Dispatcher database Secret. The
 model-free lifecycle and model smoke tests share [`stack.py`](stack.py), which starts k3s, streams
 the Bazel-built OCI image layouts into containerd, applies the rendered stack and reports Deployment
 readiness.
@@ -135,9 +135,9 @@ result for the new Go composition. Breaks found on the way, in order:
 - **Pod egress:** flannel `host-gw` does not translate Pod traffic, so the test adds a `MASQUERADE` rule for the Pod
   CIDR using the `iptables` k3s ships; without it Pods resolve `litellm.allegedly.works` but cannot connect.
 - **Namespaces:** the manifest's Roles live in `litellm` and `ollama`, so empty ones are created.
-- **Dex dropped:** its config reaches the Pod through an ExternalSecret template (`regexReplaceAll`, `htpasswd`
-  are External Secrets functions). `render.py` does not evaluate those, and the image's gomplate rejects them.
-  Dex returns once the emulation renders that template (it needs a bcrypt hash).
+- **Dex dropped:** its config reached the Pod through an ExternalSecret template (`regexReplaceAll`, `htpasswd`
+  are External Secrets functions). The old YAML rewrite could not evaluate that template, and the image's
+  gomplate rejected it. The direct fixture also leaves Dex out.
 
 - **Runner image:** the `runner` SandboxTemplate's image is Nix-built and private. `:runner_image` builds an
   equivalent from the runner plus the pinned Claude Code and Codex binaries at `/bin/claude` and `/bin/codex`

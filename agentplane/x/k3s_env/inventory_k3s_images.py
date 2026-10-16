@@ -43,10 +43,6 @@ IMAGES = {
         "//agentplane/notification_service:migration_image",
         "agentplane/notification_service/migration_image",
     ),
-    "oauth_fixture": (
-        "//agentplane/action_service/testing:oauth_mcp_server_image",
-        "agentplane/action_service/testing/oauth_mcp_server_image",
-    ),
     "policy_controller": ("//agentplane/policy_controller:image", "agentplane/policy_controller/image"),
     "runner": ("//agentplane/x/k3s_env:runner_image", "agentplane/x/k3s_env/runner_image"),
     "runner_gateway_go": ("//agentplane/runner_gateway:go_image", "agentplane/runner_gateway/go_image"),

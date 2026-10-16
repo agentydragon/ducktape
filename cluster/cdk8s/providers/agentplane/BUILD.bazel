@@ -38,7 +38,10 @@ py_test(
 py_library(
     name = "policy_set",
     srcs = ["policy_set.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         "//agentplane/crds:policyset",
         "@pypi//cdk8s",

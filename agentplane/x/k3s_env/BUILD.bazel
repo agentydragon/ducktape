@@ -5,6 +5,9 @@ load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+# gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
+# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
+
 # Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
 # Manual only: it downloads k3s at run time and runs it as root.
 
@@ -73,7 +76,6 @@ _IMAGES = {
     "llm_ingress": "//agentplane/llm_ingress:image",
     "notification_service": "//agentplane/notification_service:image",
     "notification_service_migrate": "//agentplane/notification_service:migration_image",
-    "oauth_fixture": "//agentplane/action_service/testing:oauth_mcp_server_image",
     "policy_controller": "//agentplane/policy_controller:image",
     "runner": ":runner_image",
     "runner_gateway_go": "//agentplane/runner_gateway:go_image",
@@ -104,23 +106,16 @@ _K3S_TAGS = [
     "requires-network",
 ]
 
-py_library(
-    name = "render",
-    testonly = True,
-    srcs = ["render.py"],
-)
-
 py_test(
     name = "test_render",
     size = "small",
     srcs = ["test_render.py"],
-    data = ["//cluster:agentplane_testing_manifest"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":render",
+        ":fixture_chart",
         "//:conftest",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -135,10 +130,9 @@ py_library(
     srcs = ["stack.py"],
     data = [
         "//agentplane/crds",
-        "//cluster:agentplane_testing_manifest",
     ] + [":" + name + "_layout" for name in _IMAGES],
     deps = [
-        ":render",
+        ":fixture_chart",
         "//agentplane/acceptance:conftest",
         "//util/bazel:runfiles",
         "@pypi//pyyaml",
@@ -150,11 +144,13 @@ py_test(
     name = "test_env",
     size = "enormous",
     srcs = ["test_env.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     env_inherit = ["LITELLM_QWEN_KEY"],
     exec_properties = _K3S_EXEC_PROPERTIES,
     tags = _K3S_TAGS,
     deps = [
-        ":render",
+        ":fixture_chart",
         ":stack",
         "//:conftest",
         "//agentplane/acceptance:agent",
@@ -174,10 +170,12 @@ py_test(
     name = "test_lifecycle",
     size = "enormous",
     srcs = ["test_lifecycle.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     exec_properties = _K3S_EXEC_PROPERTIES,
     tags = _K3S_TAGS,
     deps = [
-        ":render",
+        ":fixture_chart",
         ":stack",
         "//:conftest",
         "//agentplane:sandbox_resource",
@@ -195,4 +193,54 @@ py_library(
     name = "runner_entrypoint",
     srcs = ["runner_entrypoint.py"],
     deps = ["//agentplane/runner:main"],
+)
+
+py_library(
+    name = "fixture_chart",
+    srcs = ["fixture_chart.py"],
+    deps = [
+        ":fixture_database",
+        "//agentplane:subjects",
+        "//cluster/cdk8s:agent_access_profiles",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/agentplane:actions",
+        "//cluster/cdk8s/agentplane:app",
+        "//cluster/cdk8s/agentplane:chart",
+        "//cluster/cdk8s/agentplane:command_sandbox",
+        "//cluster/cdk8s/agentplane:egress",
+        "//cluster/cdk8s/agentplane:egress_credentials",
+        "//cluster/cdk8s/agentplane:electric",
+        "//cluster/cdk8s/agentplane:history_service",
+        "//cluster/cdk8s/agentplane:llm_ingress",
+        "//cluster/cdk8s/agentplane:notifications",
+        "//cluster/cdk8s/agentplane:policy_controller",
+        "//cluster/cdk8s/agentplane:policy_controller_rbac",
+        "//cluster/cdk8s/agentplane:runner_gateway",
+        "//cluster/cdk8s/agentplane:runner_gateway_go",
+        "//cluster/cdk8s/agentplane:runner_sandbox",
+        "//cluster/cdk8s/agentplane:sandbox_controller",
+        "//cluster/cdk8s/agentplane:sandbox_pod",
+        "//cluster/cdk8s/agentplane:session_dispatcher",
+        "//cluster/cdk8s/agentplane:testing",
+        "//cluster/cdk8s/providers/agentplane:policy_set",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "fixture_database",
+    srcs = ["fixture_database.py"],
+    deps = [
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s/agentplane:database",
+        "//cluster/cdk8s/agentplane:environment",
+        "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s/providers/cnpg:cnpg_database",
+        "//cluster/cdk8s/providers/cnpg:database",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
 )

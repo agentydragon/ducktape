@@ -14,7 +14,7 @@ from agentplane.app.sandbox_models import NewSandbox
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
-from agentplane.x.k3s_env import render
+from agentplane.x.k3s_env import fixture_chart
 from agentplane.x.k3s_env.stack import Stack, run, running_stack
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
@@ -38,12 +38,12 @@ def _print_turn_diagnostics(stack: Stack) -> None:
         f"agentplane.allegedly.works/sandbox={SANDBOX}",
     ):
         logs = stack.k3s.kubectl(
-            "logs", "-l", selector, "-n", render.NAMESPACE, "--all-containers", "--tail=60", check=False
+            "logs", "-l", selector, "-n", fixture_chart.NAMESPACE, "--all-containers", "--tail=60", check=False
         )
         print(f"--- {selector}\n{logs}")
     print(
         "--- LiteLLM from the host\n",
-        run("curl", "-sS", "-m", "20", "-I", f"https://{render.LITELLM_EXTERNAL_HOST}/", check=False),
+        run("curl", "-sS", "-m", "20", "-I", "https://litellm.allegedly.works/", check=False),
     )
 
 

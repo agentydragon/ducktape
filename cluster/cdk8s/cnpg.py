@@ -12,6 +12,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecBootstrapInitdbSecret,
+    ClusterSpecEnv,
     ClusterSpecManaged,
     ClusterSpecMonitoring,
     ClusterSpecPlugins,
@@ -100,7 +101,7 @@ def cluster(
     id: str,
     *,
     ref: PostgresRef,
-    placement: Placement,
+    placement: Placement | None,
     storage_class: str,
     size: str,
     initdb: ClusterSpecBootstrapInitdb | None,
@@ -111,6 +112,8 @@ def cluster(
     managed: ClusterSpecManaged | None = None,
     postgresql: ClusterSpecPostgresql | None = None,
     resources: ClusterSpecResources | None = None,
+    env: list[ClusterSpecEnv] | None = None,
+    enable_pod_monitor: bool = True,
 ) -> Cluster:
     """`ref`'s CNPG `Cluster`. Keywords are `ClusterSpec` fields under the same names and types,
     except `initdb` (`bootstrap.initdb`; `None` leaves CNPG's default, an `app` database and
@@ -130,7 +133,8 @@ def cluster(
         instances=instances,
         image_name=image_name,
         bootstrap=None if initdb is None else ClusterSpecBootstrap(initdb=initdb),
-        affinity=_affinity(placement=placement, storage_class=storage_class),
+        affinity=_affinity(placement=placement, storage_class=storage_class) if placement is not None else None,
+        env=env,
         managed=managed,
         postgresql=postgresql,
         plugins=(
@@ -143,5 +147,5 @@ def cluster(
             liveness=ClusterSpecProbesLiveness(isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False))
         ),
         # TODO: Migrate to manually managed PodMonitors (enablePodMonitor is deprecated).
-        monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
+        monitoring=ClusterSpecMonitoring(enable_pod_monitor=enable_pod_monitor),
     )

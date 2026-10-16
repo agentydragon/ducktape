@@ -15,7 +15,7 @@ from agentplane.acceptance.conftest import POD_TEMPLATE, wait_until_running
 from agentplane.app.sandbox_models import NewSandbox, SandboxView
 from agentplane.app.testing.client import Client
 from agentplane.sandbox_resource import OperatingMode
-from agentplane.x.k3s_env import render
+from agentplane.x.k3s_env import fixture_chart
 from agentplane.x.k3s_env.stack import Stack, running_stack
 
 TRANSITION_SECONDS = 300.0
@@ -70,7 +70,17 @@ async def wait_until_suspended(client: Client, name: str) -> SandboxView:
 def exec_in_sandbox(stack: Stack, view: SandboxView, script: str) -> str:
     assert view.pod is not None, f"{view.name} has no Pod"
     return stack.k3s.kubectl(
-        "exec", "-n", render.NAMESPACE, f"pod/{view.pod.name}", "-c", "runner", "--", "sh", "-c", script, check=False
+        "exec",
+        "-n",
+        fixture_chart.NAMESPACE,
+        f"pod/{view.pod.name}",
+        "-c",
+        "runner",
+        "--",
+        "sh",
+        "-c",
+        script,
+        check=False,
     )
 
 

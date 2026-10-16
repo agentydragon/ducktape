@@ -112,7 +112,10 @@ py_test(
 py_library(
     name = "secret_ref",
     srcs = ["secret_ref.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -137,7 +140,10 @@ py_test(
 py_library(
     name = "service_ref",
     srcs = ["service_ref.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -329,7 +335,10 @@ py_test(
 py_library(
     name = "cnpg",
     srcs = ["cnpg.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":local_path_provisioner",
         ":node_scheduling",
@@ -1749,7 +1758,10 @@ py_library(
 py_library(
     name = "agent_access_profiles",
     srcs = ["agent_access_profiles.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":namespace_access",
         "//agentplane/crds:policyset",
