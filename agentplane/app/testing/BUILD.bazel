@@ -27,6 +27,7 @@ py_library(
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:session_dispatcher_pb2",
+        "@pypi//protobuf",
     ],
 )
 

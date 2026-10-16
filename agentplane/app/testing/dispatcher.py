@@ -8,6 +8,9 @@ from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.proto import command_pb2, runner_control_pb2, runner_pb2, session_dispatcher_pb2
 
+# The generated protobuf stubs import google.protobuf for mypy.
+# gazelle:include_dep @pypi//protobuf
+
 
 class RunnerProxyBackedDispatcher(SessionDispatcherClient):
     """Keep runner-backed app tests focused on app effects, using a real local Runner proxy.
