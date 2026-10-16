@@ -12,7 +12,7 @@ import yaml
 from jsonschema import Draft4Validator
 from referencing import Registry
 
-from agentplane.crds.generate import CRD_FILES, CRDS_DIR, generated_files
+from agentplane.crds.generate import CRD_FILES, CRDS_DIR, GENERATED_CRDS, SANDBOX_CRDS, generated_files
 from util.bazel.runfiles import get_required_path
 
 
@@ -21,7 +21,9 @@ def _committed(relative: Path) -> str:
 
 
 def test_committed_files_are_generated() -> None:
-    for relative, content in generated_files({name: _committed(CRDS_DIR / name) for name in CRD_FILES}):
+    generated = get_required_path(GENERATED_CRDS)
+    sandbox_crds = {name: (generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
+    for relative, content in generated_files({name: _committed(CRDS_DIR / name) for name in CRD_FILES}, sandbox_crds):
         assert content == _committed(relative), f"{relative} is stale"
 
 
@@ -73,31 +75,29 @@ def test_credential_target_schema_is_unambiguous(target: dict[str, str], valid: 
     [
         ({"type": "DirectoryTree"}, None, True),
         ({"type": "DirectoryTree"}, "Filesystem", True),
-        ({"type": "DirectoryTree", "filesystem": "ext4"}, None, False),
-        ({"type": "DirectoryTree"}, "Block", False),
+        ({"type": "DirectoryTree", "filesystem": "ext4"}, None, True),
+        ({"type": "DirectoryTree"}, "Block", True),
         ({"type": "RawDiskImage", "filesystem": "ext4"}, None, True),
         ({"type": "RawDiskImage", "filesystem": "ext4"}, "Filesystem", True),
-        ({"type": "RawDiskImage"}, None, False),
+        ({"type": "RawDiskImage"}, None, True),
         ({"type": "RawDiskImage", "filesystem": "xfs"}, None, False),
-        ({"type": "RawDiskImage", "filesystem": "ext4"}, "Block", False),
+        ({"type": "RawDiskImage", "filesystem": "ext4"}, "Block", True),
         ({"type": "BlockFilesystem", "filesystem": "ext4"}, "Block", True),
-        ({"type": "BlockFilesystem", "filesystem": "ext4"}, None, False),
-        ({"type": "BlockFilesystem", "filesystem": "ext4"}, "Filesystem", False),
+        ({"type": "BlockFilesystem", "filesystem": "ext4"}, None, True),
+        ({"type": "BlockFilesystem", "filesystem": "ext4"}, "Filesystem", True),
         ({"type": "Other"}, None, False),
         ({}, None, False),
         (None, None, False),
     ],
 )
-def test_workspace_schema_rejects_ambiguous_layout_and_claim_mode(
-    layout: dict[str, str] | None, mode: str | None, valid: bool
-) -> None:
+def test_workspace_structural_schema(layout: dict[str, str] | None, mode: str | None, valid: bool) -> None:
     crd = yaml.safe_load(_committed(CRDS_DIR / "crd-sandboxtemplates.yaml"))
     workspace: dict[str, object] = {"name": "workspace", "claim": {} if mode is None else {"volumeMode": mode}}
     if layout is not None:
         workspace["layout"] = layout
     for version in crd["spec"]["versions"]:
         schema = version["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"]["workspaceVolume"]
-        # CEL's Pod attachment rule is exercised by controller tests, not this Draft 4 validator.
+        # Draft 4 does not evaluate the generated CEL rules below.
         assert Draft4Validator(schema, registry=Registry()).is_valid(workspace) is valid
 
 
@@ -110,11 +110,54 @@ def test_state_volume_schema_requires_explicit_directory_tree_layout() -> None:
     for state_volume, valid in [
         ({"name": "state", "claim": {}}, False),
         ({"name": "state", "claim": {}, "layout": {"type": "DirectoryTree"}}, True),
-        ({"name": "state", "claim": {}, "layout": {"type": "DirectoryTree", "filesystem": "ext4"}}, False),
-        ({"name": "state", "claim": {}, "layout": {"type": "RawDiskImage", "filesystem": "ext4"}}, False),
+        ({"name": "state", "claim": {}, "layout": {"type": "DirectoryTree", "filesystem": "ext4"}}, True),
+        ({"name": "state", "claim": {}, "layout": {"type": "RawDiskImage", "filesystem": "ext4"}}, True),
         ({"name": "state", "claim": {}, "layout": {}}, False),
     ]:
         assert validator.is_valid(state_volume) is valid, state_volume
+
+
+def test_sandbox_crd_validation_rules_and_defaults() -> None:
+    template = yaml.safe_load(_committed(CRDS_DIR / "crd-sandboxtemplates.yaml"))
+    sandbox = yaml.safe_load(_committed(CRDS_DIR / "crd-sandboxes.yaml"))
+    template_schema = template["spec"]["versions"][0]["schema"]["openAPIV3Schema"]
+    sandbox_schema = sandbox["spec"]["versions"][0]["schema"]["openAPIV3Schema"]
+    template_spec = template_schema["properties"]["spec"]
+    sandbox_spec = sandbox_schema["properties"]["spec"]
+
+    assert set(template_spec["required"]) == {"stateVolume"}
+    assert {v["rule"] for v in template_spec["x-kubernetes-validations"]} == {
+        "[has(self.pod),has(self.vm)].filter(x,x==true).size() == 1",
+        "!has(self.workspaceVolume) || !has(self.pod) || self.workspaceVolume.layout.type == 'DirectoryTree'",
+    }
+    state = template_spec["properties"]["stateVolume"]
+    workspace = template_spec["properties"]["workspaceVolume"]
+    assert {v["rule"] for v in state["properties"]["layout"]["x-kubernetes-validations"]} >= {
+        "self.type == 'DirectoryTree' && !has(self.filesystem)"
+    }
+    assert {v["rule"] for v in workspace["properties"]["layout"]["x-kubernetes-validations"]} == {
+        "self.type == 'DirectoryTree' ? !has(self.filesystem) : has(self.filesystem)"
+    }
+    assert {v["rule"] for v in workspace["x-kubernetes-validations"]} == {
+        "self.layout.type == 'BlockFilesystem' ? has(self.claim.volumeMode) && self.claim.volumeMode == 'Block' : !has(self.claim.volumeMode) || self.claim.volumeMode == 'Filesystem'"
+    }
+    assert workspace["properties"]["claim"]["properties"]["volumeMode"]["type"] == "string"
+    assert workspace["properties"]["claim"]["x-kubernetes-preserve-unknown-fields"] is True
+    assert state["properties"]["claim"]["x-kubernetes-preserve-unknown-fields"] is True
+    for field in ("pod", "vm"):
+        assert template_spec["properties"][field]["x-kubernetes-preserve-unknown-fields"] is True
+
+    assert set(sandbox_spec["required"]) == {"template"}
+    for field, default in (("running", False), ("wakeOnSend", False), ("wakeGeneration", 0)):
+        assert sandbox_spec["properties"][field]["default"] == default
+    assert sandbox_spec["properties"]["policySets"]["x-kubernetes-list-type"] == "set"
+    status = sandbox_schema["properties"]["status"]
+    assert {v["rule"] for v in status["x-kubernetes-validations"]} == {
+        "has(self.suspendedBy) == has(self.suspendedAtWakeGeneration)"
+    }
+    assert status["properties"]["conditions"]["x-kubernetes-list-type"] == "map"
+    assert status["properties"]["conditions"]["x-kubernetes-list-map-keys"] == ["type"]
+    assert {v["rule"] for v in sandbox_schema["x-kubernetes-validations"]} == {"size(self.metadata.name) <= 63"}
 
 
 if __name__ == "__main__":

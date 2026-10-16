@@ -1,238 +1,318 @@
-# A Sandbox is its state, running or not: a state PVC that the Sandbox Controller
-# (agentplane/sandbox_controller/SPEC.md) creates from the template and keeps across incarnations,
-# plus, while `running` is set, one Pod stamped from the template as it is at that start. Stopping
-# deletes the Pod and keeps the PVC; deleting the Sandbox deletes both. The kubeconform schema under
-# cluster/schemas/ is written by `bb run //agentplane/crds:generate_bin` from this file.
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: sandboxes.agentplane.allegedly.works
 spec:
   group: agentplane.allegedly.works
-  scope: Namespaced
   names:
     kind: Sandbox
     listKind: SandboxList
     plural: sandboxes
     singular: sandbox
+  scope: Namespaced
   versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-      subresources:
-        status: {}
-      additionalPrinterColumns:
-        - name: Template
-          type: string
-          jsonPath: .spec.template
-        - name: Desired
-          type: boolean
-          jsonPath: .spec.running
-        - name: Running
-          type: string
-          jsonPath: .status.conditions[?(@.type=="Running")].reason
-        - name: Age
-          type: date
-          jsonPath: .metadata.creationTimestamp
-      schema:
-        openAPIV3Schema:
-          type: object
-          required: [spec]
-          x-kubernetes-validations:
-            # The name is the value of the Sandbox label on its Pod and state PVC.
-            - rule: size(self.metadata.name) <= 63
-              message: a Sandbox name is at most 63 characters
-          properties:
-            spec:
-              type: object
-              required: [template]
-              properties:
-                template:
-                  description: >-
-                    A SandboxTemplate in the Sandbox's namespace. The controller reads it at every
-                    start, so changing it, or the template itself, applies from the next incarnation.
-                  type: string
+  - additionalPrinterColumns:
+    - jsonPath: .spec.template
+      name: Template
+      type: string
+    - jsonPath: .spec.running
+      name: Desired
+      type: boolean
+    - jsonPath: .status.conditions[?(@.type=="Running")].reason
+      name: Running
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object.
+
+              Servers should convert recognized schemas to the latest internal value,
+              and
+
+              may reject unrecognized values.
+
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents.
+
+              Servers may infer this from the endpoint the client submits requests
+              to.
+
+              Cannot be updated.
+
+              In CamelCase.
+
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              bootstrap:
+                description: Bootstrap is the shell source the Sandbox's runner runs
+                  once, before its first Session.
+                maxLength: 65536
+                type: string
+              policySets:
+                description: PolicySets names the PolicySets in the Sandbox's namespace
+                  its ServiceAccount is bound to.
+                items:
                   minLength: 1
-                running:
-                  description: >-
-                    Whether the Sandbox has a Pod. Setting it starts a new incarnation; clearing it
-                    deletes the Pod and keeps the state PVC.
-                  type: boolean
-                  default: false
-                wakeOnSend:
-                  description: >-
-                    Whether authenticated user and notification sends may resume this Sandbox. Omitted
-                    or false keeps it suspended and leaves eligible sends queued.
-                  type: boolean
-                  default: false
-                wakeGeneration:
-                  description: >-
-                    Bumped by whoever wakes the Sandbox. A Sandbox the controller suspended for idleness
-                    runs again once this differs from the generation it was suspended at.
-                  type: integer
-                  format: int64
-                  minimum: 0
-                  default: 0
-                policySets:
-                  description: >-
-                    PolicySets in the Sandbox's namespace to bind its own ServiceAccount to, through
-                    one PolicyBinding the Sandbox owns. No Pod starts until every reader of that
-                    binding reports it applied.
-                  type: array
-                  items:
-                    type: string
-                    minLength: 1
-                  x-kubernetes-list-type: set
-                bootstrap:
-                  description: >-
-                    A script the runner runs once before the Sandbox's first Session. The Runner
-                    Gateway reads it; the controller does not.
                   type: string
-                  maxLength: 65536
-            status:
-              type: object
-              x-kubernetes-validations:
-                - rule: has(self.suspendedBy) == has(self.suspendedAtWakeGeneration)
-                  message: suspendedBy and suspendedAtWakeGeneration are set together
-              properties:
-                volumes:
-                  type: object
+                type: array
+                x-kubernetes-list-type: set
+              running:
+                default: false
+                type: boolean
+              template:
+                description: Template names a SandboxTemplate in the Sandbox's namespace,
+                  read again at every start.
+                minLength: 1
+                type: string
+              wakeGeneration:
+                default: 0
+                description: 'WakeGeneration is bumped by whoever wakes the Sandbox.
+                  An idle-suspended Sandbox runs again once it
+
+                  differs from the generation it was suspended at.'
+                format: int64
+                minimum: 0
+                type: integer
+              wakeOnSend:
+                default: false
+                description: 'WakeOnSend allows authenticated user and notification
+                  sends to resume a stopped Sandbox.
+
+                  Omitted is false so older Sandbox manifests keep wake-on-send disabled.'
+                type: boolean
+            required:
+            - template
+            type: object
+          status:
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
                   properties:
-                    state:
-                      description: >-
-                        Projection of the state PVC layout record, pinning the retained claim's identity.
-                      type: object
-                      required: [name, uid, layout]
-                      properties:
-                        name:
-                          type: string
-                          minLength: 1
-                        uid:
-                          type: string
-                          minLength: 1
-                        layout:
-                          type: object
-                          required: [type]
-                          oneOf:
-                            - properties:
-                                type:
-                                  enum: [DirectoryTree]
-                              not:
-                                required: [filesystem]
-                          properties:
-                            type:
-                              type: string
-                              enum: [DirectoryTree]
-                            filesystem:
-                              type: string
-                    workspace:
-                      description: >-
-                        Projection of the PVC creation record, pinning the retained claim's identity.
-                      type: object
-                      required: [name, uid, layout]
-                      properties:
-                        name:
-                          type: string
-                          minLength: 1
-                        uid:
-                          type: string
-                          minLength: 1
-                        layout:
-                          type: object
-                          required: [type]
-                          oneOf:
-                            - properties:
-                                type:
-                                  enum: [DirectoryTree]
-                              not:
-                                required: [filesystem]
-                            - required: [filesystem]
-                              properties:
-                                type:
-                                  enum: [RawDiskImage, BlockFilesystem]
-                          properties:
-                            type:
-                              type: string
-                              enum: [DirectoryTree, RawDiskImage, BlockFilesystem]
-                            filesystem:
-                              type: string
-                              enum: [ext4]
-                incarnation:
-                  description: The Sandbox's current Pod, while it has one.
-                  type: object
-                  required: [name, uid]
-                  properties:
-                    name:
-                      type: string
-                    uid:
-                      type: string
-                quiescedIncarnation:
-                  description: >-
-                    The UID of the last incarnation whose runner sealed every Session, kept after it
-                    stops. A runner that connected and is not this one has Sessions still to seal
-                    before the Sandbox stops or is deleted.
-                  type: string
-                quiesceAttempt:
-                  description: >-
-                    The controller's latest Quiesce request time for a runner incarnation. It bounds
-                    retries across reconciles and controller restarts.
-                  type: object
-                  required: [runnerPodUid, attemptedAt]
-                  properties:
-                    runnerPodUid:
-                      type: string
-                    attemptedAt:
-                      type: string
+                    lastTransitionTime:
+                      description: 'lastTransitionTime is the last time the condition
+                        transitioned from one status to another.
+
+                        This should be when the underlying condition changed.  If
+                        that is not known, then using the time when the API field
+                        changed is acceptable.'
                       format: date-time
-                operatingMode:
-                  description: >-
-                    Whether the controller runs the Sandbox: `spec.running` unless the controller suspended
-                    it for idleness at the current `spec.wakeGeneration`. Readers of `spec.running` read
-                    this instead.
-                  type: string
-                  enum: [Running, Suspended]
-                suspendedBy:
-                  description: >-
-                    Set while the controller keeps a Sandbox stopped that `spec.running` says to run.
-                  type: string
-                  enum: [Idle]
-                suspendedAtWakeGeneration:
-                  description: The `spec.wakeGeneration` the controller suspended the Sandbox at.
-                  type: integer
-                  format: int64
-                  minimum: 0
-                conditions:
-                  type: array
-                  x-kubernetes-list-type: map
-                  x-kubernetes-list-map-keys: [type]
-                  items:
-                    description: >-
-                      A metav1.Condition. `Running` is the controller's: True once the Pod runs,
-                      otherwise False with a reason naming the state or what blocks it.
-                      `Quiesced` is set on a deleting Sandbox: True once
-                      its runner sealed every Session and the ingress acknowledged each seal.
-                    type: object
-                    required: [type, status, lastTransitionTime, reason, message]
+                      type: string
+                    message:
+                      description: 'message is a human readable message indicating
+                        details about the transition.
+
+                        This may be an empty string.'
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: 'observedGeneration represents the .metadata.generation
+                        that the condition was set based upon.
+
+                        For instance, if .metadata.generation is currently 12, but
+                        the .status.conditions[x].observedGeneration is 9, the condition
+                        is out of date
+
+                        with respect to the current state of the instance.'
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: 'reason contains a programmatic identifier indicating
+                        the reason for the condition''s last transition.
+
+                        Producers of specific condition types may define expected
+                        values and meanings for this field,
+
+                        and whether the values are considered a guaranteed API.
+
+                        The value should be a CamelCase string.
+
+                        This field may not be empty.'
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - 'True'
+                      - 'False'
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              incarnation:
+                description: 'Incarnation is the Pod the Sandbox''s runner currently
+                  runs in: its own Pod, or its VM''s
+
+                  virt-launcher Pod.'
+                properties:
+                  name:
+                    type: string
+                  uid:
+                    type: string
+                required:
+                - name
+                - uid
+                type: object
+              operatingMode:
+                description: 'OperatingMode is whether the controller runs the Sandbox:
+                  the one derivation every reader of
+
+                  `spec.running` reads instead.'
+                enum:
+                - Running
+                - Suspended
+                type: string
+              quiesceAttempt:
+                description: The latest Quiesce request, scoped to its runner incarnation,
+                  for the controller's retry deadline.
+                properties:
+                  attemptedAt:
+                    format: date-time
+                    type: string
+                  runnerPodUid:
+                    type: string
+                required:
+                - attemptedAt
+                - runnerPodUid
+                type: object
+              quiescedIncarnation:
+                description: The UID of the last incarnation whose runner sealed every
+                  Session, kept after it stops.
+                type: string
+              suspendedAtWakeGeneration:
+                format: int64
+                minimum: 0
+                type: integer
+              suspendedBy:
+                description: 'SuspendedBy is set while the controller keeps a Sandbox
+                  stopped that `spec.running` says to run, and
+
+                  SuspendedAtWakeGeneration is the `spec.wakeGeneration` it stopped
+                  it at.'
+                enum:
+                - Idle
+                type: string
+              volumes:
+                properties:
+                  state:
+                    description: StateBinding projects the state PVC's durable layout
+                      record and pins the claim's identity.
                     properties:
-                      type:
-                        type: string
-                        maxLength: 316
-                        pattern: '^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'
-                      status:
-                        type: string
-                        enum: ["True", "False", Unknown]
-                      observedGeneration:
-                        type: integer
-                        format: int64
-                        minimum: 0
-                      lastTransitionTime:
-                        type: string
-                        format: date-time
-                      reason:
-                        type: string
+                      layout:
+                        description: VolumeLayout describes contents independently
+                          of the workload attachment.
+                        properties:
+                          filesystem:
+                            enum:
+                            - ext4
+                            type: string
+                          type:
+                            enum:
+                            - DirectoryTree
+                            - RawDiskImage
+                            - BlockFilesystem
+                            type: string
+                        required:
+                        - type
+                        type: object
+                        x-kubernetes-validations:
+                        - message: state volume requires DirectoryTree without a filesystem
+                          rule: self.type == 'DirectoryTree' && !has(self.filesystem)
+                        - message: DirectoryTree omits filesystem; disk layouts require
+                            it
+                          rule: 'self.type == ''DirectoryTree'' ? !has(self.filesystem)
+                            : has(self.filesystem)'
+                      name:
                         minLength: 1
-                        maxLength: 1024
-                        pattern: "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$"
-                      message:
                         type: string
-                        maxLength: 32768
+                      uid:
+                        minLength: 1
+                        type: string
+                    required:
+                    - layout
+                    - name
+                    - uid
+                    type: object
+                  workspace:
+                    description: WorkspaceBinding projects the creation record and
+                      pins the claim's identity.
+                    properties:
+                      layout:
+                        description: VolumeLayout describes contents independently
+                          of the workload attachment.
+                        properties:
+                          filesystem:
+                            enum:
+                            - ext4
+                            type: string
+                          type:
+                            enum:
+                            - DirectoryTree
+                            - RawDiskImage
+                            - BlockFilesystem
+                            type: string
+                        required:
+                        - type
+                        type: object
+                        x-kubernetes-validations:
+                        - message: DirectoryTree omits filesystem; disk layouts require
+                            it
+                          rule: 'self.type == ''DirectoryTree'' ? !has(self.filesystem)
+                            : has(self.filesystem)'
+                      name:
+                        minLength: 1
+                        type: string
+                      uid:
+                        minLength: 1
+                        type: string
+                    required:
+                    - layout
+                    - name
+                    - uid
+                    type: object
+                type: object
+            type: object
+            x-kubernetes-validations:
+            - message: suspendedBy and suspendedAtWakeGeneration are set together
+              rule: has(self.suspendedBy) == has(self.suspendedAtWakeGeneration)
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: a Sandbox name is at most 63 characters
+          rule: size(self.metadata.name) <= 63
+    served: true
+    storage: true
+    subresources:
+      status: {}

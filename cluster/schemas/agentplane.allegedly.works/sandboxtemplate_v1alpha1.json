@@ -1,229 +1,159 @@
 {
-  "type": "object",
-  "required": [
-    "spec"
-  ],
   "properties": {
+    "apiVersion": {
+      "description": "APIVersion defines the versioned schema of this representation of an object.\nServers should convert recognized schemas to the latest internal value, and\nmay reject unrecognized values.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Kind is a string value representing the REST resource this object represents.\nServers may infer this from the endpoint the client submits requests to.\nCannot be updated.\nIn CamelCase.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds",
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object"
+    },
     "spec": {
-      "type": "object",
-      "required": [
-        "stateVolume"
-      ],
-      "oneOf": [
-        {
-          "required": [
-            "pod"
-          ]
-        },
-        {
-          "required": [
-            "vm"
-          ]
-        }
-      ],
-      "x-kubernetes-validations": [
-        {
-          "rule": "!has(self.workspaceVolume) || !has(self.pod) || self.workspaceVolume.layout.type == 'DirectoryTree'",
-          "message": "Pod workspaces require DirectoryTree layout"
-        }
-      ],
+      "description": "SandboxTemplateSpec sets the Sandbox's kind: exactly one of Pod and VM.",
       "properties": {
         "pod": {
-          "description": "A PodTemplateSpec, for a Sandbox that runs as a Pod. Each incarnation's Pod takes its labels, annotations and spec; the controller adds the state volume. The API server validates the result when the Pod is created.",
-          "type": "object",
-          "x-kubernetes-preserve-unknown-fields": true
-        },
-        "vm": {
-          "description": "A KubeVirt VirtualMachineSpec, for a Sandbox that runs as a VM. The controller sets its run strategy, adds the state volume as a virtiofs filesystem, and prefixes each DataVolume template's name with the Sandbox's. KubeVirt validates the result when the VirtualMachine is written.",
           "type": "object",
           "x-kubernetes-preserve-unknown-fields": true
         },
         "stateVolume": {
-          "type": "object",
-          "required": [
-            "name",
-            "claim",
-            "layout"
-          ],
+          "description": "StateVolume is the volume the controller fills with the Sandbox's state PVC: a Pod's containers\nmount it by name, and a VM guest mounts the virtiofs filesystem of that name.",
           "properties": {
-            "name": {
-              "description": "The volume the controller fills with the Sandbox's state PVC. A Pod's containers mount it by this name, a VM guest mounts the virtiofs filesystem of this name, and the template must not define it.",
-              "type": "string",
-              "minLength": 1
-            },
             "claim": {
-              "description": "A PersistentVolumeClaimSpec for the state PVC.",
               "type": "object",
               "x-kubernetes-preserve-unknown-fields": true
             },
             "layout": {
-              "description": "The state PVC requires an explicit DirectoryTree layout.",
-              "type": "object",
-              "required": [
-                "type"
-              ],
-              "oneOf": [
-                {
-                  "properties": {
-                    "type": {
-                      "enum": [
-                        "DirectoryTree"
-                      ]
-                    }
-                  },
-                  "not": {
-                    "required": [
-                      "filesystem"
-                    ]
-                  }
-                }
-              ],
+              "description": "VolumeLayout describes contents independently of the workload attachment.",
               "properties": {
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "DirectoryTree"
-                  ]
-                },
                 "filesystem": {
+                  "enum": [
+                    "ext4"
+                  ],
                   "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "workspaceVolume": {
-          "description": "A Sandbox-owned PVC retained across incarnations. Its layout declares contents independently of attachment. The template must not define the volume itself.",
-          "type": "object",
-          "required": [
-            "name",
-            "claim",
-            "layout"
-          ],
-          "oneOf": [
-            {
-              "properties": {
-                "layout": {
-                  "properties": {
-                    "type": {
-                      "enum": [
-                        "BlockFilesystem"
-                      ]
-                    }
-                  }
                 },
-                "claim": {
-                  "required": [
-                    "volumeMode"
-                  ],
-                  "properties": {
-                    "volumeMode": {
-                      "enum": [
-                        "Block"
-                      ]
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "properties": {
-                "layout": {
-                  "properties": {
-                    "type": {
-                      "enum": [
-                        "DirectoryTree",
-                        "RawDiskImage"
-                      ]
-                    }
-                  }
-                },
-                "claim": {
-                  "properties": {
-                    "volumeMode": {
-                      "enum": [
-                        "Filesystem"
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          ],
-          "properties": {
-            "name": {
-              "description": "The Pod or VM volume the controller fills with the workspace PVC.",
-              "type": "string",
-              "minLength": 1
-            },
-            "layout": {
-              "type": "object",
-              "required": [
-                "type"
-              ],
-              "oneOf": [
-                {
-                  "properties": {
-                    "type": {
-                      "enum": [
-                        "DirectoryTree"
-                      ]
-                    }
-                  },
-                  "not": {
-                    "required": [
-                      "filesystem"
-                    ]
-                  }
-                },
-                {
-                  "required": [
-                    "filesystem"
-                  ],
-                  "properties": {
-                    "type": {
-                      "enum": [
-                        "RawDiskImage",
-                        "BlockFilesystem"
-                      ]
-                    }
-                  }
-                }
-              ],
-              "properties": {
                 "type": {
-                  "type": "string",
                   "enum": [
                     "DirectoryTree",
                     "RawDiskImage",
                     "BlockFilesystem"
-                  ]
-                },
-                "filesystem": {
-                  "type": "string",
-                  "enum": [
-                    "ext4"
-                  ]
+                  ],
+                  "type": "string"
                 }
-              }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object",
+              "x-kubernetes-validations": [
+                {
+                  "message": "state volume requires DirectoryTree without a filesystem",
+                  "rule": "self.type == 'DirectoryTree' && !has(self.filesystem)"
+                },
+                {
+                  "message": "DirectoryTree omits filesystem; disk layouts require it",
+                  "rule": "self.type == 'DirectoryTree' ? !has(self.filesystem) : has(self.filesystem)"
+                }
+              ]
             },
+            "name": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "claim",
+            "layout",
+            "name"
+          ],
+          "type": "object"
+        },
+        "vm": {
+          "description": "VM is the VirtualMachine's spec; the controller sets its run strategy from spec.running.",
+          "type": "object",
+          "x-kubernetes-preserve-unknown-fields": true
+        },
+        "workspaceVolume": {
+          "description": "WorkspaceVolume is retained by the Sandbox across workload replacements.",
+          "properties": {
             "claim": {
-              "description": "A PersistentVolumeClaimSpec for the workspace PVC.",
               "type": "object",
               "x-kubernetes-preserve-unknown-fields": true,
               "properties": {
                 "volumeMode": {
-                  "type": "string",
-                  "enum": [
-                    "Filesystem",
-                    "Block"
-                  ]
+                  "description": "volumeMode defines what type of volume is required by the claim.\nValue of Filesystem is implied when not included in claim spec.",
+                  "type": "string"
                 }
               }
+            },
+            "layout": {
+              "description": "VolumeLayout describes contents independently of the workload attachment.",
+              "properties": {
+                "filesystem": {
+                  "enum": [
+                    "ext4"
+                  ],
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "DirectoryTree",
+                    "RawDiskImage",
+                    "BlockFilesystem"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object",
+              "x-kubernetes-validations": [
+                {
+                  "message": "DirectoryTree omits filesystem; disk layouts require it",
+                  "rule": "self.type == 'DirectoryTree' ? !has(self.filesystem) : has(self.filesystem)"
+                }
+              ]
+            },
+            "name": {
+              "minLength": 1,
+              "type": "string"
             }
-          }
+          },
+          "required": [
+            "claim",
+            "layout",
+            "name"
+          ],
+          "type": "object",
+          "x-kubernetes-validations": [
+            {
+              "message": "BlockFilesystem needs Block volumeMode; other layouts use Filesystem",
+              "rule": "self.layout.type == 'BlockFilesystem' ? has(self.claim.volumeMode) && self.claim.volumeMode == 'Block' : !has(self.claim.volumeMode) || self.claim.volumeMode == 'Filesystem'"
+            }
+          ]
         }
-      }
+      },
+      "required": [
+        "stateVolume"
+      ],
+      "type": "object",
+      "x-kubernetes-validations": [
+        {
+          "message": "Pod workspaces require DirectoryTree layout",
+          "rule": "!has(self.workspaceVolume) || !has(self.pod) || self.workspaceVolume.layout.type == 'DirectoryTree'"
+        },
+        {
+          "message": "exactly one of the fields in [pod vm] must be set",
+          "rule": "[has(self.pod),has(self.vm)].filter(x,x==true).size() == 1"
+        }
+      ]
     }
-  }
+  },
+  "required": [
+    "spec"
+  ],
+  "type": "object"
 }
