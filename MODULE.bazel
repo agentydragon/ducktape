@@ -782,6 +782,22 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+# Test-only local Kubernetes control-plane binaries used by Agentplane's envtest fixture.
+# Pin the archive so tests do not download assets at runtime.
+http_archive(
+    name = "envtest_kubernetes_linux_amd64",
+    build_file_content = '''
+filegroup(
+    name = "assets",
+    srcs = ["etcd", "kube-apiserver", "kubectl"],
+    visibility = ["//visibility:public"],
+)
+''',
+    sha256 = "f03faedfc68d2a78cee5cb02618bb44e7f67044f4c5fc957f72d3307fda61a9c",
+    strip_prefix = "controller-tools/envtest",
+    urls = ["https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-v1.37.0/envtest-v1.37.0-linux-amd64.tar.gz"],
+)
+
 # ca-certificates deb feeding //third_party/debian_slim:cacerts — the single repo-level
 # source of a generated /etc/ssl/certs/ca-certificates.crt bundle for distroless images
 # (rules_distroless apt unpacks the deb but never runs update-ca-certificates, so its
