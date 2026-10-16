@@ -28,6 +28,7 @@ exports_files(
         "0024_drop_grant_caller.py",
         "0025_drop_binding_change.py",
         "0026_drop_retired_policy_source.py",
+        "0027_drop_reconciliation_audit.py",
     ],
     visibility = ["//agentplane/action_service/migrations:__pkg__"],
 )
@@ -255,4 +256,13 @@ py_library(
     name = "0026_drop_retired_policy_source",
     srcs = ["0026_drop_retired_policy_source.py"],
     deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0027_drop_reconciliation_audit",
+    srcs = ["0027_drop_reconciliation_audit.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
 )

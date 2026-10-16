@@ -1244,17 +1244,8 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 
 ```mermaid
 flowchart TD
-    ACTION_EXECUTION_AUDIT_COLUMNS_DROP[Blocked: drop retired execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
 ```
-
-### `ACTION_EXECUTION_AUDIT_COLUMNS_DROP` — drop retired reconciliation columns
-
-**Candidate; rollout verified 2026-10-16 UTC.** All Action Service replicas run
-`devel-20261016024436-b40e501`: testing 1/1 and staging 2/2 Ready, observed Deployment generations
-current, no old or terminating Action pods. Source `b40e501` (#10697) has neither ORM mapping.
-A separate migration may now drop `reconciliation_source` and `reconciled_by`.
-Preserve `reconciled_at` and late-completion behavior.
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 

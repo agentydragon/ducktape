@@ -159,9 +159,6 @@ async def test_late_completion_from_the_original_executor_reconciles_the_unknown
     async with make_sessionmaker(engine)() as session:
         execution = await session.scalar(select(ExecutionRow).where(ExecutionRow.request_id == request_id))
     assert execution is not None
-    selected_columns = {column.key for column in select(ExecutionRow).selected_columns}
-    assert {"reconciliation_source", "reconciled_by"}.isdisjoint(selected_columns)
-    assert "reconciled_at" in selected_columns
     assert execution.reconciled_at is not None
 
 
