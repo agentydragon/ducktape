@@ -1,4 +1,4 @@
-// Package auth authenticates Pod-bound workload tokens for the unified delivery service.
+// Package auth authenticates Pod-bound workload tokens for the unified Runner Gateway.
 // Each API surface constructs its own Resolver with its own audience and namespace policy.
 package auth
 

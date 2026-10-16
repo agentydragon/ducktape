@@ -961,6 +961,58 @@ py_library(
 )
 
 py_library(
+    name = "runner_gateway_go",
+    srcs = ["runner_gateway_go.py"],
+    deps = [
+        ":database",
+        ":egress",
+        ":environment",
+        ":runner_gateway",
+        ":service_workload",
+        ":session_dispatcher",
+        "//agentplane:crd_group",
+        "//agentplane:subjects",
+        "//agentplane/runner_gateway:settings",
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_runner_gateway_go",
+    size = "medium",
+    srcs = ["test_runner_gateway_go.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":app",
+        ":notifications",
+        ":runner_gateway",
+        ":runner_gateway_go",
+        ":sandbox_controller",
+        ":session_dispatcher",
+        ":staging",
+        "//:conftest",
+        "//agentplane:subjects",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "session_dispatcher",
     srcs = ["session_dispatcher.py"],
     deps = [
