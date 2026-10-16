@@ -133,46 +133,6 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
-  name: postgres-sandbox-commands-generator
-  namespace: agentplane-staging
-spec:
-  allowRepeat: true
-  digits: 8
-  length: 40
-  noUpper: false
-  symbols: 0
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: postgres-sandbox-commands
-  namespace: agentplane-staging
-spec:
-  dataFrom:
-    - sourceRef:
-        generatorRef:
-          apiVersion: generators.external-secrets.io/v1alpha1
-          kind: Password
-          name: postgres-sandbox-commands-generator
-  refreshInterval: 8760h
-  target:
-    name: postgres-sandbox-commands
-    template:
-      data:
-        dbname: sandbox_commands
-        host: postgres-rw.agentplane-staging.svc
-        password: "{{ .password }}"
-        port: "5432"
-        uri: postgresql://sandbox_commands:{{ .password }}@postgres-rw.agentplane-staging.svc:5432/sandbox_commands
-        username: sandbox_commands
-      metadata:
-        labels:
-          cnpg.io/reload: "true"
-      type: kubernetes.io/basic-auth
----
-apiVersion: generators.external-secrets.io/v1alpha1
-kind: Password
-metadata:
   name: postgres-sandbox-service-generator
   namespace: agentplane-staging
 spec:
@@ -330,11 +290,6 @@ spec:
           name: postgres-notifications
       - ensure: present
         login: true
-        name: sandbox_commands
-        passwordSecret:
-          name: postgres-sandbox-commands
-      - ensure: present
-        login: true
         name: sandbox_service
         passwordSecret:
           name: postgres-sandbox-service
@@ -343,6 +298,8 @@ spec:
         name: session_dispatcher
         passwordSecret:
           name: postgres-session-dispatcher
+      - ensure: absent
+        name: sandbox_commands
       - ensure: present
         login: true
         name: electric
@@ -403,18 +360,6 @@ spec:
   databaseReclaimPolicy: delete
   name: notifications
   owner: notifications
----
-apiVersion: postgresql.cnpg.io/v1
-kind: Database
-metadata:
-  name: sandbox-commands
-  namespace: agentplane-staging
-spec:
-  cluster:
-    name: postgres
-  databaseReclaimPolicy: delete
-  name: sandbox_commands
-  owner: sandbox_commands
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -2208,30 +2153,6 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
-      initContainers:
-        - env:
-            - name: AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-sandbox-commands
-          image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate:unset
-          imagePullPolicy: Always
-          name: migrate-commands
-          resources:
-            limits:
-              memory: 256Mi
-            requests:
-              cpu: 25m
-              memory: 64Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
@@ -2386,14 +2307,6 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
-    - toEndpoints:
-        - matchLabels:
-            k8s:cnpg.io/cluster: postgres
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "5432"
-              protocol: TCP
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: runner-gateway
