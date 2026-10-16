@@ -80,7 +80,10 @@ use explicit names for multiple checkpoints in one test. Pass a strict
 Duplicate output names within an execution fail instead of overwriting an image.
 
 `VisualHarness.open()` retains a standard Playwright trace for each named case by default.
-Use `VISUAL_TRACE=0` to disable tracing. Set `VISUAL_TRACE_CAPTURE_NAME` to the exact
+Custom deterministic-context fixtures can use the same policy and Playwright trace lifecycle
+through `playwright_trace(context, output_dir, capture_name)` in
+`util.testing.visual_capture`, passing the pytest case name as the capture identity. Use
+`VISUAL_TRACE=0` to disable tracing. Set `VISUAL_TRACE_CAPTURE_NAME` to the exact
 `capture_name` to retain only that case; the `capture_name` fixture supplies the pytest
 case identity. Calls without `capture_name` are not traced.
 

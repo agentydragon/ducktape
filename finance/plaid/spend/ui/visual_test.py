@@ -69,7 +69,7 @@ from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_capture import VisualPage
+from util.testing.visual_capture import VisualPage, playwright_trace
 
 # pytest_plugins loads util.playwright by name; Gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
@@ -83,10 +83,14 @@ _TRANSACTION_VIEWPORTS = [(1280, 960), (390, 844), (320, 720)]
 
 
 @pytest.fixture
-async def page(playwright: Playwright) -> AsyncIterator[Page]:
-    async with deterministic_browser_context(
-        playwright, viewport={"width": 1280, "height": 960}, frozen_now_ms=_FROZEN_NOW_MS
-    ) as context:
+async def page(playwright: Playwright, request: pytest.FixtureRequest) -> AsyncIterator[Page]:
+    capture_name = request.node.name.removeprefix("test_")
+    async with (
+        deterministic_browser_context(
+            playwright, viewport={"width": 1280, "height": 960}, frozen_now_ms=_FROZEN_NOW_MS
+        ) as context,
+        playwright_trace(context, undeclared_outputs_dir(), capture_name),
+    ):
         yield await context.new_page()
 
 

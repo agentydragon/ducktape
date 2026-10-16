@@ -46,10 +46,30 @@ _FONT_STATUS_JS = """async family => {
 }"""
 
 
+def _trace_path_for_capture(output_dir: Path, capture_name: str | None) -> Path | None:
+    trace_setting = os.environ.get("VISUAL_TRACE", "1")
+    if trace_setting not in {"0", "1"}:
+        raise ValueError("VISUAL_TRACE must be 0 or 1")
+    trace_capture_name = os.environ.get("VISUAL_TRACE_CAPTURE_NAME")
+    trace_enabled = trace_setting == "1" and capture_name is not None
+    if trace_capture_name is not None:
+        trace_enabled = trace_enabled and trace_capture_name == capture_name
+    if not trace_enabled:
+        return None
+    assert capture_name is not None
+    if Path(capture_name).name != capture_name or capture_name in {".", ".."}:
+        raise ValueError("trace capture name must be a single path component")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    trace_path = output_dir / f"{capture_name}.trace.zip"
+    if trace_path.exists():
+        raise FileExistsError(trace_path)
+    return trace_path
+
+
 @asynccontextmanager
-async def _playwright_trace(
-    context: BrowserContext, trace_path: Path | None, capture_name: str | None
-) -> AsyncIterator[None]:
+async def playwright_trace(context: BrowserContext, output_dir: Path, capture_name: str | None) -> AsyncIterator[None]:
+    """Trace a named visual case under the shared environment and output policy."""
+    trace_path = _trace_path_for_capture(output_dir, capture_name)
     if trace_path is None:
         yield
         return
@@ -240,27 +260,10 @@ class VisualHarness:
     ) -> AsyncIterator[VisualPage]:
         config = self.config
         viewport = viewport or Viewport()
-        trace_setting = os.environ.get("VISUAL_TRACE", "1")
-        if trace_setting not in {"0", "1"}:
-            raise ValueError("VISUAL_TRACE must be 0 or 1")
-        trace_capture_name = os.environ.get("VISUAL_TRACE_CAPTURE_NAME")
-        trace_enabled = trace_setting == "1" and capture_name is not None
-        if trace_capture_name is not None:
-            trace_enabled = trace_enabled and trace_capture_name == capture_name
         if config.inline_page is None and window_globals is not None:
             raise ValueError("window globals require an inline harness")
         if config.inline_page is not None and query is not None:
             raise ValueError("an inline harness is selected by window globals, not query")
-        trace_path: Path | None = None
-        if trace_enabled:
-            if capture_name is None:
-                raise ValueError("Playwright tracing requires an explicit capture_name")
-            if Path(capture_name).name != capture_name or capture_name in {".", ".."}:
-                raise ValueError("trace capture name must be a single path component")
-            self.output_dir.mkdir(parents=True, exist_ok=True)
-            trace_path = self.output_dir / f"{capture_name}.trace.zip"
-            if trace_path.exists():
-                raise FileExistsError(trace_path)
         async with (
             deterministic_browser_context(
                 self.playwright,
@@ -271,7 +274,7 @@ class VisualHarness:
                 has_touch=viewport.has_touch,
                 extra_args=["--allow-file-access-from-files"] if config.inline_page is None else [],
             ) as context,
-            _playwright_trace(context, trace_path, capture_name),
+            playwright_trace(context, self.output_dir, capture_name),
         ):
             page = await context.new_page()
             page.set_default_timeout(WAIT_TIMEOUT_MS)
