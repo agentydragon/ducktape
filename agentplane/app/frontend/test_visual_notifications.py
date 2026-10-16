@@ -138,6 +138,15 @@ async def test_sandbox_notifications_mobile_menu(view: VisualPage, app: Agentpla
     await view.capture(name="sandbox_notifications_mobile_menu")
     await page.get_by_role("menuitem", name="Notifications").click()
     await expect(page.get_by_text("Session s-2")).to_be_visible()
+
+    # ScrollArea uses hover-mode scrollbars. The menu click can leave the pointer over the newly
+    # mounted drawer without dispatching pointerenter to its ScrollArea, so establish that state
+    # explicitly before capturing it.
+    await page.mouse.move(0, 0)
+    scroll_area = page.get_by_role("dialog").locator(".mantine-ScrollArea-root")
+    await scroll_area.hover()
+    vertical_scrollbar = scroll_area.locator('[data-mantine-scrollbar][data-orientation="vertical"]')
+    await expect(vertical_scrollbar).to_have_attribute("data-state", "visible")
     await view.capture(name="sandbox_notifications_mobile_drawer")
 
 
