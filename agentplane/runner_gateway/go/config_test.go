@@ -17,7 +17,7 @@ func TestUnifiedGatewayConfigKeepsAuthAndWakePoliciesSeparate(t *testing.T) {
 		"--wake-caller=agentplane/app", "--gateway-caller=agentplane/runner-gateway",
 		"--sandbox-controller-account=agentplane/sandbox-controller",
 	}
-	_, err := loadConfig(args, getenv)
+	c, err := loadConfig(args, getenv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestUnifiedGatewayConfigAcceptsHostProcessTargetsAndBoundsProxyPort(t *test
 		"--runner-control-target-template=127.0.0.1:41001",
 		"--kubeconfig=/tmp/fake-kubeconfig",
 	}
-	c, err := loadConfig(args, getenv)
+	_, err := loadConfig(args, getenv)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,8 @@ import pytest_bazel
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner_gateway.testing.runner_peer import runner_peer
 
+# gazelle:include_dep @pypi//protobuf
+
 
 async def test_runner_client_sends_bearer_and_complete_sandbox_identity(tmp_path: Path) -> None:
     destination = SandboxDestination(

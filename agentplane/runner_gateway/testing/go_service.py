@@ -30,6 +30,10 @@ from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+# gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep @pypi//types_protobuf
+
+
 _GATEWAY_BINARY = "agentplane/runner_gateway/go/runner-gateway_/runner-gateway"
 _MIGRATOR_BINARY = (
     "agentplane/runner_gateway/go/migrations/cmd/runner-gateway-queue-migrate_/runner-gateway-queue-migrate"
@@ -63,7 +67,7 @@ def _migrate(database_url: str, log_path: Path) -> None:
             check=False,
         )
     except subprocess.TimeoutExpired as error:
-        log_path.write_text(f"migration timed out\nstdout:\n{error.stdout}\nstderr:\n{error.stderr}")
+        log_path.write_text(f"migration timed out\nstdout:\n{error.stdout!r}\nstderr:\n{error.stderr!r}")
         raise RuntimeError(f"Go Runner Gateway migration timed out; see {log_path}") from error
     if result.returncode != 0:
         log_path.write_text(f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}")
