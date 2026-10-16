@@ -112,11 +112,11 @@ def main() -> None:
 async def async_main(settings: Settings) -> None:
     oidc = OIDCSettings()
     async with (
+        AsyncExitStack() as frontend,
         ApiClient(configuration=await kubernetes_configuration(settings.kubeconfig)) as api,
         httpx.AsyncClient(base_url=str(settings.action_federation.service_url), timeout=10) as actions_http,
         httpx.AsyncClient(base_url=str(settings.notifications_url), timeout=5) as notifications_http,
         httpx.AsyncClient(base_url=str(settings.egress_admin_url), timeout=settings.egress_admin_timeout) as admin_http,
-        httpx.AsyncClient(base_url=str(settings.electric_url), timeout=httpx.Timeout(65, connect=5)) as electric_http,
         dial(settings.runner_gateway_target) as gateway_channel,
         dial(settings.session_dispatcher_target) as dispatcher_channel,
         dial(settings.history_service_target) as history_health_channel,
@@ -177,6 +177,22 @@ async def async_main(settings: Settings) -> None:
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
 
         decisions = DecisionsClient(admin_http)
+        system_probes = [
+            grpc_health_probe("Runner Gateway", gateway_channel),
+            grpc_health_probe("History Service", history_health_channel),
+            http_health_probe("Action Service", actions_http, "/healthz"),
+            http_health_probe("Notification Service", notifications_http, "/healthz"),
+            http_health_probe("Egress proxy", admin_http, "/healthz"),
+        ]
+        electric = None
+        if settings.electric_url is not None:
+            electric_http = await frontend.enter_async_context(
+                httpx.AsyncClient(base_url=str(settings.electric_url), timeout=httpx.Timeout(65, connect=5))
+            )
+            electric = ElectricProxy(
+                electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
+            )
+            system_probes.append(http_health_probe("Electric", electric_http, "/v1/health"))
         app = create_app(
             inventory,
             bridge,
@@ -189,9 +205,7 @@ async def async_main(settings: Settings) -> None:
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=FederatedOperatorActions(settings.action_federation, oidc, actions_http),
-            electric=ElectricProxy(
-                electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
-            ),
+            electric=electric,
             presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
             event_logs=event_logs,
             content=content,
@@ -199,26 +213,19 @@ async def async_main(settings: Settings) -> None:
             operator_sessions=OperatorSessionStore(engine),
             notifications_http=notifications_http,
             notifications_token_file=settings.notifications_token_file,
-            system_status=SystemStatusChecker(
-                [
-                    grpc_health_probe("Runner Gateway", gateway_channel),
-                    grpc_health_probe("History Service", history_health_channel),
-                    http_health_probe("Action Service", actions_http, "/healthz"),
-                    http_health_probe("Notification Service", notifications_http, "/healthz"),
-                    http_health_probe("Egress proxy", admin_http, "/healthz"),
-                    http_health_probe("Electric", electric_http, "/v1/health"),
-                ],
-                timeout_s=SYSTEM_STATUS_TIMEOUT_S,
-            ),
+            system_status=SystemStatusChecker(system_probes, timeout_s=SYSTEM_STATUS_TIMEOUT_S),
         )
-        worker = await asyncio.to_thread(Path(get_required_path(SERVICE_WORKER)).read_bytes)
+        if electric is not None:
+            worker = await asyncio.to_thread(Path(get_required_path(SERVICE_WORKER)).read_bytes)
 
-        @app.get("/sw.js")
-        async def service_worker() -> Response:
-            return Response(content=worker, media_type="application/javascript", headers={"Cache-Control": "no-store"})
+            @app.get("/sw.js")
+            async def service_worker() -> Response:
+                return Response(
+                    content=worker, media_type="application/javascript", headers={"Cache-Control": "no-store"}
+                )
 
-        # The SPA, mounted last so the API routes above it win; index.html answers the rest.
-        app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
+            # The SPA, mounted last so the API routes above it win; index.html answers the rest.
+            app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         async with (
             background(watch.run(), name="live-watch"),
             background(history_watch.run(), name="history-watch"),

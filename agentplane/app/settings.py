@@ -96,8 +96,9 @@ class Settings(AppSettingsConfig):
     port: int = Field(default=8080, description="Bind port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     database_url: str = Field(description="SQLAlchemy asyncpg URL of the thread store.")
-    electric_url: HttpEndpointUrl = Field(
-        description="Cluster-internal root URL of the Electric replicating the History Service fold."
+    electric_url: HttpEndpointUrl | None = Field(
+        default=None,
+        description="Electric replicating the History Service fold; omit to serve the REST/SSE API without the frontend.",
     )
     egress_admin_timeout: float = Field(
         default=5, description="Seconds to wait for the proxy before showing rules only."

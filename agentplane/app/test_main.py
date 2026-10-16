@@ -25,7 +25,6 @@ from agentplane.app.api import create_app
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.database_updates import create_database_updates
 from agentplane.app.egress_access import EgressAccess
-from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.main import AppServer, SpaFiles, serve_then_close
@@ -155,6 +154,12 @@ def test_the_two_settings_models_read_environment_and_config_without_colliding(
     assert oidc.cookie_name.startswith("__Host-")
 
 
+def test_rest_api_settings_do_not_require_electric(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    set_app_environment(monkeypatch, tmp_path)
+    monkeypatch.delenv("AGENTPLANE_ELECTRIC_URL")
+    assert Settings(_cli_parse_args=[]).electric_url is None
+
+
 @pytest.mark.parametrize("default_policy_sets", [None, [], ["basic"]])
 def test_default_policy_sets_are_required_for_direct_lifecycle(
     default_policy_sets: list[str] | None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -247,7 +252,6 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
     content: ContentStore,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
-    electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
     history_client: HistoryServiceClient,
@@ -274,7 +278,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
         content=content,
         database_updates=database_updates,
         operator_sessions=operator_sessions,
-        electric=electric_proxy,
+        electric=None,
         notifications_http=notifications_http,
         notifications_token_file=notifications_token_file,
         system_status=answering_system_status(),
@@ -303,6 +307,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
 
         async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=AGENT_AUTH) as client:
             assert (await client.get("/readyz")).status_code == 204
+            assert (await client.get("/threads/00000000-0000-0000-0000-000000000000/sync/scope")).status_code == 404
             async with client.stream("GET", "/live/sandboxes") as stream:
                 lines = stream.aiter_lines()
                 async for line in lines:

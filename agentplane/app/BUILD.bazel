@@ -572,7 +572,6 @@ py_test(
         ":conftest",
         ":database_updates",
         ":egress_access",
-        ":electric",
         ":identity",
         ":live",
         ":main",
