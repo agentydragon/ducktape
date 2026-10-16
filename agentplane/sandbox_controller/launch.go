@@ -56,7 +56,7 @@ func (r *Reconciler) ensureLaunch(ctx context.Context, sandbox *sandboxapi.Sandb
 	}
 	return r.applyOwned(ctx, sandbox,
 		corev1ac.ConfigMap(LaunchConfigMapName(sandbox.Name), sandbox.Namespace).
-			WithLabels(map[string]string{SandboxLabel: sandbox.Name}).
+			WithLabels(map[string]string{sandboxapi.SandboxLabel: sandbox.Name}).
 			WithData(map[string]string{LaunchFile: string(content)}), "ConfigMapConflict")
 }
 

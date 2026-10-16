@@ -159,7 +159,7 @@ func TestControlServiceTheGatewayCreatedIsReconciled(t *testing.T) {
 	if err := c.Get(context.Background(), client.ObjectKeyFromObject(created), &service); err != nil {
 		t.Fatal(err)
 	}
-	if len(service.Spec.Ports) != 1 || service.Spec.Ports[0].Port != ControlServicePort {
+	if len(service.Spec.Ports) != 1 || service.Spec.Ports[0].Port != sandboxapi.ControlServicePort {
 		t.Errorf("Service ports = %v, want the control port", service.Spec.Ports)
 	}
 }
