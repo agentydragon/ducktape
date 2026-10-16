@@ -76,10 +76,9 @@ _IMAGES = {
     "oauth_fixture": "//agentplane/action_service/testing:oauth_mcp_server_image",
     "policy_controller": "//agentplane/policy_controller:image",
     "runner": ":runner_image",
-    "runner_gateway": "//agentplane/runner_gateway:image",
+    "runner_gateway_go": "//agentplane/runner_gateway:go_image",
+    "runner_gateway_queue_migrate": "//agentplane/runner_gateway/go/migrations:image",
     "sandbox_controller": "//agentplane/sandbox_controller:image",
-    "session_dispatcher": "//agentplane/session_dispatcher:image",
-    "session_dispatcher_migrate": "//agentplane/session_dispatcher:migration_image",
 }
 
 [
@@ -109,6 +108,20 @@ py_library(
     name = "render",
     testonly = True,
     srcs = ["render.py"],
+)
+
+py_test(
+    name = "test_render",
+    size = "small",
+    srcs = ["test_render.py"],
+    data = ["//cluster:agentplane_testing_manifest"],
+    deps = [
+        ":render",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
 )
 
 py_library(

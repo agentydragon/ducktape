@@ -75,8 +75,7 @@ from agentplane.runner.session import Session
 from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.testing.backend import Endpoint, runner_bearer
-from agentplane.runner_gateway.testing.control_listener import dialing
+from agentplane.runner_gateway.testing.runner_peer import Endpoint
 from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
 from agentplane.subjects import ServiceAccountRef
 from util.net import bind_free_port
@@ -294,11 +293,10 @@ async def local_runners(
     core_v1: FakeCoreV1Api,
     runner: Runner,
 ) -> AsyncIterator[RunnerDirectory]:
-    """`SANDBOX` running, its Pod's runner connected over the control stream."""
+    """`SANDBOX` running, with its native RunnerService exposed to the App client."""
     raw, live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
     live_index.sandboxes[SANDBOX] = raw
-    async with dialing(runner, gateway_endpoint.control_target, runner_bearer(SANDBOX)):
-        await asyncio.to_thread(gateway_endpoint.wait_connected, UUID(raw["metadata"]["uid"]))
+    with gateway_endpoint.using_runner(runner):
         yield RunnerDirectory(live_index, gateway)
 
 
@@ -1429,34 +1427,30 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
         sandbox=SANDBOX,
         sandbox_uid=raw["metadata"]["uid"],
     )
-    async with (
-        dialing(runner, gateway_endpoint.control_target, runner_bearer(SANDBOX)),
-        history_client.new_client() as openings_client,
-    ):
-        await asyncio.to_thread(gateway_endpoint.wait_connected, UUID(destination.sandbox_uid))
-        openings = asyncio.create_task(SessionOpenings(openings_client, event_logs, retry_interval_s=0.05).run())
-        try:
-            session_id = uuid4()
-            # This seeds a runner-owned Session without going through Gateway placement or app open.
-            await gateway.runner_unary(
-                destination,
-                lambda stub: stub.OpenSession,
-                runner_control_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec),
-                timeout_s=gateway.lifecycle_timeout_s,
-            )
-            # Only the openings can create this row: no bridge exists, so no Open, command, or SSE request ran.
-            async for attempt in AsyncRetrying(
-                stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-            ):
-                with attempt:
-                    (thread,) = await store.list_threads()
-                    assert thread.id == session_id
-                    assert await event_logs.last_cursor(thread.id) > 0
-            # The gateway still routes the Thread to its Sandbox.
-            assert thread.sandbox == SANDBOX
-        finally:
-            openings.cancel()
-            await asyncio.gather(openings, return_exceptions=True)
+    with gateway_endpoint.using_runner(runner):
+        async with history_client.new_client() as openings_client:
+            openings = asyncio.create_task(SessionOpenings(openings_client, event_logs, retry_interval_s=0.05).run())
+            try:
+                session_id = uuid4()
+                # This seeds a runner-owned Session without going through Dispatcher admission or app open.
+                await gateway.runner_unary(
+                    destination,
+                    lambda stub: stub.OpenSession,
+                    runner_control_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec),
+                    timeout_s=gateway.lifecycle_timeout_s,
+                )
+                # Only the openings can create this row: no bridge exists, so no command or SSE request ran.
+                async for attempt in AsyncRetrying(
+                    stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+                ):
+                    with attempt:
+                        (thread,) = await store.list_threads()
+                        assert thread.id == session_id
+                        assert await event_logs.last_cursor(thread.id) > 0
+                assert thread.sandbox == SANDBOX
+            finally:
+                openings.cancel()
+                await asyncio.gather(openings, return_exceptions=True)
 
 
 async def test_resumed_session_stream_does_not_end_at_previous_shutdown(

@@ -1,9 +1,9 @@
 # Runner control stream
 
 Status: **accepted design, deployed.** The Runner Gateway's
-control listener (`runner_gateway/runner_control.py`), reachable over the egress sidecar's platform
+control listener (`runner_gateway/go/gateway/control.go`), reachable over the egress sidecar's platform
 route, authenticates, fences and keeps connections alive, and carries command deliveries and
-lifecycle requests (`runner_gateway/lifecycle_control.py`) for Sandboxes routed to it. The runner
+lifecycle requests (`runner_gateway/go/gateway/tunnel.go`) for Sandboxes routed to it. The runner
 dials it at `--control-target` (`runner/control.py`), which every runner `SandboxTemplate` passes
 (`cluster/cdk8s/agentplane/platform_routes.py`); runner Pods admit no connections. This is the contract it implements. It
 covers command delivery, authentication, connection ownership, lifecycle
@@ -376,7 +376,7 @@ No routing record is kept: runners dial out, so nothing is routed inbound.
 ## Lifecycle operations
 
 Status: **built.** The Runner Gateway makes every Session call through the
-control stream (`runner_gateway/lifecycle_control.py`). A runner fails `OpenSession` for a Session it created but could not
+control stream (`runner_gateway/go/gateway/tunnel.go`). A runner fails `OpenSession` for a Session it created but could not
 start; asked again, it confirms the Session and starts the stopped harness. The App and the Notification
 Service reach the holder through the control Service (`control_target`, a required setting).
 

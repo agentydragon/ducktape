@@ -6,124 +6,43 @@ package(
 )
 
 py_library(
-    name = "grpc_service",
-    srcs = ["grpc_service.py"],
+    name = "runner_peer",
+    srcs = ["runner_peer.py"],
     deps = [
         "//agentplane/grpc:serving",
-        "//agentplane/runner_gateway:client",
-        "//agentplane/runner_gateway:runner_proxy",
-        "@pypi//grpcio",
-    ],
-)
-
-py_library(
-    name = "journal",
-    srcs = ["journal.py"],
-    deps = [
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "resources",
-    srcs = ["resources.py"],
-    deps = [
-        "//agentplane:subjects",
-        "//agentplane/runner_gateway:connection_records",
-        "//agentplane/runner_gateway:destinations",
-        "//agentplane/runner_gateway:lifecycle_control",
-        "//agentplane/runner_gateway:runner_proxy",
-        "//agentplane/workload_auth:principal",
-    ],
-)
-
-py_library(
-    name = "runner_control",
-    srcs = ["runner_control.py"],
-    deps = [
-        ":control_listener",
-        "//agentplane:sandbox_resource",
-        "//agentplane/grpc:tunnel",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner",
         "//agentplane/runner:control",
-        "//agentplane/runner_gateway:connection_records",
-        "//agentplane/runner_gateway:lifecycle_control",
-        "//agentplane/runner_gateway:runner_control",
-        "//agentplane/sandboxes/testing:kubernetes",
-        "//agentplane/testing:fake_apiserver",
+        "//agentplane/runner_gateway:client",
         "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
     ],
 )
 
 py_library(
-    name = "control_listener",
-    srcs = ["control_listener.py"],
+    name = "go_service",
+    srcs = ["go_service.py"],
+    data = [
+        "//agentplane/runner_gateway/go:runner-gateway",
+        "//agentplane/runner_gateway/go/migrations/cmd:runner-gateway-queue-migrate",
+    ],
     deps = [
         "//agentplane:background_task",
-        "//agentplane/grpc:serving",
-        "//agentplane/proto:runner_control_pb2",
-        "//agentplane/proto:runner_control_pb2_grpc",
+        "//agentplane:subjects",
+        "//agentplane/grpc:calls",
+        "//agentplane/proto:sandboxes_pb2",
         "//agentplane/runner",
         "//agentplane/runner:control",
         "//agentplane/runner:reconnect",
-        "//agentplane/runner_gateway:connection_records",
-        "//agentplane/runner_gateway:lifecycle_control",
-        "//agentplane/runner_gateway:runner_control",
-        "//agentplane/runner_gateway:runner_proxy",
-        "//agentplane/sandboxes:reader",
-        "//agentplane/workload_auth:principal",
+        "//agentplane/runner_gateway:client",
+        "//agentplane/testing:fake_apiserver",
+        "//util:net",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
+        "@pypi//grpcio_health_checking",
+        "@pypi//sqlalchemy",
     ],
-)
-
-py_library(
-    name = "backend",
-    srcs = ["backend.py"],
-    deps = [
-        ":control_listener",
-        ":grpc_service",
-        ":resources",
-        "//agentplane:subjects",
-        "//agentplane/runner_gateway:client",
-        "//agentplane/runner_gateway:destinations",
-        "//agentplane/sandboxes:inventory",
-        "//agentplane/sandboxes/testing:fake_inventory",
-        "//agentplane/testing:fake_apiserver",
-        "//agentplane/workload_auth:principal",
-        "//util:kubernetes",
-        "@pypi//anyio",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_library(
-    name = "connected_runner",
-    srcs = ["connected_runner.py"],
-    deps = [
-        ":control_listener",
-        ":grpc_service",
-        ":resources",
-        "//agentplane:subjects",
-        "//agentplane/runner",
-        "//agentplane/runner_gateway:client",
-        "//agentplane/runner_gateway:destinations",
-        "//agentplane/runner_gateway:runner_proxy",
-        "//agentplane/sandboxes/testing:kubernetes",
-        "//agentplane/testing:fake_apiserver",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_library(
-    name = "auth",
-    srcs = ["auth.py"],
 )

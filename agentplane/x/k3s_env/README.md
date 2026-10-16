@@ -11,15 +11,21 @@ directly with `bbr test //agentplane/x/k3s_env:test_lifecycle --test_output=all`
 `render.py` rewrites the generated manifest for a bare cluster: drops Cilium, Gateway API, Kyverno,
 Prometheus, cert-manager and External Secrets kinds, emulates the ExternalSecrets with random
 Secrets, keeps the CNPG `Cluster` and `Database` objects (the real operator is installed from its release
-manifest), makes Services headless (no kube-proxy means no ClusterIP) and generates the egress CA. The
+manifest), makes Services headless (no kube-proxy means no ClusterIP) and generates the egress CA. In
+this fixture only, the Python Runner Gateway and Session Dispatcher Deployments are replaced with the
+Go Runner Gateway; the stable `runner-gateway` and `session-dispatcher` Service names remain. The
+headless Dispatcher Service and its fixture clients use port 8081 directly, while the live generated
+Service contract remains on port 8080 for the separately reviewed cutover. A Goose init container
+runs before the Go server container and uses the existing Dispatcher database Secret. The
 model-free lifecycle and model smoke tests share [`stack.py`](stack.py), which starts k3s, streams
 the Bazel-built OCI image layouts into containerd, applies the rendered stack and reports Deployment
 readiness.
 
-The image list includes the Session Dispatcher and its migration image, matching the generated
-stack. The `test_lifecycle` target has no model credential dependency; the workflow only supplies
-the BuildBuddy credential needed to run Bazel remotely. The `test_env` target is the separate live
-model smoke and is not run by this workflow.
+The image list includes the Go Runner Gateway and Goose queue migration images. A fast
+[`test_render`](BUILD.bazel) check validates this fixture composition and its endpoint/Service wiring
+without starting Kubernetes. The `test_lifecycle` target exercises the full model-free stack and has
+no model credential dependency; the workflow only supplies the BuildBuddy credential needed to run
+Bazel remotely. The `test_env` target is the separate live model smoke and is not run by this workflow.
 The importer consumes the `oci_image` targets through `oci_layout_rloc`, combines their index
 descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
 Docker-format `oci_load` tarballs.
@@ -40,6 +46,9 @@ existing eventual k3s outcomes cover the requested lifecycle checks; no extra tr
 or expensive rerun were needed. New quiesce behavior still needs its own focused regression tests.
 
 ## Lifecycle measurements
+
+These profiles and outcomes describe the earlier Python Gateway/Dispatcher fixture. They predate
+the Go fixture composition above and are not image-size or lifecycle measurements for the Go images.
 
 ### OCI-layout streaming, 2026-10-14
 
@@ -100,10 +109,12 @@ cleanup as separate future work until those coverage gaps have an explicit owner
 Earlier evidence from [#10414](https://github.com/agentydragon/ducktape/pull/10414) was 784 seconds for
 four lifecycle tests and 590 seconds for the model test; those timings predate Dispatcher deployment.
 
-## Result
+## Historical result: Python Gateway and Dispatcher fixture
 
-Every Deployment of the stack except Dex (13, the app included) becomes Available and a pod Sandbox starts and runs a real Qwen turn through the app on one RBE action (about 10 minutes with the images
-already in the cache), with the changes below. Breaks found on the way, in order:
+Before the Go fixture rewrite, every Deployment except Dex (13, the app included) became Available,
+and a pod Sandbox started and ran a real Qwen turn through the app on one RBE action (about 10 minutes
+with the images already in the cache). This is historical Python-service fixture evidence, not a
+result for the new Go composition. Breaks found on the way, in order:
 
 - **Kernel sysctls:** the kubelet needs every `/proc/sys/kernel` entry present in the shadow copy, not only
   the keys ones.
@@ -147,4 +158,6 @@ rules URL uses it) and Dex/OIDC public hostnames. The k3s lifecycle tests use st
 Cilium, so they do not validate those integrations or real external identity.
 
 The [historical image inventory](k3s_image_inventory_2026_10_14.md) records the layer and unpacked-file
-breakdown for the 21-image snapshot before Sandbox Service image retirement.
+breakdown for the 21-image Python-service snapshot before Sandbox Service image retirement and this
+Go fixture conversion. Its image sizes are historical and do not measure the Go images now selected
+by the fixture.

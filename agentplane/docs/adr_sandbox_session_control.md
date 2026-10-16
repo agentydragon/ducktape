@@ -201,7 +201,7 @@ marker names the incarnation it was entered in:
 
 - **Incarnation identity.** The runner does not choose it. The gateway already authenticates the
   connecting Pod and refuses one that is not the Sandbox's current incarnation
-  (`runner_gateway/runner_control.py`); its `Welcome` carries that incarnation's UID (the Pod, or a
+  (`runner_gateway/go/gateway/control.go`); its `Welcome` carries that incarnation's UID (the Pod, or a
   VM's virt-launcher Pod, as `status.incarnation` names it). `runner_boot_id` cannot serve: it
   changes on every runner process start, restarts included.
 - **Keying.** Entering lameduck writes the marker with the incarnation UID the runner last saw in a

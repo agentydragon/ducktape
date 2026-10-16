@@ -188,7 +188,7 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 		}}, Wake: queueWake{}, Leases: queueLease{store: store},
 		Runner: &dispatcher.ProxyRunner{
 			Namespace: testNamespace, TokenFile: tokenFile, Timeout: 5 * time.Second,
-			Target: func(string, string) string { return listener.Addr().String() },
+			TargetTemplate: listener.Addr().String(),
 		},
 		Hub: hub, Ready: make(chan struct{}),
 	}

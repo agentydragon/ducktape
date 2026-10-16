@@ -11,12 +11,11 @@ import (
 
 // ControlServiceSuffix names a Sandbox's headless control Service `{sandbox}-control`, and
 // ControlServicePort is the Runner Gateway's port on it; both must equal the Runner Gateway's
-// `RecordOwner.control_name` suffix and `Settings.port` in
-// agentplane/runner_gateway/connection_records.py and settings.py.
+// control Service suffix and proxy listener in agentplane/runner_gateway/go/gateway.
 const (
 	ControlServiceSuffix = "-control"
 	ControlServicePort   = 8080
-	// Must equal CONTROL_PORT in agentplane/runner_gateway/connection_records.py.
+	// Must equal controlPortName in agentplane/runner_gateway/go/gateway/records.go.
 	ControlPortName = "grpc"
 )
 

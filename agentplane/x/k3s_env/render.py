@@ -14,6 +14,11 @@ from typing import Any
 
 NAMESPACE = "agentplane-testing"
 POSTGRES_SERVICE = "postgres-rw"
+RUNNER_GATEWAY = "runner-gateway"
+SESSION_DISPATCHER = "session-dispatcher"
+GO_RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset"
+GO_QUEUE_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
+DISPATCHER_PORT = 8081
 
 # Kinds a bare k3s has no CRD for and that the services do not read.
 LITELLM_INTERNAL_HOST = "litellm.litellm.svc.cluster.local"
@@ -181,6 +186,120 @@ def _pod_spec_fixups(pod: dict[str, Any], node_ip: str) -> None:
         )
 
 
+def _go_runner_gateway(deployment: dict[str, Any]) -> None:
+    """Replace the fixture's two Python workloads with the combined Go runtime."""
+    pod = deployment["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    container.update(
+        {
+            "name": RUNNER_GATEWAY,
+            "image": GO_RUNNER_GATEWAY_IMAGE,
+            "args": [
+                f"--sandbox-namespace={NAMESPACE}",
+                "--runner-token-file=/var/run/secrets/agentplane-runner-gateway/token",
+                "--dispatcher-audience=session-dispatcher",
+                "--gateway-audience=agentplane-runner-gateway",
+                "--runner-audience=agentplane-runner-control",
+                f"--sandbox-controller-account={NAMESPACE}/sandbox-controller",
+                f"--dispatcher-caller={NAMESPACE}/app",
+                f"--dispatcher-caller={NAMESPACE}/notifications",
+                f"--gateway-caller={NAMESPACE}/app",
+                f"--gateway-caller={NAMESPACE}/notifications",
+                f"--gateway-caller={NAMESPACE}/{RUNNER_GATEWAY}",
+                f"--wake-caller={NAMESPACE}/app",
+                f"--wake-caller={NAMESPACE}/notifications",
+            ],
+            "ports": [
+                {"name": "grpc", "containerPort": 8080, "protocol": "TCP"},
+                {"name": "dispatcher", "containerPort": DISPATCHER_PORT, "protocol": "TCP"},
+                {"name": "runner-control", "containerPort": 8082, "protocol": "TCP"},
+            ],
+        }
+    )
+    env = [entry for entry in container.get("env", []) if entry.get("name") != "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"]
+    env.append(
+        {
+            "name": "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL",
+            "valueFrom": {"secretKeyRef": {"key": "uri", "name": "postgres-session-dispatcher"}},
+        }
+    )
+    container["env"] = env
+    container["volumeMounts"] = [
+        mount
+        for mount in container.get("volumeMounts", [])
+        if mount.get("mountPath") != "/etc/agentplane-runner-gateway"
+    ]
+
+    pod["volumes"] = [
+        volume for volume in pod.get("volumes", []) if volume.get("name") != "configmap-runner-gateway-config"
+    ]
+    pod["volumes"].append(
+        {
+            "name": "runner-gateway-token",
+            "projected": {
+                "sources": [
+                    {
+                        "serviceAccountToken": {
+                            "audience": "agentplane-runner-gateway",
+                            "expirationSeconds": 3600,
+                            "path": "token",
+                        }
+                    }
+                ]
+            },
+        }
+    )
+    container["volumeMounts"].append(
+        {"mountPath": "/var/run/secrets/agentplane-runner-gateway", "name": "runner-gateway-token", "readOnly": True}
+    )
+    pod["initContainers"] = [
+        {
+            "name": "goose-migrate",
+            "image": GO_QUEUE_MIGRATOR_IMAGE,
+            "imagePullPolicy": "IfNotPresent",
+            "env": [
+                {
+                    "name": "DATABASE_URL",
+                    "valueFrom": {"secretKeyRef": {"key": "uri", "name": "postgres-session-dispatcher"}},
+                }
+            ],
+            "resources": {"requests": {"cpu": "25m", "memory": "64Mi"}},
+            "securityContext": {
+                "allowPrivilegeEscalation": False,
+                "capabilities": {"drop": ["ALL"]},
+                "privileged": False,
+                "readOnlyRootFilesystem": False,
+                "runAsNonRoot": True,
+            },
+        }
+    ]
+
+
+def _go_dispatcher_service(service: dict[str, Any], gateway_selector: Mapping[str, str]) -> None:
+    """Keep the stable Service name; headless fixture clients dial the Go Pod port directly."""
+    service["spec"]["selector"] = dict(gateway_selector)
+    found = False
+    for port in service["spec"]["ports"]:
+        if port["name"] == "grpc":
+            port["targetPort"] = DISPATCHER_PORT
+            found = True
+    if not found:
+        raise ValueError(f"{SESSION_DISPATCHER} Service has no grpc port")
+
+
+def _go_dispatcher_endpoint(node: Any) -> Any:
+    """Without kube-proxy, clients use the Go Pod port behind the stable headless Service name."""
+    old = f"{SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local:8080"
+    new = f"{SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local:{DISPATCHER_PORT}"
+    if isinstance(node, dict):
+        return {key: _go_dispatcher_endpoint(value) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_go_dispatcher_endpoint(value) for value in node]
+    if isinstance(node, str):
+        return node.replace(old, new)
+    return node
+
+
 def _use_external_litellm(node: Any) -> Any:
     """Point at the public LiteLLM: the cluster-internal Service is not here, and its rules were `clusterInternal`."""
     if isinstance(node, dict):
@@ -205,23 +324,45 @@ def rewrite(
     `overrides` maps a Secret name to the one value it holds; `external_litellm` sends LiteLLM traffic to the
     public endpoint, which `overrides` must then hold a key for.
     """
+    source_docs = [copy.deepcopy(dict(original)) for original in docs]
+    gateway = next(
+        doc for doc in source_docs if doc["kind"] == "Deployment" and doc["metadata"]["name"] == RUNNER_GATEWAY
+    )
+    if not any(doc["kind"] == "Deployment" and doc["metadata"]["name"] == SESSION_DISPATCHER for doc in source_docs):
+        raise ValueError(f"generated fixture is missing the {SESSION_DISPATCHER} Deployment")
+    gateway_selector = gateway["spec"]["selector"]["matchLabels"]
     out: list[dict[str, Any]] = []
-    for original in docs:
-        doc = copy.deepcopy(dict(original))
+    for original in source_docs:
+        doc = original
         kind, name = doc["kind"], doc["metadata"]["name"]
         if kind in DROPPED_KINDS or (kind, name) in DROPPED_NAMES:
+            continue
+        if kind == "Deployment" and name == SESSION_DISPATCHER:
             continue
         if kind == "ExternalSecret":
             doc = _external_secret_to_secret(doc, overrides)
         elif kind == "Service":
+            if name == SESSION_DISPATCHER:
+                _go_dispatcher_service(doc, gateway_selector)
             _headless(doc)
         elif kind == "Cluster":
             _cnpg_cluster_fixups(doc, node_ip)
         elif kind == "Deployment":
+            if name == RUNNER_GATEWAY:
+                _go_runner_gateway(doc)
             _pod_spec_fixups(doc["spec"]["template"]["spec"], node_ip)
+        elif kind == "Role" and name == RUNNER_GATEWAY:
+            for rule in doc.get("rules", []):
+                if (
+                    "sandboxes" in rule.get("resources", [])
+                    and "agentplane.allegedly.works" in rule.get("apiGroups", [])
+                    and "patch" not in rule["verbs"]
+                ):
+                    rule["verbs"].append("patch")
         elif kind == "SandboxTemplate":
             _pod_spec_fixups(doc["spec"]["pod"]["spec"], node_ip)
         _use_local_path(doc)
+        doc = _go_dispatcher_endpoint(doc)
         if external_litellm:
             doc = _use_external_litellm(doc)
         out.append(doc)

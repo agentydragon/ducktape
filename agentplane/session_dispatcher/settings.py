@@ -1,4 +1,7 @@
-"""Session Dispatcher deployment settings and configuration file name."""
+"""Configuration contract for the pinned Python deployment.
+
+CLEANUP: remove after the Go cutover retires the Python Deployment and its ConfigMap.
+"""
 
 from pathlib import Path
 from typing import ClassVar

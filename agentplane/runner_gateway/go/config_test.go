@@ -17,7 +17,7 @@ func TestUnifiedGatewayConfigKeepsAuthAndWakePoliciesSeparate(t *testing.T) {
 		"--wake-caller=agentplane/app", "--gateway-caller=agentplane/runner-gateway",
 		"--sandbox-controller-account=agentplane/sandbox-controller",
 	}
-	c, err := loadConfig(args, getenv)
+	_, err := loadConfig(args, getenv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,5 +28,34 @@ func TestUnifiedGatewayConfigKeepsAuthAndWakePoliciesSeparate(t *testing.T) {
 	invalid := append(append([]string{}, args...), "--wake-caller=agentplane/unknown")
 	if _, err := loadConfig(invalid, getenv); err == nil {
 		t.Fatal("unauthorized wake caller accepted")
+	}
+}
+
+func TestUnifiedGatewayConfigAcceptsHostProcessTargetsAndBoundsProxyPort(t *testing.T) {
+	env := map[string]string{
+		"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": "postgres://queue",
+		"AGENTPLANE_RUNNER_GATEWAY_POD_NAME":                "runner-gateway-test",
+		"AGENTPLANE_RUNNER_GATEWAY_POD_IP":                  "127.0.0.1",
+	}
+	getenv := func(name string) string { return env[name] }
+	args := []string{
+		"--sandbox-namespace=agentplane", "--runner-token-file=/tmp/runner-token",
+		"--dispatcher-audience=dispatcher", "--gateway-audience=gateway", "--runner-audience=runner",
+		"--dispatcher-caller=agentplane/notifications", "--gateway-caller=agentplane/app",
+		"--proxy-listen-address=127.0.0.1:41001", "--dispatcher-listen-address=127.0.0.1:41002",
+		"--control-listen-address=127.0.0.1:41003", "--proxy-port=42000",
+		"--runner-control-target-template=127.0.0.1:41001",
+		"--kubeconfig=/tmp/fake-kubeconfig",
+	}
+	c, err := loadConfig(args, getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, port := range []string{"0", "65536"} {
+		invalid := append(append([]string{}, args...), "--proxy-port="+port)
+		if _, err := loadConfig(invalid, getenv); err == nil {
+			t.Fatalf("invalid advertised proxy port %s was accepted", port)
+		}
 	}
 }

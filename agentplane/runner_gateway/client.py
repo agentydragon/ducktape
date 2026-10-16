@@ -9,7 +9,7 @@ from google.protobuf.message import Message
 from agentplane.grpc.calls import call_unary, dial
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
-from agentplane.runner_gateway.runner_proxy import (
+from agentplane.runner_gateway.api import (
     SANDBOX_HEADER,
     SANDBOX_OWNER_NAME_HEADER,
     SANDBOX_OWNER_NAMESPACE_HEADER,

@@ -24,6 +24,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 NAMESPACE = "agentplane-testing"
 SERVICE = "session-dispatcher"
+WORKLOAD = "runner-gateway"
 BOUND_SECONDS = 300
 type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
@@ -133,7 +134,7 @@ async def _forward(resource: str = f"service/{SERVICE}") -> AsyncIterator[str]:
         NAMESPACE,
         "port-forward",
         resource,
-        f"{port}:8080",
+        f"{port}:{8081 if resource.startswith('pod/') else 8080}",
         "--address=127.0.0.1",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
@@ -177,7 +178,7 @@ async def _dispatch_until(
 async def _replace_owner_with_peer(
     sandbox_uid: str, deployment_uid: str, evidence: dict[str, object]
 ) -> AsyncIterator[str]:
-    pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={SERVICE}", "-o", "json"))
+    pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
     (original,) = pods["items"]
     lease_name = f"dispatcher-{UUID(sandbox_uid).hex}"
     lease = json.loads(await _kubectl("get", "lease", lease_name, "-o", "json"))
@@ -188,7 +189,7 @@ async def _replace_owner_with_peer(
             await _kubectl(
                 "patch",
                 "deployment",
-                SERVICE,
+                WORKLOAD,
                 "--type=json",
                 "-p",
                 json.dumps(
@@ -203,8 +204,8 @@ async def _replace_owner_with_peer(
             )
         )
         scaled_generation = patched["metadata"]["generation"]
-        await _kubectl("rollout", "status", f"deployment/{SERVICE}", "--timeout=120s")
-        pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={SERVICE}", "-o", "json"))
+        await _kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
+        pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
         (peer,) = [item for item in pods["items"] if item["metadata"]["uid"] != original["metadata"]["uid"]]
         await _delete_pod(original["metadata"]["name"], original["metadata"]["uid"])
         configuration = k8s.Configuration()
@@ -231,23 +232,23 @@ async def _replace_owner_with_peer(
         yield peer["metadata"]["name"]
     finally:
         if scaled_generation is not None:
-            current = json.loads(await _kubectl("get", "deployment", SERVICE, "-o", "json"))
+            current = json.loads(await _kubectl("get", "deployment", WORKLOAD, "-o", "json"))
             # Do not overwrite a concurrent operator or GitOps rollout.
             if current["metadata"]["uid"] == deployment_uid and current["metadata"]["generation"] == scaled_generation:
                 await _kubectl(
                     "scale",
-                    f"deployment/{SERVICE}",
+                    f"deployment/{WORKLOAD}",
                     "--current-replicas=2",
                     "--replicas=1",
                     f"--resource-version={current['metadata']['resourceVersion']}",
                 )
-                await _kubectl("rollout", "status", f"deployment/{SERVICE}", "--timeout=120s")
+                await _kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
 
 
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("replica_failover", [False, True], ids=["queue", "replicas"])
 async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission(replica_failover: bool) -> None:
-    deployment = json.loads(await _kubectl("get", "deployment", SERVICE, "-o", "json"))
+    deployment = json.loads(await _kubectl("get", "deployment", WORKLOAD, "-o", "json"))
     assert deployment["status"].get("readyReplicas") == 1, "testing Dispatcher is not Ready"
     assert deployment["spec"]["replicas"] == 1
     assert deployment["spec"]["strategy"]["type"] == "Recreate"
@@ -417,8 +418,8 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                 metadata=authentication.metadata,
                 timeout=15,
             )
-            await _kubectl("rollout", "status", f"deployment/{SERVICE}", "--timeout=120s")
-            pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={SERVICE}", "-o", "json"))
+            await _kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
+            pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
             live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
             assert len(live) == 2
             streams = []
@@ -466,7 +467,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
 @pytest.mark.timeout(600)
 async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notification_sends() -> None:
     deployments: dict[str, object] = {}
-    for name in (SERVICE, "sandbox-controller", "runner-gateway", "app", "notifications"):
+    for name in (WORKLOAD, "sandbox-controller", "app", "notifications"):
         deployment = json.loads(await _kubectl("get", "deployment", name, "-o", "json"))
         assert deployment["status"].get("readyReplicas") == deployment["spec"]["replicas"], f"{name} is not Ready"
         deployments[name] = {
@@ -479,12 +480,14 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                 for container in deployment["spec"]["template"]["spec"].get("initContainers", [])
             },
         }
-    dispatcher_config = yaml.safe_load(
-        json.loads(await _kubectl("get", "configmap", f"{SERVICE}-config", "-o", "json"))["data"]["config.yaml"]
-    )
+    gateway = json.loads(await _kubectl("get", "deployment", WORKLOAD, "-o", "json"))
+    args = gateway["spec"]["template"]["spec"]["containers"][0]["args"]
     expected_wake_callers = [{"namespace": NAMESPACE, "name": "app"}, {"namespace": NAMESPACE, "name": "notifications"}]
-    assert dispatcher_config["caller_accounts"] == expected_wake_callers
-    assert dispatcher_config["wake_caller_accounts"] == expected_wake_callers
+    accounts = {f"{account['namespace']}/{account['name']}" for account in expected_wake_callers}
+    assert {
+        arg.removeprefix("--dispatcher-caller=") for arg in args if arg.startswith("--dispatcher-caller=")
+    } == accounts
+    assert {arg.removeprefix("--wake-caller=") for arg in args if arg.startswith("--wake-caller=")} == accounts
 
     service_config = json.loads(await _kubectl("get", "configmap", "app-config", "-o", "json"))
     policies = yaml.safe_load(service_config["data"]["config.yaml"])["default_policy_sets"]

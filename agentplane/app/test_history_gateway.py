@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import grpc
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
@@ -22,7 +23,7 @@ from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.runner.runner import Runner
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
-from agentplane.runner_gateway.testing.connected_runner import authenticated_runner_gateway
+from agentplane.runner_gateway.testing.runner_peer import runner_peer
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster, sandbox_cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
@@ -51,7 +52,6 @@ async def discover(cluster: SandboxCluster, live_index: LiveIndex) -> None:
 
 
 async def test_production_bridge_archives_native_evidence_across_bounded_service_copies(
-    cluster: SandboxCluster,
     live_index: LiveIndex,
     tmp_path: Path,
     event_logs: SeededEventLogStore,
@@ -63,9 +63,10 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     service_history_db_url: str,
 ) -> None:
     async with (
-        authenticated_runner_gateway(cluster, runner, tmp_path / "gateway-token") as remote,
+        runner_peer(tmp_path / "gateway-token", runner=runner) as endpoint,
         ingest(service_history_db_url, runner),
     ):
+        remote = endpoint.client()
         directory = RunnerDirectory(live_index, remote)
         async with runner_proxy_backed_dispatcher(directory, event_logs, tmp_path / "dispatcher-token") as dispatcher:
             bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, dispatcher=dispatcher)
@@ -133,8 +134,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
                     assert any(entry.event.HasField("harness_exited") for entry in archived)
 
 
-async def test_history_resume_rejects_a_recreated_sandbox_incarnation(
-    cluster: SandboxCluster,
+async def test_history_resume_propagates_runner_not_found(
     live_index: LiveIndex,
     tmp_path: Path,
     event_logs: SeededEventLogStore,
@@ -142,49 +142,40 @@ async def test_history_resume_rejects_a_recreated_sandbox_incarnation(
     runner: Runner,
     spec: runner_pb2.SessionSpec,
 ) -> None:
-    async with authenticated_runner_gateway(cluster, runner, tmp_path / "gateway-token") as remote:
+    async with runner_peer(tmp_path / "gateway-token", runner=runner) as endpoint:
+        remote = endpoint.client()
         directory = RunnerDirectory(live_index, remote)
         async with runner_proxy_backed_dispatcher(directory, event_logs, tmp_path / "dispatcher-token") as dispatcher:
             bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, dispatcher=dispatcher)
             opening = await bridge.create_session(SANDBOX, uuid4(), spec)
             thread_id = UUID(opening.session_id)
-            current = live_index.sandbox_view(SANDBOX)
-            assert current is not None
 
-            # The name is the same, but the live index now represents a different API resource.
-            cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"]["uid"] = str(uuid4())
-            replacement = live_index.sandbox_view(SANDBOX)
-            assert replacement is not None
-            assert replacement.uid != current.uid
-
-            # History provides the name only; the runner proxy must use the current UID and refuse
-            # to resume the old Session through the still-running Pod of the deleted resource.
-            with pytest.raises(ServiceError):
+            # Gateway Go tests enforce the incarnation fence. This peer scripts NOT_FOUND so the
+            # App test checks only that resume errors survive the client boundary.
+            endpoint.peer.reject_next_list_sessions(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
+            with pytest.raises(ServiceError) as refused:
                 await bridge.resume_thread(thread_id, sandbox=SANDBOX, expected_harness=None, expected_cwd=None)
+            assert refused.value.code == grpc.StatusCode.NOT_FOUND
 
 
-async def test_stopped_service_never_falls_back_to_reachable_runner(
-    cluster: SandboxCluster, live_index: LiveIndex, tmp_path: Path, runner: Runner
+async def test_runner_client_does_not_fall_back_after_peer_stops(
+    live_index: LiveIndex, tmp_path: Path, runner: Runner
 ) -> None:
-    async with authenticated_runner_gateway(cluster, runner, tmp_path / "gateway-token") as remote:
+    async with runner_peer(tmp_path / "gateway-token", runner=runner) as endpoint:
+        remote = endpoint.client()
         directory = RunnerDirectory(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []
-    # Each call to the Sandbox's runner dials its control Service anew, here with the gateway gone.
+    # Each call through the Sandbox destination dials the peer anew, here after it stopped.
     with pytest.raises(ServiceError):
         await directory.client(SANDBOX).list_sessions()
     assert not runner.sessions
 
 
 async def test_runner_proxy_lists_and_resumes_a_stopped_session(
-    cluster: SandboxCluster,
-    live_index: LiveIndex,
-    tmp_path: Path,
-    runner: Runner,
-    spec: runner_pb2.SessionSpec,
-    model: ScriptedModel,
+    live_index: LiveIndex, tmp_path: Path, runner: Runner, spec: runner_pb2.SessionSpec, model: ScriptedModel
 ) -> None:
-    token_file = tmp_path / "gateway-token"
-    async with authenticated_runner_gateway(cluster, runner, token_file) as remote:
+    async with runner_peer(tmp_path / "gateway-token", runner=runner) as endpoint:
+        remote = endpoint.client()
         session_id = str(uuid4())
         session = await runner.open_session(session_id, spec, None)
         await session.command(
