@@ -1,8 +1,6 @@
 """The public Dispatcher queue and Gateway proxy on the path to a connected Runner."""
 
 import asyncio
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import override
 
@@ -12,14 +10,12 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.grpc.calls import dial
 from agentplane.proto import (
     command_pb2,
     event_log_pb2,
     runner_control_pb2,
     runner_pb2,
     session_dispatcher_pb2 as dispatcher_pb,
-    session_dispatcher_pb2_grpc,
 )
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
@@ -36,9 +32,9 @@ from agentplane.runner_gateway.testing.runner_control import (
     connected,
 )
 from agentplane.sandboxes.testing.kubernetes import ACCOUNT, OWNER, POD_UID, SANDBOX, SANDBOX_UID, SandboxCluster
-from agentplane.session_dispatcher import main as dispatcher_main
 from agentplane.session_dispatcher.settings import Settings
 from agentplane.session_dispatcher.testing.sandbox_status import set_sandbox
+from agentplane.session_dispatcher.testing.service import running_dispatcher
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from util.net import pick_free_port
@@ -54,7 +50,6 @@ DISPATCHER_ACCOUNT = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="sessio
 SESSION = "contract-session"
 COMMAND_ID = "contract-command"
 CALLER_METADATA = (("authorization", f"Bearer {DISPATCHER_TOKEN}"),)
-type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
 
 class DispatcherGatewayRunner(ScriptedRunner):
@@ -65,33 +60,6 @@ class DispatcherGatewayRunner(ScriptedRunner):
         self, request: runner_control_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.SubmitInputResponse:
         return await self._queue(request, runner_control_pb2.SubmitInputResponse, context)
-
-
-@asynccontextmanager
-async def running_dispatcher(
-    settings: Settings, cluster: SandboxCluster, monkeypatch: pytest.MonkeyPatch
-) -> AsyncIterator[Dispatcher]:
-    stopping = asyncio.Event()
-
-    async def until_stopped() -> None:
-        await stopping.wait()
-
-    async def configuration(path: Path | None) -> k8s.Configuration:
-        del path
-        return cluster.api.configuration
-
-    monkeypatch.setattr(dispatcher_main, "kubernetes_configuration", configuration)
-    monkeypatch.setattr(dispatcher_main, "until_terminated", until_stopped)
-    task = asyncio.create_task(dispatcher_main.serve(settings), name="dispatcher-contract-service")
-    try:
-        async with dial(f"127.0.0.1:{settings.port}") as channel:
-            async with asyncio.timeout(5):
-                await channel.channel_ready()
-            stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
-            yield stub
-    finally:
-        stopping.set()
-        await task
 
 
 async def test_queue_receipt_then_runner_admission_crosses_the_gateway_proxy(

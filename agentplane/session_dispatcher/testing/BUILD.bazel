@@ -30,3 +30,17 @@ py_library(
         "@pypi//protobuf",
     ],
 )
+
+py_library(
+    name = "service",
+    srcs = ["service.py"],
+    deps = [
+        "//agentplane/grpc:calls",
+        "//agentplane/proto:session_dispatcher_pb2_grpc",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/session_dispatcher:main",
+        "//agentplane/session_dispatcher:settings",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+    ],
+)
