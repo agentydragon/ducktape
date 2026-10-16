@@ -1,6 +1,6 @@
-# Agentplane k3s OCI image inventory (2026-10-14)
+# Agentplane k3s OCI image inventory (historical snapshot, 2026-10-14)
 
-Measured from the 21 labels in `agentplane/x/k3s_env/BUILD.bazel` at source revision `ff38137b3f`. This predates the later removal of the Sandbox Service image on current `devel`; numbers below describe the measured snapshot, not today's target list. OCI config/manifest/index metadata is excluded from compressed-layer totals. The script verifies each layer blob SHA-256 and counts regular-file bytes from uncompressed tar members. No layer contained whiteouts or replaced paths in this snapshot.
+Measured from 21 labels in `agentplane/x/k3s_env/BUILD.bazel` at source revision `ff38137b3f`. That snapshot included the Sandbox Service image and the Python Gateway migration image, neither of which belongs to the current inventory. The measurements and image names below describe that historical snapshot, not today's target list. The current inventory is defined by `BUILD.bazel` and `inventory_k3s_images.py`. OCI config/manifest/index metadata is excluded from compressed-layer totals. The script verifies each layer blob SHA-256 and counts regular-file bytes from uncompressed tar members. No layer contained whiteouts or replaced paths in this snapshot.
 
 ## Image totals
 
@@ -165,9 +165,11 @@ A BBR `somepath(//agentplane/action_service:migration_image_bin, @pypi//mypy)` q
 
 The large Egress-only pieces (`zstandard` ~22.6 MB, `mitmproxy_rs` ~8.1 MB, `aioquic` ~6.4 MB, Brotli ~5.1 MB) correspond to the proxy's protocol/compression implementation. Their size alone is not evidence of an accidental edge. Likewise, the runner harness archives are explicitly required. No language rewrite or speculative removals are proposed.
 
-## Reproduction
+## Historical reproduction
 
-At the measured source revision `ff38137b3f`, build all 21 image labels from `_IMAGES`, then run:
+At the measured source revision `ff38137b3f`, the command below built all 21 image labels from
+`_IMAGES`. It is preserved as provenance for this historical snapshot; those labels are not the
+current k3s image inventory and the command will not run unchanged against current source.
 
 ```sh
 direnv exec . bbr build \
@@ -195,4 +197,4 @@ direnv exec . bbr build \
 direnv exec . python agentplane/x/k3s_env/inventory_k3s_images.py --bazel-bin bb-out/bazel-out/k8-fastbuild/bin
 ```
 
-The successful all-image BBR build was invocation `23745169-079f-468d-aded-2d7861d2aea8`; it materialized the OCI layout blobs in the `bb-out` tree. The script uses only the Python standard library and verifies compressed layer SHA-256 before reading tar members. The accepted lifecycle profiles are documented in [the k3s spike README](README.md): baseline profile run `75cf36f3-50c9-423c-bc24-522e00782390` at `4fcc98579e` plus instrumentation, OCI stream run `3b656910-9b6f-4b6c-8a7a-e7129375a1fd` at `ff38137b3f` plus instrumentation. Inventory source revision and profiled source revisions are stated separately.
+The historical all-image BBR build was invocation `23745169-079f-468d-aded-2d7861d2aea8`; it materialized the OCI layouts in the `bb-out` tree. The inventory script uses only the Python standard library and verifies compressed-layer SHA-256 before reading tar members. The accepted lifecycle profiles are documented in [the k3s spike README](README.md): baseline profile run `75cf36f3-50c9-423c-bc24-522e00782390` at `4fcc98579e` plus instrumentation, OCI stream run `3b656910-9b6f-4b6c-8a7a-e7129375a1fd` at `ff38137b3f` plus instrumentation. Inventory source revision and profiled source revisions are stated separately.

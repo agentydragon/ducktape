@@ -62,8 +62,8 @@ presentation state and projections, but those must not become hidden sources of 
 - **Runner Gateway:** runner control stream, verified destination bindings, the per-Sandbox Runner
   Proxy and read-only Sandbox inventory. It does not own Session records or command admission. The
   app and Dispatcher use the proxy for live Runner RPCs; the Dispatcher owns sender-facing durable
-  command admission and delivery state. The legacy `sandbox_commands.session` table is retained only
-  for the separate rollout-gated database drop.
+  command admission and delivery state. The retired `sandbox_commands` database resource is absent
+  from current manifests.
 - **History Service:** the Session Event archive, the ingress runners push their journals to, the
   Thread fold of each Session, and the read API over both. It retains the existing `sandbox_service`
   PostgreSQL database and its authored history.
@@ -86,10 +86,10 @@ use it for live Runner inventory; the app uses it for explicit native resume; th
 uses it for quiesce. The Session Dispatcher owns durable sender-facing command admission and delivery.
 No backend needs the app process to keep serving these operations.
 
-The Gateway-specific Session API and registry runtime are removed. The historical sandbox_commands.session
-table remains only through its separate rollout-gated database drop. Notification-triggered wake and
-durable acceptance for offline destinations are separate features with their own rollout gates. Do not
-create another runner-command queue as a side effect of a service-boundary change.
+The Gateway-specific Session API, registry runtime, and database resource are removed from current
+source and manifests. Notification-triggered wake and durable acceptance for offline destinations are
+separate features with their own rollout gates. Do not create another runner-command queue as a side
+effect of a service-boundary change.
 
 Runner journals remain durable on runner state volumes. Runners push them to the History Service,
 whose Session Event archive outlives the runner volume; the app reads history from that archive and

@@ -2,7 +2,7 @@
 
 import pytest
 import pytest_bazel
-from playwright.async_api import expect
+from playwright.async_api import Page, expect
 
 from agentplane.app.frontend.testing.visual_assertions import _open_settings
 from agentplane.app.frontend.testing.visual_fixtures import MOBILE_ONLY
@@ -11,6 +11,15 @@ from util.testing.visual_capture import VisualPage
 
 pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
+
+
+async def _hover_notification_drawer(page: Page) -> None:
+    # The menu can mount this ScrollArea under the pointer without dispatching pointerenter.
+    await page.mouse.move(0, 0)
+    scroll_area = page.get_by_role("dialog").locator(".mantine-ScrollArea-root")
+    await scroll_area.hover()
+    vertical_scrollbar = scroll_area.locator('[data-mantine-scrollbar][data-orientation="vertical"]')
+    await expect(vertical_scrollbar).to_have_attribute("data-state", "visible")
 
 
 async def test_settings_push_registration_follows_other_browser(view: VisualPage, app: AgentplaneFixture) -> None:
@@ -125,6 +134,7 @@ async def test_thread_notifications_mobile_menu(view: VisualPage, app: Agentplan
     await view.capture(name="thread_notifications_mobile_menu")
     await page.get_by_role("menuitem", name="Notifications").click()
     await expect(page.get_by_text("2 awaiting notice", exact=False)).to_be_visible()
+    await _hover_notification_drawer(page)
     await view.capture(name="thread_notifications_mobile_drawer")
 
 
@@ -139,14 +149,7 @@ async def test_sandbox_notifications_mobile_menu(view: VisualPage, app: Agentpla
     await page.get_by_role("menuitem", name="Notifications").click()
     await expect(page.get_by_text("Session s-2")).to_be_visible()
 
-    # ScrollArea uses hover-mode scrollbars. The menu click can leave the pointer over the newly
-    # mounted drawer without dispatching pointerenter to its ScrollArea, so establish that state
-    # explicitly before capturing it.
-    await page.mouse.move(0, 0)
-    scroll_area = page.get_by_role("dialog").locator(".mantine-ScrollArea-root")
-    await scroll_area.hover()
-    vertical_scrollbar = scroll_area.locator('[data-mantine-scrollbar][data-orientation="vertical"]')
-    await expect(vertical_scrollbar).to_have_attribute("data-state", "visible")
+    await _hover_notification_drawer(page)
     await view.capture(name="sandbox_notifications_mobile_drawer")
 
 

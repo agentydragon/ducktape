@@ -298,8 +298,6 @@ spec:
         name: session_dispatcher
         passwordSecret:
           name: postgres-session-dispatcher
-      - ensure: absent
-        name: sandbox_commands
       - ensure: present
         login: true
         name: electric

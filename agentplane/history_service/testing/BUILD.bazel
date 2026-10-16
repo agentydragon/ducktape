@@ -69,7 +69,6 @@ py_library(
     deps = [
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/storage:db",
-        "//agentplane/runner_gateway/commands:db",
         "//util/testing:postgres",
         "//util/testing:sqlalchemy_engines",
         "@pypi//pytest",

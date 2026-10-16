@@ -458,7 +458,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     )
 
     session = await driver.attach("sparse-child-root", spec=child_spec)
-    await submit_input(session, "input-1", "Reply with exactly: SPARSE_ROOT_TURN_OK")
+    await session.submit_input("input-1", "Reply with exactly: SPARSE_ROOT_TURN_OK")
     request = await model.request()
     await model.reply(request, Text("SPARSE_ROOT_TURN_OK"))
     await session.until(events.turn_completed)
@@ -484,7 +484,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
         lambda entry: events.is_kind("harness_started")(entry) and entry.event.harness_started.resumed
     )
     assert resumed.cursor > exited.cursor
-    await submit_input(second, "input-2", "Reply with exactly: SPARSE_ROOT_RESUME_OK")
+    await second.submit_input("input-2", "Reply with exactly: SPARSE_ROOT_RESUME_OK")
     request = await model.request()
     assert request.user_texts == [
         "Reply with exactly: SPARSE_ROOT_TURN_OK",
@@ -496,7 +496,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
     assert private_sentinel.read_text() == "runner-owned\n"
 
-    await submit_input(second, "input-3", "Run the shell tool and report its output.")
+    await second.submit_input("input-3", "Run the shell tool and report its output.")
     request = await model.request()
     await model.reply(request, ShellCall("sparse-shell", "printf SPARSE_ROOT_TOOL_OK"))
     tool_result = await model.request()

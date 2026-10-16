@@ -30,17 +30,12 @@ callers. Command admission and delivery use Session Dispatcher and the per-opera
 the journal's `CommandAdmitted` history still stores the shared `Command` message. History's Session
 Event archive and the Dispatcher queue are independent state owners.
 
-## Retained database migration gate
+## Database artifact cleanup
 
-The Gateway serving process no longer opens or reads the `sandbox_commands` database. The legacy
-`session` table remains in the schema and its migration init container continues to run while the
-registry-free image rolls out. The optional serving setting accepts an old Pod configuration value
-but is not used by the server; the migration command has its own database URL setting.
-
-The separate app `Runner.ResumeSession` caller rollout was verified on 2026-10-16: testing app and
-Runner Gateway are 1/1 Ready, staging app and Runner Gateway are 2/2 Ready, and every Pod runs image
-`devel-*4693fc9`; the image includes #10709's app change. This clears the direct-resume caller gate.
-The registry-free receiver image has not rolled out yet, so the database-drop gate remains closed.
+The database-drop change removed the Gateway database resource, URL wiring, and migration init
+container from current manifests. This cleanup removes the unused serving setting, migration sources
+and test fixture, and the old migration-image publication path. It retains the shared CNPG PostgreSQL
+Cluster and every other service database.
 
 The HTTP/client paths likewise have distinct effects: app `POST /sandboxes/{name}/resume`
 changes a Sandbox desired state, whereas `POST /threads/{thread_id}/resume` explicitly resumes
@@ -52,17 +47,11 @@ its status; `GET /sandboxes/{name}/sessions/{session_id}/opening`
 (`client.ts::getSessionOpening`) polls a separate opening. None is a duplicate command sender.
 The browser's old Sandbox session GET is already removed; retained Threads come from History.
 
-After the registry-free image is Ready in testing and staging and deployed callers no longer require
-the old receiver, a separate PR removes the `session` table and Gateway-owned database resources.
-That PR removes the CNPG Database, role, generated Secret, migration init container, URL wiring and
-migration/image publication path. It retains the shared CNPG PostgreSQL Cluster and every other
-service database. No live database is mutated by this runtime-retirement change.
-
 ## Source links
 
 - [RunnerControl and the reverse stream](runner_control.md) and [RunnerControl proto](../proto/runner_control.proto)
 - [Runner RPCs](../proto/runner.proto)
 - [Session Dispatcher API](../proto/session_dispatcher.proto)
 - [Gateway proxy implementation](../runner_gateway/runner_proxy.py)
-- [Gateway runtime and retained migration code](../runner_gateway/README.md)
-- [Rollout and database-drop gates](../plans/task_dag.md#12-the-runner-gateway-serves-the-runners-own-service)
+- [Gateway runtime](../runner_gateway/README.md)
+- [Gateway plan](../plans/task_dag.md#12-the-runner-gateway-serves-the-runners-own-service)

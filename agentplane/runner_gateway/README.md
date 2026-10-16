@@ -18,5 +18,4 @@ unavailable, but it does not replace Dispatcher admission or History's retained 
 - `runner_proxy.py`: the runner's `Runner` service, forwarded through the connection held by this
   replica ([runner proxy](../docs/runner_control.md#runner-proxy)).
 - `destinations.py`: validates the Sandbox incarnation and ready runner Pod before proxying.
-- `commands/`: legacy migration artifacts pending removal after database-drop reconciliation.
 - `settings.py`, `main.py`: server settings and listener wiring.

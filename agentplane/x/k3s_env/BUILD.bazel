@@ -77,7 +77,6 @@ _IMAGES = {
     "policy_controller": "//agentplane/policy_controller:image",
     "runner": ":runner_image",
     "runner_gateway": "//agentplane/runner_gateway:image",
-    "runner_gateway_migrate": "//agentplane/runner_gateway/commands:migration_image",
     "sandbox_controller": "//agentplane/sandbox_controller:image",
     "session_dispatcher": "//agentplane/session_dispatcher:image",
     "session_dispatcher_migrate": "//agentplane/session_dispatcher:migration_image",

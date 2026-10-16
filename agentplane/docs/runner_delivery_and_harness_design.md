@@ -46,8 +46,9 @@ recovery use the requested Sandbox, Kubernetes state, and runner control RPCs. S
 [`store.py`](../session_dispatcher/store.py).
 
 The Gateway owns the runner's long-lived control connection and routes calls to the replica holding
-that connection. It does not persist Dispatcher commands or read the historical `sandbox_commands`
-Session table, which remains only until its separate rollout-gated database drop. The runner journals admitted commands on its state volume. The History Service
+that connection. It does not persist Dispatcher commands or read the retired `sandbox_commands`
+Session table. The Gateway database resource is absent from current manifests. The runner journals
+admitted commands on its state volume. The History Service
 receives runner journals and serves retained events and folded Thread views, but these are separate
 service boundaries rather than a Dispatcher dependency:
 
@@ -239,8 +240,8 @@ other live interlocutors. App and Notification call the per-Sandbox proxy for UI
 authenticated `RunnerControl.Connect` stream to a separate Gateway listener through the egress
 sidecar. The holder writes each Sandbox's connection Lease and the EndpointSlice behind its
 `<sandbox>-control` Service; all Gateway replicas watch the Leases. Runner journal ingress goes to
-History, not Gateway. The app's explicit resume uses the per-Sandbox proxy. The Gateway-specific Session wrappers and registry runtime are removed in the Python retirement;
-the historical table remains only through the separate database-drop rollout gate.
+History, not Gateway. The app's explicit resume uses the per-Sandbox proxy. The Python Gateway's
+Session wrappers, registry runtime and database have been retired.
 
 **History prerequisite, checked on the 2026-10-15 tree:** neither Dispatcher nor Gateway has a
 runtime History Service client, History RPC call or History configuration edge. Their entry points,
@@ -257,8 +258,8 @@ and runner Connect as distinct authenticated surfaces. Keep the Dispatcher queue
 delivery Lease and database-generation fence separate from the Gateway connection Lease and
 EndpointSlice. A worker may own queued work on replica A while replica B holds that runner's stream;
 the per-Sandbox control Service still routes the call to B. Co-location alone cannot safely replace
-that routing with an in-process call or remove the queue. The historical Gateway table is removed only through its separate database-drop rollout gate,
-whether the services co-locate or not.
+that routing with an in-process call or remove the queue. Gateway database retirement is separate
+from this topology decision; it did not remove the Dispatcher queue or retained History.
 
 One deployment could remove a deployment and some duplicated configuration. A local fast path could
 avoid a service hop only when the queue owner also holds that runner connection, and would need the
@@ -359,9 +360,10 @@ was also lost. Any direct-admission mode is online-only and never wakes a suspen
 delivery remains the mode that may retain work and wake-to-deliver. If assessing a useful deployment
 without CNPG, explicitly inventory which other stateful services can be omitted or given another
 persistence owner; runner-local persistence cannot accept work while the runner is absent. Removing
-Dispatcher PostgreSQL alone does not remove CNPG. The current shared-CNPG databases are `app`,
-`sandbox_commands`, `sandbox_service`, `actions`, `egress`, `notifications` and `session_dispatcher`;
-the Indexing service also has a separate PostgreSQL dependency. See the
+Dispatcher PostgreSQL alone does not remove CNPG. Current manifests declare the shared-CNPG databases
+`app`, `sandbox_service`, `actions`, `egress`, `notifications` and `session_dispatcher`; the retired
+`sandbox_commands` database is not part of the current manifests. The Indexing service also has a
+separate PostgreSQL dependency. See the
 [service database inventory](../README.md#system-overview).
 
 The decision should recommend one of: retain the separate queue; change its boundary/placement while

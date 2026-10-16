@@ -238,7 +238,6 @@ flowchart TD
     NATIVE_SUBAGENT_EXPOSURE -. if multiple Sessions share a harness .-> RUNNER_HARNESS_OBJECTS_DESIGN
     NATIVE_SUBAGENT_EXPOSURE -. the native-child boundary it informs .-> MULTIAGENT_MODEL
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
-    GATEWAY_WRAPPER_RETIRE -. related .-> NATIVE_SUBAGENT_EXPOSURE
 ```
 
 ### `MULTIAGENT_MODEL` — shared identity and authority vocabulary
@@ -400,10 +399,9 @@ child IDs and parent links accompany them, and whether any child can be addresse
 independently. Forwarded text alone does not establish attachable Agentplane child Sessions; do not
 enable the flag in the runner until its actual behavior and the desired projection are reviewed.
 
-**Also in scope: keep Session identity runner-owned.** The Python Gateway Session wrappers and partial
-registry runtime are being removed under `GATEWAY_WRAPPER_RETIRE`; the app now calls the runner's
-identity-fenced `ResumeSession` through the proxy. The historical `session` table remains until the
-separate rollout-gated database drop. Do not treat that table as the source of live Session identity.
+**Also in scope: keep Session identity runner-owned.** The app calls the runner's identity-fenced
+`ResumeSession` through the proxy. The old `session` table was removed with the Gateway database; it
+was not the source of live Session identity.
 
 ## 4. VM environment phases
 
@@ -828,7 +826,6 @@ flowchart TD
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
-    GATEWAY_WRAPPER_RETIRE[In progress: retire Gateway wrappers, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
@@ -1303,18 +1300,13 @@ No refactor is open here.
 ## 12. The Runner Gateway serves the runner's own service
 
 Target and decisions: [History Service plan](history_service.md#decided-operator-2026-10-10-pdt)
-(Runner Gateway shape, Session specs). The Python Gateway Session wrappers and partial registry
-runtime are being removed. The Gateway serves `Connect` and proxies the runner's `Runner` service
-with per-method authorization; commands use Dispatcher and typed Runner RPCs.
+(Runner Gateway shape, Session specs). The Gateway serves `Connect` and proxies the runner's
+`Runner` service with per-method authorization; commands use Dispatcher and typed Runner RPCs. The
+Python Session wrappers, registry runtime, and database artifacts have been retired.
 
 ```mermaid
 flowchart TD
-    GATEWAY_WRAPPER_RETIRE[In progress: remove legacy Gateway wrappers]
-    GATEWAY_DATABASE_DROP --> GATEWAY_DATABASE_DROP_CLEANUP[Blocked: remove migration artifacts after database drop]
-    GATEWAY_DATABASE_DROP[Approved: drop Gateway database and its CNPG resources after rollout]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
-    GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
-    GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
 ```
 
 The [completed control-surface audit](../docs/control_surface_retirement.md) records protobuf,
@@ -1325,51 +1317,11 @@ node is removed. This does not remove the separate destination-authority decisio
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
 **Needs policy revision; preserve the explicitly approved direct app `Runner.ResumeSession` caller.**
-The app caller rollout is verified: testing and staging run #10716's image, which includes #10709's
-direct Runner resume change. The runner proxy (`runner_gateway/runner_proxy.py`) currently lets each
-configured caller account invoke the Runner methods allowed by policy, except `Quiesce` and `Seal`.
-Review the per-method policy for `OpenSession` and other start-or-continue-work methods against the
-Dispatcher-only command boundary and the approved app resume path. Do not revoke app resume as part of
-retiring the Gateway Session wrapper.
-
-### `GATEWAY_WRAPPER_RETIRE` — remove Gateway Session wrappers and registry runtime
-
-**In progress; wrapper/registry worker, 2026-10-16.** `SubmitCommand` and its wire/client surface
-are removed by #10716. This change removes Gateway `ResumeSession`, `CreateSession`, `ListSessions`
-and `BatchGetSessionSandboxes`, plus the partial `SessionRegistry`, its ORM mapping and serving-process
-database access. Test callers use Runner RPCs and Dispatcher operations. Keep live Runner inventory,
-the reverse tunnel and proxy, controller Quiesce, standard gRPC health, and the app's Gateway target
-for its System health probe. The direct app `Runner.ResumeSession` rollout is already verified; keep
-that explicitly approved caller. Manifests may continue supplying the legacy optional serving setting
-through rollout; delete its reader only in `GATEWAY_DATABASE_DROP`. Preserve runner-native state,
-History and the independent Dispatcher queue. Do not port the registry into Go. Roll the registry-free
-Gateway image to all replicas in testing and staging before the separate database drop.
-
-### `GATEWAY_DATABASE_DROP` — remove Gateway's database and CNPG-managed resources
-
-**Approved data-drop scope, 2026-10-16. The operator accepts a brief outage while the
-registry-free Gateway image rolls out; its rollout no longer blocks this drop. Separate PR, merged
-by the operator.** Drop the `session` table by dropping its
-`sandbox_commands` database; old Gateway images may fail until replaced by the registry-free image. Remove its CNPG `Database` resource,
-managed role, generated credentials/Secret, migration init container, database URL manifest setting,
-and obsolete migration/image publication wiring. Verify the CNPG Database reclaim policy and actual
-SQL database/role deletion rather than assuming pruning the CR deletes the data. After manifests
-without the setting have reconciled, delete the remaining settings reader and migration sources.
-
-The CNPG **Cluster `postgres` is shared** with app, Actions, Egress, Notifications, History and
-Dispatcher (`cluster/cdk8s/agentplane/database.py`); retain that Cluster, operator and storage.
-This node removes Gateway's logical database and associated CNPG resources, not other services'
-data. No database rename is needed. `DELIVERY_GO_RETIREMENT_REBASE` then rebases the Go implementation
-onto this completed retirement before the unified Go PR may merge.
-
-### `GATEWAY_DATABASE_DROP_CLEANUP` — remove retired migration artifacts and role tombstone
-
-**Blocked on verified `GATEWAY_DATABASE_DROP` reconciliation in testing and staging.** Verify the
-SQL `sandbox_commands` database and role are absent, and no Gateway Pod still has a migration init
-container or database URL. Remove the `ensure: absent` role tombstone, optional legacy settings
-reader, `runner_gateway/commands` migration sources, migration image publication and automation,
-and stale database documentation. Preserve the shared PostgreSQL Cluster and Dispatcher migrations.
-Remove both retirement nodes once the drop and cleanup are complete.
+The runner proxy (`runner_gateway/runner_proxy.py`) currently lets each configured caller account
+invoke the Runner methods allowed by policy, except `Quiesce` and `Seal`. Review the per-method policy
+for `OpenSession` and other start-or-continue-work methods against the Dispatcher-only command
+boundary and the approved app resume path. Do not revoke app resume as part of retiring the Gateway
+Session wrapper.
 
 ## Scope and retirement of stale gates
 
@@ -1401,7 +1353,7 @@ flowchart LR
     DELIVERY_GO_PROTOCOL_AUTH[Go proto and auth foundation]
     DELIVERY_GO_GATEWAY[Go tunnel and connection role]
     DELIVERY_GO_DISPATCHER[Go durable queue and delivery role]
-    DELIVERY_GO_RETIREMENT_REBASE[Merge gate: rebase Go after Gateway database retirement]
+    DELIVERY_GO_RETIREMENT_REBASE[Merge gate: rebase Go after Python Gateway retirement]
     DELIVERY_GO_INTEGRATION[One process, image and cdk8s deployment]
     DELIVERY_UNIFIED_CUTOVER[Atomic cutover and recovery verification]
     DELIVERY_OLD_RUNTIME_RETIRE[Retire obsolete runtime objects]
@@ -1417,7 +1369,6 @@ flowchart LR
     K3S_VM_IMAGE[Blocked: build a real VM fixture, section 10]
     DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_GATEWAY
     DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_DISPATCHER
-    GATEWAY_DATABASE_DROP --> DELIVERY_GO_RETIREMENT_REBASE
     DELIVERY_GO_GATEWAY --> DELIVERY_GO_INTEGRATION
     DELIVERY_GO_DISPATCHER --> DELIVERY_GO_INTEGRATION
     DELIVERY_GO_RETIREMENT_REBASE --> DELIVERY_GO_INTEGRATION
@@ -1449,9 +1400,10 @@ loss is terminal for runner-owned state; there is no requirement to reconstruct 
 History, and this does not imply separately retained History was also lost. Cover per-Session ordering,
 cancellation, duplicate opens, sender and replica failure, and retries. Runner-local persistence
 protects work only after the runner has committed admission; it does not accept work while that runner
-is absent. Inventory all database owners before making any CNPG claim: the shared cluster also serves `app`, `sandbox_commands`,
-`sandbox_service`, `actions`, `egress`, `notifications` and the Dispatcher; Indexing has a separate
-PostgreSQL dependency.
+is absent. Inventory all database owners before making any CNPG claim: current manifests declare the
+shared cluster databases `app`, `sandbox_service`, `actions`, `egress`, `notifications` and the
+Dispatcher; the retired `sandbox_commands` database is not part of the current manifests. Indexing
+has a separate PostgreSQL dependency.
 
 **Recommendation for review:** preserve the queue's durable acceptance and wake-to-deliver contract.
 If a direct mode is considered, keep it a separate online-only contract with explicit idempotent
@@ -1534,10 +1486,10 @@ fencing). The Go port still needs equivalent tests against its implementation. K
 `agentplane/acceptance:test_dispatcher_deployed` manual for deployed replica failover; do not add it
 to default CI.
 
-### `DELIVERY_GO_RETIREMENT_REBASE` — rebase Go implementation after Python database retirement
+### `DELIVERY_GO_RETIREMENT_REBASE` — rebase Go implementation after Python Gateway retirement
 
-**Merge gate; operator-approved, 2026-10-16. Blocked on `GATEWAY_DATABASE_DROP`.** Rebase the single
-Go implementation PR onto the landed Python wrapper/registry/database retirement. Remove the
+**Merge gate; operator-approved, 2026-10-16.** Rebase the single Go implementation PR onto devel
+after the Python wrapper/registry and database-artifact retirement lands. Remove the
 obsolete Gateway registry port, database configuration and Gateway Goose baseline/handoff code;
 keep Dispatcher queue migrations and data-preserving ownership handoff. Do not restore deleted
 wrappers or CNPG resources through the Go cutover. Review the combined diff and run affected Go
@@ -1661,9 +1613,7 @@ can evolve independently. This node does not expose process placement or select 
 harnesses per runner.
 
 This implementation can make a central Session-to-Sandbox placement lookup unnecessary for command
-delivery. `GATEWAY_WRAPPER_RETIRE` removes the Python registry runtime, but the registry-free receiver
-image still must roll out before the separate operator-approved `GATEWAY_DATABASE_DROP` proceeds.
-Neither the destination design nor this node deletes retained History or the Kubernetes
+delivery. Neither the destination design nor this node deletes retained History or the Kubernetes
 UID-to-connection locator.
 
 ### `SERVICE_API_TRANSPORT_MIGRATIONS` — stage service and interface migrations independently
