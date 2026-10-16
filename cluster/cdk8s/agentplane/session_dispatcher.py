@@ -16,12 +16,13 @@ from constructs import Construct
 from agentplane.crd_group import GROUP
 from agentplane.session_dispatcher.settings import Settings
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -110,6 +111,8 @@ class SessionDispatcher(Construct):
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
             termination_grace=Duration.seconds(30),
+            placement=node_scheduling.HIL_OVH,
+            registry_secret_name=SECRET_NAME,
             migrate=migrate_init_container(
                 f"{_MIGRATION_IMAGE}:unset",
                 name="migrate",

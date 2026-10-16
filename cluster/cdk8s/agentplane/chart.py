@@ -10,7 +10,7 @@ from cdk8s import App, Chart
 from constructs import Construct
 
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
@@ -27,6 +27,7 @@ from cluster.cdk8s.agentplane import (
     session_dispatcher,
 )
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.namespaces import Vpa
 
 
@@ -57,9 +58,26 @@ def environment_chart(app: App, env: Environment) -> Chart:
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
     database.Db(chart, "db", env)
-    electric.Electric(chart, "electric", env)
-    llm_ingress.LlmIngress(chart, "llm-ingress", env)
-    egress.Egress(chart, "egress", env, runners=runner_sandbox.pods(env.namespace))
+    electric.Electric(
+        chart, "electric", env, placement=node_scheduling.HIL_OVH, service_cluster_ip=None
+    ).add_platform_resources()
+    llm_ingress.LlmIngress(
+        chart,
+        "llm-ingress",
+        env,
+        placement=node_scheduling.HIL_OVH,
+        registry_secret_name=REGISTRY_SECRET_NAME,
+        service_cluster_ip=None,
+    ).add_platform_resources()
+    egress.Egress(
+        chart,
+        "egress",
+        env,
+        runners=runner_sandbox.pods(env.namespace),
+        placement=node_scheduling.HIL_OVH,
+        registry_secret_name=REGISTRY_SECRET_NAME,
+        service_cluster_ip=None,
+    ).add_platform_resources()
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {
         ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace).pods
@@ -99,9 +117,27 @@ def environment_chart(app: App, env: Environment) -> Chart:
         env,
         # The app reads Threads; the Notification Service reads command receipts.
         callers=app_caller | notifications_caller,
-    )
-    app_component.App(chart, "app", env)
-    runner_sandbox.RunnerSandbox(chart, "runner-sandbox", env)
+        placement=node_scheduling.HIL_OVH,
+        registry_secret_name=REGISTRY_SECRET_NAME,
+        service_cluster_ip=None,
+    ).add_platform_resources()
+    app_component.App(
+        chart,
+        "app",
+        env,
+        placement=node_scheduling.HIL_OVH,
+        registry_secret_name=REGISTRY_SECRET_NAME,
+        service_cluster_ip=None,
+        runner_control_target=runner_gateway.control_target(env.namespace),
+    ).add_platform_resources()
+    runner_sandbox.RunnerSandbox(
+        chart,
+        "runner-sandbox",
+        env,
+        image_pull_secret_name=sandbox_pod.SECRET_NAME,
+        control_service=runner_gateway.runner_control(env.namespace),
+        egress_api_service=egress.agent_api(env.namespace),
+    ).add_platform_resources()
     sandbox_controller.SandboxController(
         chart,
         "sandbox-controller",
@@ -109,8 +145,18 @@ def environment_chart(app: App, env: Environment) -> Chart:
         gateway=runner_gateway.service(env.namespace),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=runner_gateway.control_target(env.namespace),
-    )
-    actions.Actions(chart, "actions", env)
+        placement=node_scheduling.HIL_OVH,
+        registry_secret_name=REGISTRY_SECRET_NAME,
+        service_cluster_ip=None,
+    ).add_platform_resources()
+    actions.Actions(
+        chart,
+        "actions",
+        env,
+        placement=node_scheduling.HIL_OVH,
+        registry_secret_name=REGISTRY_SECRET_NAME,
+        service_cluster_ip=None,
+    ).add_platform_resources()
     notifications.Notifications(
         chart,
         "notifications",
@@ -124,5 +170,8 @@ def environment_chart(app: App, env: Environment) -> Chart:
         dispatcher=session_dispatcher.service(env.namespace),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         callers=[egress.proxy(env.namespace).pods, app_component.service(env.namespace).pods],
-    )
+        placement=node_scheduling.HIL_OVH,
+        registry_secret_name=REGISTRY_SECRET_NAME,
+        service_cluster_ip=None,
+    ).add_platform_resources()
     return chart

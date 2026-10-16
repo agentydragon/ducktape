@@ -5,6 +5,7 @@ HTTPRoute, NetworkPolicy, and the agent and app ServiceAccounts.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -16,6 +17,7 @@ from cdk8s_plus_34 import (
     CpuResources,
     EnvValue,
     IApiResource,
+    ImagePullPolicy,
     MemoryResources,
     Role,
     RoleBinding,
@@ -28,7 +30,7 @@ from constructs import Construct
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.settings import Settings
 from agentplane.crd_group import GROUP
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
     database,
@@ -60,6 +62,10 @@ _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
 _LABELS = {"app.kubernetes.io/name": NAME}
 
 
+_DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
+_DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
+
+
 def service(namespace: str) -> ServiceRef:
     """The app's Service in one environment's namespace."""
     return ServiceRef(
@@ -74,16 +80,38 @@ def oidc_secret(namespace: str) -> SecretRef:
 
 class App(Construct):
     """ServiceAccounts, RBAC, the config ConfigMap, Deployment (+ migrate initContainer), Service,
-    HTTPRoute, NetworkPolicy, and optional PodDisruptionBudget.
+    and optional PodDisruptionBudget. The fleet route, network policy, and credential
+    resources are added by `add_platform_resources`.
     """
 
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
+        registry_secret_name: str | None = "forgejo-images-creds",
+        service_cluster_ip: str | None = None,
+        runner_control_target: str | None = None,
+        container_env: Mapping[str, EnvValue] | None = None,
+        memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
+        migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
+    ) -> None:
         super().__init__(scope, id)
         self.env = env
+        self.placement = placement
+        self.registry_secret_name = registry_secret_name
+        self.service_cluster_ip = service_cluster_ip
+        self.runner_control_target = runner_control_target or runner_gateway.control_target(env.namespace)
+        self.container_env = container_env or {}
+        self.memory_limit = memory_limit
+        self.migrate_pull_policy = migrate_pull_policy
+        self.migrate_memory_limit = migrate_memory_limit
         self.service = service(env.namespace)
         self.oidc = oidc_secret(env.namespace)
 
-        forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=env.namespace)
         self._add_agent_service_account()
         config = SettingsFile(
             self,
@@ -95,6 +123,10 @@ class App(Construct):
         )
         workload = self._add_workload(config)
         self._add_rbac(workload.account)
+
+    def add_platform_resources(self) -> None:
+        """Add the public route and Cilium policy used by fleet environments."""
+        forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=self.env.namespace)
         self._add_http_route()
         self._add_network_policy()
 
@@ -188,7 +220,7 @@ class App(Construct):
     def _add_workload(self, config: SettingsFile) -> ServiceWorkload:
         namespace = self.env.namespace
         env = self._container_env()
-        control_target = EnvValue.from_value(runner_gateway.control_target(namespace))
+        control_target = EnvValue.from_value(self.runner_control_target)
         oidc_secret_reload = self.oidc.name
         if self.env.app.oidc_session_secret_name != self.oidc.name:
             oidc_secret_reload += f",{self.env.app.oidc_session_secret_name}"
@@ -214,20 +246,33 @@ class App(Construct):
                 host="0.0.0.0",
                 port=self.service.pod_port,
             ),
-            env_variables={**env, env_name(Settings, "runner_gateway_control_target"): control_target},
+            env_variables={
+                **env,
+                **self.container_env,
+                env_name(Settings, "runner_gateway_control_target"): control_target,
+            },
             ports=[self.service.port.container_port()],
             readiness=http_probe("/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
+                memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
             ),
             # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease
             # release and the store's close.
             termination_grace=Duration.seconds(60),
             # The app's Alembic history. The app itself creates no tables; it verifies
             # the migrated schema at startup and fails if this hasn't run.
-            migrate=migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=env),
+            migrate=migrate_init_container(
+                f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
+                name="migrate",
+                env_variables=env,
+                image_pull_policy=self.migrate_pull_policy,
+                memory_limit=self.migrate_memory_limit,
+            ),
+            placement=self.placement,
+            registry_secret_name=self.registry_secret_name,
+            service_cluster_ip=self.service_cluster_ip,
             annotations={
                 # A re-minted client secret otherwise leaves the pod on the old
                 # one, and every login 401s.

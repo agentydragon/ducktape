@@ -17,16 +17,25 @@ from cdk8s_plus_34 import (
     MemoryResources,
 )
 
+_DEFAULT_MEMORY_LIMIT = Size.mebibytes(256)
 
-def migrate_init_container(image: str, *, name: str, env_variables: dict[str, EnvValue]) -> ContainerProps:
+
+def migrate_init_container(
+    image: str,
+    *,
+    name: str,
+    env_variables: dict[str, EnvValue],
+    image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
+    memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+) -> ContainerProps:
     return ContainerProps(
         name=name,
         image=image,
-        image_pull_policy=ImagePullPolicy.ALWAYS,
+        image_pull_policy=image_pull_policy,
         env_variables=env_variables,
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(25)),
-            memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(256)),
+            memory=MemoryResources(request=Size.mebibytes(64), limit=memory_limit),
         ),
         # Writable: its root filesystem writes are unaudited.
         security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),

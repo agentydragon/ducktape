@@ -13,6 +13,7 @@ from typing import cast
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
+    ContainerProps,
     ContainerResources,
     ContainerSecurityContextProps,
     Cpu,
@@ -54,27 +55,32 @@ _RUNNER_TOKEN_FILE = "/var/run/secrets/agentplane-runner-gateway/token"
 _GRPC_PORT = 8080
 
 
+_DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
+
+
 def dispatcher_service(namespace: str) -> ServiceRef:
     """Keep the sender's DNS and Service port; target the shared Go listener."""
     return ServiceRef(
         name=session_dispatcher.NAME,
-        port=Port(name="grpc", number=8080),
+        port=Port(name="grpc", number=_GRPC_PORT),
         pods=runner_gateway.service(namespace).pods,
         target_port=_GRPC_PORT,
     )
 
 
-def runner_control_service(namespace: str) -> ServiceRef:
-    """Keep the runner-facing Service port while sharing the Go gRPC listener."""
+def runner_control_service(namespace: str, *, port: Port | None = None) -> ServiceRef:
+    """The Go listener behind a caller-selected control Service port."""
     control = runner_gateway.runner_control(namespace)
-    return ServiceRef(name=control.name, port=control.port, pods=control.pods, target_port=_GRPC_PORT)
+    return ServiceRef(name=control.name, port=port or control.port, pods=control.pods, target_port=_GRPC_PORT)
 
 
 def _account(account: ServiceAccountRef) -> str:
     return f"{account.namespace}/{account.name}"
 
 
-def add_stable_services(scope: Construct, env: Environment) -> None:
+def add_stable_services(
+    scope: Construct, env: Environment, *, cluster_ip: str | None = None, control: ServiceRef | None = None
+) -> None:
     """Root-owned Services retain their names while the new Go workload is gated on migration.
 
     Call this in the existing environment chart only during the fenced cutover, after
@@ -82,23 +88,28 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
     in their current Flux owner, while the Go workload belongs to a dependent one.
     """
     proxy = runner_gateway.service(env.namespace)
-    control = runner_control_service(env.namespace)
+    control = control or runner_control_service(env.namespace)
     dispatcher = dispatcher_service(env.namespace)
     k8s.KubeService(
         scope,
         "runner-gateway-service",
         metadata=k8s.ObjectMeta(name=proxy.name, namespace=env.namespace, labels=proxy.labels),
         spec=k8s.ServiceSpec(
+            cluster_ip=cluster_ip,
             selector=proxy.pods.selector,
-            ports=[
-                proxy.port.k8s_service_port(),
-                k8s.ServicePort(
-                    name=control.port.name,
-                    port=control.port.number,
-                    target_port=k8s.IntOrString.from_number(control.pod_port),
-                    protocol="TCP",
-                ),
-            ],
+            ports=(
+                [proxy.port.k8s_service_port()]
+                if control.port.number == proxy.port.number
+                else [
+                    proxy.port.k8s_service_port(),
+                    k8s.ServicePort(
+                        name=control.port.name,
+                        port=control.port.number,
+                        target_port=k8s.IntOrString.from_number(_GRPC_PORT),
+                        protocol="TCP",
+                    ),
+                ]
+            ),
         ),
     )
     k8s.KubeService(
@@ -108,6 +119,7 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
             name=dispatcher.name, namespace=env.namespace, labels={"app.kubernetes.io/name": dispatcher.name}
         ),
         spec=k8s.ServiceSpec(
+            cluster_ip=cluster_ip,
             selector=dispatcher.pods.selector,
             ports=[
                 k8s.ServicePort(
@@ -134,6 +146,12 @@ class GoRunnerGateway(Construct):
         gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
         sandbox_controller: tuple[ServiceAccountRef, Pods],
+        control: ServiceRef | None = None,
+        migration: ContainerProps | None = None,
+        registry_secret_name: str | None = "forgejo-images-creds",
+        placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
+        container_env: Mapping[str, EnvValue] | None = None,
+        memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
         if not dispatcher_callers or not gateway_callers:
@@ -142,15 +160,20 @@ class GoRunnerGateway(Construct):
             raise ValueError("wake callers must also be Dispatcher callers")
 
         namespace = env.namespace
+        self.env = env
+        self.dispatcher_callers = dispatcher_callers
+        self.sandbox_controller_pods = sandbox_controller[1]
         proxy = runner_gateway.service(namespace)
-        control = runner_control_service(namespace)
-        dispatcher = dispatcher_service(namespace)
+        control = control or runner_control_service(namespace)
+        self.control = control
         own_account = ServiceAccountRef(namespace=namespace, name=runner_gateway.NAME)
         # A delivery worker may run on a different replica from the holder. It calls
         # the per-Sandbox control Service with this projected Gateway-audience token.
         proxy_callers = {**gateway_callers, own_account: proxy.pods}
+        self.proxy_callers = proxy_callers
         args = [
             f"--sandbox-namespace={namespace}",
+            f"--listen-address=0.0.0.0:{_GRPC_PORT}",
             f"--runner-token-file={_RUNNER_TOKEN_FILE}",
             f"--dispatcher-audience={session_dispatcher.TOKEN_AUDIENCE}",
             f"--gateway-audience={runner_gateway.TOKEN_AUDIENCE}",
@@ -181,17 +204,21 @@ class GoRunnerGateway(Construct):
             env_variables={
                 "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": database_url,
                 "AGENTPLANE_RUNNER_GATEWAY_POD_IP": EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
+                **(container_env or {}),
             },
             ports=[proxy.port.container_port()],
             readiness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(100)),
-                memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
+                memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
             ),
             termination_grace=Duration.seconds(60),
             replica_profile=initial_replicas,
             create_service=False,
+            migrate=migration,
+            registry_secret_name=registry_secret_name,
+            placement=placement,
         )
         workload.project_tokens(
             "runner-gateway-token",
@@ -199,24 +226,6 @@ class GoRunnerGateway(Construct):
             {"token": runner_gateway.TOKEN_AUDIENCE},
         )
         self._add_rbac(workload.account, namespace)
-        NetworkPolicy(
-            self,
-            "network-policy",
-            metadata=ApiObjectMetadata(name=runner_gateway.NAME.removeprefix("agentplane-"), namespace=namespace),
-            endpoint_selector=proxy.pods.selector,
-            ingress=[
-                *(pods.admit(proxy.pod_port) for pods in proxy_callers.values()),
-                sandbox_controller[1].admit(proxy.pod_port),
-                *(pods.admit(dispatcher.pod_port) for pods in dispatcher_callers.values()),
-                egress.proxy(namespace).pods.admit(control.pod_port),
-            ],
-            egress=[
-                cilium.dns_egress(),
-                EgressRule.to_entities(Entity.KUBE_APISERVER),
-                database.egress(namespace),
-                proxy.egress(),
-            ],
-        )
         egress.add_runner_egress(
             self,
             policy=runner_gateway.RUNNER_CONTROL_POLICY,
@@ -225,6 +234,33 @@ class GoRunnerGateway(Construct):
             path="/agentplane.proto.runner_control.RunnerControl/Connect",
             audience=RUNNER_CONTROL_AUDIENCE,
             purpose="control stream to the Runner Gateway",
+        )
+
+    def add_platform_resources(self) -> None:
+        """Add the fleet Cilium fences around the shared Gateway listeners."""
+        namespace = self.env.namespace
+        proxy = runner_gateway.service(namespace)
+        dispatcher = dispatcher_service(namespace)
+        NetworkPolicy(
+            self,
+            "network-policy",
+            metadata=ApiObjectMetadata(name=runner_gateway.NAME.removeprefix("agentplane-"), namespace=namespace),
+            endpoint_selector=proxy.pods.selector,
+            ingress=[
+                *(pods.admit(proxy.pod_port) for pods in self.proxy_callers.values()),
+                self.sandbox_controller_pods.admit(proxy.pod_port),
+                *(pods.admit(dispatcher.pod_port) for pods in self.dispatcher_callers.values()),
+                egress.proxy(namespace).pods.admit(self.control.pod_port),
+            ],
+            egress=[
+                cilium.dns_egress(),
+                EgressRule.to_entities(Entity.KUBE_APISERVER),
+                database.egress(namespace),
+                proxy.egress(),
+            ],
+        )
+        egress.add_runner_egress_network_policy(
+            self, policy=runner_gateway.RUNNER_CONTROL_POLICY, endpoint=self.control
         )
 
     def _add_rbac(self, service_account: ServiceAccount, namespace: str) -> None:

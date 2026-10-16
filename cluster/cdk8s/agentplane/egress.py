@@ -4,6 +4,8 @@ EgressCredential resources and egress PolicySets it reads.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
@@ -19,6 +21,8 @@ from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
     CpuResources,
+    EnvValue,
+    ImagePullPolicy,
     MemoryResources,
     Protocol,
     Role,
@@ -48,7 +52,7 @@ from agentplane.egress.settings import Settings
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
@@ -124,6 +128,10 @@ PUBLIC_INTERNET_POLICY = "public-internet"
 DEFAULT_POLICIES = (BASIC_POLICY, INFERENCE_EXPERIMENTS_POLICY)
 
 
+_DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
+_DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
+
+
 def _pods(namespace: str) -> Pods:
     return Pods(namespace=namespace, labels=tuple(_LABELS.items()))
 
@@ -150,8 +158,7 @@ def add_runner_egress(
     swaps the `credential` placeholder for the Pod's own token for `audience`, a token no other
     recipient accepts. `purpose` finishes "minted only for its runner's ..." in the description.
 
-    The proxy NetworkPolicy is additive to the proxy's own: that one cannot name the endpoint,
-    since the endpoint's module imports this one."""
+    The fleet chart adds its Cilium policy separately."""
     namespace = endpoint.pods.namespace
     EgressCredential(
         scope,
@@ -182,6 +189,11 @@ def add_runner_egress(
             )
         ],
     )
+
+
+def add_runner_egress_network_policy(scope: Construct, *, policy: str, endpoint: ServiceRef) -> None:
+    """The fleet proxy fence is additive to the proxy's own network policy."""
+    namespace = endpoint.pods.namespace
     NetworkPolicy(
         scope,
         f"{policy}-proxy-egress",
@@ -311,9 +323,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
     )
 
 
-def _egress_policies(scope: Construct, *, namespace: str) -> None:
-    (litellm_spec,) = litellm_proxy.proxy_specs()
-    litellm_service = litellm_proxy.service(litellm_spec)
+def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, litellm_cluster_internal: bool) -> None:
     add_egress_policy(
         scope,
         "egresspolicy-inference-experiments",
@@ -344,15 +354,15 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 credential_ref=PolicySetSpecRulesCredentialRef(name="ollama"),
             ),
             Rule.egress(
-                hosts=[litellm_service.fqdn],
-                cluster_internal=True,
+                hosts=[litellm_host],
+                cluster_internal=litellm_cluster_internal,
                 methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/v1/models", "/models", "/model/info"],
                 credential_ref=PolicySetSpecRulesCredentialRef(name="litellm-cheap-experiments"),
             ),
             Rule.egress(
-                hosts=[litellm_service.fqdn],
-                cluster_internal=True,
+                hosts=[litellm_host],
+                cluster_internal=litellm_cluster_internal,
                 methods=[PolicySetSpecRulesMethods.POST],
                 paths=[
                     "/v1/chat/completions",
@@ -602,21 +612,44 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
 
 
 class Egress(Construct):
-    """The central egress proxy: ServiceAccount, RBAC, interception CA/trust bundle,
-    Deployment, Services, CiliumNetworkPolicy, optional PodDisruptionBudget, and the
-    EgressCredential resources and egress PolicySets it reads.
+    """The central egress proxy: ServiceAccount, RBAC, Deployment, Services,
+    optional PodDisruptionBudget, and the EgressCredential and PolicySet resources it
+    reads. Fleet CA issuance, trust bundles, and Cilium policy are added separately.
     """
 
-    def __init__(self, scope: Construct, id: str, env: Environment, *, runners: Pods) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        runners: Pods,
+        agent_api_service: ServiceRef | None = None,
+        litellm_host: str | None = None,
+        litellm_cluster_internal: bool = True,
+        placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
+        registry_secret_name: str | None = "forgejo-images-creds",
+        service_cluster_ip: str | None = None,
+        container_env: Mapping[str, EnvValue] | None = None,
+        memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
+        migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
+    ) -> None:
         """`runners` are the runner Pods, which the proxy admits."""
         super().__init__(scope, id)
         self.env = env
         self.proxy = proxy(env.namespace)
-        self.agent_api = agent_api(env.namespace)
+        self.agent_api = agent_api_service or agent_api(env.namespace)
         self.admin = admin(env.namespace)
+        self.runners = runners
+        self.placement = placement
+        self.registry_secret_name = registry_secret_name
+        self.service_cluster_ip = service_cluster_ip
+        self.container_env = container_env or {}
+        self.memory_limit = memory_limit
+        self.migrate_pull_policy = migrate_pull_policy
+        self.migrate_memory_limit = migrate_memory_limit
 
-        self._add_certificate_and_bundle()
-        self.upstream_bundle = self._add_upstream_bundle()
         # Settings this deployment supplies as YAML rather than flags, so a list is a list.
         settings = SettingsFile(
             self,
@@ -643,11 +676,23 @@ class Egress(Construct):
             "service-admin",
             metadata=ApiObjectMetadata(name=self.admin.name, namespace=env.namespace),
             selector=workload.deployment,
+            cluster_ip=service_cluster_ip,
             ports=[self.admin.port.service_port()],
         )
-        self._add_network_policy(runners)
         _egress_credentials(self, namespace=env.namespace)
-        _egress_policies(self, namespace=env.namespace)
+        (litellm_spec,) = litellm_proxy.proxy_specs()
+        _egress_policies(
+            self,
+            namespace=env.namespace,
+            litellm_host=litellm_host or litellm_proxy.service(litellm_spec).fqdn,
+            litellm_cluster_internal=litellm_cluster_internal,
+        )
+
+    def add_platform_resources(self) -> None:
+        """Add fleet CA issuance, trust bundle, and Cilium network admission."""
+        self._add_certificate_and_bundle()
+        self._add_upstream_bundle()
+        self._add_network_policy(self.runners)
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         # TokenReview proves the sidecar's projected, audience-scoped ServiceAccount
@@ -755,7 +800,7 @@ class Egress(Construct):
         upstream_ca_volume = Volume.from_config_map(
             self,
             "upstream-ca-volume",
-            ConfigMap.from_config_map_name(self, "upstream-ca-ref", self.upstream_bundle.name),
+            ConfigMap.from_config_map_name(self, "upstream-ca-ref", f"{self.env.namespace}-egress-upstream-ca"),
             name="upstream-ca",
         )
 
@@ -785,7 +830,8 @@ class Egress(Construct):
                 token_audience=WORKLOAD_TOKEN_AUDIENCE,
             ),
             env_variables={
-                env_name(Settings, "database_url"): database_url.env_value(self, "postgres-egress-secret-proxy")
+                env_name(Settings, "database_url"): database_url.env_value(self, "postgres-egress-secret-proxy"),
+                **self.container_env,
             },
             ports=[
                 self.proxy.port.container_port(),
@@ -796,13 +842,20 @@ class Egress(Construct):
             liveness=http_probe("/livez", port=self.admin.pod_port, initial_delay_seconds=30, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
+                memory=MemoryResources(request=Size.mebibytes(256), limit=self.memory_limit),
             ),
             termination_grace=Duration.seconds(60),
             migrate=migrate_init_container(
-                f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=migrate_env
+                f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
+                name="migrate",
+                env_variables=migrate_env,
+                image_pull_policy=self.migrate_pull_policy,
+                memory_limit=self.migrate_memory_limit,
             ),
             tolerate_control_plane=True,
+            placement=self.placement,
+            registry_secret_name=self.registry_secret_name,
+            service_cluster_ip=self.service_cluster_ip,
         )
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)

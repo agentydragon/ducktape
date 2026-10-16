@@ -4,6 +4,8 @@ shared LiteLLM deployment.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     ContainerResources,
@@ -11,9 +13,11 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     Deployment,
+    EnvValue,
     ImagePullPolicy,
     MemoryResources,
     PodSecurityContextProps,
+    Secret,
     Service,
     ServiceAccount,
 )
@@ -23,7 +27,6 @@ from agentplane.llm_ingress.settings import Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -36,6 +39,9 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "llm-ingress"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/agentplane-llm-ingress"
 _LABELS = {"app.kubernetes.io/name": _NAME}
+
+
+_DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -54,12 +60,30 @@ def proxied_url(namespace: str) -> str:
 
 class LlmIngress(Construct):
     """ServiceAccount, cluster TokenReview RBAC, the settings ConfigMap, Deployment,
-    Service, and CiliumNetworkPolicy for the LLM ingress.
+    and Service for the LLM ingress. Fleet Cilium policy is added separately.
     """
 
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        litellm_url: str = "http://litellm.litellm.svc.cluster.local:4000",
+        placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
+        registry_secret_name: str | None = "forgejo-images-creds",
+        service_cluster_ip: str | None = None,
+        container_env: Mapping[str, EnvValue] | None = None,
+        memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+    ) -> None:
         super().__init__(scope, id)
         self.env = env
+        self.litellm_url = litellm_url
+        self.placement = placement
+        self.registry_secret_name = registry_secret_name
+        self.service_cluster_ip = service_cluster_ip
+        self.container_env = container_env or {}
+        self.memory_limit = memory_limit
         self.service = service(env.namespace)
 
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the ingress
@@ -94,6 +118,9 @@ class LlmIngress(Construct):
         )
         deployment = self._add_deployment(service_account, settings)
         self._add_service(deployment)
+
+    def add_platform_resources(self) -> None:
+        """Add fleet Cilium network admission."""
         self._add_network_policy()
 
     def _add_deployment(self, service_account: ServiceAccount, settings: SettingsFile) -> Deployment:
@@ -116,7 +143,11 @@ class LlmIngress(Construct):
             # cdk8s_plus_34 defaults this to False independent of the ServiceAccount's
             # own automount_token -- opt in for the same reason as the ServiceAccount.
             automount_service_account_token=True,
-            docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
+            docker_registry_auth=(
+                Secret.from_secret_name(self, "forgejo-images-creds-ref", self.registry_secret_name)
+                if self.registry_secret_name is not None
+                else None
+            ),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
         )
         deployment.add_container(
@@ -126,7 +157,7 @@ class LlmIngress(Construct):
             args=cli_args(
                 Settings,
                 token_audience=WORKLOAD_TOKEN_AUDIENCE,
-                litellm_url="http://litellm.litellm.svc.cluster.local:4000",
+                litellm_url=self.litellm_url,
                 host="0.0.0.0",
                 port=self.service.pod_port,
             ),
@@ -136,14 +167,15 @@ class LlmIngress(Construct):
                     namespace=self.env.namespace, name=self.env.llm_ingress.litellm_key_secret_name
                 )
                 .key("api-key")
-                .env_value(self, "litellm-key-secret")
+                .env_value(self, "litellm-key-secret"),
+                **self.container_env,
             },
             ports=[self.service.port.container_port()],
             readiness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
+                memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
             ),
             # Writable: its root filesystem writes are unaudited.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
@@ -151,7 +183,8 @@ class LlmIngress(Construct):
 
         settings.mount_into(deployment.containers[0], env=Settings.config_file_env)
 
-        pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=True)
+        if self.placement is not None:
+            pod_policy.place(deployment, self.placement, tolerate_control_plane=True)
         pod_policy.harden(deployment)
         return deployment
 
@@ -161,6 +194,7 @@ class LlmIngress(Construct):
             "service",
             metadata=ApiObjectMetadata(name=self.service.name, namespace=self.env.namespace),
             selector=deployment,
+            cluster_ip=self.service_cluster_ip,
             ports=[self.service.port.service_port()],
         )
 

@@ -38,7 +38,7 @@ from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import DirectFederationSettings
 from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s import agent_access_profiles as access, cilium
+from cluster.cdk8s import agent_access_profiles as access, cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
@@ -73,6 +73,7 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.agentplane.namespaces import TESTING_NAMESPACE
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_selections import TESTING_APP_MODELS, model_configs
@@ -386,7 +387,9 @@ def chart(app: App) -> Chart:
     # `AgentRbac`'s own docstring for why it must not be in staging's.
     AgentRbac(chart, "rbac", ENV)
     AcceptanceToken(chart, "acceptance-token", ENV)
-    command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
+    command_sandbox.CommandSandbox(
+        chart, "command-sandbox", ENV, image_pull_secret_name=sandbox_pod.SECRET_NAME
+    ).add_platform_resources()
     # claude-ai's boxes reach this app through staging's egress proxy, by its Service rather than its
     # public name, which would hairpin out through the Gateway and back.
     app_service = app_component.service(ENV.namespace)
@@ -410,7 +413,15 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=sandbox_pod.TOOL_CONFIG_GRANT, namespace=ENV.namespace),
         rules=access.rules_for_grants([tool_config_grant]),
     )
-    controller = policy_controller.PolicyController(chart, "policy-controller", ENV)
+    controller = policy_controller.PolicyController(
+        chart,
+        "policy-controller",
+        ENV,
+        placement=node_scheduling.HIL_OVH,
+        registry_secret_name=REGISTRY_SECRET_NAME,
+        service_cluster_ip=None,
+    )
+    controller.add_platform_resources()
     policy_controller_rbac.PolicyControllerRbac(
         chart, "policy-controller-rbac", ENV, account=controller.account, assignable_grants=[tool_config_grant]
     )

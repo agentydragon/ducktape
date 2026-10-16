@@ -74,10 +74,11 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.agentplane.runner_sandbox import RunnerTemplate
-from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_GRANT
+from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -436,6 +437,7 @@ def chart(app: App) -> Chart:
         image="git.allegedly.works/ducktape-ci/runner-ducktape",
         buildbuddy_secret=True,
         extra_harness_env=("BBR_BUILDBUDDY_API_KEY_FILE",),
+        image_pull_secret_name=SANDBOX_SECRET_NAME,
     )
     notification_service = notifications.service(STAGING_NAMESPACE)
     https_route(
@@ -454,7 +456,9 @@ def chart(app: App) -> Chart:
         endpoint_selector=notification_service.pods.selector,
         ingress=[IngressRule.from_gateway(notification_service.pod_port)],
     )
-    command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
+    command_sandbox.CommandSandbox(
+        chart, "command-sandbox", ENV, image_pull_secret_name=SANDBOX_SECRET_NAME
+    ).add_platform_resources()
     # Compose staging's complete PolicySets from the shared grant definitions and its own egress
     # rules before materializing them. The controller workload and its RBAC are separate constructs.
     assignable_sets = assignable_policy_sets()
@@ -472,7 +476,15 @@ def chart(app: App) -> Chart:
             metadata=ApiObjectMetadata(name=name, namespace=ENV.namespace),
             rules=[*agent_access_profiles.rules_for_grants(grants), *deployment_rules.get(name, ())],
         )
-    controller = policy_controller.PolicyController(chart, "policy-controller", ENV)
+    controller = policy_controller.PolicyController(
+        chart,
+        "policy-controller",
+        ENV,
+        placement=node_scheduling.HIL_OVH,
+        registry_secret_name=REGISTRY_SECRET_NAME,
+        service_cluster_ip=None,
+    )
+    controller.add_platform_resources()
     policy_controller_rbac.PolicyControllerRbac(
         chart,
         "policy-controller-rbac",
