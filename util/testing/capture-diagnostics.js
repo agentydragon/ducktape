@@ -20,6 +20,17 @@
     return /^(auto|scroll|hidden|overlay)$/.test(overflowY) && element.scrollHeight > element.clientHeight;
   };
   const elements = Array.from(document.querySelectorAll("*"));
+  const canvases = Array.from(document.querySelectorAll("canvas"), (canvas) => {
+    const { x, y, width, height } = canvas.getBoundingClientRect();
+    const style = getComputedStyle(canvas);
+    return {
+      rect: { x, y, width, height },
+      computedCssWidth: style.width,
+      computedCssHeight: style.height,
+      bitmapWidth: canvas.width,
+      bitmapHeight: canvas.height,
+    };
+  });
   const scrollables = [];
   for (const [domIndex, element] of elements.entries()) {
     if (!scrollable(element)) continue;
@@ -46,6 +57,7 @@
       incompleteImageCount: Array.from(document.images).filter((image) => !image.complete).length,
     },
     documentScroll: document.scrollingElement ? describe(document.scrollingElement) : null,
+    canvases,
     focus: focused
       ? {
           ...describe(focused),
