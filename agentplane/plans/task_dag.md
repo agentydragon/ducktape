@@ -1525,8 +1525,6 @@ items below; this direction does not authorize runtime changes.
 ```mermaid
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: durable queue or direct admission]
-    DISPATCHER_GATEWAY_TOPOLOGY_DESIGN[Decision: Dispatcher and Gateway topology]
-    DELIVERY_UNIFICATION_SCOPE_DECISION[Decision: one Go process scope]
     DELIVERY_GO_PROTOCOL_AUTH[Go proto and auth foundation]
     DELIVERY_GO_GATEWAY[Go tunnel and connection role]
     DELIVERY_GO_DISPATCHER[Go durable queue and delivery role]
@@ -1545,8 +1543,6 @@ flowchart LR
     RUNNER_DELIVERY_INGRESS_ACCEPTANCE[Candidate: test queued delivery and flush with real ingress, without History]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a narrow CNPG-free K3s integration tier]
     K3S_VM_IMAGE[Blocked: build a real VM fixture, section 10]
-    DISPATCHER_GATEWAY_TOPOLOGY_DESIGN -. if one Go process selected .-> DELIVERY_UNIFICATION_SCOPE_DECISION
-    DELIVERY_UNIFICATION_SCOPE_DECISION --> DELIVERY_GO_PROTOCOL_AUTH
     DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_GATEWAY
     DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_DISPATCHER
     DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_LEGACY_WRAPPER
@@ -1620,42 +1616,17 @@ ingress protocol with a direct runner-control stub or require History folds, arc
 projection. This no-History scenario is independent of the fully CNPG-free tier below: it still uses
 the PostgreSQL-backed queue and does not imply that the Dispatcher database can be omitted.
 
-### `DISPATCHER_GATEWAY_TOPOLOGY_DESIGN` — decide where delivery and runner connection roles live
-
-**Candidate decision, independent of `DISPATCHER_PERSISTENCE_MODEL_DESIGN`.** Since current delivery
-crosses both Dispatcher and Gateway in sequence, compare separate services, co-location in one
-deployment/process with distinct APIs and state
-ownership, and a genuinely merged service. Trace all actual interlocutors and credentials, not just
-the sequential Dispatcher-to-Gateway delivery path. Compare failure domains, replica routing,
-rollout, authorization, recovery and scaling with today's PostgreSQL queue retained. “Merge” must say
-whether it changes API, deployment or state owner; these are independent choices.
-
-**Concrete candidate for review:** one deployment/process serves separate Dispatcher sender API,
-per-Sandbox proxy and runner Connect listeners while retaining the queue database, delivery
-ownership and Gateway connection ownership as distinct state. App/Notification live reads,
-controller Quiesce and runner Connect remain independent Gateway callers; runner journal ingress
-still goes to History. A queue worker and connection holder can be on different replicas, so the
-per-Sandbox control Service and its EndpointSlice cannot disappear from co-location alone. The
-[delivery design note](../docs/runner_delivery_and_harness_design.md#delivery-service-and-persistence-alternatives)
-details the credential, Kubernetes permission and failure-domain tradeoffs. Compare measured benefit
-with coupled worker/stream restarts and verify cross-replica routing and recovery before choosing.
-The legacy wrapper/registry retirement gates and destination authority work remain separate; this
-node authorizes no deployment or service change.
-
-### `DELIVERY_UNIFICATION_SCOPE_DECISION` — approve the language and deployment boundary
-
-**Conditional on topology review selecting a single process.** Decide explicitly whether the target
-is a full Go Dispatcher plus Gateway, a Python co-location, or a staged Gateway-only Go rewrite.
-Recommend one Go service to avoid a disposable Python merged entry point and two runtime cutovers,
-but a full Dispatcher port is extra scope beyond the earlier Gateway-only Go idea. The Go path below
-is conditional on that approval. It retains the existing queue, wire contracts, distinct
-authenticated listeners and state owners; it does not decide direct admission, destination authority,
-registry retirement or a new sender policy. Record the selected Deployment/listener/Service shape and
-rollback boundary so implementation nodes have a stable target.
+**Approved direction (operator, 2026-10-15):** unify the Dispatcher and Gateway roles in one Go
+service, retaining the PostgreSQL queue, distinct authenticated sender/proxy/runner-control
+surfaces, and separate delivery and connection ownership across replicas. Exact listener count and
+deployment wiring belong to `DELIVERY_GO_INTEGRATION`; no deployment change is approved by this
+design record. The [delivery design note](../docs/runner_delivery_and_harness_design.md#delivery-service-and-persistence-alternatives)
+records the tradeoffs. Destination authority, direct admission, wrapper/registry retirement and
+new sender grants remain independent decisions or gated cleanup.
 
 ### `DELIVERY_GO_PROTOCOL_AUTH` — generate Go APIs and shared authentication
 
-**Depends on `DELIVERY_UNIFICATION_SCOPE_DECISION` selecting Go.** Add Go proto/gRPC generation for
+**Approved Go target; first implementation foundation.** Add Go proto/gRPC generation for
 Dispatcher, Gateway wrapper and Sandbox destination types alongside the existing runner/control Go
 protos. Implement reusable TokenReview principal validation with separate Dispatcher, Gateway and
 runner-control audiences and method allowlists; preserve the current App/Notification sender and

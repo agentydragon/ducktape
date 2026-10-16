@@ -254,7 +254,7 @@ Notification also read History. Those are not Dispatcher or Gateway service depe
 both services' runtime wiring before any unification rollout; if a new History dependency appears,
 resolve it first under the operator's gate.
 
-**Concrete co-location candidate for review:** run the existing Dispatcher queue API and workers with
+**Approved topology direction:** run the existing Dispatcher queue API and workers with
 the Gateway connection holder and proxy in one deployment, keeping the sender API, per-Sandbox proxy
 and runner Connect as distinct authenticated surfaces. Keep the Dispatcher queue database, per-Sandbox
 delivery Lease and database-generation fence separate from the Gateway connection Lease and
@@ -273,17 +273,18 @@ v0 Dispatcher service trust must remain limited to App and Notification. A truly
 owner would require additional decisions beyond co-location. Measure the saved hop/operational cost
 and test multi-replica owner/holder mismatch and crash recovery before choosing a deployment merge.
 
-### Implementation candidate: one Go delivery service
+### Approved implementation direction: one Go delivery service
 
-**Scope for operator review, not an approved rewrite.** The useful merger is one Go process and
-Deployment with separate Dispatcher sender, Gateway proxy/wrapper, and runner `Connect` gRPC listeners.
+**Approved Go scope, not a rollout approval.** The target is one Go service and Deployment with
+distinct authenticated Dispatcher sender, Gateway proxy/wrapper, and runner `Connect` surfaces;
+the exact listener count remains an implementation choice.
 It keeps the existing PostgreSQL Dispatcher queue and `sandbox_commands` registry while their
 independent retirement gates are open. A Gateway-only Go rewrite followed by a Python co-location
 would require two protocol/runtime cutovers; a Python merged entry point would be thrown away by a
 later Go rewrite. A single Go target avoids those intermediate deployments, but ports substantially
 more than the originally discussed Gateway-only rewrite: Dispatcher SQL transactions, wakeups,
 per-Sandbox ownership and recovery, as well as Gateway's tunnel and connection records. The operator
-must explicitly choose that expanded language scope. This topology work has no dependency on the
+has approved that expanded language scope. This topology work has no dependency on the
 separate direct-admission question; this candidate retains the current queue.
 
 The repository already has `rules_go`, Go gRPC generation for runner/control messages and a Go
