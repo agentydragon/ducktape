@@ -1,0 +1,142 @@
+--- a/dist/chart.js
++++ b/dist/chart.js
+@@ -885,7 +885,7 @@
+  _update(mode) {
+         const meta = this._cachedMeta;
+         this.update(mode || 'default');
+-        meta._clip = toClip(valueOrDefault(this.options.clip, defaultClip(meta.xScale, meta.yScale, this.getMaxOverflow())));
++        meta._clip = toClip(valueOrDefault(this.options.clip, defaultClip(meta.xScale, meta.yScale, this.getMaxOverflow(mode))));
+     }
+  update(mode) {}
+     draw() {
+@@ -2170,10 +2170,11 @@
+             prevParsed = parsed;
+         }
+     }
+- getMaxOverflow() {
++ getMaxOverflow(mode) {
+         const meta = this._cachedMeta;
+         const dataset = meta.dataset;
+-        const border = dataset.options && dataset.options.borderWidth || 0;
++        const options = this.options.showLine && this.resolveDatasetElementOptions(dataset.active ? 'active' : mode || 'default');
++        const border = options && options.borderWidth || 0;
+         const data = meta.data || [];
+         if (!data.length) {
+             return border;
+@@ -5928,11 +5929,15 @@
+         const newControllers = this.buildOrUpdateControllers();
+         this.notifyPlugins('beforeElementsUpdate');
+         let minPadding = 0;
++        const datasetModes = [];
+         for(let i = 0, ilen = this.data.datasets.length; i < ilen; i++){
+             const { controller  } = this.getDatasetMeta(i);
+             const reset = !animsDisabled && newControllers.indexOf(controller) === -1;
++            controller.configure();
+             controller.buildOrUpdateElements(reset);
+-            minPadding = Math.max(+controller.getMaxOverflow(), minPadding);
++            const datasetMode = isFunction(mode) ? mode({datasetIndex: i}) : mode;
++            datasetModes.push(datasetMode);
++            minPadding = Math.max(+controller.getMaxOverflow(datasetMode), minPadding);
+         }
+         minPadding = this._minPadding = options.layout.autoPadding ? minPadding : 0;
+         this._updateLayout(minPadding);
+@@ -5941,7 +5946,7 @@
+                 controller.reset();
+             });
+         }
+-        this._updateDatasets(mode);
++        this._updateDatasets(mode, datasetModes);
+         this.notifyPlugins('afterUpdate', {
+             mode
+         });
+@@ -6022,7 +6027,7 @@
+         });
+         this.notifyPlugins('afterLayout');
+     }
+- _updateDatasets(mode) {
++ _updateDatasets(mode, datasetModes) {
+         if (this.notifyPlugins('beforeDatasetsUpdate', {
+             mode,
+             cancelable: true
+@@ -6033,9 +6038,7 @@
+             this.getDatasetMeta(i).controller.configure();
+         }
+         for(let i = 0, ilen = this.data.datasets.length; i < ilen; ++i){
+-            this._updateDataset(i, isFunction(mode) ? mode({
+-                datasetIndex: i
+-            }) : mode);
++            this._updateDataset(i, datasetModes[i]);
+         }
+         this.notifyPlugins('afterDatasetsUpdate', {
+             mode
+--- a/dist/chart.cjs
++++ b/dist/chart.cjs
+@@ -887,7 +887,7 @@
+  _update(mode) {
+         const meta = this._cachedMeta;
+         this.update(mode || 'default');
+-        meta._clip = toClip(helpers_dataset.valueOrDefault(this.options.clip, defaultClip(meta.xScale, meta.yScale, this.getMaxOverflow())));
++        meta._clip = toClip(helpers_dataset.valueOrDefault(this.options.clip, defaultClip(meta.xScale, meta.yScale, this.getMaxOverflow(mode))));
+     }
+  update(mode) {}
+     draw() {
+@@ -2172,10 +2172,11 @@
+             prevParsed = parsed;
+         }
+     }
+- getMaxOverflow() {
++ getMaxOverflow(mode) {
+         const meta = this._cachedMeta;
+         const dataset = meta.dataset;
+-        const border = dataset.options && dataset.options.borderWidth || 0;
++        const options = this.options.showLine && this.resolveDatasetElementOptions(dataset.active ? 'active' : mode || 'default');
++        const border = options && options.borderWidth || 0;
+         const data = meta.data || [];
+         if (!data.length) {
+             return border;
+@@ -5930,11 +5931,15 @@
+         const newControllers = this.buildOrUpdateControllers();
+         this.notifyPlugins('beforeElementsUpdate');
+         let minPadding = 0;
++        const datasetModes = [];
+         for(let i = 0, ilen = this.data.datasets.length; i < ilen; i++){
+             const { controller  } = this.getDatasetMeta(i);
+             const reset = !animsDisabled && newControllers.indexOf(controller) === -1;
++            controller.configure();
+             controller.buildOrUpdateElements(reset);
+-            minPadding = Math.max(+controller.getMaxOverflow(), minPadding);
++            const datasetMode = helpers_dataset.isFunction(mode) ? mode({datasetIndex: i}) : mode;
++            datasetModes.push(datasetMode);
++            minPadding = Math.max(+controller.getMaxOverflow(datasetMode), minPadding);
+         }
+         minPadding = this._minPadding = options.layout.autoPadding ? minPadding : 0;
+         this._updateLayout(minPadding);
+@@ -5943,7 +5948,7 @@
+                 controller.reset();
+             });
+         }
+-        this._updateDatasets(mode);
++        this._updateDatasets(mode, datasetModes);
+         this.notifyPlugins('afterUpdate', {
+             mode
+         });
+@@ -6024,7 +6029,7 @@
+         });
+         this.notifyPlugins('afterLayout');
+     }
+- _updateDatasets(mode) {
++ _updateDatasets(mode, datasetModes) {
+         if (this.notifyPlugins('beforeDatasetsUpdate', {
+             mode,
+             cancelable: true
+@@ -6035,9 +6040,7 @@
+             this.getDatasetMeta(i).controller.configure();
+         }
+         for(let i = 0, ilen = this.data.datasets.length; i < ilen; ++i){
+-            this._updateDataset(i, helpers_dataset.isFunction(mode) ? mode({
+-                datasetIndex: i
+-            }) : mode);
++            this._updateDataset(i, datasetModes[i]);
+         }
+         this.notifyPlugins('afterDatasetsUpdate', {
+             mode

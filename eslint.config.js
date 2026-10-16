@@ -98,7 +98,15 @@ export default [
 
   js.configs.recommended,
 
-  // The capture diagnostic runs inside Playwright's browser page, not Node.
+  {
+    files: ["third_party/chartjs/layout-fixture.js"],
+    languageOptions: {
+      parserOptions: { ecmaVersion: "latest", sourceType: "module" },
+      globals: browserGlobals,
+    },
+  },
+
+  // These helpers run inside Playwright's browser page, not Node.
   {
     files: ["util/testing/capture-diagnostics.js", "util/testing/capture-diagnostics-fixture.js"],
     languageOptions: {
