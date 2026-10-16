@@ -16580,5 +16580,329 @@
       "patch_hash": "6sbtsacnxf55veexkmgxctg6sy",
       "pnpm_patch_docs": "https://pnpm.io/cli/patch"
     }
+  },
+  "post_window_followups": {
+    "captured_at_utc": "2026-10-16T09:36:41Z",
+    "scope": "These post-window fixes and focused checks are outside the 100-PR cohort denominator.",
+    "thread_history_readiness": {
+      "pr": 10762,
+      "url": "https://github.com/agentydragon/ducktape/pull/10762",
+      "state": "MERGED",
+      "head_sha": "8c20d7bf4350473d9f998913f232c6c858143f69",
+      "merged_at_utc": "2026-10-16T09:14:17Z",
+      "merge_commit_sha": "fc7c9d2cf0b0b22b8adf15847283c6d85bccc37a",
+      "diagnostic_pr": {
+        "number": 10763,
+        "url": "https://github.com/agentydragon/ducktape/pull/10763",
+        "head_sha": "6122d7f2409727f673eccd545d187cc64f5ea2bb",
+        "merged_at_utc": "2026-10-16T09:06:39Z",
+        "merge_commit_sha": "8c20d7bf4350473d9f998913f232c6c858143f69"
+      },
+      "focused_repeat": {
+        "source_sha": "8c20d7bf4350473d9f998913f232c6c858143f69",
+        "target": "//agentplane/app:test_thread_browser",
+        "test_filter": "test_switching_threads_starts_at_each_threads_tail",
+        "expected_runs": 10,
+        "completed_runs": 10,
+        "passed_runs": 10,
+        "all_test_runner_actions_do_not_cache": true,
+        "child_invocation_id": "7ca8b762-7743-4590-ac61-339629121411",
+        "child_invocation_url": "https://app.buildbuddy.io/invocation/7ca8b762-7743-4590-ac61-339629121411",
+        "outer_runner_invocation_id": "f63aaff2-a4d4-492f-aa2b-72b58f9ae3d0",
+        "outer_runner_invocation_url": "https://app.buildbuddy.io/invocation/f63aaff2-a4d4-492f-aa2b-72b58f9ae3d0",
+        "per_run_outputs": "Each of the 10 TestRunner records has worker and start/finish metadata and includes the Electric proxy log, thread marks, Playwright trace, PNG, and container logs."
+      },
+      "scope_limit": "This repeat covers one focused navigation test on the exact merged head; it is not a full visual-fleet repeat."
+    },
+    "electric_proxy_log_retention": {
+      "pr": 10763,
+      "source_sha": "8c20d7bf4350473d9f998913f232c6c858143f69",
+      "ci_run_id": "38878081790",
+      "buildbuddy_invocation_id": "4e44a6cd-f626-5ce1-991d-4f36805e1e11",
+      "buildbuddy_invocation_url": "https://app.buildbuddy.io/invocation/4e44a6cd-f626-5ce1-991d-4f36805e1e11",
+      "target": "//agentplane/app:test_thread_browser",
+      "test_case": "test_switching_threads_starts_at_each_threads_tail",
+      "artifact_path": "test.outputs/electric-proxy-5bbe72b391ab495d98f57cec2f13b018.log",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/324ebb15cb97a5a2bd3cdd0f17e499aa8da34c992bb476f7847d76c440d9581e/8498",
+      "bytes": 8498,
+      "lines": 42,
+      "lines_with_upstream_timing": 42,
+      "all_lines_contain_status_and_handle": true,
+      "sha256": "324ebb15cb97a5a2bd3cdd0f17e499aa8da34c992bb476f7847d76c440d9581e",
+      "observed_upstream_seconds_min": 0.003,
+      "observed_upstream_seconds_max": 0.295,
+      "secret_field_name_matches": 0,
+      "interpretation": "This proves existing per-request Electric proxy INFO logs are retained as undeclared test output. It does not retroactively identify the cause of the earlier cold /sync/entities delay."
+    },
+    "remote_cache_policy_pr": {
+      "number": 10765,
+      "url": "https://github.com/agentydragon/ducktape/pull/10765",
+      "title": "Keep remote dependency cache enabled in visual sweep",
+      "state": "MERGED",
+      "head_sha": "2fbec249168ecee29b43cb7cfad77802958c9527",
+      "base_sha": "fc7c9d2cf0b0b22b8adf15847283c6d85bccc37a",
+      "captured_at_utc": "2026-10-16T09:36:41Z",
+      "source_behavior": "Runs the visual determinism tests with --nocache_test_results while leaving remote cache reads enabled for prerequisite build actions; it removes --noremote_accept_cached.",
+      "bazel_ci": {
+        "state": "PASS",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/38879940677"
+      },
+      "build_artifacts_and_imports": {
+        "state": "PASS",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/38879940830"
+      },
+      "pre_commit": {
+        "state": "PASS",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/38879940694"
+      },
+      "visual_review": {
+        "state": "NEUTRAL_NO_MANIFEST",
+        "url": "https://github.com/agentydragon/ducktape/runs/116904230478",
+        "summary": "No test published a review manifest; this is a neutral visual-review result."
+      },
+      "interpretation": "This is a test-execution cache policy change, not a renderer fix; the open PR is not treated as merged or as the source of any fleet result.",
+      "merge_state": "UNKNOWN_AFTER_MERGE",
+      "mergeable": "UNKNOWN_AFTER_MERGE",
+      "pinned_bazel_source": [
+        "https://github.com/bazelbuild/bazel/blob/9.2.0/src/main/java/com/google/devtools/build/lib/analysis/test/TestRunnerAction.java#L513-L628",
+        "https://github.com/bazelbuild/bazel/blob/9.2.0/src/main/java/com/google/devtools/build/lib/exec/StandaloneTestStrategy.java#L92-L135",
+        "https://github.com/bazelbuild/bazel/blob/9.2.0/src/main/java/com/google/devtools/build/lib/remote/RemoteExecutionService.java#L322-L343"
+      ],
+      "fresh_action_probe": {
+        "target": "//third_party/chartjs:overflow_test",
+        "runs_expected": 2,
+        "runs_passed": 2,
+        "flag": "--nocache_test_results",
+        "remote_cache_reads_enabled": true,
+        "test_runner_do_not_cache": true,
+        "shared_action_digest": "66ebc1a2171071068c250bdb5fc6aaed5de4b769554cba907db014faef6a5cb5",
+        "run1_execute_response_digest": "2fda40ac6307a9a28fbb6a18d36d2179c49216f678abdc42a2e4c63fc5096129",
+        "run2_execute_response_digest": "3a4f006937771b9dc4de3d335f7919b6aa6a756c6cc1522c3506f2dbda8ef9da",
+        "interpretation": "BuildBuddy recorded completed TestRunner executions with doNotCache=true for both runs; the repeated shared action digest had distinct execution-response digests.",
+        "source_sha": "b174b75d62d87c828aae231466968c43fd8b15a6",
+        "source_tree_matches_pr_10753_head": "519cd94a3ed4abdb3a82e53c9aa71c564174a2a1",
+        "run_invocations": [
+          {
+            "run": "run1",
+            "invocation_id": "ed5b6358-8b8e-479f-9930-973c343fa601",
+            "url": "https://app.buildbuddy.io/invocation/ed5b6358-8b8e-479f-9930-973c343fa601"
+          },
+          {
+            "run": "run2",
+            "invocation_id": "2c890fff-1f9c-4d32-b6e7-7ee35085ff22",
+            "url": "https://app.buildbuddy.io/invocation/2c890fff-1f9c-4d32-b6e7-7ee35085ff22"
+          }
+        ],
+        "command_flags": [
+          "--nocache_test_results"
+        ]
+      },
+      "determinism_unit_test": {
+        "target": "//devinfra/pr_visuals:test_determinism",
+        "result": "PASS",
+        "ci_url": "https://github.com/agentydragon/ducktape/actions/runs/38879940677",
+        "buildbuddy_invocation_id": "e5167f30-1498-56f7-8325-5e186d36ea7b",
+        "buildbuddy_invocation_url": "https://app.buildbuddy.io/invocation/e5167f30-1498-56f7-8325-5e186d36ea7b"
+      },
+      "merged_at_utc": "2026-10-16T09:26:57Z",
+      "merge_commit_sha": "2e8c7d31606c850d0b39255d27792c5b9c2839a0"
+    },
+    "chart_candidate_current": {
+      "pr": 10753,
+      "url": "https://github.com/agentydragon/ducktape/pull/10753",
+      "state": "OPEN",
+      "head_sha": "519cd94a3ed4abdb3a82e53c9aa71c564174a2a1",
+      "base_sha": "fc7c9d2cf0b0b22b8adf15847283c6d85bccc37a",
+      "merge_state": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "captured_at_utc": "2026-10-16T09:36:41Z",
+      "ci": {
+        "bazel_ci": {
+          "state": "PASS",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/38879184853"
+        },
+        "build_artifacts_and_imports": {
+          "state": "PASS",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/38879184828"
+        },
+        "pre_commit": {
+          "state": "PASS",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/38879184837"
+        },
+        "visual_review": {
+          "state": "PASS",
+          "url": "https://github.com/agentydragon/ducktape/runs/116901721774"
+        },
+        "visual_diffs": {
+          "state": "NEUTRAL",
+          "url": "https://github.com/agentydragon/ducktape/runs/116905903519"
+        }
+      },
+      "visual_review_publisher": {
+        "run_id": "38879877940",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/38879877940",
+        "handled_ci_run_id": "38879184853",
+        "target_count": 24,
+        "modified_assets": 13,
+        "unchanged_assets": 577,
+        "interpretation": "Published review evidence for this exact PR head; not a repeated-run stability result."
+      },
+      "same_as_previous_visual_review": {
+        "previous_head": "5bc2dcdc2cb0761345394b59ebd59c9e1e4ed4df",
+        "all_assets_match": true,
+        "asset_count": 13,
+        "assets": [
+          {
+            "asset": "dashboard-1280-30-days.png",
+            "sha256": "7678e1caf92db4b02f8d8e84fd0bc8e4c00cbfe9e856766c8dce9c72234a2756",
+            "matches_previous_candidate": true
+          },
+          {
+            "asset": "dashboard-1280-purchase.png",
+            "sha256": "f92e46d9c5738518059ef7423b83badbd9fedd530bf3f7a0b7e5ba4a45abf50f",
+            "matches_previous_candidate": true
+          },
+          {
+            "asset": "dashboard-1280.png",
+            "sha256": "c438007d2017b53e4b2bfdefbcaa8293428c818390ca7fc64b2ca34da0436632",
+            "matches_previous_candidate": true
+          },
+          {
+            "asset": "dashboard-390-30-days.png",
+            "sha256": "aad0f06769a1fa274be7ed3362cd773649672e55e2d3c01ebc49382e36b092eb",
+            "matches_previous_candidate": true
+          },
+          {
+            "asset": "dashboard-390-purchase.png",
+            "sha256": "9296741c81bede0a41149b74af3f3cbfb3fa5ae4831cc181d7a21dcbdc21b63c",
+            "matches_previous_candidate": true
+          },
+          {
+            "asset": "dashboard-390.png",
+            "sha256": "e72fc00da496702fbd2761591820c0dffa94e67d294636ce29c2a9547afea58d",
+            "matches_previous_candidate": true
+          },
+          {
+            "asset": "dashboard-dark-1280-exceeded.png",
+            "sha256": "46344d9809ca7e1fc9432e4fd7f6aca9794fde34593e2e159eec8cdae14834f1",
+            "matches_previous_candidate": true
+          },
+          {
+            "asset": "dashboard-dark-1280-warning.png",
+            "sha256": "1f177c37ed839dfac230cd4bba6b2c92774ab47981e77c5cba0983d4a1d7a88e",
+            "matches_previous_candidate": true
+          },
+          {
+            "asset": "dashboard-dark-1280.png",
+            "sha256": "028065b1cf2b14287c7f98837d202b9f4843656ba7828c6a0f8718b6bf74c3b2",
+            "matches_previous_candidate": true
+          },
+          {
+            "asset": "dashboard-dark-390-exceeded.png",
+            "sha256": "153e4dcb7cbb3256451a6492910003c9de4f482e801db59efdbfa4b20ce3f966",
+            "matches_previous_candidate": true
+          },
+          {
+            "asset": "dashboard-dark-390-warning.png",
+            "sha256": "f52bd6d1ede3f7c9395a48094f61218ad1826dec8e4dda1d9c22828ae0214cd1",
+            "matches_previous_candidate": true
+          },
+          {
+            "asset": "dashboard-dark-390.png",
+            "sha256": "13e46193bc012f7de054b068c71eee65c180cc90eedcbba7d0f6c67071841a7f",
+            "matches_previous_candidate": true
+          },
+          {
+            "asset": "dashboard-warmup.png",
+            "sha256": "5aa901d01feeb2771e81bfd76a5983aceeda5f3b4ee1d4e812fc8fc00a200e7e",
+            "matches_previous_candidate": true
+          }
+        ]
+      }
+    },
+    "latest_full_fleet_repeat": {
+      "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/38878572947",
+      "source_sha": "b174b75d62d87c828aae231466968c43fd8b15a6",
+      "source_tree_matches_pr_10753_head": {
+        "head_sha": "519cd94a3ed4abdb3a82e53c9aa71c564174a2a1",
+        "same_tree": true
+      },
+      "workflow_status": "SUCCESS",
+      "expected_runs": 5,
+      "completed_runs": 5,
+      "all_builds_successful": true,
+      "target_count_per_run": 25,
+      "target_executions_total": 125,
+      "all_target_executions_passed": true,
+      "test_output_rows_per_run": 2138,
+      "test_output_statuses_per_run": {
+        "PASSED": 2138
+      },
+      "test_attempts_per_output": 1,
+      "manifest_records_per_run": 41,
+      "manifest_producing_target_labels_per_run": 24,
+      "declared_review_pngs_per_run": 590,
+      "diagnostic_pngs_excluded_per_run": 36,
+      "declared_review_asset_membership_equal": true,
+      "manifest_membership_equal": true,
+      "mapping_errors_total": 0,
+      "uri_drift_count": 0,
+      "byte_identical_review_pngs_across_all_runs": 590,
+      "comparison_method": "Map every manifest-declared asset to exactly one PASSED test.outputs/<path>.png artifact with the same target label; compare full bytestream URIs. Only manifest-declared review PNGs are counted; other PNGs are diagnostic.",
+      "fresh_test_flags": {
+        "all_test_results_uncached": true,
+        "all_runs_passed_nocache_test_results": true,
+        "all_runs_passed_noremote_accept_cached": true,
+        "interpretation": "The target executions were fresh; remote cache reads were also disabled for these invocations. The later #10765 cache-policy change was validated separately and is not exercised by these old-command invocations."
+      },
+      "run_invocations": [
+        {
+          "run": "run1",
+          "invocation_id": "39897271-5fa4-4dc5-9ca5-91f18d151947",
+          "url": "https://app.buildbuddy.io/invocation/39897271-5fa4-4dc5-9ca5-91f18d151947"
+        },
+        {
+          "run": "run2",
+          "invocation_id": "c906f916-6718-4e31-b11a-db95f7b76cc0",
+          "url": "https://app.buildbuddy.io/invocation/c906f916-6718-4e31-b11a-db95f7b76cc0"
+        },
+        {
+          "run": "run3",
+          "invocation_id": "28dc5936-acdb-4178-a9d9-2756ebbe802b",
+          "url": "https://app.buildbuddy.io/invocation/28dc5936-acdb-4178-a9d9-2756ebbe802b"
+        },
+        {
+          "run": "run4",
+          "invocation_id": "0ec6f092-624c-47c8-98e5-61b9674a9ff9",
+          "url": "https://app.buildbuddy.io/invocation/0ec6f092-624c-47c8-98e5-61b9674a9ff9"
+        },
+        {
+          "run": "run5",
+          "invocation_id": "897f5b43-6214-4cb3-a51f-a6da515bdecb",
+          "url": "https://app.buildbuddy.io/invocation/897f5b43-6214-4cb3-a51f-a6da515bdecb"
+        }
+      ],
+      "diagnostic_only_note": "All 36 unpublished diagnostic PNGs per run were excluded. Five thread-browser diagnostic variants represented post-action states such as failed-turn, open-call, and reader-away; they are not manifest-declared review assets and do not affect comparison.",
+      "captured_at_utc": "2026-10-16T09:36:41Z",
+      "test_output_attempts_per_run": 2138,
+      "all_test_output_rows_passed_first_attempt": true
+    },
+    "gnome_service_failure_visibility_limit": {
+      "clock_fix_pr": 10729,
+      "clock_fix_url": "https://github.com/agentydragon/ducktape/pull/10729",
+      "clock_fix_head_sha": "f396bed8068bcf043661bf621e205d35abc72286",
+      "clock_fix_merge_commit_sha": "cfd8f37cdf643ad189abdbf30fe100f6f033cd52",
+      "clock_fix_merged_at_utc": "2026-10-16T05:44:25Z",
+      "confirmed_visual_issue": "The relative Sync age is evaluated against Date.now() in production; screenshot tests now set PLAID_SPEND_TEST_NOW before extension startup under PLAID_SPEND_TEST=1 and retain production wall-clock behavior.",
+      "render_assertions": "The test asserts 59m and 1h at the hour boundary and keeps the visible Sync row.",
+      "diagnostic_logs_added": [
+        "startup.shell.log",
+        "session.shell.log"
+      ],
+      "service_error_observed": "org.freedesktop.DBus.Error.ServiceUnknown after session startup during earlier #10729 validation.",
+      "historical_shell_logs_retained": false,
+      "runtime_failure_root_cause": "UNRESOLVED",
+      "scope_limit": "The clock fixture addresses screenshot age drift. Passing clock-fixed GNOME captures do not prove or claim that the historical D-Bus service-ownership failure is fixed; the new shell logs improve diagnosis of future occurrences."
+    }
   }
 }
