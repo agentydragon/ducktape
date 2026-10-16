@@ -54,7 +54,13 @@ func TestAPIServerApplyDriftRevocationIdentityAndForeignCollision(t *testing.T) 
 	if err := api.Get(ctx, client.ObjectKeyFromObject(binding), binding); err != nil {
 		t.Fatal(err)
 	}
-	binding.Status.Conditions = []metav1.Condition{{Type: "EgressReady", Status: metav1.ConditionTrue, Reason: "Applied", Message: "egress reader status"}}
+	binding.Status.Conditions = []metav1.Condition{{
+		Type:               "EgressReady",
+		Status:             metav1.ConditionTrue,
+		LastTransitionTime: metav1.Now(),
+		Reason:             "Applied",
+		Message:            "egress reader status",
+	}}
 	if err := api.Status().Update(ctx, binding); err != nil {
 		t.Fatal(err)
 	}
