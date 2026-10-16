@@ -814,7 +814,8 @@ flowchart TD
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
-    APP_NATIVE_RESUME_SURFACE[Decision: explicit native-resume UI] --> APP_NATIVE_RESUME_CUTOVER[Blocked: remove direct native resume]
+    APP_NATIVE_RESUME_SURFACE[Approved: retain explicit resume UI; clarify wake-off affordance] --> APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume]
+    APP_NATIVE_RESUME_CONTRACT --> APP_NATIVE_RESUME_CUTOVER[Blocked: migrate direct native resume]
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
@@ -1115,22 +1116,39 @@ general senders are admitted. Consider RBAC-backed permissions, but choose the a
 multiagent model. Include authorization before wake and any required execution-time recheck. The
 mandatory Sandbox UID fence is part of `DELIVERY_DESTINATION_CONTRACT`, independent of sender policy.
 
-### `APP_NATIVE_RESUME_SURFACE` — decide the explicit native-resume UI
+### `APP_NATIVE_RESUME_SURFACE` — retain explicit resume and distinguish the two controls
 
-**Decision; proposal can proceed independently.** ADR D4 already requires Dispatcher-only starts and
-makes runner `ResumeSession` an internal step of each command. The app still exposes a direct native
-resume action. Recommended: remove that action and revive the native harness when a queued command
-arrives, preserving explicit Sandbox wake. Alternative: retain a standalone native-resume action,
-which needs an explicitly reviewed durable Dispatcher operation and retry/outcome contract. The
-question is whether the UI must resume a native harness without submitting work; the existing ADR
-does not authorize silently adding that RPC. No change to Sandbox suspend/resume semantics.
+**Explicit native-resume action retained; exact wake-off affordance needs review.** The Thread page
+currently shows **Resume harness** only for a Ready Sandbox with a stopped harness. It calls the
+Gateway directly. A submitted input always makes Dispatcher call runner `ResumeSession` before
+delivery, independent of the `wake_on_send` setting. That opt-in setting controls waking a
+**suspended Sandbox**, not whether a command resumes a stopped native harness. The composer can
+queue a message while the Sandbox is suspended even when wake on message is off; the queue then
+waits for explicit Sandbox resume. The suspended indicator remains visible.
 
-### `APP_NATIVE_RESUME_CUTOVER` — remove the app's direct native-resume path
+The operator wants an explicit button when automatic resume on send is off. Decide whether this
+means a Thread-page **Resume Sandbox** affordance when `wake_on_send` is off, the existing **Resume
+harness** action once the Sandbox is Ready, or both. The native button cannot itself wake a
+suspended Sandbox because its current Gateway path requires a live runner. Keep explicit Sandbox
+resume available and do not erase the suspended indicator or turn on wake permission implicitly.
 
-**Blocked on `APP_NATIVE_RESUME_SURFACE`.** Implement the reviewed UI behavior. If it requires a new
-Dispatcher receiver, land and pin that before enabling its caller; otherwise remove the direct
-native-resume UI/API/client together. Preserve retained native identity/history and ordinary retries.
-Complete caller rollout before narrowing Gateway authorization or removing the legacy receiver.
+### `APP_NATIVE_RESUME_CONTRACT` — specify durable explicit native resume
+
+**Decision before implementation.** ADR D4 makes Dispatcher the sole starter of runner work, but
+the retained explicit native-resume button still bypasses it. Specify a durable Dispatcher
+operation, including caller-chosen retry ID, full destination/UID authority, authorization,
+admission before any wake, lost-response retry, and observable outcome. Decide whether it applies
+only to a Ready Sandbox or may also wake a suspended one; the existing Sandbox resume API is a
+distinct control. Do not add a new RPC or broaden wake grants before this contract is reviewed.
+
+### `APP_NATIVE_RESUME_CUTOVER` — migrate the app's explicit native-resume path
+
+**Blocked on `APP_NATIVE_RESUME_CONTRACT`.** Land the reviewed Dispatcher receiver and pin it
+before changing the app caller. Preserve the **Resume harness** action, retained native
+identity/history, suspended-state indication and ordinary retries. If the reviewed UX also adds a
+Thread-page manual Sandbox wake button, use the separately authorized Sandbox resume path; do not
+label a native-harness call as Sandbox wake. Verify the new app image in testing and staging and
+external/pinned callers before narrowing Gateway authorization or deleting its legacy receiver.
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
 
@@ -1397,7 +1415,7 @@ migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — retire redundant live operations; retain placement registry
 
-**Blocked on the reviewed native-resume outcome, the corresponding app image rollout and external/
+**Blocked on the explicit native-resume caller migration, the corresponding app image rollout and external/
 pinned-caller review for the remaining Gateway methods.** #10619 moved app archive and Notification
 membership reads to the per-Sandbox proxy; the `agentplane-app`, `agentplane-notifications` and
 `agentplane-runner-gateway` images tagged `...-354a3e0` are Ready in testing and staging. Those reads
@@ -1412,7 +1430,7 @@ Sessions. Keep the runner control stream and proxy. Removing redundant Gateway A
 `SANDBOX_DATABASE_RENAME` moot while the registry remains.
 Remove the `RunnerGatewayClient.command` helper and Notification's `command_admission_timeout_s` and
 `lifecycle_timeout_s` settings with the old command/resume methods after checking pinned callers;
-remove the app's `runner_gateway_lifecycle_timeout_s` only if the explicit resume path is removed.
+remove the app's `runner_gateway_lifecycle_timeout_s` only after the explicit resume caller moves.
 Retire the app's unused Gateway API channel/target after pinned-client review; its token and the
 separate Sandbox control target still serve live runner reads. Remove strict config keys from
 manifests before deleting their settings readers.
@@ -1420,12 +1438,12 @@ manifests before deleting their settings readers.
 ### `GATEWAY_SESSION_REGISTRY_RETIRE` — retire registry consumers only after resume review
 
 **Blocked on `APP_NATIVE_RESUME_CUTOVER`, wrapper callers and external/pinned clients.** The app no
-longer calls `BatchGetSessionSandboxes`: it routes resume using the History-backed Sandbox name and a
-live runner list. `SandboxRunner.resume` still calls Gateway `ResumeSession`, which
-requires a `session_registry` row for that Sandbox UID. Only Gateway `CreateSession` writes the
-registry; production openings use Dispatcher, so their direct-resume path is currently refused. If
-native resume remains, first review how its receiver can preserve UID and owner checks for
-Dispatcher-opened Sessions. Otherwise remove `ResumeSession` with the reviewed app cutover.
+longer calls `BatchGetSessionSandboxes`: it routes direct native resume using the History-backed
+Sandbox name and a live runner list. `SandboxRunner.resume` still calls Gateway `ResumeSession`,
+which requires a `session_registry` row for that Sandbox UID. Only Gateway `CreateSession` writes
+the registry; production openings use Dispatcher, so their direct-resume path is currently refused.
+Migrate the retained explicit action to the reviewed Dispatcher contract, preserving UID and owner
+checks, before removing Gateway `ResumeSession` or its registry reader.
 `BatchGetSessionSandboxes` has no production in-repo caller; confirm external/pinned use before
 removing its method, client helper and `SessionSandbox` wire shape. Retain the registry and its data
 until all live readers/writers are retired and
