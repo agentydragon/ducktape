@@ -1519,6 +1519,16 @@ http_file(
     urls = ["https://dl.k8s.io/release/v1.32.3/bin/linux/amd64/kubectl"],
 )
 
+# K3s v1.33.4+k3s1 for the Agentplane bare-cluster lifecycle fixture. The checksum matches
+# the official sha256sum-amd64.txt release asset.
+http_file(
+    name = "k3s_linux_amd64",
+    downloaded_file_path = "k3s",
+    executable = True,
+    sha256 = "10da34c350ab8a02e4513a6021046db9e9afecc31bae77419bc6444cbd7b1400",
+    urls = ["https://github.com/k3s-io/k3s/releases/download/v1.33.4%2Bk3s1/k3s"],
+)
+
 # Bazelisk v1.25.0 linux-amd64 — used by container E2E test to provide
 # bazelisk on PATH inside the test container (mirrors what Nix provides in prod).
 http_file(
