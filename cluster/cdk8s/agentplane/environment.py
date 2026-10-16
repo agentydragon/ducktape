@@ -138,6 +138,7 @@ class Environment:
     # includes, repo-relative (manifest_roots.py).
     output_dir: str
     image_pins: str
+    delivery_output_dir: str
     # Files the root Kustomization lists beside the generated one.
     extra_resources: Sequence[str]
     replicas: ReplicaProfile

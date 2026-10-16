@@ -20,8 +20,9 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 ### Handoff snapshot — 2026-10-16 UTC
 
-**Dispatch paused by Rai. All coordinator workers have stopped.** No new projects or live cutover
-are authorized by this handoff. The following change is implemented on a review branch, **not merged**;
+**The handoff pause remains except operator-selected lanes.** On 2026-10-16 Rai selected Go delivery
+rollout preparation, the workload-tools VM prototype and current K3s profiling. Live Go activation
+still needs its reviewed fenced cutover. Other projects remain paused. The following change is implemented on a review branch, **not merged**;
 its published-head checks passed when checked for this handoff. Recheck GitHub before resuming.
 Rai merges every PR by hand; do not merge or enable auto-merge.
 
@@ -1395,21 +1396,19 @@ wrapper/registry retirement is complete.
 
 ### `GATEWAY_GO_ROLLOUT_CONFIG` — publish images and wire migration readiness into Flux
 
-**Blocked on published, pinned images; rollout not started.** The Go implementation
-is merged, but live charts still use Python pins. Use the existing root Flux owner for CNPG,
-database/Secrets and stable Gateway/Dispatcher Services. Add the full-digest-named Goose Job there
-with an explicit completion health check; put only the new Go serving workload in a separate
-Kustomization depending on that root. This avoids a migration/serving dependency cycle without
-transferring stateful resource ownership. The inactive Go cdk8s constructs are not this live chart
-wiring. Verify the deployed Dispatcher Alembic head/schema before Goose's data-preserving handoff;
-the retired Gateway database must not return.
+**In review, operator-selected work, 2026-10-16 UTC.** Preparation
+[#10785](https://github.com/agentydragon/ducktape/pull/10785) protects Gateway resources before their
+Flux ownership handoff and adds Go image discovery. It must merge and reconcile first. The stacked
+cutover branch pins the published Go server and Goose digests, keeps database/Secrets/stable Services
+and the migration Job under the root, and gates a separate Go serving Kustomization on that exact
+completed migration. Both roots remain suspended in the staged configuration; publication is not
+activation. The Python serving implementations were already removed; this branch removes their
+remaining deployment/configuration sources and image automation, retaining historical Alembic
+handoff fixtures. See the [rollout procedure](../docs/go_delivery_rollout.md).
 
-Prepare the staged cutover: stop Python acceptance/workers and Gateway connections, verify zero old
-Pods/workers, then remove their Deployments before activating Go queue owners. Preserve stable
-Service endpoints/audiences, existing runner Pod/VM contracts, per-Sandbox EndpointSlices and queued
-rows. Do not allow both writer implementations concurrently. A brief outage is approved; stateful
-pruning is not. Configure the migration/serving dependency for future rolling releases too. Review
-activation separately; wiring must not quietly deploy the new image as a side effect of publication.
+Live preflight on 2026-10-16 found both environments running Python and both Dispatcher databases
+at `0007_drop_opening_attached`. That read-only preflight is not backup/restore or cutover acceptance.
+Review activation separately and preserve the explicit root holds until the old writers are stopped.
 
 ### `DELIVERY_UNIFIED_CUTOVER` — switch owners without losing admitted work
 

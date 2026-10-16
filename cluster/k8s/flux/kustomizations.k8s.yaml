@@ -3775,14 +3775,6 @@ spec:
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: session-dispatcher
-      namespace: agentplane-testing
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: runner-gateway
-      namespace: agentplane-testing
-    - apiVersion: apps/v1
-      kind: Deployment
       name: history-service
       namespace: agentplane-testing
     - apiVersion: apps/v1
@@ -3827,6 +3819,10 @@ spec:
     - apiVersion: trust.cert-manager.io/v1alpha1
       kind: Bundle
       name: agentplane-testing-egress-upstream-ca
+    - apiVersion: batch/v1
+      kind: Job
+      name: queue-l5juvmfef3nkuqjsdorztezkx3dbldvvfuk2yzxhlio45vhh4qva
+      namespace: agentplane-testing
     - apiVersion: v1
       kind: ConfigMap
       name: agentplane-testing-egress-ca
@@ -3843,7 +3839,29 @@ spec:
     kind: ExternalArtifact
     name: agentplane-testing
     namespace: ducktape-flux
+  suspend: true
   timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agentplane-testing-delivery
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: agentplane-testing
+      namespace: ducktape-flux
+      readyExpr: (!has(dep.spec.suspend) || !dep.spec.suspend) && dep.metadata.generation == dep.status.observedGeneration && dep.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True') && dep.spec.healthChecks.exists(c, c.kind == 'Job' && c.name == 'queue-l5juvmfef3nkuqjsdorztezkx3dbldvvfuk2yzxhlio45vhh4qva')
+  interval: 10m
+  path: ./cluster/generated/agentplane-testing-delivery
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: agentplane-testing-delivery
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -3979,14 +3997,6 @@ spec:
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: session-dispatcher
-      namespace: agentplane-staging
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: runner-gateway
-      namespace: agentplane-staging
-    - apiVersion: apps/v1
-      kind: Deployment
       name: history-service
       namespace: agentplane-staging
     - apiVersion: apps/v1
@@ -4019,6 +4029,10 @@ spec:
     - apiVersion: trust.cert-manager.io/v1alpha1
       kind: Bundle
       name: agentplane-staging-egress-upstream-ca
+    - apiVersion: batch/v1
+      kind: Job
+      name: queue-l5juvmfef3nkuqjsdorztezkx3dbldvvfuk2yzxhlio45vhh4qva
+      namespace: agentplane-staging
     - apiVersion: v1
       kind: ConfigMap
       name: agentplane-egress-ca
@@ -4055,7 +4069,29 @@ spec:
     kind: ExternalArtifact
     name: agentplane-staging
     namespace: ducktape-flux
+  suspend: true
   timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agentplane-staging-delivery
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: agentplane-staging
+      namespace: ducktape-flux
+      readyExpr: (!has(dep.spec.suspend) || !dep.spec.suspend) && dep.metadata.generation == dep.status.observedGeneration && dep.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True') && dep.spec.healthChecks.exists(c, c.kind == 'Job' && c.name == 'queue-l5juvmfef3nkuqjsdorztezkx3dbldvvfuk2yzxhlio45vhh4qva')
+  interval: 10m
+  path: ./cluster/generated/agentplane-staging-delivery
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: agentplane-staging-delivery
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

@@ -23,6 +23,10 @@ oci_image(
 py_library(
     name = "api",
     srcs = ["api.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
 )
 
 py_library(
@@ -37,22 +41,6 @@ py_library(
         "//agentplane/proto:sandboxes_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "settings",
-    srcs = ["settings.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = [
-        "//agentplane:log_levels",
-        "//agentplane:subjects",
-        "//util:yaml_file_settings",
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
     ],
 )
 

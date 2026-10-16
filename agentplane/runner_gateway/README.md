@@ -21,7 +21,6 @@ conversation and from Runner admission.
 - `go/migrations/`: Goose migrations and the data-preserving Dispatcher Alembic handoff.
 - `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and
   the real Go fixture for cross-language acceptance.
-- `settings.py`: configuration contract for the still-pinned Python deployment, retained until cutover.
 
 Build `//agentplane/runner_gateway/go:runner-gateway` or `//agentplane/runner_gateway:go_image`.
 The migrator image is `//agentplane/runner_gateway/go/migrations:image`; serving never applies
@@ -32,11 +31,12 @@ consumer tests continue using lightweight gRPC peers.
 
 ## Deployment gate
 
-The live chart still renders the existing Python image pins. Their serving source and image
-publishers are removed; the dedicated `agentplane-runner-gateway-go` release slot publishes Go
-without advancing those pins. Before activation, stop old Python acceptance, delivery workers
-and runner connections, verify all old Pods/workers are gone, then apply the digest-named Goose
-Job under the existing root Flux owner. Keep CNPG, PVCs, Secrets, database and stable Services
-under that owner. The new Go workload belongs to a dependent Kustomization and starts only after
-migration completion. Verify row recovery, reconnect, two-replica routing and fencing before
-restoring RollingUpdate. See the [delivery design](../docs/runner_delivery_and_harness_design.md).
+The environment root owns the stable Services, Dispatcher database/Secret and full-digest-named
+Goose Job. Its dependent delivery Kustomization owns the pinned Go serving workload and starts
+only after the current migration completes. Serving never migrates on startup. Image discovery
+does not advance the reviewed serving/migration release pair automatically.
+
+The staged configuration suspends both roots, retaining their existing Python workloads until
+activation is reviewed. Use the [fenced rollout procedure](../docs/go_delivery_rollout.md) to stop
+old writers, preserve queued work, activate testing and then staging, and verify reconnect and
+replica recovery. Both environments retain `Recreate` through acceptance.

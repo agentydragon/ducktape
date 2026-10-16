@@ -1,21 +1,19 @@
-"""Dispatcher wake eligibility is limited to the approved app and notification senders."""
+"""The durable sender front door and workload grants survive Go delivery unification."""
 
 import re
-from typing import Any, cast
+from typing import Any
 
 import pytest
 import pytest_bazel
-import yaml
 from more_itertools import one
 
-from agentplane.crd_group import GROUP
-from cluster.cdk8s.agentplane import app, notifications, runner_gateway, session_dispatcher, staging, testing
+from cluster.cdk8s.agentplane import app, notifications, runner_gateway, session_dispatcher, staging
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from util.settings_contract import env_name
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_dispatcher_deployment_and_sender_auth(
+def test_dispatcher_sender_identity_and_service_routing(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     documents = agentplane_manifests[namespace]
@@ -23,149 +21,38 @@ def test_dispatcher_deployment_and_sender_auth(
     def resource(kind: str, name: str) -> dict[str, Any]:
         return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
-    deployment = resource("Deployment", session_dispatcher.NAME)
-    if namespace == staging.ENV.namespace:
-        assert deployment["spec"]["replicas"] == 2
-        assert deployment["spec"]["strategy"] == {
-            "type": "RollingUpdate",
-            "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0},
-        }
-        assert resource("PodDisruptionBudget", session_dispatcher.NAME)["spec"]["minAvailable"] == 1
-    else:
-        assert deployment["spec"]["replicas"] == 1
-        assert deployment["spec"]["strategy"] == {"type": "Recreate"}
-        assert not any(
-            doc["kind"] == "PodDisruptionBudget" and doc["metadata"]["name"] == session_dispatcher.NAME
-            for doc in documents
+    pod = resource("Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
+    container = one(pod["containers"])
+    callers = {
+        arg.removeprefix("--dispatcher-caller=") for arg in container["args"] if arg.startswith("--dispatcher-caller=")
+    }
+    wakers = {arg.removeprefix("--wake-caller=") for arg in container["args"] if arg.startswith("--wake-caller=")}
+    assert callers == {f"{namespace}/{app.NAME}", f"{namespace}/{notifications.NAME}"}
+    assert wakers <= callers
+    assert f"--dispatcher-audience={session_dispatcher.TOKEN_AUDIENCE}" in container["args"]
+    service = resource("Service", session_dispatcher.NAME)["spec"]
+    labels = resource("Deployment", runner_gateway.NAME)["spec"]["template"]["metadata"]["labels"]
+    assert service["selector"].items() <= labels.items()
+    assert {port["targetPort"] for port in service["ports"]} <= {port["containerPort"] for port in container["ports"]}
+    database = resource("Database", "session-dispatcher")["spec"]
+    assert database["name"] == "session_dispatcher"
+    assert database["owner"] == "session_dispatcher"
+    assert {item["name"]: item.get("valueFrom") for item in container["env"]}[
+        "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
+    ] == {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
+    for sender in (app.NAME, notifications.NAME):
+        sender_pod = resource("Deployment", sender)["spec"]["template"]["spec"]
+        assert any(
+            source.get("serviceAccountToken", {}).get("audience") == session_dispatcher.TOKEN_AUDIENCE
+            for volume in sender_pod["volumes"]
+            for source in volume.get("projected", {}).get("sources", [])
         )
-    pod = deployment["spec"]["template"]["spec"]
-    assert pod["serviceAccountName"] == session_dispatcher.NAME
-    migration = one(pod["initContainers"])
-    container = one(item for item in pod["containers"] if item["name"] == "session-dispatcher")
-    database_secret = {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
-    database_env = {"name": "AGENTPLANE_SESSION_DISPATCHER_DATABASE_URL", "valueFrom": database_secret}
-    assert migration["image"] == "git.allegedly.works/ducktape-ci/agentplane-session-dispatcher-migrate:unset"
-    assert database_env in migration["env"]
-    assert database_env in container["env"]
-    assert container["image"] == "git.allegedly.works/ducktape-ci/agentplane-session-dispatcher:unset"
-
-    settings = yaml.safe_load(resource("ConfigMap", f"{session_dispatcher.NAME}-config")["data"]["config.yaml"])
-    expected_settings = {
-        "namespace": namespace,
-        "caller_accounts": [
-            {"namespace": namespace, "name": app.NAME},
-            {"namespace": namespace, "name": notifications.NAME},
-        ],
-        "token_audience": session_dispatcher.TOKEN_AUDIENCE,
-        "runner_control_target": runner_gateway.control_target(namespace),
-        "runner_token_file": "/var/run/secrets/agentplane-runner-gateway/token",
-        "port": 8080,
-    }
-    expected_settings["wake_caller_accounts"] = [
-        {"namespace": namespace, "name": app.NAME},
-        {"namespace": namespace, "name": notifications.NAME},
-    ]
-    assert settings == expected_settings
-    token_mount = one(mount for mount in container["volumeMounts"] if mount["name"] == "runner-gateway-token")
-    assert token_mount["mountPath"] == "/var/run/secrets/agentplane-runner-gateway"
-    assert token_mount["readOnly"] is True
-    token_volume = one(volume for volume in pod["volumes"] if volume["name"] == "runner-gateway-token")
-    assert token_volume["projected"]["sources"] == [
-        {"serviceAccountToken": {"audience": runner_gateway.TOKEN_AUDIENCE, "expirationSeconds": 3600, "path": "token"}}
-    ]
-
-    database = resource("Database", "session-dispatcher")
-    assert database["spec"]["name"] == "session_dispatcher"
-    assert database["spec"]["owner"] == "session_dispatcher"
-    assert database["spec"]["cluster"]["name"] == "postgres"
-    service = resource("Service", session_dispatcher.NAME)
-    assert service["spec"]["ports"] == [{"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080}]
-
-    role = resource("Role", session_dispatcher.NAME.removeprefix("agentplane-"))
-    assert role["rules"] == [
-        {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch", "patch"]},
-        {
-            "apiGroups": ["coordination.k8s.io"],
-            "resources": ["leases"],
-            "verbs": ["get", "list", "watch", "create", "update"],
-        },
-    ]
-    role_binding = resource("RoleBinding", session_dispatcher.NAME.removeprefix("agentplane-"))
-    assert role_binding["subjects"] == [
-        {"apiGroup": "", "kind": "ServiceAccount", "name": session_dispatcher.NAME, "namespace": namespace}
-    ]
-    token_reviewer = resource("ClusterRole", f"{namespace}-session-dispatcher-token-reviewer")
-    assert token_reviewer["rules"] == [
-        {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
-    ]
-
-    dispatcher_policy = resource("CiliumNetworkPolicy", session_dispatcher.NAME.removeprefix("agentplane-"))["spec"]
-    dispatcher_callers = {
-        endpoint["matchLabels"]["app.kubernetes.io/name"]
-        for rule in dispatcher_policy["ingress"]
-        for endpoint in rule.get("fromEndpoints", [])
-    }
-    assert dispatcher_callers == {app.NAME, notifications.NAME}
-
-    app_deployment = resource("Deployment", app.NAME)
-    app_pod = app_deployment["spec"]["template"]["spec"]
-    app_container = one(item for item in app_pod["containers"] if item["name"] == "app")
-    dispatcher = session_dispatcher.service(namespace)
-    assert f"--session-dispatcher-target={dispatcher.fqdn}:{dispatcher.port.number}" in app_container["args"]
-    app_token = one(volume for volume in app_pod["volumes"] if volume["name"] == "session-dispatcher-token")
-    assert app_token["projected"]["sources"] == [
-        {
-            "serviceAccountToken": {
-                "audience": session_dispatcher.TOKEN_AUDIENCE,
-                "expirationSeconds": 3600,
-                "path": "token",
-            }
-        }
-    ]
-    app_token_mount = one(mount for mount in app_container["volumeMounts"] if mount["name"] == app_token["name"])
-    assert app_token_mount["mountPath"] == "/var/run/secrets/agentplane-session-dispatcher"
-    assert app_token_mount["readOnly"] is True
-    app_policy = resource("CiliumNetworkPolicy", app.NAME.removeprefix("agentplane-"))["spec"]
-    app_egress = {
-        endpoint["matchLabels"].get("app.kubernetes.io/name")
-        for rule in app_policy["egress"]
-        for endpoint in rule.get("toEndpoints", [])
-    }
-    assert session_dispatcher.NAME in app_egress
-    dispatcher_egress = {
-        endpoint["matchLabels"].get("app.kubernetes.io/name")
-        for rule in dispatcher_policy["egress"]
-        for endpoint in rule.get("toEndpoints", [])
-    }
-    assert runner_gateway.NAME in dispatcher_egress
-
-    gateway_config = yaml.safe_load(resource("ConfigMap", f"{runner_gateway.NAME}-config")["data"]["config.yaml"])
-    assert gateway_config["caller_accounts"] == [
-        {"namespace": namespace, "name": app.NAME},
-        {"namespace": namespace, "name": notifications.NAME},
-        {"namespace": namespace, "name": session_dispatcher.NAME},
-    ]
-    gateway_policy = resource("CiliumNetworkPolicy", runner_gateway.NAME.removeprefix("agentplane-"))["spec"]
-    assert any(
-        endpoint["matchLabels"].get("app.kubernetes.io/name") == session_dispatcher.NAME
-        for rule in gateway_policy["ingress"]
-        for endpoint in rule.get("fromEndpoints", [])
-    )
-
-
-def test_app_config_omits_retired_dispatcher_session_opening_flag(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    def app_config(namespace: str) -> dict[str, Any]:
-        config = one(
-            doc
-            for doc in agentplane_manifests[namespace]
-            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
+        policy = resource("CiliumNetworkPolicy", sender)["spec"]
+        assert any(
+            target["matchLabels"].get("app.kubernetes.io/name") == runner_gateway.NAME
+            for rule in policy["egress"]
+            for target in rule.get("toEndpoints", [])
         )
-        return cast(dict[str, Any], yaml.safe_load(config["data"]["config.yaml"]))
-
-    assert "session_dispatcher_open_sessions" not in app_config(testing.ENV.namespace)
-    assert "session_dispatcher_open_sessions" not in app_config(staging.ENV.namespace)
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)

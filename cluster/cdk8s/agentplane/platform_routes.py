@@ -20,7 +20,7 @@ from constructs import Construct
 from agentplane.egress import sidecar
 from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
-from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
+from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
 from cluster.cdk8s.agentplane import history_service, runner_gateway, sandbox_pod
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef

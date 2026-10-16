@@ -186,11 +186,6 @@ spec:
       name: agentplane-policy-controller
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-runner-gateway'
-      kind: ImageRepository
-      name: agentplane-runner-gateway
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-runner-gateway-go'
       kind: ImageRepository
       name: agentplane-runner-gateway-go
@@ -219,16 +214,6 @@ spec:
       filter: req.package.name == 'agentplane-sandbox-controller'
       kind: ImageRepository
       name: agentplane-sandbox-controller
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-session-dispatcher'
-      kind: ImageRepository
-      name: agentplane-session-dispatcher
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-session-dispatcher-migrate'
-      kind: ImageRepository
-      name: agentplane-session-dispatcher-migrate
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'aiquota-api'

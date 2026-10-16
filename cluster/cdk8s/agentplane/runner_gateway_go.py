@@ -1,16 +1,13 @@
-"""Candidate unified Go Runner Gateway objects for the fenced cutover.
-
-The environment chart still instantiates the Python Gateway and Dispatcher. Keep this
-construct out of it until the Go images are published and the old Dispatcher is stopped.
-"""
+"""Unified Go delivery workload, gated by the root-owned queue migration."""
 
 from __future__ import annotations
 
+import base64
 import re
 from collections.abc import Mapping
 from typing import cast
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ContainerProps,
@@ -34,24 +31,45 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDependsOn
 
 from agentplane.crd_group import GROUP
-from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
+from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import database, egress, runner_gateway, session_dispatcher
+from cluster.cdk8s.agentplane import (
+    app as app_component,
+    database,
+    egress,
+    notifications,
+    runner_gateway,
+    sandbox_controller,
+    session_dispatcher,
+)
 from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset"
 _RUNNER_TOKEN_FILE = "/var/run/secrets/agentplane-runner-gateway/token"
 _GRPC_PORT = 8080
+
+# Keep serving and schema changes in one reviewed release; discovery does not activate upgrades.
+GATEWAY_IMAGE = (
+    "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go"
+    "@sha256:bd165864d490fd6582abc66e77cf61acd59f9d68b64e317c389651923e4dc280"
+)
+MIGRATION_IMAGE = (
+    "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate"
+    "@sha256:5f534ab0a42edaaa41321ba399932abec6158eb52d15ac66e75a1dced4e7e42a"
+)
 
 
 _DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
@@ -80,12 +98,7 @@ def _account(account: ServiceAccountRef) -> str:
 def add_stable_services(
     scope: Construct, env: Environment, *, cluster_ip: str | None = None, control: ServiceRef | None = None
 ) -> None:
-    """Root-owned Services retain their names while the new Go workload is gated on migration.
-
-    Call this in the existing environment chart only during the fenced cutover, after
-    its Python Gateway and Dispatcher constructs have been removed. The Services stay
-    in their current Flux owner, while the Go workload belongs to a dependent one.
-    """
+    """Keep stable Services in their root Flux owner, targeting the shared Go listener."""
     proxy = runner_gateway.service(env.namespace)
     control = control or runner_control_service(env.namespace)
     dispatcher = dispatcher_service(env.namespace)
@@ -152,6 +165,7 @@ class GoRunnerGateway(Construct):
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+        image: str = _IMAGE,
     ) -> None:
         super().__init__(scope, id)
         if not dispatcher_callers or not gateway_callers:
@@ -196,7 +210,7 @@ class GoRunnerGateway(Construct):
             env,
             serves=[proxy, control],
             container="runner-gateway",
-            image=_IMAGE,
+            image=image,
             args=args,
             env_variables={
                 "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": database_url,
@@ -299,21 +313,25 @@ _MIGRATOR_RE = re.compile(
 )
 
 
+def migration_job_name(image: str) -> str:
+    match = _MIGRATOR_RE.fullmatch(image)
+    if match is None:
+        raise ValueError("queue migrator image must be the published OCI image pinned by its full sha256 digest")
+    # Base32 carries the whole digest within Kubernetes' 63-character Job-name limit.
+    digest = base64.b32encode(bytes.fromhex(match.group(1))).decode().rstrip("=").lower()
+    return f"queue-{digest}"
+
+
 class QueueMigration(Construct):
     """A digest-coupled Goose Job for the existing Agentplane root Kustomization.
 
     The root owns PostgreSQL and its Secret, so it also owns this Job and checks
     its completion. A separate Go serving Kustomization depends on that root.
-    This construct is not instantiated until the fenced cutover is reviewed.
     """
 
     def __init__(self, scope: Construct, id: str, env: Environment, *, image: str, database_url: EnvValue) -> None:
         super().__init__(scope, id)
-        match = _MIGRATOR_RE.fullmatch(image)
-        if match is None:
-            raise ValueError("queue migrator image must be the published OCI image pinned by its full sha256 digest")
-        digest = match.group(1)
-        self.name = f"runner-gateway-queue-migrate-{digest[:12]}"
+        self.name = migration_job_name(image)
         labels = {"app.kubernetes.io/name": "runner-gateway-queue-migrate"}
         account = ServiceAccount(
             self,
@@ -357,3 +375,51 @@ class QueueMigration(Construct):
             ingress=[],
             egress=[cilium.dns_egress(), database.egress(env.namespace)],
         )
+
+
+def serving_chart(app: App, *, env: Environment) -> Chart:
+    chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
+    callers = {
+        ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace).pods,
+        ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods,
+    }
+    GoRunnerGateway(
+        chart,
+        "runner-gateway",
+        env,
+        image=GATEWAY_IMAGE,
+        database_url=SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
+        .key("uri")
+        .env_value(chart, "dispatcher-database-url"),
+        dispatcher_callers=callers,
+        gateway_callers=callers,
+        wake_callers=env.wake_caller_accounts,
+        sandbox_controller=(
+            ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME),
+            sandbox_controller.pods(env.namespace),
+        ),
+    ).add_platform_resources()
+    return chart
+
+
+def serving(chart: Chart, directory: RenderedDirectory, root: Kustomization, *, migration_name: str) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        directory.artifact.name,
+        directory,
+        timeout="10m",
+        depends_on=[
+            KustomizationSpecDependsOn(
+                name=root.name,
+                namespace=root.metadata.namespace,
+                # ExternalArtifacts update independently. Old Ready=True must not admit a
+                # new server before the root has observed this release's migration check.
+                ready_expr=(
+                    "(!has(dep.spec.suspend) || !dep.spec.suspend) && "
+                    "dep.metadata.generation == dep.status.observedGeneration && "
+                    "dep.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True') && "
+                    f"dep.spec.healthChecks.exists(c, c.kind == 'Job' && c.name == '{migration_name}')"
+                ),
+            )
+        ],
+    )

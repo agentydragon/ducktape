@@ -81,7 +81,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_selections import STAGING_APP_MODELS, model_configs
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
@@ -304,6 +304,7 @@ ENV = Environment(
     ),
     output_dir=f"{HAND_WRITTEN_ROOT}/{STAGING_NAMESPACE}",
     image_pins=f"{HAND_WRITTEN_ROOT}/{STAGING_NAMESPACE}/image-pins",
+    delivery_output_dir=f"{GENERATED_ROOT}/{STAGING_NAMESPACE}-delivery",
     extra_resources=(_WEB_PUSH_SECRET_FILE, "github-app.sops.yaml"),
     replicas=ReplicaProfile(
         count=2,
@@ -600,6 +601,8 @@ def agentplane_staging(
         ENV.namespace,
         artifact,
         description=ENV.flux_description,
+        # CLEANUP: resume after the testing Go delivery cutover passes acceptance.
+        suspend=True,
         wait=None,
         timeout="10m",
         # This one Kustomization owns the CNPG Cluster's PVCs; pruning on

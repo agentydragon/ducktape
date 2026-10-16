@@ -1,5 +1,4 @@
-// Package migrations owns the eventual Goose handoff for the Dispatcher database.
-// The deployed Alembic jobs remain the owners until the unified service cutover is reviewed.
+// Package migrations owns the guarded Goose handoff for the Dispatcher database.
 package migrations
 
 import (

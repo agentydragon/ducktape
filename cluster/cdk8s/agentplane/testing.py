@@ -165,6 +165,7 @@ ENV = Environment(
     ),
     output_dir=f"{GENERATED_ROOT}/{TESTING_NAMESPACE}",
     image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
+    delivery_output_dir=f"{GENERATED_ROOT}/{TESTING_NAMESPACE}-delivery",
     extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     app_config=app_settings.settings(
@@ -447,6 +448,8 @@ def agentplane_testing(
         ENV.namespace,
         artifact,
         description=ENV.flux_description,
+        # CLEANUP: release only after the fenced Go delivery cutover is approved.
+        suspend=True,
         wait=None,
         timeout="10m",
         # This one Kustomization owns the CNPG Cluster's PVCs; pruning on

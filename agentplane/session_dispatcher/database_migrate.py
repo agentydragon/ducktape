@@ -1,4 +1,4 @@
-"""Image-owned, advisory-locked Alembic migrations for the Session Dispatcher database."""
+"""Historical advisory-locked Alembic schema for Dispatcher handoff fixtures."""
 
 from pathlib import Path
 

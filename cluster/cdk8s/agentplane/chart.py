@@ -22,6 +22,7 @@ from cluster.cdk8s.agentplane import (
     llm_ingress,
     notifications,
     runner_gateway,
+    runner_gateway_go,
     runner_sandbox,
     sandbox_controller,
     sandbox_pod,
@@ -121,32 +122,9 @@ def environment_chart(app: App, env: Environment) -> Chart:
     notifications_caller = {
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
-    dispatcher_callers = app_caller | notifications_caller
-    dispatcher_caller = {
-        ServiceAccountRef(namespace=env.namespace, name=session_dispatcher.NAME): session_dispatcher.service(
-            env.namespace
-        ).pods
-    }
-    session_dispatcher.SessionDispatcher(
-        chart,
-        "session-dispatcher",
-        env,
-        database_url=dispatcher_database_url,
-        callers=dispatcher_callers,
-        wake_callers=env.wake_caller_accounts,
-        runner_gateway=runner_gateway.service(env.namespace),
-        runner_control_target=runner_gateway.control_target(env.namespace),
-        runner_gateway_audience=runner_gateway.TOKEN_AUDIENCE,
-    )
-    runner_gateway.RunnerGateway(
-        chart,
-        "runner-gateway",
-        env,
-        callers=dispatcher_callers | dispatcher_caller,
-        sandbox_controller=(
-            ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME),
-            sandbox_controller.pods(env.namespace),
-        ),
+    runner_gateway_go.add_stable_services(chart, env)
+    runner_gateway_go.QueueMigration(
+        chart, "queue-migration", env, image=runner_gateway_go.MIGRATION_IMAGE, database_url=dispatcher_database_url
     )
     history_service.HistoryService(
         chart,

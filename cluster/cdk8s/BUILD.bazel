@@ -1507,6 +1507,7 @@ py_library(
         "//cluster/cdk8s/agentplane:binding_delegation",
         "//cluster/cdk8s/agentplane:db_backups",
         "//cluster/cdk8s/agentplane:generation",
+        "//cluster/cdk8s/agentplane:runner_gateway_go",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:staging_grants",
         "//cluster/cdk8s/agentplane:testing",

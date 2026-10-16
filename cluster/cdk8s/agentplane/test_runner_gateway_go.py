@@ -111,7 +111,7 @@ def test_goose_job_name_follows_pinned_image_digest() -> None:
         chart, "migration", staging.ENV, image=image, database_url=database_url
     )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    job = _resource(docs, "Job", "runner-gateway-queue-migrate-aaaaaaaaaaaa")
+    job = _resource(docs, "Job", migration.name)
     assert migration.name == job["metadata"]["name"]
     pod = job["spec"]["template"]["spec"]
     assert pod["restartPolicy"] == "Never"
@@ -129,6 +129,15 @@ def test_goose_job_name_follows_pinned_image_digest() -> None:
             image=image.replace("@sha256:" + digest, ":latest"),
             database_url=database_url,
         )
+
+
+def test_migration_job_identity_uses_the_whole_digest() -> None:
+    prefix = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate@sha256:"
+    first = runner_gateway_go.migration_job_name(prefix + "a" * 64)
+    second = runner_gateway_go.migration_job_name(prefix + "a" * 63 + "b")
+    assert first != second
+    assert len(first) <= 63
+    assert len(second) <= 63
 
 
 if __name__ == "__main__":

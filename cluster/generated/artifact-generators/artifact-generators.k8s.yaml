@@ -11,6 +11,11 @@ spec:
       name: agentplane-staging
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/agentplane-staging-delivery/**"
+          to: "@artifact/cluster/generated/agentplane-staging-delivery/"
+      name: agentplane-staging-delivery
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/agentplane-staging/db-backups/**"
           to: "@artifact/cluster/generated/agentplane-staging/db-backups/"
       name: agentplane-staging-db-backups
@@ -31,6 +36,11 @@ spec:
         - from: "@repo/cluster/k8s/agentplane-testing-image-pins/**"
           to: "@artifact/cluster/k8s/agentplane-testing-image-pins/"
       name: agentplane-testing
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/agentplane-testing-delivery/**"
+          to: "@artifact/cluster/generated/agentplane-testing-delivery/"
+      name: agentplane-testing-delivery
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/agents/agent-rbac-base/**"

@@ -7,8 +7,8 @@ to the shared Go listener on `8080` at cutover. The Go worker delivers through t
 the exact Sandbox is ready, with per-Sandbox Lease and PostgreSQL generation fencing.
 
 This package retains the immutable Alembic migration history and its dependencies for the Goose
-handoff. Its Python serving implementation and tests are removed. Live manifests still run their
-pinned Python images until the separately reviewed fenced cutover. The manual queue, replica and
+handoff. Its Python serving implementation and deployment settings are removed. The
+[staged rollout](../docs/go_delivery_rollout.md) retains existing live workloads until activation. The manual queue, replica and
 wake probes are documented in the [acceptance suite](../acceptance/README.md#dispatcher-queue-and-replica-acceptance).
 
 ## Contract
@@ -80,5 +80,4 @@ The serving binary and image live under `//agentplane/runner_gateway/go` and
 Gateway token for calls to other holder replicas, and
 `AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. Apply the Goose queue migrator before
 serving; `grpc.health.v1` is available on the shared listener. The retained `:migrate` and
-`:migration_image` targets create the historical Alembic schema for handoff tests and the pinned
-legacy deployment. They never run the removed Python service.
+`:migration_image` targets create the historical Alembic schema for historical handoff fixtures. They are not published as deployment images.

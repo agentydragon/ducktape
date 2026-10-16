@@ -48,7 +48,7 @@ from agentplane.crd_group import GROUP
 from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.settings import Settings
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
-from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
+from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications

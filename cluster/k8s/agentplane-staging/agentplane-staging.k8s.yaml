@@ -1734,452 +1734,6 @@ rules:
       - get
 ---
 apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: session-dispatcher-config
-  namespace: agentplane-staging
-data:
-  config.yaml: |
-    namespace: agentplane-staging
-    caller_accounts:
-      - namespace: agentplane-staging
-        name: app
-      - namespace: agentplane-staging
-        name: notifications
-    wake_caller_accounts:
-      - namespace: agentplane-staging
-        name: app
-      - namespace: agentplane-staging
-        name: notifications
-    token_audience: session-dispatcher
-    runner_control_target: "{sandbox}-control.{namespace}.svc:8080"
-    runner_token_file: /var/run/secrets/agentplane-runner-gateway/token
-    port: 8080
-immutable: false
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: session-dispatcher
-  namespace: agentplane-staging
-automountServiceAccountToken: true
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app.kubernetes.io/name: session-dispatcher
-  name: session-dispatcher
-  namespace: agentplane-staging
-spec:
-  minReadySeconds: 5
-  progressDeadlineSeconds: 600
-  replicas: 2
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      cdk8s.io/metadata.addr: agentplane-session-dispatcher-deployment-c87227ec
-  strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-    type: RollingUpdate
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: session-dispatcher
-        cdk8s.io/metadata.addr: agentplane-session-dispatcher-deployment-c87227ec
-    spec:
-      automountServiceAccountToken: true
-      containers:
-        - env:
-            - name: AGENTPLANE_SESSION_DISPATCHER_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-session-dispatcher
-            - name: AGENTPLANE_SESSION_DISPATCHER_CONFIG_FILE
-              value: /etc/agentplane-session-dispatcher/config.yaml
-          image: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher:unset
-          imagePullPolicy: IfNotPresent
-          livenessProbe:
-            failureThreshold: 3
-            grpc:
-              port: 8080
-            initialDelaySeconds: 20
-            periodSeconds: 30
-          name: session-dispatcher
-          ports:
-            - containerPort: 8080
-              name: grpc
-              protocol: TCP
-          readinessProbe:
-            failureThreshold: 3
-            grpc:
-              port: 8080
-            initialDelaySeconds: 3
-            periodSeconds: 10
-          resources:
-            limits:
-              memory: 512Mi
-            requests:
-              cpu: 50m
-              memory: 128Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
-          volumeMounts:
-            - mountPath: /etc/agentplane-session-dispatcher
-              name: configmap-session-dispatcher-config
-              readOnly: true
-            - mountPath: /var/run/secrets/agentplane-runner-gateway
-              name: runner-gateway-token
-              readOnly: true
-      dnsPolicy: ClusterFirst
-      hostNetwork: false
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      initContainers:
-        - env:
-            - name: AGENTPLANE_SESSION_DISPATCHER_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-session-dispatcher
-          image: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher-migrate:unset
-          imagePullPolicy: Always
-          name: migrate
-          resources:
-            limits:
-              memory: 256Mi
-            requests:
-              cpu: 25m
-              memory: 64Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
-      restartPolicy: Always
-      securityContext:
-        fsGroup: 1000
-        fsGroupChangePolicy: Always
-        runAsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      serviceAccountName: session-dispatcher
-      setHostnameAsFQDN: false
-      shareProcessNamespace: false
-      terminationGracePeriodSeconds: 30
-      volumes:
-        - configMap:
-            name: session-dispatcher-config
-          name: configmap-session-dispatcher-config
-        - name: runner-gateway-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: token
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app.kubernetes.io/name: session-dispatcher
-  name: session-dispatcher
-  namespace: agentplane-staging
-spec:
-  externalIPs: []
-  ports:
-    - name: grpc
-      port: 8080
-      protocol: TCP
-      targetPort: 8080
-  selector:
-    cdk8s.io/metadata.addr: agentplane-session-dispatcher-deployment-c87227ec
-  type: ClusterIP
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: session-dispatcher
-  namespace: agentplane-staging
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: session-dispatcher
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-staging-session-dispatcher-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-staging-session-dispatcher-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-session-dispatcher-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: session-dispatcher
-    namespace: agentplane-staging
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: session-dispatcher
-  namespace: agentplane-staging
-rules:
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-      - watch
-      - patch
-  - apiGroups:
-      - coordination.k8s.io
-    resources:
-      - leases
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: session-dispatcher
-  namespace: agentplane-staging
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: session-dispatcher
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: session-dispatcher
-    namespace: agentplane-staging
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: session-dispatcher
-  namespace: agentplane-staging
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            k8s-app: kube-dns
-            k8s:io.kubernetes.pod.namespace: kube-system
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-    - toEntities:
-        - kube-apiserver
-    - toEndpoints:
-        - matchLabels:
-            k8s:cnpg.io/cluster: postgres
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "5432"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: session-dispatcher
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: app
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: notifications
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: runner-gateway-config
-  namespace: agentplane-staging
-data:
-  config.yaml: |
-    sandbox_namespace: agentplane-staging
-    caller_accounts:
-      - namespace: agentplane-staging
-        name: app
-      - namespace: agentplane-staging
-        name: notifications
-      - namespace: agentplane-staging
-        name: session-dispatcher
-    token_audience: agentplane-runner-gateway
-    sandbox_controller_account:
-      namespace: agentplane-staging
-      name: sandbox-controller
-    runner_control_audience: agentplane-runner-control
-    port: 8080
-    runner_control_port: 8082
-immutable: false
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  name: runner-gateway
-  namespace: agentplane-staging
-automountServiceAccountToken: true
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app.kubernetes.io/name: runner-gateway
-  name: runner-gateway
-  namespace: agentplane-staging
-spec:
-  minReadySeconds: 5
-  progressDeadlineSeconds: 600
-  replicas: 2
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      cdk8s.io/metadata.addr: agentplane-runner-gateway-deployment-c8a3e7b5
-  strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-    type: RollingUpdate
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: runner-gateway
-        cdk8s.io/metadata.addr: agentplane-runner-gateway-deployment-c8a3e7b5
-    spec:
-      automountServiceAccountToken: true
-      containers:
-        - env:
-            - name: AGENTPLANE_RUNNER_GATEWAY_POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
-            - name: AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE
-              value: /etc/agentplane-runner-gateway/config.yaml
-          image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset
-          imagePullPolicy: IfNotPresent
-          livenessProbe:
-            failureThreshold: 3
-            grpc:
-              port: 8080
-            initialDelaySeconds: 20
-            periodSeconds: 30
-          name: runner-gateway
-          ports:
-            - containerPort: 8080
-              name: grpc
-              protocol: TCP
-            - containerPort: 8082
-              name: runner-control
-              protocol: TCP
-          readinessProbe:
-            failureThreshold: 3
-            grpc:
-              port: 8080
-            initialDelaySeconds: 3
-            periodSeconds: 10
-          resources:
-            limits:
-              memory: 512Mi
-            requests:
-              cpu: 50m
-              memory: 128Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
-          volumeMounts:
-            - mountPath: /etc/agentplane-runner-gateway
-              name: configmap-runner-gateway-config
-              readOnly: true
-      dnsPolicy: ClusterFirst
-      hostNetwork: false
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
-      restartPolicy: Always
-      securityContext:
-        fsGroup: 1000
-        fsGroupChangePolicy: Always
-        runAsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      serviceAccountName: runner-gateway
-      setHostnameAsFQDN: false
-      shareProcessNamespace: false
-      terminationGracePeriodSeconds: 60
-      volumes:
-        - configMap:
-            name: runner-gateway-config
-          name: configmap-runner-gateway-config
----
-apiVersion: v1
 kind: Service
 metadata:
   labels:
@@ -2187,7 +1741,6 @@ metadata:
   name: runner-gateway
   namespace: agentplane-staging
 spec:
-  externalIPs: []
   ports:
     - name: grpc
       port: 8080
@@ -2196,121 +1749,97 @@ spec:
     - name: runner-control
       port: 8082
       protocol: TCP
-      targetPort: 8082
+      targetPort: 8080
   selector:
-    cdk8s.io/metadata.addr: agentplane-runner-gateway-deployment-c8a3e7b5
-  type: ClusterIP
+    app.kubernetes.io/name: runner-gateway
 ---
-apiVersion: policy/v1
-kind: PodDisruptionBudget
+apiVersion: v1
+kind: Service
 metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  name: runner-gateway
+  labels:
+    app.kubernetes.io/name: session-dispatcher
+  name: session-dispatcher
   namespace: agentplane-staging
 spec:
-  minAvailable: 1
+  ports:
+    - name: grpc
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
   selector:
-    matchLabels:
-      app.kubernetes.io/name: runner-gateway
+    app.kubernetes.io/name: runner-gateway
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+apiVersion: v1
+kind: ServiceAccount
 metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  name: agentplane-staging-runner-gateway-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  name: agentplane-staging-runner-gateway-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-runner-gateway-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: runner-gateway
-    namespace: agentplane-staging
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  name: runner-gateway
+  name: runner-gateway-queue-migrate
   namespace: agentplane-staging
-rules:
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - coordination.k8s.io
-    resources:
-      - leases
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-  - apiGroups:
-      - discovery.k8s.io
-    resources:
-      - endpointslices
-    verbs:
-      - get
-      - create
-      - update
+automountServiceAccountToken: false
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+apiVersion: batch/v1
+kind: Job
 metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  name: runner-gateway
+  name: queue-l5juvmfef3nkuqjsdorztezkx3dbldvvfuk2yzxhlio45vhh4qva
   namespace: agentplane-staging
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: runner-gateway
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: runner-gateway
-    namespace: agentplane-staging
+spec:
+  activeDeadlineSeconds: 600
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: runner-gateway-queue-migrate
+        cdk8s.io/metadata.addr: agentplane-queue-migration-job-c8bd34df
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-session-dispatcher
+          image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate@sha256:5f534ab0a42edaaa41321ba399932abec6158eb52d15ac66e75a1dced4e7e42a
+          imagePullPolicy: IfNotPresent
+          name: migrate
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+      dnsPolicy: ClusterFirst
+      enableServiceLinks: false
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Never
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: runner-gateway-queue-migrate
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: runner-gateway
+  name: runner-gateway-queue-migrate
   namespace: agentplane-staging
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   egress:
     - toEndpoints:
@@ -2323,110 +1852,18 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    - toEntities:
-        - kube-apiserver
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: runner-gateway
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: app
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: notifications
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: session-dispatcher
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: egress
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
-  name: agentplane-runner-control
-  namespace: agentplane-staging
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-spec:
-  description: The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's control stream to the Runner Gateway. It conveys no other authority.
-  source:
-    projectedWorkloadToken:
-      audience: agentplane-runner-control
-  targets:
-    - header: Authorization
-      method: schemeToken
-      scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: runner-control
-  namespace: agentplane-staging
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-spec:
-  rules:
-    - type: egress
-      hosts:
-        - runner-gateway.agentplane-staging.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /agentplane.proto.runner_control.RunnerControl/Connect
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-runner-control
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: runner-gateway-runner-control-proxy
-  namespace: agentplane-staging
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-spec:
-  egress:
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: runner-gateway
+            k8s:cnpg.io/cluster: postgres
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "8082"
+            - port: "5432"
               protocol: TCP
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: egress
+      app.kubernetes.io/name: runner-gateway-queue-migrate
+  ingress: []
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -3711,7 +3148,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: session-dispatcher
+            app.kubernetes.io/name: runner-gateway
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -6070,7 +5507,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: session-dispatcher
+            app.kubernetes.io/name: runner-gateway
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

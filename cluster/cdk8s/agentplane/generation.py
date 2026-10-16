@@ -15,7 +15,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_app, write_yaml
 
-_HEALTH_CHECK_KINDS = ("Namespace", "Cluster", "Database", "Deployment", "Certificate", "Bundle")
+_HEALTH_CHECK_KINDS = ("Namespace", "Cluster", "Database", "Deployment", "Certificate", "Bundle", "Job")
 
 
 def environment_health_checks(chart: Chart, namespace: str) -> list[KustomizationSpecHealthChecks]:
