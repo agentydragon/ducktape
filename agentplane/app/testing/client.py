@@ -271,9 +271,13 @@ class Client:
     ) -> session_dispatcher_pb2.Dispatch | event_log_pb2.EventEntry:
         """Return the durable Dispatch, or archived admission for an exact retry; neither is a native outcome."""
         answered = await self._json("POST", f"/threads/{thread_id}/commands", json=MessageToDict(command))
-        if "sessionId" in answered:
-            return ParseDict(answered, session_dispatcher_pb2.Dispatch())
-        return ParseDict(answered, event_log_pb2.EventEntry())
+        match answered["kind"]:
+            case "dispatch":
+                return ParseDict(answered["dispatch"], session_dispatcher_pb2.Dispatch())
+            case "archived_admission":
+                return ParseDict(answered["admission"], event_log_pb2.EventEntry())
+            case kind:
+                raise ValueError(f"unrecognized command submission kind: {kind!r}")
 
     async def events(
         self, thread_id: UUID, *, after: int, read_seconds: float

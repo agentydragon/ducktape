@@ -99,13 +99,14 @@ async def route_once(page: Page, url: str, handler: Callable[[Route], Awaitable[
 
 
 def command_admission_receipt(body: str) -> event_log_pb2.EventEntry:
-    """Unwrap the documented HTTP union: a Dispatcher receipt or an archived admission."""
+    """Unwrap the tagged HTTP receipt: a Dispatcher result or an archived admission."""
     value = json.loads(body)
-    if isinstance(value, dict) and "admission" in value:
-        dispatch = json_format.ParseDict(value, session_dispatcher_pb2.Dispatch())
+    if value["kind"] == "dispatch":
+        dispatch = json_format.ParseDict(value["dispatch"], session_dispatcher_pb2.Dispatch())
         assert dispatch.HasField("admission"), "these scenarios wait for runner admission"
         return dispatch.admission
-    return json_format.Parse(body, event_log_pb2.EventEntry())
+    assert value["kind"] == "archived_admission"
+    return json_format.ParseDict(value["admission"], event_log_pb2.EventEntry())
 
 
 async def _review_screenshot(page: Page, name: str, label: str) -> None:

@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path as FilePath
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 import grpc
@@ -95,7 +95,7 @@ from agentplane.app.threads.view.content import CommandIdConflictError, ContentS
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import runner_pb2
+from agentplane.proto import event_log_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandboxes.egress_views import (
     BindingNotFoundError,
@@ -859,7 +859,20 @@ async def unarchive_thread(store: Store, thread_id: UUID) -> None:
     await store.unarchive(thread_id)
 
 
-@threads.post("/{thread_id}/commands")
+class DispatchedCommand(BaseModel):
+    kind: Literal["dispatch"] = "dispatch"
+    dispatch: dict[str, object]
+
+
+class ArchivedCommandAdmission(BaseModel):
+    kind: Literal["archived_admission"] = "archived_admission"
+    admission: dict[str, object]
+
+
+CommandSubmissionResponse = Annotated[DispatchedCommand | ArchivedCommandAdmission, Field(discriminator="kind")]
+
+
+@threads.post("/{thread_id}/commands", response_model=CommandSubmissionResponse)
 async def thread_command(
     store: Store,
     content: Content,
@@ -867,7 +880,7 @@ async def thread_command(
     catalog: Models,
     thread_id: UUID,
     body: dict[str, object],
-) -> dict[str, object]:
+) -> DispatchedCommand | ArchivedCommandAdmission:
     """Return the Dispatcher's durable result, or an archived admission for an exact retry.
 
     The Dispatcher may still be delivering the command. Neither a queued result nor runner
@@ -879,7 +892,7 @@ async def thread_command(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="command requires id and operation"
         )
     if admitted := await content.admitted_command(thread_id, command):
-        return MessageToDict(admitted)
+        return ArchivedCommandAdmission(admission=MessageToDict(admitted))
     thread = await store.get_thread(thread_id)
     if thread is None:
         raise ThreadNotFoundError(thread_id)
@@ -891,7 +904,11 @@ async def thread_command(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="model is incompatible with this thread's harness"
         )
-    return MessageToDict(await bridge.command(thread_id, command, sandbox=thread.sandbox))
+    receipt = await bridge.command(thread_id, command, sandbox=thread.sandbox)
+    if isinstance(receipt, event_log_pb2.EventEntry):
+        return ArchivedCommandAdmission(admission=MessageToDict(receipt))
+    assert isinstance(receipt, session_dispatcher_pb2.Dispatch)
+    return DispatchedCommand(dispatch=MessageToDict(receipt))
 
 
 @threads.get("/{thread_id}/commands/{command_id}/dispatch")

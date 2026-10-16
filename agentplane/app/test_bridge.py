@@ -349,7 +349,8 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
                 json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: BRIDGE_OK"}},
             )
             assert accepted.status_code == 200, accepted.text
-            assert accepted.json()["admission"]["event"]["commandAdmitted"]["command"] == {
+            assert accepted.json()["kind"] == "dispatch"
+            assert accepted.json()["dispatch"]["admission"]["event"]["commandAdmitted"]["command"] == {
                 "commandId": "input-1",
                 "submitInput": {"text": "Reply with exactly: BRIDGE_OK"},
             }
@@ -361,8 +362,11 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
             # A retry can race History's independent archive copy: before it arrives the
             # Dispatcher returns a Dispatch; afterward the route returns the archived entry.
             retry_receipt = retry.json()
-            assert ("admission" in retry_receipt) != ("event" in retry_receipt)
-            assert retry_receipt.get("admission", retry_receipt) == accepted.json()["admission"]
+            assert retry_receipt["kind"] in {"dispatch", "archived_admission"}
+            if retry_receipt["kind"] == "dispatch":
+                assert retry_receipt["dispatch"]["admission"] == accepted.json()["dispatch"]["admission"]
+            else:
+                assert retry_receipt["admission"] == accepted.json()["dispatch"]["admission"]
             request = await model.request()
             assert request.user_texts[-1] == "Reply with exactly: BRIDGE_OK"
             await model.reply(request, Text("BRIDGE_OK"))
@@ -388,7 +392,8 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
                     json={"commandId": "input-2", "submitInput": {"text": "Reply with exactly: BRIDGE_TWO"}},
                 )
                 assert accepted.status_code == 200, accepted.text
-                assert accepted.json()["admission"]["event"]["commandAdmitted"]["command"] == {
+                assert accepted.json()["kind"] == "dispatch"
+                assert accepted.json()["dispatch"]["admission"]["event"]["commandAdmitted"]["command"] == {
                     "commandId": "input-2",
                     "submitInput": {"text": "Reply with exactly: BRIDGE_TWO"},
                 }
@@ -418,7 +423,8 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
 
         stopped = await http.post(_commands(thread_id), json={"commandId": "stop-bridge", "stopRunnerSession": {}})
         assert stopped.status_code == 200, stopped.text
-        assert stopped.json()["admission"]["event"]["commandAdmitted"]["command"] == {
+        assert stopped.json()["kind"] == "dispatch"
+        assert stopped.json()["dispatch"]["admission"]["event"]["commandAdmitted"]["command"] == {
             "commandId": "stop-bridge",
             "stopRunnerSession": {},
         }
@@ -1085,7 +1091,8 @@ async def test_stop_command_returns_after_admission_before_native_shutdown_effec
             async with asyncio.timeout(10):
                 accepted = await asyncio.shield(response)
             assert accepted.status_code == 200, accepted.text
-            assert accepted.json()["admission"]["event"]["commandAdmitted"]["command"] == {
+            assert accepted.json()["kind"] == "dispatch"
+            assert accepted.json()["dispatch"]["admission"]["event"]["commandAdmitted"]["command"] == {
                 "commandId": "stop-gated",
                 "stopRunnerSession": {},
             }

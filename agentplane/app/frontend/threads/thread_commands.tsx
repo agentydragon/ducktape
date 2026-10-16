@@ -67,7 +67,7 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
       try {
         if (!navigator.onLine || !store.markAttempted(id)) return;
         const result = await command(threadId, value.command);
-        if (result.kind === "admission") store.acknowledge(value.command, result.admission);
+        if (result.kind === "archived_admission") store.acknowledge(value.command, result.admission);
         else store.acknowledgeDispatch(value.command, result.dispatch);
         settle(null);
       } catch (reason) {

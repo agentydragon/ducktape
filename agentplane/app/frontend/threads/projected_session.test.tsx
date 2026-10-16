@@ -780,8 +780,11 @@ function admission(value: Command): EventEntry {
   });
 }
 
-async function admit(_threadId: string, value: Command): Promise<{ kind: "admission"; admission: EventEntry }> {
-  return { kind: "admission", admission: admission(value) };
+async function admit(
+  _threadId: string,
+  value: Command
+): Promise<{ kind: "archived_admission"; admission: EventEntry }> {
+  return { kind: "archived_admission", admission: admission(value) };
 }
 
 function sentIds(): string[] {

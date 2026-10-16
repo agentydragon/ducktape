@@ -15,6 +15,8 @@ import httpx
 import pytest
 import pytest_bazel
 from fastapi import FastAPI
+from google.protobuf.json_format import MessageToDict
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import _require_operator_login, create_app, upstream_http_error
@@ -38,9 +40,17 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.grpc.serving import serving
+from agentplane.history_service.testing.history import History
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
+from agentplane.proto import (
+    command_pb2,
+    event_log_pb2,
+    event_pb2,
+    runner_pb2,
+    session_dispatcher_pb2,
+    session_dispatcher_pb2_grpc,
+)
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.inventory import SandboxInventory
@@ -699,6 +709,59 @@ async def test_bridge_returns_the_dispatcher_queued_receipt_over_grpc(
     assert result.command_id == command.command_id
     assert result.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
     assert result.reason == "sandbox_resuming"
+
+
+async def test_command_submission_tags_dispatch_and_archived_retry_after_sandbox_deletion(
+    client: httpx.AsyncClient,
+    bridge: RunnerBridge,
+    event_logs: SeededEventLogStore,
+    history: History,
+    store: ThreadStore,
+    custom_objects: FakeCustomObjectsApi,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    thread_id = await event_logs.seed("live", str(uuid4()))
+    command = command_pb2.Command(command_id="retry-after-archive", submit_input=command_pb2.SubmitInput(text="once"))
+    queued = session_dispatcher_pb2.Dispatch(
+        command_id=command.command_id,
+        session_id=str(thread_id),
+        sandbox="live",
+        state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+    )
+    calls: list[command_pb2.Command] = []
+
+    async def submit(
+        candidate_thread: UUID, candidate: command_pb2.Command, *, sandbox: str
+    ) -> session_dispatcher_pb2.Dispatch:
+        assert (candidate_thread, sandbox) == (thread_id, "live")
+        calls.append(candidate)
+        return queued
+
+    monkeypatch.setattr(bridge, "command", submit)
+    path = f"/threads/{thread_id}/commands"
+    body = MessageToDict(command)
+    first = await client.post(path, json=body)
+    assert first.status_code == 200, first.text
+    assert first.json() == {"kind": "dispatch", "dispatch": MessageToDict(queued)}
+    assert calls == [command]
+
+    timestamp = Timestamp()
+    timestamp.GetCurrentTime()
+    admission = event_log_pb2.EventEntry(
+        cursor=1,
+        origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=1),
+        event=event_pb2.Event(at=timestamp, command_admitted=event_pb2.CommandAdmitted(command=command)),
+    )
+    await history.record(thread_id, [admission])
+    await store.archive(thread_id)
+    custom_objects.objects.pop((SANDBOXES_PLURAL, "live"))
+
+    retry = await client.post(path, json=body)
+    assert retry.status_code == 200, retry.text
+    assert retry.json() == {"kind": "archived_admission", "admission": MessageToDict(admission)}
+    conflict = await client.post(path, json={"commandId": command.command_id, "submitInput": {"text": "different"}})
+    assert conflict.status_code == 409, conflict.text
+    assert calls == [command]
 
 
 async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(

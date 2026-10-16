@@ -81,15 +81,39 @@ async def _unavailable(after: int, writer: asyncio.StreamWriter) -> None:
 async def test_command_accepts_the_dispatchers_durable_receipt() -> None:
     command = command_pb2.Command(command_id="resume-by-input", submit_input=command_pb2.SubmitInput(text="Continue"))
     receipt = session_dispatcher_pb2.Dispatch(
-        command_id=command.command_id, session_id=str(uuid4()), state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED
+        command_id=command.command_id,
+        session_id=str(uuid4()),
+        state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
     )
 
     async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "200 OK", json.dumps(MessageToDict(receipt)).encode(), "application/json")
+        await _respond(
+            writer,
+            "200 OK",
+            json.dumps({"kind": "dispatch", "dispatch": MessageToDict(receipt)}).encode(),
+            "application/json",
+        )
 
     async with _app(accepted) as (client, _):
         result = await client.command(uuid4(), command)
     assert result == receipt
+
+
+async def test_command_accepts_an_archived_admission_without_a_dispatch() -> None:
+    command = command_pb2.Command(command_id="archived", submit_input=command_pb2.SubmitInput(text="Continue"))
+    admission = event_log_pb2.EventEntry(cursor=1)
+
+    async def archived(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            json.dumps({"kind": "archived_admission", "admission": MessageToDict(admission)}).encode(),
+            "application/json",
+        )
+
+    async with _app(archived) as (client, _):
+        result = await client.command(uuid4(), command)
+    assert result == admission
 
 
 async def test_resumes_after_the_last_entry_when_the_stream_closes_without_an_end_frame() -> None:

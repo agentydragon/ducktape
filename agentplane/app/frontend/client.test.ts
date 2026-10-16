@@ -98,11 +98,14 @@ it("accepts a durable queued Dispatch separately from a runner admission receipt
   const middleware = {
     onRequest: () =>
       Response.json({
-        commandId: input.commandId,
-        sessionId: "thread",
-        state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-        reason: "sandbox_resuming",
-        updatedAt: "2026-10-14T12:00:00Z",
+        kind: "dispatch",
+        dispatch: {
+          commandId: input.commandId,
+          sessionId: "thread",
+          state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+          reason: "sandbox_resuming",
+          updatedAt: "2026-10-14T12:00:00Z",
+        },
       }),
   };
   api.use(middleware);
@@ -116,6 +119,28 @@ it("accepts a durable queued Dispatch separately from a runner admission receipt
         reason: "sandbox_resuming",
         updatedAt: "2026-10-14T12:00:00Z",
         admission: null,
+      },
+    });
+  } finally {
+    api.eject(middleware);
+  }
+});
+
+it("accepts a tagged archived admission after a deleted Sandbox", async () => {
+  const middleware = {
+    onRequest: () =>
+      Response.json({
+        kind: "archived_admission",
+        admission: { cursor: "1", event: { commandAdmitted: { command: { commandId: input.commandId } } } },
+      }),
+  };
+  api.use(middleware);
+  try {
+    await expect(command("thread", input)).resolves.toMatchObject({
+      kind: "archived_admission",
+      admission: {
+        cursor: 1n,
+        event: { observation: { case: "commandAdmitted", value: { command: { commandId: input.commandId } } } },
       },
     });
   } finally {

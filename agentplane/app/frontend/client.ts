@@ -282,7 +282,7 @@ export interface DispatchReceipt {
 }
 
 export type CommandSubmission =
-  { kind: "admission"; admission: EventEntry } | { kind: "dispatch"; dispatch: DispatchReceipt };
+  { kind: "archived_admission"; admission: EventEntry } | { kind: "dispatch"; dispatch: DispatchReceipt };
 
 function dispatchReceipt(value: unknown): DispatchReceipt {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -334,11 +334,10 @@ export async function command(threadId: string, message: Command): Promise<Comma
     throw new Error(`Command admission unconfirmed: ${message}`);
   }
   try {
-    const value = data as JsonValue;
-    if (typeof value === "object" && value !== null && "event" in value) {
-      return { kind: "admission", admission: fromJson(EventEntrySchema, value) };
-    }
-    return { kind: "dispatch", dispatch: dispatchReceipt(data) };
+    if (data.kind === "dispatch") return { kind: "dispatch", dispatch: dispatchReceipt(data.dispatch) };
+    if (data.kind === "archived_admission")
+      return { kind: "archived_admission", admission: fromJson(EventEntrySchema, data.admission as JsonValue) };
+    throw new Error("App returned an unrecognized command submission kind");
   } catch (cause) {
     throw new Error(`Command receipt could not be verified: ${displayableError(cause)}`, { cause });
   }
