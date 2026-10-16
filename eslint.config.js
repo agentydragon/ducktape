@@ -98,6 +98,15 @@ export default [
 
   js.configs.recommended,
 
+  // The capture diagnostic runs inside Playwright's browser page, not Node.
+  {
+    files: ["util/testing/capture-diagnostics.js"],
+    languageOptions: {
+      parserOptions: { ecmaVersion: "latest", sourceType: "script" },
+      globals: browserGlobals,
+    },
+  },
+
   // ── All TypeScript files ───────────────────────────────────────────────
   {
     files: tsFiles,

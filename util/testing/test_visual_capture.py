@@ -86,6 +86,8 @@ async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(har
             const history = document.createElement("div");
             history.className = "history";
             history.style.cssText = "position:absolute;left:10.25px;top:20.5px;width:80.5px;height:40px;overflow-y:auto";
+            history.dataset.layoutSettled = "true";
+            history.dataset.scrollMode = "virtualized";
             const entry = document.createElement("div");
             entry.className = "entry";
             entry.style.cssText = "height:300px;width:100px";
@@ -103,25 +105,25 @@ async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(har
         await view.capture("cropped", target=view.page.locator(".entry"), scale="css")
 
     viewport = json.loads((harness.output_dir / "viewport.capture.json").read_text())
-    assert viewport["capture"]["mode"] == "viewport"
-    assert viewport["capture"]["checks_passed"] is True
-    assert viewport["page"]["viewport"]["width"] == 300
-    assert viewport["page"]["viewport"]["height"] == 200
-    assert viewport["page"]["viewport"]["deviceScaleFactor"] == 2
-    assert viewport["page"]["viewport"]["scrollY"] == 50
-    assert viewport["page"]["document"]["focus"]["inputSelection"] == {"start": 2, "end": 9, "direction": "forward"}
-    assert viewport["page"]["target"] is None
+    assert viewport["capture_name"] == "viewport"
+    assert viewport["sample"] == "before_screenshot"
+    assert viewport["scale"] == "css"
+    assert viewport["viewport"] == {"width": 300, "height": 200, "deviceScaleFactor": 2, "scrollX": 0, "scrollY": 50}
+    assert viewport["focus"]["inputSelection"] == {"start": 2, "end": 9, "direction": "forward"}
+    assert viewport["target"] is None
 
     cropped = json.loads((harness.output_dir / "cropped.capture.json").read_text())
-    assert cropped["capture"]["mode"] == "cropped_target"
-    assert cropped["page"]["target"]["rect"]["x"] == 10.25
-    assert cropped["page"]["target"]["screenshotClip"] == {"x": 10, "y": 4, "width": 100, "height": 300}
-    assert cropped["page"]["targetScrollAncestors"][0]["classes"] == ["history"]
-    assert cropped["page"]["targetScrollAncestors"][0]["scroll"]["top"] == 17
-    assert (
-        cropped["page"]["targetScrollAncestors"][0]["scroll"]["height"]
-        > cropped["page"]["targetScrollAncestors"][0]["scroll"]["clientHeight"]
-    )
+    assert cropped["capture_name"] == "cropped"
+    assert cropped["full_page"] is False
+    assert cropped["target"]["rect"]["x"] == 10.25
+    assert cropped["target"]["scrollHeight"] == 300
+    history = cropped["targetScrollAncestors"][0]
+    assert history["classes"] == ["history"]
+    assert history["scrollTop"] == 17
+    assert history["scrollHeight"] > history["clientHeight"]
+    assert history["data-layout-settled"] == "true"
+    assert history["data-scroll-mode"] == "virtualized"
+    assert cropped["scrollables"][0]["data-scroll-mode"] == "virtualized"
     assert "sensitive-selection" not in json.dumps([viewport, cropped])
     assert json.loads((harness.output_dir / "visual-review.json").read_text())["assets"] == [
         {"path": "viewport.png", "label": "viewport"},

@@ -20,7 +20,7 @@ from more_itertools import one
 from playwright.async_api import BrowserContext, Locator, Page, Playwright, Route
 from pydantic import JsonValue, TypeAdapter
 
-from util.bazel.runfiles import get_required_path
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.frontend_visual import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.page_capture import (
     WAIT_TIMEOUT_MS,
@@ -67,154 +67,11 @@ async def _playwright_trace(
             active_error.add_note(f"Could not save Playwright trace to {trace_path}: {trace_error!r}")
 
 
-# Captured with the screenshot, before any crop/full-page screenshot can change browser metrics.
-# This records layout and selection geometry only: never text, input values, URLs, or ARIA labels.
-_CAPTURE_DIAGNOSTICS_JS = """target => {
-    const identity = element => ({
-        tag: element.tagName.toLowerCase(),
-        classes: Array.from(element.classList).slice(0, 4),
-        role: element.getAttribute("role"),
-        hasId: element.hasAttribute("id"),
-        hasTestId: element.hasAttribute("data-testid"),
-    });
-    const measure = element => {
-        const rect = element.getBoundingClientRect();
-        const style = getComputedStyle(element);
-        const scrollWidth = element.scrollWidth;
-        const scrollHeight = element.scrollHeight;
-        const clientWidth = element.clientWidth;
-        const clientHeight = element.clientHeight;
-        return {
-            ...identity(element),
-            rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
-            documentRect: {
-                x: rect.x + window.scrollX,
-                y: rect.y + window.scrollY,
-                width: rect.width,
-                height: rect.height,
-            },
-            scroll: {
-                left: element.scrollLeft,
-                top: element.scrollTop,
-                width: scrollWidth,
-                height: scrollHeight,
-                clientWidth,
-                clientHeight,
-                maxLeft: Math.max(0, scrollWidth - clientWidth),
-                maxTop: Math.max(0, scrollHeight - clientHeight),
-                modeX: style.overflowX,
-                modeY: style.overflowY,
-                behavior: style.scrollBehavior,
-                snapType: style.scrollSnapType,
-                hasOverflowX: scrollWidth > clientWidth,
-                hasOverflowY: scrollHeight > clientHeight,
-            },
-        };
-    };
-    const scrollable = element => {
-        const style = getComputedStyle(element);
-        return (/(auto|scroll|hidden|overlay)/.test(style.overflowX) && element.scrollWidth > element.clientWidth)
-            || (/(auto|scroll|hidden|overlay)/.test(style.overflowY) && element.scrollHeight > element.clientHeight);
-    };
-    const root = document.scrollingElement;
-    const selection = window.getSelection();
-    const selectedRange = selection && selection.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null;
-    const active = document.activeElement;
-    const inputSelection = active && typeof active.selectionStart === "number" ? {
-        start: active.selectionStart,
-        end: active.selectionEnd,
-        direction: active.selectionDirection,
-    } : null;
-    const targetMetrics = target ? measure(target) : null;
-    if (targetMetrics) {
-        const {x, y, width, height} = targetMetrics.documentRect;
-        const clipX = Math.floor(x + 0.5);
-        const clipY = Math.floor(y + 0.5);
-        targetMetrics.screenshotClip = {
-            x: clipX,
-            y: clipY,
-            width: Math.floor(width + x - clipX + 0.5),
-            height: Math.floor(height + y - clipY + 0.5),
-        };
-    }
-    const ancestorScrollables = [];
-    for (let element = target && target.parentElement; element; element = element.parentElement) {
-        if (scrollable(element)) ancestorScrollables.push(measure(element));
-    }
-    const scrollableElements = [];
-    let scrollableCount = 0;
-    const elements = document.querySelectorAll("*");
-    for (let index = 0; index < elements.length; index++) {
-        const element = elements[index];
-        if (scrollable(element)) {
-            scrollableCount++;
-            if (scrollableElements.length < 20) scrollableElements.push({domIndex: index, ...measure(element)});
-        }
-    }
-    const ledger = window.__visualNetworkLedger__;
-    return {
-        browser: {
-            userAgent: navigator.userAgent,
-            language: navigator.language,
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            colorScheme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
-            reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
-        },
-        viewport: {
-            width: window.innerWidth,
-            height: window.innerHeight,
-            deviceScaleFactor: window.devicePixelRatio,
-            screenWidth: screen.width,
-            screenHeight: screen.height,
-            scrollX: window.scrollX,
-            scrollY: window.scrollY,
-            visual: window.visualViewport ? {
-                width: window.visualViewport.width,
-                height: window.visualViewport.height,
-                scale: window.visualViewport.scale,
-                offsetLeft: window.visualViewport.offsetLeft,
-                offsetTop: window.visualViewport.offsetTop,
-                pageLeft: window.visualViewport.pageLeft,
-                pageTop: window.visualViewport.pageTop,
-            } : null,
-        },
-        document: {
-            readyState: document.readyState,
-            visibilityState: document.visibilityState,
-            fonts: document.fonts.status,
-            incompleteImages: Array.from(document.images).filter(image => !image.complete).length,
-            scroll: root ? measure(root) : null,
-            focus: active ? {
-                element: identity(active),
-                inputType: active instanceof HTMLInputElement ? active.type : null,
-                contentEditable: active.isContentEditable,
-                inputSelection,
-            } : null,
-            textSelection: selection ? {
-                collapsed: selection.isCollapsed,
-                rangeCount: selection.rangeCount,
-                rect: selectedRange ? {
-                    x: selectedRange.x,
-                    y: selectedRange.y,
-                    width: selectedRange.width,
-                    height: selectedRange.height,
-                } : null,
-            } : null,
-            networkLedger: ledger ? {
-                pendingCount: ledger.pending.length,
-                violationCount: ledger.violations.length,
-            } : null,
-        },
-        target: targetMetrics,
-        targetScrollAncestors: ancestorScrollables.slice(0, 12),
-        targetScrollAncestorsTruncated: ancestorScrollables.length > 12,
-        scrollables: {
-            count: scrollableCount,
-            elements: scrollableElements,
-            truncated: scrollableCount > scrollableElements.length,
-        },
-    };
-}"""
+# Keep the browser-side snapshot in a linted JS file. It records geometry and selection positions,
+# never page text, input values, URLs, or accessible names.
+_CAPTURE_DIAGNOSTICS_JS = get_required_path(own_repo_rlocation("util/testing/capture-diagnostics.js")).read_text(
+    encoding="utf-8"
+)
 
 
 _PATHS_BY_URL = TypeAdapter(dict[str, str])
@@ -366,7 +223,7 @@ class VisualPage:
             raise ValueError("DevTools captures require animations to be pinned before mount")
         if target is not None and (count := await target.count()) != 1:
             raise ValueError(f"{name}: screenshot target must match exactly one element, got {count}")
-        diagnostics = (
+        page_diagnostics = (
             await target.evaluate(_CAPTURE_DIAGNOSTICS_JS)
             if target is not None
             else await self.page.evaluate(_CAPTURE_DIAGNOSTICS_JS)
@@ -378,30 +235,16 @@ class VisualPage:
         else:
             screenshot = await self.page.screenshot(full_page=full_page, scale=scale, animations=animations)
         await self.check(context=name)
-        mode = (
-            "cropped_target"
-            if target is not None
-            else "devtools_viewport"
-            if self.devtools_viewport is not None and not full_page and scale == "device"
-            else "full_page"
-            if full_page
-            else "viewport"
-        )
         self.output_dir.mkdir(parents=True, exist_ok=True)
         diagnostics_path = self.output_dir / f"{name}.capture.json"
         with diagnostics_path.open("x", encoding="utf-8") as stream:
             json.dump(
                 {
-                    "schema_version": 1,
-                    "capture": {
-                        "name": name,
-                        "mode": mode,
-                        "full_page": full_page,
-                        "scale": scale,
-                        "animations": animations,
-                        "checks_passed": True,
-                    },
-                    "page": diagnostics,
+                    "capture_name": name,
+                    "sample": "before_screenshot",
+                    "scale": scale,
+                    "full_page": full_page,
+                    **page_diagnostics,
                 },
                 stream,
                 indent=2,
