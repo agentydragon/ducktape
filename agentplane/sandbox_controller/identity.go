@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,7 +25,7 @@ const ActionCallerLabel = "agentplane.allegedly.works/use-action-service"
 // returns why no Pod may start yet; a running Pod is never stopped for it. A Pod does not wait for
 // the binding's readers: a grant that lands after the Pod starts only means early requests are
 // refused, the same as for a running Pod whose PolicySets change.
-func (r *Reconciler) ensureIdentity(ctx context.Context, sandbox *Sandbox) (*unready, error) {
+func (r *Reconciler) ensureIdentity(ctx context.Context, sandbox *sandboxapi.Sandbox) (*unready, error) {
 	account := &corev1.ServiceAccount{ObjectMeta: owned(sandbox)}
 	account.Labels[ActionCallerLabel] = "true"
 	if err := r.Get(ctx, client.ObjectKeyFromObject(account), account); err != nil {
@@ -49,7 +50,7 @@ func (r *Reconciler) ensureIdentity(ctx context.Context, sandbox *Sandbox) (*unr
 	return r.ensureBinding(ctx, sandbox)
 }
 
-func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *Sandbox) (*unready, error) {
+func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *sandboxapi.Sandbox) (*unready, error) {
 	sets := sandbox.Spec.PolicySets
 	spec := policycontroller.PolicyBindingSpec{
 		Subject:    policycontroller.ServiceAccountRef{Namespace: sandbox.Namespace, Name: sandbox.Name},
@@ -77,13 +78,13 @@ func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *Sandbox) (*unre
 }
 
 // owned is the metadata of an object named after the Sandbox and labeled with it.
-func owned(sandbox *Sandbox) metav1.ObjectMeta {
+func owned(sandbox *sandboxapi.Sandbox) metav1.ObjectMeta {
 	return metav1.ObjectMeta{Name: sandbox.Name, Namespace: sandbox.Namespace, Labels: map[string]string{SandboxLabel: sandbox.Name}}
 }
 
 // createOwned creates obj controlled by the Sandbox. An AlreadyExists is a concurrent create, and
 // the object's watch event runs the reconcile that checks it.
-func (r *Reconciler) createOwned(ctx context.Context, sandbox *Sandbox, obj client.Object) error {
+func (r *Reconciler) createOwned(ctx context.Context, sandbox *sandboxapi.Sandbox, obj client.Object) error {
 	if err := controllerutil.SetControllerReference(sandbox, obj, r.Scheme()); err != nil {
 		return err
 	}

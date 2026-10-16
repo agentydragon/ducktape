@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -136,7 +137,7 @@ func (w workload) incarnation() *corev1.Pod {
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl.Result, error) {
-	var sandbox Sandbox
+	var sandbox sandboxapi.Sandbox
 	if err := r.Get(ctx, req.NamespacedName, &sandbox); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -175,20 +176,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 	} else if gate == nil {
 		gate = launchGate
 	}
-	if blocked == nil && (!sandbox.running() || sandbox.quiescing()) {
+	if blocked == nil && (!sandboxRunning(&sandbox) || sandboxQuiescing(&sandbox)) {
 		if blocked, err = r.quiesceBeforeStop(ctx, &sandbox, w); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 	if blocked == nil {
-		if w, blocked, err = r.converge(ctx, &sandbox, w, sandbox.running(), gate); err != nil {
+		if w, blocked, err = r.converge(ctx, &sandbox, w, sandboxRunning(&sandbox), gate); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 	return r.updateStatus(ctx, &sandbox, w, blocked)
 }
 
-func (r *Reconciler) workload(ctx context.Context, sandbox *Sandbox) (workload, error) {
+func (r *Reconciler) workload(ctx context.Context, sandbox *sandboxapi.Sandbox) (workload, error) {
 	var w workload
 	var err error
 	if w.pod, err = r.pod(ctx, sandbox); err != nil {
@@ -210,7 +211,7 @@ func (r *Reconciler) workload(ctx context.Context, sandbox *Sandbox) (workload, 
 }
 
 // pod is the Sandbox's Pod, or nil; a same-name Pod it does not control is not its.
-func (r *Reconciler) pod(ctx context.Context, sandbox *Sandbox) (*corev1.Pod, error) {
+func (r *Reconciler) pod(ctx context.Context, sandbox *sandboxapi.Sandbox) (*corev1.Pod, error) {
 	var pod corev1.Pod
 	if err := r.Get(ctx, client.ObjectKeyFromObject(sandbox), &pod); err != nil {
 		return nil, client.IgnoreNotFound(err)
@@ -224,7 +225,7 @@ func (r *Reconciler) pod(ctx context.Context, sandbox *Sandbox) (*corev1.Pod, er
 // finalize seals the Sandbox's Sessions, then deletes the Pod, then the state PVC once no Pod can
 // be writing to it, then lets the Sandbox go. Each step's watch event runs the next. It returns why
 // the Sandbox is still there, or nil once the finalizer is removed.
-func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload) (workload, *unready, error) {
+func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload) (workload, *unready, error) {
 	pvc, err := r.stateVolume(ctx, sandbox)
 	if err != nil {
 		return w, nil, err
@@ -232,7 +233,7 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 	own := pvc != nil && metav1.IsControlledBy(pvc, sandbox)
 	// Without a state PVC of its own the Sandbox never had a runner, so it has no Session to seal;
 	// nor has one whose runner never connected, which is not sealed, only has nothing to seal.
-	needsQuiesce := own && !sandbox.sessionsQuiesced()
+	needsQuiesce := own && !sandboxSessionsQuiesced(sandbox)
 	var runner string
 	if needsQuiesce {
 		var err error
@@ -283,14 +284,14 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 
 // connectedRunner is the Pod UID of the runner that last connected for the Sandbox, which the Runner
 // Gateway records on the Sandbox's Lease, or "" if none ever did.
-func (r *Reconciler) connectedRunner(ctx context.Context, sandbox *Sandbox) (string, error) {
+func (r *Reconciler) connectedRunner(ctx context.Context, sandbox *sandboxapi.Sandbox) (string, error) {
 	lease, err := r.runnerLease(ctx, sandbox)
 	return lease.Annotations[PodUIDAnnotation], err
 }
 
 // runnerLease reads the Lease the Runner Gateway writes for the Sandbox's runner connection; it is
 // empty if no runner ever connected.
-func (r *Reconciler) runnerLease(ctx context.Context, sandbox *Sandbox) (coordinationv1.Lease, error) {
+func (r *Reconciler) runnerLease(ctx context.Context, sandbox *sandboxapi.Sandbox) (coordinationv1.Lease, error) {
 	var lease coordinationv1.Lease
 	err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + "-runner"}, &lease)
 	return lease, client.IgnoreNotFound(err)
@@ -298,9 +299,9 @@ func (r *Reconciler) runnerLease(ctx context.Context, sandbox *Sandbox) (coordin
 
 // unquiescedRunner is the Pod UID of the last connected runner if it still has Sessions to seal, or
 // "": none connected, or it is the one already sealed.
-func (r *Reconciler) unquiescedRunner(ctx context.Context, sandbox *Sandbox) (string, error) {
+func (r *Reconciler) unquiescedRunner(ctx context.Context, sandbox *sandboxapi.Sandbox) (string, error) {
 	runner, err := r.connectedRunner(ctx, sandbox)
-	if err != nil || sandbox.quiescedIncarnation(runner) {
+	if err != nil || sandboxQuiescedIncarnation(sandbox, runner) {
 		return "", err
 	}
 	return runner, nil
@@ -308,7 +309,7 @@ func (r *Reconciler) unquiescedRunner(ctx context.Context, sandbox *Sandbox) (st
 
 // quiesceBeforeStop holds a Sandbox that is to stop while its current incarnation's runner has Sessions
 // to seal, and seals them. An incarnation whose runner never connected has none.
-func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *Sandbox, w workload) (*unready, error) {
+func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload) (*unready, error) {
 	pod := w.incarnation()
 	if pod == nil {
 		return nil, nil
@@ -317,7 +318,7 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *Sandbox, w 
 	if err != nil || runner == "" || runner != string(pod.UID) {
 		return nil, err
 	}
-	if !sandbox.quiescing() {
+	if !sandboxQuiescing(sandbox) {
 		if held, err := r.holdSuspend(ctx, sandbox, runner); held != nil || err != nil {
 			return held, err
 		}
@@ -328,7 +329,7 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *Sandbox, w 
 // holdSuspend holds a suspend that has not begun quiescing while the incarnation's bootstrap or any
 // Session's setup runs: quiescing would interrupt it, and an interrupted bootstrap is terminal. The
 // runner's next fact enqueues the Sandbox, so no retry is set. A delete does not come here.
-func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *Sandbox, runner string) (*unready, error) {
+func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *sandboxapi.Sandbox, runner string) (*unready, error) {
 	lease, err := r.runnerLease(ctx, sandbox)
 	if err != nil {
 		return nil, err
@@ -355,7 +356,7 @@ func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *Sandbox, runner s
 // A runner that reports `Quiesced` on the connection Lease is recorded without another call. Other
 // stage reports enqueue the Sandbox; the persisted deadline throttles calls while a stage is absent
 // or stalled.
-func (r *Reconciler) quiesce(ctx context.Context, sandbox *Sandbox, runner string) (*unready, error) {
+func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, runner string) (*unready, error) {
 	lease, err := r.runnerLease(ctx, sandbox)
 	if err != nil {
 		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
@@ -375,7 +376,7 @@ func (r *Reconciler) quiesce(ctx context.Context, sandbox *Sandbox, runner strin
 			return &unready{reason: "Quiescing", message: "the runner is quiescing", retryAfter: remaining}, nil
 		}
 	}
-	sandbox.Status.QuiesceAttempt = &QuiesceAttempt{RunnerPodUID: runner, AttemptedAt: metav1.NewTime(r.Now())}
+	sandbox.Status.QuiesceAttempt = &sandboxapi.QuiesceAttempt{RunnerPodUID: runner, AttemptedAt: metav1.NewTime(r.Now())}
 	if err := r.Status().Update(ctx, sandbox); err != nil {
 		return nil, fmt.Errorf("recording quiesce attempt for %s: %w", sandbox.Name, err)
 	}
@@ -400,12 +401,12 @@ func (r *Reconciler) deleteIfLive(ctx context.Context, obj client.Object) error 
 	return client.IgnoreNotFound(r.Delete(ctx, obj, client.Preconditions{UID: &uid}))
 }
 
-func (r *Reconciler) stateVolume(ctx context.Context, sandbox *Sandbox) (*corev1.PersistentVolumeClaim, error) {
+func (r *Reconciler) stateVolume(ctx context.Context, sandbox *sandboxapi.Sandbox) (*corev1.PersistentVolumeClaim, error) {
 	return r.claim(ctx, sandbox, StateVolumeName(sandbox.Name))
 }
 
 // claim is the PVC of that name in the Sandbox's namespace, or nil.
-func (r *Reconciler) claim(ctx context.Context, sandbox *Sandbox, name string) (*corev1.PersistentVolumeClaim, error) {
+func (r *Reconciler) claim(ctx context.Context, sandbox *sandboxapi.Sandbox, name string) (*corev1.PersistentVolumeClaim, error) {
 	var pvc corev1.PersistentVolumeClaim
 	if err := r.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: name}, &pvc); err != nil {
 		return nil, client.IgnoreNotFound(err)
@@ -414,15 +415,15 @@ func (r *Reconciler) claim(ctx context.Context, sandbox *Sandbox, name string) (
 }
 
 // claimConflict is why the Sandbox cannot use a PVC of its name: it is another's, or going.
-func claimConflict(pvc *corev1.PersistentVolumeClaim, sandbox *Sandbox, reason string) *unready {
+func claimConflict(pvc *corev1.PersistentVolumeClaim, sandbox *sandboxapi.Sandbox, reason string) *unready {
 	if metav1.IsControlledBy(pvc, sandbox) && pvc.DeletionTimestamp.IsZero() {
 		return nil
 	}
 	return &unready{reason: reason, message: fmt.Sprintf("PVC %s belongs to another Sandbox or is being deleted", pvc.Name)}
 }
 
-func (r *Reconciler) template(ctx context.Context, sandbox *Sandbox) (*SandboxTemplate, *unready, error) {
-	var template SandboxTemplate
+func (r *Reconciler) template(ctx context.Context, sandbox *sandboxapi.Sandbox) (*sandboxapi.SandboxTemplate, *unready, error) {
+	var template sandboxapi.SandboxTemplate
 	key := types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Spec.Template}
 	if err := r.Get(ctx, key, &template); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -445,7 +446,7 @@ func (r *Reconciler) template(ctx context.Context, sandbox *Sandbox) (*SandboxTe
 // converge starts a Pod or VM for a Sandbox that is to run and has none, unless gate says why not
 // yet, and stops the one of a Sandbox that is not. A running incarnation keeps its kind and spec
 // whatever the template now says. It returns the workload the Sandbox now has.
-func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload, running bool, gate *unready) (workload, *unready, error) {
+func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, running bool, gate *unready) (workload, *unready, error) {
 	if !running {
 		if w.pod != nil {
 			if err := r.deleteIfLive(ctx, w.pod); err != nil {
@@ -456,11 +457,11 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 	}
 	// Validate retained contents before replacing a sealed/ended incarnation or a halted VM.
 	ended := w.pod != nil && (w.pod.Status.Phase == corev1.PodSucceeded || w.pod.Status.Phase == corev1.PodFailed)
-	sealed := w.incarnation() != nil && sandbox.quiescedIncarnation(string(w.incarnation().UID))
+	sealed := w.incarnation() != nil && sandboxQuiescedIncarnation(sandbox, string(w.incarnation().UID))
 	if gate != nil && (sealed || ended) {
 		return w, gate, nil
 	}
-	var template *SandboxTemplate
+	var template *sandboxapi.SandboxTemplate
 	if gate == nil && (sealed || ended || (w.pod == nil && !vmRunning(w.vm) && w.vmi == nil)) {
 		var blocked *unready
 		var err error
@@ -473,7 +474,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 		}
 	}
 	// A runner that sealed its Sessions takes no new ones, so a Sandbox resumed meanwhile starts anew.
-	if pod := w.incarnation(); pod != nil && sandbox.quiescedIncarnation(string(pod.UID)) {
+	if pod := w.incarnation(); pod != nil && sandboxQuiescedIncarnation(sandbox, string(pod.UID)) {
 		if err := r.deleteIfLive(ctx, pod); err != nil {
 			return w, nil, err
 		}
@@ -543,7 +544,7 @@ func renderedSpec(spec any) string {
 
 // render is the template's Pod for this Sandbox, running as the Sandbox's ServiceAccount, with the
 // state volume filled in.
-func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready) {
+func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate) (*corev1.Pod, *unready) {
 	if blocked := validateStateVolume(template); blocked != nil {
 		return nil, blocked
 	}
@@ -589,7 +590,7 @@ func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready)
 	}, nil
 }
 
-func withSandboxLabel(labels map[string]string, sandbox *Sandbox) map[string]string {
+func withSandboxLabel(labels map[string]string, sandbox *sandboxapi.Sandbox) map[string]string {
 	labels = maps.Clone(labels)
 	if labels == nil {
 		labels = map[string]string{}
@@ -598,12 +599,12 @@ func withSandboxLabel(labels map[string]string, sandbox *Sandbox) map[string]str
 	return labels
 }
 
-func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workload, blocked *unready) (ctrl.Result, error) {
+func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, blocked *unready) (ctrl.Result, error) {
 	status := sandbox.Status.DeepCopy()
 	status.Incarnation = nil
-	status.OperatingMode = sandbox.operatingMode()
+	status.OperatingMode = sandboxOperatingMode(sandbox)
 	if pod := w.incarnation(); pod != nil {
-		status.Incarnation = &Incarnation{Name: pod.Name, UID: string(pod.UID)}
+		status.Incarnation = &sandboxapi.Incarnation{Name: pod.Name, UID: string(pod.UID)}
 	}
 	condition := metav1.Condition{Type: Running, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	switch {
@@ -613,7 +614,7 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workl
 		podCondition(&condition, sandbox, w.pod)
 	case w.vmi != nil || (w.vm != nil && vmRunning(w.vm)):
 		vmCondition(&condition, sandbox, w)
-	case sandbox.running():
+	case sandboxRunning(sandbox):
 		condition.Reason, condition.Message = "Starting", "no Pod or VM is created yet"
 	case w.vm != nil:
 		condition.Reason, condition.Message = "Stopped", fmt.Sprintf("VM %s is halted; its disks and the state PVC are kept", w.vm.Name)
@@ -661,7 +662,7 @@ func earliest(a, b time.Duration) time.Duration {
 // workloadReadyCondition is True only while the Sandbox runs and its incarnation Pod is Ready;
 // otherwise it carries the reason `running` gives, or `PodNotReady` when everything runs but the Pod
 // is not Ready.
-func workloadReadyCondition(sandbox *Sandbox, running metav1.Condition, incarnation *corev1.Pod) metav1.Condition {
+func workloadReadyCondition(sandbox *sandboxapi.Sandbox, running metav1.Condition, incarnation *corev1.Pod) metav1.Condition {
 	condition := metav1.Condition{Type: WorkloadReady, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation, Reason: running.Reason, Message: running.Message}
 	if running.Status != metav1.ConditionTrue {
 		return condition
@@ -679,7 +680,7 @@ func workloadReadyCondition(sandbox *Sandbox, running metav1.Condition, incarnat
 // was renewed within its duration plus the grace, so a connection from an earlier incarnation never
 // counts and a brief drop does not. It also says when to look again, since no watch event marks time:
 // the moment a live connection would lapse, and a lapsed one, which a renewal revives silently.
-func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *Sandbox, workload metav1.Condition, incarnation *corev1.Pod) (metav1.Condition, time.Duration, error) {
+func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *sandboxapi.Sandbox, workload metav1.Condition, incarnation *corev1.Pod) (metav1.Condition, time.Duration, error) {
 	condition := metav1.Condition{Type: RunnerConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	if workload.Status != metav1.ConditionTrue {
 		condition.Reason, condition.Message = "WorkloadNotReady", "the incarnation is not Ready"
@@ -714,7 +715,7 @@ func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *Sand
 // bootstrappedCondition says how far the Sandbox's bootstrap has got, from the facts the incarnation's
 // runner published on its Lease. A Sandbox without one is bootstrapped. A runner that has reported
 // nothing leaves the condition Unknown, since one that predates the fact never will.
-func (r *Reconciler) bootstrappedCondition(ctx context.Context, sandbox *Sandbox, incarnation *corev1.Pod) (metav1.Condition, error) {
+func (r *Reconciler) bootstrappedCondition(ctx context.Context, sandbox *sandboxapi.Sandbox, incarnation *corev1.Pod) (metav1.Condition, error) {
 	condition := metav1.Condition{Type: Bootstrapped, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	if sandbox.Spec.Bootstrap == "" {
 		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "NoBootstrap", "the Sandbox has no bootstrap"
@@ -754,9 +755,9 @@ func podReady(pod *corev1.Pod) bool {
 	})
 }
 
-func podCondition(condition *metav1.Condition, sandbox *Sandbox, pod *corev1.Pod) {
+func podCondition(condition *metav1.Condition, sandbox *sandboxapi.Sandbox, pod *corev1.Pod) {
 	switch {
-	case !pod.DeletionTimestamp.IsZero() || !sandbox.running():
+	case !pod.DeletionTimestamp.IsZero() || !sandboxRunning(sandbox):
 		condition.Reason, condition.Message = "Stopping", fmt.Sprintf("Pod %s is being deleted", pod.Name)
 	case pod.Status.Phase == corev1.PodPending || pod.Status.Phase == "":
 		if reason, message, scheduled := podSchedulingFailure(pod); scheduled {
@@ -788,15 +789,15 @@ func podHasSchedulingFailure(pod *corev1.Pod) bool {
 // SetupWithManager wires the watches: each Sandbox, the objects it owns, the Pods, VMIs and state
 // PVC carrying its label, and the templates it names.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &Sandbox{}, templateIndex, func(obj client.Object) []string {
-		return []string{obj.(*Sandbox).Spec.Template}
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &sandboxapi.Sandbox{}, templateIndex, func(obj client.Object) []string {
+		return []string{obj.(*sandboxapi.Sandbox).Spec.Template}
 	}); err != nil {
 		return err
 	}
 	// A template appearing or changing retries the Sandboxes that name it; one already running is
 	// unaffected until its next start.
 	byTemplate := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-		var sandboxes SandboxList
+		var sandboxes sandboxapi.SandboxList
 		if err := r.List(ctx, &sandboxes, client.InNamespace(obj.GetNamespace()), client.MatchingFields{templateIndex: obj.GetName()}); err != nil {
 			return nil
 		}
@@ -814,7 +815,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: obj.GetNamespace(), Name: name}}}
 	})
 	setup := ctrl.NewControllerManagedBy(mgr).
-		For(&Sandbox{}).
+		For(&sandboxapi.Sandbox{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
@@ -822,12 +823,12 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// A virt-launcher Pod is its VMI's, not the Sandbox's, so Pods map back by the label.
 		Watches(&corev1.Pod{}, bySandboxLabel).
 		Watches(&corev1.PersistentVolumeClaim{}, bySandboxLabel).
-		Watches(&SandboxTemplate{}, byTemplate)
+		Watches(&sandboxapi.SandboxTemplate{}, byTemplate)
 	// A connection's Lease is the Sandbox's by owner reference. Renewals only move the renew time,
 	// so only a different runner Pod, a new connection or a change in the facts the runner
 	// publishes enqueues.
 	setup = setup.Watches(&coordinationv1.Lease{},
-		handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &Sandbox{}),
+		handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &sandboxapi.Sandbox{}),
 		builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
 			previous, current := e.ObjectOld.(*coordinationv1.Lease), e.ObjectNew.(*coordinationv1.Lease)
 			return previous.Annotations[PodUIDAnnotation] != current.Annotations[PodUIDAnnotation] ||

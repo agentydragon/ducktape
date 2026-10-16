@@ -1,10 +1,8 @@
-// Package sandboxcontroller is the Sandbox Controller: it reconciles Agentplane's own Sandbox into
-// a state PVC that outlives every incarnation and, while the Sandbox is running, one Pod stamped
-// from its SandboxTemplate. Contract: SPEC.md.
+// Package api defines Agentplane's shared Sandbox and SandboxTemplate Kubernetes API.
 //
 // +kubebuilder:object:generate=true
 // +groupName=agentplane.allegedly.works
-package sandboxcontroller
+package api
 
 import (
 	corev1 "k8s.io/api/core/v1"

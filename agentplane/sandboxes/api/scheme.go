@@ -1,4 +1,4 @@
-package sandboxcontroller
+package api
 
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"

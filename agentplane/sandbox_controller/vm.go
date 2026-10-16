@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,7 +15,7 @@ import (
 )
 
 // vm is the Sandbox's VirtualMachine, or nil; a same-name VM it does not control is not its.
-func (r *Reconciler) vm(ctx context.Context, sandbox *Sandbox) (*kubevirtv1.VirtualMachine, error) {
+func (r *Reconciler) vm(ctx context.Context, sandbox *sandboxapi.Sandbox) (*kubevirtv1.VirtualMachine, error) {
 	var vm kubevirtv1.VirtualMachine
 	if err := r.Get(ctx, client.ObjectKeyFromObject(sandbox), &vm); err != nil {
 		return nil, client.IgnoreNotFound(err)
@@ -26,7 +27,7 @@ func (r *Reconciler) vm(ctx context.Context, sandbox *Sandbox) (*kubevirtv1.Virt
 }
 
 // vmi is the VMI of the Sandbox's VM, or of a VM of its name being deleted, or nil.
-func (r *Reconciler) vmi(ctx context.Context, sandbox *Sandbox) (*kubevirtv1.VirtualMachineInstance, error) {
+func (r *Reconciler) vmi(ctx context.Context, sandbox *sandboxapi.Sandbox) (*kubevirtv1.VirtualMachineInstance, error) {
 	var vmi kubevirtv1.VirtualMachineInstance
 	if err := r.Get(ctx, client.ObjectKeyFromObject(sandbox), &vmi); err != nil {
 		return nil, client.IgnoreNotFound(err)
@@ -39,7 +40,7 @@ func (r *Reconciler) vmi(ctx context.Context, sandbox *Sandbox) (*kubevirtv1.Vir
 }
 
 // launcher is the VMI's live virt-launcher Pod, the runner's incarnation, or nil.
-func (r *Reconciler) launcher(ctx context.Context, sandbox *Sandbox, vmi *kubevirtv1.VirtualMachineInstance) (*corev1.Pod, error) {
+func (r *Reconciler) launcher(ctx context.Context, sandbox *sandboxapi.Sandbox, vmi *kubevirtv1.VirtualMachineInstance) (*corev1.Pod, error) {
 	if vmi == nil {
 		return nil, nil
 	}
@@ -72,7 +73,7 @@ func (r *Reconciler) haltVM(ctx context.Context, vm *kubevirtv1.VirtualMachine) 
 
 // startVM creates the Sandbox's VM, or starts its halted one with the template as it is now, so a
 // changed image or template applies at this start; a halted VM's disks are kept.
-func (r *Reconciler) startVM(ctx context.Context, sandbox *Sandbox, w workload, template *SandboxTemplate) (workload, *unready, error) {
+func (r *Reconciler) startVM(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, template *sandboxapi.SandboxTemplate) (workload, *unready, error) {
 	vm, blocked := renderVM(sandbox, template)
 	if blocked != nil {
 		return w, blocked, nil
@@ -99,7 +100,7 @@ func (r *Reconciler) startVM(ctx context.Context, sandbox *Sandbox, w workload, 
 // workspace PVC as the volume of its name. The launcher's ServiceAccount is not set here: KubeVirt
 // sets it only from a serviceAccount volume, which would hand the guest the token, so the
 // namespace's launcher admission sets the Sandbox's.
-func renderVM(sandbox *Sandbox, template *SandboxTemplate) (*kubevirtv1.VirtualMachine, *unready) {
+func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate) (*kubevirtv1.VirtualMachine, *unready) {
 	if blocked := validateWorkspace(template); blocked != nil {
 		return nil, blocked
 	}
@@ -139,7 +140,7 @@ func renderVM(sandbox *Sandbox, template *SandboxTemplate) (*kubevirtv1.VirtualM
 	instance.Volumes = append(instance.Volumes, pvcVolume(volume, StateVolumeName(sandbox.Name)))
 	if workspace != nil {
 		instance.Volumes = append(instance.Volumes, pvcVolume(workspace.Name, WorkspaceVolumeName(sandbox.Name)))
-		if workspace.Layout.Type == DirectoryTree {
+		if workspace.Layout.Type == sandboxapi.DirectoryTree {
 			instance.Domain.Devices.Filesystems = append(instance.Domain.Devices.Filesystems, kubevirtv1.Filesystem{
 				Name: workspace.Name, Virtiofs: &kubevirtv1.FilesystemVirtiofs{},
 			})
@@ -166,12 +167,12 @@ func pvcVolume(name, claim string) kubevirtv1.Volume {
 	}
 }
 
-func vmCondition(condition *metav1.Condition, sandbox *Sandbox, w workload) {
+func vmCondition(condition *metav1.Condition, sandbox *sandboxapi.Sandbox, w workload) {
 	vmi := w.vmi
 	switch {
 	case vmi == nil:
 		condition.Reason, condition.Message = "Starting", fmt.Sprintf("VM %s has no VMI yet", w.vm.Name)
-	case !vmi.DeletionTimestamp.IsZero() || !sandbox.running() || !vmRunning(w.vm):
+	case !vmi.DeletionTimestamp.IsZero() || !sandboxRunning(sandbox) || !vmRunning(w.vm):
 		condition.Reason, condition.Message = "Stopping", fmt.Sprintf("VMI %s is stopping", vmi.Name)
 	case w.launcher != nil && podHasSchedulingFailure(w.launcher):
 		reason, message, _ := podSchedulingFailure(w.launcher)

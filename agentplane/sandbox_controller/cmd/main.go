@@ -26,6 +26,7 @@ import (
 
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 )
 
 func main() {
@@ -54,7 +55,7 @@ func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontrol
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return err
 	}
-	if err := sandboxcontroller.AddToScheme(scheme); err != nil {
+	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		return err
 	}
 	if err := policycontroller.AddToScheme(scheme); err != nil {

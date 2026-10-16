@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,7 +49,7 @@ type launchSandbox struct {
 
 // ensureLaunch keeps the Sandbox's launch ConfigMap. It returns why no Pod may start yet; a running
 // Pod is never stopped for it. A changed bootstrap reaches the Sandbox's next incarnation only.
-func (r *Reconciler) ensureLaunch(ctx context.Context, sandbox *Sandbox) (*unready, error) {
+func (r *Reconciler) ensureLaunch(ctx context.Context, sandbox *sandboxapi.Sandbox) (*unready, error) {
 	content, err := json.Marshal(launch{
 		Sandbox:   launchSandbox{Namespace: sandbox.Namespace, Name: sandbox.Name, UID: string(sandbox.UID)},
 		Bootstrap: sandbox.Spec.Bootstrap,
@@ -77,7 +78,7 @@ func (r *Reconciler) ensureLaunch(ctx context.Context, sandbox *Sandbox) (*unrea
 }
 
 // withLaunch mounts the Sandbox's launch ConfigMap into the template's runner container.
-func withLaunch(sandbox *Sandbox, template *SandboxTemplate, spec *corev1.PodSpec) *unready {
+func withLaunch(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, spec *corev1.PodSpec) *unready {
 	i := slices.IndexFunc(spec.Containers, func(c corev1.Container) bool { return c.Name == RunnerContainer })
 	if i < 0 {
 		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s has no %s container", template.Name, RunnerContainer)}
@@ -99,7 +100,7 @@ func withLaunch(sandbox *Sandbox, template *SandboxTemplate, spec *corev1.PodSpe
 
 // withLaunchDisk attaches the Sandbox's launch ConfigMap to the VM as a disk the guest finds by
 // serial.
-func withLaunchDisk(sandbox *Sandbox, template *SandboxTemplate, instance *kubevirtv1.VirtualMachineInstanceSpec) *unready {
+func withLaunchDisk(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, instance *kubevirtv1.VirtualMachineInstanceSpec) *unready {
 	if slices.ContainsFunc(instance.Volumes, func(v kubevirtv1.Volume) bool { return v.Name == launchVolume }) ||
 		slices.ContainsFunc(instance.Domain.Devices.Disks, func(d kubevirtv1.Disk) bool { return d.Name == launchVolume || d.Serial == LaunchDiskSerial }) {
 		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the launch volume %s itself", template.Name, launchVolume)}

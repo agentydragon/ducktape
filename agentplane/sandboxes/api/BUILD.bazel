@@ -1,0 +1,45 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path")
+load("//devinfra/go:controller_gen.bzl", "controller_deepcopy")
+
+go_library(
+    name = "api",
+    srcs = [
+        "scheme.go",
+        "types.go",
+        ":deepcopy",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/api",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_sigs_controller_runtime//pkg/scheme",
+        "@io_kubevirt_api//core/v1:core",
+    ],
+)
+
+go_library(
+    name = "deepcopy_inputs",
+    srcs = ["types.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/api",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_kubevirt_api//core/v1:core",
+    ],
+)
+
+go_path(
+    name = "deepcopy_gopath",
+    mode = "copy",
+    deps = [":deepcopy_inputs"],
+)
+
+controller_deepcopy(
+    name = "deepcopy",
+    gopath = ":deepcopy_gopath",
+    importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/api",
+)

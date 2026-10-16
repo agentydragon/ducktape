@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -19,21 +20,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
-func workspaceBinding(sandbox *Sandbox) *WorkspaceBinding {
+func workspaceBinding(sandbox *sandboxapi.Sandbox) *sandboxapi.WorkspaceBinding {
 	if sandbox.Status.Volumes == nil {
 		return nil
 	}
 	return sandbox.Status.Volumes.Workspace
 }
 
-func workspaceTemplate(kind string, layout VolumeLayoutType) *SandboxTemplate {
+func workspaceTemplate(kind string, layout sandboxapi.VolumeLayoutType) *sandboxapi.SandboxTemplate {
 	template := testWorkspaceVMTemplate("guest:v1")
 	w := template.Spec.WorkspaceVolume
-	w.Layout = VolumeLayout{Type: layout}
-	if layout != DirectoryTree {
+	w.Layout = sandboxapi.VolumeLayout{Type: layout}
+	if layout != sandboxapi.DirectoryTree {
 		w.Layout.Filesystem = "ext4"
 	}
-	if layout == BlockFilesystem {
+	if layout == sandboxapi.BlockFilesystem {
 		mode := corev1.PersistentVolumeBlock
 		w.Claim.VolumeMode = &mode
 	}
@@ -44,7 +45,7 @@ func workspaceTemplate(kind string, layout VolumeLayoutType) *SandboxTemplate {
 			corev1.VolumeMount{Name: w.Name, MountPath: "/workspace"})
 		return pod
 	}
-	if layout == DirectoryTree {
+	if layout == sandboxapi.DirectoryTree {
 		template.Spec.VM.Template.Spec.Domain.Devices.Disks = slices.DeleteFunc(template.Spec.VM.Template.Spec.Domain.Devices.Disks,
 			func(d kubevirtv1.Disk) bool { return d.Name == w.Name })
 	}
@@ -54,9 +55,9 @@ func workspaceTemplate(kind string, layout VolumeLayoutType) *SandboxTemplate {
 func TestWorkspaceCreationRecordsLayoutAndRendersSupportedAttachments(t *testing.T) {
 	for _, scenario := range []struct {
 		kind   string
-		layout VolumeLayoutType
+		layout sandboxapi.VolumeLayoutType
 	}{
-		{"pod", DirectoryTree}, {"vm", DirectoryTree}, {"vm", RawDiskImage}, {"vm", BlockFilesystem},
+		{"pod", sandboxapi.DirectoryTree}, {"vm", sandboxapi.DirectoryTree}, {"vm", sandboxapi.RawDiskImage}, {"vm", sandboxapi.BlockFilesystem},
 	} {
 		t.Run(scenario.kind+"/"+string(scenario.layout), func(t *testing.T) {
 			template := workspaceTemplate(scenario.kind, scenario.layout)
@@ -90,7 +91,7 @@ func TestWorkspaceCreationRecordsLayoutAndRendersSupportedAttachments(t *testing
 					t.Fatal("VM did not attach retained claim")
 				}
 				virtiofs := slices.ContainsFunc(vm.Spec.Template.Spec.Domain.Devices.Filesystems, func(f kubevirtv1.Filesystem) bool { return f.Name == workspaceVolume && f.Virtiofs != nil })
-				if virtiofs != (scenario.layout == DirectoryTree) {
+				if virtiofs != (scenario.layout == sandboxapi.DirectoryTree) {
 					t.Fatalf("virtiofs = %v", virtiofs)
 				}
 			}
@@ -99,26 +100,26 @@ func TestWorkspaceCreationRecordsLayoutAndRendersSupportedAttachments(t *testing
 }
 
 func TestWorkspaceChangeRefusesResumeAndRetainsClaimAndHaltedVM(t *testing.T) {
-	changes := map[string]func(*SandboxTemplate){
-		"layout": func(s *SandboxTemplate) {
-			s.Spec.WorkspaceVolume.Layout = VolumeLayout{Type: DirectoryTree}
+	changes := map[string]func(*sandboxapi.SandboxTemplate){
+		"layout": func(s *sandboxapi.SandboxTemplate) {
+			s.Spec.WorkspaceVolume.Layout = sandboxapi.VolumeLayout{Type: sandboxapi.DirectoryTree}
 			s.Spec.VM.Template.Spec.Domain.Devices.Disks = slices.DeleteFunc(s.Spec.VM.Template.Spec.Domain.Devices.Disks, func(d kubevirtv1.Disk) bool { return d.Name == workspaceVolume })
 		},
-		"filesystem": func(s *SandboxTemplate) { s.Spec.WorkspaceVolume.Layout.Filesystem = "xfs" },
-		"mode": func(s *SandboxTemplate) {
+		"filesystem": func(s *sandboxapi.SandboxTemplate) { s.Spec.WorkspaceVolume.Layout.Filesystem = "xfs" },
+		"mode": func(s *sandboxapi.SandboxTemplate) {
 			mode := corev1.PersistentVolumeBlock
 			s.Spec.WorkspaceVolume.Claim.VolumeMode = &mode
-			s.Spec.WorkspaceVolume.Layout.Type = BlockFilesystem
+			s.Spec.WorkspaceVolume.Layout.Type = sandboxapi.BlockFilesystem
 		},
-		"claim": func(s *SandboxTemplate) {
+		"claim": func(s *sandboxapi.SandboxTemplate) {
 			s.Spec.WorkspaceVolume.Claim.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("3Gi")
 		},
-		"removed": func(s *SandboxTemplate) { s.Spec.WorkspaceVolume = nil },
-		"pod":     func(s *SandboxTemplate) { *s = *workspaceTemplate("pod", DirectoryTree) },
+		"removed": func(s *sandboxapi.SandboxTemplate) { s.Spec.WorkspaceVolume = nil },
+		"pod":     func(s *sandboxapi.SandboxTemplate) { *s = *workspaceTemplate("pod", sandboxapi.DirectoryTree) },
 	}
 	for name, change := range changes {
 		t.Run(name, func(t *testing.T) {
-			template := workspaceTemplate("vm", RawDiskImage)
+			template := workspaceTemplate("vm", sandboxapi.RawDiskImage)
 			r, c := newReconciler(t, true, template)
 			reconcileOnce(t, r)
 			pvc := getWorkspacePVC(t, c)
@@ -148,12 +149,12 @@ func TestWorkspaceChangeRefusesResumeAndRetainsClaimAndHaltedVM(t *testing.T) {
 }
 
 func TestWorkspaceRestartRecoversCreationRecordAfterFailedStatusWrite(t *testing.T) {
-	template := workspaceTemplate("vm", RawDiskImage)
+	template := workspaceTemplate("vm", sandboxapi.RawDiskImage)
 	r, c := newReconciler(t, true, template)
 	failure := errors.New("controller interrupted before binding persistence")
 	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
 		SubResourceUpdate: func(ctx context.Context, c client.Client, name string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-			if sandbox, ok := obj.(*Sandbox); ok && workspaceBinding(sandbox) != nil {
+			if sandbox, ok := obj.(*sandboxapi.Sandbox); ok && workspaceBinding(sandbox) != nil {
 				return failure
 			}
 			return c.SubResource(name).Update(ctx, obj, opts...)
@@ -180,7 +181,7 @@ func TestWorkspaceRestartRecoversCreationRecordAfterFailedStatusWrite(t *testing
 func TestWorkspaceClaimCollisionsFailClosed(t *testing.T) {
 	for _, change := range []string{"unrecorded", "foreign", "deleting", "replaced-uid", "record-conflict", "actual-mode"} {
 		t.Run(change, func(t *testing.T) {
-			r, c := newReconciler(t, true, workspaceTemplate("vm", RawDiskImage))
+			r, c := newReconciler(t, true, workspaceTemplate("vm", sandboxapi.RawDiskImage))
 			reconcileOnce(t, r)
 			setRunning(t, c, false)
 			reconcileOnce(t, r)
@@ -233,10 +234,10 @@ func TestWorkspaceClaimCollisionsFailClosed(t *testing.T) {
 func TestInvalidWorkspaceDeclarationStartsNothing(t *testing.T) {
 	for _, change := range []string{"missing-layout", "missing-filesystem", "unsupported-filesystem", "mode", "pod-disk", "directory-filesystem", "pod-no-mount"} {
 		t.Run(change, func(t *testing.T) {
-			template := workspaceTemplate("vm", RawDiskImage)
+			template := workspaceTemplate("vm", sandboxapi.RawDiskImage)
 			switch change {
 			case "missing-layout":
-				template.Spec.WorkspaceVolume.Layout = VolumeLayout{}
+				template.Spec.WorkspaceVolume.Layout = sandboxapi.VolumeLayout{}
 			case "missing-filesystem":
 				template.Spec.WorkspaceVolume.Layout.Filesystem = ""
 			case "unsupported-filesystem":
@@ -245,12 +246,12 @@ func TestInvalidWorkspaceDeclarationStartsNothing(t *testing.T) {
 				mode := corev1.PersistentVolumeBlock
 				template.Spec.WorkspaceVolume.Claim.VolumeMode = &mode
 			case "pod-disk":
-				template = workspaceTemplate("pod", RawDiskImage)
+				template = workspaceTemplate("pod", sandboxapi.RawDiskImage)
 			case "directory-filesystem":
-				template = workspaceTemplate("pod", DirectoryTree)
+				template = workspaceTemplate("pod", sandboxapi.DirectoryTree)
 				template.Spec.WorkspaceVolume.Layout.Filesystem = "ext4"
 			case "pod-no-mount":
-				template = workspaceTemplate("pod", DirectoryTree)
+				template = workspaceTemplate("pod", sandboxapi.DirectoryTree)
 				template.Spec.Pod.Spec.Containers[0].VolumeMounts = nil
 			}
 			r, c := newReconciler(t, true, template)
@@ -282,9 +283,9 @@ func TestOwnedUnrecordedWorkspaceIsNeverAdoptedOnFirstStart(t *testing.T) {
 	controller := true
 	claim := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
 		Namespace: namespace, Name: WorkspaceVolumeName(sandboxName), UID: "unrecorded-claim",
-		OwnerReferences: []metav1.OwnerReference{{APIVersion: GroupVersion.String(), Kind: "Sandbox", Name: sandboxName, UID: "uid-sandbox", Controller: &controller}},
+		OwnerReferences: []metav1.OwnerReference{{APIVersion: sandboxapi.GroupVersion.String(), Kind: "Sandbox", Name: sandboxName, UID: "uid-sandbox", Controller: &controller}},
 	}}
-	r, c := newReconciler(t, true, workspaceTemplate("vm", RawDiskImage), claim)
+	r, c := newReconciler(t, true, workspaceTemplate("vm", sandboxapi.RawDiskImage), claim)
 	reconcileOnce(t, r)
 	if getVM(t, c) != nil || workspaceBinding(getSandbox(t, c)) != nil || getWorkspacePVC(t, c).UID != claim.UID {
 		t.Fatal("unrecorded owned claim was adopted or replaced")
@@ -295,7 +296,7 @@ func TestOwnedUnrecordedWorkspaceIsNeverAdoptedOnFirstStart(t *testing.T) {
 }
 
 func TestLaunchGateKeepsEndedWorkloadBeforeReplacement(t *testing.T) {
-	template := workspaceTemplate("pod", DirectoryTree)
+	template := workspaceTemplate("pod", sandboxapi.DirectoryTree)
 	r, c := newReconciler(t, true, template)
 	reconcileOnce(t, r)
 	pod := getPod(t, c)
@@ -311,7 +312,7 @@ func TestLaunchGateKeepsEndedWorkloadBeforeReplacement(t *testing.T) {
 	if err := c.Update(context.Background(), &account); err != nil {
 		t.Fatal(err)
 	}
-	template.Spec.WorkspaceVolume.Layout = VolumeLayout{Type: RawDiskImage, Filesystem: "ext4"}
+	template.Spec.WorkspaceVolume.Layout = sandboxapi.VolumeLayout{Type: sandboxapi.RawDiskImage, Filesystem: "ext4"}
 	replaceTemplate(t, c, template)
 	reconcileOnce(t, r)
 	if getPod(t, c) == nil {
@@ -320,12 +321,12 @@ func TestLaunchGateKeepsEndedWorkloadBeforeReplacement(t *testing.T) {
 }
 
 func TestDirectoryWorkspaceSurvivesCompatibleVMToPodTransition(t *testing.T) {
-	r, c := newReconciler(t, true, workspaceTemplate("vm", DirectoryTree))
+	r, c := newReconciler(t, true, workspaceTemplate("vm", sandboxapi.DirectoryTree))
 	reconcileOnce(t, r)
 	claim := getWorkspacePVC(t, c)
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
-	replaceTemplate(t, c, workspaceTemplate("pod", DirectoryTree))
+	replaceTemplate(t, c, workspaceTemplate("pod", sandboxapi.DirectoryTree))
 	setRunning(t, c, true)
 	reconcileOnce(t, r)
 	reconcileOnce(t, r)
@@ -352,7 +353,7 @@ func TestKindChangeCannotDiscardCustomVMDataVolumeDisks(t *testing.T) {
 }
 
 func TestSealedSuspendedSandboxCanDeleteDespiteChangedWorkspaceLayout(t *testing.T) {
-	template := workspaceTemplate("vm", RawDiskImage)
+	template := workspaceTemplate("vm", sandboxapi.RawDiskImage)
 	r, c := newReconciler(t, true, template)
 	reconcileOnce(t, r)
 	setRunning(t, c, false)
@@ -367,23 +368,23 @@ func TestSealedSuspendedSandboxCanDeleteDespiteChangedWorkspaceLayout(t *testing
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
 	reconcileOnce(t, r)
-	var remaining Sandbox
+	var remaining sandboxapi.Sandbox
 	if err := c.Get(context.Background(), sandboxKey, &remaining); !apierrors.IsNotFound(err) {
 		t.Fatalf("sealed Sandbox deletion blocked: %v", err)
 	}
 }
 
 func TestTemplateEditAfterBindingPersistenceCannotChangeValidatedAttachment(t *testing.T) {
-	r, c := newReconciler(t, true, workspaceTemplate("vm", RawDiskImage))
+	r, c := newReconciler(t, true, workspaceTemplate("vm", sandboxapi.RawDiskImage))
 	changed := false
 	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
 		SubResourceUpdate: func(ctx context.Context, c client.Client, name string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
 			if err := c.SubResource(name).Update(ctx, obj, opts...); err != nil {
 				return err
 			}
-			if sandbox, ok := obj.(*Sandbox); ok && workspaceBinding(sandbox) != nil && !changed {
+			if sandbox, ok := obj.(*sandboxapi.Sandbox); ok && workspaceBinding(sandbox) != nil && !changed {
 				changed = true
-				replaceTemplate(t, c, workspaceTemplate("vm", DirectoryTree))
+				replaceTemplate(t, c, workspaceTemplate("vm", sandboxapi.DirectoryTree))
 			}
 			return nil
 		},
@@ -402,7 +403,7 @@ func TestTemplateEditAfterBindingPersistenceCannotChangeValidatedAttachment(t *t
 	if !slices.ContainsFunc(vm.Spec.Template.Spec.Domain.Devices.Disks, func(d kubevirtv1.Disk) bool { return d.Name == workspaceVolume && d.Disk != nil }) {
 		t.Fatal("validated disk attachment was lost")
 	}
-	if got := getSandbox(t, c).Status.Volumes.Workspace.Layout.Type; got != RawDiskImage {
+	if got := getSandbox(t, c).Status.Volumes.Workspace.Layout.Type; got != sandboxapi.RawDiskImage {
 		t.Fatalf("recorded layout = %s", got)
 	}
 }

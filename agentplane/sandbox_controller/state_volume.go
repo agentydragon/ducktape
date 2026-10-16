@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -17,28 +19,28 @@ const StateVolumeRecordAnnotation = "agentplane.allegedly.works/state-volume-rec
 // The record is created with the PVC, so a restart before the status update recovers its layout.
 // +kubebuilder:object:generate=false
 type stateVolumeRecord struct {
-	Layout VolumeLayout `json:"layout"`
+	Layout sandboxapi.VolumeLayout `json:"layout"`
 }
 
-func validateStateVolume(template *SandboxTemplate) *unready {
+func validateStateVolume(template *sandboxapi.SandboxTemplate) *unready {
 	state := template.Spec.StateVolume
 	if state.Name == "" {
 		return layoutMismatch("state volume name is empty")
 	}
 	layout := state.Layout
-	if layout.Type != DirectoryTree || layout.Filesystem != "" || claimMode(state.Claim) != corev1.PersistentVolumeFilesystem {
+	if layout.Type != sandboxapi.DirectoryTree || layout.Filesystem != "" || claimMode(state.Claim) != corev1.PersistentVolumeFilesystem {
 		return layoutMismatch("state volume currently supports DirectoryTree on a Filesystem claim")
 	}
 	return nil
 }
 
 // ensureStateVolume records a state PVC's layout and identity before a workload can use it.
-func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *Sandbox) (*unready, error) {
+func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *sandboxapi.Sandbox) (*unready, error) {
 	pvc, err := r.stateVolume(ctx, sandbox)
 	if err != nil {
 		return nil, err
 	}
-	var binding *StateBinding
+	var binding *sandboxapi.StateBinding
 	if sandbox.Status.Volumes != nil {
 		binding = sandbox.Status.Volumes.State
 	}
@@ -89,19 +91,19 @@ func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *Sandbox) (*
 	}
 	var recorded stateVolumeRecord
 	if err := json.Unmarshal([]byte(recordText), &recorded); err != nil ||
-		recorded.Layout.Type != DirectoryTree || recorded.Layout.Filesystem != "" {
+		recorded.Layout.Type != sandboxapi.DirectoryTree || recorded.Layout.Filesystem != "" {
 		return layoutMismatch(fmt.Sprintf("PVC %s has no supported state layout record", pvc.Name)), nil
 	}
 	if pvc.UID == "" {
 		return layoutMismatch("state claim has no UID"), nil
 	}
-	current := &StateBinding{Name: pvc.Name, UID: string(pvc.UID), Layout: recorded.Layout}
+	current := &sandboxapi.StateBinding{Name: pvc.Name, UID: string(pvc.UID), Layout: recorded.Layout}
 	if binding != nil && !equality.Semantic.DeepEqual(binding, current) {
 		return layoutMismatch("state claim identity or layout differs from its recorded binding"), nil
 	}
 	if binding == nil {
 		if sandbox.Status.Volumes == nil {
-			sandbox.Status.Volumes = &SandboxVolumes{}
+			sandbox.Status.Volumes = &sandboxapi.SandboxVolumes{}
 		}
 		sandbox.Status.Volumes.State = current
 		// Persist the identity before a workload can start; a status conflict leaves the PVC intact.

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -18,7 +19,7 @@ import (
 
 const workspaceVolume = "workspace"
 
-func testVMTemplate(image string) *SandboxTemplate {
+func testVMTemplate(image string) *sandboxapi.SandboxTemplate {
 	template := testTemplate(image)
 	template.Spec.Pod = nil
 	template.Spec.VM = &kubevirtv1.VirtualMachineSpec{
@@ -39,7 +40,7 @@ func testVMTemplate(image string) *SandboxTemplate {
 
 // testWorkspaceVMTemplate is testVMTemplate with the workspace disk a PVC the controller creates
 // instead of a DataVolume the VM does.
-func testWorkspaceVMTemplate(image string) *SandboxTemplate {
+func testWorkspaceVMTemplate(image string) *sandboxapi.SandboxTemplate {
 	template := testVMTemplate(image)
 	template.Spec.VM.DataVolumeTemplates = nil
 	volumes := &template.Spec.VM.Template.Spec.Volumes
@@ -50,7 +51,7 @@ func testWorkspaceVMTemplate(image string) *SandboxTemplate {
 			disk.Disk = &kubevirtv1.DiskTarget{Bus: "virtio"}
 		}
 	}
-	template.Spec.WorkspaceVolume = &WorkspaceVolume{Name: workspaceVolume, Layout: VolumeLayout{Type: RawDiskImage, Filesystem: "ext4"}, Claim: corev1.PersistentVolumeClaimSpec{
+	template.Spec.WorkspaceVolume = &sandboxapi.WorkspaceVolume{Name: workspaceVolume, Layout: sandboxapi.VolumeLayout{Type: sandboxapi.RawDiskImage, Filesystem: "ext4"}, Claim: corev1.PersistentVolumeClaimSpec{
 		AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 		Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{
 			corev1.ResourceStorage: resource.MustParse("2Gi"),
@@ -92,9 +93,9 @@ func volume(vm *kubevirtv1.VirtualMachine, name string) *kubevirtv1.Volume {
 	return nil
 }
 
-func replaceTemplate(t *testing.T, c client.Client, template *SandboxTemplate) {
+func replaceTemplate(t *testing.T, c client.Client, template *sandboxapi.SandboxTemplate) {
 	t.Helper()
-	var current SandboxTemplate
+	var current sandboxapi.SandboxTemplate
 	if err := c.Get(context.Background(), client.ObjectKeyFromObject(template), &current); err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +311,7 @@ func TestVMDeletionWaitsForTheVMIBeforeTheStateVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	reconcileOnce(t, r)
-	var sandbox Sandbox
+	var sandbox sandboxapi.Sandbox
 	if err := c.Get(context.Background(), sandboxKey, &sandbox); !apierrors.IsNotFound(err) {
 		t.Fatalf("Sandbox still present once the VMI was gone: %v", err)
 	}
