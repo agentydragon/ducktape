@@ -173,6 +173,45 @@ export function SpendingHistoryChart({
         labels: chart.labels,
         datasets: chart.datasets,
       },
+      plugins: [
+        {
+          id: "visual-forensics",
+          afterDraw: (rendered) => {
+            console.debug(
+              "chart-probe",
+              JSON.stringify({
+                width: rendered.width,
+                height: rendered.height,
+                dpr: rendered.currentDevicePixelRatio,
+                area: rendered.chartArea,
+                canvas: {
+                  width: rendered.canvas.width,
+                  height: rendered.canvas.height,
+                  rect: rendered.canvas.getBoundingClientRect().toJSON(),
+                  style: rendered.canvas.style.cssText,
+                },
+                scales: Object.fromEntries(
+                  Object.entries(rendered.scales).map(([key, scale]) => [
+                    key,
+                    {
+                      left: scale.left,
+                      right: scale.right,
+                      top: scale.top,
+                      bottom: scale.bottom,
+                      min: scale.min,
+                      max: scale.max,
+                      ticks: scale.ticks.map((tick, index) => ({
+                        label: tick.label,
+                        pixel: scale.getPixelForTick(index),
+                      })),
+                    },
+                  ])
+                ),
+              })
+            );
+          },
+        },
+      ],
       options: {
         responsive: true,
         maintainAspectRatio: false,
