@@ -48,11 +48,10 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
-from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
 from agentplane.subjects import ServiceAccountRef
@@ -241,8 +240,6 @@ async def _serve(
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         content = ContentStore(engine, history_reader=history)
         async with (
-            # One peer serves both services.
-            dial(f"127.0.0.1:{service_port}") as channel,
             history,
             history.new_client() as watch_client,
             history.new_client() as openings_client,
@@ -257,19 +254,14 @@ async def _serve(
                 default_policy_sets=frozenset(),
                 caller=ServiceAccountRef(namespace=NAMESPACE, name="app"),
             )
-            gateway = RunnerGatewayClient(
-                channel,
+            gateway = SandboxControlClient(
+                control_target=f"127.0.0.1:{service_port}",
                 token_file=token_file,
                 request_timeout_s=10,
-                control=SandboxControlClient(
-                    control_target=f"127.0.0.1:{service_port}",
-                    token_file=token_file,
-                    request_timeout_s=10,
-                    lifecycle_timeout_s=10,
-                ),
+                lifecycle_timeout_s=10,
             )
             store = ThreadStore(engine, summaries)
-            runners = RunnerDirectory(index, gateway.control)
+            runners = RunnerDirectory(index, gateway)
             bridge = RunnerBridge(
                 runners=runners,
                 event_logs=event_logs,

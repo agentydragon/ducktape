@@ -8,7 +8,6 @@ import grpc
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import (
     command_pb2,
@@ -19,9 +18,8 @@ from agentplane.proto import (
 )
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
-from agentplane.runner_gateway.grpc_api import Resources as GatewayResources
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
-from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.runner_gateway.runner_proxy import Resources as GatewayResources
 from agentplane.runner_gateway.testing.control_listener import control_plane
 from agentplane.runner_gateway.testing.grpc_service import service as gateway_service
 from agentplane.runner_gateway.testing.runner_control import (
@@ -63,7 +61,7 @@ class DispatcherGatewayRunner(ScriptedRunner):
 
 
 async def test_queue_receipt_then_runner_admission_crosses_the_gateway_proxy(
-    cluster: SandboxCluster, engine: AsyncEngine, db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cluster: SandboxCluster, db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The queued sender receipt is distinct from later runner admission through the proxy."""
     set_sandbox(cluster, ready=False, incarnation=POD_UID, pod_name=SANDBOX, running=True)
@@ -87,14 +85,14 @@ async def test_queue_receipt_then_runner_admission_crosses_the_gateway_proxy(
     )
 
     gateway_control = LifecycleControl(ConnectionLeases())
+    destinations = DestinationResolver(cluster.inventory, k8s.CoreV1Api(cluster.api))
     gateway_resources = GatewayResources(
         principals=cluster.build_principal_resolver(GATEWAY_AUDIENCE),
         caller_accounts=frozenset({DISPATCHER_ACCOUNT}),
-        destinations=DestinationResolver(cluster.inventory, k8s.CoreV1Api(cluster.api)),
+        sandboxes=destinations.sandboxes,
+        destinations=destinations,
         control=gateway_control,
-        sessions=SessionRegistry(engine),
-        admission_timeout_s=15,
-        lifecycle_timeout_s=300,
+        sandbox_controller_account=None,
     )
     gateway_caller_token = tmp_path / "gateway-caller-token"
     gateway_caller_token.write_text(GATEWAY_CALLER_TOKEN)

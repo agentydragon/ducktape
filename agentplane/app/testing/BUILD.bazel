@@ -27,7 +27,6 @@ py_library(
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:session_dispatcher_pb2",
-        "@pypi//protobuf",
     ],
 )
 
@@ -81,7 +80,6 @@ py_library(
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",
         "//agentplane/egress:decisions_client",
-        "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
         "//agentplane/runner:harness",
         "//agentplane/runner_gateway:client",
@@ -106,8 +104,6 @@ py_library(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
-        "//agentplane/proto:runner_gateway_pb2",
-        "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
@@ -162,7 +158,6 @@ py_library(
         ":thread_view_marks",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads/view:content",
-        "//agentplane/grpc:calls",
         "//agentplane/grpc:serving",
         "//agentplane/history_service:client",
         "//agentplane/history_service/testing:electric_service",
@@ -197,7 +192,6 @@ py_library(
     srcs = ["history.py"],
     visibility = ["//agentplane/app:__subpackages__"],
     deps = [
-        ":replication_source",
         "//agentplane/app:database_updates",
         "//agentplane/app/threads:models",
         "//agentplane/app/threads:summaries",
@@ -205,7 +199,6 @@ py_library(
         "//agentplane/history_service:client",
         "//agentplane/history_service/testing:history",
         "//agentplane/postgres:wakeups",
-        "//agentplane/runner_gateway/commands:db",
         "@pypi//sqlalchemy",
     ],
 )

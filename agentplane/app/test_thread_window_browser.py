@@ -11,7 +11,6 @@ import pytest_bazel
 from playwright.async_api import Page, Request, Route, TimeoutError as PlaywrightTimeoutError, expect
 
 from agentplane.app.testing import thread_view_marks
-from agentplane.app.testing.replication_source import Placements
 from agentplane.app.testing.thread_browser import (
     ThreadBrowser,
     append_items,
@@ -23,7 +22,7 @@ from agentplane.app.testing.thread_browser import (
 )
 from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -37,13 +36,8 @@ async def service_history_db_url(electric: ElectricService) -> str:
 
 
 @pytest.fixture
-def gateway(gateway_client: RunnerGatewayClient) -> RunnerGatewayClient:
+def gateway(gateway_client: SandboxControlClient) -> SandboxControlClient:
     return gateway_client
-
-
-@pytest.fixture
-def gateway_registry(placements: Placements) -> Placements:
-    return placements
 
 
 def _append_uneven_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:

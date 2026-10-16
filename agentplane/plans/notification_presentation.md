@@ -4,7 +4,7 @@ Status: open, unscheduled. The [task DAG](task_dag.md#notification_presentation-
 tracks the dependencies. The metadata's carriage (`SESSION_INPUT_METADATA`) is the operator's lean,
 not a settled decision: typed provenance must travel through Session Dispatcher to the matching
 Runner input RPC and be echoed into the Event that journals the input. The gateway keeps no command
-records ([Runner Gateway API](../runner_gateway/API.md#sessions)).
+records ([Runner Gateway API](../docs/control_surface_retirement.md#session-and-command-ownership)).
 
 ## Goal and boundaries
 

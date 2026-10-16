@@ -9,7 +9,7 @@ checks and durable queue until a replacement contract is reviewed.
 
 The related decision nodes are in [section 13 of the task DAG](../plans/task_dag.md#13-delivery-boundaries-apis-and-harness-identity).
 The current runner contracts remain in [Session layering](thread_layering.md), the
-[Dispatcher README](../session_dispatcher/README.md), the [Gateway API](../runner_gateway/API.md),
+[Dispatcher README](../session_dispatcher/README.md), the [Gateway control-surface audit](control_surface_retirement.md),
 and the [scripted harness capability index](../native/README.md#behavioral-coverage).
 
 ## Generated HTTP/JSON facade spike
@@ -46,9 +46,8 @@ recovery use the requested Sandbox, Kubernetes state, and runner control RPCs. S
 [`store.py`](../session_dispatcher/store.py).
 
 The Gateway owns the runner's long-lived control connection and routes calls to the replica holding
-that connection. It does not persist Dispatcher commands. Its separate `sandbox_commands` database
-stores the legacy public Session registry, written only by Gateway `CreateSession`; it is not the
-Dispatcher queue. The runner journals admitted commands on its state volume. The History Service
+that connection. It does not persist Dispatcher commands or read the historical `sandbox_commands`
+Session table, which remains only until its separate rollout-gated database drop. The runner journals admitted commands on its state volume. The History Service
 receives runner journals and serves retained events and folded Thread views, but these are separate
 service boundaries rather than a Dispatcher dependency:
 
@@ -79,10 +78,8 @@ There are two different Session inventories:
 - Runner `ListSessions` asks the current runner's `SessionStore` for records it has retained and
   reports its retained records and current harness, setup, launch and activity state. The current
   production callers are the app and Notification, through the per-Sandbox proxy with expected
-  Sandbox UID and owner. The Gateway's separate `RunnerGateway.ListSessions` wrapper also calls it,
-  but the app and Notification no longer use that wrapper. Dispatcher does not call either list RPC:
-  an identical `OpenSession` retry returns the runner's existing attachment and a conflicting spec or
-  setup returns `ALREADY_EXISTS`. Runner test drivers use the read for lifecycle assertions.
+  Sandbox UID and owner. Dispatcher does not call the list RPC: an identical `OpenSession` retry
+  returns the runner's existing attachment and a conflicting spec or setup returns `ALREADY_EXISTS`. Runner test drivers use the read for lifecycle assertions.
 - History `FindSessions` and summaries describe Sessions whose Events were retained and folded. They
   can include deleted Sandboxes, do not carry Sandbox UID, and can lag the runner. They are useful
   for retained history and display, but cannot answer whether a harness is running now or whether a
@@ -95,7 +92,7 @@ There are two different Session inventories:
 | App archive safety                                      | Whether this Thread's harness is running in the current, ready runner                                        | `api.py` calls `RunnerBridge.list_sessions`; keep a live check or approve an equally authoritative narrower state read. A Pod whose runner is not ready currently blocks archive.                                                      |
 | App explicit native resume                              | Current runner's retained Session, recoverable spec and setup state, compared with the History-backed Thread | `RunnerBridge.resume_thread` checks live `ListSessions`, then calls `Runner.ResumeSession` through the per-Sandbox proxy with the live Sandbox identity. History's old attachment cannot establish present membership or current spec. |
 | Notification subscription                               | Session membership in the requested UID/owner Sandbox at subscription time                                   | `Service.subscribe` validates namespace, UID and owner, then calls live `ListSessions`; preserve an equivalent preflight or explicitly revise offline subscription semantics. This read alone is not send permission.                  |
-| Gateway wrapper and test drivers                        | Gateway wrapper forwards `ListSessions`; runner drivers inspect lifecycle and quiesce behavior               | Audit pinned/external wrapper callers separately; preserve test coverage through any narrower live read. Wrapper retirement does not imply runner-read retirement.                                                                     |
+| Former Gateway wrapper and runner test drivers          | Production callers use the Runner proxy directly; runner drivers inspect lifecycle and quiesce behavior      | The Gateway wrapper is retired after pinned-caller verification; retain runner-read coverage for current app and Notification decisions.                                                                                               |
 | Notification outcome reconciliation                     | Durable command journal watermark and entries                                                                | History `ReadSessionEvents` is evidence of runner admission/confirmation after an attempt, not destination inventory; its separate outcome design remains open.                                                                        |
 
 The app's History reads are appropriate for retained views. No History inventory read can stand in for
@@ -136,12 +133,10 @@ The current path has different authority at each step:
 | Dispatcher admission and wake        | Authenticated service-account allowlist; a separate wake-caller allowlist. It resolves the requested name in its watch, persists that UID with queued work, compares UID before delivery, and UID-guards the Kubernetes wake patch. | The caller does not supply the expected UID. Current admission can bind a same-name replacement. V0 delegates user checks to App/Notification; generalized per-destination grants and queued-work revocation need a separate decision.         |
 | Gateway proxy and runner             | Proxy authenticates an allowed service account and routes to the connection holder. UID and owner headers are optional; when supplied, the proxy checks the exact Sandbox and ready Pod. Runner rejects an unknown Session.         | Dispatcher currently supplies only the name, so a replacement between its watch check and proxy resolution can receive work. Proxy's broad caller list is not a per-destination send grant; runner membership cannot be checked while offline. |
 
-`RunnerGateway`'s older lifecycle and command wrapper checks a full `SandboxDestination` and its
-Session registry. That wrapper's retirement is separate from selecting an execution authority for
-Dispatcher's proxy path. The registry cannot validate Sessions opened directly by Dispatcher because
-only Gateway `CreateSession` writes it. The app's explicit native resume now bypasses that registry
-and calls the Runner through the same identity-fenced per-Sandbox proxy as its live inventory read;
-the legacy Gateway resume reader remains only for external or pinned callers until its retirement gate.
+The removed Gateway lifecycle wrappers had a partial registry that could not validate Sessions
+opened directly by Dispatcher. Current app resume and live inventory both call the Runner through the
+identity-fenced per-Sandbox proxy. The historical database table remains until the registry-free
+Gateway image has rolled out and a separate data-drop gate.
 
 **Approved public destination (operator, 2026-10-15):** every submission names the exact
 `(Sandbox UID, Agentplane Session ID)`. Store, native-ID and process routing are runner-private;
@@ -244,9 +239,8 @@ other live interlocutors. App and Notification call the per-Sandbox proxy for UI
 authenticated `RunnerControl.Connect` stream to a separate Gateway listener through the egress
 sidecar. The holder writes each Sandbox's connection Lease and the EndpointSlice behind its
 `<sandbox>-control` Service; all Gateway replicas watch the Leases. Runner journal ingress goes to
-History, not Gateway. The app's explicit resume uses the per-Sandbox proxy. The older `RunnerGateway`
-wrapper and its Session registry remain until their external/pinned caller and app-image rollout
-gates are met.
+History, not Gateway. The app's explicit resume uses the per-Sandbox proxy. The Gateway-specific Session wrappers and registry runtime are removed in the Python retirement;
+the historical table remains only through the separate database-drop rollout gate.
 
 **History prerequisite, checked on the 2026-10-15 tree:** neither Dispatcher nor Gateway has a
 runtime History Service client, History RPC call or History configuration edge. Their entry points,
@@ -263,8 +257,8 @@ and runner Connect as distinct authenticated surfaces. Keep the Dispatcher queue
 delivery Lease and database-generation fence separate from the Gateway connection Lease and
 EndpointSlice. A worker may own queued work on replica A while replica B holds that runner's stream;
 the per-Sandbox control Service still routes the call to B. Co-location alone cannot safely replace
-that routing with an in-process call or remove the queue. Gateway's legacy registry database can leave
-only through its existing retirement gate, whether the services co-locate or not.
+that routing with an in-process call or remove the queue. The historical Gateway table is removed only through its separate database-drop rollout gate,
+whether the services co-locate or not.
 
 One deployment could remove a deployment and some duplicated configuration. A local fast path could
 avoid a service hop only when the queue owner also holds that runner connection, and would need the
@@ -279,10 +273,10 @@ and test multi-replica owner/holder mismatch and crash recovery before choosing 
 ### Approved implementation direction: one Go delivery service
 
 **Approved Go scope, not a rollout approval.** The target is one Go service and Deployment with
-distinct authenticated Dispatcher sender, Gateway proxy/wrapper, and runner `Connect` surfaces;
+distinct authenticated Dispatcher sender, per-Sandbox Runner proxy, and runner `Connect` surfaces;
 the exact listener count remains an implementation choice.
-It keeps the existing PostgreSQL Dispatcher queue and `sandbox_commands` registry while their
-independent retirement gates are open. A Gateway-only Go rewrite followed by a Python co-location
+It keeps the existing PostgreSQL Dispatcher queue. The Python Gateway-specific Session RPCs and
+registry runtime are removed separately; Go must not recreate them. A Gateway-only Go rewrite followed by a Python co-location
 would require two protocol/runtime cutovers; a Python merged entry point would be thrown away by a
 later Go rewrite. A single Go target avoids those intermediate deployments, but ports substantially
 more than the originally discussed Gateway-only rewrite: Dispatcher SQL transactions, wakeups,
@@ -291,20 +285,20 @@ has approved that expanded language scope. This topology work has no dependency 
 separate direct-admission question; this candidate retains the current queue.
 
 The repository already has `rules_go`, Go gRPC generation for runner/control messages and a Go
-Sandbox Controller using Kubernetes clients. The Dispatcher, Gateway wrapper and Sandbox destination
+Sandbox Controller using Kubernetes clients. The Dispatcher and Sandbox destination
 protos still need generated Go libraries. A Go implementation needs an explicit PostgreSQL driver and
 transaction mapping; copying the Python SQLAlchemy models is not enough. Preserve the existing
 `session_dispatcher` rows and idempotency keys (`dispatch`, `session_opening`, `sandbox_ownership`,
-`wake_attempt`) and the `sandbox_commands` registry until its readers/writers are gone. Retain their
-current database roles and run only additive migrations if the Go implementation truly needs them;
-an applied migration is immutable. The app's explicit native Resume action uses `Runner.ResumeSession`
+`wake_attempt`). Keep the Dispatcher database role and run only additive migrations if the Go
+implementation truly needs them; an applied migration is immutable. Do not add Gateway database
+configuration or a Gateway registry migration to the Go service. The app's explicit native Resume action uses `Runner.ResumeSession`
 through the per-Sandbox control proxy, so the unified service must preserve that proxy and Runner
-method. Port the legacy Gateway resume wrapper and registry only if external or pinned callers still
-use them after audit. Neither registry deletion nor either database drop is part of the merger.
+method. Do not port the removed Gateway Session wrappers or registry. The Gateway table and
+database resources are removed through their separate rollout-gated retirement.
 
 Keep the current `agentplane-session-dispatcher` and `agentplane-runner-gateway` Service names and
 token audiences as two logical front doors to the unified Pods. Use distinct, authenticated
-Dispatcher sender, Gateway API/proxy and runner-control listeners; retain method-level allowlists:
+Dispatcher sender, per-Sandbox Runner proxy and runner-control listeners; retain method-level allowlists:
 App and Notification alone may submit to Dispatcher v0, the existing narrower wake allowlist still
 applies, controller alone may Quiesce, and runner `Connect` still requires its runner audience and
 Pod/ServiceAccount proof. The current Gateway proxy admits its configured callers for non-Quiesce

@@ -42,7 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.electric import ElectricProxy, electric_proxy, router
 from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.changes import ChangeSignal
@@ -169,15 +169,10 @@ async def _followed_body(engine: AsyncEngine, token_file: Path) -> AsyncIterator
         async def forward(request: httpx.Request) -> None:
             forwarded.append(request)
 
-        placements = Placements()
         event_logs = SeededEventLogStore(
-            engine,
-            history=history,
-            gateway=placements,
-            history_reader=history_client,
-            summaries=Summaries(history_client),
+            engine, history=history, history_reader=history_client, summaries=Summaries(history_client)
         )
-        source = ReplicationSource(placements)
+        source = ReplicationSource()
         thread = await event_logs.seed(SANDBOX, SESSION)
         await history.set_attached(thread, source.attached)
         started = (

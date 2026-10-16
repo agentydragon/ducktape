@@ -26,7 +26,7 @@ Backend responsibilities needed by another service move to an independent owner,
 app endpoint. The shared `agentplane/sandboxes` library owns Sandbox request construction; the app uses
 it directly as the requesting operator. The [Session Dispatcher](../session_dispatcher/README.md)
 owns opening and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
-runner control stream, a legacy partial placement registry and authorized live runner access; the
+runner control stream and authorized live Runner proxy; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
 The app is a client of each service for its distinct operation.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser
@@ -61,10 +61,8 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 - Sandbox provisioning uses the shared `agentplane/sandboxes` inventory directly as the requesting
   operator. Session openings and commands use `SessionDispatcherClient`; the Sandbox control client
   reaches current-incarnation live checks and explicit native resume through the per-Sandbox Runner
-  Proxy, carrying the live Sandbox name, UID and owner. Native resume calls the Runner directly and
-  does not consult the legacy Gateway Session registry. The app reads Kubernetes projections for UI
-  updates. Its Gateway placement API client has no production caller after #10622, pending
-  pinned-caller review.
+  Proxy, carrying the live Sandbox name, UID and owner. Native resume calls the Runner directly. The
+  app reads Kubernetes projections for UI updates and has no Gateway Session API client.
 - `egress_access.py`: egress-policy/binding projections for the UI, and the operator's grants and
   revocations of `PolicyBinding`s, written through the Kubernetes API by the app itself. Bindings remain
   desired-state grants, with expiry/revocation per binding; Flux-owned and Sandbox-controlled bindings
@@ -148,8 +146,8 @@ setting.
 The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
 runner Pod does not clear the inventory. Harness state and turn IDs in that table are last observed
 History values; they do not assert that a harness is still running or can be resumed. Explicitly
-resuming a retained Session still uses the Runner Gateway's Session API. Every new Session opening is
-submitted to the Dispatcher with the complete Session spec. A `SessionOpening` reports queued,
+resuming a retained Session calls `Runner.ResumeSession` through the per-Sandbox Runner proxy. Every
+new Session opening is submitted to the Dispatcher with the complete Session spec. A `SessionOpening` reports queued,
 delivering, runner-admitted, or failed state, and
 `GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
 History Service has projected a Thread yet. Opening always uses the Dispatcher; generated ConfigMaps
@@ -501,10 +499,9 @@ Before opening a session on a bound Sandbox, the app sends the SandboxPreset's c
 content to the runner under a stable preset identity. The runner executes it idempotently on the
 persistent state volume; a failure refuses the session open. The selected Sandbox preset determines
 the complete default `SessionSpec` even though the Sandbox stores only its preset label. An explicit
-request can override those defaults, including with empty strings. The app composes no instructions:
-the Runner Gateway prepends its configured platform instructions to every launch's preset or task
-instructions, including direct `SessionSpec` API launches
-([API.md](../runner_gateway/API.md#launch-overrides-and-field-presence)). The shared block teaches agents
+request can override those defaults, including with empty strings. The app composes the Session's preset and task instructions. The Runner composes those with the
+deployment-wide platform instructions before starting the harness, including for direct
+`SessionSpec` API launches ([Runner specification](../runner/SPEC.md)). The shared block teaches agents
 the platform's egress and Actions Service protocol and how to query their effective Kubernetes
 permissions; a preset and the per-turn task remain the place for workload-specific constraints and
 the requested outcome.

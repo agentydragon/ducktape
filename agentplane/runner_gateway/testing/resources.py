@@ -1,30 +1,26 @@
-"""The gateway's `Resources` over one test database, with one-second runner deadlines and no
-runner control connection."""
-
-from sqlalchemy.ext.asyncio import AsyncEngine
+"""Build the Runner Proxy resources over a fake Kubernetes cluster."""
 
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
-from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
-from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.runner_gateway.runner_proxy import Resources
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 
 def build_resources(
-    engine: AsyncEngine,
     *,
     principals: WorkloadPrincipalResolver,
     destinations: DestinationResolver,
     caller_accounts: frozenset[ServiceAccountRef],
+    sandbox_controller_account: ServiceAccountRef | None = None,
+    control: LifecycleControl | None = None,
 ) -> Resources:
     return Resources(
-        admission_timeout_s=15,
-        lifecycle_timeout_s=300,
         principals=principals,
-        destinations=destinations,
         caller_accounts=caller_accounts,
-        sessions=SessionRegistry(engine),
-        control=LifecycleControl(ConnectionLeases()),
+        sandboxes=destinations.sandboxes,
+        destinations=destinations,
+        control=control or LifecycleControl(ConnectionLeases()),
+        sandbox_controller_account=sandbox_controller_account,
     )

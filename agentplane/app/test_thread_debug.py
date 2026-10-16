@@ -16,7 +16,7 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
@@ -47,7 +47,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
 ) -> None:
-    source = ReplicationSource(Placements())
+    source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
     source.append(event_pb2.Event(native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line="first")))

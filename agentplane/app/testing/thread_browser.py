@@ -2,9 +2,8 @@
 `pytest_plugins = ("agentplane.app.testing.thread_browser",)`.
 
 A conftest fixture outranks a plugin's, so each test module defines `service_history_db_url` itself,
-as `electric`'s database, for the package conftest's history fixtures to follow; `gateway_registry` as
-`placements`, where the package conftest's `event_logs` registers Sessions; and `gateway` as
-`gateway_client`, for its `store` to ask where they run.
+as `electric`'s database, for the package conftest's history fixtures to follow; and `gateway` as
+`gateway_client`, which points live Runner calls at the scripted service.
 """
 
 import asyncio
@@ -27,13 +26,11 @@ from agentplane.app.testing.replication_source import (
     SANDBOX,
     SESSION,
     Opened,
-    Placements,
     ReplicationSource,
     add_replication_source,
 )
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import (
@@ -44,7 +41,7 @@ from agentplane.history_service.testing.electric_service import (
 )
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import deterministic_browser_context, disable_animations_script
 from util.testing.postgres import DatabaseNames
@@ -149,36 +146,21 @@ async def electric(
 
 
 @pytest.fixture
-def placements() -> Placements:
-    """Where the test's Sessions run, for every fake gateway the test serves."""
-    return Placements()
-
-
-@pytest.fixture
-async def gateway_port(placements: Placements) -> AsyncIterator[int]:
-    """A Runner Gateway that answers where every Session the test opened runs, for apps with no live runner."""
+async def gateway_port() -> AsyncIterator[int]:
+    """A scripted Runner service used by apps with no live Sandbox process."""
     server = grpc.aio.server()
-    add_replication_source(ReplicationSource(placements), server)
+    add_replication_source(ReplicationSource(), server)
     async with serving(server, "127.0.0.1:0", grace_s=0) as port:
         yield port
 
 
 @pytest.fixture
-async def gateway_client(gateway_port: int, tmp_path: Path) -> AsyncIterator[RunnerGatewayClient]:
+async def gateway_client(gateway_port: int, tmp_path: Path) -> SandboxControlClient:
     token_file = tmp_path / "gateway-token"
     await asyncio.to_thread(token_file.write_text, "test-browser-gateway-peer")
-    async with dial(f"127.0.0.1:{gateway_port}") as channel:
-        yield RunnerGatewayClient(
-            channel,
-            token_file=token_file,
-            request_timeout_s=10,
-            control=SandboxControlClient(
-                control_target=f"127.0.0.1:{gateway_port}",
-                token_file=token_file,
-                request_timeout_s=10,
-                lifecycle_timeout_s=10,
-            ),
-        )
+    return SandboxControlClient(
+        control_target=f"127.0.0.1:{gateway_port}", token_file=token_file, request_timeout_s=10, lifecycle_timeout_s=10
+    )
 
 
 @pytest.fixture
@@ -187,8 +169,8 @@ def replay_after() -> int | None:
 
 
 @pytest.fixture
-def thread_source(placements: Placements) -> ReplicationSource:
-    source = ReplicationSource(placements)
+def thread_source() -> ReplicationSource:
+    source = ReplicationSource()
     source.attached.active_turn_id = "test-browser-turn"
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(

@@ -13,9 +13,10 @@ See [the dependency rule](docs/service_boundaries.md).
   This includes v1, startup, background recovery, provisioning, and backend-required prompt/context
   construction. Operator approval still belongs to its backend authority; the app presents it.
 - The integration app submits Sandbox desired-state and operator-grant changes through Kubernetes;
-  the Sandbox Controller reconciles those requests and owns Sandbox status. The Runner Gateway owns
-  Sessions, command admission and access to runner sessions; notifications owns subscriptions/inboxes,
-  and runners own native execution and canonical command/Event evidence.
+  the Sandbox Controller reconciles those requests and owns Sandbox status. The Session Dispatcher
+  owns command admission, the Runner Gateway owns the reverse control stream and Runner proxy, and
+  runners own Sessions, native execution and canonical command/Event evidence. Notifications owns
+  subscriptions and inboxes.
 - Current backend responsibilities inside the app are extraction work, not a precedent for new
   dependencies. Distinguish planned boundaries from what is already implemented.
 - Acceptance for an extracted backend path must exercise it with the integration app unavailable.

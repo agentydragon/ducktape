@@ -63,12 +63,10 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     service_history_db_url: str,
 ) -> None:
     async with (
-        authenticated_runner_gateway(
-            cluster, runner, tmp_path / "gateway-token", database_url=service_history_db_url
-        ) as remote,
+        authenticated_runner_gateway(cluster, runner, tmp_path / "gateway-token") as remote,
         ingest(service_history_db_url, runner),
     ):
-        directory = RunnerDirectory(live_index, remote.control)
+        directory = RunnerDirectory(live_index, remote)
         bridge = RunnerBridge(
             runners=directory,
             event_logs=event_logs,
@@ -126,10 +124,8 @@ async def test_history_resume_rejects_a_recreated_sandbox_incarnation(
     spec: runner_pb2.SessionSpec,
     service_history_db_url: str,
 ) -> None:
-    async with authenticated_runner_gateway(
-        cluster, runner, tmp_path / "gateway-token", database_url=service_history_db_url
-    ) as remote:
-        directory = RunnerDirectory(live_index, remote.control)
+    async with authenticated_runner_gateway(cluster, runner, tmp_path / "gateway-token") as remote:
+        directory = RunnerDirectory(live_index, remote)
         bridge = RunnerBridge(
             runners=directory,
             event_logs=event_logs,
@@ -156,10 +152,8 @@ async def test_history_resume_rejects_a_recreated_sandbox_incarnation(
 async def test_stopped_service_never_falls_back_to_reachable_runner(
     cluster: SandboxCluster, live_index: LiveIndex, tmp_path: Path, runner: Runner, service_history_db_url: str
 ) -> None:
-    async with authenticated_runner_gateway(
-        cluster, runner, tmp_path / "gateway-token", database_url=service_history_db_url
-    ) as remote:
-        directory = RunnerDirectory(live_index, remote.control)
+    async with authenticated_runner_gateway(cluster, runner, tmp_path / "gateway-token") as remote:
+        directory = RunnerDirectory(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []
     # Each call to the Sandbox's runner dials its control Service anew, here with the gateway gone.
     with pytest.raises(ServiceError):
@@ -167,26 +161,23 @@ async def test_stopped_service_never_falls_back_to_reachable_runner(
     assert not runner.sessions
 
 
-async def test_runner_proxy_lists_and_resumes_a_session_without_registry_lookup(
+async def test_runner_proxy_lists_and_resumes_a_stopped_session(
     cluster: SandboxCluster,
     live_index: LiveIndex,
     tmp_path: Path,
     runner: Runner,
     spec: runner_pb2.SessionSpec,
     model: ScriptedModel,
-    service_history_db_url: str,
 ) -> None:
     token_file = tmp_path / "gateway-token"
-    async with authenticated_runner_gateway(cluster, runner, token_file, database_url=service_history_db_url) as remote:
+    async with authenticated_runner_gateway(cluster, runner, token_file) as remote:
         session_id = str(uuid4())
-        # Create runner state directly, without a Gateway.CreateSession registry row. Exercise the
-        # app's live inventory and ResumeSession through the identity-fenced proxy.
         session = await runner.open_session(session_id, spec, None)
         await session.command(
             command_pb2.Command(command_id="resume-without-registry", submit_input=command_pb2.SubmitInput(text="hi"))
         )
         await model.reply(await model.request(), Text("hello"))
-        directory = RunnerDirectory(live_index, remote.control)
+        directory = RunnerDirectory(live_index, remote)
         client = directory.client(SANDBOX)
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
@@ -202,7 +193,6 @@ async def test_runner_proxy_lists_and_resumes_a_session_without_registry_lookup(
             with attempt:
                 (summary,) = await client.list_sessions()
                 assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
-
         attached = await client.resume(session_id)
         assert attached.session_id == session_id
         assert attached.spec == summary.spec

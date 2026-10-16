@@ -3,8 +3,6 @@
 from typing import override
 from uuid import UUID
 
-from google.protobuf.json_format import MessageToDict
-
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.runner_directory import RunnerDirectory
@@ -103,11 +101,7 @@ class RunnerProxyBackedDispatcher(SessionDispatcherClient):
         self, *, sandbox: str, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None
     ) -> session_dispatcher_pb2.SessionOpening:
         runner = self.runners.client(sandbox)
-        created = await runner.create(
-            session_id=UUID(session_id),
-            spec=MessageToDict(spec, always_print_fields_with_no_presence=True),
-            setup_script=setup_script,
-        )
+        created = await runner.open_session(session_id=UUID(session_id), spec=spec, setup_script=setup_script)
         await self.event_logs.open(created.session_id)
         opening = session_dispatcher_pb2.SessionOpening(
             session_id=created.session_id, sandbox=sandbox, state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED

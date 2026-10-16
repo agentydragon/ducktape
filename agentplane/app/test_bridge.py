@@ -39,7 +39,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.dispatcher import RunnerProxyBackedDispatcher
-from agentplane.app.testing.history import SeededEventLogStore, register_gateway_session
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import DispatcherRequestTimeoutError, DispatchNotFoundError, RunnerBridge
@@ -74,7 +74,7 @@ from agentplane.runner.runner import Runner
 from agentplane.runner.session import Session
 from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
-from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.testing.backend import Endpoint, runner_bearer
 from agentplane.runner_gateway.testing.control_listener import dialing
 from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
@@ -252,7 +252,7 @@ async def history_client(
 async def local_runners(
     live_index: LiveIndex,
     gateway_endpoint: Endpoint,
-    gateway: RunnerGatewayClient,
+    gateway: SandboxControlClient,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     runner: Runner,
@@ -262,13 +262,13 @@ async def local_runners(
     live_index.sandboxes[SANDBOX] = raw
     async with dialing(runner, gateway_endpoint.control_target, runner_bearer(SANDBOX)):
         await asyncio.to_thread(gateway_endpoint.wait_connected, UUID(raw["metadata"]["uid"]))
-        yield RunnerDirectory(live_index, gateway.control)
+        yield RunnerDirectory(live_index, gateway)
 
 
 @pytest.fixture
 async def app_url(
     local_runners: RunnerDirectory,
-    gateway: RunnerGatewayClient,
+    gateway: SandboxControlClient,
     inventory: SandboxAccess,
     store: ThreadStore,
     database_updates: WakeupListener,
@@ -989,7 +989,6 @@ async def test_thread_resume_reports_missing_runner_recovery_state(
 ) -> None:
     thread_id = await event_logs.seed(SANDBOX, "missing-runner-session")
     await history.open(thread_id, sandbox_name=SANDBOX)
-    await register_gateway_session(history.engine, thread_id, sandbox=SANDBOX)
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         response = await http.post(f"/threads/{thread_id}/resume")
     assert response.status_code == 409
@@ -1251,7 +1250,7 @@ class Replicas:
 @pytest.fixture
 async def replicas(
     gateway_endpoint: Endpoint,
-    gateway: RunnerGatewayClient,
+    gateway: SandboxControlClient,
     local_runners: RunnerDirectory,
     live_index: LiveIndex,
     runner: Runner,
@@ -1265,11 +1264,7 @@ async def replicas(
 ) -> AsyncIterator[Replicas]:
     replica_engine = connect(db_url)
     survivor_event_logs = SeededEventLogStore(
-        replica_engine,
-        history=event_logs.history,
-        gateway=event_logs.gateway,
-        history_reader=history_client,
-        summaries=Summaries(history_client),
+        replica_engine, history=event_logs.history, history_reader=history_client, summaries=Summaries(history_client)
     )
     owner = RunnerBridge(
         runners=local_runners,
@@ -1279,14 +1274,11 @@ async def replicas(
     )
     try:
         async with (
-            # The survivor replica's own channel to the gateway.
-            dial(gateway_endpoint.target) as survivor_channel,
             listening(replica_engine, history_client, history_token_file) as replica_updates,
             history_client.new_client() as owner_openings_client,
             history_client.new_client() as survivor_openings_client,
         ):
-            survivor_gateway = gateway_endpoint.gateway(survivor_channel)
-            survivor_runners = RunnerDirectory(live_index, survivor_gateway.control)
+            survivor_runners = RunnerDirectory(live_index, gateway_endpoint.client())
             survivor = RunnerBridge(
                 runners=survivor_runners,
                 event_logs=survivor_event_logs,
@@ -1369,7 +1361,7 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
 
 async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
     gateway_endpoint: Endpoint,
-    gateway: RunnerGatewayClient,
+    gateway: SandboxControlClient,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     runner: Runner,
@@ -1394,11 +1386,11 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
         try:
             session_id = uuid4()
             # This seeds a runner-owned Session without going through Gateway placement or app open.
-            await gateway.control.runner_unary(
+            await gateway.runner_unary(
                 destination,
                 lambda stub: stub.OpenSession,
                 runner_control_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec),
-                timeout_s=gateway.control.lifecycle_timeout_s,
+                timeout_s=gateway.lifecycle_timeout_s,
             )
             # Only the openings can create this row: no bridge exists, so no Open, command, or SSE request ran.
             async for attempt in AsyncRetrying(
@@ -1474,7 +1466,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
 async def test_stored_thread_stream_does_not_require_reachable_runner(
     replicas: Replicas,
     local_runners: RunnerDirectory,
-    gateway: RunnerGatewayClient,
+    gateway: SandboxControlClient,
     live_index: LiveIndex,
     event_logs: SeededEventLogStore,
     database_updates: WakeupListener,
@@ -1518,7 +1510,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
 
 async def test_open_and_resume_reply_before_archive_catches_up(
     local_runners: RunnerDirectory,
-    gateway: RunnerGatewayClient,
+    gateway: SandboxControlClient,
     event_logs: SeededEventLogStore,
     store: ThreadStore,
     content: ContentStore,

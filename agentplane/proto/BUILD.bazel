@@ -170,26 +170,6 @@ ts_proto_library(
 )
 
 proto_library(
-    name = "runner_gateway_proto",
-    srcs = ["runner_gateway.proto"],
-    deps = [
-        ":runner_proto",
-        ":sandboxes_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "runner_gateway_pb2",
-    deps = [":runner_gateway_proto"],
-)
-
-py_grpc_service_library(
-    name = "runner_gateway_pb2_grpc",
-    proto = ":runner_gateway_proto",
-    py_proto = ":runner_gateway_pb2",
-)
-
-proto_library(
     name = "sandboxes_proto",
     srcs = ["sandboxes.proto"],
     deps = [
@@ -293,19 +273,5 @@ go_proto_library(
     deps = [
         ":event_log_go_proto",
         ":runner_go_proto",
-    ],
-)
-
-go_proto_library(
-    name = "runner_gateway_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/proto/runner_gateway",
-    proto = ":runner_gateway_proto",
-    deps = [
-        ":runner_go_proto",
-        ":sandboxes_go_proto",
     ],
 )

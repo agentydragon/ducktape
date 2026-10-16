@@ -1,28 +1,24 @@
 # Runner Gateway
 
-The Sandbox runners' side of Agentplane: the
-[runner control stream](../docs/runner_control.md), proxy and live runner access. Its server
-(`:server`, image `:image`) also serves the `RunnerGateway` gRPC service
-([API](API.md), [`runner_gateway.proto`](../proto/runner_gateway.proto)) with replicas. The app opens
-Sessions and sends commands through Session Dispatcher; Gateway `CreateSession` remains a legacy
-direct operation with no production sender. It reads Sandboxes through the shared
-read-only projection (`agentplane.sandboxes.reader`) and does not create or delete them.
+The Runner Gateway holds the runners' outbound
+[RunnerControl stream](../docs/runner_control.md), publishes which replica holds each connection,
+and proxies the runner's `Runner` RPCs to that connection. The app uses the per-Sandbox proxy for
+live inventory and explicit native resume; Session openings and durable command admission go through
+the Session Dispatcher. The Gateway reads Sandbox and Pod state and writes connection Leases and
+EndpointSlices; the Sandbox Controller owns `Sandbox.status`.
 
-It does not call the History Service. Its runner proxy can continue serving live calls while History
-is unavailable, but this does not replace Dispatcher admission or History's retained conversation.
+The serving process has no Session registry or Gateway-specific Session RPC service. The historical
+`session` table in `sandbox_commands` remains untouched while the registry-free image rolls out;
+the migration init container still runs until a separate, rollout-gated database retirement removes
+that table and its database resources. The shared PostgreSQL cluster remains in use by other services.
 
-The Sandbox Controller owns `Sandbox.status`, including the `Quiesced` condition. The Gateway reads
-Sandboxes and Pods, and writes only its per-Sandbox runner connection Leases and EndpointSlices; its
-Role has no `sandboxes/status` write permission.
+The Gateway has no History Service client. Its proxy can serve live runner calls while History is
+unavailable, but it does not replace Dispatcher admission or History's retained conversation.
 
-- `runner_control.py`, `lifecycle_control.py`, `connection_records.py`: the runner connection, and
-  the commands and lifecycle requests the replica holding it sends on it.
-- `runner_proxy.py`: the runner's `Runner` service, forwarded unchanged to the runner through the
-  connection this replica holds ([runner proxy](../docs/runner_control.md#runner-proxy)).
-- `session_registry.py`, `session_lifecycle.py`: the legacy direct API's Session-incarnation registry
-  and opening/resume helpers. Only Gateway `CreateSession` writes the registry; Dispatcher-opened
-  Sessions are absent, so it is not complete inventory.
-- `commands/`: the `sandbox_commands` database that currently holds the Session registry; it does not
-  hold current command admission rows.
-- `destinations.py`: checking that a request's Sandbox incarnation has a ready runner Pod.
-- `grpc_api.py`, `settings.py`, `main.py`: the server.
+- `runner_control.py`, `lifecycle_control.py`, `connection_records.py`: runner connections, the
+  control requests sent over them, and per-Sandbox connection ownership.
+- `runner_proxy.py`: the runner's `Runner` service, forwarded through the connection held by this
+  replica ([runner proxy](../docs/runner_control.md#runner-proxy)).
+- `destinations.py`: validates the Sandbox incarnation and ready runner Pod before proxying.
+- `commands/`: legacy schema and migration code retained until the approved database-drop gate.
+- `settings.py`, `main.py`: server settings and listener wiring.

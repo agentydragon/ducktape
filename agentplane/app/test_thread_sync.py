@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.replication_process import app_process
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.summaries import Summaries
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.backend import history_service
@@ -32,11 +32,8 @@ async def test_materialized_revisions_replicate_with_restricted_role(
         history_service(service.database_url, tmp_path / "history-token") as reader,
         History(service.database_url) as history,
     ):
-        placements = Placements()
-        event_logs = SeededEventLogStore(
-            engine, history=history, gateway=placements, history_reader=reader, summaries=Summaries(reader)
-        )
-        source = ReplicationSource(placements)
+        event_logs = SeededEventLogStore(engine, history=history, history_reader=reader, summaries=Summaries(reader))
+        source = ReplicationSource()
         source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
         source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
         source.append(
