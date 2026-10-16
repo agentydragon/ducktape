@@ -13,6 +13,7 @@ filegroup(
         "//agentplane/runner_gateway/commands/migrations/versions:0007_redelivery.py",
         "//agentplane/runner_gateway/commands/migrations/versions:0008_dial_out_only.py",
         "//agentplane/runner_gateway/commands/migrations/versions:0009_session_open_columns.py",
+        "//agentplane/runner_gateway/commands/migrations/versions:0010_command_submission_drop.py",
     ],
     visibility = ["//agentplane/runner_gateway/commands:__pkg__"],
 )
