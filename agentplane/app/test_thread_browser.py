@@ -1318,6 +1318,8 @@ async def test_the_history_is_not_settled_while_a_row_is_still_loading_its_text(
 )
 async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser, viewport_name: str) -> None:
     page = thread_browser.page
+    # The footer includes relative activity text; keep timers and replication running.
+    await page.clock.set_fixed_time("2026-10-15T00:00:00Z")
     await append_run_among_rows(thread_browser, below=8)
     history = page.get_by_role("region", name="Thread history", exact=True)
     # Visit the preceding content before composing this review scene. Rows that left the
