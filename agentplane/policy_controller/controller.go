@@ -327,9 +327,6 @@ func (r *Reconciler) applyNative(ctx context.Context, wanted client.Object) erro
 	switch obj := wanted.(type) {
 	case *rbacv1.RoleBinding:
 		applyConfiguration := applyrbacv1.RoleBinding(obj.Name, obj.Namespace).
-			WithAPIVersion(rbacv1.GroupName + "/v1").
-			WithKind("RoleBinding").
-			WithNamespace(obj.Namespace).
 			WithLabels(obj.Labels).
 			WithAnnotations(obj.Annotations).
 			WithRoleRef(applyrbacv1.RoleRef().WithAPIGroup(obj.RoleRef.APIGroup).WithKind(obj.RoleRef.Kind).WithName(obj.RoleRef.Name)).
@@ -340,8 +337,6 @@ func (r *Reconciler) applyNative(ctx context.Context, wanted client.Object) erro
 		configuration = applyConfiguration
 	case *rbacv1.ClusterRoleBinding:
 		applyConfiguration := applyrbacv1.ClusterRoleBinding(obj.Name).
-			WithAPIVersion(rbacv1.GroupName + "/v1").
-			WithKind("ClusterRoleBinding").
 			WithLabels(obj.Labels).
 			WithAnnotations(obj.Annotations).
 			WithRoleRef(applyrbacv1.RoleRef().WithAPIGroup(obj.RoleRef.APIGroup).WithKind(obj.RoleRef.Kind).WithName(obj.RoleRef.Name)).
