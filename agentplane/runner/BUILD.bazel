@@ -334,6 +334,8 @@ py_test(
     data = [
         ":harness_background_child_testonly",
         ":main_bin",  # keep: the runner as its own process, so a crash takes its harnesses with it
+        "//agentplane/x/runner_layering_spike:child_exec",  # keep: the sparse-root Codex process fence
+        "//agentplane/x/runner_layering_spike:tools_rootfs",  # keep: Bash-only tools rootfs for the sparse-root probe
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
     ],

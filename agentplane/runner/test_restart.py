@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import ctypes
 import errno
+import json
 import os
 import shutil
 import signal
-from collections.abc import AsyncIterator, Awaitable, Callable
+import tarfile
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -135,6 +137,20 @@ def _runner_environment(home: Path) -> dict[str, str]:
     }
 
 
+def _extract_oci_rootfs(rloc_file: str, destination: Path) -> None:
+    """Expand the layers from a Bazel OCI layout into a disposable child root."""
+    reference = get_required_path(own_repo_rlocation(rloc_file))
+    layout = get_required_path(reference.read_text().strip())
+    index = json.loads((layout / "index.json").read_text())
+    (descriptor,) = index["manifests"]
+    manifest_path = layout / "blobs" / descriptor["digest"].replace(":", "/")
+    manifest = json.loads(manifest_path.read_text())
+    for layer in manifest["layers"]:
+        layer_path = layout / "blobs" / layer["digest"].replace(":", "/")
+        with tarfile.open(layer_path, "r:*") as archive:
+            archive.extractall(destination, filter="data")
+
+
 @pytest.fixture
 def driver(gateway: Gateway) -> RunnerDriver:
     """Drives whichever runner process holds the newest connection to `gateway`."""
@@ -153,6 +169,8 @@ async def start_runner(
         test_debug_checkpoint: tuple[str, str] | None = None,
         bootstrap: str | None = None,
         home: Path = tmp_path / "home",
+        codex_binary: Path | None = None,
+        harness_env: Sequence[str] = (),
     ) -> RunnerProcess:
         connections = gateway.control.connections
         process = await asyncio.create_subprocess_exec(
@@ -163,6 +181,8 @@ async def start_runner(
                 gateway=gateway.endpoint,
                 test_debug_checkpoint=test_debug_checkpoint,
                 bootstrap=bootstrap,
+                codex_binary=codex_binary,
+                harness_env=harness_env,
             ),
             env=_runner_environment(home),
             start_new_session=True,
@@ -395,6 +415,87 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
     events.assert_contiguous([*first.seen, *second.seen])
     await second.stop_runner_session("stop-after-crash")
+    await second.drain_until_end()
+
+
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
+async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
+    harness: runner_pb2.Harness,
+    model: ScriptedModel,
+    spec: runner_pb2.SessionSpec,
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
+    driver: RunnerDriver,
+    tmp_path: Path,
+) -> None:
+    """Pinned Codex runs with an independently built Bash layer and private runner state."""
+    child_root = tmp_path / "child-root"
+    codex = get_required_path(launches.CODEX_BINARY)
+    binary_dir = child_root / "opt"
+    binary_dir.mkdir(parents=True)
+    shutil.copyfile(codex, binary_dir / "codex")
+    (binary_dir / "codex").chmod(0o555)
+    _extract_oci_rootfs("agentplane/x/runner_layering_spike/tools_rootfs.rloc", child_root)
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    private_sentinel = state_dir / "runner-private-sentinel"
+    private_sentinel.write_text("runner-owned\n")
+    child_exec = get_required_path(own_repo_rlocation("agentplane/x/runner_layering_spike/child_exec_/child_exec"))
+    first_runner = await start_runner(
+        codex_binary=child_exec,
+        harness_env=[f"AGENTPLANE_CHILD_ROOT={child_root}", f"AGENTPLANE_PRIVATE_SENTINEL={private_sentinel}"],
+    )
+
+    session = await driver.attach("sparse-child-root", spec=spec)
+    await submit_input(session, "input-1", "Reply with exactly: SPARSE_ROOT_TURN_OK")
+    request = await model.request()
+    await model.reply(request, Text("SPARSE_ROOT_TURN_OK"))
+    await session.until(events.turn_completed)
+    fences = [
+        entry
+        for entry in events.of_kind(session.seen, "harness_stderr")
+        if "runner-private state remains outside child root" in entry.event.harness_stderr.text
+    ]
+    assert len(fences) == 1
+    fence = fences[0]
+    assert fence.event.harness_stderr.text.strip() == "runner-layering: runner-private state remains outside child root"
+
+    (started,) = events.of_kind(session.seen, "harness_started")
+    os.kill(started.event.harness_started.pid, signal.SIGKILL)
+    exited = await session.until(events.is_kind("harness_exited"))
+    assert exited.cursor > fence.cursor
+    assert not exited.event.harness_exited.stopped_by_runner
+    assert first_runner.process.returncode is None, "a native child exit must not terminate the runner"
+    await session.drain_until_end()
+
+    second = await driver.attach("sparse-child-root", spec=spec, after_cursor=exited.cursor)
+    resumed = await second.until(
+        lambda entry: events.is_kind("harness_started")(entry) and entry.event.harness_started.resumed
+    )
+    assert resumed.cursor > exited.cursor
+    await submit_input(second, "input-2", "Reply with exactly: SPARSE_ROOT_RESUME_OK")
+    request = await model.request()
+    assert request.user_texts == [
+        "Reply with exactly: SPARSE_ROOT_TURN_OK",
+        "Reply with exactly: SPARSE_ROOT_RESUME_OK",
+    ]
+    assert request.assistant_texts == ["SPARSE_ROOT_TURN_OK"]
+    await model.reply(request, Text("SPARSE_ROOT_RESUME_OK"))
+    done = await second.until(events.turn_completed)
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    assert private_sentinel.read_text() == "runner-owned\n"
+
+    await submit_input(second, "input-3", "Run the shell tool and report its output.")
+    request = await model.request()
+    await model.reply(request, ShellCall("sparse-shell", "printf SPARSE_ROOT_TOOL_OK"))
+    tool_result = await model.request()
+    (output,) = tool_result.tool_outputs
+    assert "SPARSE_ROOT_TOOL_OK" in output.text
+    await model.reply(tool_result, Text("SPARSE_ROOT_TOOL_DONE"))
+    tool_done = await second.until(events.turn_completed)
+    assert tool_done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+
+    await second.stop_runner_session("stop-after-sparse-root-resume")
     await second.drain_until_end()
 
 

@@ -440,6 +440,23 @@ apt.install(
     ],
 )
 
+# Minimal Codex `exec_command` environment for the Agentplane runner-layering spike. Keep this
+# separate from the harness and boot artifacts so a shell update does not rebuild either one.
+apt.install(
+    dependency_set = "trixie_runner_tools",
+    # `mawk` is explicit because the shared apt resolver also sees forky's newer
+    # mawk metadata, which evicts trixie's `awk` provider while resolving Bash.
+    packages = [
+        "bash",
+        "mawk",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
 # CPAP sync: the Wi-Fi tooling cpap/sync.py runs (ip, iw, wpa_supplicant,
 # dhclient) + git (pushes to the cpap-data Forgejo repo) on debian:trixie-slim.
 apt.install(
@@ -526,7 +543,7 @@ apt.install(
         "trixie-security",
     ],
 )
-use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_wayback_cache")
+use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -854,6 +871,11 @@ filegroup(
         "codex-path/**",
         "codex-resources/**",
     ]) + ["codex-package.json"],
+    visibility = ["//visibility:public"],
+)
+filegroup(
+    name = "codex_binary",
+    srcs = ["bin/codex"],
     visibility = ["//visibility:public"],
 )
 """,

@@ -1,0 +1,100 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
+load("//devinfra/cpio:defs.bzl", "cpio_archive")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_binary(
+    name = "boot_init",
+    srcs = ["boot_init.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/x/runner_layering_spike/boot_init",
+)
+
+go_binary(
+    name = "child_exec",
+    srcs = ["child_exec.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/x/runner_layering_spike/child_exec",
+)
+
+pkg_files(
+    name = "boot_init_file",
+    srcs = [":boot_init"],
+    attributes = pkg_attributes(
+        gid = 0,
+        mode = "0755",
+        uid = 0,
+    ),
+    renames = {":boot_init": "init"},
+)
+
+cpio_archive(
+    name = "base_initramfs",
+    srcs = [":boot_init_file"],
+    out = "base-initramfs.cpio",
+)
+
+pkg_files(
+    name = "codex_harness_file",
+    srcs = ["@agentplane_codex_cli_linux_x64//:codex_binary"],
+    attributes = pkg_attributes(
+        gid = 0,
+        mode = "0755",
+        uid = 0,
+    ),
+    renames = {"@agentplane_codex_cli_linux_x64//:codex_binary": "tools/opt/codex"},
+)
+
+cpio_archive(
+    name = "codex_harness_payload",
+    srcs = [":codex_harness_file"],
+    out = "codex-harness-payload.cpio",
+)
+
+# The first tools layer is only Bash plus the dynamic runtime closure resolved by Debian. It is a
+# separate OCI filesystem so the probe can add a real shell without pulling in a full distribution.
+oci_image(
+    name = "tools_image",
+    architecture = "amd64",
+    os = "linux",
+    tars = ["@trixie_runner_tools//:flat"],
+)
+
+oci_layout_rloc(
+    name = "tools_rootfs",
+    image = ":tools_image",
+)
+
+genrule(
+    name = "local_vm_initramfs",
+    srcs = [
+        ":base_initramfs",
+        ":codex_harness_payload",
+    ],
+    outs = ["local-vm-initramfs.cpio"],
+    cmd = "cat $(location :base_initramfs) $(location :codex_harness_payload) > $@",
+)
+
+py_binary(
+    name = "local_vm_probe",
+    srcs = ["local_vm.py"],
+    data = [
+        ":local_vm_initramfs",
+        "//devinfra/firecracker:firecracker_layer",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "local_vm",
+    srcs = ["local_vm.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//httpx",
+    ],
+)

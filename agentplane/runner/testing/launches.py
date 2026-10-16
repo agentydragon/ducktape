@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
 
 import httpx
@@ -81,6 +82,8 @@ def runner_command(
     gateway: ServiceEndpoint,
     test_debug_checkpoint: tuple[str, str] | None = None,
     bootstrap: str | None = None,
+    codex_binary: Path | None = None,
+    harness_env: Sequence[str] = (),
 ) -> list[str]:
     """The runner as its own process, configured like `config` is, dialing `gateway` for both its
     control stream and its ingress. The Sandbox's files go beside `state_dir`."""
@@ -100,9 +103,11 @@ def runner_command(
         command += ["--claude-binary", str(launch.binary), "--anthropic-base-url", launch.base_url]
     elif harness == runner_pb2.HARNESS_CODEX:
         codex = codex_launch(endpoint)
-        command += ["--codex-binary", str(codex.binary), "--openai-base-url", codex.base_url]
+        command += ["--codex-binary", str(codex_binary or codex.binary), "--openai-base-url", codex.base_url]
     else:
         raise ValueError(f"unsupported {harness=}")
+    for entry in harness_env:
+        command += ["--harness-env", entry]
     if test_debug_checkpoint is not None:
         name, command_id = test_debug_checkpoint
         command += ["--test-debug-checkpoint-name", name, "--test-debug-checkpoint-command-id", command_id]
