@@ -19,7 +19,7 @@ window.chartProbe = {
   get lastDrawnWidth() {
     return probe.lastDrawnWidth;
   },
-  hasDrawnAfter({ previousCount, expectedWidth }) {
+  hasDrawnAfter({ previousCount, expectedWidth = null }) {
     return (
       probe.drawCount > previousCount &&
       probe.lastDrawnHeight === 250 &&
