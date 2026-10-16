@@ -428,6 +428,7 @@ flowchart LR
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
     VM_PROCESS_BOUNDARY_IMPL[Candidate: implement the VM harness/process boundary]
     VM_PROCESS_ISOLATION[Blocked: isolation acceptance on a slim guest]
+    RUNNER_LAYERING_VM[Blocked: slim VM runtime, section 10]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 10]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage, section 7] -. related .-> VM_PROCESS_ISOLATION
@@ -436,7 +437,8 @@ flowchart LR
     VM_PROCESS_ISOLATION --> VM_LIFECYCLE
     VM_PROCESS_BOUNDARY_IMPL --> VM_PROCESS_ISOLATION
     VM_GUEST_BUDGET_DERIVE --> VM_PROCESS_ISOLATION
-    K3S_VM_IMAGE --> VM_PROCESS_ISOLATION
+    RUNNER_LAYERING_VM --> VM_PROCESS_ISOLATION
+    K3S_VM_IMAGE -. optional VM test fixture .-> VM_PROCESS_ISOLATION
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
     VM_GUEST_MEMORY[Candidate: size the VM guest for real builds]
     VM_GUEST_BUDGET_DERIVE[Blocked: guest budgets derive from the VM spec]
@@ -478,13 +480,15 @@ until pods hit the problem. Disk exhaustion is not covered and waits on #4717.
 
 ### `VM_PROCESS_ISOLATION` — accept isolation on the lightweight VM guest
 
-**Blocked on `VM_PROCESS_BOUNDARY_IMPL`, `VM_GUEST_BUDGET_DERIVE` and `K3S_VM_IMAGE`; operator,
+**Blocked on `VM_PROCESS_BOUNDARY_IMPL`, `VM_GUEST_BUDGET_DERIVE` and `RUNNER_LAYERING_VM`; operator,
 2026-10-15 PDT.** Run the representative tool/harness termination and bounded exhaustion checks after
-the lightweight VM root filesystem can boot the runner and harnesses with the tools-heavy image separate.
-Use the production process-visibility, filesystem, cgroup and capability settings in that guest; a
-smaller test image must not strip the isolation behavior being accepted. Verify the existing limits
-before adding mechanisms, and establish which runner/control state survives and what needs durable
-recovery. This is the expensive VM acceptance gate, not a hold on image-independent design or code.
+the lightweight VM guest can boot the runner and harnesses with the tools-heavy image separate. Use the
+production process-visibility, filesystem, cgroup and capability settings in that guest; a smaller test
+image must not strip the isolation behavior being accepted. `K3S_VM_IMAGE` can supply an automated VM
+fixture once it exists, but the k3s test environment is not a prerequisite to accepting the slim
+production guest. Verify the existing limits before adding mechanisms, and establish which runner/control
+state survives and what needs durable recovery. This is the expensive VM acceptance gate, not a hold on
+image-independent design or code.
 
 ### `VM_LIFECYCLE` — integrated lifecycle verification
 
@@ -1008,8 +1012,8 @@ The in-guest budgets (`VM_GUEST_BUDGET_DERIVE`) are the other half of the same s
 reserve, stage 2 gets the rest.
 Deliver a lean bootable guest: a bare root filesystem with the runner and harnesses available from
 their chosen layer, and the tools-heavy environment separate. The layering decision still owns exact
-disk placement. `VM_PROCESS_ISOLATION` acceptance waits for the lightweight guest fixture built from
-this split; the boundary implementation can proceed independently.
+disk placement. `VM_PROCESS_ISOLATION` acceptance waits for this slim runtime; the boundary
+implementation can proceed independently.
 
 ### `K3S_VM_IMAGE` — build a lightweight guest disk in Bazel for the k3s integration test
 
@@ -1025,9 +1029,9 @@ published image. The Pod-side pattern already exists there: `//agentplane/x/k3s_
 `debian_trixie_slim` plus a `pkg_tar` of the Bazel-pinned Codex and Claude binaries, built with no registry
 credential, and the spike's own note records that the Nix-built image is the full-toolbox one. Something of
 that shape as an image the test boots — with KubeVirt installed in the spike, or the VM path exercised
-against the host's KVM — is the deliverable, not a bigger image. It must retain the production guest's
-process-isolation configuration so `VM_PROCESS_ISOLATION` can exercise real termination and pressure
-without pulling the full tools-heavy guest.
+against the host's KVM — is the deliverable, not a bigger image. Retain the production guest's
+process-isolation configuration if this fixture exercises `VM_PROCESS_ISOLATION`: a lightweight test
+must not omit the boundary being accepted.
 
 Worth stating in the design, because it argues past the spike: a Bazel-built guest is worth more than the
 test. Once a guest root filesystem is an `oci_image` target, `RUNNER_LAYERING_VM` needs no Nix to build a
