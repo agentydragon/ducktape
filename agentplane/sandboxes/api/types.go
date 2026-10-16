@@ -1,7 +1,4 @@
 // Package api defines Agentplane's shared Sandbox and SandboxTemplate Kubernetes API.
-//
-// +kubebuilder:object:generate=true
-// +groupName=agentplane.allegedly.works
 package api
 
 import (
@@ -13,9 +10,14 @@ import (
 // StateVolume is the volume the controller fills with the Sandbox's state PVC: a Pod's containers
 // mount it by name, and a VM guest mounts the virtiofs filesystem of that name.
 type StateVolume struct {
-	Name   string                           `json:"name"`
-	Claim  corev1.PersistentVolumeClaimSpec `json:"claim"`
-	Layout VolumeLayout                     `json:"layout"`
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
+	Claim corev1.PersistentVolumeClaimSpec `json:"claim"`
+	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' && !has(self.filesystem)",message="state volume requires DirectoryTree without a filesystem"
+	Layout VolumeLayout `json:"layout"`
 }
 
 type VolumeLayoutType string
@@ -27,28 +29,44 @@ const (
 )
 
 // VolumeLayout describes contents independently of the workload attachment.
+// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' ? !has(self.filesystem) : has(self.filesystem)",message="DirectoryTree omits filesystem; disk layouts require it"
 type VolumeLayout struct {
-	Type       VolumeLayoutType `json:"type"`
-	Filesystem string           `json:"filesystem,omitempty"`
+	// +kubebuilder:validation:Enum=DirectoryTree;RawDiskImage;BlockFilesystem
+	Type VolumeLayoutType `json:"type"`
+	// +kubebuilder:validation:Enum=ext4
+	Filesystem string `json:"filesystem,omitempty"`
 }
 
 // WorkspaceVolume is retained by the Sandbox across workload replacements.
+// +kubebuilder:validation:XValidation:rule="self.layout.type == 'BlockFilesystem' ? has(self.claim.volumeMode) && self.claim.volumeMode == 'Block' : !has(self.claim.volumeMode) || self.claim.volumeMode == 'Filesystem'",message="BlockFilesystem needs Block volumeMode; other layouts use Filesystem"
 type WorkspaceVolume struct {
-	Name   string                           `json:"name"`
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// +kubebuilder:pruning:PreserveUnknownFields
 	Claim  corev1.PersistentVolumeClaimSpec `json:"claim"`
 	Layout VolumeLayout                     `json:"layout"`
 }
 
 // SandboxTemplateSpec sets the Sandbox's kind: exactly one of Pod and VM.
+// +kubebuilder:validation:ExactlyOneOf=pod;vm
+// +kubebuilder:validation:XValidation:rule="!has(self.workspaceVolume) || !has(self.pod) || self.workspaceVolume.layout.type == 'DirectoryTree'",message="Pod workspaces require DirectoryTree layout"
 type SandboxTemplateSpec struct {
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	Pod *corev1.PodTemplateSpec `json:"pod,omitempty"`
 	// VM is the VirtualMachine's spec; the controller sets its run strategy from spec.running.
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	VM              *kubevirtv1.VirtualMachineSpec `json:"vm,omitempty"`
 	StateVolume     StateVolume                    `json:"stateVolume"`
 	WorkspaceVolume *WorkspaceVolume               `json:"workspaceVolume,omitempty"`
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Namespaced,path=sandboxtemplates,singular=sandboxtemplate
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 type SandboxTemplate struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -64,17 +82,26 @@ type SandboxTemplateList struct {
 
 type SandboxSpec struct {
 	// Template names a SandboxTemplate in the Sandbox's namespace, read again at every start.
+	// +kubebuilder:validation:MinLength=1
 	Template string `json:"template"`
-	Running  bool   `json:"running"`
+	// +kubebuilder:default=false
+	// +kubebuilder:validation:Optional
+	Running bool `json:"running"`
 	// WakeOnSend allows authenticated user and notification sends to resume a stopped Sandbox.
 	// Omitted is false so older Sandbox manifests keep wake-on-send disabled.
+	// +kubebuilder:default=false
 	WakeOnSend bool `json:"wakeOnSend,omitempty"`
 	// WakeGeneration is bumped by whoever wakes the Sandbox. An idle-suspended Sandbox runs again once it
 	// differs from the generation it was suspended at.
+	// +kubebuilder:default=0
+	// +kubebuilder:validation:Minimum=0
 	WakeGeneration int64 `json:"wakeGeneration,omitempty"`
 	// PolicySets names the PolicySets in the Sandbox's namespace its ServiceAccount is bound to.
+	// +listType=set
+	// +kubebuilder:validation:items:MinLength=1
 	PolicySets []string `json:"policySets,omitempty"`
 	// Bootstrap is the shell source the Sandbox's runner runs once, before its first Session.
+	// +kubebuilder:validation:MaxLength=65536
 	Bootstrap string `json:"bootstrap,omitempty"`
 }
 
@@ -92,6 +119,7 @@ type QuiesceAttempt struct {
 	AttemptedAt  metav1.Time `json:"attemptedAt"`
 }
 
+// +kubebuilder:validation:XValidation:rule="has(self.suspendedBy) == has(self.suspendedAtWakeGeneration)",message="suspendedBy and suspendedAtWakeGeneration are set together"
 type SandboxStatus struct {
 	Volumes     *SandboxVolumes `json:"volumes,omitempty"`
 	Incarnation *Incarnation    `json:"incarnation,omitempty"`
@@ -104,14 +132,19 @@ type SandboxStatus struct {
 	OperatingMode OperatingMode `json:"operatingMode,omitempty"`
 	// SuspendedBy is set while the controller keeps a Sandbox stopped that `spec.running` says to run, and
 	// SuspendedAtWakeGeneration is the `spec.wakeGeneration` it stopped it at.
-	SuspendedBy               *SuspendedBy       `json:"suspendedBy,omitempty"`
-	SuspendedAtWakeGeneration *int64             `json:"suspendedAtWakeGeneration,omitempty"`
-	Conditions                []metav1.Condition `json:"conditions,omitempty"`
+	SuspendedBy *SuspendedBy `json:"suspendedBy,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	SuspendedAtWakeGeneration *int64 `json:"suspendedAtWakeGeneration,omitempty"`
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // WorkspaceBinding projects the creation record and pins the claim's identity.
 type WorkspaceBinding struct {
-	Name   string       `json:"name"`
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// +kubebuilder:validation:MinLength=1
 	UID    string       `json:"uid"`
 	Layout VolumeLayout `json:"layout"`
 }
@@ -123,11 +156,15 @@ type SandboxVolumes struct {
 
 // StateBinding projects the state PVC's durable layout record and pins the claim's identity.
 type StateBinding struct {
-	Name   string       `json:"name"`
-	UID    string       `json:"uid"`
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// +kubebuilder:validation:MinLength=1
+	UID string `json:"uid"`
+	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' && !has(self.filesystem)",message="state volume requires DirectoryTree without a filesystem"
 	Layout VolumeLayout `json:"layout"`
 }
 
+// +kubebuilder:validation:Enum=Running;Suspended
 type OperatingMode string
 
 const (
@@ -135,11 +172,19 @@ const (
 	OperatingModeSuspended OperatingMode = "Suspended"
 )
 
+// +kubebuilder:validation:Enum=Idle
 type SuspendedBy string
 
 const SuspendedByIdle SuspendedBy = "Idle"
 
 // +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,path=sandboxes,singular=sandbox
+// +kubebuilder:printcolumn:name="Template",type=string,JSONPath=".spec.template"
+// +kubebuilder:printcolumn:name="Desired",type=boolean,JSONPath=".spec.running"
+// +kubebuilder:printcolumn:name="Running",type=string,JSONPath=".status.conditions[?(@.type==\"Running\")].reason"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 63",message="a Sandbox name is at most 63 characters"
 type Sandbox struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
