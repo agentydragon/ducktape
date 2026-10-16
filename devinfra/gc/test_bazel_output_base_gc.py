@@ -48,7 +48,7 @@ def test_missing_workspace_is_immediately_prunable(prunable_base: Path) -> None:
 def test_existing_tmp_workspace_is_prunable_immediately(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(gc, "_TMP_ROOT", tmp_path / "tmp-root")
     workspace = gc._TMP_ROOT / "workspace"
-    workspace.mkdir()
+    workspace.mkdir(parents=True)
     base = make_base(tmp_path / "output", workspace)
     inspection = _inspect(base)
     assert isinstance(inspection, gc.PrunableBase)
