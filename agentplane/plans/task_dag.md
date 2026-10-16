@@ -1312,9 +1312,9 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 ```mermaid
 flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
-    CONTROL_SURFACE_RETIREMENT_AUDIT[Assigned: audit RPCs, fields and arguments against the intended paths]
-    CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_INVENTORY_AUTHORITY_DESIGN
-    RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state caller remains .-> RUNNER_LIST_SESSIONS_RETIRE[Conditional: retire Runner.ListSessions]
+    NOTIFICATION_GATEWAY_TARGET_MANIFEST_RETIRE[Blocked: remove accepted-unused API target from Notifications manifest]
+    NOTIFICATION_GATEWAY_TARGET_READER_RETIRE[Blocked: remove unused Notifications setting after manifest rollout]
+    NOTIFICATION_GATEWAY_TARGET_MANIFEST_RETIRE -->|Manifest-free image Ready in testing and staging| NOTIFICATION_GATEWAY_TARGET_READER_RETIRE
     DISPATCHER_OPENING_ATTACHED_READ_RETIRE[Blocked: unmap the retired snapshot after writer rollout]
     DISPATCHER_OPENING_ATTACHED_READ_RETIRE -->|Unmapped-reader image Ready in testing and staging| DISPATCHER_OPENING_ATTACHED_COLUMN_DROP[Blocked: drop the retired snapshot column]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
@@ -1329,55 +1329,25 @@ flowchart TD
     GATEWAY_SESSION_REGISTRY_RETIRE --> GATEWAY_DATABASE_DROP
 ```
 
-### `CONTROL_SURFACE_RETIREMENT_AUDIT` — converge RPCs, fields and arguments on the intended paths
+The [completed control-surface audit](../docs/control_surface_retirement.md) records protobuf,
+HTTP/client, settings, deployment and guest-wheel consumers. Live `Runner.ListSessions` remains
+needed by app archive/native resume and Notification membership, so its conditional retirement
+node is removed. This does not remove the separate destination-authority decision in section 16.
 
-**In flight; `suspended_session_inventory`, 2026-10-15 UTC.** The control-path inventory and
-confirmed RPC caller audit are recorded in [the control-surface audit](../docs/control_surface_retirement.md);
-the protobuf-field and deployment-only CLI/config review remains. Sweep Agentplane's protobuf services/messages,
-HTTP routes/client helpers, CLI arguments, settings/config keys and their producers/consumers.
-Start from the system overview: whenever two paths accomplish the same operation, ask why both
-exist. Trace their callers, authority and failure semantics; document a concrete reason for
-intentional coexistence, or identify the canonical path and the migration/removal of the other.
-Different transport names alone do not justify duplicate ways to perform the same work.
-Compare each with the decided owners: Dispatcher for starting/continuing Session work, History
-for retained inventory/history, controller for Sandbox reconciliation, and runner proxy only for
-operations that still belong at the runner. Include both `RunnerGateway.ListSessions` and
-`Runner.ListSessions`; migrating a wrapper call to the proxy is not proof that the underlying RPC
-should survive.
+### `NOTIFICATION_GATEWAY_TARGET_MANIFEST_RETIRE` — remove the unused Gateway API target
 
-Deliver an evidence-backed inventory in component docs: surface, purpose, real callers and writers,
-intended replacement, keep/migrate/delete/decision disposition, and removal prerequisites. Trace
-tests, generated schemas/clients, deployment config, templates and VM wheels as well as production
-code; distinguish real runtime callers from fixtures. Audit obsolete request/response fields,
-duplicated command envelopes, identity/default overrides and accepted-unused flags, not just RPC
-names. Do not infer that a field is dead merely because one client omits it or stale data still
-contains it.
+**Blocked on the accepting Notification image being Ready in testing and staging.**
+`RunnerGatewaySettings.target` is optional and unread by Notification runtime, but
+`cluster/cdk8s/agentplane/notifications.py` still emits `runner_gateway.target`. Remove that
+manifest value and verify the resulting image/config rollout in both environments. Keep the
+per-Sandbox `control_target`, token and request timeout used for live membership checks.
 
-Create specific unfinished migration/retirement nodes for confirmed findings, through deletion of
-old clients, receiver methods, fields, settings, BUILD targets and obsolete tests. Keep pending
-contract decisions explicit. Receiver removal waits for all caller images; writer changes wait
-for compatible readers, including separately pinned guest wheels. Stored-data removal is separate
-and owner-approved, with authored data preserved. Batch straightforward dead-surface cleanup;
-separate behavior changes and data drops. This audit does not block already-specified independent
-migrations or authorize broad compatibility shims, language rewrites or speculative replacement RPCs.
+### `NOTIFICATION_GATEWAY_TARGET_READER_RETIRE` — reject the removed setting
 
-### `RUNNER_LIST_SESSIONS_RETIRE` — retire live inventory only if its reviewed purposes no longer need it
-
-**Blocked on the surface audit's disposition and migration of its remaining real callers.** The
-Sandbox table uses retained History inventory. App archive safety/native resume and Notification
-membership still use live runner inventory; app and Notification now reach `Runner.ListSessions`
-through the per-Sandbox proxy with expected Sandbox UID and owner metadata (#10619), and their caller
-plus receiver images are deployed in both environments. Test drivers also use the read to order
-Quiesce assertions. The Dispatcher now relies on `OpenSession` to return the existing attachment for an
-identical retry and propagates `ALREADY_EXISTS` for a conflicting spec or setup; it no longer calls
-`Runner.ListSessions` for opening. History's retained harness state and namespace/name association do
-not preserve authoritative live state or Sandbox UID/owner checks. App archive safety needs current
-harness state; explicit native resume needs the current runner's Session and spec; Notification checks
-destination membership at subscription time. Migrate remaining callers with their
-live-state and identity requirements intact, then migrate tests and verify pinned caller images before
-removing the runner method/messages and helpers via normal generation. The Gateway wrapper may retire
-even if a narrowly justified runner live read remains; record that decision and remove this conditional
-node if so.
+**Blocked on `NOTIFICATION_GATEWAY_TARGET_MANIFEST_RETIRE` being Ready in both environments.**
+Delete the accepted-unused `RunnerGatewaySettings.target` field and its stale settings test/docs.
+Unknown settings are forbidden, so do not remove the reader before all deployed manifests stop
+supplying the key. This cleanup is independent of Gateway API-wrapper retirement.
 
 ### `DISPATCHER_OPENING_ATTACHED_READ_RETIRE` — stop selecting the unused opening snapshot column
 
@@ -1427,8 +1397,8 @@ migration and `Command` stays as that event's field type.
 pinned-caller review for the remaining Gateway methods.** #10619 moved app archive and Notification
 membership reads to the per-Sandbox proxy; the `agentplane-app`, `agentplane-notifications` and
 `agentplane-runner-gateway` images tagged `...-354a3e0` are Ready in testing and staging. Those reads
-are complete, while the Runner `ListSessions` method remains under `RUNNER_LIST_SESSIONS_RETIRE` for
-live inventory consumers. App and notification command sends go through Dispatcher. Retire Gateway
+are complete, and Runner `ListSessions` remains for live inventory consumers. App and notification
+command sends go through Dispatcher. Retire Gateway
 `CreateSession`, `ResumeSession` and `SubmitCommand` only after their caller gates.
 `BatchGetSessionSandboxes` has no production in-repo caller; remove it with the registry API only
 after external/pinned caller review. Preserve
@@ -1436,12 +1406,12 @@ after external/pinned caller review. Preserve
 `CreateSession` writes rows, so the app's current direct-resume path refuses Dispatcher-opened
 Sessions. Keep the runner control stream and proxy. Removing redundant Gateway APIs does not make
 `SANDBOX_DATABASE_RENAME` moot while the registry remains.
-Remove the `RunnerGatewayClient.command` helper and Notification's `command_admission_timeout_s` and
-`lifecycle_timeout_s` settings with the old command/resume methods after checking pinned callers;
-remove the app's `runner_gateway_lifecycle_timeout_s` only after the explicit resume caller moves.
-Retire the app's unused Gateway API channel/target after pinned-client review; its token and the
-separate Sandbox control target still serve live runner reads. Remove strict config keys from
-manifests before deleting their settings readers.
+Remove the `RunnerGatewayClient` helpers, wire types and test fixtures with the old methods after
+checking pinned/external callers; Notification's command/lifecycle timeout settings are already
+gone. Keep the app's `runner_gateway_lifecycle_timeout_s` until explicit resume has a reviewed new
+path. The app's Gateway API channel/target still powers its System health probe, so retain it
+until that health read is migrated. The separate Sandbox control target/token serve live runner
+reads. Remove strict config keys from manifests before deleting their settings readers.
 
 ### `GATEWAY_SESSION_REGISTRY_RETIRE` — retire registry consumers only after resume review
 
@@ -1553,7 +1523,6 @@ flowchart LR
     DELIVERY_GO_LEGACY_WRAPPER -. if port selected .-> DELIVERY_GO_INTEGRATION
     DELIVERY_GO_INTEGRATION --> DELIVERY_UNIFIED_CUTOVER
     DELIVERY_UNIFIED_CUTOVER --> DELIVERY_OLD_RUNTIME_RETIRE
-    RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state use remains .-> RUNNER_LIST_SESSIONS_RETIRE
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     HARNESS_IDENTITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
@@ -1762,8 +1731,8 @@ identical retries return the existing attachment, while conflicting specs or set
 whether each remaining caller requires live presence, retained identity/history or a narrower contract.
 
 **Recommendation for review:** retain a live read wherever an approved caller still needs live state;
-do not substitute History by name similarity. `RUNNER_LIST_SESSIONS_RETIRE` remains conditional on
-this disposition and successful caller migration; this design does not select its removal. Retiring
+do not substitute History by name similarity. App archive/native resume and Notification membership
+still need the live read, so the conditional retirement node is removed. Retiring
 the old Gateway wrapper is a separate caller/pinned-image audit, even if `Runner.ListSessions`
 remains. Keep History `FindSessions` and summaries for retained app views; Notification's History
 journal reads are command-outcome evidence, not inventory.
