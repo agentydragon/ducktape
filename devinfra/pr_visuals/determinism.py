@@ -153,13 +153,7 @@ def run_once(targets: list[str], *, bbr: Path, run: Runner) -> Execution:
     a missing test summary. Finish the other runs before reporting the failures.
     """
     invocation = str(uuid.uuid4())
-    command: list[str | Path] = [
-        bbr,
-        "test",
-        f"--invocation_id={invocation}",
-        "--nocache_test_results",
-        *targets,
-    ]
+    command: list[str | Path] = [bbr, "test", f"--invocation_id={invocation}", "--nocache_test_results", *targets]
     result = run(command, check=False, text=True, cwd=get_build_workspace_directory())
     return Execution(invocation, tuple(str(part) for part in command), result.returncode)
 
