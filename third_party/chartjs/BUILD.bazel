@@ -1,0 +1,14 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+
+js_library(
+    name = "overflow_test_lib",
+    testonly = True,
+    srcs = ["overflow_test.mjs"],
+    deps = ["//:node_modules/chart.js"],
+)
+
+js_test(
+    name = "overflow_test",
+    data = [":overflow_test_lib"],
+    entry_point = "overflow_test.mjs",
+)
