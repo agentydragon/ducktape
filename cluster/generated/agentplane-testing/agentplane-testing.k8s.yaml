@@ -407,7 +407,7 @@ metadata:
 spec:
   cluster:
     name: postgres
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
   name: sandbox_commands
   owner: sandbox_commands
 ---
