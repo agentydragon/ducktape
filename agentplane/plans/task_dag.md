@@ -1317,12 +1317,11 @@ node is removed. This does not remove the separate destination-authority decisio
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
 **Needs policy revision; preserve the explicitly approved direct app `Runner.ResumeSession` caller.**
-The app caller rollout is verified: testing and staging run #10716's image, which includes #10709's
-direct Runner resume change. The runner proxy (`runner_gateway/runner_proxy.py`) currently lets each
-configured caller account invoke the Runner methods allowed by policy, except `Quiesce` and `Seal`.
-Review the per-method policy for `OpenSession` and other start-or-continue-work methods against the
-Dispatcher-only command boundary and the approved app resume path. Do not revoke app resume as part of
-retiring the Gateway Session wrapper.
+The runner proxy (`runner_gateway/runner_proxy.py`) currently lets each configured caller account
+invoke the Runner methods allowed by policy, except `Quiesce` and `Seal`. Review the per-method policy
+for `OpenSession` and other start-or-continue-work methods against the Dispatcher-only command
+boundary and the approved app resume path. Do not revoke app resume as part of retiring the Gateway
+Session wrapper.
 
 ## Scope and retirement of stale gates
 
