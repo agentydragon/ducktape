@@ -1,5 +1,4 @@
-"""Authenticated gRPC boundary for Sessions and commands. Runners remain the command and execution-event
-authority."""
+"""Authenticated gRPC boundary for Session placement and lifecycle. Runners remain the execution authority."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -34,7 +33,6 @@ class Resources(ServicerResources):
     """What `RunnerGateway` serves from."""
 
     destinations: DestinationResolver
-    runner_admission_ack_timeout_s: float
     sessions: SessionRegistry
     control: LifecycleControl
     admission_timeout_s: float
@@ -167,30 +165,6 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             result = resumed.attached
             result.session_id = destination.session_id
             return runner_gateway_pb2.ResumeSessionResponse(attached=result)
-
-    @override
-    async def SubmitCommand(
-        self, request: runner_gateway_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.SubmitCommandResponse:
-        async with self.request(context, timeout_s=self.resources.runner_admission_ack_timeout_s):
-            if not 1 <= len(request.command.command_id) <= 128 or request.command.WhichOneof("operation") is None:
-                raise ValueError("a command needs a 1 to 128 character ID and an operation")
-            destination = request.destination
-            # Refuses a Sandbox being torn down.
-            await self.held(destination.sandbox, writes=True)
-            delivery = runner_control_pb2.DeliverCommandRequest(
-                session_id=await self.runner_session_id(destination), command=request.command
-            )
-            try:
-                delivered = await self.resources.control.runner(UUID(destination.sandbox.sandbox_uid)).DeliverCommand(
-                    delivery
-                )
-            except grpc.aio.AioRpcError as error:
-                # Only here does the runner's conflict mean the caller's own ID clashed.
-                if error.code() == grpc.StatusCode.ALREADY_EXISTS:
-                    await context.abort(error.code(), "the command ID was admitted for other work")
-                raise
-            return runner_gateway_pb2.SubmitCommandResponse(admission=delivered.admission)
 
     @override
     async def BatchGetSessionSandboxes(

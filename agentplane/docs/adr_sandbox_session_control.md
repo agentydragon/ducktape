@@ -49,8 +49,8 @@ not redesign storage, the History Service, or policy.
   Sandbox wrote each Session. Folds `last_model_activity_at`.
 
 The current sender path is queued: the app and Notification Service submit per-operation commands to
-Session Dispatcher, which durably records them and delivers after Sandbox readiness. The legacy
-Gateway `SubmitCommand` wrapper has no production sender in this repository. Explicit user-requested
+Session Dispatcher, which durably records them and delivers after Sandbox readiness. This PR removes
+the legacy Gateway `SubmitCommand` wrapper, which has no production sender in this repository. Explicit user-requested
 native resume and live runner reads use the Runner Proxy through the per-Sandbox control Service; see the
 [control-surface audit](control_surface_retirement.md) for the remaining caller and authorization gates.
 

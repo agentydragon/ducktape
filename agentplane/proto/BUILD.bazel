@@ -173,8 +173,6 @@ proto_library(
     name = "runner_gateway_proto",
     srcs = ["runner_gateway.proto"],
     deps = [
-        ":command_proto",
-        ":event_log_proto",
         ":runner_proto",
         ":sandboxes_proto",
     ],
@@ -307,8 +305,6 @@ go_proto_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/proto/runner_gateway",
     proto = ":runner_gateway_proto",
     deps = [
-        ":command_go_proto",
-        ":event_log_go_proto",
         ":runner_go_proto",
         ":sandboxes_go_proto",
     ],

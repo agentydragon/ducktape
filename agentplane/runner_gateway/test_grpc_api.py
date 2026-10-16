@@ -15,7 +15,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc.calls import ServiceError, dial
-from agentplane.proto import command_pb2, runner_control_pb2, runner_gateway_pb2, runner_pb2, sandboxes_pb2
+from agentplane.proto import runner_control_pb2, runner_gateway_pb2, runner_pb2, sandboxes_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner_gateway import wire
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
@@ -26,7 +26,6 @@ from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.testing.auth import CALLER_TOKEN
 from agentplane.runner_gateway.testing.grpc_service import gateway_client, service, service_client
-from agentplane.runner_gateway.testing.journal import admission
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.runner_gateway.testing.runner_control import (
     REPLICA,
@@ -119,25 +118,6 @@ async def test_open_uses_the_client_session_id_and_retries_on_the_runner(
             runner_control_pb2.ResumeSessionResponse(attached=attached(public, runner_pb2.HARNESS_STATE_RUNNING))
         )
         assert await resuming == created.attached
-
-
-async def test_a_retry_after_a_lost_reply_delivers_the_command_again(
-    cluster: SandboxCluster, resources: Resources, token_file: Path, peer: ScriptedRunner, engine: AsyncEngine
-) -> None:
-    session_id = uuid4()
-    await register_on_fake_sandbox(engine, session_id)
-    command = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="hi"))
-    async with asyncio.timeout(10), service_client(resources, token_file) as remote:
-        with pytest.raises(TimeoutError):
-            await remote.command(DESTINATION, str(session_id), command)
-        lost = (await peer.next(runner_control_pb2.DeliverCommandRequest)).request
-        assert (lost.session_id, lost.command) == (str(session_id), command)
-        # The gateway kept nothing: the retry reaches the runner again, which deduplicates it.
-        retrying = asyncio.create_task(remote.command(DESTINATION, str(session_id), command))
-        retried = await peer.next(runner_control_pb2.DeliverCommandRequest)
-        assert retried.request == lost
-        retried.outcome.set_result(runner_control_pb2.DeliverCommandResponse(admission=admission(command, 1)))
-        assert await retrying == admission(command, 1)
 
 
 @pytest.mark.parametrize("session_id", ["", "r-not-a-uuid"])
@@ -251,25 +231,6 @@ async def test_connection_not_held_error_detail_is_preserved(remote: RunnerGatew
     assert rejected.value.details == "another replica holds this Sandbox's runner connection"
 
 
-async def test_command_uses_runner_ack_budget_not_unary_request_budget(
-    resources: Resources, token_file: Path, peer: ScriptedRunner, engine: AsyncEngine
-) -> None:
-    command = command_pb2.Command(command_id="slow-ack", submit_input=command_pb2.SubmitInput(text="hi"))
-    # Unary authorization/destination work must not cap the runner's separate receipt wait.
-    async with service_client(
-        replace(resources, admission_timeout_s=0.1, runner_admission_ack_timeout_s=1), token_file
-    ) as remote:
-        remote.request_timeout_s = 0.1  # The client also must not use its short generic RPC deadline.
-        session_id = uuid4()
-        await register_on_fake_sandbox(engine, session_id)
-        submitted = asyncio.create_task(remote.command(DESTINATION, str(session_id), command))
-        delivered = await peer.next(runner_control_pb2.DeliverCommandRequest)
-        # Elapsed time is the subject: the ack lands after both 0.1 s budgets but inside the 1 s ack budget.
-        await asyncio.sleep(0.2)
-        delivered.outcome.set_result(runner_control_pb2.DeliverCommandResponse(admission=admission(command, 1)))
-        assert await submitted == admission(command, 1)
-
-
 @pytest.mark.parametrize(
     "metadata",
     [
@@ -326,11 +287,10 @@ async def test_unlisted_callers_rejected_before_lookup(
     cluster.fake.objects[SANDBOXES_PLURAL].clear()
     destination = sandboxes_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
     async with service(configured) as target, dial(target) as channel:
-        remote = gateway_client(channel, token_file, command_admission_timeout_s=10, control_target=target)
+        remote = gateway_client(channel, token_file, control_target=target)
         for gateway_call, gateway_request in (
             (remote.stub.ListSessions, runner_gateway_pb2.ListSessionsRequest(destination=DESTINATION)),
             (remote.stub.ResumeSession, runner_gateway_pb2.ResumeSessionRequest(destination=destination)),
-            (remote.stub.SubmitCommand, runner_gateway_pb2.SubmitCommandRequest(destination=destination)),
         ):
             with pytest.raises(ServiceError) as rejected:
                 await remote.unary(gateway_call, gateway_request)
@@ -338,23 +298,6 @@ async def test_unlisted_callers_rejected_before_lookup(
         with pytest.raises(ServiceError) as rejected:
             await remote.runner(DESTINATION).list_sessions()
         assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
-    assert cluster.fake.pod_reads == 0
-
-
-@pytest.mark.parametrize(
-    "command",
-    [
-        command_pb2.Command(),
-        command_pb2.Command(command_id="missing-operation"),
-        command_pb2.Command(submit_input=command_pb2.SubmitInput(text="missing-id")),
-    ],
-)
-async def test_invalid_command_is_not_submitted(
-    remote: RunnerGatewayClient, cluster: SandboxCluster, command: command_pb2.Command
-) -> None:
-    with pytest.raises(ServiceError) as rejected:
-        await remote.command(DESTINATION, str(uuid4()), command)
-    assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
     assert cluster.fake.pod_reads == 0
 
 

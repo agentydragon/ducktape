@@ -18,6 +18,8 @@ from agentplane.proto import (
     command_pb2,
     event_log_pb2,
     event_pb2,
+    runner_control_pb2,
+    runner_control_pb2_grpc,
     runner_gateway_pb2,
     runner_gateway_pb2_grpc,
     runner_pb2,
@@ -66,6 +68,7 @@ class ReplicationSource:
         )
         self.opened: asyncio.Queue[Opened] = asyncio.Queue()
         self.gateway = Gateway(self)
+        self.runner = Runner(self)
         self._appended = asyncio.Event()
 
     def append(self, event: event_pb2.Event) -> event_log_pb2.EventEntry:
@@ -109,12 +112,20 @@ class ReplicationSource:
 
 
 def add_replication_source(source: ReplicationSource, server: grpc.aio.Server) -> None:
-    """Registers the source's gateway, the service the app dials for commands and Session listings."""
+    """Registers placement reads at Gateway and command/list RPCs at the Runner proxy."""
     runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(source.gateway, server)
+    runner_control_pb2_grpc.add_RunnerServicer_to_server(source.runner, server)
 
 
 class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
-    """The Runner Gateway in front of the source's runner: an admitted command lands in its history."""
+    """The Runner Gateway's retained Session-placement reads."""
+
+    def __init__(self, source: ReplicationSource) -> None:
+        self.source = source
+
+
+class Runner(runner_control_pb2_grpc.RunnerServicer):
+    """A scripted Runner whose per-operation RPCs append command admissions to retained history."""
 
     def __init__(self, source: ReplicationSource) -> None:
         self.source = source
@@ -122,32 +133,10 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         self._admissions: dict[str, event_log_pb2.EventEntry] = {}
 
     @override
-    async def SubmitCommand(
-        self, request: runner_gateway_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.SubmitCommandResponse:
-        command = request.command
-        self.commands.put_nowait(command)
-        if previous := self._admissions.get(command.command_id):
-            if previous.event.command_admitted.command != command:
-                await context.abort(grpc.StatusCode.ALREADY_EXISTS, "conflicting command")
-            return runner_gateway_pb2.SubmitCommandResponse(admission=previous)
-        entry = self.source.append(event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)))
-        self._admissions[command.command_id] = entry
-        return runner_gateway_pb2.SubmitCommandResponse(admission=entry)
-
-    @override
-    async def BatchGetSessionSandboxes(
-        self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.BatchGetSessionSandboxesResponse:
-        return runner_gateway_pb2.BatchGetSessionSandboxesResponse(
-            sessions=self.source.placements.get(request.session_ids)
-        )
-
-    @override
     async def ListSessions(
-        self, request: runner_gateway_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.ListSessionsResponse:
-        return runner_gateway_pb2.ListSessionsResponse(
+        self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.ListSessionsResponse:
+        return runner_pb2.ListSessionsResponse(
             sessions=[
                 runner_pb2.SessionSummary(
                     session_id=str(self.source.session_id),
@@ -157,4 +146,68 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                     active_turn_id=self.source.attached.active_turn_id,
                 )
             ]
+        )
+
+    async def admit(self, command: command_pb2.Command, context: grpc.aio.ServicerContext) -> event_log_pb2.EventEntry:
+        if previous := self._admissions.get(command.command_id):
+            if previous.event.command_admitted.command != command:
+                await context.abort(grpc.StatusCode.ALREADY_EXISTS, "conflicting command")
+            return previous
+        self.commands.put_nowait(command)
+        entry = self.source.append(event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)))
+        self._admissions[command.command_id] = entry
+        return entry
+
+    @override
+    async def SubmitInput(
+        self, request: runner_control_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
+    ) -> runner_control_pb2.SubmitInputResponse:
+        command = command_pb2.Command(
+            command_id=request.command_id, submit_input=command_pb2.SubmitInput(text=request.text)
+        )
+        return runner_control_pb2.SubmitInputResponse(admission=await self.admit(command, context))
+
+    @override
+    async def ChangeModel(
+        self, request: runner_control_pb2.ChangeModelRequest, context: grpc.aio.ServicerContext
+    ) -> runner_control_pb2.ChangeModelResponse:
+        command = command_pb2.Command(
+            command_id=request.command_id, change_model=command_pb2.ChangeModel(model=request.model)
+        )
+        return runner_control_pb2.ChangeModelResponse(admission=await self.admit(command, context))
+
+    @override
+    async def ChangeReasoningEffort(
+        self, request: runner_control_pb2.ChangeReasoningEffortRequest, context: grpc.aio.ServicerContext
+    ) -> runner_control_pb2.ChangeReasoningEffortResponse:
+        command = command_pb2.Command(
+            command_id=request.command_id,
+            change_reasoning_effort=command_pb2.ChangeReasoningEffort(effort=request.effort),
+        )
+        return runner_control_pb2.ChangeReasoningEffortResponse(admission=await self.admit(command, context))
+
+    @override
+    async def InterruptTurn(
+        self, request: runner_control_pb2.InterruptTurnRequest, context: grpc.aio.ServicerContext
+    ) -> runner_control_pb2.InterruptTurnResponse:
+        command = command_pb2.Command(
+            command_id=request.command_id, interrupt_turn=command_pb2.InterruptTurn(turn_id=request.turn_id)
+        )
+        return runner_control_pb2.InterruptTurnResponse(admission=await self.admit(command, context))
+
+    @override
+    async def StopRunnerSession(
+        self, request: runner_control_pb2.StopRunnerSessionRequest, context: grpc.aio.ServicerContext
+    ) -> runner_control_pb2.StopRunnerSessionResponse:
+        command = command_pb2.Command(
+            command_id=request.command_id, stop_runner_session=command_pb2.StopRunnerSession()
+        )
+        return runner_control_pb2.StopRunnerSessionResponse(admission=await self.admit(command, context))
+
+    @override
+    async def BatchGetSessionSandboxes(
+        self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.BatchGetSessionSandboxesResponse:
+        return runner_gateway_pb2.BatchGetSessionSandboxesResponse(
+            sessions=self.source.placements.get(request.session_ids)
         )

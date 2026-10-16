@@ -4,8 +4,6 @@ syntax = "proto3";
 // control Service reaches the replica holding its runner connection.
 package agentplane.proto.runner_gateway;
 
-import "agentplane/proto/event_log.proto";
-import "agentplane/proto/command.proto";
 import "agentplane/proto/runner.proto";
 import "agentplane/proto/sandboxes.proto";
 
@@ -14,10 +12,6 @@ service RunnerGateway {
   // Opens the Session the client named. A retry with the same ID and inputs returns it again.
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
-  // Served only by the replica holding the runner connection of the Sandbox the Session runs in.
-  // Returns the runner's CommandAdmitted entry, not command completion; a retry with the same
-  // command returns the original one. The gateway keeps no record of the command.
-  rpc SubmitCommand(SubmitCommandRequest) returns (SubmitCommandResponse);
   // Any allowed service caller. Which Sandbox each named Session runs in; a Session the gateway
   // never registered is left out. Carries no transcript.
   rpc BatchGetSessionSandboxes(BatchGetSessionSandboxesRequest) returns (BatchGetSessionSandboxesResponse);
@@ -45,16 +39,6 @@ message ListSessionsResponse { repeated agentplane.proto.runner.SessionSummary s
 
 message ResumeSessionRequest { agentplane.proto.sandboxes.SessionDestination destination = 1; }
 message ResumeSessionResponse { agentplane.proto.runner.Attached attached = 1; }
-
-// The gateway checks that the Session runs in the Sandbox whose control Service the call reached.
-message SubmitCommandRequest {
-  agentplane.proto.sandboxes.SessionDestination destination = 1;
-  agentplane.proto.command.Command command = 2;
-}
-message SubmitCommandResponse {
-  // The runner's journal entry whose event is the matching CommandAdmitted.
-  agentplane.proto.event_log.EventEntry admission = 1;
-}
 
 message CreateSessionRequest {
   agentplane.proto.sandboxes.SandboxDestination sandbox = 1;

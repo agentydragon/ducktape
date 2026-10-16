@@ -63,7 +63,7 @@ flowchart LR
     NOTIFICATION_NOTICE_METADATA --> NOTIFICATION_PRESENTATION
 ```
 
-Details: [command admission](../runner_gateway/API.md#sessions-and-commands); later
+Details: [command admission](../runner_gateway/API.md#sessions); later
 [notification presentation and input metadata](notification_presentation.md).
 
 ### `NOTIFICATION_COMMAND_OUTCOME_DESIGN` — notice delivery without reading conversation history
@@ -80,12 +80,10 @@ outcome is recorded before the Notification Service stops reading history.
 
 **Unscheduled; operator's lean, 2026-10-12 PDT.**
 Typed metadata and restricted trusted producer provenance on input commands, so a notice the
-Notification Service sends is not rendered as a user message. The lean: the Runner Gateway stamps
-verified provenance on the runner Command, and the runner echoes it into the Event that journals
-the input, so it reaches history with the input itself; the gateway keeps no command records.
-The field rides `SubmitCommand` as it addresses a Session's Sandbox through `SessionDestination`
-(#10129) and is delivered through the replica holding the runner stream. The harness never sees it. Notification-specific authorization
-belongs here, not in the generic command-admission path; attachments are invalid on controls. No
+Notification Service sends is not rendered as a user message. The field must ride the durable
+Session Dispatcher path to the matching Runner input RPC; its trusted producer provenance and narrow
+authorization are open design points (#10129). The harness never sees it. Keep that authorization
+outside the generic command-admission path; attachments are invalid on controls. No
 untyped extension dictionary.
 
 ### `SESSION_INPUT_METADATA_READ` — authorized annotation reads
@@ -291,7 +289,7 @@ batching, abuse limits and mailbox ownership after Sandbox deletion. Reading a t
 authorize sending or acking.
 
 Output includes the selected owner/API and explicit conditional prerequisites: a direct-input
-implementation reuses durable `SubmitCommand` and separately reviewed provenance reads; a notification source reuses
+implementation reuses the durable Dispatcher command path and separately reviewed provenance reads; a notification source reuses
 inboxes without treating admission as acknowledgement. Neither branch is selected in this DAG.
 Before dispatch, add the chosen branch's edges; do not require implementing both. New Sandbox
 Service or app tables require their task-specific contract review. Pure Notification Service work need not
@@ -1336,9 +1334,10 @@ that have them. Order: every other caller has moved to the Dispatcher, then the 
 **Blocked on `GATEWAY_WRAPPER_RETIRE`; operator, 2026-10-13 PDT: one RPC per command rather than one
 taking a union.** The runner serves `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`,
 `InterruptTurn` and `StopRunnerSession` beside `DeliverCommand`, and the proxy admits every method of
-`Runner` (it builds its method set from the service descriptor). The only caller left of
-`DeliverCommand` is the Runner Gateway's `SubmitCommand` path, which goes with
-`GATEWAY_WRAPPER_RETIRE` and needs no split. Then `DeliverCommand`, `Command` as a request type and
+`Runner` (it builds its method set from the service descriptor). Current Dispatcher callers use the
+per-operation RPCs. This PR removes Gateway `SubmitCommand`, the only current path to
+`DeliverCommand`; retain the latter while already-published Gateway images can call it, then remove it
+after that pinned-image gate is clear. Then `DeliverCommand`, `Command` as a request type and
 `DeliverCommandRequest`/`DeliverCommandResponse` are deleted from `runner_control.proto` once no
 pinned caller image sends it (the VM guest's runner wheel is a reader of the new RPCs, not a caller).
 The journal's `CommandAdmitted` event keeps storing the `Command` message, so stored history needs no
@@ -1346,10 +1345,10 @@ migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — delete the legacy Gateway wrappers
 
-**Partially dispatched; operator-approved, 2026-10-16.** Delete `SubmitCommand` in its own PR against
-`devel`; production app and Notifications already use Dispatcher. Migrate meaningful test callers
-and remove wrapper-only tests, client helpers and protobuf types. Its removal does not wait for app
-Resume. Once `APP_NATIVE_RESUME_CUTOVER` is deployed, remove Gateway `ResumeSession`, `CreateSession`,
+**Partially dispatched; operator-approved, 2026-10-16.** The SubmitCommand retirement PR removes that
+method and its request/response types; production app and Notifications already use Dispatcher.
+Meaningful test callers move to the per-operation Runner RPCs and wrapper-only tests/client helpers
+are removed. The remaining wrappers stay gated independently. Once `APP_NATIVE_RESUME_CUTOVER` is deployed, remove Gateway `ResumeSession`, `CreateSession`,
 `ListSessions` and `BatchGetSessionSandboxes` after verifying remaining pinned/external callers.
 Retire their test fixtures and wire helpers; keep Runner inventory, the reverse tunnel and proxy.
 The app's Gateway API target still powers its System health probe: migrate that probe before
@@ -1358,7 +1357,7 @@ removing its channel/configuration. Remove strict settings from manifests before
 ### `GATEWAY_SESSION_REGISTRY_RETIRE` — remove Gateway registry code and database access
 
 **Blocked on `GATEWAY_WRAPPER_RETIRE`.** `CreateSession` writes the `session` table;
-`ResumeSession` and `SubmitCommand` validate against it; `BatchGetSessionSandboxes` reads it.
+`ResumeSession` validates against it; `BatchGetSessionSandboxes` reads it.
 After those methods and their callers are gone, remove `SessionRegistry`, the ORM mapping and
 serving-process database access. Keep a transitional optional settings reader only while existing
 manifests still supply its key; its deletion belongs to `GATEWAY_DATABASE_DROP`. Roll the

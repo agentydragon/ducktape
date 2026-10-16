@@ -10,7 +10,7 @@ from kubernetes_asyncio import client as k8s_client
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.live import LiveIndex
-from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
+from agentplane.app.testing.dispatcher import RunnerProxyBackedDispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.runner_directory import RunnerDirectory
@@ -73,7 +73,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
             runners=directory,
             event_logs=event_logs,
             content=content,
-            dispatcher=GatewayBackedDispatcher(directory, remote, event_logs),
+            dispatcher=RunnerProxyBackedDispatcher(directory, event_logs),
         )
         opening = await bridge.create_session(SANDBOX, uuid4(), spec)
         assert opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
@@ -134,7 +134,7 @@ async def test_history_resume_rejects_a_recreated_sandbox_incarnation(
             runners=directory,
             event_logs=event_logs,
             content=content,
-            dispatcher=GatewayBackedDispatcher(directory, remote, event_logs),
+            dispatcher=RunnerProxyBackedDispatcher(directory, event_logs),
         )
         opening = await bridge.create_session(SANDBOX, uuid4(), spec)
         thread_id = UUID(opening.session_id)

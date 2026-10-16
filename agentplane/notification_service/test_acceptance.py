@@ -42,7 +42,7 @@ from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import Store
-from agentplane.proto import command_pb2, event_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.proto import event_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.platform_instructions import render_platform_instructions
@@ -351,12 +351,8 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 assert history_cursor > 128
                 initial = None
                 if busy:
-                    await remote.command(
-                        destination,
-                        session_id,
-                        command_pb2.Command(
-                            command_id="initial", submit_input=command_pb2.SubmitInput(text="Do other work")
-                        ),
+                    await dispatcher.submit_input(
+                        sandbox=SANDBOX, session_id=session_id, command_id="initial", text="Do other work"
                     )
                     initial = await model.request()
                 original = SessionDispatcherClient.submit_input
@@ -506,10 +502,12 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     if entry.event.HasField("command_admitted")
                 ]
                 assert admitted.count(page["notice"]["command_id"]) == 1
-                await remote.command(
-                    destination,
-                    session_id,
-                    command_pb2.Command(command_id="stop", stop_runner_session=command_pb2.StopRunnerSession()),
+                await dispatcher.stub.StopRunnerSession(
+                    session_dispatcher_pb2.StopRunnerSessionRequest(
+                        sandbox=SANDBOX, session_id=session_id, command_id="stop"
+                    ),
+                    metadata=await bearer(dispatcher.token_file),
+                    timeout=dispatcher.request_timeout_s,
                 )
 
 

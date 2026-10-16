@@ -51,17 +51,9 @@ async def authenticated_runner_gateway(
             principals=cluster.build_principal_resolver(audience),
             destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
             caller_accounts=frozenset({manager}),
-            # Native acceptance uses production's admission budget, including delivery's
-            # two-second recheck. The gateway unit fixture keeps its one-second default.
-            runner_admission_ack_timeout_s=15,
         )
         async with runner_connected(cluster, resources, runner), service(resources) as target, dial(target) as channel:
-            yield gateway_client(
-                channel,
-                token_file,
-                command_admission_timeout_s=resources.runner_admission_ack_timeout_s + 10,
-                control_target=target,
-            )
+            yield gateway_client(channel, token_file, control_target=target)
 
 
 @asynccontextmanager

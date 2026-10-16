@@ -66,7 +66,6 @@ async def gateway(
         control=control,
         destinations=destinations,
         admission_timeout_s=settings.admission_timeout_s,
-        runner_admission_ack_timeout_s=settings.runner_admission_ack_timeout_s,
         caller_accounts=settings.caller_accounts,
         lifecycle_timeout_s=settings.lifecycle_timeout_s,
     )

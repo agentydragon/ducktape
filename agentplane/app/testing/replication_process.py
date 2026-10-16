@@ -36,7 +36,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
+from agentplane.app.testing.dispatcher import RunnerProxyBackedDispatcher
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.testing.system_status import answering_system_status
@@ -260,7 +260,6 @@ async def _serve(
             gateway = RunnerGatewayClient(
                 channel,
                 token_file=token_file,
-                command_admission_timeout_s=10,
                 request_timeout_s=10,
                 control=SandboxControlClient(
                     control_target=f"127.0.0.1:{service_port}",
@@ -275,7 +274,7 @@ async def _serve(
                 runners=runners,
                 event_logs=event_logs,
                 content=content,
-                dispatcher=GatewayBackedDispatcher(runners, gateway, event_logs),
+                dispatcher=RunnerProxyBackedDispatcher(runners, event_logs),
             )
             history_watch = HistoryWatch(
                 watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05

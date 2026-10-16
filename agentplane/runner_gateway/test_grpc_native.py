@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.grpc.calls import RefusedError, ServiceError
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_pb2
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.runner import Runner, follow_journal
 from agentplane.runner.testing import events, launches
@@ -52,9 +52,6 @@ def resources(cluster: SandboxCluster, runner: Runner, engine: AsyncEngine) -> R
         principals=cluster.build_principal_resolver(AUDIENCE),
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
         caller_accounts=frozenset({OWNER}),
-        # A real runner answers here, so admission needs room for delivery's two-second recheck:
-        # under one second, a single missed dispatch wakeup or control-stream reconnect fails it.
-        runner_admission_ack_timeout_s=15,
     )
 
 
@@ -85,16 +82,41 @@ async def inspect(runner: SandboxRunner, session_id: str) -> runner_pb2.SessionS
     return one(summary for summary in await runner.list_sessions() if summary.session_id == session_id)
 
 
+async def submit_input(
+    remote: RunnerGatewayClient, session_id: str, command: command_pb2.Command
+) -> event_log_pb2.EventEntry:
+    assert command.WhichOneof("operation") == "submit_input"
+    response = await remote.control.runner_unary(
+        DESTINATION,
+        lambda stub: stub.SubmitInput,
+        runner_control_pb2.SubmitInputRequest(
+            session_id=session_id, command_id=command.command_id, text=command.submit_input.text
+        ),
+        timeout_s=remote.control.request_timeout_s,
+    )
+    return response.admission
+
+
+async def stop_session(remote: RunnerGatewayClient, session_id: str, command_id: str) -> event_log_pb2.EventEntry:
+    response = await remote.control.runner_unary(
+        DESTINATION,
+        lambda stub: stub.StopRunnerSession,
+        runner_control_pb2.StopRunnerSessionRequest(session_id=session_id, command_id=command_id),
+        timeout_s=remote.control.request_timeout_s,
+    )
+    return response.admission
+
+
 async def complete_turn(
     remote: RunnerGatewayClient, local: Runner, model: ScriptedModel, session_id: str, command_id: str
 ) -> list[event_log_pb2.EventEntry]:
     command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="Reply: GRPC_OK"))
-    receipt = await remote.command(DESTINATION, session_id, command)
+    receipt = await submit_input(remote, session_id, command)
     assert receipt.event.command_admitted.command == command
     assert receipt.origin.source_id
     assert receipt.origin.sequence > 0
     # Neither admission nor exact receipt replay waits for model completion.
-    assert await remote.command(DESTINATION, session_id, command) == receipt
+    assert await submit_input(remote, session_id, command) == receipt
     request = await model.request()
     assert launches.PLATFORM_INSTRUCTIONS in request.system_text
     assert "Test task guidance." in request.system_text
@@ -155,16 +177,15 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         assert bootstrap_marker.read_text() == "B"
         assert setup_marker.read_text() == "S"
         entries = await complete_turn(remote, runner, model, session, "grpc-notice")
-        stop = command_pb2.Command(command_id="grpc-stop", stop_runner_session=command_pb2.StopRunnerSession())
-        await remote.command(DESTINATION, session, stop)
+        await stop_session(remote, session, "grpc-stop")
         journal = runner.sessions[session].journal
         async with asyncio.timeout(20), aclosing(follow_journal(journal, entries[-1].cursor)) as tail:
             async for entry in tail:
                 if events.kind(entry) == "harness_exited":
                     break
         with pytest.raises(RefusedError):
-            await remote.command(
-                DESTINATION,
+            await submit_input(
+                remote,
                 session,
                 command_pb2.Command(command_id="no-wake", submit_input=command_pb2.SubmitInput(text="no wake")),
             )
@@ -189,12 +210,12 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     assert setup_marker.read_text() == "S"
 
 
-async def test_observe_command_and_resume_do_not_create_unknown_session(remote: RunnerGatewayClient) -> None:
+async def test_runner_command_and_resume_do_not_create_unknown_session(remote: RunnerGatewayClient) -> None:
     runner = remote.runner(DESTINATION)
     unknown = str(uuid4())
     with pytest.raises(ServiceError) as commanded:
-        await remote.command(
-            DESTINATION,
+        await submit_input(
+            remote,
             unknown,
             command_pb2.Command(command_id="unknown-notice", submit_input=command_pb2.SubmitInput(text="no creation")),
         )

@@ -32,8 +32,6 @@ py_library(
         ":runner_proxy",
         ":wire",
         "//agentplane/grpc:calls",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/proto:runner_gateway_pb2",

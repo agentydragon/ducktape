@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.grpc.tunnel import TunnelCaller, relay
-from agentplane.proto import command_pb2, event_log_pb2, grpc_tunnel_pb2, runner_control_pb2, runner_pb2
+from agentplane.proto import grpc_tunnel_pb2, runner_control_pb2, runner_pb2
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
@@ -123,7 +123,7 @@ async def runner_on(replica: Replica) -> AsyncIterator[ScriptedRunner]:
 
 
 def client(token_file: Path, target: str, *, control_target: str) -> AbstractAsyncContextManager[RunnerGatewayClient]:
-    return connect(target, token_file, command_admission_timeout_s=10, control_target=control_target)
+    return connect(target, token_file, control_target=control_target)
 
 
 async def test_tunnel_send_preserves_grpc_status_and_detail() -> None:
@@ -268,50 +268,6 @@ async def test_a_lost_connection_fails_its_call(holder: Replica, token_file: Pat
             await creating
         assert lost.value.code == grpc.StatusCode.UNAVAILABLE
         assert str(lost.value) == "UNAVAILABLE: the tunnel ended before the callee answered"
-
-
-COMMAND = command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="test input"))
-
-
-async def test_a_command_reaches_the_holder_and_returns_the_runner_admission(
-    holder: Replica, other: Replica, public_id: UUID, token_file: Path
-) -> None:
-    admitted = event_log_pb2.EventEntry(cursor=1)
-    admitted.origin.source_id, admitted.origin.sequence = "test-runner-source", 1
-    admitted.event.command_admitted.command.CopyFrom(COMMAND)
-    # The caller's own target is the other replica; the control Service names the holder.
-    async with runner_on(holder) as runner, client(token_file, other.api, control_target=holder.api) as service:
-        submitting = asyncio.create_task(service.command(DESTINATION, str(public_id), COMMAND))
-        delivered = await runner.next(runner_control_pb2.DeliverCommandRequest)
-        assert (delivered.request.session_id, delivered.request.command) == (str(public_id), COMMAND)
-        delivered.outcome.set_result(runner_control_pb2.DeliverCommandResponse(admission=admitted))
-        assert await submitting == admitted
-
-
-async def test_a_refused_command_carries_the_runners_status(holder: Replica, public_id: UUID, token_file: Path) -> None:
-    async with runner_on(holder) as runner, client(token_file, holder.api, control_target=holder.api) as service:
-        submitting = asyncio.create_task(service.command(DESTINATION, str(public_id), COMMAND))
-        # The command ID was admitted for other work.
-        (await runner.next(runner_control_pb2.DeliverCommandRequest)).outcome.set_result(grpc.StatusCode.ALREADY_EXISTS)
-        with pytest.raises(ServiceError) as refused:
-            await submitting
-        assert refused.value.code == grpc.StatusCode.ALREADY_EXISTS
-
-
-async def test_a_lost_connection_fails_its_command_and_a_retry_delivers_it_again(
-    holder: Replica, public_id: UUID, token_file: Path
-) -> None:
-    async with client(token_file, holder.api, control_target=holder.api) as service:
-        async with runner_on(holder) as runner:
-            submitting = asyncio.create_task(service.command(DESTINATION, str(public_id), COMMAND))
-            await runner.next(runner_control_pb2.DeliverCommandRequest)
-        with pytest.raises(ServiceError) as lost:
-            await submitting
-        assert lost.value.code == grpc.StatusCode.UNAVAILABLE
-        async with runner_on(holder) as runner:
-            retrying = asyncio.create_task(service.command(DESTINATION, str(public_id), COMMAND))
-            assert (await runner.next(runner_control_pb2.DeliverCommandRequest)).request.command == COMMAND
-            retrying.cancel()
 
 
 if __name__ == "__main__":

@@ -126,7 +126,6 @@ async def test_queue_receipt_then_runner_admission_crosses_the_gateway_proxy(
         control=gateway_control,
         sessions=SessionRegistry(engine),
         admission_timeout_s=15,
-        runner_admission_ack_timeout_s=15,
         lifecycle_timeout_s=300,
     )
     gateway_caller_token = tmp_path / "gateway-caller-token"

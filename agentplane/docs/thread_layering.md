@@ -244,7 +244,8 @@ commands to Dispatcher and reads queued/delivering/admitted results. Dispatcher 
 suspended Sandbox, waits for `Ready`, and delivers through
 the Runner Gateway proxy. A queued `Dispatch`, a runner `CommandAdmitted`, a History observation and
 a native effect remain separate facts. The app has no second command queue, and current production
-senders do not use the Gateway's legacy `SubmitCommand` wrapper; its retirement is gated in the
+senders do not use the Gateway's legacy `SubmitCommand` wrapper; this PR removes its server path.
+The remaining wrapper and pinned-image gates are tracked in the
 [control-surface audit](control_surface_retirement.md).
 
 ### Message sketches used below

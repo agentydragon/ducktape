@@ -41,12 +41,6 @@ class Settings(YamlFileSettings):
         description="Audience of the Pod tokens the egress proxy substitutes on runner control stream connections.",
     )
     runner_control_port: int = Field(default=8082, ge=1, le=65535)
-    runner_admission_ack_timeout_s: float = Field(
-        default=15,
-        gt=0,
-        description="Seconds SubmitCommand waits for the runner journal to durably record the exact "
-        "command; expiry leaves admission uncertain.",
-    )
     pod_ip: str = Field(
         min_length=1,
         description="This replica's Pod IP, where a Sandbox's control Service points while it holds the runner connection.",

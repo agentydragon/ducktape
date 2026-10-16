@@ -1,5 +1,4 @@
-"""gRPC clients for the Runner Gateway: Session routing through its Service, and the per-Sandbox
-calls, commands included, that only the replica holding a runner's connection answers."""
+"""gRPC clients for Gateway Session placement and the per-Sandbox Runner control proxy."""
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -10,8 +9,6 @@ from google.protobuf.message import Message
 
 from agentplane.grpc.calls import bearer, call_unary, dial
 from agentplane.proto import (
-    command_pb2,
-    event_log_pb2,
     runner_control_pb2,
     runner_control_pb2_grpc,
     runner_gateway_pb2,
@@ -107,14 +104,12 @@ class RunnerGatewayClient:
         channel: grpc.aio.Channel,
         *,
         token_file: Path,
-        command_admission_timeout_s: float = 20,
         request_timeout_s: float,
         control: SandboxControlClient,
     ) -> None:
         self.stub: runner_gateway_pb2_grpc.RunnerGatewayAsyncStub = runner_gateway_pb2_grpc.RunnerGatewayStub(channel)
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
-        self.command_admission_timeout_s = command_admission_timeout_s
         self.control = control
 
     async def metadata(self) -> tuple[tuple[str, str], ...]:
@@ -131,27 +126,6 @@ class RunnerGatewayClient:
         """Where each Session the gateway registered among `session_ids` runs."""
         request = runner_gateway_pb2.BatchGetSessionSandboxesRequest(session_ids=sorted(session_ids))
         return list((await self.unary(self.stub.BatchGetSessionSandboxes, request)).sessions)
-
-    async def command(
-        self, destination: SandboxDestination, session_id: str, command: command_pb2.Command
-    ) -> event_log_pb2.EventEntry:
-        """Submit to a public Session running in `destination` and return the runner's admission entry.
-
-        A retry with the same command returns the same entry: the runner deduplicates by command ID.
-        """
-        response = await self.control.held_unary(
-            destination,
-            lambda stub: stub.SubmitCommand,
-            runner_gateway_pb2.SubmitCommandRequest(
-                destination=sandboxes_pb2.SessionDestination(sandbox=destination, session_id=session_id),
-                command=command,
-            ),
-            timeout_s=self.command_admission_timeout_s,
-        )
-        receipt = response.admission
-        if not receipt.event.HasField("command_admitted") or receipt.event.command_admitted.command != command:
-            raise ConnectionError("Runner Gateway did not return the exact command admission")
-        return receipt
 
     def runner(self, destination: SandboxDestination) -> SandboxRunner:
         return self.control.runner(destination)

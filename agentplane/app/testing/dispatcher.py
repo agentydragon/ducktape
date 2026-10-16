@@ -8,22 +8,20 @@ from google.protobuf.json_format import MessageToDict
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.runner_directory import RunnerDirectory
-from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
-from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.proto import command_pb2, runner_control_pb2, runner_pb2, session_dispatcher_pb2
 
 
-class GatewayBackedDispatcher(SessionDispatcherClient):
-    """Keep runner-backed app tests focused on app effects, using a real local Runner Gateway.
+class RunnerProxyBackedDispatcher(SessionDispatcherClient):
+    """Keep runner-backed app tests focused on app effects, using a real local Runner proxy.
 
-    This test adapter sends fixture operations to the local Runner Gateway and creates the test
+    This test adapter sends fixture operations to per-operation Runner RPCs and creates the test
     Thread row immediately, as the old direct-open path did. It is not evidence for Dispatcher
     queueing or app production routing; Dispatcher queue, retry, and deadline behavior have
     separate service/client tests.
     """
 
-    def __init__(self, runners: RunnerDirectory, gateway: RunnerGatewayClient, event_logs: EventLogStore) -> None:
+    def __init__(self, runners: RunnerDirectory, event_logs: EventLogStore) -> None:
         self.runners = runners
-        self.gateway = gateway
         self.event_logs = event_logs
         self.dispatches: dict[str, session_dispatcher_pb2.Dispatch] = {}
         self.openings: dict[str, session_dispatcher_pb2.SessionOpening] = {}
@@ -33,13 +31,50 @@ class GatewayBackedDispatcher(SessionDispatcherClient):
         self, *, sandbox: str, session_id: str, command: command_pb2.Command
     ) -> session_dispatcher_pb2.Dispatch:
         runner = self.runners.client(sandbox)
-        admission = await self.gateway.command(runner.destination, session_id, command)
-        operation = {
-            "submit_input": session_dispatcher_pb2.OPERATION_SUBMIT_INPUT,
-            "change_model": session_dispatcher_pb2.OPERATION_CHANGE_MODEL,
-            "change_reasoning_effort": session_dispatcher_pb2.OPERATION_CHANGE_REASONING_EFFORT,
-            "stop_runner_session": session_dispatcher_pb2.OPERATION_STOP_RUNNER_SESSION,
-        }.get(command.WhichOneof("operation"), session_dispatcher_pb2.OPERATION_UNSPECIFIED)
+        common = {"session_id": session_id, "command_id": command.command_id}
+        match command.WhichOneof("operation"):
+            case "submit_input":
+                response = await runner.control.runner_unary(
+                    runner.destination,
+                    lambda stub: stub.SubmitInput,
+                    runner_control_pb2.SubmitInputRequest(**common, text=command.submit_input.text),
+                )
+                operation = session_dispatcher_pb2.OPERATION_SUBMIT_INPUT
+            case "change_model":
+                response = await runner.control.runner_unary(
+                    runner.destination,
+                    lambda stub: stub.ChangeModel,
+                    runner_control_pb2.ChangeModelRequest(**common, model=command.change_model.model),
+                )
+                operation = session_dispatcher_pb2.OPERATION_CHANGE_MODEL
+            case "change_reasoning_effort":
+                response = await runner.control.runner_unary(
+                    runner.destination,
+                    lambda stub: stub.ChangeReasoningEffort,
+                    runner_control_pb2.ChangeReasoningEffortRequest(
+                        **common, effort=command.change_reasoning_effort.effort
+                    ),
+                )
+                operation = session_dispatcher_pb2.OPERATION_CHANGE_REASONING_EFFORT
+            case "stop_runner_session":
+                response = await runner.control.runner_unary(
+                    runner.destination,
+                    lambda stub: stub.StopRunnerSession,
+                    runner_control_pb2.StopRunnerSessionRequest(**common),
+                )
+                operation = session_dispatcher_pb2.OPERATION_STOP_RUNNER_SESSION
+            case "interrupt_turn":
+                response = await runner.control.runner_unary(
+                    runner.destination,
+                    lambda stub: stub.InterruptTurn,
+                    runner_control_pb2.InterruptTurnRequest(**common, turn_id=command.interrupt_turn.turn_id),
+                )
+                operation = session_dispatcher_pb2.OPERATION_INTERRUPT_TURN
+            case _:
+                raise ValueError(
+                    f"unsupported Session Dispatcher command operation: {command.WhichOneof('operation')!r}"
+                )
+        admission = response.admission
         dispatch = session_dispatcher_pb2.Dispatch(
             command_id=command.command_id,
             session_id=session_id,

@@ -1,7 +1,7 @@
 # Runner Gateway API
 
 The [Runner Gateway](README.md) serves `RunnerGateway`
-([`runner_gateway.proto`](../proto/runner_gateway.proto)) over gRPC: Sessions, commands and Session
+([`runner_gateway.proto`](../proto/runner_gateway.proto)) over gRPC: Sessions and Session
 placement. Its replicas hold the runner connections; a Sandbox's
 `<sandbox>-control` Service reaches the replica holding its runner. Callers use
 [`RunnerGatewayClient`](client.py) over a channel to the gateway, and its `SandboxControlClient`,
@@ -10,7 +10,7 @@ which dials the Sandbox's `<sandbox>-control` Service for each call only the hol
 Callers authenticate under the gateway's own token audience and `caller_accounts`. Each request
 checks the caller before resolving its Sandbox destination.
 
-## Sessions and commands
+## Sessions
 
 The gateway keeps no Session history; runners push their Events to the
 [History Service](../history_service/README.md)'s ingress, which serves reads.
@@ -38,22 +38,10 @@ The gateway keeps no Session history; runners push their Events to the
   Resume action instead calls `Runner.ResumeSession` through the Sandbox control Service, carrying
   the live Sandbox name, UID and owner to the Runner Proxy; its live-list and retained-spec checks
   do not depend on the Gateway registry.
-- `SubmitCommand`: names the Session's Sandbox incarnation and public Session ID, like
-  `ResumeSession`; the gateway refuses a Session not opened in that incarnation, and an incarnation
-  that is gone or being torn down. It forwards
-  an unchanged common-protocol `Command` only to a running harness and returns, as `admission`, the
-  original `EventEntry` containing its exact matching `CommandAdmitted`. Like the lifecycle calls, it reaches
-  the replica holding the runner's connection through the Sandbox's control Service, and any other
-  replica refuses with `UNAVAILABLE`; the command travels over the
-  [runner control stream](../docs/runner_control.md#command-delivery). The gateway records nothing:
-  a caller whose reply was lost retries with the same command, and the runner answers a command it
-  already journaled with its original receipt, even after the harness stopped or its journal was
-  sealed. A runner refusal returns `FAILED_PRECONDITION` (`ALREADY_EXISTS` for a command ID already
-  used for other work, `INVALID_ARGUMENT` for an invalid command). Admission is the runner
-  journaling the command, not the harness acting on it; the Session's history in the History Service
-  is where a caller reads it back.
 
-Session listing and command RPCs never provision, resume, or wake a Sandbox or harness.
+Commands go through Session Dispatcher, which records durable intent and calls the matching
+per-operation Runner RPC through the control proxy. Session listing never provisions, resumes, or
+wakes a Sandbox or harness.
 
 ### Complete launch spec
 
@@ -90,16 +78,10 @@ which is a separate source and does not replace the registry's incarnation recor
 
 ## Errors and uncertain outcomes
 
-Errors use the shared gRPC status mapping; `ALREADY_EXISTS` also indicates that a `SubmitCommand`
-command ID already belongs to a different submission. Runner RPC status codes and details pass
-through unchanged. In particular, `UNAVAILABLE` after the control stream ends before a reply means
-the mutation's outcome is unknown; it does not establish that the destination was unavailable before
-the runner acted.
-
-Neither a successful write nor a timeout proves admission/rejection. A mutation may commit before
-its response is lost. Settle a command by retrying it with the unchanged ID/payload; admission is
-neither harness consumption nor command completion nor inbox acknowledgement. A recorded submission
-is not a queue: nothing delivers it later, and the runner journal stays the receipt authority.
+Errors use the shared gRPC status mapping. Runner RPC status codes and details pass through unchanged.
+In particular, `UNAVAILABLE` after the control stream ends before a reply means the mutation's
+outcome is unknown; it does not establish that the destination was unavailable before the runner
+acted.
 
 ## Server configuration
 
@@ -108,17 +90,14 @@ kebab-case CLI flags (`AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` for its YAML file)
 `agentplane-runner-gateway`; Sandbox lifecycle requests use the Kubernetes API and are not served here.
 
 `port` defaults to 8080 for gRPC, which also serves the unauthenticated `grpc.health.v1.Health`.
-`SubmitCommand` waits up to `runner_admission_ack_timeout_s` (default 15) for runner journal
-admission. Clients that call it should set their `command_admission_timeout_s` above that server
-budget (default 20). The Agentplane app sends Thread commands through Session Dispatcher.
-Management uses `lifecycle_timeout_s` (default 300).
+The Agentplane app sends Thread commands through Session Dispatcher. Management uses
+`lifecycle_timeout_s` (default 300).
 
 `runner_control_port` (default 8082) is a separate gRPC listener serving only the
 [runner control stream](../docs/runner_control.md), so the gateway's network policy can admit the
 egress proxy to it alone. It accepts Pod tokens for `runner_control_audience` (default
 `agentplane-runner-control`), and `commands_database_url` names the `sandbox_commands` database,
-which currently stores the Gateway Session registry. The Gateway's `SubmitCommand` wrapper does not
-persist command rows there.
+which currently stores the Gateway Session registry.
 
 Deployment must grant the gateway the appropriate Kubernetes and TokenReview permissions, and keep
 it the sole production server of the runner control stream.

@@ -38,7 +38,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
+from agentplane.app.testing.dispatcher import RunnerProxyBackedDispatcher
 from agentplane.app.testing.history import SeededEventLogStore, register_gateway_session
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
@@ -63,6 +63,7 @@ from agentplane.proto import (
     command_pb2,
     event_log_pb2,
     event_pb2,
+    runner_control_pb2,
     runner_pb2,
     session_dispatcher_pb2,
     session_dispatcher_pb2_grpc,
@@ -291,7 +292,7 @@ async def app_url(
         runners=local_runners,
         event_logs=event_logs,
         content=content,
-        dispatcher=GatewayBackedDispatcher(local_runners, gateway, event_logs),
+        dispatcher=RunnerProxyBackedDispatcher(local_runners, event_logs),
     )
     app = create_app(
         inventory,
@@ -1031,11 +1032,7 @@ async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
 
 
 async def test_thread_command_reports_id_conflict_after_runner_admitted_before_app_copied_it(
-    app_url: str,
-    local_runners: RunnerDirectory,
-    gateway: RunnerGatewayClient,
-    spec: runner_pb2.SessionSpec,
-    failed_bridge_state: None,
+    app_url: str, dispatcher: RunnerProxyBackedDispatcher, spec: runner_pb2.SessionSpec, failed_bridge_state: None
 ) -> None:
     """An app prefix lag must still preserve the runner's id-conflict verdict as a 409."""
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
@@ -1043,8 +1040,8 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
     original = command_pb2.Command(
         command_id="reused-before-copy", interrupt_turn=command_pb2.InterruptTurn(turn_id="first-target")
     )
-    # Admitted through the Runner Gateway, not the app.
-    await gateway.command(local_runners.client(SANDBOX).destination, str(thread), original)
+    # Admitted through the Runner proxy, not the app or Session Dispatcher.
+    await dispatcher.command(sandbox=SANDBOX, session_id=str(thread), command=original)
 
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         conflict = await http.post(
@@ -1273,7 +1270,7 @@ async def replicas(
         runners=local_runners,
         event_logs=event_logs,
         content=content,
-        dispatcher=GatewayBackedDispatcher(local_runners, gateway, event_logs),
+        dispatcher=RunnerProxyBackedDispatcher(local_runners, event_logs),
     )
     try:
         async with (
@@ -1289,7 +1286,7 @@ async def replicas(
                 runners=survivor_runners,
                 event_logs=survivor_event_logs,
                 content=ContentStore(replica_engine, history_reader=history_client),
-                dispatcher=GatewayBackedDispatcher(survivor_runners, survivor_gateway, survivor_event_logs),
+                dispatcher=RunnerProxyBackedDispatcher(survivor_runners, survivor_event_logs),
             )
             owner_openings = asyncio.create_task(
                 SessionOpenings(owner_openings_client, event_logs, retry_interval_s=0.05).run()
@@ -1391,7 +1388,13 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
         openings = asyncio.create_task(SessionOpenings(openings_client, event_logs, retry_interval_s=0.05).run())
         try:
             session_id = uuid4()
-            await gateway.runner(destination).create(session_id=session_id, spec=MessageToDict(spec))
+            # This seeds a runner-owned Session without going through Gateway placement or app open.
+            await gateway.control.runner_unary(
+                destination,
+                lambda stub: stub.OpenSession,
+                runner_control_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec),
+                timeout_s=gateway.control.lifecycle_timeout_s,
+            )
             # Only the openings can create this row: no bridge exists, so no Open, command, or SSE request ran.
             async for attempt in AsyncRetrying(
                 stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
@@ -1491,7 +1494,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
         runners=local_runners,
         event_logs=event_logs,
         content=content,
-        dispatcher=GatewayBackedDispatcher(local_runners, gateway, event_logs),
+        dispatcher=RunnerProxyBackedDispatcher(local_runners, event_logs),
     )
     # A lost HTTP response is retryable from the committed Thread prefix even after the
     # sandbox disappears: this answer must not attempt a new runner attachment, which with the
@@ -1525,7 +1528,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
         runners=local_runners,
         event_logs=event_logs,
         content=content,
-        dispatcher=GatewayBackedDispatcher(local_runners, gateway, event_logs),
+        dispatcher=RunnerProxyBackedDispatcher(local_runners, event_logs),
     )
     opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), spec), timeout=10)
     assert opened.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED

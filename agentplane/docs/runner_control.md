@@ -34,7 +34,7 @@ service Runner {
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
   rpc Quiesce(runner.QuiesceRequest) returns (runner.QuiesceResponse);
-  rpc DeliverCommand(DeliverCommandRequest) returns (DeliverCommandResponse);
+  rpc DeliverCommand(DeliverCommandRequest) returns (DeliverCommandResponse); // old Gateway images
   rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
   rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
   rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
@@ -78,7 +78,8 @@ message DeliverCommandResponse {
   agentplane.proto.event_log.EventEntry admission = 1;
 }
 
-// One RPC per command beside `DeliverCommand`, each taking `session_id`, `command_id` and its own
+// Dispatcher uses one RPC per command; `DeliverCommand` remains for already-published Gateway images.
+// Each RPC takes `session_id`, `command_id` and its own
 // fields (`text`, `model`, `effort`, `turn_id`; none for a stop) and answering with `admission` as
 // above. A `command_id` is unique across all of them and `DeliverCommand`: the same id under
 // another operation or payload fails `ALREADY_EXISTS`.
@@ -118,8 +119,8 @@ message RunnerFacts {
   command already journaled with the same payload returns its existing `CommandAdmitted` entry,
   which the runner already guarantees by deduplicating on `command_id`. The service never infers
   admission from a stream write, a heartbeat or HTTP/2 flow-control progress. Which refusals are
-  terminal for a submission is the [command admission](../runner_gateway/API.md#sessions-and-commands)
-  contract's decision, not the control stream's; today none is, and a refusal leaves it pending.
+  terminal for a submission is the Dispatcher's decision, not the control stream's; today none is,
+  and a refusal leaves it pending. See [Dispatcher admission and runner result](thread_layering.md#dispatcher-admission-runner-result).
 - **Status codes.** The service ends a stream with a gRPC status naming the cause:
   `UNAUTHENTICATED`, `PERMISSION_DENIED` (not a Sandbox Pod of this service), `ABORTED` (superseded by a
   newer connection), `INVALID_ARGUMENT` (protocol error) or `UNAVAILABLE` (replica draining or the
@@ -408,13 +409,14 @@ silently. Only the replica holding the runner's stream calls the runner: callers
 ([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Calls are bounded by the
 calling RPC's deadline, like command deliveries, and a reconnect replays none of them.
 
-| Runner Gateway caller | Control operation                                  |
-| --------------------- | -------------------------------------------------- |
-| `ListSessions` RPC    | `ListSessions`                                     |
-| `CreateSession`       | `OpenSession` with the client's ID                 |
-| `ResumeSession`       | `ResumeSession`                                    |
-| `Teardown` sealing    | `Quiesce`, repeated until every Session is flushed |
-| `SubmitCommand`       | `DeliverCommand`                                   |
+| Runner Gateway caller   | Control operation                                  |
+| ----------------------- | -------------------------------------------------- |
+| `ListSessions` RPC      | `ListSessions`                                     |
+| `CreateSession`         | `OpenSession` with the client's ID                 |
+| `ResumeSession`         | `ResumeSession`                                    |
+| `Teardown` sealing      | `Quiesce`, repeated until every Session is flushed |
+| Dispatcher command RPCs | Matching per-operation Runner RPC                  |
+| Old Gateway images      | `DeliverCommand`                                   |
 
 The VM experiment's runtime acceptance drives the guest runner directly through a port-forward and
 moves with the selected VM control path.
@@ -541,19 +543,18 @@ by `command_id`. The epoch decides which replica sends new deliveries and which 
 heartbeats count; it is not a Session, Event or command identity, and a new epoch neither starts a
 harness nor proves that anything failed.
 
-## Command delivery
+## Per-operation command RPCs
 
-`SubmitCommand` is served only by the replica holding the Sandbox's runner connection; callers reach
-it through the Sandbox's control Service, as they do for lifecycle requests, and any other replica
-refuses with `UNAVAILABLE`. The holder checks that the Session runs in that Sandbox incarnation and
-calls `DeliverCommand` with the runner's Session ID and the command, within the RPC's deadline.
+Session Dispatcher durably records the caller's intent, then calls the matching Runner method through
+the Sandbox's control Service. The Runner journals each admission with the original command ID and
+payload before replying. A repeated operation with the same ID and payload returns the original
+`CommandAdmitted` entry; reuse of an ID for another operation or payload is rejected. Dispatcher
+tracks delivery status, while History exposes the Runner's journal after it is pushed.
 
-The gateway records no command. A lost reply, a passed deadline or an ended connection leaves the
-outcome to the runner's journal, and the caller retries with the same command: the runner answers a
-command it already journaled with its original `CommandAdmitted` entry, even after its harness
-stopped or its journal was sealed. A reconnect replays no delivery, so a stale interrupt or stop is
-never fired at a reconnecting runner. Where a command stands is read from the Session's history:
-its `CommandAdmitted` entry, which the History Service holds once the runner has pushed it.
+`DeliverCommand` remains in the Runner service only so already-published Gateway images can finish
+their old protocol. Current Dispatcher code does not call it. It follows the same journal and
+deduplication rules as the per-operation methods and can be removed after the pinned Gateway image
+gate is clear.
 
 ## Heartbeat and liveness
 

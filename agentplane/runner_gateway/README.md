@@ -4,8 +4,8 @@ The Sandbox runners' side of Agentplane: the
 [runner control stream](../docs/runner_control.md), proxy and live runner access. Its server
 (`:server`, image `:image`) also serves the `RunnerGateway` gRPC service
 ([API](API.md), [`runner_gateway.proto`](../proto/runner_gateway.proto)) with replicas. The app opens
-Sessions and sends commands through Session Dispatcher; Gateway `CreateSession` and `SubmitCommand`
-remain legacy direct operations with no production sender. It reads Sandboxes through the shared
+Sessions and sends commands through Session Dispatcher; Gateway `CreateSession` remains a legacy
+direct operation with no production sender. It reads Sandboxes through the shared
 read-only projection (`agentplane.sandboxes.reader`) and does not create or delete them.
 
 It does not call the History Service. Its runner proxy can continue serving live calls while History

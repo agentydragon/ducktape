@@ -46,8 +46,8 @@ its classification and grants.
 
 Authorization lives with the history's Session record and read API, in the History
 Service. Do not broaden its reader allowlist wholesale: a listed reader reads every
-Session. Add narrowly scoped read authorization, separate from the Runner Gateway's
-Open/Resume/SubmitCommand and operator policy mutations. A `read` grant does not
+Session. Add narrowly scoped read authorization, separate from Runner open/resume and operator policy
+mutations. Command send authority belongs to Session Dispatcher. A `read` grant does not
 imply eventual `send` or `create` authority.
 
 ## Sandbox trust boundary

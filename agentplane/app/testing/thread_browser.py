@@ -171,7 +171,6 @@ async def gateway_client(gateway_port: int, tmp_path: Path) -> AsyncIterator[Run
         yield RunnerGatewayClient(
             channel,
             token_file=token_file,
-            command_admission_timeout_s=10,
             request_timeout_s=10,
             control=SandboxControlClient(
                 control_target=f"127.0.0.1:{gateway_port}",

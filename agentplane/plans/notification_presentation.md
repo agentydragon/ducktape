@@ -2,9 +2,9 @@
 
 Status: open, unscheduled. The [task DAG](task_dag.md#notification_presentation--compact-notification-rendering)
 tracks the dependencies. The metadata's carriage (`SESSION_INPUT_METADATA`) is the operator's lean,
-not a settled decision: the Runner Gateway stamps verified provenance on the runner Command and the
-runner echoes it into the Event that journals the input, so metadata reaches history with the input.
-The gateway keeps no command records ([Runner Gateway API](../runner_gateway/API.md#sessions-and-commands)).
+not a settled decision: typed provenance must travel through Session Dispatcher to the matching
+Runner input RPC and be echoed into the Event that journals the input. The gateway keeps no command
+records ([Runner Gateway API](../runner_gateway/API.md#sessions)).
 
 ## Goal and boundaries
 
@@ -12,7 +12,7 @@ Give user inputs typed metadata that the harness and model never see. Initially,
 Notification Service notices so the frontend can render them compactly, with full text available
 on expansion. The agent continues receiving the existing actionable notice text.
 
-- The Runner Gateway authenticates the producer and stamps provenance on the Command it forwards.
+- Session Dispatcher must authenticate the producer and pass verified provenance to the Runner.
 - Notification Service owns subscriptions, inboxes, entries and delivery bookkeeping, and supplies
   the notice reference.
 - Runners journal the metadata with the input and stay responsible for execution and canonical
@@ -40,9 +40,9 @@ integration before choosing the permission representation; a claimed service nam
 request body is not authentication.
 
 Unauthorized metadata receives a permission-denied response before dispatch, not silent stripping.
-Notification Service must still be authorized to submit to the target session. The gateway stamps
-trusted notification provenance after authorization; callers supply notice references, not their own
-trusted producer identity. No new signatures or callback validation service is required.
+Notification Service must still be authorized to submit to the target session. Session Dispatcher
+passes trusted notification provenance after authorization; callers supply notice references, not
+their own trusted producer identity. No new signatures or callback validation service is required.
 Notification Service remains responsible for reference correctness.
 
 Provenance means the service submitted this notice, not that provider text is trusted. Never infer

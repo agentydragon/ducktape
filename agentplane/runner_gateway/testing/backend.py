@@ -72,7 +72,7 @@ class Endpoint:
 
     def gateway(self, channel: grpc.aio.Channel) -> RunnerGatewayClient:
         """The gateway's client over `channel`, which a test opens to `target`."""
-        return gateway_client(channel, self.token_file, command_admission_timeout_s=20, control_target=self.target)
+        return gateway_client(channel, self.token_file, control_target=self.target)
 
 
 @contextmanager
@@ -92,9 +92,6 @@ def backend(
             principals=principals(AUDIENCE),
             destinations=DestinationResolver(inventory, core_api),
             caller_accounts=frozenset({MANAGER}),
-            # A real runner answers here, so admission needs room for delivery's two-second recheck:
-            # under one second, a single missed dispatch wakeup or control-stream reconnect fails it.
-            runner_admission_ack_timeout_s=15,
         )
         with (
             portal.wrap_async_context_manager(service(resources)) as target,
