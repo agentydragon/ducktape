@@ -1231,7 +1231,7 @@ flowchart TD
 
 ### `ACTION_EXECUTION_AUDIT_COLUMNS_READ_RETIRE` — stop selecting unused reconciliation columns
 
-**In flight; lane5 reader-retirement PR, 2026-10-16 UTC.** The writer-free Action Service image
+**In flight; coordinator-dispatched lane5 reader-retirement [PR #10697](https://github.com/agentydragon/ducktape/pull/10697), 2026-10-16 UTC.** The writer-free Action Service image
 `devel-20261015233822-b8b2ba1` is Ready in testing (1/1) and staging (2/2), confirmed 2026-10-16
 UTC. The fields have no runtime writer or value consumer, but ordinary `ExecutionRow` loads still
 select both columns. Mark them deferred while retaining their mappings, then keep this node open
