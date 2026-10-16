@@ -1,4 +1,4 @@
-"""The Runner Gateway proxy and control stream; its legacy schema still migrates before Pod startup."""
+"""The Runner Gateway proxy and control stream."""
 
 from typing import cast
 
@@ -23,14 +23,12 @@ from agentplane.crd_group import GROUP
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import database, egress
+from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
@@ -109,11 +107,6 @@ class RunnerGateway(Construct):
             path="/etc/agentplane-runner-gateway/config.yaml",
             supplied=[("pod_ip",)],
         )
-        commands_database = (
-            SecretRef(namespace=env.namespace, name="postgres-sandbox-commands")
-            .key("uri")
-            .env_value(self, "commands-database")
-        )
         workload = add_service_workload(
             self,
             env,
@@ -132,11 +125,6 @@ class RunnerGateway(Construct):
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
             termination_grace=Duration.seconds(60),
-            migrate=migrate_init_container(
-                "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate:unset",
-                name="migrate-commands",
-                env_variables={"AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL": commands_database},
-            ),
         )
         self._add_rbac(workload.account)
         config.mount_into(workload.container, env=Settings.config_file_env)
@@ -150,7 +138,7 @@ class RunnerGateway(Construct):
                 sandbox_controller[1].admit(endpoint.pod_port),
                 egress.proxy(env.namespace).pods.admit(control.pod_port),
             ],
-            egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), database.egress(env.namespace)],
+            egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER)],
         )
         egress.add_runner_egress(
             self,

@@ -309,7 +309,6 @@ source are retired; the History Service retains its database and authored histor
   the `RunnerControl` stream they dial to the Runner Gateway, routed per Sandbox by its `<sandbox>-control` Service and
   `<sandbox>-runner` Lease ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
-  `sandbox_commands` (a retained legacy Session registry schema with no serving reader or writer),
   `sandbox_service` (Session history,
   written by the History Service), `actions`, `egress`, `notifications` and `session_dispatcher`.
   The History Service retains the existing `sandbox_service` database; no database or authored
@@ -319,9 +318,8 @@ source are retired; the History Service retains its database and authored histor
   Dispatcher owns production Session openings and durable command admission/delivery state. The
   Runner Gateway owns the runner control stream and authorized live runner access. The app reads
   current runner inventory and explicitly resumes a retained harness through the Sandbox control
-  Service, with the Runner Proxy checking the live Sandbox name, UID and owner. Its historical
-  `sandbox_commands.session` table remains until a separate rollout-gated database drop. The
-  controller holds deletion until the runner has sealed its Sessions through the Gateway.
+  Service, with the Runner Proxy checking the live Sandbox name, UID and owner. The Gateway has
+  no database. The controller holds deletion until the runner has sealed its Sessions through the Gateway.
 
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
 [`docs/`](docs/).
