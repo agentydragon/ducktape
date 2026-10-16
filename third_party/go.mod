@@ -28,6 +28,9 @@ require (
 // Direct dependencies for agentplane/sandbox_controller
 require kubevirt.io/api v1.8.2
 
+// Direct dependencies for agentplane/runner_gateway/go
+require github.com/go-logr/logr v1.4.4
+
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
@@ -42,7 +45,6 @@ require (
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/google/dotprompt/go v0.0.0-20260708220100-73beb993ac95 // indirect
