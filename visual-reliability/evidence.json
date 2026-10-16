@@ -16070,7 +16070,7 @@
   ],
   "fleet_repeat_evidence": {
     "scope": "Two separate five-run executions of all 25 visual-review test targets; compare only PNGs declared in visual-review.json. Diagnostic captures are excluded.",
-    "captured_at_utc": "2026-10-16T07:01:37Z",
+    "captured_at_utc": "2026-10-16T08:48:50Z",
     "runs": [
       {
         "label": "five-run-before-notification-scrollbar-readiness-fix",
@@ -16271,13 +16271,211 @@
             "url": "https://app.buildbuddy.io/invocation/4fb576af-549a-4c2a-bdde-28d9ae0db651"
           }
         ],
-        "visual_observation": "Three Spend dashboard PNGs each varied in one of five runs. Their source cause is under investigation; no causal attribution is made here.",
+        "visual_observation": "Three Spend dashboard PNGs varied once in five runs and the comparison failed. A later controlled Chart.js probe reproduced the exact dashboard-dark-390.png run-3 digest after one additional no-op update and traced a first-layout border-width defect. That identifies a renderer history mechanism, but not what triggered the extra update in one production-scene execution; a full-fleet repeat on the candidate fix is still pending.",
         "included_followup_fix": {
           "pr": 10740,
           "url": "https://github.com/agentydragon/ducktape/pull/10740",
           "result": "thread_notifications_mobile_drawer.png matched across all five runs"
         }
       }
-    ]
+    ],
+    "chart_layout_investigation": {
+      "captured_at_utc": "2026-10-16T08:14:05Z",
+      "classification": "confirmed Chart.js layout-history mechanism; production extra-update trigger and full-fleet fix verification pending",
+      "full_fleet_observation": {
+        "source_commit": "a327faf620b193affc159cb6ad1a6348a0a3b45c",
+        "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/38862459578",
+        "declared_review_pngs_per_run": 588,
+        "byte_identical_review_pngs_across_all_five_runs": 585,
+        "varying_review_pngs": [
+          "dashboard-dark-390.png",
+          "dashboard-dark-390-warning.png",
+          "dashboard-dark-390-exceeded.png"
+        ],
+        "comparison_failed": true,
+        "all_25_test_targets_passed_each_run": true,
+        "five_invocations": [
+          "fb05cf44-d822-48fe-8df2-1ca6577df945",
+          "fe50e02d-6a43-4ce7-8a0a-f1b32c64e755",
+          "ff4f4e09-d20c-4c2b-a08c-8ab3d76dfd4e",
+          "e522f430-112b-4e4b-a0b0-ffa6d458457e",
+          "4fb576af-549a-4c2a-bdde-28d9ae0db651"
+        ]
+      },
+      "controlled_probe": {
+        "source_commit": "1d98f437fee525732f32ca0e4b76ba2c7bae2b9f",
+        "operation": "Compare initial draw with exactly one additional chart.update('none') at unchanged inputs.",
+        "runs": [
+          {
+            "invocation_id": "7be9c01d-92cf-4f5c-93dd-0f270aa13740",
+            "url": "https://app.buildbuddy.io/invocation/7be9c01d-92cf-4f5c-93dd-0f270aa13740",
+            "initial_sha256": "fa43840ac8ad78025bca97f66bde448a3c0d1baa2a6f9fccbc63c849ead97483",
+            "initial_bytes": 208262,
+            "after_update_sha256": "13e46193bc012f7de054b068c71eee65c180cc90eedcbba7d0f6c67071841a7f",
+            "after_update_bytes": 208252
+          },
+          {
+            "invocation_id": "f56c2b8b-523e-4001-a4a0-53890fe025cb",
+            "url": "https://app.buildbuddy.io/invocation/f56c2b8b-523e-4001-a4a0-53890fe025cb",
+            "initial_sha256": "fa43840ac8ad78025bca97f66bde448a3c0d1baa2a6f9fccbc63c849ead97483",
+            "initial_bytes": 208262,
+            "after_update_sha256": "13e46193bc012f7de054b068c71eee65c180cc90eedcbba7d0f6c67071841a7f",
+            "after_update_bytes": 208252
+          }
+        ],
+        "canvas": {
+          "width_css_px": 292,
+          "height_css_px": 250,
+          "device_pixel_ratio": 1
+        },
+        "chart_area": {
+          "right_after_initial_draw_css_px": 287.85625,
+          "right_after_update_css_px": 287.7793269230769,
+          "absolute_difference_css_px": 0.0769230769231,
+          "left_top_bottom_unchanged": true,
+          "canvas_dimensions_unchanged": true,
+          "offset_category_ticks": 7
+        }
+      },
+      "source_mechanism": "Chart.js computes getMaxOverflow() before layout, then installs the resolved line options during dataset update. On the first pass the line border width is still 0; on a later pass it is 2. That changes minimum overflow by 1 CSS px. With seven offset category ticks, the axis-padding calculation moves the plot right edge by exactly 1/13 CSS px.",
+      "fix_candidate": {
+        "pr": 10753,
+        "url": "https://github.com/agentydragon/ducktape/pull/10753",
+        "proposal": "Resolve the active/default target line border width before initial overflow layout.",
+        "full_fleet_verification": "In progress. One of five runs completed with a functional test failure and two unavailable declared images; four runs remain. No fleet-stability conclusion.",
+        "head_sha": "5bc2dcdc2cb0761345394b59ebd59c9e1e4ed4df",
+        "state": "OPEN"
+      },
+      "limits": "The exact dashboard-dark-390.png variant from a327 run 3 was reproduced by the controlled second update in two independent RBE runs. This establishes the Chart.js history-dependent geometry mechanism. It does not establish what caused the production visual test to perform an extra update in only one of five runs; the three-image a327 fleet result remains a failed comparison until a full-fleet repeat on the fix candidate is complete."
+    },
+    "command_timeline_fix_followup": {
+      "captured_at_utc": "2026-10-16T08:26:26Z",
+      "pr": 10725,
+      "url": "https://github.com/agentydragon/ducktape/pull/10725",
+      "previous_head": "d88f6f2319f7f0570aef3f9c6a1e8ed4fc99aaae",
+      "rebased_head": "c9cec8a4ad8b417d39e3fdb8e7bfd223b3e55f48",
+      "rebased_base": "2740d4c2445b7b5ac82776665d66d63fc8ee92a2",
+      "merge_commit": "59b6949e8dc750a866bd96d0f445a2e4a4359aa5",
+      "merged_at_utc": "2026-10-16T08:22:49Z",
+      "rebase_content_check": "Three-commit range-diff was identical before and after rebase; the changed-file set remained the three original PR files.",
+      "exact_head_checks": [
+        {
+          "name": "Bazel CI",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/38872175166"
+        },
+        {
+          "name": "Build artifacts + imports check",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/38872175089"
+        },
+        {
+          "name": "Pre-commit checks",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/38872175057"
+        },
+        {
+          "name": "PR visual review",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/runs/116878887245"
+        }
+      ],
+      "published_visual_review": {
+        "target": "//agentplane/app:test_thread_browser",
+        "review_count": 1,
+        "modified": 2,
+        "new": 0,
+        "removed": 0,
+        "unchanged": 6,
+        "gallery_url": "https://s3.allegedly.works/pr-visuals/commits/c9cec8a4ad8b417d39e3fdb8e7bfd223b3e55f48/index.html",
+        "interpretation": "Published review evidence only; the modified images are not a repeated-run stability proof."
+      },
+      "prior_repeat_proofs": [
+        {
+          "head": "60542d3d1c016a21da5170a9e5b84212863a375b",
+          "scope": "Focused five-run check; 10 test outcomes passed and four review images each had one hash.",
+          "invocation_id": "004f45de-6b16-4282-b083-8fc703d30648"
+        },
+        {
+          "head": "689c881451b96a20b0186b03492e616674bd14ca",
+          "scope": "Hosted five-run full target; eight review images were identical. This head predates the Playwright date pin.",
+          "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/38855594849"
+        }
+      ],
+      "limits": "The merged exact head c9cec8a4 passed required CI and published its gallery, but it has no fresh five-run stability proof. The focused date-pin repeat and full-target repeat are on earlier exact heads."
+    },
+    "chart_candidate_checks": {
+      "pr": 10753,
+      "url": "https://github.com/agentydragon/ducktape/pull/10753",
+      "state": "OPEN",
+      "head_sha": "5bc2dcdc2cb0761345394b59ebd59c9e1e4ed4df",
+      "base_sha": "59b6949e8dc750a866bd96d0f445a2e4a4359aa5",
+      "bazel_ci": {
+        "conclusion": "SUCCESS",
+        "tests_passed": 1473,
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/38874621513"
+      },
+      "build_artifacts_and_imports": {
+        "conclusion": "SUCCESS",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/38874621431"
+      },
+      "pre_commit": {
+        "conclusion": "SUCCESS",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/38874621450"
+      },
+      "visual_review": {
+        "conclusion": "SUCCESS",
+        "url": "https://github.com/agentydragon/ducktape/runs/116886854426"
+      },
+      "note": "The candidate is open, not merged. Passing PR checks do not replace the full-fleet repeat."
+    },
+    "candidate_fleet_repeat": {
+      "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/38874675143",
+      "source_sha": "5bc2dcdc2cb0761345394b59ebd59c9e1e4ed4df",
+      "expected_runs": 5,
+      "completed_runs": 1,
+      "remaining_runs": 4,
+      "run1_invocation_id": "d032d11d-eae0-4401-959f-43c15755c76f",
+      "run1_invocation_url": "https://app.buildbuddy.io/invocation/d032d11d-eae0-4401-959f-43c15755c76f",
+      "run1_bazel_result": "TESTS_FAILED",
+      "run1_target_results": {
+        "passed": 24,
+        "failed": 1,
+        "failed_target": "//agentplane/app:test_thread_browser",
+        "failed_test": "test_switching_threads_starts_at_each_threads_tail",
+        "observed_failure": "The test expected 'Thread 0 message 129' to be visible within five seconds; the page still showed 'Catching up thread\u2026'."
+      },
+      "run1_review_assets": {
+        "declared_roster_size": 590,
+        "mapped_and_available": 588,
+        "unmapped_due_to_failed_target": 2
+      },
+      "stability_conclusion": "None. This is one incomplete run with a functional test failure and two unavailable declared images; it cannot support a five-run stability or absence claim."
+    },
+    "trace_policy_probe": {
+      "source_sha": "5bc2dcdc2cb0761345394b59ebd59c9e1e4ed4df",
+      "trace_enabled_invocation_id": "34fc4787-083a-466a-bad3-097880db7873",
+      "trace_disabled_five_run_invocation_id": "ffd0337c-edec-4bb1-ba70-03f6a2f4ce4d",
+      "trace_disabled_run_count": 5,
+      "parameter_cases_per_run": 4,
+      "parameter_cases_passed_with_trace_disabled": 20,
+      "identical_outputs_across_trace_enabled_and_all_disabled_runs": {
+        "stage_pngs": 68,
+        "geometry_checkpoint_jsons": 4
+      },
+      "trace_archives": {
+        "enabled": 4,
+        "disabled": 0
+      },
+      "interpretation": "For the Chart.js fixture, disabling optional Playwright trace archives did not change captured PNG or geometry outputs across the enabled run and five disabled runs; it removed the four trace archives."
+    },
+    "patch_registration_cache_diagnosis": {
+      "finding": "The first local Chart.js patch path invoked patch through repository_ctx.execute using ctx.path(patchfile), without watching patch-file contents. With a persistent Bazel repository cache, editing the patch alone could leave a previously extracted package and generated bundle in use. The observed stale bundle matched the pinned repository-rule implementation.",
+      "pinned_bazel_lib_source": "https://github.com/bazel-contrib/bazel-lib/blob/e5c0630270f70dd2c7b50471bb9c872781a55282/lib/private/patch.bzl#L120-L140",
+      "rules_js_version": "3.4.1",
+      "candidate_registration": "PR #10753 registers chart.js@4.5.1 under package.json pnpm.patchedDependencies, adds the patch to npm_translate_lock data, and regenerates pnpm-lock.yaml.",
+      "patch_hash": "6sbtsacnxf55veexkmgxctg6sy",
+      "pnpm_patch_docs": "https://pnpm.io/cli/patch"
+    }
   }
 }
