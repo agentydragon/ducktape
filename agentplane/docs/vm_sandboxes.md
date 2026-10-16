@@ -69,23 +69,40 @@ lost.
   workspace disk. The guest keeps a serial console (`ttyS0`) because a failed boot unit is otherwise
   invisible.
 
-## Resource boundary
+## Guest resource controls
 
-The VM isolates the runner from the Pod's host; protecting the runner from its own harness is the
-guest's cgroups.
+The Sandbox is the security isolation boundary, not an individual Session or native harness. A VM
+places the Runner, its Sessions, native harnesses and tool children in one guest trust domain. The
+same boundary applies to Pod-backed Sandboxes: co-resident Sessions share the Sandbox filesystem,
+credentials and ServiceAccount authority ([contract](thread_layering.md#sandbox-isolation-boundary)).
+Use separate Sandboxes when workloads need different trust or credential boundaries.
+
+Within a VM, the Runner runs as guest root and native harnesses run as uid/gid 107. Virtiofs presents
+`/state` files as 107:107, including the per-Session Runner and native state under
+`/state/sessions/<session_id>`. The guest does not create per-Session mount or PID namespaces or hide
+same-Sandbox processes from one another. The Runner's state-owner descriptor and process supervisor
+protect storage ownership across Runner restart and ensure harness descendants are reaped; they do not
+make Runner internals or sibling Session stores confidential from code in the same Sandbox.
+
+The delegated cgroups below provide resource containment and teardown, not security isolation between
+a harness and its tool children. A native harness and the tools it starts share that harness's cgroup
+and resource budget. No separate per-tool budget or kill boundary is part of the current VM contract.
 
 - The runner service is a systemd unit with `MemoryHigh`/`MemoryMax`, `CPUQuota` and `TasksMax`, and
   delegates a subtree. `agentplane.runner.cgroups` puts agent work under an aggregate group and each
   native harness under its own, with memory, CPU, task and I/O limits and `memory.oom.group`.
-- When a harness subtree exceeds its budget, that harness group is killed and the runner stays up and
-  answers RPCs. [Tool memory isolation](harness_tool_memory_isolation.md) covers the narrower
-  boundary between a tool and its harness.
-- A harness moved out of the runner's cgroup must keep stdio, signal forwarding and the inherited
-  state-owner descriptor: killing a harness must not release ownership while descendants run
+- When a harness subtree exceeds its memory budget, `memory.oom.group` kills that harness and its
+  descendants; the Runner remains outside that group and can continue answering RPCs. Acceptance of
+  the VM cgroup limits is tracked in the [VM task lane](../plans/task_dag.md#4-vm-environment-phases).
+- [Tool memory isolation](harness_tool_memory_isolation.md) records optional research on putting
+  tighter resource limits around a tool child. That would be a separate resource policy, not a change
+  to the Sandbox security boundary.
+- The Rust harness supervisor retains the state-owner descriptor, forwards stop signals and reaps
+  descendants, so a Runner restart cannot open the same state while old native work continues
   ([runner README](../runner/README.md#sqlite-storage)).
-- Agent processes get no unrestricted guest root and no cgroup administration. If they did, the
-  guest-resident runner could not survive hostile changes to limits, storage or services; the
-  journal is likewise not tamper-proof against agent code.
+- Agent processes get no unrestricted guest root and no cgroup administration, so they cannot alter
+  guest services or the configured resource budgets. This does not protect Runner-owned state from
+  other code in the same Sandbox; the journal is not tamper-proof against agent code.
 - The launcher's memory limit covers guest RAM plus QEMU overhead, disk helpers and the relay;
   a limit equal to guest RAM is not isolation. `agentplane-testing`'s 4Gi container limit caps a guest at
   about 1.7Gi. Guests need KVM-capable nodes (`kubevirt.io/schedulable`); do not fall back to

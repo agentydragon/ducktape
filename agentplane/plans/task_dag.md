@@ -425,19 +425,17 @@ flowchart LR
     VM_EGRESS[Candidate: live launcher relay checks]
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
-    VM_PROCESS_BOUNDARY_IMPL[Candidate: implement the VM harness/process boundary]
-    VM_PROCESS_ISOLATION[Blocked: isolation acceptance on a slim guest]
+    VM_HARNESS_RESOURCE_LIMITS[Blocked: accept VM per-harness resource limits]
+    VM_INTRA_SANDBOX_HARDENING[Deferred: optional intra-Sandbox process/state hardening]
     RUNNER_LAYERING_VM[Blocked: slim VM runtime, section 10]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 10]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage, section 7] -. related .-> VM_PROCESS_ISOLATION
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     VM_EGRESS --> VM_LIFECYCLE
-    VM_PROCESS_ISOLATION --> VM_LIFECYCLE
-    VM_PROCESS_BOUNDARY_IMPL --> VM_PROCESS_ISOLATION
-    VM_GUEST_BUDGET_DERIVE --> VM_PROCESS_ISOLATION
-    RUNNER_LAYERING_VM --> VM_PROCESS_ISOLATION
-    K3S_VM_IMAGE -. optional VM test fixture .-> VM_PROCESS_ISOLATION
+    VM_HARNESS_RESOURCE_LIMITS --> VM_LIFECYCLE
+    VM_GUEST_BUDGET_DERIVE --> VM_HARNESS_RESOURCE_LIMITS
+    RUNNER_LAYERING_VM --> VM_HARNESS_RESOURCE_LIMITS
+    K3S_VM_IMAGE -. optional VM test fixture .-> VM_HARNESS_RESOURCE_LIMITS
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
     VM_GUEST_MEMORY[Candidate: size the VM guest for real builds]
     VM_GUEST_BUDGET_DERIVE[Blocked: guest budgets derive from the VM spec]
@@ -459,49 +457,42 @@ kubelet's probe on 3129 is not forwarded to the guest; the runner fence admits t
 another Sandbox's guest cannot reach it; a forged launcher is refused. Do not repeat the entire
 completed prototype matrix or require simultaneous cluster-wide disasters.
 
-### `VM_PROCESS_BOUNDARY_IMPL` — implement the VM harness/process boundary
+### `VM_HARNESS_RESOURCE_LIMITS` — accept per-harness resource limits on the VM guest
 
-**Candidate; can proceed before VM image slimming.** The guest already configures runner and harness
-cgroup budgets (`runner/vm.nix`, `runner/cgroups.py`). Implement the process-visibility and control
-boundaries below with focused checks that do not need the final guest image. This directly addresses
-agents accidentally killing their own harness; guest or container packaging alone is not that guarantee.
+**Blocked on `VM_GUEST_BUDGET_DERIVE` and `RUNNER_LAYERING_VM`; `K3S_VM_IMAGE` is an optional fixture.**
+The guest already places each native harness and its tool descendants in a delegated cgroup with CPU,
+memory, task and workspace I/O limits. Exercise those limits on the slim guest: resource pressure must
+respect the aggregate and per-harness budgets, and exhausting one harness's memory group must terminate
+that harness subtree while the Runner remains available. Preserve the existing process-group cleanup and state-owner lock
+behavior. The Sandbox is the security boundary; these cgroups enforce resource budgets, not
+confidentiality between co-resident Sessions or between a harness and its tool children. Cross-Sandbox
+launcher and relay security remains in `VM_EGRESS`.
 
-Direction (operator, 2026-10-12 PDT): separate the runner and the harness by what each can see,
-not by uid, since every file on the virtiofs state PVC is `107:107` anyway (`STATE_VOLUME_BLOCK` would
-end that constraint; revisit the uid choice then). In VMs the runner runs
-as guest root under systemd and starts the harness with `systemd-run` as uid 107, in a scope with
-`InaccessiblePaths=/state/runner`, write access only to `/state/harness` and the workspace,
-`ProtectProc=invisible`, `NoNewPrivileges`, no capabilities, `MemoryMax` and `TasksMax`; the
-runner's slice reserves memory. Pods keep today's single container; the strong version there
-(runner and harness in separate containers of one pod with no shared process namespace, the harness
-mounting only its subpath, started through a launcher on a unix socket in an `emptyDir`) waits
-until pods hit the problem. Disk exhaustion is not covered and waits on #4717.
+### `VM_INTRA_SANDBOX_HARDENING` — optional process and state hardening inside one Sandbox
 
-### `VM_PROCESS_ISOLATION` — accept isolation on the lightweight VM guest
-
-**Blocked on `VM_PROCESS_BOUNDARY_IMPL`, `VM_GUEST_BUDGET_DERIVE` and `RUNNER_LAYERING_VM`; operator,
-2026-10-15 PDT.** Run the representative tool/harness termination and bounded exhaustion checks after
-the lightweight VM guest can boot the runner and harnesses with the tools-heavy image separate. Use the
-production process-visibility, filesystem, cgroup and capability settings in that guest; a smaller test
-image must not strip the isolation behavior being accepted. `K3S_VM_IMAGE` can supply an automated VM
-fixture once it exists, but the k3s test environment is not a prerequisite to accepting the slim
-production guest. Verify the existing limits before adding mechanisms, and establish which runner/control
-state survives and what needs durable recovery. This is the expensive VM acceptance gate, not a hold on
-image-independent design or code.
+**Deferred; nonblocking.** The accepted boundary is the Sandbox, so co-resident Sessions share its
+filesystem, credentials and process trust domain. The VM Runner runs as guest root, native harnesses
+run as uid/gid 107, and virtiofs presents `/state` files as 107:107; the Runner does not create a
+separate mount or PID namespace for each Session. The existing per-harness cgroup groups a native
+harness with its tool children for resource limits and teardown, not as a security boundary. Do not
+require Runner-private storage, sibling Session stores, or harness/tool process views to be isolated
+inside one Sandbox. Revisit Runner-state privacy and tool-child-versus-harness hardening separately
+only if a concrete product requirement or incident warrants it. This node does not
+gate VM resource acceptance or lifecycle work.
 
 ### `VM_LIFECYCLE` — integrated lifecycle verification
 
-**Blocked on the remaining egress and isolation checks.** Basic VM creation, Session execution,
+**Blocked on the remaining egress and resource-limit checks.** Basic VM creation, Session execution,
 retained-state suspend/resume and replacement are covered by the [acceptance suite](../acceptance/README.md).
-Combine that coverage with the remaining security/isolation results; do not repeat completed live
-runs just to assemble a capstone. Additional live faults need a concrete unresolved platform risk,
+Combine that coverage with the remaining cross-Sandbox security and resource-limit evidence; do not
+repeat completed live runs just to assemble a capstone. Additional live faults need a concrete unresolved platform risk,
 not a Cartesian product of every component crash and lifecycle operation.
 
 ### `SANDBOX_VM_ISOLATION` — VM integration capstone
 
-**Blocked on integrated lifecycle.** Publish the selectable VM environment and measured isolation
-limits, with no implied existing-Sandbox conversion or live migration. Component evidence, not
-absence of every imaginable failure, establishes the delivered contract.
+**Blocked on integrated lifecycle.** Publish the selectable VM environment and measured resource
+limits and cross-Sandbox security guarantees, with no implied existing-Sandbox conversion or live
+migration. Component evidence, not absence of every imaginable failure, establishes the delivered contract.
 
 ### `KUBEVIRT_EXPERIMENT_RETIRE` — delete the KubeVirt experiment
 
@@ -566,8 +557,8 @@ disk at a fraction of the rate a build would like.
 
 ### `VM_GUEST_BUDGET_DERIVE` — derive the guest's cgroup budgets from the VM's memory
 
-**Blocked on `VM_GUEST_MEMORY`; pair with `VM_PROCESS_ISOLATION`, which owns the boundary and already
-cites these files.** Two places set guest budgets as literals while guest RAM is a third number, and
+**Blocked on `VM_GUEST_MEMORY`; pair with `VM_HARNESS_RESOURCE_LIMITS`, which owns the VM cgroup
+acceptance and already cites these files.** Two places set guest budgets as literals while guest RAM is a third number, and
 nothing connects them:
 
 - the unit in `agentplane/runner/vm.nix`: `MemoryHigh = "6G"`, `MemoryMax = "7G"`, `CPUQuota = "700%"`,
@@ -577,7 +568,7 @@ nothing connects them:
 
 On this 1536Mi / 1 vCPU guest the unit is live — read `memory.max` 7516192768 and
 `cpu.max` 700000 100000 on `agentplane-runner.service`, about 4.5x the whole VM, with
-`memory.current` 1085681664 of it already used — so `VM_PROCESS_ISOLATION`'s "verify the existing limits"
+`memory.current` 1085681664 of it already used — so `VM_HARNESS_RESOURCE_LIMITS`' "verify the existing limits"
 step will find that the aggregate group cannot reach its declared 4 GiB and the CPU shares are meaningless
 against one core. (The `workloads/` group itself is not readable from inside as the agent user; the 4 GiB
 figure is from the source, not observed. Reading it is part of this node.)
@@ -1040,8 +1031,8 @@ The in-guest budgets (`VM_GUEST_BUDGET_DERIVE`) are the other half of the same s
 reserve, stage 2 gets the rest.
 Deliver a lean bootable guest: a bare root filesystem with the runner and harnesses available from
 their chosen layer, and the tools-heavy environment separate. The layering decision still owns exact
-disk placement. `VM_PROCESS_ISOLATION` acceptance waits for this slim runtime; the boundary
-implementation can proceed independently.
+disk placement. `VM_HARNESS_RESOURCE_LIMITS` acceptance waits for this slim runtime; existing guest
+resource controls remain in place while it is prepared.
 
 ### `K3S_VM_IMAGE` — build a lightweight guest disk in Bazel for the k3s integration test
 
@@ -1058,8 +1049,8 @@ published image. The Pod-side pattern already exists there: `//agentplane/x/k3s_
 credential, and the spike's own note records that the Nix-built image is the full-toolbox one. Something of
 that shape as an image the test boots — with KubeVirt installed in the spike, or the VM path exercised
 against the host's KVM — is the deliverable, not a bigger image. Retain the production guest's
-process-isolation configuration if this fixture exercises `VM_PROCESS_ISOLATION`: a lightweight test
-must not omit the boundary being accepted.
+delegated cgroup resource limits if this fixture exercises `VM_HARNESS_RESOURCE_LIMITS`: a lightweight
+test must not omit the limits being accepted.
 
 Worth stating in the design, because it argues past the spike: a Bazel-built guest is worth more than the
 test. Once a guest root filesystem is an `oci_image` target, `RUNNER_LAYERING_VM` needs no Nix to build a

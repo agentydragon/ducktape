@@ -1,17 +1,21 @@
 # Keeping tool memory from killing the harness
 
-Status: **research: options, none implemented**. Static reading of Claude Code 2.1.252 (debundled
-from the pinned binary) and Codex `rust-v0.144.1` source. Nothing below has been exercised in an
-Agentplane Sandbox.
+Status: **optional same-Sandbox resource research; none implemented**. Static reading of Claude Code
+2.1.252 (debundled from the pinned binary) and Codex `rust-v0.144.1` source. The Sandbox is the
+security boundary. In a VM, the native harness and its tool children share one delegated cgroup and
+resource budget; it is not a security boundary between a tool and its harness. No per-tool budget or
+separate kill behavior is part of VM acceptance. Nothing below has been exercised in an Agentplane
+Sandbox.
 
 ## Problem
 
 The Agentplane runner, its native harness (Claude Code or Codex), and every command the agent runs share one container. When
 the container's memory cgroup hits `memory.max`, the kernel OOM-kills, and under cgroup v2 kubelet
 sets `memory.oom.group=1` on the container (upstream default since Kubernetes 1.28; our nodes run
-1.35 on Talos, not observed directly), so the whole container dies, runner and harness included. The goal is
-to make an accidental runaway (`make -j`, a leaking test, a large `sort`) kill the tool process
-instead of the harness, while leaving the agent otherwise unrestricted.
+1.35 on Talos, not observed directly), so the whole container dies, runner and harness included. An
+optional future product requirement might ask for an accidental runaway (`make -j`, a leaking test,
+a large `sort`) to stop at the tool process without ending its harness. The current resource contract
+instead budgets and tears down the native harness together with its child tools.
 
 Constraints from the current workspace Pod (`cluster/cdk8s/agent_workspaces.py`): uid 1000,
 `capabilities.drop: [ALL]`, no privilege escalation, RuntimeDefault seccomp. The container runtime
@@ -98,19 +102,11 @@ for snapshots.
 | Userspace OOM guard (earlyoom-style) in the runner             | Yes                  | Polls the container's `memory.current` against `memory.max` and SIGKILLs the largest process tree that is neither the runner nor the harness (same uid, so permitted). The runner spawns the harness, so it knows both PIDs. A poll loop can be outrun by a fast allocator, so the threshold needs headroom; PSI triggers need a writable `memory.pressure` and are not available.                   |
 | Tool cgroup with `memory.max` (Claude's built-in, or the shim) | No                   | Kernel-enforced, per tree; the right mechanism. Needs a writable delegated cgroup v2 subtree: the entrypoint moves itself into a leaf, enables `+memory` in `cgroup.subtree_control`, then starts the harness in its own leaf so `claude-code-bash` (or the shim's cgroup) is a sibling. Kubernetes has no field for a writable cgroupfs short of `privileged`; sysbox or a VM runtime provides one. |
 | Tools in a separate container (Codex exec-server)              | Needs Pod change     | Kernel-enforced by that container's own limit, no privilege. A second container with the shared workspace volume runs `codex exec-server`; Codex points at it through `environments.toml`. Claude has no equivalent short of a `CLAUDE_CODE_SHELL_PREFIX` client that proxies each command, cwd and environment to that container.                                                                   |
-| VM or microVM Sandbox                                          | No                   | Not yet tried; a guest cgroupfs is writable, so the tool cgroup applies inside it.                                                                                                                                                                                                                                                                                                                   |
+| VM or microVM Sandbox                                          | No                   | The current VM uses delegated cgroups per native harness. The harness and its tool descendants share a group; per-tool limits remain optional research.                                                                                                                                                                                                                                              |
 
-## Recommendation
+## Deferred options
 
-1. Now, no privilege: a runner-side OOM guard, plus the shared `bash` shim marking tool trees (an
-   environment marker, or `oom_score_adj=1000` so the guard can pick victims without walking the
-   tree). This is the only option that works in the current Pod for both harnesses.
-2. If agent nodes can switch kubelet to `singleProcessOOMKill: true`, the shim's `oom_score_adj`
-   becomes a kernel-enforced backstop behind the guard.
-3. Longer term: a writable delegated cgroup (sysbox or VM runtime), then set
-   `CLAUDE_CODE_TOOL_MEMORY_LIMIT` for Claude and have the shim place Codex's shells in a sibling
-   cgroup. For Codex, the exec-server sidecar gets kernel enforcement without any runtime change.
-
-Any of these still needs an acceptance test that forces a tool OOM and shows the harness and runner
-journal survive, using the scripted scenarios and teardown rules in the
-[harness test suite](../native/README.md).
+The mechanisms above are alternatives only if a concrete product requirement calls for a tool child
+to have a separate resource or termination boundary. Revisit them with an acceptance scenario for
+tool OOM behavior that checks both the native harness and Runner journal. This is separate from the
+per-harness cgroup acceptance in [VM Sandboxes](vm_sandboxes.md) and does not gate it.
