@@ -537,7 +537,6 @@ payload before replying. A repeated operation with the same ID and payload retur
 `CommandAdmitted` entry; reuse of an ID for another operation or payload is rejected. Dispatcher
 tracks delivery status, while History exposes the Runner's journal after it is pushed.
 
-
 ## Heartbeat and liveness
 
 The runner sends `RunnerHeartbeat` and the gateway sends `Heartbeat` on `Connect` every 10 s. Either
