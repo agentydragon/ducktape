@@ -111,7 +111,8 @@ def test_only_staging_probe_keeps_legacy_tool_config(
     }
     assert set(legacy_maps) == ({"agentplane-sandbox-tool-config"} if namespace == "agentplane-staging" else set())
     role = _by_name(docs, "Role", "agentplane-sandbox-tool-config-reader")
-    granted_maps = {resource for rule in role["rules"] for resource in rule["resources"]}
+    granted_maps = {name for rule in role["rules"] for name in rule["resourceNames"]}
+    assert all(rule["resources"] == ["configmaps"] and rule["verbs"] == ["get"] for rule in role["rules"])
     expected_grants = {"sandbox-tool-config"}
     if namespace == "agentplane-staging":
         current = _by_name(docs, "ConfigMap", "sandbox-tool-config")
