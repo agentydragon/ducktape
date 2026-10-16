@@ -512,6 +512,36 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
     assert private_sentinel.read_text() == "runner-owned\n"
 
+    await second.submit_input("input-4", "Run the workload image tool again and report its output.")
+    request = await model.request()
+    assert request.user_texts == [
+        "Reply with exactly: SPARSE_ROOT_TURN_OK",
+        "Run the tool installed by the workload image and report its output.",
+        "Reply with exactly: SPARSE_ROOT_RESUME_OK",
+        "Run the workload image tool again and report its output.",
+    ]
+    assert request.assistant_texts == [
+        "SPARSE_ROOT_TURN_OK",
+        "WORKLOAD_IMAGE_TOOL_DONE",
+        "SPARSE_ROOT_RESUME_OK",
+    ]
+    resumed_call_id = "workload-image-tool-after-resume"
+    await model.reply(request, ShellCall(resumed_call_id, "/usr/local/bin/workload-tool"))
+    resumed_tool_result = await model.request()
+    (resumed_output,) = [
+        output for output in resumed_tool_result.tool_outputs if output.call_id == resumed_call_id
+    ]
+    resumed_stderr = "\n".join(
+        entry.event.harness_stderr.text for entry in events.of_kind(second.seen, "harness_stderr")
+    )
+    assert "WORKLOAD_IMAGE_TOOL_OK" in resumed_output.text, (
+        f"resumed tool output: {resumed_output.text}\nharness stderr:\n{resumed_stderr}"
+    )
+    assert workload_proof.read_text() == "WORKLOAD_IMAGE_TOOL_OK\n"
+    await model.reply(resumed_tool_result, Text("WORKLOAD_IMAGE_TOOL_AFTER_RESUME_DONE"))
+    resumed_tool_done = await second.until(events.turn_completed)
+    assert resumed_tool_done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+
     await second.stop_runner_session("stop-after-sparse-root-resume")
     await second.drain_until_end()
 

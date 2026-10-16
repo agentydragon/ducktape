@@ -960,11 +960,12 @@ evidence is paused.** The merged experiment proves a Codex text turn, shell call
 tools OCI layer, native resume after killing the harness, runner survival and private-state separation
 in the RBE test; a local Firecracker guest boots the digest-pinned ELF kernel and mounts separate
 read-only tools and harness SquashFS drives. This follow-on adds `workload-tool` in its own OCI tar
-layer and changes the mocked Codex shell call to run it, then check its workspace write after harness
-resume. The focused `bbr test //agentplane/runner:test_restart --test_arg=-k
+layer and changes the mocked Codex shell call to run it before the harness exit, confirms its
+workspace write survives resume, then asks the resumed harness to execute the same workload tool.
+The focused `bbr test //agentplane/runner:test_restart --test_arg=-k
 --test_arg=sparse_child_root` passed in RBE; the marker remained readable from the persistent workspace
-after the harness was killed and resumed. Production VM layout selection and implementation remain
-open.
+after the harness was killed and resumed, and the resumed Codex process emitted the tool's output
+again. Production VM layout selection and implementation remain open.
 The guest's Bash and pinned Codex `--version` probes pass; the same probe records a Claude 2.1.252
 SIGABRT in the uid-107 mount-namespace child, while the exact binary succeeds on the full host and
 in the guest chroot as root without that namespace. The UID and namespace effects still need to be

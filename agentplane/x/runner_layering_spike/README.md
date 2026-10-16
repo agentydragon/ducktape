@@ -23,8 +23,9 @@ read a runner-only sentinel.
 The focused `//agentplane/runner:test_restart` scenario runs the pinned Codex binary from the sparse
 child root. A mocked model asks Codex to execute `/usr/local/bin/workload-tool` from the independent
 workload image; the test checks its output and the proof file it writes through the workspace mount.
-It then kills the native harness, resumes the same session, and reads that file from the persistent
-workspace. Runner-private state remains outside the child root. The local VM probe separately runs
+It then kills the native harness, resumes the same session, reads that file from the persistent
+workspace, and asks the resumed Codex process to execute the workload tool again. Runner-private
+state remains outside the child root. The local VM probe separately runs
 Bash and Codex from the two mounted filesystems; guest PID 1 remains alive after both exit. Its Claude
 probe currently aborts in the guest, and the parent records that failure so it remains inspectable.
 
