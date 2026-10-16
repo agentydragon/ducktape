@@ -646,7 +646,7 @@ async def _run_spending_chart_order_probe(page: Page, dashboard_url: str, *, ord
         if path in gates:
             record("response", path)
 
-    output_dir = undeclared_outputs_dir() / f"spend-chart-order-{order}"
+    output_dir = undeclared_outputs_dir()
     view = VisualPage(page, output_dir=output_dir, title="Spend")
     capture_completed = False
 
@@ -712,7 +712,7 @@ async def _run_spending_chart_order_probe(page: Page, dashboard_url: str, *, ord
             assert index_of("response", "view") < index_of("released", "events")
 
         await view.capture(
-            "dashboard-dark-390", label=f"390px dark chart, {order}", full_page=True, animations="disabled"
+            f"{order}-dashboard-dark-390", label=f"390px dark chart, {order}", full_page=True, animations="disabled"
         )
         capture_completed = True
         chart_events = await page.evaluate("() => window.__spendChartProbe.events")
@@ -740,7 +740,9 @@ async def _run_spending_chart_order_probe(page: Page, dashboard_url: str, *, ord
                 "chart_events": chart_events,
                 "chart_events_error": chart_events_error,
             }
-            (output_dir / "ordering-probe.json").write_text(json.dumps(probe, indent=2) + "\n", encoding="utf-8")
+            (output_dir / f"ordering-probe-{order}.json").write_text(
+                json.dumps(probe, indent=2) + "\n", encoding="utf-8"
+            )
         except Exception as diagnostic_error:
             if active_error is None:
                 raise
