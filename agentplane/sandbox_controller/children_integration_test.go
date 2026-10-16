@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
@@ -36,6 +37,7 @@ func eventually(t *testing.T, check func() bool) {
 
 // Exercise real SSA field ownership and filtered manager watches, which the fake client cannot model.
 func TestChildApplyOwnershipAndDrift(t *testing.T) {
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 	asset, err := runfiles.Rlocation("envtest_kubernetes_linux_amd64/kube-apiserver")
 	if err != nil {
 		t.Fatal(err)
@@ -202,12 +204,12 @@ func TestChildApplyOwnershipAndDrift(t *testing.T) {
 	eventually(t, func() bool { return apierrors.IsNotFound(objects.Get(ctx, key, &policycontroller.PolicyBinding{})) })
 	for _, test := range []struct {
 		name, reason string
-		foreign client.Object
+		foreign      client.Object
 	}{
 		{"foreign-launch", "ConfigMapConflict", &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "foreign-launch-launch", Namespace: ns}}},
 		{"foreign-binding", "PolicyBindingConflict", &policycontroller.PolicyBinding{
 			ObjectMeta: metav1.ObjectMeta{Name: "foreign-binding", Namespace: ns},
-			Spec: policycontroller.PolicyBindingSpec{Subject: policycontroller.ServiceAccountRef{Namespace: ns, Name: "foreign-binding"}, PolicySets: []string{"foreign-grant"}},
+			Spec:       policycontroller.PolicyBindingSpec{Subject: policycontroller.ServiceAccountRef{Namespace: ns, Name: "foreign-binding"}, PolicySets: []string{"foreign-grant"}},
 		}},
 		{"foreign-service", "ServiceConflict", &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "foreign-service-control", Namespace: ns}, Spec: corev1.ServiceSpec{ClusterIP: corev1.ClusterIPNone}}},
 	} {

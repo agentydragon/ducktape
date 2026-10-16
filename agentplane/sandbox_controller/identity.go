@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,22 +33,37 @@ func (r *Reconciler) ensureIdentity(ctx context.Context, sandbox *sandboxapi.San
 }
 
 func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *sandboxapi.Sandbox) (*unready, error) {
-	if len(sandbox.Spec.PolicySets) == 0 {
-		var binding policycontroller.PolicyBinding
-		if err := r.Objects.Get(ctx, client.ObjectKeyFromObject(sandbox), &binding); err != nil {
-			return nil, client.IgnoreNotFound(err)
-		}
-		if !metav1.IsControlledBy(&binding, sandbox) {
+	var binding policycontroller.PolicyBinding
+	err := r.Objects.Get(ctx, client.ObjectKeyFromObject(sandbox), &binding)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, err
+	}
+	if err == nil {
+		if !metav1.IsControlledBy(&binding, sandbox) || !binding.DeletionTimestamp.IsZero() {
 			return &unready{reason: "PolicyBindingConflict", message: fmt.Sprintf("PolicyBinding %s is foreign", binding.Name)}, nil
 		}
-		return nil, client.IgnoreNotFound(r.Delete(ctx, &binding, client.Preconditions{UID: &binding.UID}))
+		if len(sandbox.Spec.PolicySets) == 0 {
+			return nil, client.IgnoreNotFound(r.Delete(ctx, &binding, client.Preconditions{UID: &binding.UID}))
+		}
+		// SSA cannot express removing this non-nullable optional CRD field when another
+		// writer owns it. Clear drift with an optimistic patch before applying our intent.
+		if binding.Spec.ExpiresAt != nil {
+			before := binding.DeepCopy()
+			binding.Spec.ExpiresAt = nil
+			if err := r.Patch(ctx, &binding, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(sandbox.Spec.PolicySets) == 0 {
+		return nil, nil
 	}
 	return r.applyOwned(ctx, sandbox, map[string]any{
 		"apiVersion": policycontroller.GroupVersion.String(), "kind": "PolicyBinding",
 		"metadata": map[string]any{"name": sandbox.Name, "namespace": sandbox.Namespace, "labels": map[string]string{sandboxapi.SandboxLabel: sandbox.Name}},
 		"spec": map[string]any{
 			"subject":    map[string]any{"namespace": sandbox.Namespace, "name": sandbox.Name},
-			"policySets": sandbox.Spec.PolicySets, "expiresAt": nil,
+			"policySets": sandbox.Spec.PolicySets,
 		},
 	}, "PolicyBindingConflict")
 }

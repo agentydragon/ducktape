@@ -116,6 +116,7 @@ go_test(
         "@io_k8s_sigs_controller_runtime//pkg/cache",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/envtest",
+        "@io_k8s_sigs_controller_runtime//pkg/log/zap",
         "@io_k8s_sigs_controller_runtime//pkg/metrics/server",
     ],
 )
