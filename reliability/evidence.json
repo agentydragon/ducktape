@@ -792,12 +792,19 @@
           "thread-streamed-expanded.png": {
             "candidate": "d6534b46e39299b957bff7f0a81b584f921580474c3960091c3da60e4eb577e6",
             "baseline": "0f1db312659593d5da68025ffe5500fffb38fd37ba403120a5a76c8ee61db148"
+          },
+          "thread-output-desktop-reading.png": {
+            "candidate": "44d425508f160add72d466bf35f6eb9cac9b4722bbf1aa6eca2a7fa8e3cc7b01",
+            "baseline": "282b456b2fc341e81e49bc08f7296fc061af980160bebd654431f78d9f6c846f",
+            "fix_candidate_and_baseline": "44d425508f160add72d466bf35f6eb9cac9b4722bbf1aa6eca2a7fa8e3cc7b01",
+            "fix_gallery_url": "https://s3.allegedly.works/pr-visuals/commits/a1b3e9bd7591518b5bb4a19ea6308f7c96fd23ea/tests/agentplane-app-test-thread-browser-6b162a4490/thread-output-desktop-reading.png",
+            "retired_later_by_pr": 10595
           }
         },
         "fix_pr": 10627,
         "fix_head": "a1b3e9bd7591518b5bb4a19ea6308f7c96fd23ea",
         "fixture": "EmptyActionsStream prevents an unrelated Actions-service retry/status spinner.",
-        "interpretation": "The streamed asset hashes reverse on #10627 and its candidate matches #10621's prior baseline; the test-only EmptyActionsStream fixture is source-supported to prevent the unrelated retry/status spinner. The desktop-reading image is separate: its candidate remains byte-identical in #10627 and is not explained by that fixture.",
+        "interpretation": "Both #10621 assets support the same fixture-state spinner finding: streamed hashes reverse on #10627; the desktop-reading candidate differs from its old baseline but matches #10627 candidate and baseline. The test-only EmptyActionsStream prevents the unrelated Actions-service retry/status spinner. The desktop-reading capture was later retired by #10595; thread-streamed-expanded remains published.",
         "fix_state": "Merged at a1b3e9bd7591518b5bb4a19ea6308f7c96fd23ea."
       },
       "thread_output_capture_retirement": {
@@ -822,7 +829,7 @@
             "path": "thread-output-desktop-reading.png",
             "candidate_sha256": "44d425508f160add72d466bf35f6eb9cac9b4722bbf1aa6eca2a7fa8e3cc7b01",
             "baseline_sha256": "282b456b2fc341e81e49bc08f7296fc061af980160bebd654431f78d9f6c846f",
-            "historical_cause": "Unresolved; candidate stays unchanged in #10627, so the spinner fixture does not explain it."
+            "historical_cause": "Supported fixture spinner difference: #10627 candidate and baseline both equal the #10621 candidate; this screenshot was later retired by #10595."
           }
         ],
         "follow_up_pr_state": "#10595 merged; phone and desktop output screenshot captures were removed while behavioral assertions remained."
@@ -932,10 +939,16 @@
       "source_note": "These follow-up mappings supplement the original exact-head per-PR records. A known pattern is not a claim that old per-run trace logs exist.",
       "command_phone_prs": 10,
       "command_phone_asset_pairs": 20,
-      "fixture_spinner_assets": 1,
+      "fixture_spinner_assets": 2,
       "retired_thread_output_assets": 2,
       "limitation": "Historical per-PR traces were unavailable for the repeated command-phone pairs and retired output captures. Exact candidate/baseline hashes and gallery URLs are stored per asset; source tracing is direct only for the #10719 mechanism and the #10627 fixture change.",
-      "provenance": "Follow-up review of exact immutable PR gallery metadata, source at #10719 and #10627, and capture retirement in #10595; per-asset gallery URLs and candidate/baseline hashes are preserved in the records."
+      "provenance": "Follow-up review of exact immutable PR gallery metadata, source at #10719 and #10627, and capture retirement in #10595; per-asset gallery URLs and candidate/baseline hashes are preserved in the records.",
+      "overlap_assets": [
+        {
+          "pr": 10621,
+          "path": "thread-output-desktop-reading.png"
+        }
+      ]
     }
   },
   "records": [
@@ -14707,7 +14720,7 @@
       "visual_publication": {
         "state": "gallery_with_changed_assets",
         "classification": "test_capture_input_change",
-        "rationale": "The streamed candidate/baseline hashes reverse on #10627, whose test-only EmptyActionsStream fixture prevents an unrelated Actions-service retry/status spinner. The desktop-reading candidate stayed byte-identical between #10621 and #10627, so the fixture does not explain that image; #10595 later removed its capture. No retained trace establishes the desktop-reading pixel cause.",
+        "rationale": "Both changed assets align with the test-only Actions-stream fixture correction: the streamed candidate/baseline hashes reverse on #10627, and the desktop-reading candidate differs from its old baseline but matches #10627 candidate and baseline. EmptyActionsStream prevents the unrelated retry/status spinner. #10595 later removed the desktop-reading capture; no cause is claimed for #10619 phone-reading pixels.",
         "comment_url": "https://github.com/agentydragon/ducktape/pull/10621#issuecomment-6187992748",
         "comment_created_at": "2026-10-15T08:36:31Z",
         "comment_author": "github-actions",
@@ -14885,17 +14898,25 @@
                   "baseline_sha256": "282b456b2fc341e81e49bc08f7296fc061af980160bebd654431f78d9f6c846f",
                   "candidate_url": "https://s3.allegedly.works/pr-visuals/commits/17f1dceb7a7141b608b2ed36a773e57f2821e67a/tests/agentplane-app-test-thread-browser-6b162a4490/thread-output-desktop-reading.png",
                   "baseline_url": "https://s3.allegedly.works/pr-visuals/commits/17f1dceb7a7141b608b2ed36a773e57f2821e67a/tests/agentplane-app-test-thread-browser-6b162a4490/baseline/thread-output-desktop-reading.png",
-                  "assessment": "screenshot_scope_removed_later",
-                  "assessment_rationale": "The candidate and baseline hashes are preserved in this record. #10595 later removed phone/desktop thread-output screenshot captures while retaining behavioral scroll/collapse checks. No historical trace establishes why this candidate differed.",
+                  "assessment": "supported_fixture_actions_stream_spinner",
+                  "assessment_rationale": "The candidate is 44d425\u2026 and the old baseline is 282b456\u2026. On #10627, candidate and baseline both match #10621\u2019s candidate. The test-only EmptyActionsStream prevents the unrelated Actions-service retry/status spinner, supporting fixture-state noise for this screenshot. #10595 later retired the capture; that later scope change does not erase the supported historical comparison.",
                   "historical_asset_closure": {
-                    "classification": "screenshot_scope_removed_later",
+                    "classification": "supported_fixture_actions_stream_spinner",
+                    "fix_pr": 10627,
+                    "fix_pr_url": "https://github.com/agentydragon/ducktape/pull/10627",
+                    "fix_head_sha": "a1b3e9bd7591518b5bb4a19ea6308f7c96fd23ea",
+                    "fix_state_at_collection": "#10627 is merged at a1b3e9bd7591518b5bb4a19ea6308f7c96fd23ea.",
+                    "fix_source_path": "agentplane/app/testing/replication_process.py",
+                    "fix_source_note": "Adds test-only EmptyActionsStream; its code comment says the app shell subscribes without an Action Service, and this keeps that unrelated stream healthy/empty instead of retrying and drawing a status spinner.",
+                    "fix_candidate_sha256": "44d425508f160add72d466bf35f6eb9cac9b4722bbf1aa6eca2a7fa8e3cc7b01",
+                    "fix_candidate_url": "https://s3.allegedly.works/pr-visuals/commits/a1b3e9bd7591518b5bb4a19ea6308f7c96fd23ea/tests/agentplane-app-test-thread-browser-6b162a4490/thread-output-desktop-reading.png",
+                    "fix_candidate_and_baseline_equal": true,
                     "retirement_pr": 10595,
                     "retirement_pr_url": "https://github.com/agentydragon/ducktape/pull/10595",
                     "retirement_head_sha": "120d16ba389e0220e89775e0a8564aecc01e0aad",
                     "retirement_state_at_collection": "Merged.",
                     "retirement_source_path": "agentplane/app/test_thread_browser.py",
-                    "historical_cause": "Unresolved; no retained trace establishes why the earlier candidate differed.",
-                    "scope_note": "For #10621 desktop-reading, the candidate hash is unchanged in #10627, so the Actions-stream fixture does not explain that image. For #10619 phone-reading, #10627 candidate matches the old baseline, but that is not a per-run causal trace."
+                    "historical_cause": "Fixture spinner is supported for the old candidate/baseline difference; the screenshot was later removed."
                   }
                 }
               ]
@@ -14962,21 +14983,29 @@
                 "merge_base_sha": "f465bae5189fa518acc34684b130fdb7978c22f6",
                 "baseline_fallback": false
               },
-              "assessment": "screenshot_scope_removed_later",
-              "assessment_rationale": "The candidate and baseline hashes are preserved in this record. #10595 later removed phone/desktop thread-output screenshot captures while retaining behavioral scroll/collapse checks. No historical trace establishes why this candidate differed.",
+              "assessment": "supported_fixture_actions_stream_spinner",
+              "assessment_rationale": "The candidate is 44d425\u2026 and the old baseline is 282b456\u2026. On #10627, candidate and baseline both match #10621\u2019s candidate. The test-only EmptyActionsStream prevents the unrelated Actions-service retry/status spinner, supporting fixture-state noise for this screenshot. #10595 later retired the capture; that later scope change does not erase the supported historical comparison.",
               "candidate_sha256": "44d425508f160add72d466bf35f6eb9cac9b4722bbf1aa6eca2a7fa8e3cc7b01",
               "baseline_sha256": "282b456b2fc341e81e49bc08f7296fc061af980160bebd654431f78d9f6c846f",
               "candidate_url": "https://s3.allegedly.works/pr-visuals/commits/17f1dceb7a7141b608b2ed36a773e57f2821e67a/tests/agentplane-app-test-thread-browser-6b162a4490/thread-output-desktop-reading.png",
               "baseline_url": "https://s3.allegedly.works/pr-visuals/commits/17f1dceb7a7141b608b2ed36a773e57f2821e67a/tests/agentplane-app-test-thread-browser-6b162a4490/baseline/thread-output-desktop-reading.png",
               "historical_asset_closure": {
-                "classification": "screenshot_scope_removed_later",
+                "classification": "supported_fixture_actions_stream_spinner",
+                "fix_pr": 10627,
+                "fix_pr_url": "https://github.com/agentydragon/ducktape/pull/10627",
+                "fix_head_sha": "a1b3e9bd7591518b5bb4a19ea6308f7c96fd23ea",
+                "fix_state_at_collection": "#10627 is merged at a1b3e9bd7591518b5bb4a19ea6308f7c96fd23ea.",
+                "fix_source_path": "agentplane/app/testing/replication_process.py",
+                "fix_source_note": "Adds test-only EmptyActionsStream; its code comment says the app shell subscribes without an Action Service, and this keeps that unrelated stream healthy/empty instead of retrying and drawing a status spinner.",
+                "fix_candidate_sha256": "44d425508f160add72d466bf35f6eb9cac9b4722bbf1aa6eca2a7fa8e3cc7b01",
+                "fix_candidate_url": "https://s3.allegedly.works/pr-visuals/commits/a1b3e9bd7591518b5bb4a19ea6308f7c96fd23ea/tests/agentplane-app-test-thread-browser-6b162a4490/thread-output-desktop-reading.png",
+                "fix_candidate_and_baseline_equal": true,
                 "retirement_pr": 10595,
                 "retirement_pr_url": "https://github.com/agentydragon/ducktape/pull/10595",
                 "retirement_head_sha": "120d16ba389e0220e89775e0a8564aecc01e0aad",
                 "retirement_state_at_collection": "Merged.",
                 "retirement_source_path": "agentplane/app/test_thread_browser.py",
-                "historical_cause": "Unresolved; no retained trace establishes why the earlier candidate differed.",
-                "scope_note": "For #10621 desktop-reading, the candidate hash is unchanged in #10627, so the Actions-stream fixture does not explain that image. For #10619 phone-reading, #10627 candidate matches the old baseline, but that is not a per-run causal trace."
+                "historical_cause": "Fixture spinner is supported for the old candidate/baseline difference; the screenshot was later removed."
               }
             }
           ]
