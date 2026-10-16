@@ -10,3 +10,8 @@ If a repeated `bbr test` attempt leaves no BuildBuddy invocation, retain complet
 report (compare them only when at least two are available), report the attempted command and
 exit code, and fail the sweep. Do not retry the attempt or count its absent outputs as missing
 screenshots.
+
+## Fresh repetitions
+
+Use `--nocache_test_results` to rerun tests while keeping remote cache hits for prerequisite
+builds. `--noremote_accept_cached` is unnecessary and also disables those prerequisite hits.
