@@ -596,6 +596,7 @@ npm.npm_translate_lock(
         "//:props/frontend/package.json",
         "//:study_casino/frontend/package.json",
         "//:x/rspcache/admin_ui/package.json",
+        "//patches:chartjs_line_overflow.patch",
     ],
     # Disable postinstall for packages that download binaries during lifecycle hooks.
     # These fail in Bazel's sandboxed builds (network blocked, RBE).
@@ -607,9 +608,6 @@ npm.npm_translate_lock(
         "unrs-resolver",
     ],
     npmrc = "//:.npmrc",
-    # Line overflow must use the current options before the first layout, not the
-    # previous frame's options. Otherwise no-op updates move the x axis.
-    patches = {"chart.js@4.5.1": ["//patches:chartjs_line_overflow.patch"]},
     # Root pnpm-lock.yaml with workspace packages
     pnpm_lock = "//:pnpm-lock.yaml",
     # Hoist ESLint plugins for runtime discovery

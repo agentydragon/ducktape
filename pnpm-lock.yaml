@@ -7,6 +7,11 @@ settings:
 overrides:
   esbuild: '>=0.28.0'
 
+patchedDependencies:
+  chart.js@4.5.1:
+    hash: 6sbtsacnxf55veexkmgxctg6sy
+    path: patches/chartjs_line_overflow.patch
+
 importers:
 
   .:
@@ -67,7 +72,7 @@ importers:
         version: 2.0.0-alpha.43(@babel/runtime@7.29.7)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       chart.js:
         specifier: ^4.4.8
-        version: 4.5.1
+        version: 4.5.1(patch_hash=6sbtsacnxf55veexkmgxctg6sy)
       date-fns:
         specifier: ^4.4.0
         version: 4.4.0
@@ -205,10 +210,10 @@ importers:
         version: 3.46.0(react@19.3.0)
       chart.js:
         specifier: ^4.4.8
-        version: 4.5.1
+        version: 4.5.1(patch_hash=6sbtsacnxf55veexkmgxctg6sy)
       chartjs-chart-matrix:
         specifier: ^3.0.0
-        version: 3.1.0(chart.js@4.5.1)
+        version: 3.1.0(chart.js@4.5.1(patch_hash=6sbtsacnxf55veexkmgxctg6sy))
       date-fns:
         specifier: ^4.4.0
         version: 4.4.0
@@ -5347,13 +5352,13 @@ snapshots:
 
   change-case@5.4.4: {}
 
-  chart.js@4.5.1:
+  chart.js@4.5.1(patch_hash=6sbtsacnxf55veexkmgxctg6sy):
     dependencies:
       '@kurkle/color': 0.3.4
 
-  chartjs-chart-matrix@3.1.0(chart.js@4.5.1):
+  chartjs-chart-matrix@3.1.0(chart.js@4.5.1(patch_hash=6sbtsacnxf55veexkmgxctg6sy)):
     dependencies:
-      chart.js: 4.5.1
+      chart.js: 4.5.1(patch_hash=6sbtsacnxf55veexkmgxctg6sy)
 
   chokidar@5.0.0:
     dependencies:
