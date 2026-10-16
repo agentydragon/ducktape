@@ -23,9 +23,9 @@ async def _exec_schemas() -> tuple[dict[str, Any], dict[str, Any]]:
         tool = next((item for item in await client.list_tools() if item.name == "exec"), None)
     if tool is None:
         raise RuntimeError("SSH MCP server did not register the exec tool")
-    if tool.outputSchema is None:
+    if tool.output_schema is None:
         raise RuntimeError("SSH MCP server did not publish an output schema for exec")
-    return tool.inputSchema, tool.outputSchema
+    return tool.input_schema, tool.output_schema
 
 
 def _component_schemas(schema: dict[str, Any], name: str) -> dict[str, Any]:
