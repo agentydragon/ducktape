@@ -213,9 +213,9 @@ def test_run_once_hands_the_invocation_id_to_bbr_rather_than_reading_it_back() -
     assert f"--invocation_id={execution.invocation}" in seen[0]
     assert UUID(execution.invocation).version == 4
     assert execution.returncode == 0
-    # Without both, a later run replays the first run's result and every scene looks stable.
+    # Test results must be fresh while prerequisite builds retain remote cache hits.
     assert "--nocache_test_results" in seen[0]
-    assert "--noremote_accept_cached" in seen[0]
+    assert "--noremote_accept_cached" not in seen[0]
 
 
 def test_the_fleet_is_read_as_records_out_of_the_runner_s_own_progress() -> None:

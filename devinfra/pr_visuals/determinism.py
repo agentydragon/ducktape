@@ -145,10 +145,9 @@ def run_once(targets: list[str], *, bbr: Path, run: Runner) -> Execution:
     an explicit `--invocation_id` (devinfra/bbr.py), so the run's identity is known by
     construction, and what it did is then read from BuildBuddy instead of from its console.
 
-    Both cache flags are needed and neither is redundant: without `--nocache_test_results`
-    Bazel replays the previous result, and without `--noremote_accept_cached` it takes a
-    peer's. Either way a later run would observe the first run's bytes and every scene
-    would look perfectly reproducible.
+    `--nocache_test_results` prevents Bazel from reusing a prior test result and marks its
+    TestRunner spawn non-cacheable. Leave remote cache reads enabled so prerequisite build
+    actions can still use them; `--noremote_accept_cached` would disable those hits too.
 
     Retain nonzero exits so build failures cannot disappear behind stable screenshots or
     a missing test summary. Finish the other runs before reporting the failures.
@@ -159,7 +158,6 @@ def run_once(targets: list[str], *, bbr: Path, run: Runner) -> Execution:
         "test",
         f"--invocation_id={invocation}",
         "--nocache_test_results",
-        "--noremote_accept_cached",
         *targets,
     ]
     result = run(command, check=False, text=True, cwd=get_build_workspace_directory())
