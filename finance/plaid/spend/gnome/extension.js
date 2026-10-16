@@ -12,6 +12,16 @@ import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 const BUS_NAME = "works.allegedly.PlaidSpend";
 const OBJECT_PATH = "/works/allegedly/PlaidSpend";
 const INTERFACE_NAME = "works.allegedly.PlaidSpend1";
+const TEST_NOW_MS = (() => {
+  if (GLib.getenv("PLAID_SPEND_TEST") !== "1") return null;
+  const value = GLib.getenv("PLAID_SPEND_TEST_NOW");
+  if (value === null) return null;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString() !== value) {
+    throw new Error("PLAID_SPEND_TEST_NOW must be a valid UTC timestamp in YYYY-MM-DDTHH:mm:ss.sssZ form");
+  }
+  return timestamp;
+})();
 const INTERFACE_INFO = Gio.DBusNodeInfo.new_for_xml(
   `<node><interface name="${INTERFACE_NAME}">
     <method name="GetView"><arg name="view" type="s" direction="out"/></method>
@@ -125,7 +135,7 @@ function formatDaily(minorUnits, currency) {
 }
 
 function formatSyncAge(timestamp) {
-  const elapsed = (Date.now() - new Date(timestamp).getTime()) / 60000;
+  const elapsed = ((TEST_NOW_MS ?? Date.now()) - new Date(timestamp).getTime()) / 60000;
   if (!Number.isFinite(elapsed)) return "?";
   if (elapsed < 60) return `${Math.max(0, Math.floor(elapsed))}m`;
   if (elapsed < 2880) return `${Math.floor(elapsed / 60)}h`;

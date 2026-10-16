@@ -92,7 +92,7 @@ def render_session(
         )
         try:
             session.boot()
-            session.start(environment={"PLAID_SPEND_TEST": "1"})
+            session.start(environment={"PLAID_SPEND_TEST": "1", "PLAID_SPEND_TEST_NOW": "2026-10-15T12:00:00.000Z"})
             session.wait_for_paint()
             _assert_no_plaid_extension_error(session)
         except AssertionError, TimeoutError, RuntimeError:
@@ -164,7 +164,7 @@ def test_allowance_paced(render_session: tuple[GnomeSession, Path]) -> None:
         assert "30d $18/day" in menu_text
         assert "Leash ~$23/day" in menu_text
         assert "7d unmatched 3 ($12)" in menu_text
-        assert "Sync " in menu_text
+        assert "Sync 1h ago" in menu_text
         assert "View updated" not in menu_text
         assert "sustainability target" not in menu_text
         assert "past pace is not opening debt" not in menu_text
@@ -177,6 +177,7 @@ def test_allowance_warming(render_session: tuple[GnomeSession, Path]) -> None:
         menu_text = _allowance_menu_text(session)
         assert "Pace warming up" in menu_text
         assert "7d n/a" in menu_text
+        assert "Sync 59m ago" in menu_text
         _capture(session, output_dir, geometry, "allowance_warming")
 
 
