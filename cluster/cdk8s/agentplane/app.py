@@ -194,7 +194,7 @@ class App(Construct):
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
-        return {
+        return self.container_env | {
             env_name(Settings, "database_url"): self.database_url,
             **(
                 {env_name(Settings, "electric_url"): EnvValue.from_value(self.electric.url)}
@@ -244,11 +244,7 @@ class App(Construct):
                 host="0.0.0.0",
                 port=self.service.pod_port,
             ),
-            env_variables={
-                **env,
-                **self.container_env,
-                env_name(Settings, "runner_gateway_control_target"): control_target,
-            },
+            env_variables={**env, env_name(Settings, "runner_gateway_control_target"): control_target},
             ports=[self.service.port.container_port()],
             readiness=http_probe("/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),

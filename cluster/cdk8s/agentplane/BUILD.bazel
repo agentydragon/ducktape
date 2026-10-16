@@ -1074,6 +1074,7 @@ py_test(
         ":runner_gateway",
         ":session_dispatcher",
         "//:conftest",
+        "//util:settings_contract",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
