@@ -16070,7 +16070,7 @@
   ],
   "fleet_repeat_evidence": {
     "scope": "Two separate five-run executions of all 25 visual-review test targets; compare only PNGs declared in visual-review.json. Diagnostic captures are excluded.",
-    "captured_at_utc": "2026-10-16T08:52:42Z",
+    "captured_at_utc": "2026-10-16T09:04:52Z",
     "runs": [
       {
         "label": "five-run-before-notification-scrollbar-readiness-fix",
@@ -16280,8 +16280,8 @@
       }
     ],
     "chart_layout_investigation": {
-      "captured_at_utc": "2026-10-16T08:14:05Z",
-      "classification": "confirmed Chart.js layout-history mechanism; production extra-update trigger and full-fleet fix verification pending",
+      "captured_at_utc": "2026-10-16T09:04:52Z",
+      "classification": "confirmed Chart.js layout-history mechanism; 590-image candidate repeat matched, with one target execution failure; production trigger for the earlier variant remains unestablished",
       "full_fleet_observation": {
         "source_commit": "a327faf620b193affc159cb6ad1a6348a0a3b45c",
         "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/38862459578",
@@ -16342,11 +16342,11 @@
         "pr": 10753,
         "url": "https://github.com/agentydragon/ducktape/pull/10753",
         "proposal": "Resolve the active/default target line border width before initial overflow layout.",
-        "full_fleet_verification": "In progress. One of five runs completed with a functional test failure and two unavailable declared images; four runs remain. No fleet-stability conclusion.",
+        "full_fleet_verification": "The five-run review-only comparison on exact head 5bc2dcdc found all 590 declared review PNGs byte-identical. One of 125 target executions failed the thread-history readiness assertion; #10762 is a separate proposed test fix with fresh repeats pending.",
         "head_sha": "5bc2dcdc2cb0761345394b59ebd59c9e1e4ed4df",
         "state": "OPEN"
       },
-      "limits": "The exact dashboard-dark-390.png variant from a327 run 3 was reproduced by the controlled second update in two independent RBE runs. This establishes the Chart.js history-dependent geometry mechanism. It does not establish what caused the production visual test to perform an extra update in only one of five runs; the three-image a327 fleet result remains a failed comparison until a full-fleet repeat on the fix candidate is complete."
+      "limits": "The exact dashboard-dark-390.png variant from a327 run 3 was reproduced by the controlled second update in two independent RBE runs. This establishes the Chart.js history-dependent geometry mechanism, but not what caused the extra update in one of five production-scene executions. On candidate source 5bc2dcdc, a review-only five-run comparison found all 590 declared review PNGs byte-identical, including two images produced by a failed shard; one of 125 target executions failed, so the workflow did not establish full test-fleet health."
     },
     "command_timeline_fix_followup": {
       "captured_at_utc": "2026-10-16T08:26:26Z",
@@ -16433,8 +16433,8 @@
       "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/38874675143",
       "source_sha": "5bc2dcdc2cb0761345394b59ebd59c9e1e4ed4df",
       "expected_runs": 5,
-      "completed_runs": 1,
-      "remaining_runs": 4,
+      "completed_runs": 5,
+      "remaining_runs": 0,
       "run1_invocation_id": "d032d11d-eae0-4401-959f-43c15755c76f",
       "run1_invocation_url": "https://app.buildbuddy.io/invocation/d032d11d-eae0-4401-959f-43c15755c76f",
       "run1_bazel_result": "TESTS_FAILED",
@@ -16451,8 +16451,109 @@
         "failed_shard_assets_excluded_from_comparator": 2,
         "excluded_asset_files_present_in_run_artifacts": true
       },
-      "stability_conclusion": "None. One of five runs completed with a functional test failure. Two failed-shard images are present in the run artifacts but excluded from pass-only mapping, so this run cannot support a five-run stability or absence claim.",
-      "workflow_status": "IN_PROGRESS"
+      "stability_conclusion": "Visual reproducibility: all 590 declared review PNGs were byte-identical across five runs. Test execution: one of 125 target executions failed, so the workflow is not a fully green test-fleet result.",
+      "workflow_status": "COMPLETED_WITH_TEST_FAILURE",
+      "all_builds_successful": false,
+      "target_execution_totals": {
+        "attempted": 125,
+        "passed": 124,
+        "failed": 1,
+        "failed_target": "//agentplane/app:test_thread_browser",
+        "failed_test": "test_switching_threads_starts_at_each_threads_tail"
+      },
+      "run_invocations": [
+        {
+          "run": "run1",
+          "invocation_id": "d032d11d-eae0-4401-959f-43c15755c76f",
+          "url": "https://app.buildbuddy.io/invocation/d032d11d-eae0-4401-959f-43c15755c76f",
+          "result": "TESTS_FAILED"
+        },
+        {
+          "run": "run2",
+          "invocation_id": "4e5497c7-7043-46a5-a4bd-ca5f20d3c2f0",
+          "url": "https://app.buildbuddy.io/invocation/4e5497c7-7043-46a5-a4bd-ca5f20d3c2f0",
+          "result": "SUCCESS"
+        },
+        {
+          "run": "run3",
+          "invocation_id": "9e06f952-8805-4e47-9754-eff6c765b820",
+          "url": "https://app.buildbuddy.io/invocation/9e06f952-8805-4e47-9754-eff6c765b820",
+          "result": "SUCCESS"
+        },
+        {
+          "run": "run4",
+          "invocation_id": "0b287f27-a397-4352-9ab8-5ac2be0e47c8",
+          "url": "https://app.buildbuddy.io/invocation/0b287f27-a397-4352-9ab8-5ac2be0e47c8",
+          "result": "SUCCESS"
+        },
+        {
+          "run": "run5",
+          "invocation_id": "60fbe7a8-5559-44a2-b72b-aca1a122f59a",
+          "url": "https://app.buildbuddy.io/invocation/60fbe7a8-5559-44a2-b72b-aca1a122f59a",
+          "result": "SUCCESS"
+        }
+      ],
+      "review_only_comparison": {
+        "method": "Compare every declared review PNG, including artifacts from failed shards; keep test/build failures separate. A matching PNG does not make its shard pass. Exclude undeclared diagnostic PNGs.",
+        "runs_expected": 5,
+        "runs_completed": 5,
+        "manifest_count_per_run": 41,
+        "label_count_per_run": 24,
+        "declared_review_pngs_per_run": 590,
+        "same_manifest_membership_all_runs": true,
+        "same_review_asset_membership_all_runs": true,
+        "byte_identical_review_pngs_all_runs": 590,
+        "uri_drift_count": 0,
+        "diagnostic_pngs_excluded_per_run": [
+          35,
+          36,
+          36,
+          36,
+          36
+        ],
+        "all_builds_successful": false,
+        "source_sha": "5bc2dcdc2cb0761345394b59ebd59c9e1e4ed4df",
+        "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/38874675143"
+      },
+      "strict_pass_only_comparison": {
+        "run1_passed_target_images_accepted": 588,
+        "run1_failed_shard_images_excluded": 2,
+        "excluded_images_present_in_run_artifacts": true,
+        "interpretation": "This strict mapper excludes images from test-failed shards and therefore remains distinct from the review-only comparison. The separate review-only result includes those produced images while retaining the test failure."
+      },
+      "visual_reproducibility_result": "PASS: all 590 declared review PNGs had identical bytestream URIs across all five runs, including the two produced images from run 1's failed shard.",
+      "test_execution_result": "FAIL: one of 125 target executions failed. Run 1's thread history navigation test did not find 'Thread 0 message 129' within five seconds while the page still showed 'Catching up thread\u2026'; runs 2\u20135 passed all 25 targets.",
+      "navigation_fix_followup": {
+        "pr": 10762,
+        "url": "https://github.com/agentydragon/ducktape/pull/10762",
+        "state": "OPEN",
+        "head_sha": "c6652696eab4652bd93fa76362622a73bbd5b54a",
+        "base_sha": "8bd858911b45715679200457bf92e12ddcca869c",
+        "mergeable": "MERGEABLE",
+        "checks_snapshot_at_utc": "2026-10-16T09:04:52Z",
+        "bazel_ci": {
+          "state": "SUCCESS",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/38877154787"
+        },
+        "build_artifacts_and_imports": {
+          "state": "SUCCESS",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/38877154699"
+        },
+        "pre_commit": {
+          "state": "SUCCESS",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/38877154703"
+        },
+        "visual_review": {
+          "state": "SUCCESS",
+          "url": "https://github.com/agentydragon/ducktape/runs/116895203936"
+        },
+        "repeat_validation": "Fresh visual fleet repeats on this followup head are pending.",
+        "visual_diffs": {
+          "state": "SUCCESS",
+          "url": "https://github.com/agentydragon/ducktape/runs/116896527810"
+        }
+      },
+      "captured_at_utc": "2026-10-16T09:04:52Z"
     },
     "trace_policy_probe": {
       "source_sha": "5bc2dcdc2cb0761345394b59ebd59c9e1e4ed4df",
