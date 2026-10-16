@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Iterator
+import sys
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from urllib.parse import urlparse
@@ -630,30 +631,24 @@ async def _run_spending_chart_order_probe(page: Page, dashboard_url: str, *, ord
     def record(event: str, gate: str) -> None:
         route_events.append({"sequence": len(route_events), "event": event, "gate": gate})
 
-    async def hold_route(route: Route, gate: str) -> None:
-        record("arrived", gate)
-        arrived[gate].set()
-        await gates[gate].wait()
-        record("continued", gate)
-        await route.continue_()
+    def gate_handler(gate: str) -> Callable[[Route], Awaitable[None]]:
+        async def handle(route: Route) -> None:
+            record("arrived", gate)
+            arrived[gate].set()
+            await gates[gate].wait()
+            record("continued", gate)
+            await route.continue_()
 
-    for gate in gates:
-        await page.route(f"**/api/v1/{gate}*", lambda route, route_gate=gate: hold_route(route, route_gate))
+        return handle
 
     def record_response(response: Response) -> None:
         path = urlparse(response.url).path.removeprefix("/api/v1/")
         if path in gates:
             record("response", path)
 
-    page.on("response", record_response)
     output_dir = undeclared_outputs_dir() / f"spend-chart-order-{order}"
     view = VisualPage(page, output_dir=output_dir, title="Spend")
-    await page.add_init_script(_CHART_ORDER_PROBE_JS)
-    await page.emulate_media(color_scheme="dark")
-    await page.set_viewport_size({"width": 390, "height": 844})
-
-    if order not in {"view-and-events-first", "transactions-first"}:
-        raise ValueError(f"unknown route order {order}")
+    capture_completed = False
 
     async def continue_after_response(gate: str) -> None:
         path = f"/api/v1/{gate}"
@@ -664,6 +659,16 @@ async def _run_spending_chart_order_probe(page: Page, dashboard_url: str, *, ord
         await response.finished()
 
     try:
+        for gate in gates:
+            await page.route(f"**/api/v1/{gate}*", gate_handler(gate))
+        page.on("response", record_response)
+        await page.add_init_script(_CHART_ORDER_PROBE_JS)
+        await page.emulate_media(color_scheme="dark")
+        await page.set_viewport_size({"width": 390, "height": 844})
+
+        if order not in {"view-and-events-first", "transactions-first"}:
+            raise ValueError(f"unknown route order {order}")
+
         await page.goto(dashboard_url, wait_until="domcontentloaded")
         if order == "view-and-events-first":
             await arrived["view"].wait()
@@ -709,17 +714,37 @@ async def _run_spending_chart_order_probe(page: Page, dashboard_url: str, *, ord
         await view.capture(
             "dashboard-dark-390", label=f"390px dark chart, {order}", full_page=True, animations="disabled"
         )
+        capture_completed = True
         chart_events = await page.evaluate("() => window.__spendChartProbe.events")
         assert any(event["kind"] == "before-update" for event in chart_events)
         assert any(event["kind"] == "after-draw" for event in chart_events)
-        (output_dir / "ordering-probe.json").write_text(
-            json.dumps({"order": order, "route_events": route_events, "chart_events": chart_events}, indent=2) + "\n",
-            encoding="utf-8",
-        )
         view.errors.assert_none(context=f"Spend chart order {order}")
     finally:
         for gate in gates.values():
             gate.set()
+        active_error = sys.exception()
+        chart_events = []
+        chart_events_error = None
+        try:
+            chart_events = await asyncio.wait_for(
+                page.evaluate("() => window.__spendChartProbe?.events ?? []"), timeout=2
+            )
+        except Exception as error:
+            chart_events_error = repr(error)
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            probe = {
+                "order": order,
+                "capture_completed": capture_completed,
+                "route_events": route_events,
+                "chart_events": chart_events,
+                "chart_events_error": chart_events_error,
+            }
+            (output_dir / "ordering-probe.json").write_text(json.dumps(probe, indent=2) + "\n", encoding="utf-8")
+        except Exception as diagnostic_error:
+            if active_error is None:
+                raise
+            active_error.add_note(f"Could not save chart ordering diagnostics: {diagnostic_error!r}")
 
 
 async def test_spending_chart_order_probe_view_and_events_first(page: Page, dashboard_url: str) -> None:
