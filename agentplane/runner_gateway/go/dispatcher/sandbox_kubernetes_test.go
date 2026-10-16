@@ -5,30 +5,42 @@ import (
 	"errors"
 	"testing"
 
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic/fake"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const sandboxTestUID = "00000000-0000-4000-8000-000000000001"
 
-func sandboxObject() *unstructured.Unstructured {
-	return &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "agentplane.allegedly.works/v1alpha1", "kind": "Sandbox",
-		"metadata": map[string]any{
-			"name": "box", "namespace": "agentplane", "uid": sandboxTestUID,
-			"resourceVersion": "1",
+func sandboxObject() *sandboxapi.Sandbox {
+	suspendedAt := int64(4)
+	suspendedBy := sandboxapi.SuspendedByIdle
+	return &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "box", Namespace: "agentplane", UID: types.UID(sandboxTestUID), ResourceVersion: "1",
 		},
-		"spec": map[string]any{"running": true, "wakeOnSend": true, "wakeGeneration": int64(4)},
-		"status": map[string]any{
-			"operatingMode": "Suspended", "suspendedBy": "Idle",
-			"suspendedAtWakeGeneration": int64(4), "conditions": []any{
-				map[string]any{"type": "Ready", "status": "False", "reason": "Stopped", "message": "idle"},
-			},
+		Spec: sandboxapi.SandboxSpec{Running: true, WakeOnSend: true, WakeGeneration: 4},
+		Status: sandboxapi.SandboxStatus{
+			OperatingMode:             sandboxapi.OperatingModeSuspended,
+			SuspendedBy:               &suspendedBy,
+			SuspendedAtWakeGeneration: &suspendedAt,
+			Conditions: []metav1.Condition{{
+				Type: "Ready", Status: metav1.ConditionFalse, Reason: "Stopped", Message: "idle",
+			}},
 		},
-	}}
+	}
+}
+
+func sandboxClient(t *testing.T, objects ...client.Object) client.Client {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	if err := sandboxapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	return clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 }
 
 func TestSandboxSnapshotAndGuardedIdleWake(t *testing.T) {
@@ -39,17 +51,11 @@ func TestSandboxSnapshotAndGuardedIdleWake(t *testing.T) {
 		view.Namespace != "agentplane" || view.ReadyDetail != "Ready=False/Stopped: idle" {
 		t.Fatalf("wrong live Sandbox view: %+v %v", view, err)
 	}
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
-		sandboxResource: "SandboxList",
-	})
-	k := &KubernetesSandboxes{objects: client.Resource(sandboxResource).Namespace("agentplane")}
-	if _, err := k.objects.Create(ctx, object, metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	if actual, err := k.objects.Get(ctx, "box", metav1.GetOptions{}); err != nil {
-		t.Fatalf("fake Sandbox missing: %v", err)
-	} else if string(actual.GetUID()) != sandboxTestUID {
-		t.Fatalf("fake Sandbox UID = %q, object = %+v", actual.GetUID(), actual.Object)
+	objects := sandboxClient(t, object)
+	k := &KubernetesSandboxes{objects: objects, namespace: "agentplane"}
+	var actual sandboxapi.Sandbox
+	if err := objects.Get(ctx, types.NamespacedName{Namespace: "agentplane", Name: "box"}, &actual); err != nil || string(actual.UID) != sandboxTestUID {
+		t.Fatalf("fake Sandbox UID = %q, error = %v", actual.UID, err)
 	}
 	called := 0
 	requested, err := k.WakeForSend(ctx, "box", sandboxTestUID, func(generation int64) error {
@@ -62,13 +68,11 @@ func TestSandboxSnapshotAndGuardedIdleWake(t *testing.T) {
 	if err != nil || !requested || called != 1 {
 		t.Fatalf("wake: requested=%v callback=%d err=%v", requested, called, err)
 	}
-	updated, err := k.objects.Get(ctx, "box", metav1.GetOptions{})
-	if err != nil {
+	if err := objects.Get(ctx, types.NamespacedName{Namespace: "agentplane", Name: "box"}, &actual); err != nil {
 		t.Fatal(err)
 	}
-	generation, _, err := unstructured.NestedInt64(updated.Object, "spec", "wakeGeneration")
-	if err != nil || generation != 5 {
-		t.Fatalf("wake generation was not patched: %d %v", generation, err)
+	if actual.Spec.WakeGeneration != 5 || !actual.Spec.Running {
+		t.Fatalf("wake generation or running state was not updated: %+v", actual.Spec)
 	}
 	if _, err := k.WakeForSend(ctx, "box", "another-uid", nil); !errors.Is(err, ErrWakeDeleted) {
 		t.Fatalf("stale UID was not rejected: %v", err)
@@ -78,24 +82,35 @@ func TestSandboxSnapshotAndGuardedIdleWake(t *testing.T) {
 func TestWakeDisabledDoesNotCallReservation(t *testing.T) {
 	ctx := context.Background()
 	object := sandboxObject()
-	if err := unstructured.SetNestedField(object.Object, false, "spec", "wakeOnSend"); err != nil {
-		t.Fatal(err)
-	}
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
-		sandboxResource: "SandboxList",
-	})
-	k := &KubernetesSandboxes{objects: client.Resource(sandboxResource).Namespace("agentplane")}
-	if _, err := k.objects.Create(ctx, object, metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	if actual, err := k.objects.Get(ctx, "box", metav1.GetOptions{}); err != nil || string(actual.GetUID()) != sandboxTestUID {
-		t.Fatalf("fake Sandbox = %+v, error = %v", actual, err)
-	}
+	object.Spec.WakeOnSend = false
+	k := &KubernetesSandboxes{objects: sandboxClient(t, object), namespace: "agentplane"}
 	requested, err := k.WakeForSend(ctx, "box", sandboxTestUID, func(int64) error {
 		t.Fatal("disabled wake reserved a budget")
 		return nil
 	})
 	if err != nil || requested {
 		t.Fatalf("disabled wake: requested=%v err=%v", requested, err)
+	}
+}
+
+func TestWakeRequiresSuspendedGenerationToMatchForIdle(t *testing.T) {
+	ctx := context.Background()
+	object := sandboxObject()
+	object.Status.SuspendedAtWakeGeneration = nil
+	objects := sandboxClient(t, object)
+	k := &KubernetesSandboxes{objects: objects, namespace: "agentplane"}
+	requested, err := k.WakeForSend(ctx, "box", sandboxTestUID, func(int64) error {
+		t.Fatal("a running Sandbox without the suspension generation was treated as idle")
+		return nil
+	})
+	if err != nil || !requested {
+		t.Fatalf("running Sandbox with absent suspension generation: requested=%v err=%v", requested, err)
+	}
+	var actual sandboxapi.Sandbox
+	if err := objects.Get(ctx, types.NamespacedName{Namespace: "agentplane", Name: "box"}, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if actual.Spec.WakeGeneration != 4 {
+		t.Fatalf("absent suspension generation changed wake generation: %d", actual.Spec.WakeGeneration)
 	}
 }

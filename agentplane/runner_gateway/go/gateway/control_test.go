@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/dispatcher"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -27,14 +28,13 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
 	ktesting "k8s.io/client-go/testing"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const (
@@ -46,6 +46,15 @@ const (
 )
 
 type gatewayTestTokenReviews struct{}
+
+func newSandboxClient(t *testing.T, sandbox *sandboxapi.Sandbox) client.Client {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	if err := sandboxapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	return clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox).Build()
+}
 
 func (gatewayTestTokenReviews) Create(_ context.Context, request *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
 	accounts := map[string]auth.Account{
@@ -91,24 +100,20 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sandbox := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": sandboxAPIVersion,
-		"kind":       sandboxKind,
-		"metadata": map[string]any{
-			"name": testSandbox, "namespace": testNamespace, "uid": testSandboxUID,
+	sandbox := &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Name: testSandbox, Namespace: testNamespace, UID: testSandboxUID},
+		Status: sandboxapi.SandboxStatus{
+			OperatingMode: sandboxapi.OperatingModeRunning,
+			Incarnation:   &sandboxapi.Incarnation{Name: testPod, UID: testPodUID},
+			Conditions:    []metav1.Condition{{Type: sandboxRunning, Status: metav1.ConditionTrue, Reason: "Ready"}},
 		},
-		"status": map[string]any{
-			"operatingMode": modeRunning,
-			"incarnation":   map[string]any{"name": testPod, "uid": testPodUID},
-			"conditions":    []any{map[string]any{"type": sandboxRunning, "status": "True", "reason": "Ready"}},
-		},
-	}}
+	}
 	controller := true
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testPod, Namespace: testNamespace, UID: testPodUID,
 			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: sandboxAPIVersion, Kind: sandboxKind, Name: testSandbox,
+				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxKind, Name: testSandbox,
 				UID: testSandboxUID, Controller: &controller,
 			}},
 		},
@@ -117,12 +122,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 			Type: corev1.PodReady, Status: corev1.ConditionTrue,
 		}}},
 	}
-	objects := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
-		sandboxesGVR: "SandboxList",
-	})
-	if _, err := objects.Resource(sandboxesGVR).Namespace(testNamespace).Create(context.Background(), sandbox, metav1.CreateOptions{}); err != nil {
-		t.Fatalf("create test Sandbox fixture: %v", err)
-	}
+	objects := newSandboxClient(t, sandbox)
 	kube := kubernetesfake.NewSimpleClientset(pod)
 	controllerAccount := auth.Account{Namespace: "system", Name: "sandbox-controller"}
 	gateway, err := New(Config{
@@ -148,7 +148,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.identity.Name != testSandbox || view.identity.UID != testSandboxUID || len(runnerPod.OwnerReferences) != 1 || runnerPod.OwnerReferences[0].APIVersion != sandboxAPIVersion || runnerPod.OwnerReferences[0].Kind != sandboxKind || runnerPod.OwnerReferences[0].UID != testSandboxUID {
+	if view.identity.Name != testSandbox || view.identity.UID != testSandboxUID || len(runnerPod.OwnerReferences) != 1 || runnerPod.OwnerReferences[0].APIVersion != sandboxapi.GroupVersion.String() || runnerPod.OwnerReferences[0].Kind != sandboxKind || runnerPod.OwnerReferences[0].UID != testSandboxUID {
 		t.Fatalf("test runner ownership fixture is malformed: sandbox=%#v owner=%#v", view.identity, runnerPod.OwnerReferences)
 	}
 	runnerPrincipal, err := runnerAuth.Resolve(metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer runner-token")))
@@ -415,7 +415,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	quiescer := sandboxcontroller.GatewayQuiescer{Target: proxyListener.Addr().String(), TokenFile: controllerTokenFile}
-	destination := &sandboxcontroller.Sandbox{ObjectMeta: metav1.ObjectMeta{
+	destination := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
 		Name: testSandbox, Namespace: testNamespace, UID: types.UID(testSandboxUID),
 	}}
 	staleDestination := destination.DeepCopy()

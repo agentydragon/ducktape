@@ -8,10 +8,10 @@ import (
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
 	"google.golang.org/grpc"
-	"k8s.io/client-go/dynamic"
 	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"
 	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	discoveryclient "k8s.io/client-go/kubernetes/typed/discovery/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Config contains the per-process Gateway role wiring. Callers and runner workloads use separate
@@ -80,7 +80,7 @@ func New(
 	config Config,
 	callerAuth *auth.Resolver,
 	runnerAuth *auth.Resolver,
-	objects dynamic.Interface,
+	objects client.Reader,
 	core coreclient.CoreV1Interface,
 	coordination coordinationclient.CoordinationV1Interface,
 	discovery discoveryclient.DiscoveryV1Interface,

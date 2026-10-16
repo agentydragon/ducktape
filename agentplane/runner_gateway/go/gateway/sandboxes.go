@@ -6,41 +6,32 @@ import (
 
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/dynamic"
 	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	sandboxGroup      = "agentplane.allegedly.works"
-	sandboxVersion    = "v1alpha1"
-	sandboxResource   = "sandboxes"
-	sandboxAPIVersion = sandboxGroup + "/" + sandboxVersion
-	sandboxKind       = "Sandbox"
-	sandboxLabel      = sandboxGroup + "/sandbox"
-	sandboxRunning    = "Running"
-	sandboxReady      = "Ready"
-	sandboxQuiesced   = "Quiesced"
-	sandboxVMIAPIVer  = "kubevirt.io/v1"
-	sandboxVMIKind    = "VirtualMachineInstance"
-	phaseRunning      = "Running"
-	phaseQuiescing    = "Quiescing"
-	phaseDeleting     = "Deleting"
-	modeRunning       = "Running"
-	modeSuspended     = "Suspended"
-	phaseCreate       = "Creating"
-	phaseSuspend      = "Suspending"
-	phaseTearDown     = "TearingDown"
+	sandboxKind      = "Sandbox"
+	sandboxLabel     = "agentplane.allegedly.works/sandbox"
+	sandboxRunning   = "Running"
+	sandboxQuiesced  = "Quiesced"
+	sandboxVMIAPIVer = "kubevirt.io/v1"
+	sandboxVMIKind   = "VirtualMachineInstance"
+	phaseRunning     = "Running"
+	phaseQuiescing   = "Quiescing"
+	phaseDeleting    = "Deleting"
+	modeSuspended    = "Suspended"
+	phaseCreate      = "Creating"
+	phaseSuspend     = "Suspending"
+	phaseTearDown    = "TearingDown"
 )
-
-var sandboxesGVR = schema.GroupVersionResource{Group: sandboxGroup, Version: sandboxVersion, Resource: sandboxResource}
 
 // SandboxIdentity is the exact Sandbox incarnation named by an authenticated runner or proxy
 // request. Namespace/name alone are not sufficient because Kubernetes permits name reuse.
@@ -50,43 +41,19 @@ type SandboxIdentity struct {
 	UID       string
 }
 
-type sandboxDocument struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              struct {
-		Running        bool  `json:"running"`
-		WakeGeneration int64 `json:"wakeGeneration,omitempty"`
-	} `json:"spec"`
-	Status struct {
-		OperatingMode string `json:"operatingMode,omitempty"`
-		Incarnation   *struct {
-			Name string `json:"name"`
-			UID  string `json:"uid"`
-		} `json:"incarnation,omitempty"`
-		SuspendedBy               *string            `json:"suspendedBy,omitempty"`
-		SuspendedAtWakeGeneration *int64             `json:"suspendedAtWakeGeneration,omitempty"`
-		QuiescedIncarnation       *string            `json:"quiescedIncarnation,omitempty"`
-		Conditions                []metav1.Condition `json:"conditions,omitempty"`
-	} `json:"status,omitempty"`
-}
-
 type sandboxView struct {
-	resource    sandboxDocument
 	identity    SandboxIdentity
 	phase       string
-	incarnation *struct {
-		Name string
-		UID  string
-	}
+	incarnation *sandboxapi.Incarnation
 }
 
 type sandboxReader struct {
 	namespace string
-	objects   dynamic.Interface
+	objects   client.Reader
 	core      coreclient.CoreV1Interface
 }
 
-func newSandboxReader(namespace string, objects dynamic.Interface, core coreclient.CoreV1Interface) (*sandboxReader, error) {
+func newSandboxReader(namespace string, objects client.Reader, core coreclient.CoreV1Interface) (*sandboxReader, error) {
 	if namespace == "" || objects == nil || core == nil {
 		return nil, fmt.Errorf("Sandbox namespace and Kubernetes clients are required")
 	}
@@ -94,32 +61,21 @@ func newSandboxReader(namespace string, objects dynamic.Interface, core coreclie
 }
 
 func (r *sandboxReader) get(ctx context.Context, name string) (sandboxView, error) {
-	object, err := r.objects.Resource(sandboxesGVR).Namespace(r.namespace).Get(ctx, name, metav1.GetOptions{})
+	var resource sandboxapi.Sandbox
+	err := r.objects.Get(ctx, types.NamespacedName{Namespace: r.namespace, Name: name}, &resource)
 	if apierrors.IsNotFound(err) {
 		return sandboxView{}, status.Error(codes.NotFound, "sandbox not found")
 	}
 	if err != nil {
 		return sandboxView{}, fmt.Errorf("read Sandbox: %w", err)
 	}
-	var resource sandboxDocument
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(object.Object, &resource); err != nil {
-		return sandboxView{}, fmt.Errorf("decode Sandbox: %w", err)
-	}
 	if resource.UID == "" || resource.Name == "" || resource.Namespace != r.namespace {
 		return sandboxView{}, status.Error(codes.Unavailable, "Sandbox identity is incomplete")
 	}
-	view := sandboxView{
-		resource: resource,
+	return sandboxView{
 		identity: SandboxIdentity{Namespace: resource.Namespace, Name: resource.Name, UID: string(resource.UID)},
-		phase:    sandboxPhase(&resource),
-	}
-	if resource.Status.Incarnation != nil {
-		view.incarnation = &struct {
-			Name string
-			UID  string
-		}{Name: resource.Status.Incarnation.Name, UID: resource.Status.Incarnation.UID}
-	}
-	return view, nil
+		phase:    sandboxPhase(&resource), incarnation: resource.Status.Incarnation,
+	}, nil
 }
 
 func unavailable(err error) error {
@@ -132,7 +88,7 @@ func unavailable(err error) error {
 	return status.Error(codes.Unavailable, "Sandbox or runner routing is unavailable")
 }
 
-func sandboxPhase(resource *sandboxDocument) string {
+func sandboxPhase(resource *sandboxapi.Sandbox) string {
 	runningReason := ""
 	sealed := false
 	for _, condition := range resource.Status.Conditions {
@@ -144,7 +100,7 @@ func sandboxPhase(resource *sandboxDocument) string {
 		}
 	}
 	incarnated := resource.Status.Incarnation != nil
-	if !resource.DeletionTimestamp.IsZero() {
+	if resource.DeletionTimestamp != nil && !resource.DeletionTimestamp.IsZero() {
 		if sealed || runningReason == phaseDeleting {
 			return phaseTearDown
 		}
@@ -153,13 +109,13 @@ func sandboxPhase(resource *sandboxDocument) string {
 	if resource.Status.OperatingMode == "" {
 		return ""
 	}
-	if resource.Status.OperatingMode == modeRunning {
+	if resource.Status.OperatingMode == sandboxapi.OperatingModeRunning {
 		if incarnated {
 			return phaseRunning
 		}
 		return phaseCreate
 	}
-	if resource.Status.OperatingMode != modeSuspended {
+	if resource.Status.OperatingMode != sandboxapi.OperatingModeSuspended {
 		return ""
 	}
 	if !incarnated {
@@ -210,7 +166,7 @@ func (r *sandboxReader) destination(ctx context.Context, destination *sandboxesp
 
 func podIsReadyForSandbox(pod *corev1.Pod, sandbox sandboxView) bool {
 	if pod == nil || pod.UID == "" || string(pod.UID) != sandbox.incarnation.UID || pod.Namespace != sandbox.identity.Namespace ||
-		!pod.DeletionTimestamp.IsZero() || pod.Spec.ServiceAccountName != sandbox.identity.Name || pod.Status.Phase != corev1.PodRunning {
+		pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero() || pod.Spec.ServiceAccountName != sandbox.identity.Name || pod.Status.Phase != corev1.PodRunning {
 		return false
 	}
 	ready := false
@@ -232,7 +188,7 @@ func podIsReadyForSandbox(pod *corev1.Pod, sandbox sandboxView) bool {
 		return false
 	}
 	owner := controllers[0]
-	if owner.APIVersion == sandboxAPIVersion && owner.Kind == sandboxKind {
+	if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.Kind == sandboxKind {
 		return owner.Name == sandbox.identity.Name && string(owner.UID) == sandbox.identity.UID
 	}
 	return owner.APIVersion == sandboxVMIAPIVer && owner.Kind == sandboxVMIKind &&
@@ -250,7 +206,7 @@ func (r *sandboxReader) runnerPeer(ctx context.Context, principal auth.Principal
 	if err != nil {
 		return SandboxIdentity{}, "", fmt.Errorf("read runner Pod: %w", err)
 	}
-	if string(pod.UID) != principal.PodUID || !pod.DeletionTimestamp.IsZero() {
+	if string(pod.UID) != principal.PodUID || pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero() {
 		return SandboxIdentity{}, "", status.Error(codes.Unauthenticated, "invalid workload bearer")
 	}
 	controllers := make([]metav1.OwnerReference, 0, 1)
@@ -269,7 +225,7 @@ func (r *sandboxReader) runnerPeer(ctx context.Context, principal auth.Principal
 		if sandboxName == "" {
 			return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 		}
-	} else if owner.APIVersion != sandboxAPIVersion || owner.Kind != sandboxKind {
+	} else if owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxKind {
 		return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 	}
 	view, err := r.get(ctx, sandboxName)
@@ -282,7 +238,7 @@ func (r *sandboxReader) runnerPeer(ctx context.Context, principal auth.Principal
 	if principal.Account.Name != view.identity.Name {
 		return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 	}
-	if owner.APIVersion == sandboxAPIVersion && owner.UID != types.UID(view.identity.UID) {
+	if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.UID != types.UID(view.identity.UID) {
 		return SandboxIdentity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
 	}
 	if owner.APIVersion == sandboxVMIAPIVer && (view.incarnation == nil || view.incarnation.UID != string(pod.UID)) {
