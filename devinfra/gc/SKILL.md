@@ -15,7 +15,7 @@ deleted; an output base orphans when its workspace worktree is removed):
 
 - **worktrees** — local worktrees whose work is already merged;
 - **branches** — local branches whose work is already in the default branch;
-- **bazel-bases** — orphaned Bazel output bases and stale bases for workspaces under `/tmp`.
+- **bazel-bases** — orphaned Bazel output bases and bases linked to workspaces under `/tmp`.
 
 `workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees` and
 `workspace-gc bazel-bases` are **views** of that same computed result, scoped to one domain.
@@ -139,15 +139,14 @@ alone (so squash-merges the API would have confirmed fall to REVIEW).
 
 `workspace-gc bazel-bases` classifies each base; interpret it literally:
 
-- `PRUNE`: a default MD5-named base whose recorded workspace is absent, or whose workspace
-  is under `/tmp` and whose recorded base activity is at least 14 days old, with no live
-  server or nested mount. Remove with `workspace-gc bazel-bases --delete`; it revalidates
-  and locks every candidate before deletion. Deleting a stale `/tmp` output base leaves its
-  workspace intact.
-- `KEEP`: leave it alone. A recent base for a workspace under `/tmp` stays KEEP. A base
-  whose workspace is a **prunable worktree** also stays KEEP in the `bazel-bases` view when
-  recent (its workspace still exists) but is annotated "workspace is a prunable worktree";
-  run `all --prune` to remove the worktree and then its newly orphaned base in one pass.
+- `PRUNE`: a default MD5-named base whose recorded workspace is absent or under `/tmp`, with
+  no live server or nested mount. Remove with `workspace-gc bazel-bases --delete`; it
+  revalidates and locks every candidate before deletion. Deleting a `/tmp` output base leaves
+  its workspace intact.
+- `KEEP`: leave it alone. A base whose workspace is a **prunable worktree** outside `/tmp`
+  stays KEEP in the `bazel-bases` view (its workspace still exists) but is annotated
+  "workspace is a prunable worktree"; run `all --prune` to remove the worktree and then its
+  newly orphaned base in one pass.
 - `REVIEW`: inspect the stated metadata, ownership, symlink, mount, live-use, or
   failed-quarantine issue. Never convert `REVIEW` into `rm -rf` without proving what the
   directory is and why removal is safe.

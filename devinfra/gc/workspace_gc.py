@@ -1,8 +1,8 @@
 """`workspace-gc`: reclaim local development state — worktrees, branches, Bazel output bases.
 
 The three domains are coupled (a branch checked out in a live worktree can't be deleted; an
-output base orphans when its workspace worktree is removed, and a stale `/tmp` base can be
-reclaimed after 14 days without removing its workspace), so one joint scan
+output base orphans when its workspace worktree is removed, and a base for a workspace under
+`/tmp` can be reclaimed without removing its workspace), so one joint scan
 (`workspace_scan.scan_workspace`) classifies all three together and the subcommands are views
 of that single result:
 
