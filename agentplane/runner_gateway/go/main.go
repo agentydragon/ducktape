@@ -17,18 +17,18 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/dispatcher"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/gateway"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/go-logr/logr"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	metameta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func kubernetesConfig(c config) (*rest.Config, error) {
@@ -59,13 +59,6 @@ func accountNamespaces(accounts []auth.Account, extra *auth.Account) []string {
 		result = append(result, name)
 	}
 	return result
-}
-
-func sandboxRESTMapper() metameta.RESTMapper {
-	mapper := metameta.NewDefaultRESTMapper([]schema.GroupVersion{sandboxapi.GroupVersion})
-	mapper.Add(sandboxapi.GroupVersion.WithKind("Sandbox"), metameta.RESTScopeNamespace)
-	mapper.Add(sandboxapi.GroupVersion.WithKind("SandboxTemplate"), metameta.RESTScopeNamespace)
-	return mapper
 }
 
 func waitForListener(ctx context.Context, hub *dispatcher.WatchHub, failed <-chan error) error {
@@ -106,13 +99,12 @@ func serve(ctx context.Context, c config) error {
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		return err
 	}
-	mapper := sandboxRESTMapper()
-	objects, err := client.New(config, client.Options{Scheme: scheme, Mapper: mapper})
+	objects, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
 		return err
 	}
 	inventory, err := cache.New(config, cache.Options{
-		Scheme: scheme, Mapper: mapper,
+		Scheme: scheme, Mapper: objects.RESTMapper(),
 		DefaultNamespaces: map[string]cache.Config{c.Namespace: {}},
 	})
 	if err != nil {
@@ -228,6 +220,7 @@ func serve(ctx context.Context, c config) error {
 }
 
 func main() {
+	ctrllog.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
 	c, err := loadConfig(os.Args[1:], os.Getenv)
 	if err != nil {
 		slog.Error("invalid Runner Gateway configuration", "error", err)
