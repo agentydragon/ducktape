@@ -12,7 +12,7 @@ The [hardening candidates](#deferred-hardening-candidates) are not a dispatch qu
 
 The currently tested child scenarios live beside their assertions: [Claude](../native/claude/test_tools.py),
 [Codex `multi_agent_v1`](../native/codex/test_tools.py), [Codex `multi_agent_v2`](../native/codex/test_v2_discovery.py),
-and the [experimental Claude 2.1.292 comparison](../native/x/claude_remote_io/README.md#acceptance).
+and the [experimental Claude 2.1.292 comparison](../native/claude/x/remote_io/README.md#acceptance).
 A child must be created by the real harness, not synthesized by an adapter or inferred from parent
 prose. The test index distinguishes these cases from capabilities that remain unmeasured.
 

@@ -423,7 +423,7 @@ moves with the selected VM control path.
 
 Two harnesses already ship a dial-out control channel, and the choices above borrow from both:
 
-- **Claude Code RemoteIO** (`--sdk-url`, [our interoperability spike](../native/x/claude_remote_io/README.md)):
+- **Claude Code RemoteIO** (`--sdk-url`, [our interoperability spike](../native/claude/x/remote_io/README.md)):
   the worker registers an epoch the server fences, posts heartbeats, receives commands over an
   SSE stream with sequence numbers and `Last-Event-ID` replay, and uploads output with HTTP
   `POST`s acknowledged after commit. The connection epoch here is its worker epoch.

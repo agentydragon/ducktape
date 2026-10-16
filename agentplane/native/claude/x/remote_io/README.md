@@ -56,7 +56,7 @@ RemoteIO clean exit and server hydration remain unimplemented. Source inspection
 informs the candidate protocol; CI wire captures determine the actual contract.
 
 ```bash
-bbr test //agentplane/native/x/claude_remote_io:all
+bbr test //agentplane/native/claude/x/remote_io:all
 ```
 
 ## Test boundary

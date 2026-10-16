@@ -28,6 +28,7 @@ py_test(
         ":server",
         "//:conftest",
         "//agentplane/native:conftest",
+        "//agentplane/native/claude:conftest",
         "//agentplane/native/claude/testing:anthropic_sse",
         "//agentplane/native/claude/testing:messages",
         "//util/bazel:runfiles",
@@ -50,6 +51,7 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/native:conftest",
+        "//agentplane/native/claude:conftest",
         "//agentplane/native/claude:wire",
         "//agentplane/native/claude/testing:anthropic_sse",
         "//agentplane/native/claude/testing:harness",
@@ -69,6 +71,7 @@ py_test(
         ":server",
         "//:conftest",
         "//agentplane/native:conftest",
+        "//agentplane/native/claude:conftest",
         "@pypi//aiohttp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

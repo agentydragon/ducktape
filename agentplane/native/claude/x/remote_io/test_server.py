@@ -13,7 +13,7 @@ import pytest_bazel
 from aiohttp import ClientResponse
 from aiohttp.test_utils import TestClient, TestServer
 
-from agentplane.native.x.claude_remote_io.server import SESSION_PATH, TEST_TOKEN, RemoteIOServer
+from agentplane.native.claude.x.remote_io.server import SESSION_PATH, TEST_TOKEN, RemoteIOServer
 
 AUTH = {"Authorization": f"Bearer {TEST_TOKEN}"}
 
