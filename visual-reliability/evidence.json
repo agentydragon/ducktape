@@ -16616,7 +16616,9 @@
     },
     "electric_proxy_log_retention": {
       "pr": 10763,
-      "source_sha": "8c20d7bf4350473d9f998913f232c6c858143f69",
+      "ci_source_sha": "caaa5373bddd55891b36df0ad7d9166cc951a9d2",
+      "pr_head_sha": "6122d7f2409727f673eccd545d187cc64f5ea2bb",
+      "merged_stack_sha": "8c20d7bf4350473d9f998913f232c6c858143f69",
       "ci_run_id": "38878081790",
       "buildbuddy_invocation_id": "4e44a6cd-f626-5ce1-991d-4f36805e1e11",
       "buildbuddy_invocation_url": "https://app.buildbuddy.io/invocation/4e44a6cd-f626-5ce1-991d-4f36805e1e11",
@@ -16660,7 +16662,7 @@
         "url": "https://github.com/agentydragon/ducktape/runs/116904230478",
         "summary": "No test published a review manifest; this is a neutral visual-review result."
       },
-      "interpretation": "This is a test-execution cache policy change, not a renderer fix; the open PR is not treated as merged or as the source of any fleet result.",
+      "interpretation": "This is a test-execution cache policy change, not a renderer fix; its fresh-action probe is separate from the full-fleet comparison.",
       "merge_state": "UNKNOWN_AFTER_MERGE",
       "mergeable": "UNKNOWN_AFTER_MERGE",
       "pinned_bazel_source": [
