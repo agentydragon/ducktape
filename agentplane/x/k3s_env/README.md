@@ -94,6 +94,46 @@ time paused at the yielded fixture and is not wall-clock fixture lifetime.
 This is one profiled run. The older Python fixture timings below do not provide a matched baseline
 for this Go fixture.
 
+#### Image sizes from the profiled action
+
+The table measures the 18 OCI layouts supplied to that same test action, including PostgreSQL.
+Sizes were recovered from its CAS input tree and OCI manifests, without rebuilding the images or
+rerunning the suite. The TestRunner action digest is
+`c2672d54d147f11d5219920d2730131257efa1d41134c74285658310f407156a/505`.
+[The raw inventory](image-sizes-2026-10-16.json) records every manifest and layer digest, descriptor
+size and media type. Downloaded metadata was checked against its CAS SHA-256 and size; each
+layer's descriptor size matched its input-file size. Layer payloads were not downloaded again.
+
+Stored layer bytes exclude OCI config/manifest/index metadata and count shared layers in each
+image. Layers retain their declared compression: the runner's harness archive is an uncompressed
+tar. These are not unpacked filesystem or containerd snapshot sizes. One MiB is 1,048,576 bytes.
+
+| Image                          | Stored layer bytes |   MiB |
+| ------------------------------ | -----------------: | ----: |
+| `runner`                       |        866,872,179 | 826.7 |
+| `app`                          |        331,697,280 | 316.3 |
+| `action_service`               |        299,189,894 | 285.3 |
+| `egress`                       |        288,691,960 | 275.3 |
+| `notification_service`         |        280,119,816 | 267.1 |
+| `action_service_migrate`       |        273,539,075 | 260.9 |
+| `history_service`              |        266,256,133 | 253.9 |
+| `egress_migrate`               |        264,205,213 | 252.0 |
+| `app_migrate`                  |        259,611,622 | 247.6 |
+| `llm_ingress`                  |        257,731,230 | 245.8 |
+| `egress_sidecar`               |        255,582,262 | 243.7 |
+| `history_migrate`              |        255,424,764 | 243.6 |
+| `notification_service_migrate` |        255,421,864 | 243.6 |
+| `postgres`                     |        162,433,831 | 154.9 |
+| `sandbox_controller`           |         76,558,738 |  73.0 |
+| `runner_gateway_go`            |         74,869,138 |  71.4 |
+| `policy_controller`            |         63,072,658 |  60.2 |
+| `runner_gateway_queue_migrate` |         36,346,258 |  34.7 |
+
+The per-image sum is **4,567,623,915 bytes (4.25 GiB)**. Deduplicating layer digests gives
+**1,512,613,866 bytes (1.41 GiB)**, matching the importer's distinct-blob strategy before adding
+metadata and tar framing. Thirteen Python images share the **212,320,824-byte (202.5 MiB)**
+interpreter layer. The runner's Claude/Codex archive alone is **605,624,320 bytes (577.6 MiB)**.
+
 ### OCI-layout streaming, 2026-10-14
 
 Both runs used temporary cProfile instrumentation and passed all four model-free lifecycle tests.
