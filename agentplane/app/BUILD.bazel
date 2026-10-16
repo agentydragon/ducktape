@@ -911,6 +911,7 @@ py_test(
         ":database_migrate",
         "//:conftest",
         "//agentplane/history_service/fold:models",
+        "@pypi//alembic",
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

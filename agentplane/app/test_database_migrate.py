@@ -1,15 +1,19 @@
-"""The migration history against a real PostgreSQL: it refuses a database that differs from the models,
-re-running it is a no-op, and a database already stamped at an earlier revision is carried to the models."""
+"""The migration history against real PostgreSQL: migration tests compare the exact declared schema,
+re-running is a no-op, and a database stamped at an earlier revision is carried forward."""
 
 import os
 import subprocess
 import sys
 import uuid
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
+from alembic.autogenerate import compare_metadata
+from alembic.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.schema import SchemaItem
 
 from agentplane.app.database_migrate import RUNNER
 from agentplane.history_service.fold import models as fold_models
@@ -25,6 +29,18 @@ def _execute(db_url: str, statement: str) -> None:
             connection.execute(text(statement))
     finally:
         engine.dispose()
+
+
+def _include_owned_tables(
+    _obj: SchemaItem, _name: str | None, type_: str, reflected: bool, compare_to: SchemaItem | None
+) -> bool:
+    """Only compare tables owned by this history; shared databases can hold other histories."""
+    return not (type_ == "table" and reflected and compare_to is None)
+
+
+def _schema_drift(connection: Connection) -> list[Any]:
+    context = MigrationContext.configure(connection, opts={"include_object": _include_owned_tables})
+    return cast(list[Any], compare_metadata(context, RUNNER.metadata))
 
 
 def _restore_event_log(connection: Connection) -> None:
@@ -161,18 +177,51 @@ def test_raw_retirement_refuses_unexpected_dependencies(db_url: str) -> None:
         engine.dispose()
 
 
-def test_a_database_that_differs_from_the_models_fails_to_migrate(db_url: str) -> None:
-    """A database that applied a since-edited migration is stamped at head and still differs; the
-    init container has to stop the rollout instead of letting the app write to the wrong schema."""
+def test_migration_test_detects_a_database_that_differs_from_the_models(db_url: str) -> None:
+    """The migration test retains exact model/schema comparison even though startup allows leftovers."""
     _execute(db_url, "ALTER TABLE thread ALTER COLUMN name TYPE varchar(80)")
-    with pytest.raises(RuntimeError, match="thread"):
-        RUNNER.apply(db_url)
+    RUNNER.apply(db_url)
+    engine = create_engine(RUNNER.sync_url(db_url))
+    try:
+        with engine.connect() as connection:
+            assert _schema_drift(connection)
+    finally:
+        engine.dispose()
 
 
-def test_an_index_only_the_database_has_is_drift(db_url: str) -> None:
+def test_migration_test_detects_an_index_only_the_database_has(db_url: str) -> None:
     _execute(db_url, "CREATE INDEX index_only_in_test_database ON thread (created_at)")
-    with pytest.raises(RuntimeError, match="index_only_in_test_database"):
-        RUNNER.apply(db_url)
+    RUNNER.apply(db_url)
+    engine = create_engine(RUNNER.sync_url(db_url))
+    try:
+        with engine.connect() as connection:
+            assert any(
+                diff[0] == "remove_index" and diff[1].name == "index_only_in_test_database"
+                for diff in _schema_drift(connection)
+            )
+    finally:
+        engine.dispose()
+
+
+def test_runtime_migration_accepts_an_unused_extra_nullable_column(db_url: str) -> None:
+    _execute(db_url, "ALTER TABLE thread ADD COLUMN retained_unused_field text")
+    RUNNER.apply(db_url)
+    engine = create_engine(RUNNER.sync_url(db_url))
+    try:
+        with engine.connect() as connection:
+            assert "retained_unused_field" in {column["name"] for column in inspect(connection).get_columns("thread")}
+            assert _schema_drift(connection)
+    finally:
+        engine.dispose()
+
+
+def test_a_fresh_migration_matches_the_declared_schema_exactly(db_url: str) -> None:
+    engine = create_engine(RUNNER.sync_url(db_url))
+    try:
+        with engine.connect() as connection:
+            assert _schema_drift(connection) == []
+    finally:
+        engine.dispose()
 
 
 def test_a_second_run_over_a_migrated_database_changes_nothing(db_url: str) -> None:
