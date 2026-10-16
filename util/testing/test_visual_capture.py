@@ -1,6 +1,7 @@
 """The capture API preserves health gates without owning the test's interactions."""
 
 import json
+import zipfile
 from dataclasses import replace
 from pathlib import Path
 
@@ -51,6 +52,31 @@ async def test_multiple_checkpoints_have_distinct_outputs(harness: VisualHarness
         with pytest.raises(FileExistsError):
             await view.capture()
         assert first.read_bytes() != second.read_bytes()
+
+
+async def test_opt_in_trace_uses_capture_identity_and_keeps_passing_run(
+    harness: VisualHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("VISUAL_TRACE_CAPTURE_NAME", raising=False)
+    async with harness.open("plain", capture_name="untraced"):
+        pass
+    assert not (harness.output_dir / "untraced.trace.zip").exists()
+
+    monkeypatch.setenv("VISUAL_TRACE_CAPTURE_NAME", "selected")
+    async with harness.open("plain", capture_name="unmatched"):
+        pass
+    assert not (harness.output_dir / "unmatched.trace.zip").exists()
+
+    async with harness.open("plain", capture_name="selected") as view:
+        await view.page.get_by_role("button", name="Open").click()
+    trace_path = harness.output_dir / "selected.trace.zip"
+    assert zipfile.is_zipfile(trace_path)
+
+    monkeypatch.setenv("VISUAL_TRACE_CAPTURE_NAME", "failing")
+    with pytest.raises(RuntimeError, match="trace this failure"):
+        async with harness.open("plain", capture_name="failing"):
+            raise RuntimeError("trace this failure")
+    assert zipfile.is_zipfile(harness.output_dir / "failing.trace.zip")
 
 
 async def test_unnamed_capture_requires_case_identity(harness: VisualHarness) -> None:

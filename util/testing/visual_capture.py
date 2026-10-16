@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -16,7 +17,7 @@ from typing import Literal
 from urllib.parse import urlencode
 
 from more_itertools import one
-from playwright.async_api import Locator, Page, Playwright, Route
+from playwright.async_api import BrowserContext, Locator, Page, Playwright, Route
 from pydantic import JsonValue, TypeAdapter
 
 from util.bazel.runfiles import get_required_path
@@ -43,6 +44,27 @@ _FONT_STATUS_JS = """async family => {
     if (!declared) return "undeclared";
     return document.fonts.check(`16px "${family}"`) ? "loaded" : "unloaded";
 }"""
+
+
+@asynccontextmanager
+async def _playwright_trace(
+    context: BrowserContext, trace_path: Path | None, capture_name: str | None
+) -> AsyncIterator[None]:
+    if trace_path is None:
+        yield
+        return
+    assert capture_name is not None
+    await context.tracing.start(name=f"visual capture: {capture_name}", screenshots=True, snapshots=True, sources=False)
+    try:
+        yield
+    finally:
+        active_error = sys.exception()
+        try:
+            await context.tracing.stop(path=trace_path)
+        except Exception as trace_error:
+            if active_error is None:
+                raise
+            active_error.add_note(f"Could not save Playwright trace to {trace_path}: {trace_error!r}")
 
 
 _PATHS_BY_URL = TypeAdapter(dict[str, str])
@@ -218,19 +240,34 @@ class VisualHarness:
     ) -> AsyncIterator[VisualPage]:
         config = self.config
         viewport = viewport or Viewport()
+        trace_capture_name = os.environ.get("VISUAL_TRACE_CAPTURE_NAME")
+        trace_enabled = trace_capture_name is not None and trace_capture_name == capture_name
         if config.inline_page is None and window_globals is not None:
             raise ValueError("window globals require an inline harness")
         if config.inline_page is not None and query is not None:
             raise ValueError("an inline harness is selected by window globals, not query")
-        async with deterministic_browser_context(
-            self.playwright,
-            viewport=viewport.size,
-            frozen_now_ms=frozen_now_ms,
-            color_scheme=color_scheme,
-            device_scale_factor=viewport.device_scale_factor,
-            has_touch=viewport.has_touch,
-            extra_args=["--allow-file-access-from-files"] if config.inline_page is None else [],
-        ) as context:
+        trace_path: Path | None = None
+        if trace_enabled:
+            if capture_name is None:
+                raise ValueError("Playwright tracing requires an explicit capture_name")
+            if Path(capture_name).name != capture_name or capture_name in {".", ".."}:
+                raise ValueError("trace capture name must be a single path component")
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            trace_path = self.output_dir / f"{capture_name}.trace.zip"
+            if trace_path.exists():
+                raise FileExistsError(trace_path)
+        async with (
+            deterministic_browser_context(
+                self.playwright,
+                viewport=viewport.size,
+                frozen_now_ms=frozen_now_ms,
+                color_scheme=color_scheme,
+                device_scale_factor=viewport.device_scale_factor,
+                has_touch=viewport.has_touch,
+                extra_args=["--allow-file-access-from-files"] if config.inline_page is None else [],
+            ) as context,
+            _playwright_trace(context, trace_path, capture_name),
+        ):
             page = await context.new_page()
             page.set_default_timeout(WAIT_TIMEOUT_MS)
             devtools = (
