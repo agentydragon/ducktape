@@ -1,7 +1,7 @@
-"""Derived schemas of the Agentplane CRDs, written by `bb run //agentplane/crds:generate_bin` and
-pinned to the committed files by `:test_generate`.
+"""Derived Sandbox CRDs and kubeconform schemas, written by `bb run //agentplane/crds:generate_bin`.
 
-The CRDs themselves are the `crd-*.yaml` files in this package's `manifests/` directory. `PolicyBinding.spec.subject`
+The Sandbox CRDs are generated from the shared Go API types by controller-gen. The other CRDs
+remain authored in `manifests/`. `PolicyBinding.spec.subject`
 is `agentplane.subjects.ServiceAccountRef`, the model every binding reader decides against, so its schema block
 is spliced into the otherwise hand-written CRD from the model's own JSON schema. Each served version's
 `openAPIV3Schema` is then dumped verbatim to `cluster/schemas/<group>/<kind>_<version>.json`, where
@@ -22,6 +22,7 @@ from more_itertools import one
 from pydantic import TypeAdapter
 
 from agentplane.subjects import ServiceAccountRef
+from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
 CRDS_DIR = Path("agentplane/crds/manifests")
@@ -33,6 +34,11 @@ CRD_FILES = (
     "crd-sandboxtemplates.yaml",
     "crd-sandboxes.yaml",
 )
+SANDBOX_CRDS = {
+    "crd-sandboxtemplates.yaml": "agentplane.allegedly.works_sandboxtemplates.yaml",
+    "crd-sandboxes.yaml": "agentplane.allegedly.works_sandboxes.yaml",
+}
+GENERATED_CRDS = "_main/agentplane/sandboxes/api/generated_crds"
 # The spec field holding a binding CRD's subject; an array field's items are the subject.
 _SUBJECT_FIELDS = {"crd-policybindings.yaml": "subject"}
 
@@ -99,10 +105,37 @@ def with_subject_schema(crd_text: str, field: str) -> str:
     return "".join(lines[: start.line]) + indent(block, " " * start.column) + "".join(lines[node.end_mark.line :])
 
 
-def generated_files(crds: Mapping[str, str]) -> Iterator[tuple[Path, str]]:
-    """(repo-relative path, content) of every generated file, from each CRD file's text by name."""
+def _sandbox_crd(generated: str) -> str:
+    crd = yaml.safe_load(generated)
+    annotations = crd["metadata"].get("annotations", {})
+    annotations.pop("controller-gen.kubebuilder.io/version", None)
+    if not annotations:
+        crd["metadata"].pop("annotations", None)
+    for version in crd["spec"]["versions"]:
+        if version.get("subresources") == {}:
+            del version["subresources"]
+    if crd["spec"]["names"]["kind"] == "SandboxTemplate":
+        claim = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"][
+            "workspaceVolume"
+        ]["properties"]["claim"]
+        # controller-gen expands the upstream PVC spec, whose Go type is needed by API consumers.
+        # Keep only the one nested field our CEL rule reads. The API server preserves the rest of
+        # the claim as opaque data, as it did in the authored CRD.
+        volume_mode = claim["properties"]["volumeMode"]
+        claim.clear()
+        claim.update(
+            type="object", **{"x-kubernetes-preserve-unknown-fields": True}, properties={"volumeMode": volume_mode}
+        )
+    return yaml.safe_dump(crd, sort_keys=False)
+
+
+def generated_files(crds: Mapping[str, str], sandbox_crds: Mapping[str, str]) -> Iterator[tuple[Path, str]]:
+    """(repo-relative path, content) of each generated CRD and kubeconform schema."""
     for crd_file, committed in crds.items():
-        if field := _SUBJECT_FIELDS.get(crd_file):
+        if crd_file in SANDBOX_CRDS:
+            text = _sandbox_crd(sandbox_crds[crd_file])
+            yield CRDS_DIR / crd_file, text
+        elif field := _SUBJECT_FIELDS.get(crd_file):
             text = with_subject_schema(committed, field)
             yield CRDS_DIR / crd_file, text
         else:
@@ -116,7 +149,11 @@ def generated_files(crds: Mapping[str, str]) -> Iterator[tuple[Path, str]]:
 
 def main() -> None:
     root = get_build_workspace_directory()
-    for relative, content in generated_files({name: (root / CRDS_DIR / name).read_text() for name in CRD_FILES}):
+    generated = get_required_path(GENERATED_CRDS)
+    sandbox_crds = {name: (generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
+    for relative, content in generated_files(
+        {name: (root / CRDS_DIR / name).read_text() for name in CRD_FILES}, sandbox_crds
+    ):
         (root / relative).write_text(content)
 
 
