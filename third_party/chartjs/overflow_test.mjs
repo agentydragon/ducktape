@@ -15,6 +15,7 @@ for (const [format, Controller] of formats) {
     target = 2,
     hoverTarget = 6,
     active = false,
+    mode,
     showLine = true,
     pointSize = 0,
     count = 2,
@@ -32,7 +33,7 @@ for (const [format, Controller] of formats) {
         return {};
       },
     };
-    const actual = Controller.prototype.getMaxOverflow.call(controller);
+    const actual = Controller.prototype.getMaxOverflow.call(controller, mode);
     return actual;
   };
 
@@ -47,6 +48,7 @@ for (const [format, Controller] of formats) {
   test(`${format}: active line target and visibility govern overflow`, () => {
     assert.equal(overflow({ previous: 2, target: 2, hoverTarget: 6, active: true }), 3);
     assert.equal(overflow({ previous: 6, target: 2 }), 1);
+    assert.equal(overflow({ previous: 2, mode: "active" }), 3);
     assert.equal(overflow({ previous: 6, target: 6, active: true, showLine: false }), 0);
     assert.equal(overflow({ target: 6, showLine: false }), 0);
   });

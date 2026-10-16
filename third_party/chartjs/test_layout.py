@@ -145,8 +145,28 @@ async def test_chart_layout_is_repeatable_across_updates_and_resize(
         )
         assert_same(initial, restored_width, "restore after ResizeObserver resize")
 
+        direct_active = await change("direct-active", "() => window.chartProbe.update('active')")
+        assert direct_active.sha256 != initial.sha256, f"{case_name} active update did not change canvas pixels"
+        repeated_direct_active = await change("direct-active-repeat", "() => window.chartProbe.update('active')")
+        assert_same(direct_active, repeated_direct_active, "repeated explicit active-mode update")
+        restored_mode = await change("restored-mode", "() => window.chartProbe.update()")
+        assert_same(initial, restored_mode, "restore after explicit active-mode update")
+
+        function_active = await change("function-active", "() => window.chartProbe.updateWithModeFunction()")
+        assert await page.evaluate("() => window.chartProbe.modeFunctionCalledOncePerDataset()"), (
+            f"{case_name} update-mode callback must run once per dataset"
+        )
+        assert function_active.sha256 != initial.sha256, f"{case_name} function-valued mode did not change pixels"
+        function_repeat = await change("function-active-repeat", "() => window.chartProbe.updateWithModeFunction()")
+        assert_same(function_active, function_repeat, "repeated function-valued active mode")
+        function_restored = await change("function-restored", "() => window.chartProbe.update()")
+        assert_same(initial, function_restored, "restore after function-valued update mode")
+
         active = await change("dataset-active", "() => window.chartProbe.setDatasetActive(true)")
         assert active.sha256 != initial.sha256, f"{case_name} active dataset style did not change canvas pixels"
+
+        assert direct_active.geometry == active.geometry, f"{case_name} explicit active mode used default overflow"
+        assert function_active.geometry == active.geometry, f"{case_name} function-valued mode used default overflow"
 
         repeated_active = await change("dataset-active-repeat", "() => window.chartProbe.update('active')")
         assert_same(active, repeated_active, "repeated active-state update")
