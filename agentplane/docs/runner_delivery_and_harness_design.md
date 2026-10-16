@@ -469,7 +469,7 @@ The simpler candidate is `(Sandbox UID, Agentplane Session ID)`, with store/nati
 private to the runner. An exposed store ID remains an option only if callers need to choose a store.
 Creating a Session can select its harness kind while the runner manages a default store per kind;
 that is a candidate policy, not a settled one-versus-many store/process choice. An adapter may
-arrange one Codex app-server process per store or the current Claude stream-json process per
+arrange one Codex app-server process per store or the current Claude stream-json process per root
 Session. Process instances may appear as diagnostics with hosted Sessions/status. At-most-one
 process per store and shared-store concurrent safety remain open.
 
@@ -556,6 +556,17 @@ directories can make concurrent model requests with different model settings; in
 process leaves the other's request usable. Different credentials, sharing one config directory
 across processes, and concurrent multi-process crash recovery remain untested. The existing
 single-session `--resume` tests cover restart of one root in a new process.
+
+The operator also reports a static finding from the private `gaffer-private` Claude remote-control
+orchestrator analysis: its daemon polls outbound HTTP for session-start work and launches each
+Session in its own Claude process. The pinned Claude Code 2.1.292 `RemoteIO` analysis in that repo
+shows that remote delivery feeds the same structured input parser as stream-json, with additional
+SSE/HTTP framing and accounting. The daemon finding has not been reproduced as a runtime
+process-count test here. It gives no process-sharing benefit to adopt that mode solely for
+multiplexing. Use one Claude process per root Session as the present allocation baseline and allow
+Codex to use its demonstrated shared app-server, both behind the same public Session interface.
+Neither process policy belongs in the public address or requires one process per store; another
+Claude mode could change the evidence later.
 
 Neither result decides how many processes or stores a Runner should use, whether concurrent Sessions
 may safely write one store, or which native children can be controlled. The public store-ID question
