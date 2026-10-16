@@ -335,7 +335,7 @@ class ThreadStartParams(Wire, OmitNone):
     sandbox: str
     ephemeral: bool
     model: str
-    base_instructions: str
+    base_instructions: str | None = None
     developer_instructions: str | None = None
     config: dict[str, Any]
     dynamic_tools: list[dict[str, Any]] | None = None
