@@ -36,25 +36,6 @@ the current UID, without checking the Session's prior association. The latter re
 contract to review; History's namespace/name is not an incarnation identity. Preserve the Gateway
 UID/owner checks and do not infer a prior association from a same-name Sandbox.
 
-## `SessionOpening.attached`
-
-`SessionOpening.attached` was copied from the runner's `OpenSession` response into the Dispatcher
-row and echoed by `GetSessionOpening`. The app allowlist also includes Notifications, but no
-Notification code calls this RPC; the app and frontend use opening state and reason, and the current
-testing and staging app images (`devel-20261015233545-b8b2ba1`, Ready 1/1 and 2/2) have no production
-read of `attached`. The frontend's optional field was unused. The only semantic reader was the
-acceptance client's `wait_for_session_admission`; acceptance now reads the folded History Thread for
-model, harness and cursor state. Runner `Attached` remains used by runner control and History and is
-unrelated to this response snapshot.
-
-#10675 reserved the `SessionOpening` response field and stopped writing or echoing the snapshot.
-The nullable `session_opening.attached` ORM mapping remains until the writer-free Dispatcher image is
-Ready in testing and staging. Then unmap it, wait for the unmapped-reader image in both environments,
-and drop the physical column in a separate migration. #10699 allows the unused column to remain in
-the database while absent from runtime metadata; a deferred ORM mapping is no longer required.
-Migration starts before old pods drain in a rolling deployment. Opening identity, state, reason and
-timestamps remain.
-
 ## Protobuf and client disposition
 
 | Surface                                              | Current writer/reader and disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -62,7 +43,7 @@ timestamps remain.
 | `runner_gateway.proto` service and messages          | `grpc_api.py` implements `ListSessions`, `CreateSession`, `ResumeSession`, `SubmitCommand` and `BatchGetSessionSandboxes`. In-repository production callers have left all but `ResumeSession`; the app migrated to the Runner Proxy and no longer calls this wrapper. `RunnerGatewayClient` and its command, create and registry helpers remain in test fixtures/drivers, not production startup. Remove methods, request/response messages, `SessionSandbox.sandbox_uid`, client/wire helpers and fixture support under `GATEWAY_WRAPPER_RETIRE`, after external/pinned-caller checks. The already reserved `CreateSessionRequest.override_mask` is not a live override. |
 | `runner_control.proto` `Runner` service              | App archive/native resume and Notification membership read `Runner.ListSessions` via the per-Sandbox proxy; explicit app resume calls `Runner.ResumeSession` through that proxy; test drivers also read it. Keep the live read: History folds can lag and cannot prove current UID/owner or harness state. Dispatcher calls `OpenSession` and resumes for command delivery; the proxy remains the direct app resume path. Keep those execution methods, `Quiesce` for the controller, and the `Connect` tunnel. `DeliverCommand` is only called by Gateway `SubmitCommand`; retire it after wrapper and pinned runner-image gates.                                        |
 | Runner control frames and `runner.proto`             | `Hello`/`Welcome`, connection epoch, `Welcome.incarnation_uid`, heartbeats and `RunnerFacts` publish connection identity and Quiesce/idle state; they are not alternate Session APIs. `Attached` is still the runner opening/resume result and a History input; it is unrelated to the reserved `SessionOpening.attached` field. Keep these fields.                                                                                                                                                                                                                                                                                                                       |
-| `session_dispatcher.proto`                           | `OpenSession`/`GetSessionOpening` own opening and its state; `Dispatch`/`GetDispatch`/`WatchDispatches`/`ListDispatches`/`CancelDispatch` own durable command admission and status. `InterruptTurn` has its distinct direct behavior. `Dispatch` and `SessionOpening` keep Sandbox name and UID for incarnation fencing. App, frontend, Notifications and acceptance use the corresponding paths; keep them. The only confirmed dead response field was `SessionOpening.attached`, already reserved by #10675, with its column staged for removal below.                                                                                                                  |
+| `session_dispatcher.proto`                           | `OpenSession`/`GetSessionOpening` own opening and its state; `Dispatch`/`GetDispatch`/`WatchDispatches`/`ListDispatches`/`CancelDispatch` own durable command admission and status. `InterruptTurn` has its distinct direct behavior. `Dispatch` and `SessionOpening` keep Sandbox name and UID for incarnation fencing. App, frontend, Notifications and acceptance use the corresponding paths; keep them.                                                                                                                                                                                                                                                              |
 | `sandboxes.proto`, `command.proto`, History messages | `SandboxDestination` carries owner namespace/name, Sandbox name and UID; `SessionDestination` adds Session ID. `CreateSandboxRequest.wake_on_send` governs Sandbox wake, not native harness resume. `Command` is stored in Dispatcher rows and `CommandAdmitted` Events, so retiring `DeliverCommand` does not retire it. History `SandboxRef` is namespace/name and its `FindSessions` and summaries provide retained views, not a live UID fence. Keep these distinct fields.                                                                                                                                                                                           |
 
 The HTTP/client paths likewise have distinct effects: app `POST /sandboxes/{name}/resume`
