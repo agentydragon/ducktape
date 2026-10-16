@@ -28,8 +28,8 @@ from cluster.cdk8s.agentplane.egress import (
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import (
     ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_HISTORY_POLICY,
     AIQUOTA_READ_POLICY,
-    FINANCE_AIQUOTA_HISTORY_POLICY,
     FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
@@ -232,7 +232,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             ACTIVITYWATCH_READ_POLICY,
             AGENTPLANE_TESTING_POLICY,
             AIQUOTA_READ_POLICY,
-            FINANCE_AIQUOTA_HISTORY_POLICY,
+            AIQUOTA_HISTORY_POLICY,
             HAKU_MAILBOX_POLICY,
             agent_access_profiles.COINBASE_POLICY,
             PLAID_PGWEB_CREDENTIAL,
@@ -492,15 +492,13 @@ if __name__ == "__main__":
     pytest_bazel.main()
 
 
-def test_finance_aiquota_history_is_read_only_and_finance_only(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
+def test_aiquota_history_is_read_only_and_not_public(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
-    assert FINANCE_AIQUOTA_HISTORY_POLICY in config["sandbox_presets"]["finance-agent"]["policy_sets"]
-    for name in ("public-coder", "haku"):
-        assert FINANCE_AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"][name]["policy_sets"]
-    policy = _by_name(docs, "PolicySet", FINANCE_AIQUOTA_HISTORY_POLICY)
+    for name in ("finance-agent", "haku"):
+        assert AIQUOTA_HISTORY_POLICY in config["sandbox_presets"][name]["policy_sets"]
+    assert AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"]["public-coder"]["policy_sets"]
+    policy = _by_name(docs, "PolicySet", AIQUOTA_HISTORY_POLICY)
     assert policy["spec"]["rules"] == [
         {
             "type": "egress",
@@ -508,12 +506,12 @@ def test_finance_aiquota_history_is_read_only_and_finance_only(
             "clusterInternal": True,
             "methods": ["GET"],
             "paths": ["/"],
-            "credentialRef": {"name": client.FINANCE_AGENT_CREDENTIALS},
+            "credentialRef": {"name": client.AIQUOTA_HISTORY_CREDENTIALS},
         }
     ]
-    credential = _by_name(docs, "EgressCredential", client.FINANCE_AGENT_CREDENTIALS)
+    credential = _by_name(docs, "EgressCredential", client.AIQUOTA_HISTORY_CREDENTIALS)
     assert credential["spec"]["source"] == {
-        "secretRef": {"name": client.FINANCE_AGENT_CREDENTIALS, "key": client.PASSWORD_KEY}
+        "secretRef": {"name": client.AIQUOTA_HISTORY_CREDENTIALS, "key": client.PASSWORD_KEY}
     }
     assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "basicPassword"}]
     quota = _by_name(docs, "PolicySet", AIQUOTA_READ_POLICY)

@@ -186,7 +186,7 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
-  name: clickhouse-finance-agent-credentials
+  name: clickhouse-aiquota-history-credentials
   namespace: clickhouse
 spec:
   allowRepeat: true
@@ -199,8 +199,8 @@ apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   annotations:
-    description: Read-only finance-agent access to typed AIQuota history; never mounted by a sandbox.
-  name: clickhouse-finance-agent-credentials
+    description: Read-only access to typed AIQuota history; never mounted by a sandbox.
+  name: clickhouse-aiquota-history-credentials
   namespace: clickhouse
 spec:
   dataFrom:
@@ -208,10 +208,10 @@ spec:
         generatorRef:
           apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
-          name: clickhouse-finance-agent-credentials
+          name: clickhouse-aiquota-history-credentials
   refreshPolicy: CreatedOnce
   target:
-    name: clickhouse-finance-agent-credentials
+    name: clickhouse-aiquota-history-credentials
     template:
       data:
         password: "{{ .password }}"
@@ -247,6 +247,20 @@ spec:
             name: clickhouse-admin-credentials
       admin/profile: default
       admin/quota: default
+      aiquota_history_reader/grants/query:
+        - GRANT SELECT ON aiquota.aiquota_windows
+        - GRANT SELECT ON aiquota.token_activity_daily
+        - GRANT SELECT ON aiquota.reset_credits
+      aiquota_history_reader/networks/ip:
+        - 0.0.0.0/0
+        - ::/0
+      aiquota_history_reader/password:
+        valueFrom:
+          secretKeyRef:
+            key: password
+            name: clickhouse-aiquota-history-credentials
+      aiquota_history_reader/profile: readonly
+      aiquota_history_reader/quota: readonly
       aiquota_ingest/grants/query:
         - GRANT INSERT ON aiquota.raw_http_observations
         - GRANT SELECT(event_id, observed_at, source, quota_windows, token_activity, reset_credits) ON aiquota.raw_http_observations
@@ -269,18 +283,6 @@ spec:
       default/networks/ip:
         - 127.0.0.1/32
         - ::1/128
-      finance_agent_aiquota/grants/query:
-        - GRANT SELECT ON aiquota.aiquota_windows
-      finance_agent_aiquota/networks/ip:
-        - 0.0.0.0/0
-        - ::/0
-      finance_agent_aiquota/password:
-        valueFrom:
-          secretKeyRef:
-            key: password
-            name: clickhouse-finance-agent-credentials
-      finance_agent_aiquota/profile: readonly
-      finance_agent_aiquota/quota: readonly
       grafana/grants/query:
         - GRANT SELECT ON aiquota.*
       grafana/networks/ip:

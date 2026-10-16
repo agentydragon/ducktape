@@ -65,7 +65,7 @@ HAKU_MAILBOX_POLICY = "haku-mailbox"
 GOOGLE_READONLY_POLICY = "google-readonly"
 ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
 AIQUOTA_READ_POLICY = "aiquota-read"
-FINANCE_AIQUOTA_HISTORY_POLICY = "finance-aiquota-history"
+AIQUOTA_HISTORY_POLICY = "aiquota-history"
 PLAID_PGWEB_CREDENTIAL = "plaid-pgweb"
 # Credentials whose egress rules ride in the Action PolicySets that approve the same system's
 # reads (actions_staging_policies.py), so a binding to one set grants both.
@@ -93,7 +93,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _home_assistant_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _activitywatch_read(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _aiquota_read(construct, namespace=namespace)
-    _finance_aiquota_history(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
+    _aiquota_history(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _haku_mailbox(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _buildbuddy(construct, namespace=namespace, credentials_namespace=credentials_namespace)
     _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
@@ -110,7 +110,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
             authentik.SERVER.egress(),  # _grocy_sf_readonly: the public route targets Authentik's outpost.
             activitywatch.READ.egress(),  # _activitywatch_read: bearer read sidecar.
             AIQUOTA_SERVICE.egress(),  # _aiquota_read: public Gateway and internal Service routes.
-            clickhouse.HTTP.egress(),  # _finance_aiquota_history.
+            clickhouse.HTTP.egress(),  # _aiquota_history.
             mailbox.HTTP.egress(),  # _haku_mailbox: application policy excludes management APIs.
             plaid_pgweb.SERVICE.egress(),  # _plaid_pgweb.
         ],
@@ -556,13 +556,11 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
     )
 
 
-def _finance_aiquota_history(
-    scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
-) -> None:
-    name = clickhouse.FINANCE_AGENT_CREDENTIALS
+def _aiquota_history(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
+    name = clickhouse.AIQUOTA_HISTORY_CREDENTIALS
     _copy_secret(
         scope,
-        "finance-clickhouse",
+        "aiquota-history-clickhouse",
         reader=reader,
         credentials_namespace=credentials_namespace,
         source_namespace=clickhouse.NAMESPACE,
@@ -572,10 +570,10 @@ def _finance_aiquota_history(
     # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
     _present(
         scope,
-        FINANCE_AIQUOTA_HISTORY_POLICY,
+        AIQUOTA_HISTORY_POLICY,
         namespace=namespace,
         credential=name,
-        description="Finance-only typed AIQuota ClickHouse reader; HTTP Basic password for finance_agent_aiquota.",
+        description="Typed AIQuota history ClickHouse reader; HTTP Basic password for aiquota_history_reader.",
         secret=name,
         key=clickhouse.PASSWORD_KEY,
         target=_BASIC_PASSWORD,

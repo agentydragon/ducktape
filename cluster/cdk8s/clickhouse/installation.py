@@ -3,7 +3,7 @@ three-member Keeper quorum, the client Service, ingress NetworkPolicies, the Pod
 the secret-free diagnostics grant for Haku and public-coder.
 
 Existing users' credentials are hand-written `*.sops.yaml` Secrets beside the generated
-output; finance-agent's read-only password is minted in-cluster by ESO. Pod templates
+output; the AIQuota history reader's password is minted in-cluster by ESO. Pod templates
 and volume claim templates are untyped in the operator's CRD schema, so they are plain dicts here.
 """
 
@@ -190,14 +190,18 @@ def _users() -> dict[str, object]:
             "GRANT SELECT ON aiquota.aiquota_windows",
             "GRANT SELECT ON aiquota.raw_http_observations",
         ],
-        # A distinct sandbox identity may read the typed history, not raw OAuth
+        # Agent sandboxes may read the typed history, not raw OAuth
         # responses or ClickHouse's other tenants. POST query bodies bypass proxy
         # path/method narrowing; the database's readonly profile is the barrier.
-        f"{client.FINANCE_AGENT_USER}/password": _password(client.FINANCE_AGENT_CREDENTIALS),
-        f"{client.FINANCE_AGENT_USER}/networks/ip": _ANY_ADDRESS,
-        f"{client.FINANCE_AGENT_USER}/profile": "readonly",
-        f"{client.FINANCE_AGENT_USER}/quota": "readonly",
-        f"{client.FINANCE_AGENT_USER}/grants/query": ["GRANT SELECT ON aiquota.aiquota_windows"],
+        f"{client.AIQUOTA_HISTORY_USER}/password": _password(client.AIQUOTA_HISTORY_CREDENTIALS),
+        f"{client.AIQUOTA_HISTORY_USER}/networks/ip": _ANY_ADDRESS,
+        f"{client.AIQUOTA_HISTORY_USER}/profile": "readonly",
+        f"{client.AIQUOTA_HISTORY_USER}/quota": "readonly",
+        f"{client.AIQUOTA_HISTORY_USER}/grants/query": [
+            "GRANT SELECT ON aiquota.aiquota_windows",
+            "GRANT SELECT ON aiquota.token_activity_daily",
+            "GRANT SELECT ON aiquota.reset_credits",
+        ],
     }
 
 
@@ -243,10 +247,10 @@ def clickhouse_chart(app: App) -> Chart:
     chart = Chart(app, "clickhouse", disable_resource_name_hashes=True)
     mint_bearer_secret(
         chart,
-        "finance-agent-password",
-        name=client.FINANCE_AGENT_CREDENTIALS,
+        "aiquota-history-password",
+        name=client.AIQUOTA_HISTORY_CREDENTIALS,
         namespace=client.NAMESPACE,
-        description="Read-only finance-agent access to typed AIQuota history; never mounted by a sandbox.",
+        description="Read-only access to typed AIQuota history; never mounted by a sandbox.",
     )
     pod_template = "clickhouse"
     data_claim = "data"

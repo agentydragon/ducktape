@@ -59,12 +59,13 @@ The finance preset reads live AIQuota via GET on the internal `aiquota-api` Serv
 unavailable even when the Service is healthy. For historical typed quota/spend
 observations, query ClickHouse's HTTP endpoint at
 `clickhouse.clickhouse.svc.cluster.local:8123/` with GET and URL-encoded `query=`,
-HTTP Basic username `finance_agent_aiquota` and password placeholder
-`agentplane-credential-clickhouse-finance-agent-credentials`. This role is restricted
-to SELECT on `aiquota.aiquota_windows`; it cannot read raw provider bodies or other
-tenants. Check current egress rules before either request; no auth token or raw
-provider payload belongs in a public repo. The `finance-agent` sandbox
-preset grants `aiquota-read` and `finance-aiquota-history` to new sandboxes;
+HTTP Basic username `aiquota_history_reader` and password placeholder
+`agentplane-credential-clickhouse-aiquota-history-credentials`. This role is restricted
+to SELECT on `aiquota.aiquota_windows`, `aiquota.token_activity_daily` and
+`aiquota.reset_credits`; it cannot read raw provider bodies or other tenants. Check
+current egress rules before either request; no auth token or raw provider payload
+belongs in a public repo. The `finance-agent` sandbox
+preset grants `aiquota-read` and `aiquota-history` to new sandboxes;
 verify the actual live `/v1/rules` before using either route. A minimal
 read-only history probe is `SELECT count() FROM aiquota.aiquota_windows` via
 GET with URL-encoded `query=`.

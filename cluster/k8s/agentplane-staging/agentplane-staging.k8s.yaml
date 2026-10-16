@@ -2948,12 +2948,13 @@ data:
           unavailable even when the Service is healthy. For historical typed quota/spend
           observations, query ClickHouse's HTTP endpoint at
           `clickhouse.clickhouse.svc.cluster.local:8123/` with GET and URL-encoded `query=`,
-          HTTP Basic username `finance_agent_aiquota` and password placeholder
-          `agentplane-credential-clickhouse-finance-agent-credentials`. This role is restricted
-          to SELECT on `aiquota.aiquota_windows`; it cannot read raw provider bodies or other
-          tenants. Check current egress rules before either request; no auth token or raw
-          provider payload belongs in a public repo. The `finance-agent` sandbox
-          preset grants `aiquota-read` and `finance-aiquota-history` to new sandboxes;
+          HTTP Basic username `aiquota_history_reader` and password placeholder
+          `agentplane-credential-clickhouse-aiquota-history-credentials`. This role is restricted
+          to SELECT on `aiquota.aiquota_windows`, `aiquota.token_activity_daily` and
+          `aiquota.reset_credits`; it cannot read raw provider bodies or other tenants. Check
+          current egress rules before either request; no auth token or raw provider payload
+          belongs in a public repo. The `finance-agent` sandbox
+          preset grants `aiquota-read` and `aiquota-history` to new sandboxes;
           verify the actual live `/v1/rules` before using either route. A minimal
           read-only history probe is `SELECT count() FROM aiquota.aiquota_windows` via
           GET with URL-encoded `query=`.
@@ -3101,6 +3102,7 @@ data:
           - google-readonly
           - activitywatch-read
           - aiquota-read
+          - aiquota-history
           - haku-mailbox
           - github-clone
           - github-agentydragon-agent
@@ -3129,7 +3131,7 @@ data:
           - basic
           - packages
           - aiquota-read
-          - finance-aiquota-history
+          - aiquota-history
           - forgejo-finance-agent
           - github-agentydragon-agent
           - github-clone
@@ -8421,6 +8423,7 @@ spec:
     - google-readonly
     - activitywatch-read
     - aiquota-read
+    - aiquota-history
     - haku-mailbox
     - coinbase
     - plaid-diagnostics
@@ -8459,6 +8462,7 @@ spec:
     - google-readonly
     - activitywatch-read
     - aiquota-read
+    - aiquota-history
     - haku-mailbox
     - coinbase
     - plaid-diagnostics
@@ -9370,13 +9374,13 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-staging-finance-clickhouse-reader
+  name: agentplane-staging-aiquota-history-clickhouse-reader
   namespace: clickhouse
 rules:
   - apiGroups:
       - ""
     resourceNames:
-      - clickhouse-finance-agent-credentials
+      - clickhouse-aiquota-history-credentials
     resources:
       - secrets
     verbs:
@@ -9385,12 +9389,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: agentplane-staging-finance-clickhouse-reader
+  name: agentplane-staging-aiquota-history-clickhouse-reader
   namespace: clickhouse
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agentplane-staging-finance-clickhouse-reader
+  name: agentplane-staging-aiquota-history-clickhouse-reader
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -9400,7 +9404,7 @@ subjects:
 apiVersion: external-secrets.io/v1
 kind: ClusterSecretStore
 metadata:
-  name: kubernetes-agentplane-staging-finance-clickhouse-secret-store
+  name: kubernetes-agentplane-staging-aiquota-history-clickhouse-secret-store
 spec:
   conditions:
     - namespaces:
@@ -9421,33 +9425,33 @@ spec:
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: clickhouse-finance-agent-credentials
+  name: clickhouse-aiquota-history-credentials
   namespace: agentplane-staging-egress-credentials
 spec:
   data:
     - remoteRef:
-        key: clickhouse-finance-agent-credentials
+        key: clickhouse-aiquota-history-credentials
         property: password
       secretKey: password
   refreshInterval: 1h
   secretStoreRef:
     kind: ClusterSecretStore
-    name: kubernetes-agentplane-staging-finance-clickhouse-secret-store
+    name: kubernetes-agentplane-staging-aiquota-history-clickhouse-secret-store
   target:
     creationPolicy: Owner
     deletionPolicy: Retain
-    name: clickhouse-finance-agent-credentials
+    name: clickhouse-aiquota-history-credentials
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
-  name: clickhouse-finance-agent-credentials
+  name: clickhouse-aiquota-history-credentials
   namespace: agentplane-staging
 spec:
-  description: Finance-only typed AIQuota ClickHouse reader; HTTP Basic password for finance_agent_aiquota.
+  description: Typed AIQuota history ClickHouse reader; HTTP Basic password for aiquota_history_reader.
   source:
     secretRef:
-      name: clickhouse-finance-agent-credentials
+      name: clickhouse-aiquota-history-credentials
       key: password
   targets:
     - header: Authorization
@@ -9456,7 +9460,7 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
-  name: finance-aiquota-history
+  name: aiquota-history
   namespace: agentplane-staging
 spec:
   rules:
@@ -9469,7 +9473,7 @@ spec:
         - /
       clusterInternal: true
       credentialRef:
-        name: clickhouse-finance-agent-credentials
+        name: clickhouse-aiquota-history-credentials
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
