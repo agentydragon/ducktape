@@ -1446,26 +1446,26 @@ only after that rollout delete their settings readers. This remains a separate d
 
 ```mermaid
 flowchart TD
-    AGENTPLANE_OBJECT_NAMES[Candidate: drop redundant namespace prefixes from stateless objects]
+    AGENTPLANE_OBJECT_NAMES[In flight: remove redundant prefixes from safe stateless metadata]
 ```
 
 ### `AGENTPLANE_OBJECT_NAMES` — drop redundant prefixes from stateless Agentplane objects
 
-**Candidate.** Audit authored Kubernetes `metadata.name` values inside the `agentplane-*`
-namespaces and start with stateless objects whose names merely repeat the namespace's `agentplane-`
-prefix, such as `agentplane-staging/agentplane-sandbox-controller`. This is an inventory and staged
-rename proposal; it does not rename objects. Follow the existing
+**In flight; lane6, 2026-10-15 UTC.** This PR removes the namespace-redundant prefix from Cilium
+NetworkPolicy names and service-local Role/RoleBinding names whose names are not consumed as a grant
+identity. It updates their references and generated manifests without changing their selectors,
+rules, subjects or service endpoints. Follow the existing
 [cdk8s naming rule](../../cluster/cdk8s/AGENTS.md): an in-namespace name carries what its namespace
 does not.
 
-For each candidate, trace generated references, selectors, Service DNS consumers, ConfigMaps and
-Secrets, ServiceAccounts and RoleBinding subjects, Flux ownership/dependencies, and monitoring
-selectors before choosing a rename. A Service rename changes its DNS name and requires coordinated
-updates to every caller; update producer and callers together, not by changing only the object name.
-Preserve the current image, configuration, readiness and rollout behavior through any replacement.
-Keep stateful objects, databases/roles, PVCs, storage objects, mirrored secrets, and names that are
-external identities out of this first pass; move those only for a separate, reviewed reason with
-their data and identity contracts intact.
+The Service, Deployment, ServiceAccount, ConfigMap, HTTPRoute, monitoring and PodDisruptionBudget
+names remain for a staged follow-up. Service DNS is embedded in long-lived Sandbox runner configs;
+Deployment selectors and ServiceAccount subjects are runtime identities; ConfigMaps have mounted or
+template readers. A coordinated replacement needs to preserve the old route/config until every
+reader has moved. Duplicate HTTPRoutes can conflict, duplicate monitors can duplicate scrapes, and
+overlapping PodDisruptionBudgets can block voluntary evictions during reconciliation. Keep Secrets,
+PodTemplates, PolicySets, databases, PVCs, mirrored credentials, and roles named by the grant catalog
+or existing managed Sandbox specs under their current identity.
 
 ## Scope and retirement of stale gates
 

@@ -92,7 +92,7 @@ class PlatformRouteFences(Construct):
         NetworkPolicy(
             self,
             "clients",
-            metadata=ApiObjectMetadata(name="agentplane-platform-route-clients", namespace=namespace),
+            metadata=ApiObjectMetadata(name="platform-route-clients", namespace=namespace),
             endpoint_selector=clients.selector,
             egress=[route.service.egress() for route in routes(namespace)],
         )
@@ -100,7 +100,7 @@ class PlatformRouteFences(Construct):
             NetworkPolicy(
                 self,
                 route.name,
-                metadata=ApiObjectMetadata(name=f"agentplane-platform-route-{route.name}", namespace=namespace),
+                metadata=ApiObjectMetadata(name=f"platform-route-{route.name}", namespace=namespace),
                 endpoint_selector=route.service.pods.selector,
                 ingress=[clients.admit(route.service.pod_port)],
             )

@@ -46,7 +46,7 @@ def test_app_uses_direct_sandbox_access(namespace: str, agentplane_manifests: di
     assert not any(arg.startswith("--sandbox-service-target=") for arg in container["args"])
     assert not any(volume["name"] == "sandbox-service-token" for volume in application["volumes"])
 
-    app_rules = _resource(documents, "Role", app.NAME)["rules"]
+    app_rules = _resource(documents, "Role", app.NAME.removeprefix("agentplane-"))["rules"]
     for rule in app_rules:
         if rule["resources"] not in (["policybindings"], ["sandboxes"]):
             assert set(rule["verbs"]) <= {"get", "list", "watch"}
@@ -76,7 +76,7 @@ def test_notifications_have_no_app_or_sandbox_service_dependency(
         _resource(documents, "ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
     )
     assert "sandbox_service" not in settings
-    policy = _resource(documents, "CiliumNetworkPolicy", notifications.NAME)["spec"]
+    policy = _resource(documents, "CiliumNetworkPolicy", notifications.NAME.removeprefix("agentplane-"))["spec"]
     assert not any(
         target["matchLabels"].get("app.kubernetes.io/name") == app.NAME
         for rule in policy["egress"]

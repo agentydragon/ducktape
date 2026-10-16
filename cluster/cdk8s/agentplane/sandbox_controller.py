@@ -75,10 +75,11 @@ class SandboxController(Construct):
             termination_grace=Duration.seconds(30),
         )
         workload.project_tokens("runner-gateway-token", _GATEWAY_TOKEN_DIR, {"token": gateway_audience})
+        role_name = NAME.removeprefix("agentplane-")
         Role(
             self,
             "role",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
                 # Update adds and removes the state-volume finalizer.
                 RolePolicyRule(
@@ -133,13 +134,13 @@ class SandboxController(Construct):
         RoleBinding(
             self,
             "role-binding",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            role=Role.from_role_name(self, "role-ref", NAME),
+            metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
+            role=Role.from_role_name(self, "role-ref", role_name),
         ).add_subjects(workload.account)
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[cilium.SCRAPERS.admit(endpoint.pod_port)],
             egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), gateway.egress()],

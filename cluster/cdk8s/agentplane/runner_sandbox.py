@@ -106,7 +106,7 @@ class RunnerSandbox(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=pods(namespace).selector,
             ingress=isolate_ingress(),
             egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],

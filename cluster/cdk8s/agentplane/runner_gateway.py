@@ -145,7 +145,7 @@ class RunnerGateway(Construct):
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[
                 *(pods.admit(endpoint.pod_port) for pods in callers.values()),
@@ -166,6 +166,7 @@ class RunnerGateway(Construct):
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
+        role_name = NAME.removeprefix("agentplane-")
         # TokenReview proves the caller's projected workload token. Creating a review grants none of the
         # reviewed identity's authority.
         token_reviewer_cluster_rbac(
@@ -178,7 +179,7 @@ class RunnerGateway(Construct):
         Role(
             self,
             "role",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
                 # Resolving a Session's Sandbox and its runner Pod.
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
@@ -197,6 +198,6 @@ class RunnerGateway(Construct):
         RoleBinding(
             self,
             "rolebinding",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            role=Role.from_role_name(self, "role-ref", NAME),
+            metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
+            role=Role.from_role_name(self, "role-ref", role_name),
         ).add_subjects(service_account)

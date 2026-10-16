@@ -61,7 +61,7 @@ class PolicyController(Construct):
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[cilium.SCRAPERS.admit(endpoint.pod_port)],
             egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER)],

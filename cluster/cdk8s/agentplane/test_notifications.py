@@ -119,7 +119,8 @@ def test_notifications_use_the_configured_dispatcher(
     policy = one(
         doc
         for doc in documents
-        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == notifications.NAME
+        if doc["kind"] == "CiliumNetworkPolicy"
+        and doc["metadata"]["name"] == notifications.NAME.removeprefix("agentplane-")
     )["spec"]
     egress_services = {
         endpoint["matchLabels"].get("app.kubernetes.io/name")

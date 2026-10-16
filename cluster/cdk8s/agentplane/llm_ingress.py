@@ -171,7 +171,7 @@ class LlmIngress(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
+            metadata=ApiObjectMetadata(name=_NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[
                 # egress.py imports this module, so the proxy's Pods are named here.

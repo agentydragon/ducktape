@@ -393,7 +393,9 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "networkpolicy-app-from-staging-egress",
-        metadata=ApiObjectMetadata(name=f"{app_service.name}-from-staging-egress", namespace=ENV.namespace),
+        metadata=ApiObjectMetadata(
+            name=f"{app_service.name.removeprefix('agentplane-')}-from-staging-egress", namespace=ENV.namespace
+        ),
         endpoint_selector=app_service.pods.selector,
         ingress=[egress.proxy("agentplane-staging").pods.admit(app_service.pod_port)],
     )

@@ -47,7 +47,7 @@ class EgressCredentials(Construct):
         proxy_role = Role(
             self,
             "proxy-role",
-            metadata=ApiObjectMetadata(name="agentplane-egress-credentials-reader", namespace=namespace),
+            metadata=ApiObjectMetadata(name="egress-credentials-reader", namespace=namespace),
             rules=[RolePolicyRule(resources=[custom_resource("", "secrets")], verbs=["get", "list", "watch"])],
         )
         RoleBinding(

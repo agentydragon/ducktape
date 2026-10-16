@@ -58,7 +58,7 @@ def write_environment_manifests(
                     app,
                     # The interception proxy terminates TLS for the namespace; its allowlist is the
                     # egress PolicySets, not SNI on its own egress rule.
-                    unpinned_https_egress={egress.NAME},
+                    unpinned_https_egress={egress.NAME.removeprefix("agentplane-")},
                 ),
                 *env.extra_resources,
             ],

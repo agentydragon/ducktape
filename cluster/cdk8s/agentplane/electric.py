@@ -121,7 +121,7 @@ class Electric(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
             endpoint_selector=electric.pods.selector,
             # app.py imports this module, so the app's Pods are named here.
             ingress=[

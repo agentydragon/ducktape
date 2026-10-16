@@ -104,7 +104,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     NetworkPolicy(
         construct,
         "networkpolicy-egress-staging-credentials",
-        metadata=ApiObjectMetadata(name="agentplane-egress-staging-credentials", namespace=namespace),
+        metadata=ApiObjectMetadata(name="egress-staging-credentials", namespace=namespace),
         endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
         egress=[
             authentik.SERVER.egress(),  # _grocy_sf_readonly: the public route targets Authentik's outpost.

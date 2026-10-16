@@ -79,7 +79,7 @@ def test_dispatcher_deployment_and_sender_auth(
     service = resource("Service", session_dispatcher.NAME)
     assert service["spec"]["ports"] == [{"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080}]
 
-    role = resource("Role", session_dispatcher.NAME)
+    role = resource("Role", session_dispatcher.NAME.removeprefix("agentplane-"))
     assert role["rules"] == [
         {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch", "patch"]},
         {
@@ -88,7 +88,7 @@ def test_dispatcher_deployment_and_sender_auth(
             "verbs": ["get", "list", "watch", "create", "update"],
         },
     ]
-    role_binding = resource("RoleBinding", session_dispatcher.NAME)
+    role_binding = resource("RoleBinding", session_dispatcher.NAME.removeprefix("agentplane-"))
     assert role_binding["subjects"] == [
         {"apiGroup": "", "kind": "ServiceAccount", "name": session_dispatcher.NAME, "namespace": namespace}
     ]
@@ -97,7 +97,7 @@ def test_dispatcher_deployment_and_sender_auth(
         {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
     ]
 
-    dispatcher_policy = resource("CiliumNetworkPolicy", session_dispatcher.NAME)["spec"]
+    dispatcher_policy = resource("CiliumNetworkPolicy", session_dispatcher.NAME.removeprefix("agentplane-"))["spec"]
     dispatcher_callers = {
         endpoint["matchLabels"]["app.kubernetes.io/name"]
         for rule in dispatcher_policy["ingress"]
@@ -123,7 +123,7 @@ def test_dispatcher_deployment_and_sender_auth(
     app_token_mount = one(mount for mount in app_container["volumeMounts"] if mount["name"] == app_token["name"])
     assert app_token_mount["mountPath"] == "/var/run/secrets/agentplane-session-dispatcher"
     assert app_token_mount["readOnly"] is True
-    app_policy = resource("CiliumNetworkPolicy", app.NAME)["spec"]
+    app_policy = resource("CiliumNetworkPolicy", app.NAME.removeprefix("agentplane-"))["spec"]
     app_egress = {
         endpoint["matchLabels"].get("app.kubernetes.io/name")
         for rule in app_policy["egress"]
@@ -143,7 +143,7 @@ def test_dispatcher_deployment_and_sender_auth(
         {"namespace": namespace, "name": notifications.NAME},
         {"namespace": namespace, "name": session_dispatcher.NAME},
     ]
-    gateway_policy = resource("CiliumNetworkPolicy", runner_gateway.NAME)["spec"]
+    gateway_policy = resource("CiliumNetworkPolicy", runner_gateway.NAME.removeprefix("agentplane-"))["spec"]
     assert any(
         endpoint["matchLabels"].get("app.kubernetes.io/name") == session_dispatcher.NAME
         for rule in gateway_policy["ingress"]

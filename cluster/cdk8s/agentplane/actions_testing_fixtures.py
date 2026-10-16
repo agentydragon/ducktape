@@ -102,7 +102,7 @@ def _add_mcp_everything(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "mcp-everything-networkpolicy",
-        metadata=ApiObjectMetadata(name=MCP_EVERYTHING_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=MCP_EVERYTHING_NAME.removeprefix("agentplane-"), namespace=_NAMESPACE),
         endpoint_selector=_MCP_EVERYTHING_LABELS,
         ingress=[
             IngressRule.from_endpoints(
@@ -118,7 +118,9 @@ def _add_mcp_everything(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "mcp-everything-callers-networkpolicy",
-        metadata=ApiObjectMetadata(name=f"{MCP_EVERYTHING_NAME}-callers", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(
+            name=f"{MCP_EVERYTHING_NAME.removeprefix('agentplane-')}-callers", namespace=_NAMESPACE
+        ),
         endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(
             match_expressions=[
                 CiliumNetworkPolicySpecEndpointSelectorMatchExpressions(
@@ -201,7 +203,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "oauth-fixture-networkpolicy",
-        metadata=ApiObjectMetadata(name=OAUTH_FIXTURE_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=OAUTH_FIXTURE_NAME.removeprefix("agentplane-"), namespace=_NAMESPACE),
         endpoint_selector=_OAUTH_FIXTURE_LABELS,
         ingress=[
             IngressRule.from_endpoints(

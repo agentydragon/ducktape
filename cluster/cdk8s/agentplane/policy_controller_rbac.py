@@ -32,6 +32,7 @@ class PolicyControllerRbac(Construct):
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
+        role_name = NAME.removeprefix("agentplane-")
         own_roles = sorted(
             {
                 grant.role_ref.name
@@ -47,7 +48,7 @@ class PolicyControllerRbac(Construct):
         Role(
             self,
             "role",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
                 RolePolicyRule(resources=[custom_resource(_GROUP, "policysets")], verbs=["get", "list", "watch"]),
                 # Deleting is how a binding expires.
@@ -74,8 +75,8 @@ class PolicyControllerRbac(Construct):
         RoleBinding(
             self,
             "role-binding",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            role=Role.from_role_name(self, "role-ref", NAME),
+            metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
+            role=Role.from_role_name(self, "role-ref", role_name),
         ).add_subjects(account)
         cluster_role_name = f"{namespace}-policy-controller"
         k8s.KubeClusterRole(

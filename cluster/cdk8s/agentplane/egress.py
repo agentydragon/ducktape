@@ -185,7 +185,9 @@ def add_runner_egress(
     NetworkPolicy(
         scope,
         f"{policy}-proxy-egress",
-        metadata=ApiObjectMetadata(name=f"{endpoint.name}-{policy}-proxy", namespace=namespace),
+        metadata=ApiObjectMetadata(
+            name=f"{endpoint.name.removeprefix('agentplane-')}-{policy}-proxy", namespace=namespace
+        ),
         endpoint_selector=proxy(namespace).pods.selector,
         egress=[endpoint.egress()],
     )
@@ -661,7 +663,7 @@ class Egress(Construct):
         Role(
             self,
             "role",
-            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
             rules=[
                 RolePolicyRule(
                     resources=[
@@ -676,8 +678,8 @@ class Egress(Construct):
         RoleBinding(
             self,
             "rolebinding",
-            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
-            role=Role.from_role_name(self, "role-ref", NAME),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
+            role=Role.from_role_name(self, "role-ref", NAME.removeprefix("agentplane-")),
         ).add_subjects(service_account)
 
     def _add_certificate_and_bundle(self) -> None:
@@ -810,7 +812,7 @@ class Egress(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=self.proxy.pods.selector,
             ingress=[
                 # Runner Pods, and the sandbox Actions' command boxes. command_sandbox.py imports this

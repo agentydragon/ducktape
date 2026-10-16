@@ -590,7 +590,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-electric
+  name: electric
   namespace: agentplane-staging
 spec:
   egress:
@@ -805,7 +805,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-llm-ingress
+  name: llm-ingress
   namespace: agentplane-staging
 spec:
   egress:
@@ -1167,7 +1167,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-egress
+  name: egress
   namespace: agentplane-staging
 rules:
   - apiGroups:
@@ -1204,12 +1204,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: agentplane-egress
+  name: egress
   namespace: agentplane-staging
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agentplane-egress
+  name: egress
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -1235,7 +1235,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-egress
+  name: egress
   namespace: agentplane-staging
 spec:
   egress:
@@ -2004,7 +2004,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-session-dispatcher
+  name: session-dispatcher
   namespace: agentplane-staging
 rules:
   - apiGroups:
@@ -2030,12 +2030,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: agentplane-session-dispatcher
+  name: session-dispatcher
   namespace: agentplane-staging
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agentplane-session-dispatcher
+  name: session-dispatcher
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -2045,7 +2045,7 @@ subjects:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-session-dispatcher
+  name: session-dispatcher
   namespace: agentplane-staging
 spec:
   egress:
@@ -2319,7 +2319,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-runner-gateway
+  name: runner-gateway
   namespace: agentplane-staging
 rules:
   - apiGroups:
@@ -2360,12 +2360,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: agentplane-runner-gateway
+  name: runner-gateway
   namespace: agentplane-staging
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agentplane-runner-gateway
+  name: runner-gateway
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -2375,7 +2375,7 @@ subjects:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-runner-gateway
+  name: runner-gateway
   namespace: agentplane-staging
 spec:
   egress:
@@ -2480,7 +2480,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-runner-gateway-runner-control-proxy
+  name: runner-gateway-runner-control-proxy
   namespace: agentplane-staging
 spec:
   egress:
@@ -2711,7 +2711,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-history-service
+  name: history-service
   namespace: agentplane-staging
 spec:
   egress:
@@ -2800,7 +2800,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-history-service-runner-ingress-proxy
+  name: history-service-runner-ingress-proxy
   namespace: agentplane-staging
 spec:
   egress:
@@ -3622,7 +3622,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-app
+  name: app
   namespace: agentplane-staging
 rules:
   - apiGroups:
@@ -3696,12 +3696,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: agentplane-app
+  name: app
   namespace: agentplane-staging
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agentplane-app
+  name: app
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -3737,7 +3737,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-app
+  name: app
   namespace: agentplane-staging
 spec:
   egress:
@@ -3859,7 +3859,7 @@ automountServiceAccountToken: false
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-runner
+  name: runner
   namespace: agentplane-staging
 spec:
   egress:
@@ -3890,7 +3890,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-platform-route-clients
+  name: platform-route-clients
   namespace: agentplane-staging
 spec:
   egress:
@@ -3917,7 +3917,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-platform-route-control
+  name: platform-route-control
   namespace: agentplane-staging
 spec:
   endpointSelector:
@@ -3936,7 +3936,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-platform-route-ingress
+  name: platform-route-ingress
   namespace: agentplane-staging
 spec:
   endpointSelector:
@@ -4978,7 +4978,7 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-sandbox-controller
+  name: sandbox-controller
   namespace: agentplane-staging
 rules:
   - apiGroups:
@@ -5110,12 +5110,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: agentplane-sandbox-controller
+  name: sandbox-controller
   namespace: agentplane-staging
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agentplane-sandbox-controller
+  name: sandbox-controller
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -5125,7 +5125,7 @@ subjects:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-sandbox-controller
+  name: sandbox-controller
   namespace: agentplane-staging
 spec:
   egress:
@@ -5829,7 +5829,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-actions
+  name: actions
   namespace: agentplane-staging
 spec:
   egress:
@@ -6258,7 +6258,7 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-notifications
+  name: notifications
   namespace: agentplane-staging
 rules:
   - apiGroups:
@@ -6271,12 +6271,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: agentplane-notifications
+  name: notifications
   namespace: agentplane-staging
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agentplane-notifications
+  name: notifications
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -6286,7 +6286,7 @@ subjects:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-notifications
+  name: notifications
   namespace: agentplane-staging
 spec:
   egress:
@@ -6683,7 +6683,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-notifications-github-webhook
+  name: notifications-github-webhook
   namespace: agentplane-staging
 spec:
   endpointSelector:
@@ -7019,7 +7019,7 @@ template:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-sandbox
+  name: sandbox
   namespace: agentplane-staging
 spec:
   egress:
@@ -7440,7 +7440,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-policy-controller
+  name: policy-controller
   namespace: agentplane-staging
 spec:
   egress:
@@ -7501,7 +7501,7 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-policy-controller
+  name: policy-controller
   namespace: agentplane-staging
 rules:
   - apiGroups:
@@ -7577,12 +7577,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: agentplane-policy-controller
+  name: policy-controller
   namespace: agentplane-staging
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agentplane-policy-controller
+  name: policy-controller
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -8458,7 +8458,7 @@ subjects:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-egress-to-testing-app
+  name: egress-to-testing-app
   namespace: agentplane-staging
 spec:
   egress:
@@ -8811,7 +8811,7 @@ spec: {}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-egress-credentials-reader
+  name: egress-credentials-reader
   namespace: agentplane-staging-egress-credentials
 rules:
   - apiGroups:
@@ -8831,7 +8831,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agentplane-egress-credentials-reader
+  name: egress-credentials-reader
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -10374,7 +10374,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-egress-staging-credentials
+  name: egress-staging-credentials
   namespace: agentplane-staging
 spec:
   egress:

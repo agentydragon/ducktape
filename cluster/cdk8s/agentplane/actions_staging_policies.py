@@ -627,7 +627,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "networkpolicy-egress-to-testing-app",
-        metadata=ApiObjectMetadata(name=f"{proxy.name}-to-testing-app", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(
+            name=f"{proxy.name.removeprefix('agentplane-')}-to-testing-app", namespace=_NAMESPACE
+        ),
         endpoint_selector=proxy.pods.selector,
         egress=[
             testing_app.egress(),

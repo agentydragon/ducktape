@@ -450,7 +450,7 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "notifications-github-webhook-policy",
-        metadata=ApiObjectMetadata(name="agentplane-notifications-github-webhook", namespace=STAGING_NAMESPACE),
+        metadata=ApiObjectMetadata(name="notifications-github-webhook", namespace=STAGING_NAMESPACE),
         endpoint_selector=notification_service.pods.selector,
         ingress=[IngressRule.from_gateway(notification_service.pod_port)],
     )

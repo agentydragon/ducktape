@@ -81,7 +81,7 @@ class CommandSandbox(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
             endpoint_selector=_LABELS,
             ingress=[CiliumNetworkPolicySpecIngress()],
             egress=[cilium.dns_egress(), egress.proxy(env.namespace).egress()],

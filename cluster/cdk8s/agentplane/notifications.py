@@ -120,18 +120,19 @@ class Notifications(Construct):
             termination_grace=Duration.seconds(30),
             migrate=migrate_init_container(f"{_IMAGE}-migrate:unset", name="migrate", env_variables=variables),
         )
+        role_name = NAME.removeprefix("agentplane-")
         Role(
             self,
             "role",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=role_name, namespace=env.namespace),
             # Resolving a destination reads its Sandbox, not the Pod.
             rules=[RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"])],
         )
         RoleBinding(
             self,
             "rolebinding",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
-            role=Role.from_role_name(self, "role-ref", NAME),
+            metadata=ApiObjectMetadata(name=role_name, namespace=env.namespace),
+            role=Role.from_role_name(self, "role-ref", role_name),
         ).add_subjects(workload.account)
         if github is not None:
             secret = SecretRef(namespace=env.namespace, name=github.secret_name)
@@ -153,7 +154,7 @@ class Notifications(Construct):
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
             endpoint_selector=_LABELS,
             ingress=[pods.admit(endpoint.pod_port) for pods in callers],
             egress=[

@@ -118,7 +118,7 @@ class HistoryService(Construct):
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[*(pods.admit(endpoint.pod_port) for pods in callers.values()), proxy.pods.admit(ingress.pod_port)],
             egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), database.egress(env.namespace)],
