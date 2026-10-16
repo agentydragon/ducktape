@@ -1231,11 +1231,12 @@ flowchart TD
 
 ### `ACTION_EXECUTION_AUDIT_COLUMNS_READ_RETIRE` — stop selecting unused reconciliation columns
 
-**Candidate; the writer-free Action Service image `devel-20261015233822-b8b2ba1` is Ready in testing
-(1/1) and staging (2/2), 2026-10-15 UTC.** The ORM still selects both unused columns by default.
-Mark them deferred while retaining their mappings, then wait for that image in both environments
-before dropping them. This read-removal rollout keeps existing replicas compatible while the
-migration runner still requires exact schema/model agreement.
+**In flight; lane5 reader-retirement PR, 2026-10-16 UTC.** The writer-free Action Service image
+`devel-20261015233822-b8b2ba1` is Ready in testing (1/1) and staging (2/2), confirmed 2026-10-16
+UTC. The fields have no runtime writer or value consumer, but ordinary `ExecutionRow` loads still
+select both columns. Mark them deferred while retaining their mappings, then keep this node open
+until the deferred-reader image is Ready in both environments. Only after that may the separate drop
+PR start; the mapping remains meanwhile so schema verification agrees with the database.
 
 ### `ACTION_EXECUTION_AUDIT_COLUMNS_DROP` — drop retired reconciliation columns
 
