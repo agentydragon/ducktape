@@ -16,6 +16,13 @@ def test_only_the_proxy_reads_and_nothing_is_copied() -> None:
     assert not any(obj["kind"] in {"ExternalSecret", "ClusterSecretStore", "ServiceAccount"} for obj in objects)
     bindings = [obj for obj in objects if obj["kind"] == "RoleBinding"]
     assert len(bindings) == 1
+    assert bindings[0]["metadata"]["name"] == "egress"
+    assert bindings[0]["metadata"]["namespace"] == TESTING_CREDENTIALS_NAMESPACE
+    assert bindings[0]["roleRef"] == {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "Role",
+        "name": "egress-credentials-reader",
+    }
     assert bindings[0]["subjects"] == [
         {"apiGroup": "", "kind": "ServiceAccount", "name": "egress", "namespace": "agentplane-testing"}
     ]

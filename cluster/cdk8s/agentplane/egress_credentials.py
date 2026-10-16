@@ -53,7 +53,9 @@ class EgressCredentials(Construct):
         RoleBinding(
             self,
             "proxy-binding",
-            metadata=ApiObjectMetadata(name=f"{proxy_namespace}-egress", namespace=namespace),
+            # A RoleBinding's roleRef is immutable. This new name lets Flux create the
+            # canonical binding and prune the old one instead of patching it in place.
+            metadata=ApiObjectMetadata(name="egress", namespace=namespace),
             role=proxy_role,
         ).add_subjects(
             ServiceAccount.from_service_account_name(self, "proxy", "egress", namespace_name=proxy_namespace)
