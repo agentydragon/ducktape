@@ -23,7 +23,10 @@ go_library(
 
 go_library(
     name = "deepcopy_inputs",
-    srcs = ["doc.go", "types.go"],
+    srcs = [
+        "doc.go",
+        "types.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/api",
     visibility = ["//visibility:private"],
     deps = [

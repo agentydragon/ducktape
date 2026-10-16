@@ -1,5 +1,4 @@
 // Package api defines Agentplane's shared Sandbox and SandboxTemplate Kubernetes API.
-//
 package api
 
 import (
@@ -12,13 +11,13 @@ import (
 // mount it by name, and a VM guest mounts the virtiofs filesystem of that name.
 type StateVolume struct {
 	// +kubebuilder:validation:MinLength=1
-	Name   string                           `json:"name"`
+	Name string `json:"name"`
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object
-	Claim  corev1.PersistentVolumeClaimSpec `json:"claim"`
+	Claim corev1.PersistentVolumeClaimSpec `json:"claim"`
 	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' && !has(self.filesystem)",message="state volume requires DirectoryTree without a filesystem"
-	Layout VolumeLayout                     `json:"layout"`
+	Layout VolumeLayout `json:"layout"`
 }
 
 type VolumeLayoutType string
@@ -33,16 +32,16 @@ const (
 // +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' ? !has(self.filesystem) : has(self.filesystem)",message="DirectoryTree omits filesystem; disk layouts require it"
 type VolumeLayout struct {
 	// +kubebuilder:validation:Enum=DirectoryTree;RawDiskImage;BlockFilesystem
-	Type       VolumeLayoutType `json:"type"`
+	Type VolumeLayoutType `json:"type"`
 	// +kubebuilder:validation:Enum=ext4
-	Filesystem string           `json:"filesystem,omitempty"`
+	Filesystem string `json:"filesystem,omitempty"`
 }
 
 // WorkspaceVolume is retained by the Sandbox across workload replacements.
 // +kubebuilder:validation:XValidation:rule="self.layout.type == 'BlockFilesystem' ? has(self.claim.volumeMode) && self.claim.volumeMode == 'Block' : !has(self.claim.volumeMode) || self.claim.volumeMode == 'Filesystem'",message="BlockFilesystem needs Block volumeMode; other layouts use Filesystem"
 type WorkspaceVolume struct {
 	// +kubebuilder:validation:MinLength=1
-	Name   string                           `json:"name"`
+	Name string `json:"name"`
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Claim  corev1.PersistentVolumeClaimSpec `json:"claim"`
 	Layout VolumeLayout                     `json:"layout"`
@@ -87,7 +86,7 @@ type SandboxSpec struct {
 	Template string `json:"template"`
 	// +kubebuilder:default=false
 	// +kubebuilder:validation:Optional
-	Running  bool   `json:"running"`
+	Running bool `json:"running"`
 	// WakeOnSend allows authenticated user and notification sends to resume a stopped Sandbox.
 	// Omitted is false so older Sandbox manifests keep wake-on-send disabled.
 	// +kubebuilder:default=false
@@ -133,18 +132,18 @@ type SandboxStatus struct {
 	OperatingMode OperatingMode `json:"operatingMode,omitempty"`
 	// SuspendedBy is set while the controller keeps a Sandbox stopped that `spec.running` says to run, and
 	// SuspendedAtWakeGeneration is the `spec.wakeGeneration` it stopped it at.
-	SuspendedBy               *SuspendedBy       `json:"suspendedBy,omitempty"`
+	SuspendedBy *SuspendedBy `json:"suspendedBy,omitempty"`
 	// +kubebuilder:validation:Minimum=0
-	SuspendedAtWakeGeneration *int64             `json:"suspendedAtWakeGeneration,omitempty"`
+	SuspendedAtWakeGeneration *int64 `json:"suspendedAtWakeGeneration,omitempty"`
 	// +listType=map
 	// +listMapKey=type
-	Conditions                []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // WorkspaceBinding projects the creation record and pins the claim's identity.
 type WorkspaceBinding struct {
 	// +kubebuilder:validation:MinLength=1
-	Name   string       `json:"name"`
+	Name string `json:"name"`
 	// +kubebuilder:validation:MinLength=1
 	UID    string       `json:"uid"`
 	Layout VolumeLayout `json:"layout"`
@@ -158,9 +157,9 @@ type SandboxVolumes struct {
 // StateBinding projects the state PVC's durable layout record and pins the claim's identity.
 type StateBinding struct {
 	// +kubebuilder:validation:MinLength=1
-	Name   string       `json:"name"`
+	Name string `json:"name"`
 	// +kubebuilder:validation:MinLength=1
-	UID    string       `json:"uid"`
+	UID string `json:"uid"`
 	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' && !has(self.filesystem)",message="state volume requires DirectoryTree without a filesystem"
 	Layout VolumeLayout `json:"layout"`
 }

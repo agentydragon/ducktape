@@ -52,8 +52,8 @@ py_library(
 
 py_binary(
     name = "generate_bin",
-    main_module = "agentplane.crds.generate",
     data = ["//agentplane/sandboxes/api:generated_crds"],
+    main_module = "agentplane.crds.generate",
     deps = [":generate"],
 )
 
@@ -62,8 +62,8 @@ py_test(
     srcs = ["test_generate.py"],
     data = [
         ":crds",
-        "//cluster/schemas",
         "//agentplane/sandboxes/api:generated_crds",
+        "//cluster/schemas",
     ],
     deps = [
         ":generate",
