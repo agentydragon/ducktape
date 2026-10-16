@@ -75,9 +75,12 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
             content=content,
             dispatcher=GatewayBackedDispatcher(directory, remote, event_logs),
         )
-        opened = await bridge.create_session(SANDBOX, uuid4(), spec)
-        assert launches.PLATFORM_INSTRUCTIONS in opened.attached.spec.instructions
-        thread = UUID(opened.session_id)
+        opening = await bridge.create_session(SANDBOX, uuid4(), spec)
+        assert opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
+        (runner_session,) = await directory.client(SANDBOX).list_sessions()
+        assert runner_session.session_id == opening.session_id
+        assert launches.PLATFORM_INSTRUCTIONS in runner_session.spec.instructions
+        thread = UUID(opening.session_id)
         first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
         receipt = await bridge.command(thread, first, sandbox=SANDBOX)
         assert isinstance(receipt, session_dispatcher_pb2.Dispatch)

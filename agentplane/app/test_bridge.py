@@ -325,7 +325,6 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         opened = await http.post(SESSIONS, json={"session_id": str(session_id), "spec": MessageToDict(spec)})
         assert opened.status_code == 201, opened.text
         assert opened.json()["state"] == "DELIVERY_STATE_RUNNER_ADMITTED"
-        assert opened.json()["attached"]["harnessState"] == "HARNESS_STATE_RUNNING"
         thread_id = opened.json()["sessionId"]
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
@@ -338,7 +337,9 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                assert (await http.get(f"/threads/{thread_id}")).json()["last_cursor"] > 0
+                thread = (await http.get(f"/threads/{thread_id}")).json()
+                assert thread["last_cursor"] > 0
+                assert thread["harness_state"] == "HARNESS_STATE_RUNNING"
         async with http.stream("GET", f"/threads/{thread_id}/events/stream") as first_tab:
             first = first_tab.aiter_lines()
             assert (await next_message(first)).event == "attached"
@@ -1520,8 +1521,12 @@ async def test_open_and_resume_reply_before_archive_catches_up(
         dispatcher=GatewayBackedDispatcher(local_runners, gateway, event_logs),
     )
     opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), spec), timeout=10)
+    assert opened.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
     thread_id = UUID(opened.session_id)
-    assert opened.attached.last_cursor > 0
+    (runner_session,) = await local_runners.client(SANDBOX).list_sessions()
+    assert runner_session.session_id == opened.session_id
+    opened_cursor = runner_session.last_cursor
+    assert opened_cursor > 0
     assert await event_logs.exists(thread_id)
     assert await store.get_thread(thread_id) is None
     assert await store.list_threads() == []
@@ -1569,7 +1574,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
         timeout=10,
     )
     assert resumed.session_id == opened.session_id
-    assert resumed.last_cursor > opened.attached.last_cursor
+    assert resumed.last_cursor > opened_cursor
     assert await event_logs.last_cursor(thread_id) == 0
 
 
