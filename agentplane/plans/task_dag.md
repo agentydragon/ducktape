@@ -1250,11 +1250,10 @@ flowchart TD
 
 ### `ACTION_EXECUTION_AUDIT_COLUMNS_DROP` — drop retired reconciliation columns
 
-**Blocked on the ORM-unmapped Action Service image being Ready in testing and staging.** The
-writer-free Action Service image `devel-20261015233822-b8b2ba1` is Ready in testing (1/1) and
-staging (2/2), confirmed 2026-10-16 UTC. This PR removes the unused ORM mappings after that writer
-rollout. The physical columns remain untouched until the new reader-free image is Ready in both
-environments; then a separate migration may drop `reconciliation_source` and `reconciled_by`.
+**Candidate; rollout verified 2026-10-16 UTC.** All Action Service replicas run
+`devel-20261016024436-b40e501`: testing 1/1 and staging 2/2 Ready, observed Deployment generations
+current, no old or terminating Action pods. Source `b40e501` (#10697) has neither ORM mapping.
+A separate migration may now drop `reconciliation_source` and `reconciled_by`.
 Preserve `reconciled_at` and late-completion behavior.
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
@@ -1310,10 +1309,10 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 ```mermaid
 flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
-    NOTIFICATION_GATEWAY_TARGET_MANIFEST_RETIRE[Blocked: remove accepted-unused API target from Notifications manifest]
+    NOTIFICATION_GATEWAY_TARGET_MANIFEST_RETIRE[Candidate: remove unused Notifications API target]
     NOTIFICATION_GATEWAY_TARGET_READER_RETIRE[Blocked: remove unused Notifications setting after manifest rollout]
     NOTIFICATION_GATEWAY_TARGET_MANIFEST_RETIRE -->|Manifest-free image Ready in testing and staging| NOTIFICATION_GATEWAY_TARGET_READER_RETIRE
-    DISPATCHER_OPENING_ATTACHED_READ_RETIRE[Blocked: unmap the retired snapshot after writer rollout]
+    DISPATCHER_OPENING_ATTACHED_READ_RETIRE[Candidate: unmap the retired snapshot]
     DISPATCHER_OPENING_ATTACHED_READ_RETIRE -->|Unmapped-reader image Ready in testing and staging| DISPATCHER_OPENING_ATTACHED_COLUMN_DROP[Blocked: drop the retired snapshot column]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[In progress: remove legacy Gateway wrappers]
@@ -1334,7 +1333,10 @@ node is removed. This does not remove the separate destination-authority decisio
 
 ### `NOTIFICATION_GATEWAY_TARGET_MANIFEST_RETIRE` — remove the unused Gateway API target
 
-**Blocked on the accepting Notification image being Ready in testing and staging.**
+**Candidate; rollout verified 2026-10-16 UTC.** All Notification replicas run
+`devel-20261016020216-6ec9015`, testing 1/1 and staging 2/2 Ready with current observed generations.
+That source accepts an omitted `target` and has no runtime reader. Both live
+`notifications-settings` ConfigMaps still supply the target; its Python field cannot be removed yet.
 `RunnerGatewaySettings.target` is optional and unread by Notification runtime, but
 `cluster/cdk8s/agentplane/notifications.py` still emits `runner_gateway.target`. Remove that
 manifest value and verify the resulting image/config rollout in both environments. Keep the
@@ -1349,7 +1351,9 @@ supplying the key. This cleanup is independent of Gateway API-wrapper retirement
 
 ### `DISPATCHER_OPENING_ATTACHED_READ_RETIRE` — stop selecting the unused opening snapshot column
 
-**Blocked on the writer-free Dispatcher image from #10675 being Ready in testing and staging.** The
+**Candidate; rollout verified 2026-10-16 UTC.** All Dispatcher replicas run
+`devel-20261016020159-6ec9015`, testing 1/1 and staging 2/2 Ready with current observed generations;
+the source includes #10675 and no longer writes `attached`. The
 protobuf field is reserved and the writer is gone; the nullable ORM mapping remains and ordinary
 Dispatcher reads still select it. Unmap the field after that rollout. #10699 permits a retained
 physical column to be absent from the runtime metadata, so no deferred mapping is needed. Wait for
