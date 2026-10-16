@@ -5,12 +5,14 @@ policy_controller_rbac.py and binding_delegation.py.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
+from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, MemoryResources
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.probes import http_probe
@@ -28,6 +30,9 @@ _HEALTH_PORT = 8081
 _OVERDUE_SECONDS = 300
 
 
+_DEFAULT_MEMORY_LIMIT = Size.mebibytes(256)
+
+
 def metrics(namespace: str) -> ServiceRef:
     return ServiceRef(
         name=NAME, port=Port(name="metrics", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
@@ -35,10 +40,22 @@ def metrics(namespace: str) -> ServiceRef:
 
 
 class PolicyController(Construct):
-    """The controller's workload, service, network policy and alert; RBAC is a separate construct."""
+    """The controller's workload and service; fleet policy and monitoring are added separately."""
 
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
+        registry_secret_name: str | None = "forgejo-images-creds",
+        service_cluster_ip: str | None = None,
+        container_env: Mapping[str, EnvValue] | None = None,
+        memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+    ) -> None:
         super().__init__(scope, id)
+        self.env = env
         namespace = env.namespace
         endpoint = metrics(namespace)
         workload = add_service_workload(
@@ -48,16 +65,25 @@ class PolicyController(Construct):
             container="policy-controller",
             image=f"{_IMAGE}:unset",
             args=[f"--policy-namespace={namespace}", f"--subject-namespaces={namespace}"],
+            env_variables=dict(container_env or {}),
             ports=[endpoint.port.container_port(), Port(name="health", number=_HEALTH_PORT).container_port()],
             readiness=http_probe("/readyz", port=_HEALTH_PORT, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=_HEALTH_PORT, initial_delay_seconds=10, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(10)),
-                memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(256)),
+                memory=MemoryResources(request=Size.mebibytes(64), limit=memory_limit),
             ),
             termination_grace=Duration.seconds(30),
+            placement=placement,
+            registry_secret_name=registry_secret_name,
+            service_cluster_ip=service_cluster_ip,
         )
         self.account = workload.account
+
+    def add_platform_resources(self) -> None:
+        """Add fleet network policy, scraping and expiry alert."""
+        namespace = self.env.namespace
+        endpoint = metrics(namespace)
         NetworkPolicy(
             self,
             "network-policy",

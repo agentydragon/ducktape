@@ -22,11 +22,12 @@ from constructs import Construct
 from agentplane.crd_group import GROUP
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE, Settings
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -125,6 +126,8 @@ class RunnerGateway(Construct):
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
             termination_grace=Duration.seconds(60),
+            placement=node_scheduling.HIL_OVH,
+            registry_secret_name=SECRET_NAME,
         )
         self._add_rbac(workload.account)
         config.mount_into(workload.container, env=Settings.config_file_env)
@@ -149,6 +152,7 @@ class RunnerGateway(Construct):
             audience=RUNNER_CONTROL_AUDIENCE,
             purpose="control stream to the Runner Gateway",
         )
+        egress.add_runner_egress_network_policy(self, policy=RUNNER_CONTROL_POLICY, endpoint=control)
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         namespace = self.env.namespace

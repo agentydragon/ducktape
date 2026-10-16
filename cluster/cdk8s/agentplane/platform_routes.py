@@ -44,19 +44,20 @@ class Route:
 ROUTE_BEARER = "platform-route"
 
 
-def control(namespace: str) -> Route:
-    return Route("control", runner_gateway.runner_control(namespace), RUNNER_CONTROL_AUDIENCE, 3130)
+def control(namespace: str, *, service: ServiceRef | None = None) -> Route:
+    service = service or runner_gateway.runner_control(namespace)
+    return Route("control", service, RUNNER_CONTROL_AUDIENCE, 3130)
 
 
 def ingress(namespace: str) -> Route:
     return Route("ingress", history_service.ingress_service(namespace), RUNNER_INGRESS_AUDIENCE, 3131)
 
 
-def routes(namespace: str) -> tuple[Route, ...]:
-    return control(namespace), ingress(namespace)
+def routes(namespace: str, *, control_service: ServiceRef | None = None) -> tuple[Route, ...]:
+    return control(namespace, service=control_service), ingress(namespace)
 
 
-def sidecar_env(namespace: str) -> k8s.EnvVar:
+def sidecar_env(namespace: str, *, control_service: ServiceRef | None = None) -> k8s.EnvVar:
     """The sidecar's `platform_routes` setting, as its environment variable."""
     value = {
         route.name: PlatformRoute(
@@ -64,7 +65,7 @@ def sidecar_env(namespace: str) -> k8s.EnvVar:
             upstream=f"{route.service.fqdn}:{route.service.pod_port}",
             token_file=Path(sandbox_pod.audience_token_file(route.audience)),
         ).model_dump(mode="json")
-        for route in routes(namespace)
+        for route in routes(namespace, control_service=control_service)
     }
     return k8s.EnvVar(name=env_name(sidecar.Settings, "platform_routes"), value=json.dumps(value))
 

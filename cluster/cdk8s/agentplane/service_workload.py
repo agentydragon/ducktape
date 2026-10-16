@@ -23,6 +23,7 @@ from cdk8s_plus_34 import (
     ImagePullPolicy,
     PodSecurityContextProps,
     Probe,
+    Secret,
     Service,
     ServiceAccount,
     k8s,
@@ -32,7 +33,6 @@ from more_itertools import one
 
 from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
-from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.service_ref import ServiceRef
 
 
@@ -94,6 +94,9 @@ def add_service_workload(
     image_pull_policy: ImagePullPolicy = ImagePullPolicy.IF_NOT_PRESENT,
     tolerate_control_plane: bool = False,
     create_service: bool = True,
+    placement: node_scheduling.Placement | None = None,
+    registry_secret_name: str | None = None,
+    service_cluster_ip: str | None = None,
 ) -> ServiceWorkload:
     """`serves` identify the Pod ports and shared name/labels. Normally build their Service here;
     a separately reconciled Service can instead use the same refs. Mount into the returned container."""
@@ -117,7 +120,11 @@ def add_service_workload(
         service_account=account,
         # Independent of the ServiceAccount's own automount_token, and also False by default.
         automount_service_account_token=True,
-        docker_registry_auth=forgejo_images_creds_secret_ref(scope, "images-creds"),
+        docker_registry_auth=(
+            Secret.from_secret_name(scope, "images-creds", registry_secret_name)
+            if registry_secret_name is not None
+            else None
+        ),
         security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
         # A migration failure blocks startup; no migration command has a retry loop.
         init_containers=[migrate] if migrate is not None else None,
@@ -136,7 +143,8 @@ def add_service_workload(
         security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
     )
     # With the database (cnpg_conventions R5).
-    pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=tolerate_control_plane)
+    if placement is not None:
+        pod_policy.place(deployment, placement, tolerate_control_plane=tolerate_control_plane)
     pod_policy.harden(deployment)
     if create_service:
         Service(
@@ -144,6 +152,7 @@ def add_service_workload(
             "service",
             metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=labels),
             selector=deployment,
+            cluster_ip=service_cluster_ip,
             ports=[ref.service_port() for ref in serves],
         )
     if replicas.pdb_min_available is not None:

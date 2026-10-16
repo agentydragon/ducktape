@@ -64,19 +64,50 @@ TEMPLATES = {
 
 
 class CommandSandbox(Construct):
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        workload_env: Sequence[k8s.EnvVar] = (),
+        image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
+        sidecar_resources: k8s.ResourceRequirements | None = None,
+        sidecar_env: Sequence[k8s.EnvVar] = (),
+        trust_mounts: Sequence[k8s.VolumeMount] | None = None,
+    ) -> None:
         super().__init__(scope, id)
-        _pod_template(self, "podtemplate", env, name=NAME, workload=_workload(_IMAGE, _COMMAND_RESOURCES, env))
+        self.image_pull_secret_name = image_pull_secret_name
+        self.sidecar_resources = sidecar_resources
+        self.sidecar_env = sidecar_env
+        mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
+        _pod_template(
+            self,
+            "podtemplate",
+            env,
+            name=NAME,
+            workload=_workload(_IMAGE, _COMMAND_RESOURCES, env, workload_env=workload_env, trust_mounts=mounts),
+        )
         _pod_template(
             self,
             "build-podtemplate",
             env,
             name=BUILD_NAME,
             workload=_workload(
-                _BUILD_IMAGE, _BUILD_RESOURCES, env, k8s.VolumeMount(name=_BUILD_HOME.name, mount_path=HOME)
+                _BUILD_IMAGE,
+                _BUILD_RESOURCES,
+                env,
+                k8s.VolumeMount(name=_BUILD_HOME.name, mount_path=HOME),
+                workload_env=workload_env,
+                trust_mounts=mounts,
             ),
             volumes=[_BUILD_HOME],
         )
+        self.env = env
+
+    def add_platform_resources(self) -> None:
+        """Limit command boxes to DNS and the fleet egress proxy."""
+        env = self.env
         # DNS and the egress proxy out, nothing in: `exec` reaches a box through the API server.
         NetworkPolicy(
             self,
@@ -89,7 +120,7 @@ class CommandSandbox(Construct):
 
 
 def _pod_template(
-    scope: Construct,
+    scope: CommandSandbox,
     id: str,
     env: Environment,
     *,
@@ -100,7 +131,15 @@ def _pod_template(
     rendered = sandbox_pod.render_pod_template(
         _LABELS,
         # No account of its own: the sandbox Actions run every box as its caller.
-        sandbox_pod.pod_spec(env, workload=workload, service_account_name=None, workload_volumes=volumes),
+        sandbox_pod.pod_spec(
+            env,
+            workload=workload,
+            service_account_name=None,
+            workload_volumes=volumes,
+            sidecar_env=scope.sidecar_env,
+            sidecar_resources=scope.sidecar_resources,
+            image_pull_secret_name=scope.image_pull_secret_name,
+        ),
     )
     # A PodTemplate rather than a Pod spec in the Action Service's ConfigMap: the image pins
     # (image-pins/kustomization.yaml) rewrite containers in any object, never inside a string.
@@ -110,7 +149,12 @@ def _pod_template(
 
 
 def _workload(
-    image: str, resources: k8s.ResourceRequirements, env: Environment, *mounts: k8s.VolumeMount
+    image: str,
+    resources: k8s.ResourceRequirements,
+    env: Environment,
+    *mounts: k8s.VolumeMount,
+    workload_env: Sequence[k8s.EnvVar] = (),
+    trust_mounts: Sequence[k8s.VolumeMount] = (),
 ) -> k8s.Container:
     return k8s.Container(
         name=CONTAINER,
@@ -120,7 +164,7 @@ def _workload(
         # dispose, and the quota the box holds, for the whole termination grace period.
         command=["bash", "-c", "trap 'exit 0' TERM; sleep infinity & wait"],
         security_context=sandbox_pod.workload_security_context(),
-        env=sandbox_pod.workload_environment(env, sandbox_pod.egress_env()),
+        env=sandbox_pod.workload_environment(env, sandbox_pod.egress_env(), workload_env),
         resources=resources,
-        volume_mounts=[*sandbox_pod.egress_mounts(), sandbox_pod.bazelrc_mount(), *mounts],
+        volume_mounts=[*trust_mounts, sandbox_pod.bazelrc_mount(), *mounts],
     )

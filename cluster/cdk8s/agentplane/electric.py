@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ContainerResources,
@@ -38,6 +40,9 @@ _DATABASE = "sandbox_service"
 _STREAM_ID = "agentplane_history"
 
 
+_DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
+
+
 def service(namespace: str) -> ServiceRef:
     return ServiceRef(
         name=NAME,
@@ -47,8 +52,19 @@ def service(namespace: str) -> ServiceRef:
 
 
 class Electric(Construct):
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
+        service_cluster_ip: str | None = None,
+        container_env: Mapping[str, EnvValue] | None = None,
+        memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+    ) -> None:
         super().__init__(scope, id)
+        self.env = env
         electric = service(env.namespace)
         labels = electric.pods.selector
         # The replication role's login, which database.py mints.
@@ -92,13 +108,14 @@ class Electric(Construct):
                 # Window rotation and exact payload reads create finite shapes. Enable Electric's
                 # once-per-minute LRU expiry; the upstream default retains every shape forever.
                 "ELECTRIC_MAX_SHAPES": EnvValue.from_value("1024"),
+                **(container_env or {}),
             },
             ports=[electric.port.container_port()],
             readiness=http_probe("/v1/health", port=electric.pod_port, initial_delay_seconds=5, period_seconds=10),
             liveness=http_probe("/v1/health", port=electric.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(100)),
-                memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
+                memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
             ),
             # Writable: its root filesystem writes are unaudited.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
@@ -108,7 +125,8 @@ class Electric(Construct):
         container.mount(
             _STORAGE_DIR, Volume.from_empty_dir(self, "storage-volume", "storage", size_limit=Size.gibibytes(5))
         )
-        pod_policy.place(deployment, node_scheduling.HIL_OVH)
+        if placement is not None:
+            pod_policy.place(deployment, placement)
         pod_policy.harden(deployment)
 
         Service(
@@ -116,16 +134,20 @@ class Electric(Construct):
             "service",
             metadata=ApiObjectMetadata(name=electric.name, namespace=env.namespace, labels=electric.labels),
             selector=deployment,
+            cluster_ip=service_cluster_ip,
             ports=[electric.port.service_port()],
         )
+
+    def add_platform_resources(self) -> None:
+        """Admit the app through the fleet's Cilium network boundary."""
+        electric = service(self.env.namespace)
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
             endpoint_selector=electric.pods.selector,
-            # app.py imports this module, so the app's Pods are named here.
             ingress=[
-                IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "app"), ports=[electric.pod_port])
+                IngressRule.from_endpoints(cilium.endpoint_labels(self.env.namespace, "app"), ports=[electric.pod_port])
             ],
-            egress=[cilium.dns_egress(), database.egress(env.namespace)],
+            egress=[cilium.dns_egress(), database.egress(self.env.namespace)],
         )

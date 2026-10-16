@@ -1,4 +1,4 @@
-"""The staged Go cutover keeps the old addresses and authenticates each service."""
+"""The staged Go cutover keeps stable Service addresses for one authenticated gRPC listener."""
 
 from typing import Any, cast
 
@@ -41,11 +41,11 @@ def _go_objects() -> list[dict[str, Any]]:
             ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME),
             sandbox_controller.pods(env.namespace),
         ),
-    )
+    ).add_platform_resources()
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
-def test_go_gateway_preserves_services_and_fences_service_ingress() -> None:
+def test_go_gateway_preserves_services_and_fences_listener_ingress() -> None:
     docs = _go_objects()
     root = Chart(Cdk8sTesting.app(), "root-services", disable_resource_name_hashes=True)
     runner_gateway_go.add_stable_services(root, staging.ENV)
@@ -58,6 +58,7 @@ def test_go_gateway_preserves_services_and_fences_service_ingress() -> None:
     assert pod["serviceAccountName"] == runner_gateway.NAME
     assert deployment["spec"]["strategy"] == {"type": "Recreate"}
     assert {p["containerPort"] for p in container["ports"]} == {8080}
+    assert "--listen-address=0.0.0.0:8080" in container["args"]
     assert f"--dispatcher-audience={session_dispatcher.TOKEN_AUDIENCE}" in container["args"]
     assert f"--gateway-audience={runner_gateway.TOKEN_AUDIENCE}" in container["args"]
     assert f"--dispatcher-caller={staging.ENV.namespace}/{app.NAME}" in container["args"]
@@ -86,7 +87,7 @@ def test_go_gateway_preserves_services_and_fences_service_ingress() -> None:
     assert (notifications.NAME, "8080") in ingress
     assert (runner_gateway.NAME, "8080") in ingress
     assert (sandbox_controller.NAME, "8080") in ingress
-    assert (sandbox_controller.NAME, "8081") not in ingress
+    assert (sandbox_controller.NAME, "8080") in ingress
     role = _resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
     assert {rule["resources"][0] for rule in role["rules"]} == {"pods", "sandboxes", "leases", "endpointslices"}
     assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]

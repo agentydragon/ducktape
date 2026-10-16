@@ -1,14 +1,26 @@
 """Notification-owned persistence and workload API; only the Runner Gateway reaches runners, and
 receipts are read from the History Service."""
 
+from collections.abc import Mapping
+
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources, Role, RoleBinding, RolePolicyRule
+from cdk8s_plus_34 import (
+    ContainerResources,
+    Cpu,
+    CpuResources,
+    EnvValue,
+    ImagePullPolicy,
+    MemoryResources,
+    Role,
+    RoleBinding,
+    RolePolicyRule,
+)
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
 from agentplane.notification_service.settings import TOKEN_AUDIENCE, Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -26,6 +38,10 @@ NAME = "notifications"
 WORKLOAD_CREDENTIAL = "agentplane-notifications-workload"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
+
+
+_DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
+_DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -50,10 +66,23 @@ class Notifications(Construct):
         dispatcher: ServiceRef,
         dispatcher_audience: str,
         callers: list[Pods],
+        placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
+        registry_secret_name: str | None = "forgejo-images-creds",
+        service_cluster_ip: str | None = None,
+        container_env: Mapping[str, EnvValue] | None = None,
+        memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
+        migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
     ) -> None:
         """Any ServiceAccount in the namespace may call with its workload token, a Sandbox's through the
         egress proxy, so `callers` are the Pods the requests come from, not accounts."""
         super().__init__(scope, id)
+        self.env = env
+        self.callers = callers
+        self.actions = actions
+        self.gateway = gateway
+        self.history = history
+        self.dispatcher = dispatcher
         endpoint = service(env.namespace)
         token_reviewer_cluster_rbac(
             self,
@@ -65,7 +94,8 @@ class Notifications(Construct):
         variables = {
             "AGENTPLANE_NOTIFICATIONS_DATABASE_URL": SecretRef(namespace=env.namespace, name="postgres-notifications")
             .key("uri")
-            .env_value(self, "database")
+            .env_value(self, "database"),
+            **(container_env or {}),
         }
         github = env.notifications_github
         supplied: list[tuple[str, ...]] = [("database_url",)]
@@ -114,10 +144,19 @@ class Notifications(Construct):
             liveness=http_probe("/healthz", port=8080, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
+                memory=MemoryResources(request=Size.mebibytes(128), limit=memory_limit),
             ),
             termination_grace=Duration.seconds(30),
-            migrate=migrate_init_container(f"{_IMAGE}-migrate:unset", name="migrate", env_variables=variables),
+            migrate=migrate_init_container(
+                f"{_IMAGE}-migrate:unset",
+                name="migrate",
+                env_variables=variables,
+                image_pull_policy=migrate_pull_policy,
+                memory_limit=migrate_memory_limit,
+            ),
+            placement=placement,
+            registry_secret_name=registry_secret_name,
+            service_cluster_ip=service_cluster_ip,
         )
         role_name = NAME.removeprefix("agentplane-")
         Role(
@@ -150,20 +189,25 @@ class Notifications(Construct):
                 "dispatcher": dispatcher_audience,
             },
         )
+
+    def add_platform_resources(self) -> None:
+        """Add fleet Cilium network admission."""
+        env = self.env
+        endpoint = service(env.namespace)
         NetworkPolicy(
             self,
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
             endpoint_selector=_LABELS,
-            ingress=[pods.admit(endpoint.pod_port) for pods in callers],
+            ingress=[pods.admit(endpoint.pod_port) for pods in self.callers],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
                 EgressRule.to_fqdns("api.github.com"),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
-                actions.egress(),
-                gateway.egress(),
-                history.egress(),
-                dispatcher.egress(),
+                self.actions.egress(),
+                self.gateway.egress(),
+                self.history.egress(),
+                self.dispatcher.egress(),
                 database.egress(env.namespace),
             ],
         )

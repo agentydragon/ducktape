@@ -32,7 +32,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
-from cluster.cdk8s.service_ref import Pods
+from cluster.cdk8s.service_ref import Pods, ServiceRef
 
 # Every runner template's Pod name label, and the runners' ServiceAccount and fence.
 NAME = "runner"
@@ -59,11 +59,13 @@ _PLATFORM_INSTRUCTIONS_DIR = "/etc/agentplane/platform-instructions"
 _LAUNCH_FILE = "/run/agentplane/sandbox/launch.json"
 
 
-def platform_instructions(env: Environment) -> str:
+def platform_instructions(env: Environment, *, egress_api_service: ServiceRef | None = None) -> str:
     """The complete deployment-wide prompt: shared guidance with this environment's service URLs."""
     actions_service = actions.service(env.namespace)
+    egress_api = egress_api_service or egress.agent_api(env.namespace)
+    egress_port = f":{egress_api.port.number}" if egress_api.port.number != 80 else ""
     return render_platform_instructions(
-        egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",
+        egress_api_url=f"http://{egress_api.fqdn}{egress_port}",
         actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
         notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
     )
@@ -89,35 +91,52 @@ def workspace_volume_spec(
 
 
 class RunnerSandbox(Construct):
-    """The runners' ServiceAccount and fence, the shared runner template, and where the environment has
-    VM Sandboxes, the VM template and its launchers' relay."""
+    """The runners' ServiceAccount and template, plus the VM template and relay when enabled.
+    Fleet network and route fences are added separately."""
 
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        egress_api_service: ServiceRef | None = None,
+        storage_class: str = "local-path-ovh-hdd",
+        runner_resources: k8s.ResourceRequirements | None = None,
+        sidecar_resources: k8s.ResourceRequirements | None = None,
+        workload_env: Sequence[k8s.EnvVar] = (),
+        image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
+        trust_mounts: Sequence[k8s.VolumeMount] | None = None,
+        control_service: ServiceRef | None = None,
+    ) -> None:
         super().__init__(scope, id)
+        self.env = env
         namespace = env.namespace
         # The runner Pods' identity, with no RBAC of its own.
         ServiceAccount(
             self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), automount_token=False
         )
-        # Runner Pods accept no connections; they reach DNS and the egress proxy's listener, which the
-        # sidecar relays to. The platform routes add the Agentplane services their runner dials.
-        NetworkPolicy(
-            self,
-            "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
-            endpoint_selector=pods(namespace).selector,
-            ingress=isolate_ingress(),
-            egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],
-        )
-        platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
-        instructions = platform_instructions(env)
+        instructions = platform_instructions(env, egress_api_service=egress_api_service)
         ConfigMap(
             self,
             "platform-instructions",
             metadata=ApiObjectMetadata(name=_PLATFORM_INSTRUCTIONS_CONFIG_MAP, namespace=namespace),
             data={_PLATFORM_INSTRUCTIONS_KEY: instructions},
         )
-        template = RunnerTemplate(self, "runner-template", env, name="runner", image=_IMAGE)
+        template = RunnerTemplate(
+            self,
+            "runner-template",
+            env,
+            name="runner",
+            image=_IMAGE,
+            storage_class=storage_class,
+            runner_resources=runner_resources,
+            sidecar_resources=sidecar_resources,
+            workload_env=workload_env,
+            image_pull_secret_name=image_pull_secret_name,
+            trust_mounts=trust_mounts,
+            control_service=control_service,
+        )
         if env.vm_sandboxes:
             launcher_relay.LauncherRelayPolicy(
                 self, "launcher-relay", namespace=namespace, runner_pod=template.spec["pod"]
@@ -131,8 +150,21 @@ class RunnerSandbox(Construct):
                 workspace_volume=workspace_volume_spec(
                     template.spec["stateVolume"], layout_type="RawDiskImage", filesystem="ext4"
                 ),
-                platform_instructions=platform_instructions(env),
+                platform_instructions=platform_instructions(env, egress_api_service=egress_api_service),
             )
+
+    def add_platform_resources(self) -> None:
+        """Add the fleet runner network and platform-route fences."""
+        namespace = self.env.namespace
+        NetworkPolicy(
+            self,
+            "networkpolicy",
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            endpoint_selector=pods(namespace).selector,
+            ingress=isolate_ingress(),
+            egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],
+        )
+        platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
 
 
 class RunnerTemplate(Construct):
@@ -148,11 +180,25 @@ class RunnerTemplate(Construct):
         image: str,
         buildbuddy_secret: bool = False,
         extra_harness_env: Sequence[str] = (),
+        storage_class: str = "local-path-ovh-hdd",
+        runner_resources: k8s.ResourceRequirements | None = None,
+        sidecar_resources: k8s.ResourceRequirements | None = None,
+        workload_env: Sequence[k8s.EnvVar] = (),
+        image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
+        trust_mounts: Sequence[k8s.VolumeMount] | None = None,
+        control_service: ServiceRef | None = None,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
         self.buildbuddy_secret = buildbuddy_secret
         self.extra_harness_env = extra_harness_env
+        self.storage_class = storage_class
+        self.runner_resources = runner_resources
+        self.sidecar_resources = sidecar_resources
+        self.workload_env = workload_env
+        self.image_pull_secret_name = image_pull_secret_name
+        self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
+        self.control_service = control_service
         # The SandboxTemplate's spec: its `pod`, and the `stateVolume` the VM template shares.
         self.spec = self._add_sandbox_template(name=name, image=image)
 
@@ -226,8 +272,10 @@ class RunnerTemplate(Construct):
                     k8s.EnvVar(name="ANTHROPIC_AUTH_TOKEN", value="agentplane-credential-agentplane-workload"),
                     k8s.EnvVar(name="OPENAI_API_KEY", value="agentplane-credential-agentplane-workload"),
                 ],
+                self.workload_env,
             ),
-            resources=k8s.ResourceRequirements(
+            resources=self.runner_resources
+            or k8s.ResourceRequirements(
                 requests={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("1Gi")},
                 limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
             ),
@@ -238,7 +286,7 @@ class RunnerTemplate(Construct):
                 k8s.VolumeMount(
                     name=_PLATFORM_INSTRUCTIONS_VOLUME, mount_path=_PLATFORM_INSTRUCTIONS_DIR, read_only=True
                 ),
-                *sandbox_pod.egress_mounts(),
+                *self.trust_mounts,
                 *(
                     [k8s.VolumeMount(name=_BUILDBUDDY_SECRET, mount_path=_BUILDBUDDY_MOUNT, read_only=True)]
                     if self.buildbuddy_secret
@@ -273,7 +321,12 @@ class RunnerTemplate(Construct):
                         else []
                     ),
                 ],
-                sidecar_env=[platform_routes.sidecar_env(self.env.namespace)],
+                sidecar_env=[
+                    platform_routes.sidecar_env(self.env.namespace, control_service=self.control_service),
+                    *self.workload_env,
+                ],
+                sidecar_resources=self.sidecar_resources,
+                image_pull_secret_name=self.image_pull_secret_name,
             ),
         )
         state_volume = {
@@ -283,7 +336,7 @@ class RunnerTemplate(Construct):
                 # The bulk tier, and the only one a sandbox can have: OVH's `tier=ssd` nodes are
                 # control-plane, and a sandbox is not getting that toleration. Node-local, so a sandbox
                 # does not outlive its node -- which is what a sandbox is for.
-                "storageClassName": "local-path-ovh-hdd",
+                "storageClassName": self.storage_class,
                 "accessModes": ["ReadWriteOnce"],
                 "resources": {"requests": {"storage": "10Gi"}},
             },

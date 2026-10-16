@@ -94,33 +94,46 @@ def egress_env() -> list[k8s.EnvVar]:
     ]
 
 
-def workload_environment(env: Environment, existing: Sequence[k8s.EnvVar]) -> list[k8s.EnvVar]:
+def workload_environment(
+    env: Environment, existing: Sequence[k8s.EnvVar], extra_env: Sequence[k8s.EnvVar] = ()
+) -> list[k8s.EnvVar]:
     """Add the deployment's non-secret defaults to one workload container."""
     existing_env_names = {item.name for item in existing}
-    conflicting_env_names = existing_env_names & env.sandbox_workload_env.keys()
+    conflicting_env_names = existing_env_names & (env.sandbox_workload_env.keys() | {item.name for item in extra_env})
     if conflicting_env_names:
         names = ", ".join(sorted(conflicting_env_names))
         raise ValueError(f"sandbox workload environment defaults conflict with container env: {names}")
-    return [*existing, *(k8s.EnvVar(name=name, value=value) for name, value in env.sandbox_workload_env.items())]
+    return [
+        *existing,
+        *(k8s.EnvVar(name=name, value=value) for name, value in env.sandbox_workload_env.items()),
+        *extra_env,
+    ]
 
 
-def egress_mounts() -> list[k8s.VolumeMount]:
-    """Public roots + cluster root + the proxy's interception root, over the image's own bundle at the
-    path every client falls back to and as Java's trust store, plus the kubeconfig. A subPath mount
-    does not follow ConfigMap updates: a CA rotation reaches a sandbox at its next Pod."""
+def egress_proxy_mounts() -> list[k8s.VolumeMount]:
+    """The proxy CA bundle and kubeconfig needed by a sandbox workload."""
     return [
         k8s.VolumeMount(
             name=_EGRESS_CA_VOLUME_NAME, mount_path=_CA_BUNDLE_PATH, sub_path=egress.CA_BUNDLE_KEY, read_only=True
         ),
+        k8s.VolumeMount(
+            name=_TOOL_CONFIG_VOLUME_NAME, mount_path=_KUBECONFIG_PATH, sub_path=_KUBECONFIG_KEY, read_only=True
+        ),
+    ]
+
+
+def egress_mounts() -> list[k8s.VolumeMount]:
+    """The proxy mounts plus Java's trust store. subPath updates reach a new Pod on restart."""
+    ca, kubeconfig_mount = egress_proxy_mounts()
+    return [
+        ca,
         k8s.VolumeMount(
             name=_EGRESS_CA_VOLUME_NAME,
             mount_path=_JAVA_TRUST_STORE_PATH,
             sub_path=egress.JAVA_TRUST_STORE_KEY,
             read_only=True,
         ),
-        k8s.VolumeMount(
-            name=_TOOL_CONFIG_VOLUME_NAME, mount_path=_KUBECONFIG_PATH, sub_path=_KUBECONFIG_KEY, read_only=True
-        ),
+        kubeconfig_mount,
     ]
 
 
@@ -188,7 +201,9 @@ def workload_security_context() -> k8s.SecurityContext:
     return k8s.SecurityContext(allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"]))
 
 
-def _egress_sidecar(env: Environment, extra_env: Sequence[k8s.EnvVar]) -> k8s.Container:
+def _egress_sidecar(
+    env: Environment, extra_env: Sequence[k8s.EnvVar], resources: k8s.ResourceRequirements
+) -> k8s.Container:
     return k8s.Container(
         name=sidecar.CONTAINER_NAME,
         image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
@@ -216,10 +231,7 @@ def _egress_sidecar(env: Environment, extra_env: Sequence[k8s.EnvVar]) -> k8s.Co
             period_seconds=2,
             timeout_seconds=1,
         ),
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-            limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
-        ),
+        resources=resources,
         volume_mounts=[k8s.VolumeMount(name="egress-token", mount_path=_EGRESS_TOKEN_DIR, read_only=True)],
     )
 
@@ -264,6 +276,8 @@ def pod_spec(
     service_account_name: str | None,
     workload_volumes: Sequence[k8s.Volume] = (),
     sidecar_env: Sequence[k8s.EnvVar] = (),
+    sidecar_resources: k8s.ResourceRequirements | None = None,
+    image_pull_secret_name: str | None = SECRET_NAME,
 ) -> k8s.PodSpec:
     """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
@@ -274,9 +288,22 @@ def pod_spec(
     return k8s.PodSpec(
         # The workload first: with no default-container annotation, the first container is the one
         # `kubectl exec` and the sandbox Actions run a command in.
-        containers=[workload, _egress_sidecar(env, sidecar_env)],
+        containers=[
+            workload,
+            _egress_sidecar(
+                env,
+                sidecar_env,
+                sidecar_resources
+                or k8s.ResourceRequirements(
+                    requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
+                    limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
+                ),
+            ),
+        ],
         automount_service_account_token=False,
-        image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
+        image_pull_secrets=(
+            [k8s.LocalObjectReference(name=image_pull_secret_name)] if image_pull_secret_name is not None else None
+        ),
         # With the rest of the namespace and with LiteLLM: a box's traffic through the egress proxy
         # and a runner's model calls both stay inside the zone.
         node_selector=({node_scheduling.ZONE_LABEL: env.app.runner_zone} if env.app.runner_zone is not None else None),
