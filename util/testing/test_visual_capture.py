@@ -54,14 +54,25 @@ async def test_multiple_checkpoints_have_distinct_outputs(harness: VisualHarness
         assert first.read_bytes() != second.read_bytes()
 
 
-async def test_opt_in_trace_uses_capture_identity_and_keeps_passing_run(
+async def test_trace_default_opt_out_selection_and_failure_retention(
     harness: VisualHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.delenv("VISUAL_TRACE", raising=False)
     monkeypatch.delenv("VISUAL_TRACE_CAPTURE_NAME", raising=False)
-    async with harness.open("plain", capture_name="untraced"):
+    async with harness.open("plain"):
         pass
-    assert not (harness.output_dir / "untraced.trace.zip").exists()
+    assert not harness.output_dir.exists()
 
+    async with harness.open("plain", capture_name="default"):
+        pass
+    assert zipfile.is_zipfile(harness.output_dir / "default.trace.zip")
+
+    monkeypatch.setenv("VISUAL_TRACE", "0")
+    async with harness.open("plain", capture_name="disabled"):
+        pass
+    assert not (harness.output_dir / "disabled.trace.zip").exists()
+
+    monkeypatch.setenv("VISUAL_TRACE", "1")
     monkeypatch.setenv("VISUAL_TRACE_CAPTURE_NAME", "selected")
     async with harness.open("plain", capture_name="unmatched"):
         pass
@@ -77,6 +88,11 @@ async def test_opt_in_trace_uses_capture_identity_and_keeps_passing_run(
         async with harness.open("plain", capture_name="failing"):
             raise RuntimeError("trace this failure")
     assert zipfile.is_zipfile(harness.output_dir / "failing.trace.zip")
+
+    monkeypatch.setenv("VISUAL_TRACE", "invalid")
+    with pytest.raises(ValueError, match="VISUAL_TRACE must be 0 or 1"):
+        async with harness.open("plain", capture_name="invalid"):
+            pass
 
 
 async def test_unnamed_capture_requires_case_identity(harness: VisualHarness) -> None:

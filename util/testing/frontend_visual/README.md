@@ -79,9 +79,12 @@ use explicit names for multiple checkpoints in one test. Pass a strict
 `devtools_viewport` retains device-pixel compatibility for existing galleries.
 Duplicate output names within an execution fail instead of overwriting an image.
 
-To retain a Playwright trace for one case, set `VISUAL_TRACE_CAPTURE_NAME` to the
-same explicit `capture_name` passed to `visual.open()` (the `capture_name` fixture
-already supplies the pytest case identity) and filter the Bazel target to that test:
+`VisualHarness.open()` retains a standard Playwright trace for each named case by default.
+Use `VISUAL_TRACE=0` to disable tracing. Set `VISUAL_TRACE_CAPTURE_NAME` to the exact
+`capture_name` to retain only that case; the `capture_name` fixture supplies the pytest
+case identity. Calls without `capture_name` are not traced.
+
+To trace one case, set `VISUAL_TRACE_CAPTURE_NAME` and filter the Bazel target:
 
 ```bash
 bbr test //package:visual_test \
@@ -91,8 +94,8 @@ bbr test //package:visual_test \
 
 The trace is written as `<capture_name>.trace.zip` in the test output directory,
 including when the case passes. It contains Playwright DOM snapshots and network
-activity; enable it only for synthetic visual cases. An unset or nonmatching
-`VISUAL_TRACE_CAPTURE_NAME` records no trace.
+activity; use it only with synthetic visual cases. `VISUAL_TRACE` accepts `0` or `1`
+and defaults to `1`.
 
 ## One way in
 

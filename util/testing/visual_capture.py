@@ -240,8 +240,13 @@ class VisualHarness:
     ) -> AsyncIterator[VisualPage]:
         config = self.config
         viewport = viewport or Viewport()
+        trace_setting = os.environ.get("VISUAL_TRACE", "1")
+        if trace_setting not in {"0", "1"}:
+            raise ValueError("VISUAL_TRACE must be 0 or 1")
         trace_capture_name = os.environ.get("VISUAL_TRACE_CAPTURE_NAME")
-        trace_enabled = trace_capture_name is not None and trace_capture_name == capture_name
+        trace_enabled = trace_setting == "1" and capture_name is not None
+        if trace_capture_name is not None:
+            trace_enabled = trace_enabled and trace_capture_name == capture_name
         if config.inline_page is None and window_globals is not None:
             raise ValueError("window globals require an inline harness")
         if config.inline_page is not None and query is not None:
