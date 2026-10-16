@@ -428,12 +428,20 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     tmp_path: Path,
 ) -> None:
     """Pinned Codex runs with an independently built Bash layer and private runner state."""
+    child_spec = runner_pb2.SessionSpec()
+    child_spec.CopyFrom(spec)
+    child_spec.cwd = "/workspace"
     child_root = tmp_path / "child-root"
     codex = get_required_path(launches.CODEX_BINARY)
-    binary_dir = child_root / "opt"
+    binary_dir = child_root / "opt/bin"
     binary_dir.mkdir(parents=True)
     shutil.copyfile(codex, binary_dir / "codex")
     (binary_dir / "codex").chmod(0o555)
+    codex_bwrap = get_required_path("agentplane_codex_cli_linux_x64/codex-resources/bwrap")
+    resources_dir = child_root / "opt/codex-resources"
+    resources_dir.mkdir()
+    shutil.copyfile(codex_bwrap, resources_dir / "bwrap")
+    (resources_dir / "bwrap").chmod(0o555)
     _extract_oci_rootfs("agentplane/x/runner_layering_spike/tools_rootfs.rloc", child_root)
 
     state_dir = tmp_path / "state"
@@ -443,10 +451,14 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     child_exec = get_required_path(own_repo_rlocation("agentplane/x/runner_layering_spike/child_exec_/child_exec"))
     first_runner = await start_runner(
         codex_binary=child_exec,
-        harness_env=[f"AGENTPLANE_CHILD_ROOT={child_root}", f"AGENTPLANE_PRIVATE_SENTINEL={private_sentinel}"],
+        harness_env=[
+            f"AGENTPLANE_CHILD_ROOT={child_root}",
+            f"AGENTPLANE_CHILD_WORKSPACE={spec.cwd}",
+            f"AGENTPLANE_PRIVATE_SENTINEL={private_sentinel}",
+        ],
     )
 
-    session = await driver.attach("sparse-child-root", spec=spec)
+    session = await driver.attach("sparse-child-root", spec=child_spec)
     await submit_input(session, "input-1", "Reply with exactly: SPARSE_ROOT_TURN_OK")
     request = await model.request()
     await model.reply(request, Text("SPARSE_ROOT_TURN_OK"))
@@ -468,7 +480,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     assert first_runner.process.returncode is None, "a native child exit must not terminate the runner"
     await session.drain_until_end()
 
-    second = await driver.attach("sparse-child-root", spec=spec, after_cursor=exited.cursor)
+    second = await driver.attach("sparse-child-root", spec=child_spec, after_cursor=exited.cursor)
     resumed = await second.until(
         lambda entry: events.is_kind("harness_started")(entry) and entry.event.harness_started.resumed
     )
@@ -490,7 +502,8 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     await model.reply(request, ShellCall("sparse-shell", "printf SPARSE_ROOT_TOOL_OK"))
     tool_result = await model.request()
     (output,) = tool_result.tool_outputs
-    assert "SPARSE_ROOT_TOOL_OK" in output.text
+    stderr = "\n".join(entry.event.harness_stderr.text for entry in events.of_kind(second.seen, "harness_stderr"))
+    assert "SPARSE_ROOT_TOOL_OK" in output.text, f"tool output: {output.text}\nharness stderr:\n{stderr}"
     await model.reply(tool_result, Text("SPARSE_ROOT_TOOL_DONE"))
     tool_done = await second.until(events.turn_completed)
     assert tool_done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED

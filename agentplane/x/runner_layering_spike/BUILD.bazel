@@ -38,19 +38,19 @@ cpio_archive(
 
 pkg_files(
     name = "codex_harness_file",
-    srcs = ["@agentplane_codex_cli_linux_x64//:codex_binary"],
+    srcs = [
+        "@agentplane_codex_cli_linux_x64//:codex_binary",
+        "@agentplane_codex_cli_linux_x64//:codex_bwrap",
+    ],
     attributes = pkg_attributes(
         gid = 0,
         mode = "0755",
         uid = 0,
     ),
-    renames = {"@agentplane_codex_cli_linux_x64//:codex_binary": "tools/opt/codex"},
-)
-
-cpio_archive(
-    name = "codex_harness_payload",
-    srcs = [":codex_harness_file"],
-    out = "codex-harness-payload.cpio",
+    renames = {
+        "@agentplane_codex_cli_linux_x64//:codex_binary": "tools/opt/bin/codex",
+        "@agentplane_codex_cli_linux_x64//:codex_bwrap": "tools/opt/codex-resources/bwrap",
+    },
 )
 
 # The first tools layer is only Bash plus the dynamic runtime closure resolved by Debian. It is a
@@ -67,14 +67,13 @@ oci_layout_rloc(
     image = ":tools_image",
 )
 
-genrule(
+cpio_archive(
     name = "local_vm_initramfs",
     srcs = [
-        ":base_initramfs",
-        ":codex_harness_payload",
+        ":boot_init_file",
+        ":codex_harness_file",
     ],
-    outs = ["local-vm-initramfs.cpio"],
-    cmd = "cat $(location :base_initramfs) $(location :codex_harness_payload) > $@",
+    out = "local-vm-initramfs.cpio",
 )
 
 py_binary(
@@ -83,7 +82,9 @@ py_binary(
     data = [
         ":local_vm_initramfs",
         "//devinfra/firecracker:firecracker_layer",
+        "@firecracker_vmlinux_6_1_128//file",
     ],
+    main = "local_vm.py",
     deps = [
         "//util/bazel:runfiles",
         "@pypi//httpx",

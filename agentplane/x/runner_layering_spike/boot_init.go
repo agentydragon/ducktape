@@ -70,7 +70,7 @@ func main() {
 	}
 
 	fmt.Fprintln(os.Stdout, "runner-layering: guest init started outside child root")
-	command := exec.Command("/opt/codex", "--version")
+	command := exec.Command("/opt/bin/codex", "--version")
 	command.Dir = "/workspace"
 	command.Env = []string{
 		"HOME=/home/agent",

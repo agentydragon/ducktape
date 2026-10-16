@@ -78,9 +78,13 @@ func enterIsolatedRoot() {
 		fatal("resolve child root symlinks: %v", err)
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		fatal("read workspace directory: %v", err)
+	cwd := os.Getenv("AGENTPLANE_CHILD_WORKSPACE")
+	if cwd == "" {
+		var err error
+		cwd, err = os.Getwd()
+		if err != nil {
+			fatal("read workspace directory: %v", err)
+		}
 	}
 	cwd, err = filepath.EvalSymlinks(cwd)
 	if err != nil {
@@ -104,13 +108,18 @@ func enterIsolatedRoot() {
 	for _, path := range []string{
 		filepath.Join(root, "workspace"),
 		filepath.Join(root, "home/agent/.codex"),
+		filepath.Join(root, "dev"),
 		filepath.Join(root, "proc"),
 		filepath.Join(root, "tmp"),
 	} {
 		mustMkdir(path)
 	}
+	if err := os.WriteFile(filepath.Join(root, "dev/null"), nil, 0o666); err != nil {
+		fatal("create /dev/null mountpoint: %v", err)
+	}
 	mustMount(root, root, "", syscall.MS_BIND|syscall.MS_REC, "")
 	mustMount("", root, "", syscall.MS_BIND|syscall.MS_REMOUNT|syscall.MS_RDONLY, "")
+	mustMount("/dev/null", filepath.Join(root, "dev/null"), "", syscall.MS_BIND, "")
 	mustMount(cwd, filepath.Join(root, "workspace"), "", syscall.MS_BIND|syscall.MS_REC, "")
 	mustMount(codexHome, filepath.Join(root, "home/agent/.codex"), "", syscall.MS_BIND|syscall.MS_REC, "")
 	mustMount("proc", filepath.Join(root, "proc"), "proc", syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC, "")
@@ -148,7 +157,7 @@ func enterIsolatedRoot() {
 		fatal("OPENAI_API_KEY is required")
 	}
 	argv := append([]string{"codex"}, os.Args[1:]...)
-	if err := syscall.Exec("/opt/codex", argv, env); err != nil {
+	if err := syscall.Exec("/opt/bin/codex", argv, env); err != nil {
 		fatal("exec pinned Codex with sparse environment %s: %v", strings.Join(env, ","), err)
 	}
 }

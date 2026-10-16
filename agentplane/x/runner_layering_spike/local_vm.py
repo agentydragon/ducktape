@@ -35,11 +35,12 @@ def _read_console(stream: TextIO, output: list[str], lines: queue.Queue[str]) ->
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--kernel", type=Path, default=Path("/run/current-system/kernel"))
+    parser.add_argument("--kernel", type=Path)
     parser.add_argument("--timeout-seconds", type=float, default=20)
     args = parser.parse_args()
-    if not args.kernel.is_file():
-        raise SystemExit(f"kernel image is not available: {args.kernel}")
+    kernel = args.kernel or get_required_path("firecracker_vmlinux_6_1_128/file/vmlinux-6.1.128")
+    if not kernel.is_file():
+        raise SystemExit(f"kernel image is not available: {kernel}")
 
     initramfs = get_required_path(own_repo_rlocation("agentplane/x/runner_layering_spike/local-vm-initramfs.cpio"))
     firecracker_layer = get_required_path(own_repo_rlocation("devinfra/firecracker/firecracker_layer.tar"))
@@ -85,13 +86,13 @@ def main() -> None:
                 client,
                 "/boot-source",
                 {
-                    "kernel_image_path": str(args.kernel.resolve()),
+                    "kernel_image_path": str(kernel.resolve()),
                     "initrd_path": str(initramfs),
                     "boot_args": "console=ttyS0 panic=1 init=/init",
                 },
                 output,
             )
-            _put(client, "/machine-config", {"vcpu_count": 1, "mem_size_mib": 256}, output)
+            _put(client, "/machine-config", {"vcpu_count": 1, "mem_size_mib": 1024}, output)
             _put(client, "/actions", {"action_type": "InstanceStart"}, output)
 
             expected = ("runner-layering: child exited; parent init still owns control", "codex-cli 0.157.0")
@@ -107,7 +108,7 @@ def main() -> None:
                     if marker in line:
                         seen.add(marker)
                 if "runner-layering init:" in line:
-                    raise RuntimeError("guest init failed: " + line)
+                    raise RuntimeError("guest init failed; console:\n" + "\n".join(output))
             if seen != set(expected):
                 raise TimeoutError("guest did not produce expected markers; console:\n" + "\n".join(output))
             if process.poll() is not None:

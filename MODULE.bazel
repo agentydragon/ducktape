@@ -878,6 +878,11 @@ filegroup(
     srcs = ["bin/codex"],
     visibility = ["//visibility:public"],
 )
+filegroup(
+    name = "codex_bwrap",
+    srcs = ["codex-resources/bwrap"],
+    visibility = ["//visibility:public"],
+)
 """,
     integrity = "sha512-3TEPslRaNmlgJST5xMJJ9ZWXW1hr4RlVEpF0tO4NULNGj4b5naWlHa6PlSRiDpnMz322aJkz0uvyyKqc37rLJQ==",
     strip_prefix = "package/vendor/x86_64-unknown-linux-musl",
@@ -1552,6 +1557,14 @@ http_archive(
     build_file_content = 'exports_files(["release-v1.12.1-x86_64/firecracker-v1.12.1-x86_64"])',
     sha256 = "0a75e67ef6e4c540a2cf248b06822b0be9820cbba9fe19f9e0321200fe76ff6b",
     urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.12.1/firecracker-v1.12.1-x86_64.tgz"],
+)
+
+# Firecracker v1.12 CI's x86_64 ELF guest kernel, pinned for the local runner-layering VM probe.
+http_file(
+    name = "firecracker_vmlinux_6_1_128",
+    downloaded_file_path = "vmlinux-6.1.128",
+    sha256 = "27a8310b9a727517e9eb02044524b6ceb77de5728e3491b6974d5c846227ecc8",
+    urls = ["https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.12/x86_64/vmlinux-6.1.128"],
 )
 
 # Node.js v22.22.2 LTS linux-x64 — provides the hermetic Node runtime used by

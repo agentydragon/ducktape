@@ -1,16 +1,15 @@
 # Epistemic State: Agentplane runner image layering
 
-## Last updated: 2026-10-16 03:56 UTC
+## Last updated: 2026-10-16 05:28 UTC
 
 ## 1. Objective
 
 Determine whether an Agentplane runner can remain outside a separately updated tools filesystem
-while a real pinned Codex process runs from a very small child root, and what prevents a faithful
-local VM demonstration. The decision concerns packaging and process boundaries, not choosing a
-production VMM. Required evidence is a real turn and native conversation resume, runner survival
-after child termination, runner-private state outside the child, independently buildable tools and
-boot artifacts, and a measured artifact size. Guest startup timing and a booted Firecracker guest
-remain open while no compatible ELF `vmlinux` is available.
+while a real pinned Codex process runs from a very small child root. The decision concerns packaging
+and process boundaries, not choosing a production VMM. Required evidence is a real turn and native
+conversation resume, runner survival after child termination, runner-private state outside the child,
+independently buildable tools and boot artifacts, a booted Firecracker guest, and artifact/startup
+measurements. No production VMM or runtime layout is selected by this spike.
 
 ## 2. Available action space
 
@@ -20,39 +19,37 @@ Firecracker binary with host KVM; exercise the runner against the repository's m
 inspect Bazel action graphs and produced layer sizes. The host supports unprivileged user/mount
 namespaces, but RBE test actions may have different kernel restrictions.
 
-User-mediated: operator can select an architecture after reviewing the evidence, authorize a
-kernel build or an executor with namespaces if either is desired, or supply an existing compatible
-ELF `vmlinux`. None is needed to complete the bounded current spike.
+User-mediated: operator selects an architecture after reviewing the evidence. No kernel build,
+cluster mutation, or production cutover is part of this spike.
 
-Acquirable: a Bazel-pinned ELF kernel output or a compatible existing artifact; a BuildBuddy test
-execution environment that permits the required namespaces; and, only after a concrete Codex tool
-failure, an additional pinned tools payload. No network install at runner boot is in scope.
+Acquired: a digest-pinned Firecracker CI ELF kernel and a BuildBuddy executor that permits the
+required namespaces. No network install at runner boot is in scope.
 
 ## 3. Uncertainty register
 
 Entropies below use stated discrete probabilities and are tagged `[VIBE]` because no empirical
 reference class for this spike is available.
 
-| ID  | Quantity                                                                                 | Prior / current estimate                         | Source                                                                                                                                 | Entropy            | Status                              |
-| --- | ---------------------------------------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ----------------------------------- |
-| U1  | Firecracker can boot with the host's current kernel                                      | 0; the exposed `bzImage` is not ELF              | Firecracker response below                                                                                                             | 0 bits             | resolved: no                        |
-| U2  | Static Codex completes a full text turn from the sparse child root                       | yes                                              | RBE run reached `turn_completed` after procfs was mounted                                                                              | 0 bits             | resolved: yes                       |
-| U3  | RBE permits a child user+mount namespace                                                 | 1.00 yes / 0.00 no                               | Clone-based RBE attempt entered namespace and mounted the root                                                                         | 0 bits             | resolved: yes                       |
-| U4  | Ordinary Codex shell tools work from the sparse root with the Bash-only tools filesystem | 0.80 yes / 0.20 no `[VIBE]`                      | The first tool call failed at process creation with `No such file or directory (os error 2)`; root/path/closure cause is not diagnosed | 0.72 bits `[VIBE]` | open                                |
-| U5  | Codex tools and boot layer are independently buildable                                   | 0.95 yes / 0.05 no `[VIBE]`                      | Separate Bazel targets and a local concatenated artifact built                                                                         | 0.29 bits `[VIBE]` | open: confirm final graph and sizes |
-| U6  | Pinned Claude can use the same empty root without a runtime closure                      | 0.05 yes / 0.95 needs dynamic libraries `[VIBE]` | `ldd` shows a glibc loader and libraries                                                                                               | 0.29 bits `[VIBE]` | resolved: needs closure             |
-| U7  | Debian and Nix environments can be consumed as tools roots without runner payload        | 0.70 yes / 0.30 no `[VIBE]`                      | Existing images and runner code indicate likely; no compatibility test                                                                 | 0.88 bits `[VIBE]` | open, follow-up only                |
-| U8  | RBE permits mounting procfs from the new PID namespace                                   | yes                                              | Proc mount succeeded; Codex completed a full text turn                                                                                 | 0 bits             | resolved: yes                       |
-| U9  | Codex history resumes after killing its process in the sparse root                       | yes                                              | RBE test confirmed resumed harness and prior assistant history                                                                         | 0 bits             | resolved: yes                       |
+| ID  | Quantity                                                                                 | Prior / current estimate                                             | Source                                                                                                              | Entropy            | Status                                                 |
+| --- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------ |
+| U1  | Firecracker can boot the pinned ELF kernel in this environment                           | yes                                                                  | Local Firecracker 1.12.1 booted Linux 6.1.128 and ran the pinned Codex payload                                      | 0 bits             | resolved: yes                                          |
+| U2  | Static Codex completes a full text turn from the sparse child root                       | yes                                                                  | RBE run reached `turn_completed` after procfs was mounted                                                           | 0 bits             | resolved: yes                                          |
+| U3  | RBE permits a child user+mount namespace                                                 | 1.00 yes / 0.00 no                                                   | Clone-based RBE attempt entered namespace and mounted the root                                                      | 0 bits             | resolved: yes                                          |
+| U4  | Ordinary Codex shell tools work from the sparse root with the Bash-only tools filesystem | yes                                                                  | Focused RBE scenario executed `printf SPARSE_ROOT_TOOL_OK` through Codex's shell tool                               | 0 bits             | resolved: yes                                          |
+| U5  | Codex harness, guest boot, and tools artifacts build separately                          | yes; no dependency path from VM initramfs to tools-root target       | Separate Bazel targets; 1.9 MB initramfs base, 22.3 MB tools OCI layer, 287.8 MB combined local initramfs           | n/a                | target graph resolved; rebuild isolation not exercised |
+| U6  | Pinned Claude can use the same empty root without a runtime closure                      | 0.05 yes / 0.95 needs dynamic libraries `[VIBE]`                     | `ldd` shows a glibc loader and libraries                                                                            | 0.29 bits `[VIBE]` | resolved: needs closure                                |
+| U7  | Debian and Nix environments can be consumed as tools roots without runner payload        | 0.70 yes / 0.30 no `[VIBE]`                                          | Existing images and runner code indicate likely; no compatibility test                                              | 0.88 bits `[VIBE]` | open, follow-up only                                   |
+| U8  | RBE permits mounting procfs from the new PID namespace                                   | yes                                                                  | Proc mount succeeded; Codex completed a full text turn                                                              | 0 bits             | resolved: yes                                          |
+| U9  | Codex history resumes after killing its process in the sparse root                       | yes                                                                  | RBE test confirmed resumed harness and prior assistant history                                                      | 0 bits             | resolved: yes                                          |
+| U10 | Guest boot and layer-preparation time                                                    | warm preparation 5.6 s; repeated end-to-end launches 2.231 ± 0.066 s | BuildBuddy cached build; three fresh guest launches via `perf stat`; first local initramfs materialization 24.776 s | open               | guest-only and cache-cold timing                       |
 
 ## 4. Hypothesis space
 
-| ID      | Hypothesis                                                                                                                    | Probability   | Key evidence for                                                   | Key evidence against                                                                                | Distinguishing test                                                 |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| H1      | A minimal runner layer plus mounted tool roots is feasible; remaining issues are tool-layer contents and production packaging | 0.75 `[VIBE]` | Full Codex turn/resume and runner survival pass in child namespace | VM lacks ELF kernel; shell-tool launch failed with ENOENT                                           | Diagnose tool launch and independent artifact graph                 |
-| H2      | Codex works, but basic coding requires a larger distro/Nix tools root                                                         | 0.15 `[VIBE]` | Existing runner image is Debian/Nix; Codex tool tests use shell    | Minimal turn/resume passes; first tool launch failure is not yet attributed to a missing dependency | Diagnose the `ENOENT`, then add only an observed missing dependency |
-| H3      | Runner/harness coupling makes independent tools roots impractical                                                             | 0.05 `[VIBE]` | Codex home, workspace and process policy have coupling             | Full native resume passed                                                                           | Independent artifact graph and harness/tools split                  |
-| H_other | Other packaging or kernel constraints dominate                                                                                | 0.05 `[VIBE]` | Guest boot not yet possible                                        | Full Codex turn/resume passed                                                                       | Update from the next failure or a boot                              |
+| ID  | Hypothesis                                                                                    | Probability                        | Key evidence for                                                              | Key evidence against                                        | Distinguishing test                                                  |
+| --- | --------------------------------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| H1  | A minimal runner layer plus mounted tool roots is feasible; production packaging remains open | supported by current prototype     | Full Codex turn/resume, Bash tool, runner survival, and local guest boot pass | Production packaging and Claude remain untested             | Measure update boundaries and evaluate remaining compatibility cases |
+| H2  | Basic Codex tool use requires a larger distro/Nix tools root                                  | contradicted for one shell command | Existing runner image is Debian/Nix                                           | Bash-only tools root successfully ran a Codex shell command | Broader coding task remains untested                                 |
+| H3  | Runner/harness coupling makes independent tools roots impractical                             | not supported by this evidence     | Process and state paths require explicit mounts                               | Harness/runner lifecycle and Bash tools are separate inputs | Verify artifact rebuild isolation                                    |
 
 Key distinguishing test: a complete runner session through the sparse root, including a killed
 Codex process and a resumed turn, with the child unable to read a runner-only sentinel.
@@ -141,75 +138,111 @@ Is /proc mounted?` and failed with `Error: Codex executable path is not configur
    the concrete child process setup before adding another dependency. Pointer: BuildBuddy invocation
    `44014602-68fe-4b86-90a7-00cfe9ecc376`, target `//agentplane/runner:test_restart`.
 
+10. **2026-10-16 05:12 UTC, Codex shell tool and logical cwd.** Action: keep the runner's host
+    workspace as the bind source while setting the persisted child `SessionSpec.cwd` to `/workspace`,
+    the path visible inside the chroot; retain `/dev/null` in the child device mount. Type: remote
+    integration experiment. Raw result: the focused test passed, including the `printf
+SPARSE_ROOT_TOOL_OK` shell tool call, child termination, runner survival, conversation resume,
+    and private-state check. The direct Bash probe passed after mounting `/dev/null`; the Codex tool
+    call still failed until its logical cwd matched the mounted path. Update: U4 resolved yes for this
+    pinned Codex and Bash root. Pointer: BuildBuddy invocation
+    `d2e3808c-ad70-47ff-ad10-23868996d2c2`, target `//agentplane/runner:test_restart`.
+
+11. **2026-10-16 05:12 UTC, pinned Firecracker guest boot.** Action: pin the official Firecracker
+    1.12 CI `vmlinux-6.1.128` ELF kernel (`sha256
+27a8310b9a727517e9eb02044524b6ceb77de5728e3491b6974d5c846227ecc8`), make nested CPIO parent
+    directories explicit, and launch Firecracker 1.12.1 on host KVM. Type: local VM experiment.
+    Raw result: 512 MiB reached the guest but could not unpack the 275 MiB initramfs; at 1 GiB,
+    Linux ran `/init`, Codex printed `codex-cli 0.157.0` in the sparse child chroot, and guest init
+    remained alive after Codex exited. Run outside the sandbox to access `/dev/kvm`. Update: U1
+    resolved yes for this pinned kernel/VMM pair. The kernel is an experiment input, not a production
+    choice. Pointer: successful `bb run //agentplane/x/runner_layering_spike:local_vm_probe`,
+    BuildBuddy invocation `f63ca51e-cdee-43d8-8670-1f2f46f6d339`.
+
+12. **2026-10-16 05:15 UTC, artifact sizes and build.** Action: build the independent base-initramfs
+    and tools-rootfs targets. Type: BuildBuddy-backed build. Raw result: base initramfs 1,913,348
+    bytes; Bash tools OCI layer tar 22,277,632 bytes; combined local VM initramfs 287,783,968
+    bytes, including the 285,340,072-byte Codex binary and bundled bwrap. A warm two-target build
+    completed in 5.577 s (3.90 s critical path; 19 action-cache hits, 4 remote-cache hits, 1 remote
+    action). Update: artifacts are separately buildable and sizes are measured; cold build and
+    repeatable startup timings remain open. Pointer: BuildBuddy invocation
+    `075cdcc5-ce18-402c-89b9-095b18cad1a8`.
+
+13. **2026-10-16 05:20 UTC, final guest and runner checks.** Action: rerun the VM probe after removing
+    temporary diagnostics, run the focused Codex shell/resume integration again, query the target
+    graph, and profile three local VM launches. Type: local and RBE experiments. Raw result: local
+    Firecracker boot passed; the focused RBE test passed in 30.9 s; Bazel `somepath` from
+    `local_vm_initramfs` to `tools_rootfs` returned an empty result. `perf stat --repeat 3 -- bb run
+//agentplane/x/runner_layering_spike:local_vm_probe` measured 2.231 ± 0.066 s elapsed (1.716 s
+    task-clock) across three fresh guest boots with warm host/build artifacts. This includes the
+    Bazel local-run wrapper, not just guest boot. Update: target graph separation is established;
+    distinct tools mounting in the guest and cache-cold packaging remain open. Pointers: local VM
+    invocation `b7123dd3-7fcd-44e1-8777-10509293a7df`; RBE test invocation
+    `fc1dfd61-2b3f-45f2-970a-74902a4a8f99`; query invocation
+    `0a961269-96dd-48b3-968f-956ef73ab61b`; profiler runs `11ba1168-553d-4bb9-b655-b9f184fed573`,
+    `4001e8d1-565c-453e-86f9-8ced0ecdefa8`, and `ba37273f-14b8-4363-937c-f79fa9391131`.
+
+14. **2026-10-16 05:28 UTC, rebased-head verification.** Action: rebase the spike on devel
+    `3f8379123a`, rerun the focused Codex child test and boot the local VM from that tree. Type: RBE
+    and local experiments. Raw result: `//agentplane/runner:test_restart` passed in 27.6 s; local
+    Firecracker again ran Codex 0.157.0 and left init alive. Bazel analysis emitted 404 warnings for
+    some pinned Debian snapshot index URLs but resolved the tools target and completed the test.
+    Update: the current devel base preserves the tested behavior. Pointers: test invocation
+    `d62754ca-1882-405f-b310-b0ead71740d8`; local VM invocation
+    `b692c329-47ad-4623-a9f3-6c2b72555bf9`.
+
 ## 6. Current posterior state
 
-- U1: Firecracker cannot boot the current `bzImage`; confidence 1.0 from the explicit ELF-loader
-  rejection. A compatible kernel remains unavailable. No guest startup timing is measured.
-- U2: resolved yes for a complete Codex text turn. The child root contains the pinned binary, procfs,
-  a mounted workspace and session home, and tmpfs; the private sentinel check succeeded. Native
-  process restart also passed.
-- U3: resolved yes for the RBE test executor: clone flags created the user and mount namespaces and
-  allowed the binds/tmpfs. The failed `unshare` path was a Go-runtime implementation issue, not a
-  missing executor capability.
-- U8: resolved yes with a child PID namespace; procfs allowed Codex to start and complete a turn.
-- U9: resolved yes. The native Codex session resumed after child termination, and its prior user and
-  assistant history was present in the next Responses request.
-- U4: open. The first `exec_command` call from the sparse-root Codex session failed with `ENOENT`
-  during process creation despite building the Bash-only tools filesystem. Do not infer the missing
-  piece until the child executable path, cwd, environment, and extracted root layout are inspected.
-- U5: separate build graph appears feasible; measured combined initramfs output was 287,253,784
-  bytes locally. This is not a cold/warm time measurement and is not the exact standalone tools-root
-  size. Confirm the standalone outputs and runfiles graph before making an independence claim.
-- U6: pinned Claude needs a glibc loader and libraries according to `ldd`; no Claude child launch
-  is tested. Do not share Codex's static-root claim with Claude.
-- U7: Debian/Nix compatibility remains a later follow-up, after minimal dependency discovery.
+- U1: resolved yes for the pinned Firecracker 1.12.1 plus official 6.1.128 ELF kernel; the guest
+  booted on host KVM and ran the pinned Codex payload.
+- U2/U3/U8/U9: resolved yes in the RBE runner test. Codex completed a text turn, the child namespace
+  mounted `/proc`, workspace, Codex home, `/dev/null`, and tmpfs, runner-private state stayed out of
+  the child root, and conversation state resumed after killing the harness.
+- U4: resolved yes for a real Bash shell call in the sparse child. The cause of the earlier ENOENT
+  was the persisted logical cwd being a host path absent inside the chroot; `/dev/null` was also
+  necessary for the Bash preflight.
+- U5: separate Bazel targets build, and `somepath(local_vm_initramfs, tools_rootfs)` is empty.
+  Current outputs are 1,913,348-byte base initramfs, 22,277,632-byte Bash OCI layer tar, and
+  287,783,968-byte local VM initramfs. Actual independent-update behavior in a production packaging
+  path is not implemented.
+- U6: pinned Claude's `ldd` output requires a glibc loader and libraries; no Claude child launch is
+  tested. Do not extend Codex's static-root result to Claude.
+- U7: Debian/Nix compatibility remains a follow-up after this minimal dependency experiment.
+- U10: warm BuildBuddy preparation of the base and tools targets took 5.577 s total (3.90 s critical
+  path). Three fresh guest launches with warm host/build artifacts averaged 2.231 ± 0.066 s through
+  `bb run`; the CLI and wrapper are included. A cache-cold build and guest-only latency remain
+  unmeasured. Two attempted cache-bypass builds still reported action-cache hits, so they are not
+  classified as cold.
 
 ## 7. Action queue
 
-1. Trace the `ENOENT` from invocation `44014602-68fe-4b86-90a7-00cfe9ecc376` through Codex's child
-   process request, environment and extracted tools root. Cost: bounded source/log inspection; first
-   determine whether the failure is path/layout or an actual missing runtime dependency.
-2. Correct only the demonstrated launch/rootfs issue, then rerun the same focused shell-tool test.
-   Add another pinned payload only if the failure identifies a missing component.
-3. Build standalone layer targets; inspect output sizes and Bazel dependency graph (type: `bbr
-build`/query; low cost; confirms whether a tools update avoids boot-layer rebuild; estimates
-   `[VIBE]`).
-4. If an ELF kernel becomes available without introducing a kernel-build project, run local
-   Firecracker and collect its existing boot timer output (type: local experiment; high information
-   value, availability unknown). Do not add ad-hoc timing macros.
-5. Close the spike with a recommendation and production DAG sequence; Debian/Nix compatibility is
-   a follow-up only if it changes the choice.
+1. Verify the Bazel dependency graph has no tools-rootfs edge into the base or boot initramfs and
+   record independent rebuild behavior. Add no compatibility alias or second image mechanism.
+2. Use the existing profiler on repeated local VM launches and, if practical, a cache-cold packaging
+   run. Report measured boundaries; do not add timing instrumentation to the guest.
+3. Close the spike with an evidence-based recommendation and production DAG sequence. Claude,
+   conventional Debian/Nix compatibility, and a full coding task remain explicit follow-ups rather
+   than implied support.
 
 ## 8. Decision tree
 
 ```text
-Clone-based RBE user+mount+PID namespaces and procfs work; turn and resume pass
-└─ first exec_command fails with ENOENT
-   └─ trace executable path, cwd, environment, and rootfs layout; add a payload only if needed
-
-Compatible ELF vmlinux available?
-├─ yes → local Firecracker boot probe, boot markers and built-in boot timer
-└─ no → keep guest boot and startup timing explicitly unproven; do not build a kernel for this spike
+Clone-based RBE namespaces, Codex turn/resume, runner-state fence, and Bash shell tool pass.
+Local Firecracker boots the pinned ELF kernel and Codex payload.
+└─ Remaining: verify independent artifact rebuilds and measure warm/cold preparation/startup.
 ```
 
 ## 9. Stopping criteria
 
 Stop when the sparse-root runner test proves one completed turn, child exit, runner survival, resume,
-and a shell-tool call; the separate artifact outputs and dependency graph establish whether tools and
-boot layers can update independently; the unavailable kernel limitation and unmeasured boot timing
-are recorded; and a recommendation names the remaining production gates. If RBE blocks namespace
-creation and no authorized default-path local test can provide the same evidence, stop with that
-exact visibility limit rather than claiming isolation or rebuilding the kernel.
+and a shell-tool call; the local guest boot is real; separate outputs and their dependency graph
+establish the update boundary; measurements name what they cover; and a recommendation names the
+remaining production gates. Do not claim complete isolation, arbitrary-rootfs support, or a production
+cutover from this prototype.
 
 ## 10. Vibes ledger
 
-- `[VIBE]` H1-H3 probabilities and entropy estimates: no calibration set for this repository-specific
-  architecture decision. De-vibe with the real runner test and artifact dependency graph; load-bearing
-  only until those tests run.
-- `[VIBE]` probability that shell tooling is needed: inferred from existing Codex tool scenarios.
-  The first concrete `exec_command` attempt returned ENOENT; de-vibe after tracing the launch path
-  and repeating the tool call with the demonstrated fix.
-- `[VIBE]` probability of native Codex history resuming after child restart: de-vibe with the next
-  completed runner test.
-- `[VIBE]` Debian/Nix compatibility estimate: not needed for the minimal-root decision. De-vibe only
-  if the architecture review selects the layered runtime.
+- `[VIBE]` probability that a full coding task, Claude child, or conventional Nix root works: those
+  cases are not tested and are not needed to establish minimal Codex plus Bash feasibility.
+- No calibrated probability is assigned to cache-cold build timing, Claude startup or broad
+  compatibility; those remain empirical follow-ups.

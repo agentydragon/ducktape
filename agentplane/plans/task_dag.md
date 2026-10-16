@@ -914,7 +914,13 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 flowchart TD
     SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
     RUNNER_IMAGE_LAYERING_DESIGN[Decision: what carries the runner, harnesses and per-template tools]
+    RUNNER_LAYERING_SPIKE[In flight: minimal guest, Codex and separate tools-layer evidence]
+    RUNNER_LAYERING_SPIKE_EXIT[Blocked: finish update-boundary evidence, measurements and recommendation]
+    RUNNER_LAYERING_SPIKE_RETIRE[Candidate: port retained pieces or delete spike-only scaffolding]
     SANDBOX_GENERIC_SPLIT -. related .-> RUNNER_IMAGE_LAYERING_DESIGN
+    RUNNER_LAYERING_SPIKE --> RUNNER_LAYERING_SPIKE_EXIT
+    RUNNER_LAYERING_SPIKE_EXIT --> RUNNER_IMAGE_LAYERING_DESIGN
+    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_SPIKE_RETIRE
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_POD[Blocked: a Pod takes runner and tools from separate images]
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[Blocked: a guest takes runner and tools from separate images]
     RUNNER_LAYERING_VM --> K3S_VM_IMAGE[Blocked: build a lightweight guest disk in Bazel]
@@ -986,6 +992,29 @@ Related to `SANDBOX_GENERIC_SPLIT`: that separates the resource, this separates 
 
 The disk split and Firecracker are not alternatives to each other: splitting disks is additive on the
 runtime we have, and Firecracker is a new runtime added beside it.
+
+### `RUNNER_LAYERING_SPIKE` — minimal guest, harness and tools-layer evidence
+
+**In flight; evidence experiment, not a production runtime selection.** The prototype now proves a
+Codex text turn, shell call through a separate Bash tools OCI layer, native resume after killing the
+harness, runner survival and private-state separation in the RBE test; a local Firecracker guest
+boots the digest-pinned ELF kernel and runs the pinned Codex CLI. The measured inputs are a 1.9 MB
+base initramfs, a 22.3 MB Bash tools OCI layer tar and a 287.8 MB local initramfs with the Codex
+binary and bwrap. The tools image is not yet mounted as a distinct disk in the guest, and Claude,
+full coding work, Nix-root compatibility, true cache-cold preparation and guest-only boot latency
+remain unproven.
+
+Candidate layout to carry into the design review: keep stage-one init and runner control outside the
+tools root; mount the per-template tools image read-only; give the workspace and Codex home explicit
+writable mounts, use tmpfs for `/tmp`, and provide only the required `/proc` and `/dev/null` paths to
+the child. Reuse that filesystem contract in Pods by mounting the same tools image beside the runner
+image, with workspace and persistent session state on separate volumes. The Pod image-volume path
+and the guest's distinct tools mount still need a focused compatibility test before selection.
+
+The spike exits when those update boundaries and startup measurements are documented alongside a
+bounded compatibility contract and a production DAG proposal. After the design decision, either
+port only the accepted artifacts and tests to their production owners or remove the spike-only
+package, kernel pin, and child fence; do not leave the experiment as an implicit supported runtime.
 
 ### `RUNNER_LAYERING_POD` — a Pod takes the runner, harnesses and tools from separate images
 

@@ -51,7 +51,8 @@ def main() -> None:
     output_path, manifest_path = sys.argv[1], sys.argv[2]
     entries = pkg_manifest.read_entries_from(manifest_path)
 
-    cpio_entries = [(".", None, 0o040755, 2)]
+    directory_names = {"."}
+    file_entries = []
     for e in entries:
         if e.type != pkg_manifest.ENTRY_IS_FILE:
             sys.exit(f"{e.dest!r}: unsupported entry type {e.type!r} (only 'file' is supported)")
@@ -64,7 +65,21 @@ def main() -> None:
         if e.gid not in (None, 0):
             sys.exit(f"{e.dest!r}: gid={e.gid!r} not supported (only gid=0 is supported)")
         _check_dest(e.dest)
-        cpio_entries.append((e.dest, e.src, 0o100000 | int(e.mode or "0755", 8), 1))
+        path = PurePosixPath(e.dest)
+        directory_names.update(str(parent) for parent in path.parents if str(parent) != ".")
+        file_entries.append((e.dest, e.src, 0o100000 | int(e.mode or "0755", 8), 1))
+
+    # newc extraction does not create missing parent directories. Emit them explicitly,
+    # shallowest first, so nested package destinations exist when the kernel unpacks files.
+    cpio_entries = [
+        (name, None, 0o040755, 2)
+        for name in sorted(directory_names, key=lambda item: (len(PurePosixPath(item).parts), item))
+    ]
+    file_names = {name for name, _, _, _ in file_entries}
+    conflicting_dirs = directory_names & file_names
+    if conflicting_dirs:
+        sys.exit(f"archive paths are both files and directories: {sorted(conflicting_dirs)!r}")
+    cpio_entries.extend(file_entries)
     with Path(output_path).open("wb") as out:
         for ino, (name, src_file, mode, nlink) in enumerate(cpio_entries, start=1):
             data = Path(src_file).read_bytes() if src_file else b""
