@@ -53,20 +53,19 @@ def _database_secret(
 ) -> None:
     host = f"{SERVICE}.{env.namespace}.svc"
     uri = f"postgresql://{role}:{password}@{host}:{PORT}/{database}"
-    data = {"username": role, "password": password, "host": host, "port": str(PORT), "dbname": database, "uri": uri}
+    data = {"password": password, "uri": uri}
     if async_uri:
         data["async-uri"] = f"postgresql+asyncpg://{role}:{password}@{host}:{PORT}/{database}"
     Secret(
         scope,
         f"credentials-{role}",
         metadata=ApiObjectMetadata(name=f"postgres-{role.replace('_', '-')}", namespace=env.namespace),
-        type="kubernetes.io/basic-auth",
         string_data=data,
     )
 
 
 def add_database(scope: Construct, env: Environment) -> Construct:
-    """Build the fixture database and its compatible connection Secrets."""
+    """Build the fixture database and its connection Secrets."""
     db_scope = Construct(scope, "db")
 
     bootstrap_password = _password()
