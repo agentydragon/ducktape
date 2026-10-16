@@ -96,6 +96,16 @@ async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(har
     assert viewport["viewport"] == {"width": 300, "height": 200, "deviceScaleFactor": 2, "scrollX": 0, "scrollY": 50}
     assert viewport["focus"]["inputSelection"] == {"start": 2, "end": 9, "direction": "forward"}
     assert viewport["target"] is None
+    assert viewport["canvases"] == [
+        {
+            "domIndex": 2,
+            "rect": {"x": 110, "y": -30, "width": 80, "height": 40},
+            "computedCssWidth": "80px",
+            "computedCssHeight": "40px",
+            "bitmapWidth": 160,
+            "bitmapHeight": 80,
+        }
+    ]
 
     cropped = json.loads((harness.output_dir / "cropped.capture.json").read_text())
     assert cropped["capture_name"] == "cropped"

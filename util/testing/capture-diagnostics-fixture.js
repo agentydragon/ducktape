@@ -11,6 +11,12 @@
   history.append(entry);
   document.body.append(history);
   history.scrollTop = 17;
+  const canvas = document.createElement("canvas");
+  canvas.className = "diagnostic-canvas";
+  canvas.width = 160;
+  canvas.height = 80;
+  canvas.style.cssText = "position:absolute;left:110px;top:20px;width:80px;height:40px";
+  document.body.append(canvas);
   const input = document.createElement("input");
   input.value = "sensitive-selection";
   document.body.append(input);
