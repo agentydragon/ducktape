@@ -7,6 +7,7 @@ from typing import Any
 import tomli_w
 
 PRESERVE_KEYS = ("projects", "notice", "windows")
+DEPRECATED_FEATURE_FLAGS = ("rmcp_client", "streamable_shell", "view_image_tool")
 
 
 def load(path: Path) -> dict:
@@ -23,6 +24,18 @@ def deep_merge(dst: dict, src: dict) -> dict:
         else:
             dst[key] = value
     return dst
+
+
+def remove_deprecated_feature_flags(doc: dict) -> None:
+    features = doc.get("features")
+    if not isinstance(features, dict):
+        return
+
+    for key in DEPRECATED_FEATURE_FLAGS:
+        features.pop(key, None)
+
+    if not features:
+        doc.pop("features")
 
 
 def unmanaged_live_paths(
@@ -76,6 +89,7 @@ def main() -> None:
         raise SystemExit(0)
 
     live_doc = load(live)
+    remove_deprecated_feature_flags(live_doc)
     print_unmanaged_live_doc(unmanaged_live_doc(live_doc, base_doc))
 
     preserved = {}
@@ -85,6 +99,7 @@ def main() -> None:
 
     merged = deep_merge(live_doc, base_doc)
     merged.update(preserved)
+    remove_deprecated_feature_flags(merged)
 
     tmp = live.with_suffix(".tmp")
     tmp.write_text(tomli_w.dumps(merged))

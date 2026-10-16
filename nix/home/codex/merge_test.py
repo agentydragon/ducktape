@@ -28,7 +28,9 @@ def test_main_prints_unmanaged_toml_and_preserves_live_only_config(tmp_path, mon
             approval_policy = "never"
 
             [features]
+            rmcp_client = true
             streamable_shell = false
+            view_image_tool = true
             manual_feature = true
 
             [profiles.openai]
@@ -68,8 +70,7 @@ def test_main_prints_unmanaged_toml_and_preserves_live_only_config(tmp_path, mon
 
     result = tomllib.loads(live.read_text())
     assert result["approval_policy"] == "on-request"
-    assert result["features"]["streamable_shell"] is True
-    assert result["features"]["manual_feature"] is True
+    assert result["features"] == {"manual_feature": True}
     assert result["profiles"]["openai"]["model"] == "gpt-5.1-codex"
     assert result["profiles"]["openai"]["local_note"] == "keep"
     assert result["profiles"]["scratch"]["model"] == "local"
