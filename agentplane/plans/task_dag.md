@@ -3,37 +3,46 @@
 This is the dispatch map for **unfinished** work. Detailed contracts belong in component plans;
 completed work belongs in component docs, not done nodes here. Maintenance rules are in
 [AGENTS.md](../AGENTS.md#task-dag-maintenance). Deliberately deferred candidates and conditional
-hardening live in the [freezer](task_freezer.md), not the execution graph.
+hardening live in the [freezer](task_freezer.md), except the explicit nonblocking
+intra-Sandbox hardening reminder retained here at Rai's request.
 
 ## Current state and scheduling
 
 Audit metadata consumers (`sandbox`, `harness`, `model`, `cwd`, summary/activity fields) before
 deleting useful UI projections. Squash Alembic only once the app schema settles.
 
-States: **in flight** means reported work is underway; **decision** needs a reviewed outcome;
+States: **in flight** means reported work is underway; **in review** means an unmerged PR;
+**paused** means no worker is assigned; **decision** needs a reviewed outcome;
 **blocked** names prerequisites; **candidate** is dispatchable when selected, not a priority claim.
 A **capstone** closes an integrated contract, not another implementation. Solid arrows below are
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
-Dispatch assignments (Rai authorized; Codex reported, 2026-10-15 UTC):
+### Handoff snapshot — 2026-10-16 UTC
 
-| Worker                        | Assigned work and remaining gates                                                   |
-| ----------------------------- | ----------------------------------------------------------------------------------- |
-| `suspended_session_inventory` | Finish the protobuf-field and deployment-only CLI/config audit.                     |
-| Coordinator                   | Integrate notes cleanup, burn down merged tasks and review rollout and CI evidence. |
+**Dispatch paused by Rai. All coordinator workers have stopped.** No new projects or live cutover
+are authorized by this handoff. The following work is implemented on review branches, **not merged**;
+all published-head checks passed when checked for this handoff. Recheck GitHub before resuming.
+Rai merges every PR by hand; do not merge or enable auto-merge.
 
-Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
-without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
-user experience. Finish reported bugs and red PR checks first. The next dispatch order is
-verified runner compatibility cleanup, then `K3S_STARTUP_COST`. The per-Sandbox wake-on-message policy and suspended composer are implemented
-and deployed. The lifecycle coverage audit found the requested eventual outcomes already covered;
-see the [suite coverage](../x/k3s_env/README.md#lifecycle-coverage).
-Audit assignment does not waive any image, embedded VM wheel, live-runner or retained-data gate.
+| Open PR / exact reviewed head                                               | Scope                                                                                                                   | Remaining gate                                                                                                             |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| [#10705](https://github.com/agentydragon/ducktape/pull/10705), `897acb320f` | Unified Go Runner Gateway, Dispatcher queue, Goose, separate image publication slots and inactive deployment constructs | Review/merge; then image pins, migration/Flux wiring and fenced deployment acceptance below. Live charts still run Python. |
+| [#10734](https://github.com/agentydragon/ducktape/pull/10734), `39522ca3ab` | 8 GiB VM guest and testing admission limits                                                                             | Review/merge/reconcile; actual launcher resources, guest memory and representative build/test acceptance.                  |
+| [#10744](https://github.com/agentydragon/ducktape/pull/10744), `3505c376ce` | Remove failed experimental Pod image-volume probe and record its measured runtime limitation                            | Review/merge; this does not establish Pod layering compatibility.                                                          |
 
-These are assignments, not claims that gated work has started. Independent config changes can
-proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
-with remaining gates in the body; Rai merges each PR by hand.
+These PRs also edit this DAG. When rebasing them after this handoff, preserve the current status,
+remaining gates and Sandbox trust-boundary decision; do not restore their older planning snapshots.
+Delete the corresponding review row when it merges; remove implementation-only nodes and retain
+acceptance nodes until their unfinished rollout checks pass.
+No replacement implementation should be dispatched for code already in these PRs.
+
+Operator priority remains usable VM Sandboxes and retiring obsolete paths. The Gateway wrapper,
+registry/database and migration-artifact retirements are complete; they are not cutover prerequisites
+still awaiting an image. The Go branch has already been rebased after that retirement. The Sandbox
+is the isolation boundary: intra-Sandbox hardening is an explicitly deferred, nonblocking TODO.
+The console deferred-attachment task was not started. Detailed parked work remains below; a
+candidate label is not permission to restart dispatch while Rai's pause remains in effect.
 
 ## 1. Session schema and identity follow-up
 
@@ -63,7 +72,7 @@ flowchart LR
     NOTIFICATION_NOTICE_METADATA --> NOTIFICATION_PRESENTATION
 ```
 
-Details: [command admission](../runner_gateway/API.md#sessions); later
+Details: [command admission](../session_dispatcher/README.md#contract); later
 [notification presentation and input metadata](notification_presentation.md).
 
 ### `NOTIFICATION_COMMAND_OUTCOME_DESIGN` — notice delivery without reading conversation history
@@ -437,7 +446,7 @@ flowchart LR
     RUNNER_LAYERING_VM --> VM_HARNESS_RESOURCE_LIMITS
     K3S_VM_IMAGE -. optional VM test fixture .-> VM_HARNESS_RESOURCE_LIMITS
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
-    VM_GUEST_MEMORY[Candidate: size the VM guest for real builds]
+    VM_GUEST_MEMORY[In review: 8 GiB guest and testing limits]
     VM_GUEST_BUDGET_DERIVE[Blocked: guest budgets derive from the VM spec]
     VM_GUEST_MEMORY -. the two numbers neither node should author alone .-> VM_GUEST_BUDGET_DERIVE
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
@@ -536,24 +545,16 @@ prerequisite: no client budget inside the guest is workable until the guest has 
 
 ### `VM_GUEST_MEMORY` — size the VM guest for real builds
 
-**Candidate; operator, 2026-10-15 UTC: 8 GiB requested, and one VM per OVH node is acceptable.** Raise
-`runner-vm`'s guest RAM from 1536Mi (`cluster/cdk8s/agentplane/runner_vm.py`, still 1536Mi with
-`cores: 1` as of 2026-10-15) so a `bbr`/Bazelisk client inside the guest has room to compile.
-Acceptance is not "the template says 8 GiB": a Sandbox booted on the new template reports the larger
-`MemTotal` in the guest, and a representative `bbr build` and `bbr test` complete in it without the guest
-OOM killer firing.
+**In review: [#10734](https://github.com/agentydragon/ducktape/pull/10734); worker stopped.**
+The patch requests the approved 8 GiB, retaining one vCPU. It raises testing's aggregate memory
+request quota to 16 GiB and container/Pod limit caps to 24 GiB, retaining the 28 GiB aggregate
+memory limit. It is not on devel and has not established live guest acceptance.
 
-Know where the ceiling is before choosing the number. A guest of `N` costs the launcher Pod roughly
-`N + 240Mi` (guest RAM plus QEMU, disk helpers and the relay), so an 8 GiB guest needs about 8.25 Gi
-free on a `kubevirt.io/schedulable` node — the 8-core hosts fit one each, the largest host about five.
-Measure current free memory rather than trusting that; the operator accepts one VM per 8-core host.
-Staging carries **no** `ResourceQuota` or `LimitRange` (`TestingNamespaceResourceLimits` is testing-only,
-by design), so nothing refuses an oversized guest here — an unschedulable one just sits `Pending` on
-`Insufficient memory` rather than failing fast, which is also why testing's 4Gi container max and quota
-have to move with the template or the change fails there instead. The guest sees ~10% less than the
-domain is given (1536Mi yields 1383Mi). `cores: 1` is a separate deliberate choice: 8 GiB on one vCPU is
-memory-heavy and compute-starved, and `docs/vm_sandboxes.md` records a 1 vCPU guest reading a workspace
-disk at a fraction of the rate a build would like.
+After merge/reconciliation, inspect actual launcher requests/limits, namespace usage and node
+capacity: KubeVirt adds overhead and quota-derived limits, not a fixed 240 MiB surcharge. Confirm
+larger guest `MemTotal`, then run a representative `bbr build` and `bbr test` without guest OOM.
+Record useful sizing evidence in VM documentation and delete this node when acceptance is complete.
+One VM per OVH node is approved; CPU sizing and derived guest budgets remain separate work.
 
 ### `VM_GUEST_BUDGET_DERIVE` — derive the guest's cgroup budgets from the VM's memory
 
@@ -899,10 +900,12 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 flowchart TD
     SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
     RUNNER_IMAGE_LAYERING_DESIGN[Decision: what carries the runner, harnesses and per-template tools]
-    RUNNER_LAYERING_SPIKE[In flight: minimal guest, Codex and separate tools-layer evidence]
+    RUNNER_LAYERING_SPIKE[Paused: remaining layering compatibility evidence]
     RUNNER_LAYERING_SPIKE_EXIT[Blocked: finish update-boundary evidence, measurements and recommendation]
-    RUNNER_LAYERING_SPIKE_RETIRE[Candidate: port retained pieces or delete spike-only scaffolding]
+    RUNNER_LAYERING_SPIKE_RETIRE[Blocked: port retained pieces or delete spike after design]
     SANDBOX_GENERIC_SPLIT -. related .-> RUNNER_IMAGE_LAYERING_DESIGN
+    RUNNER_LAYERING_PROBE_CLEANUP[In review: remove unusable Pod probe, PR 10744]
+    RUNNER_LAYERING_PROBE_CLEANUP --> RUNNER_LAYERING_SPIKE_EXIT
     RUNNER_LAYERING_SPIKE --> RUNNER_LAYERING_SPIKE_EXIT
     RUNNER_LAYERING_SPIKE_EXIT --> RUNNER_IMAGE_LAYERING_DESIGN
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_SPIKE_RETIRE
@@ -978,9 +981,15 @@ Related to `SANDBOX_GENERIC_SPLIT`: that separates the resource, this separates 
 The disk split and Firecracker are not alternatives to each other: splitting disks is additive on the
 runtime we have, and Firecracker is a new runtime added beside it.
 
+### `RUNNER_LAYERING_PROBE_CLEANUP` — remove the unusable Pod probe
+
+**In review: [#10744](https://github.com/agentydragon/ducktape/pull/10744).** Remove the failed
+experimental image-volume test and its unused configuration, retaining the measured limitation
+in the spike README. Delete this node after merge; Pod layering compatibility remains unproven.
+
 ### `RUNNER_LAYERING_SPIKE` — minimal guest, harness and tools-layer evidence
 
-**In flight; evidence experiment, not a production runtime selection.** The prototype now proves a
+**Paused; worker stopped. Merged experiment, not a production runtime selection.** The prototype proves a
 Codex text turn, shell call through a separate Bash tools OCI layer, native resume after killing the
 harness, runner survival and private-state separation in the RBE test; a local Firecracker guest
 boots the digest-pinned ELF kernel and mounts separate read-only tools and harness SquashFS drives.
@@ -989,16 +998,21 @@ SIGABRT in the uid-107 mount-namespace child, while the exact binary succeeds on
 in the guest chroot as root without that namespace. The UID and namespace effects still need to be
 separated. Measured artifacts are a 1.9 MB base
 initramfs, 7.2 MB tools SquashFS, and 168.9 MB harness SquashFS (the source Bash OCI layer tar is
-22.3 MB). A focused k3s image-volume test is in progress; full coding work, Nix-root compatibility,
-true cache-cold preparation, and guest-only boot latency remain unproven.
+22.3 MB). The K3s `v1.33.4+k3s1`/containerd `v2.0.5-k3s2` probe finished unsuccessfully: the API
+accepted its Pod, but container spec creation failed with `failed to mkdir ""`, before Bash ran.
+[#10744](https://github.com/agentydragon/ducktape/pull/10744) removes that unusable experimental test,
+its feature toggles and image import, and records the result. Until it merges, devel still contains
+the unsuccessful manual probe. This is evidence about that tested stack, not a universal claim about
+image volumes. Full coding work, Nix-root compatibility, true cache-cold preparation and guest-only
+boot latency remain unproven; no runtime upgrade or further experiment is currently assigned.
 
 Candidate layout to carry into the design review: keep stage-one init and runner control outside the
 tools root; mount the per-template tools image read-only; give the workspace and harness homes
 explicit writable mounts, use tmpfs for `/tmp`, and provide only the required `/proc` and `/dev/null`
 paths to the child. Reuse that filesystem contract in Pods by mounting the same tools image beside
 the runner image, with workspace and persistent session state on separate volumes. The guest's
-distinct mounts work in the local probe; Pod image-volume support and Claude's failure cause still
-need resolution before selection.
+distinct mounts work in the local probe; Pod compatibility and the Claude child-context abort remain unresolved. Further intra-Sandbox
+hardening is not required by the production contract.
 
 The spike exits when those update boundaries and startup measurements are documented alongside a
 bounded compatibility contract and a production DAG proposal. After the design decision, either
@@ -1332,8 +1346,8 @@ Session wrapper.
 
 ## 13. Delivery boundaries, APIs and harness identity
 
-These are operator-reviewable design and characterization tasks. They do not authorize a queue,
-database, transport, identity or permission change. Detailed code paths and alternatives are in the
+This section separates approved implementation under review from pending rollout and design tasks.
+Decision nodes do not authorize runtime changes. Detailed code paths and alternatives are in the
 [delivery and harness design note](../docs/runner_delivery_and_harness_design.md).
 
 **Approved transport direction (operator, 2026-10-15 UTC):** gRPC for internal APIs,
@@ -1345,11 +1359,8 @@ items below; this direction does not authorize runtime changes.
 ```mermaid
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: durable queue or direct admission]
-    DELIVERY_GO_PROTOCOL_AUTH[Go proto and auth foundation]
-    DELIVERY_GO_GATEWAY[Go tunnel and connection role]
-    DELIVERY_GO_DISPATCHER[Go durable queue and delivery role]
-    DELIVERY_GO_RETIREMENT_REBASE[Merge gate: rebase Go after Python Gateway retirement]
-    DELIVERY_GO_INTEGRATION[One process, image and cdk8s deployment]
+    GATEWAY_GO_IMPLEMENTATION[In review: unified Go implementation, PR 10705]
+    GATEWAY_GO_ROLLOUT_CONFIG[Blocked: image pins and migration-gated Flux wiring]
     DELIVERY_UNIFIED_CUTOVER[Atomic cutover and recovery verification]
     DELIVERY_OLD_RUNTIME_RETIRE[Retire obsolete runtime objects]
     RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
@@ -1362,12 +1373,8 @@ flowchart LR
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a narrow CNPG-free K3s integration tier]
     K3S_VM_IMAGE[Blocked: build a real VM fixture, section 10]
-    DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_GATEWAY
-    DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_DISPATCHER
-    DELIVERY_GO_GATEWAY --> DELIVERY_GO_INTEGRATION
-    DELIVERY_GO_DISPATCHER --> DELIVERY_GO_INTEGRATION
-    DELIVERY_GO_RETIREMENT_REBASE --> DELIVERY_GO_INTEGRATION
-    DELIVERY_GO_INTEGRATION --> DELIVERY_UNIFIED_CUTOVER
+    GATEWAY_GO_IMPLEMENTATION --> GATEWAY_GO_ROLLOUT_CONFIG
+    GATEWAY_GO_ROLLOUT_CONFIG --> DELIVERY_UNIFIED_CUTOVER
     DELIVERY_UNIFIED_CUTOVER --> DELIVERY_OLD_RUNTIME_RETIRE
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
@@ -1425,90 +1432,47 @@ mode remains the owner of wake-to-deliver.
 **Approved direction (operator, 2026-10-15):** unify the Dispatcher and Gateway roles in one Go
 service, retaining the PostgreSQL queue, distinct authenticated sender/proxy/runner-control
 surfaces, and separate delivery and connection ownership across replicas. Exact listener count and
-deployment wiring belong to `DELIVERY_GO_INTEGRATION`; no deployment change is approved by this
+deployment wiring belong to `GATEWAY_GO_ROLLOUT_CONFIG`; no deployment change is approved by this
 design record. The [delivery design note](../docs/runner_delivery_and_harness_design.md#delivery-service-and-persistence-alternatives)
-records the tradeoffs. Destination authority, direct admission, wrapper/registry retirement and
-new sender grants remain independent decisions or gated cleanup.
+records the tradeoffs. Direct admission and new sender grants remain separate decisions;
+wrapper/registry retirement is complete.
 
-### `DELIVERY_GO_PROTOCOL_AUTH` — generate Go APIs and shared authentication
+### `GATEWAY_GO_IMPLEMENTATION` — review the unified Go Runner Gateway
 
-**Approved Go target; first implementation foundation.** Add Go proto/gRPC generation for
-Dispatcher, Gateway wrapper and Sandbox destination types alongside the existing runner/control Go
-protos. Implement reusable TokenReview principal validation with separate Dispatcher, Gateway and
-runner-control audiences and method allowlists; preserve the current App/Notification sender and
-narrower wake lists, controller-only Quiesce, the Gateway proxy's current non-Quiesce caller
-allowlist, and authenticated runner identity. Prove wrong audience, wrong Pod/ServiceAccount and
-controller submission to Dispatcher are rejected. This is a
-library/protocol foundation, not a deployed API or broadened grant.
+**In review: [#10705](https://github.com/agentydragon/ducktape/pull/10705); worker stopped.**
+The branch implements generated Go APIs/auth, durable Dispatcher admission/ownership/delivery,
+Runner reverse tunnels and proxying, guarded wake, Goose's Dispatcher-only schema handoff, image
+publication and inactive cdk8s constructs. Code lives under `agentplane/runner_gateway/go`; generated
+Go stays in Bazel output. PostgreSQL-backed and composed queue-to-tunnel tests pass, as does CI on
+the handoff head. It preserves queued rows/IDs, separate delivery and connection fences, per-method
+auth and cross-replica routing. Review the existing patch; do not dispatch these ports again.
 
-The Python auth baseline is `session_dispatcher/test_grpc_api.py` and
-`runner_gateway/test_grpc_api.py` for caller admission, plus `runner_gateway/test_runner_control.py`
-for the authenticated Runner peer. Go tests must assert equivalent public gRPC outcomes; these
-Python tests are baseline evidence, not Go parity.
+The old Gateway database, wrappers and migration image have already been retired on devel, and this
+branch has been rebased after them. There is no remaining retirement/rebase prerequisite node.
+The current Python serving image slot remains Python; distinct Go serving and queue-migrator slots
+prevent premature auto-pin activation. No Go deployment or live two-replica acceptance has occurred.
+Delete this implementation-review node after merge; deployment remains in the following nodes.
 
-### `DELIVERY_GO_GATEWAY` — port connection holder and proxy behavior
+### `GATEWAY_GO_ROLLOUT_CONFIG` — publish images and wire migration readiness into Flux
 
-**Depends on `DELIVERY_GO_PROTOCOL_AUTH`; independently dispatchable from the queue port.** Port
-`RunnerControl.Connect`, tunnel framing/heartbeats, holder epochs, connection Lease watch/write,
-EndpointSlice writes and per-Sandbox proxy routing. Preserve `Runner.ListSessions`, controller
-`Quiesce`, runner method policy, reconnect and stale-holder fences. A worker on another replica must
-still route through `<sandbox>-control`; do not replace the EndpointSlice with an in-process pointer.
-Compare behavior and failure recovery with the Python Gateway under two replicas.
+**Blocked on implementation merge and published, pinned images; not started.** Use the existing
+root Flux owner for CNPG, database/Secrets and stable Gateway/Dispatcher Services. Add the
+full-digest-named Goose Job there with an explicit completion health check; put only the new Go
+serving workload in a separate Kustomization depending on that root. This avoids a migration/serving
+dependency cycle without transferring stateful resource ownership. The inactive constructs in
+#10705 are not this live chart wiring. Verify the deployed Dispatcher Alembic head/schema before
+Goose's data-preserving handoff; the retired Gateway database must not return.
 
-Current Python RBE baselines are `runner_gateway/test_lifecycle_control.py` (a caller on one replica
-reaches a runner held by another), `test_runner_control.py` (Connect identity, epochs and EndpointSlice
-fencing), and `test_runner_proxy.py` (proxy auth, refusal and status). The new
-`session_dispatcher/test_gateway_contract.py` additionally covers the public Dispatcher queue through
-the Gateway proxy and runner tunnel. Go acceptance still needs equivalent Go tests, including the
-two-replica path.
-
-### `DELIVERY_GO_DISPATCHER` — port durable admission and queue recovery
-
-**Depends on `DELIVERY_GO_PROTOCOL_AUTH`; independently dispatchable from the Gateway port.** Choose
-a Go PostgreSQL driver and map the existing schema/transactions for `dispatch`, `session_opening`,
-`sandbox_ownership` and `wake_attempt`, including NOTIFY/listener wakeups, idempotency, per-Session
-ordering, queue cap, stop/cancel, watch/list/status, wake-on-accept, delivery Lease plus database
-generation fence, owner crash recovery and lost-response retry with the same ID. Retain existing
-database/rows and the rule that a full request is stored before acceptance or wake; do not add a
-direct mode. Verify parity against a real PostgreSQL database and the current runner contract,
-including queued work surviving process replacement and replacement Sandbox UID fencing.
-
-Python RBE baselines are `session_dispatcher/test_grpc_api.py` (auth, queued receipts and same-ID
-idempotency), `test_gateway_contract.py` (queue receipt distinct from later Runner admission through
-Gateway), `test_startup.py` (queued work across Dispatcher restart), `test_delivery.py` (same-ID journal
-resolution after a lost admission reply), and `test_ownership.py` (Lease handoff and stale-generation
-fencing). The Go port still needs equivalent tests against its implementation. Keep
-`agentplane/acceptance:test_dispatcher_deployed` manual for deployed replica failover; do not add it
-to default CI.
-
-### `DELIVERY_GO_RETIREMENT_REBASE` — rebase Go implementation after Python Gateway retirement
-
-**Merge gate; operator-approved, 2026-10-16.** Rebase the single Go implementation PR onto devel
-after the Python wrapper/registry and database-artifact retirement lands. Remove the
-obsolete Gateway registry port, database configuration and Gateway Goose baseline/handoff code;
-keep Dispatcher queue migrations and data-preserving ownership handoff. Do not restore deleted
-wrappers or CNPG resources through the Go cutover. Review the combined diff and run affected Go
-integration checks on the rebased revision before merging. Independent Go Dispatcher and tunnel
-implementation work can continue while the Python cleanup rolls out.
-
-### `DELIVERY_GO_INTEGRATION` — one process and deployment, separate front doors
-
-**Depends on both Go role ports and the post-retirement Go rebase.** Wire a single process and
-image with distinct authenticated Dispatcher sender, Gateway API/proxy and runner `Connect`
-listeners. Keep the Dispatcher PostgreSQL queue, its migration wiring and credentials; do not recreate
-the retired Gateway database. In cdk8s, make one Deployment/ServiceAccount with reviewed union RBAC and per-listener
-NetworkPolicy, while retaining `agentplane-session-dispatcher` and `agentplane-runner-gateway` as
-logical Service names and existing token audiences. Both Services select the unified Pods; the
-runner-control port and per-Sandbox control EndpointSlices still target the holder replica. Update
-image build/publish automation, chart wiring, config producers, readiness, resource/grace settings,
-and service docs. Inventory App/Notification clients, controller Quiesce target, runner egress route,
-saved SandboxTemplates and pinned VM wheel; preserve their wire/endpoint contract or put an explicit
-runner-image/template migration before cutover. Test a two-replica deployment shape and caller
-permission matrix. No old and new writers run together in this implementation test.
+Prepare the staged cutover: stop Python acceptance/workers and Gateway connections, verify zero old
+Pods/workers, then remove their Deployments before activating Go queue owners. Preserve stable
+Service endpoints/audiences, existing runner Pod/VM contracts, per-Sandbox EndpointSlices and queued
+rows. Do not allow both writer implementations concurrently. A brief outage is approved; stateful
+pruning is not. Configure the migration/serving dependency for future rolling releases too. Review
+activation separately; wiring must not quietly deploy the new image as a side effect of publication.
 
 ### `DELIVERY_UNIFIED_CUTOVER` — switch owners without losing admitted work
 
-**Depends on `DELIVERY_GO_INTEGRATION`; operational cutover is separately reviewed.** Recheck the
+**Blocked on `GATEWAY_GO_ROLLOUT_CONFIG`; operational cutover is separately reviewed.** Recheck the
 operator's prerequisite that neither service depends on History: the 2026-10-15 entrypoints,
 settings, chart and runtime call paths have no History client/call/config, while runner ingress and
 app/Notification History reads are separate. If this changes, remove that direct service dependency
@@ -1526,10 +1490,12 @@ or claim History can reconstruct runner storage. Record exact cutover and recove
 
 **Depends on verified cutover.** Remove obsolete Deployment definitions, single-purpose ConfigMaps,
 service accounts/RBAC, network policies, projected inter-service Gateway token and image automation
-entries once no running or saved client needs them. Keep the two stable public Service names as front
-doors, the per-Sandbox control Services/EndpointSlices, database roles/migrations and live wrapper
-interfaces while they still have callers. Legacy alias retirement, Gateway wrapper/registry cleanup
-and data-drop nodes remain independently gated. Search code, BUILD, chart, image automation, docs,
+entries once no running or saved client needs them. Delete the superseded Python serving code and
+its tests/BUILD targets, retaining any still-used shared helpers and Dispatcher migration history
+needed by the reviewed Goose handoff. Restore RollingUpdate after fenced-cutover acceptance.
+Keep both stable Service front doors, per-Sandbox Services/EndpointSlices and the Dispatcher database;
+the Go worker may still need a Gateway-audience token for a different connection-holder replica, so
+remove only unused token projections. Do not recreate the already-retired Gateway wrappers or DB. Search code, BUILD, chart, image automation, docs,
 CI and pinned VM artifacts for references before deleting definitions.
 
 ### `RUNNER_INVENTORY_AUTHORITY_DESIGN` — distinguish live runner state from retained inventory
