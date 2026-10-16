@@ -395,8 +395,9 @@ async def test_revised_recovery_tool_output(recovery_tools: VisualPage) -> None:
     view = recovery_tools
     page = view.page
     output = page.locator(".agentplane-output-label").filter(has_text="Continuation output")
-    await _focus(page, output)
-    await _in_viewport(page.get_by_text("aborted", exact=True))
+    # The label is sticky: scroll its content into view from the content's natural position.
+    await _focus(page, page.get_by_text("aborted", exact=True))
+    await _in_viewport(output)
     await view.capture()
 
 

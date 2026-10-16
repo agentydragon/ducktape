@@ -52,3 +52,9 @@ Python behavior test and an explicit screenshot checkpoint instead. BUILD names 
 module, not individual scenes. Each `visual_*` test target owns one Python test file.
 Run a target directly, or select the group with Bazel's `--test_tag_filters=visual`; there is no aggregate runner or suite.
 Filter within a target with the test function or parametrized case ID.
+
+## Scrolling review scenes
+
+Do not center a sticky heading with `scrollIntoView()`: its pinned screen position makes the
+result depend on the starting scroll offset. Position ordinary content, then assert that its
+heading and content are visible before capture.
