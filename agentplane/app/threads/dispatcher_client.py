@@ -14,6 +14,8 @@ from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2, se
 
 
 class SessionDispatcherClient:
+    """Generated Dispatcher stub plus rotating bearer and deadline transport."""
+
     def __init__(self, channel: grpc.aio.Channel, *, token_file: Path, request_timeout_s: float) -> None:
         self.stub: session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub = (
             session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
@@ -29,19 +31,19 @@ class SessionDispatcherClient:
         common = {"sandbox": sandbox, "session_id": session_id, "command_id": command.command_id}
         match operation:
             case "submit_input":
-                submit_response = await self._unary(
+                submit_response = await self.unary(
                     self.stub.SubmitInput,
                     session_dispatcher_pb2.SubmitInputRequest(**common, text=command.submit_input.text),
                 )
                 return submit_response.dispatch
             case "change_model":
-                model_response = await self._unary(
+                model_response = await self.unary(
                     self.stub.ChangeModel,
                     session_dispatcher_pb2.ChangeModelRequest(**common, model=command.change_model.model),
                 )
                 return model_response.dispatch
             case "change_reasoning_effort":
-                effort_response = await self._unary(
+                effort_response = await self.unary(
                     self.stub.ChangeReasoningEffort,
                     session_dispatcher_pb2.ChangeReasoningEffortRequest(
                         **common, effort=command.change_reasoning_effort.effort
@@ -49,12 +51,12 @@ class SessionDispatcherClient:
                 )
                 return effort_response.dispatch
             case "stop_runner_session":
-                stop_response = await self._unary(
+                stop_response = await self.unary(
                     self.stub.StopRunnerSession, session_dispatcher_pb2.StopRunnerSessionRequest(**common)
                 )
                 return stop_response.dispatch
             case "interrupt_turn":
-                interrupt_response = await self._unary(
+                interrupt_response = await self.unary(
                     self.stub.InterruptTurn,
                     session_dispatcher_pb2.InterruptTurnRequest(**common, turn_id=command.interrupt_turn.turn_id),
                 )
@@ -73,7 +75,7 @@ class SessionDispatcherClient:
                 raise ValueError(f"unsupported Session Dispatcher command operation: {operation!r}")
 
     async def get_dispatch(self, command_id: str) -> session_dispatcher_pb2.Dispatch:
-        response = await self._unary(
+        response = await self.unary(
             self.stub.GetDispatch, session_dispatcher_pb2.GetDispatchRequest(command_id=command_id)
         )
         return response.dispatch
@@ -84,16 +86,14 @@ class SessionDispatcherClient:
         request = session_dispatcher_pb2.OpenSessionRequest(session_id=session_id, sandbox=sandbox, spec=spec)
         if setup_script is not None:
             request.setup_script = setup_script
-        response = await self._unary(self.stub.OpenSession, request)
+        response = await self.unary(self.stub.OpenSession, request)
         return response.opening
 
     async def get_session_opening(self, session_id: str) -> session_dispatcher_pb2.SessionOpening:
-        response = await self._unary(
+        response = await self.unary(
             self.stub.GetSessionOpening, session_dispatcher_pb2.GetSessionOpeningRequest(session_id=session_id)
         )
         return response.opening
 
-    async def _unary[ResponseT: Message](
-        self, call: Callable[..., Awaitable[ResponseT]], request: Message
-    ) -> ResponseT:
+    async def unary[ResponseT: Message](self, call: Callable[..., Awaitable[ResponseT]], request: Message) -> ResponseT:
         return await call_unary(call, request, token_file=self.token_file, timeout_s=self.request_timeout_s)
