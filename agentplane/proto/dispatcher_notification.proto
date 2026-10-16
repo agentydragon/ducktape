@@ -1,0 +1,12 @@
+// Internal PostgreSQL NOTIFY envelope for Dispatcher terminal Watch events.
+// NOTIFY carries text, so each serialized envelope is base64-encoded once.
+syntax = "proto3";
+
+package agentplane.proto.dispatcher_notification;
+
+message TerminalNotificationPart {
+  string event_id = 1;
+  uint32 part = 2;
+  uint32 part_count = 3;
+  bytes data = 4;
+}

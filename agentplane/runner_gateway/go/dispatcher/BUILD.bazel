@@ -1,0 +1,116 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+go_library(
+    name = "dispatcher",
+    srcs = [
+        "api.go",
+        "delivery.go",
+        "delivery_wake.go",
+        "ownership.go",
+        "runner_client.go",
+        "sandbox_kubernetes.go",
+        "snapshots.go",
+        "store.go",
+        "terminal.go",
+        "wake.go",
+        "watch.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/go/dispatcher",
+    visibility = [
+        "//agentplane/runner_gateway:__subpackages__",
+        "//agentplane/runner_gateway/go:__subpackages__",
+    ],
+    deps = [
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:dispatcher_notification_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:runner_control_go_proto",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:session_dispatcher_go_proto",
+        "//agentplane/runner_gateway/go/auth",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+        "@io_k8s_api//coordination/v1:coordination",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_apimachinery//pkg/watch",
+        "@io_k8s_client_go//dynamic",
+        "@io_k8s_client_go//tools/cache",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+# Executed by the Python wrapper below so the repo's real PostgreSQL fixture
+# provides a migrated database. Running this Go test alone intentionally fails.
+go_test(
+    name = "sandbox_kubernetes_test",
+    srcs = ["sandbox_kubernetes_test.go"],
+    embed = [":dispatcher"],
+    deps = [
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_client_go//dynamic/fake",
+    ],
+)
+
+go_test(
+    name = "store_integration_test",
+    srcs = ["store_integration_test.go"],
+    embed = [":dispatcher"],
+    tags = ["manual"],
+    deps = [
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:session_dispatcher_go_proto",
+        "//agentplane/runner_gateway/go/auth",
+        "@com_github_lib_pq//:pq",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//util/testing:postgres_fixtures"],
+)
+
+py_test(
+    name = "test_store_integration",
+    size = "medium",
+    srcs = ["test_store_integration.py"],
+    data = [
+        ":store_integration_test",
+        "//agentplane/runner_gateway/go/migrations/cmd:runner-gateway-queue-migrate",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/runner_gateway:conftest",
+        "//util/bazel:runfiles",
+        "//util/testing:postgres",
+        "@pypi//psycopg",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
