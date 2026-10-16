@@ -473,6 +473,12 @@ arrange one Codex app-server process per store or the current Claude stream-json
 Session. Process instances may appear as diagnostics with hosted Sessions/status. At-most-one
 process per store and shared-store concurrent safety remain open.
 
+Current [`SessionSpec`](../proto/runner.proto) already selects Claude or Codex and has no store
+selector; the adapters create `CODEX_HOME` or `CLAUDE_CONFIG_DIR` under the Session's runner-owned
+directory. No production in-repo caller currently chooses either directory. That supports trying a
+private default-store policy first, subject to the external/pinned-caller audit, without proving a
+public store API can never be useful.
+
 The Sandbox UID must identify the exact incarnation; namespace/name may be a locator, but its wire
 syntax and UID resolver are open. A runner-owned store ID names one durable lineage and is never
 recycled, even after retirement; it is not a path or process. A public Session ID names a logical
@@ -500,6 +506,11 @@ the possibly orphaned native data for reconciliation. A lost response after the 
 commit resolves by the same public ID. Claude's current adapter chooses a native ID before launch;
 that narrower path does not solve the harness-chosen-ID crash window in general. Specify the
 reservation/mapping format, native reconciliation proof, and failure status before implementation.
+Today [`Session._start`](../runner/session.py) writes the native ID only after adapter handshake;
+[`CodexAdapter`](../runner/codex.py) starts a native thread during that handshake, and
+[`ClaudeAdapter`](../runner/claude.py) selects an ID before launch but also persists it afterward.
+Persisting Claude's chosen ID before launch can narrow its case; Codex still needs a proven recovery
+path for an ID assigned by the harness.
 
 **Store and Session lifecycle proposal for review:** a store has a durable internal ID, harness type
 and binding to the exact Sandbox UID; it survives process exit, Runner restart and Sandbox suspension.
