@@ -1,5 +1,6 @@
 exports_files(
     [
+        "chartjs_line_overflow.patch",
         "rules_tf_check_terraform_mirror.patch",
         "rules_tf_check_tofu_mirror.patch",
         "aspect_rules_lint_no_external_touch.patch",
