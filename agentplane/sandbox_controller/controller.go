@@ -601,12 +601,23 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 	workloadReady := workloadReadyCondition(sandbox, condition, w.incarnation())
 	meta.SetStatusCondition(&status.Conditions, workloadReady)
 	ready := workloadReady
-	connected, recheck, err := r.runnerConnectedCondition(ctx, sandbox, workloadReady, w.incarnation())
-	if err != nil {
-		return ctrl.Result{}, err
+	incarnation := w.incarnation()
+	var connectionLease *coordinationv1.Lease
+	needsConnectionLease := workloadReady.Status == metav1.ConditionTrue ||
+		(sandbox.Spec.Bootstrap != "" && incarnation != nil)
+	if needsConnectionLease {
+		var lease coordinationv1.Lease
+		err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + sandboxlease.RunnerLeaseSuffix}, &lease)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
+		if err == nil {
+			connectionLease = &lease
+		}
 	}
+	connected, recheck := runnerConnectedCondition(sandbox, workloadReady, incarnation, connectionLease, r.Now())
 	meta.SetStatusCondition(&status.Conditions, connected)
-	bootstrapped, err := r.bootstrappedCondition(ctx, sandbox, w.incarnation())
+	bootstrapped, err := bootstrappedCondition(sandbox, incarnation, connectionLease)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -656,53 +667,46 @@ func workloadReadyCondition(sandbox *sandboxapi.Sandbox, running metav1.Conditio
 // was renewed within its duration plus the grace, so a connection from an earlier incarnation never
 // counts and a brief drop does not. It also says when to look again, since no watch event marks time:
 // the moment a live connection would lapse, and a lapsed one, which a renewal revives silently.
-func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *sandboxapi.Sandbox, workload metav1.Condition, incarnation *corev1.Pod) (metav1.Condition, time.Duration, error) {
+func runnerConnectedCondition(sandbox *sandboxapi.Sandbox, workload metav1.Condition, incarnation *corev1.Pod, lease *coordinationv1.Lease, now time.Time) (metav1.Condition, time.Duration) {
 	condition := metav1.Condition{Type: sandboxapi.ConditionRunnerConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	if workload.Status != metav1.ConditionTrue {
 		condition.Reason, condition.Message = "WorkloadNotReady", "the incarnation is not Ready"
-		return condition, 0, nil
+		return condition, 0
 	}
-	var lease coordinationv1.Lease
-	if err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + sandboxlease.RunnerLeaseSuffix}, &lease); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return condition, 0, err
-		}
+	if lease == nil {
 		condition.Reason, condition.Message = "NeverConnected", "no runner has connected"
-		return condition, 0, nil
+		return condition, 0
 	}
 	if runner := lease.Annotations[sandboxlease.PodUIDAnnotation]; runner == "" || runner != string(incarnation.UID) {
 		condition.Reason, condition.Message = "AwaitingRunner", fmt.Sprintf("the runner that connected last is not Pod %s's", incarnation.Name)
-		return condition, 0, nil
+		return condition, 0
 	}
 	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
 		condition.Reason, condition.Message = "ConnectionLost", "the connection Lease records no renewal"
-		return condition, runnerLapsedPoll, nil
+		return condition, runnerLapsedPoll
 	}
 	lapse := lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second + runnerDisconnectGrace)
-	if remaining := lapse.Sub(r.Now()); remaining > 0 {
+	if remaining := lapse.Sub(now); remaining > 0 {
 		condition.Status, condition.Reason = metav1.ConditionTrue, "Connected"
 		condition.Message = fmt.Sprintf("Pod %s's runner is connected to the Runner Gateway", incarnation.Name)
-		return condition, remaining, nil
+		return condition, remaining
 	}
 	condition.Reason, condition.Message = "ConnectionLost", fmt.Sprintf("Pod %s's runner has not renewed its connection since %s", incarnation.Name, lease.Spec.RenewTime.Format(time.RFC3339))
-	return condition, runnerLapsedPoll, nil
+	return condition, runnerLapsedPoll
 }
 
 // bootstrappedCondition says how far the Sandbox's bootstrap has got, from the facts the incarnation's
 // runner published on its Lease. A Sandbox without one is bootstrapped. A runner that has reported
 // nothing leaves the condition Unknown, since one that predates the fact never will.
-func (r *Reconciler) bootstrappedCondition(ctx context.Context, sandbox *sandboxapi.Sandbox, incarnation *corev1.Pod) (metav1.Condition, error) {
+func bootstrappedCondition(sandbox *sandboxapi.Sandbox, incarnation *corev1.Pod, lease *coordinationv1.Lease) (metav1.Condition, error) {
 	condition := metav1.Condition{Type: sandboxapi.ConditionBootstrapped, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	if sandbox.Spec.Bootstrap == "" {
 		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "NoBootstrap", "the Sandbox has no bootstrap"
 		return condition, nil
 	}
 	var facts sandboxlease.RunnerFacts
-	if incarnation != nil {
-		lease, err := r.runnerLease(ctx, sandbox)
-		if err != nil {
-			return condition, err
-		}
+	if incarnation != nil && lease != nil {
+		var err error
 		if facts, err = sandboxlease.DecodeFacts(lease.Name, lease.Annotations, string(incarnation.UID)); err != nil {
 			return condition, err
 		}

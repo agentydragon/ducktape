@@ -261,6 +261,53 @@ func TestSandboxWithoutABootstrapIsBootstrapped(t *testing.T) {
 	}
 }
 
+func TestStatusConditionsUseOneConnectionLeaseSnapshot(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	setBootstrap(t, c, "echo test-bootstrap")
+	sandbox := getSandbox(t, c)
+	connect(t, c, "uid-pod")
+	var lease coordinationv1.Lease
+	leaseKey := client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}
+	if err := c.Get(context.Background(), leaseKey, &lease); err != nil {
+		t.Fatal(err)
+	}
+	lease.Annotations[sandboxlease.BootstrapAnnotation] = "succeeded"
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+
+	reader := &countingLeaseReader{Reader: c}
+	r.Leases = reader
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-pod"},
+		Status:     corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
+	}
+	if _, err := r.updateStatus(context.Background(), sandbox, workload{pod: pod}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if reader.leaseGets != 1 {
+		t.Errorf("connection Lease reads = %d, want one snapshot shared by both conditions", reader.leaseGets)
+	}
+	for _, conditionType := range []string{sandboxapi.ConditionRunnerConnected, sandboxapi.ConditionBootstrapped} {
+		condition := getCondition(t, c, conditionType)
+		if condition.Status != metav1.ConditionTrue {
+			t.Errorf("%s = %s/%s, want True from the shared connection Lease", conditionType, condition.Status, condition.Reason)
+		}
+	}
+}
+
+type countingLeaseReader struct {
+	client.Reader
+	leaseGets int
+}
+
+func (r *countingLeaseReader) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if _, ok := obj.(*coordinationv1.Lease); ok {
+		r.leaseGets++
+	}
+	return r.Reader.Get(ctx, key, obj, opts...)
+}
+
 func TestSandboxWhoseRunnerNeverConnectedIsNotReady(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
