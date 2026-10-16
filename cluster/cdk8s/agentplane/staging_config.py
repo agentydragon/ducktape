@@ -1,4 +1,4 @@
-"""Generates agentplane-staging's `agentplane-app-config` ConfigMap's `config.yaml`
+"""Generates agentplane-staging's `app-config` ConfigMap's `config.yaml`
 content -- agentplane/app/settings.py's `AppSettingsConfig`, mounted by the Deployment. See
 model_catalog/catalog.py for the model-name scheme.
 """

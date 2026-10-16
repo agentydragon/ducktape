@@ -22,8 +22,8 @@ from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
 # The command box's PodTemplate, and both boxes' Pod name label and fence. The egress proxy's
 # policy spells it too (egress.py), since this module imports that one.
-NAME = "agentplane-sandbox"
-BUILD_NAME = "agentplane-sandbox-build"
+NAME = "sandbox"
+BUILD_NAME = "sandbox-build"
 # The workload container, which `exec` runs commands in.
 CONTAINER = "sandbox"
 # The image's HOME and WorkingDir, writable by its uid 1000 (agentplane/images/sandbox.nix).

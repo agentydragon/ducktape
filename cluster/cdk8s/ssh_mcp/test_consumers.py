@@ -58,19 +58,15 @@ def test_actions_binding_uses_the_bearer_ssh_mcp_mints(
 ) -> None:
     documents = agentplane_manifests["agentplane-staging"]
     settings = yaml.safe_load(
-        one(
-            doc
-            for doc in documents
-            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-actions-settings"
-        )["data"]["settings.yaml"]
+        one(doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings")[
+            "data"
+        ]["settings.yaml"]
     )
     config = settings["action_groups"]["ssh"]["executor"]["config"]
     assert config["auth"] == "static_bearer"
     assert config["url"] == ssh_mcp_config.MCP_URL
     bearer_file = Path(config["bearer_file"])
-    deployment = one(
-        doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "agentplane-actions"
-    )
+    deployment = one(doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions")
     pod = deployment["spec"]["template"]["spec"]
     actions = one(pod["containers"])
     mount = one(m for m in actions["volumeMounts"] if Path(m["mountPath"]) == bearer_file.parent)

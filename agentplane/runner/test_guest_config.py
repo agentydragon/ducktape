@@ -14,7 +14,7 @@ def _config(**updates: object) -> GuestConfig:
         "version": 1,
         "control": {"target": "test-gateway.test:7100", "bearer": "test-control-placeholder"},
         "ingress": {"target": "test-history.test:8081", "bearer": "test-ingress-placeholder"},
-        "llm_base_url": "http://agentplane-llm-ingress.agentplane.svc.cluster.local:8080",
+        "llm_base_url": "http://llm-ingress.agentplane.svc.cluster.local:8080",
         "proxy_url": "http://10.0.2.2:3128",
         "platform_instructions": "Test platform guidance.",
     }
@@ -30,7 +30,7 @@ def test_guest_config_builds_explicit_proxy_and_persistent_paths() -> None:
     assert runner.workspace_root is not None
     assert runner.workspace_root.as_posix() == "/state/workspaces"
     assert runner.claude is not None
-    assert runner.claude.base_url == "http://agentplane-llm-ingress.agentplane.svc.cluster.local:8080"
+    assert runner.claude.base_url == "http://llm-ingress.agentplane.svc.cluster.local:8080"
     assert runner.codex is not None
     assert runner.codex.base_url.endswith(":8080/v1")
     assert runner.claude.auth_token == "agentplane-credential-agentplane-workload"

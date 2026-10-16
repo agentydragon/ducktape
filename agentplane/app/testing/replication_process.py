@@ -255,7 +255,7 @@ async def _serve(
             inventory = SandboxAccess(
                 SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core),
                 default_policy_sets=frozenset(),
-                caller=ServiceAccountRef(namespace=NAMESPACE, name="agentplane-app"),
+                caller=ServiceAccountRef(namespace=NAMESPACE, name="app"),
             )
             gateway = RunnerGatewayClient(
                 channel,

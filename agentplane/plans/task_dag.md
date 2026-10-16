@@ -1446,26 +1446,31 @@ only after that rollout delete their settings readers. This remains a separate d
 
 ```mermaid
 flowchart TD
-    AGENTPLANE_OBJECT_NAMES[In flight: remove redundant prefixes from safe stateless metadata]
+    AGENTPLANE_LEGACY_RUNTIME_ALIASES_RETIRE[Remove legacy Sandbox DNS and ConfigMap aliases after reader gate]
 ```
 
-### `AGENTPLANE_OBJECT_NAMES` — drop redundant prefixes from stateless Agentplane objects
+The stateless namespace-local naming cleanup is complete. Services, Deployments, ServiceAccounts,
+ConfigMaps, HTTPRoutes, monitors, PodDisruptionBudgets, and remaining safe local network and RBAC
+objects now use names that do not repeat their `agentplane-*` namespace. References and generated
+manifests moved with them. Secret and credential names, PolicySets, database resources, Flux
+Kustomization identities, token audiences, and other durable auth or data identities retain their
+established names.
 
-**In flight; lane6, 2026-10-15 UTC.** This PR removes the namespace-redundant prefix from Cilium
-NetworkPolicy names and service-local Role/RoleBinding names whose names are not consumed as a grant
-identity. It updates their references and generated manifests without changing their selectors,
-rules, subjects or service endpoints. Follow the existing
-[cdk8s naming rule](../../cluster/cdk8s/AGENTS.md): an in-namespace name carries what its namespace
-does not.
+The rename keeps the prior DNS names as Service aliases and mirrors the runner platform-instructions,
+tool-config, and VM-config ConfigMaps at their old names. Persisted Sandbox specs and already-running
+Pods or VMs can retain those references after a template update; the aliases point at the current
+services and config data. Runner Pod labels also keep their prior value so existing incarnations
+remain covered by the network fences.
 
-The Service, Deployment, ServiceAccount, ConfigMap, HTTPRoute, monitoring and PodDisruptionBudget
-names remain for a staged follow-up. Service DNS is embedded in long-lived Sandbox runner configs;
-Deployment selectors and ServiceAccount subjects are runtime identities; ConfigMaps have mounted or
-template readers. A coordinated replacement needs to preserve the old route/config until every
-reader has moved. Duplicate HTTPRoutes can conflict, duplicate monitors can duplicate scrapes, and
-overlapping PodDisruptionBudgets can block voluntary evictions during reconciliation. Keep Secrets,
-PodTemplates, PolicySets, databases, PVCs, mirrored credentials, and roles named by the grant catalog
-or existing managed Sandbox specs under their current identity.
+### `AGENTPLANE_LEGACY_RUNTIME_ALIASES_RETIRE` — remove old Sandbox runtime references
+
+**Blocked on a read-only rollout inventory showing no running Sandbox Pod or VM, and no persisted
+Sandbox/template spec that can still start an incarnation, references the old Service DNS or
+ConfigMap names.** Do not delete or force-recreate Sandboxes to clear this gate. Once every old
+incarnation and stored spec has naturally moved or gone, remove the legacy Service aliases and the
+three ConfigMap mirrors together with their compatibility tests and reader permissions. Until then,
+they are required runtime compatibility for user-owned Sandbox state, not unfinished canonical
+naming.
 
 ## Scope and retirement of stale gates
 

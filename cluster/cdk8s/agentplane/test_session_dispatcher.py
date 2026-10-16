@@ -158,7 +158,7 @@ def test_app_config_omits_retired_dispatcher_session_opening_flag(
         config = one(
             doc
             for doc in agentplane_manifests[namespace]
-            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
+            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
         )
         return cast(dict[str, Any], yaml.safe_load(config["data"]["config.yaml"]))
 

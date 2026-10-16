@@ -36,10 +36,13 @@ from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate
 from cluster.cdk8s.service_ref import Pods
 
 # Every runner template's Pod name label, and the runners' ServiceAccount and fence.
-NAME = "agentplane-runner"
+NAME = "runner"
+# Sandbox runner Pods can outlive their template revision. Keep the label they already carry so the
+# network fences continue to select existing incarnations until they are naturally replaced.
+_POD_LABEL_NAME = "agentplane-runner"
 _IMAGE = "git.allegedly.works/ducktape-ci/runner"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-_LABELS = {"app.kubernetes.io/name": NAME}
+_LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
 # Shared by the runner's --state-dir flag, its container volumeMount, and the
 # SandboxTemplate's state volume -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
@@ -52,7 +55,8 @@ KUBERNETES_ADMIN_INSTRUCTIONS = (
     Path(__file__).with_name("kubernetes_admin_instructions.md").read_text(encoding="utf-8").strip()
 )
 # The deployment-wide instructions every Session starts with, as a ConfigMap the runner container mounts.
-_PLATFORM_INSTRUCTIONS_CONFIG_MAP = "agentplane-runner-platform-instructions"
+_PLATFORM_INSTRUCTIONS_CONFIG_MAP = "runner-platform-instructions"
+_LEGACY_PLATFORM_INSTRUCTIONS_CONFIG_MAP = "agentplane-runner-platform-instructions"
 _PLATFORM_INSTRUCTIONS_KEY = "platform-instructions.md"
 _PLATFORM_INSTRUCTIONS_VOLUME = "platform-instructions"
 _PLATFORM_INSTRUCTIONS_DIR = "/etc/agentplane/platform-instructions"
@@ -112,11 +116,20 @@ class RunnerSandbox(Construct):
             egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],
         )
         platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
+        instructions = platform_instructions(env)
         ConfigMap(
             self,
             "platform-instructions",
             metadata=ApiObjectMetadata(name=_PLATFORM_INSTRUCTIONS_CONFIG_MAP, namespace=namespace),
-            data={_PLATFORM_INSTRUCTIONS_KEY: platform_instructions(env)},
+            data={_PLATFORM_INSTRUCTIONS_KEY: instructions},
+        )
+        # Existing Sandbox Pods and VMs keep their original volume reference until the next
+        # incarnation. Mirror the current instructions at that name so mounted readers keep working.
+        ConfigMap(
+            self,
+            "legacy-platform-instructions",
+            metadata=ApiObjectMetadata(name=_LEGACY_PLATFORM_INSTRUCTIONS_CONFIG_MAP, namespace=namespace),
+            data={_PLATFORM_INSTRUCTIONS_KEY: instructions},
         )
         template = RunnerTemplate(self, "runner-template", env, name="runner", image=_IMAGE)
         if env.vm_sandboxes:

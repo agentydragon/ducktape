@@ -54,9 +54,29 @@ def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]
 
 def _app_default_policies(docs: list[dict[str, Any]]) -> list[str]:
     """The PolicySets the app grants to each Sandbox it creates."""
-    config = _by_name(docs, "ConfigMap", "agentplane-app-config")
+    config = _by_name(docs, "ConfigMap", "app-config")
     defaults: list[str] = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
     return defaults
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_legacy_sandbox_service_names_still_target_the_current_workloads(
+    agentplane_manifests: dict[str, list[dict[str, Any]]], namespace: str
+) -> None:
+    """Existing runner specs keep their old DNS names until their Pods or VMs are replaced."""
+    docs = agentplane_manifests[namespace]
+    for canonical, legacy in (
+        ("actions", "agentplane-actions"),
+        ("egress", "agentplane-egress"),
+        ("history-service", "agentplane-history-service"),
+        ("llm-ingress", "agentplane-llm-ingress"),
+        ("notifications", "agentplane-notifications"),
+        ("runner-gateway", "agentplane-runner-gateway"),
+    ):
+        current = _by_name(docs, "Service", canonical)
+        compatibility = _by_name(docs, "Service", legacy)
+        assert compatibility["spec"]["selector"] == current["spec"]["selector"]
+        assert compatibility["spec"]["ports"] == current["spec"]["ports"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
@@ -77,7 +97,7 @@ def test_public_internet_is_available_but_never_implicitly_granted(
     public = _by_name(docs, "PolicySet", PUBLIC_INTERNET_POLICY)
     assert public["spec"]["rules"] == [{"type": "egress", "hosts": ["*"]}]
     # Every preset, not just today's public-coder preset, and the defaults.
-    assert PUBLIC_INTERNET_POLICY not in _by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"]
+    assert PUBLIC_INTERNET_POLICY not in _by_name(docs, "ConfigMap", "app-config")["data"]["config.yaml"]
     assert PUBLIC_INTERNET_POLICY not in _app_default_policies(docs)
     for doc in docs:
         if doc["kind"] == "PolicyBinding":
@@ -101,7 +121,10 @@ def test_workload_policy_grants_only_the_agent_facing_actions_api(
         for doc in agentplane_manifests[namespace]
         if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == BASIC_POLICY
     )
-    rule = one(rule for rule in policy["spec"]["rules"] if one(rule["hosts"]).startswith("agentplane-actions."))
+    canonical_host = f"actions.{namespace}.svc.cluster.local"
+    legacy_host = f"agentplane-actions.{namespace}.svc.cluster.local"
+    rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule["hosts"])
+    assert legacy_host in rule["hosts"]
     assert rule["paths"], "a rule without paths admits every path on the host"
     assert all(path.startswith(_AGENT_FACING_PREFIXES) for path in rule["paths"])
 
@@ -157,7 +180,7 @@ def test_notifications_use_their_own_projected_audience(
     assert notification_rule["credentialRef"] == {"name": notifications.WORKLOAD_CREDENTIAL}
     credential = _by_name(docs, "EgressCredential", notifications.WORKLOAD_CREDENTIAL)
     assert credential["spec"]["source"]["projectedWorkloadToken"]["audience"] == notifications.TOKEN_AUDIENCE
-    settings = _by_name(docs, "ConfigMap", "agentplane-egress-settings")["data"]["settings.yaml"]
+    settings = _by_name(docs, "ConfigMap", "egress-settings")["data"]["settings.yaml"]
     proxy_settings = yaml.safe_load(settings)
     assert notifications.TOKEN_AUDIENCE in proxy_settings["projected_token_audiences"]
     notification_settings = yaml.safe_load(
@@ -227,7 +250,7 @@ def test_claude_picker_offers_environment_models_and_keeps_ingress(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     docs = agentplane_manifests[namespace]
-    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     expected_claude_models = (
         [route.id for route in STAGING_APP_MODELS.claude]
         if namespace == staging.ENV.namespace
@@ -243,7 +266,7 @@ def test_claude_picker_offers_environment_models_and_keeps_ingress(
         )
     assert all(preset["harness"] == "HARNESS_CODEX" for preset in config["thread_presets"].values())
     # The Anthropic Messages endpoint remains available to Claude sessions.
-    assert any(doc["kind"] == "Service" and doc["metadata"]["name"] == "agentplane-llm-ingress" for doc in docs)
+    assert any(doc["kind"] == "Service" and doc["metadata"]["name"] == "llm-ingress" for doc in docs)
 
 
 def test_haku_launches_on_codex_with_the_wider_qwen_context_window(
@@ -256,7 +279,7 @@ def test_haku_launches_on_codex_with_the_wider_qwen_context_window(
     at all, since only staging provisions Haku's credentials.
     """
     docs = agentplane_manifests[staging.ENV.namespace]
-    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     preset = config["thread_presets"]["haku-codex"]
     assert preset["harness"] == "HARNESS_CODEX"
     assert preset["model"] == OLLAMA_QWEN_IQ4XS_256K.openai.id
@@ -266,9 +289,7 @@ def test_haku_launches_on_codex_with_the_wider_qwen_context_window(
     assert config["sandbox_presets"]["haku"]["thread_preset"] == "haku-codex"
 
     testing_config = yaml.safe_load(
-        _by_name(agentplane_manifests[testing.ENV.namespace], "ConfigMap", "agentplane-app-config")["data"][
-            "config.yaml"
-        ]
+        _by_name(agentplane_manifests[testing.ENV.namespace], "ConfigMap", "app-config")["data"]["config.yaml"]
     )
     assert not {"haku", "haku-codex"} & set(testing_config["sandbox_presets"])
     assert not {"haku", "haku-codex"} & set(testing_config["thread_presets"])
@@ -284,7 +305,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     preset: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
-    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert "kubernetes_grants" not in config
     grant_models = staging_grants.catalog(staging.ENV.namespace)
     catalog = {name: grant.model_dump(mode="json") for name, grant in grant_models.items()}
@@ -390,9 +411,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         else set()
     )
     testing_config = yaml.safe_load(
-        _by_name(agentplane_manifests[testing.ENV.namespace], "ConfigMap", "agentplane-app-config")["data"][
-            "config.yaml"
-        ]
+        _by_name(agentplane_manifests[testing.ENV.namespace], "ConfigMap", "app-config")["data"]["config.yaml"]
     )
     assert "kubernetes_grants" not in testing_config
     assert not _kubernetes_grants(testing_config["sandbox_presets"]["public-coder"]["policy_sets"])
@@ -481,7 +500,7 @@ def test_finance_aiquota_history_is_read_only_and_finance_only(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
-    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert FINANCE_AIQUOTA_HISTORY_POLICY in config["sandbox_presets"]["finance-agent"]["policy_sets"]
     for name in ("public-coder", "haku"):
         assert FINANCE_AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"][name]["policy_sets"]

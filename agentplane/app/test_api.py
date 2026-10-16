@@ -396,7 +396,7 @@ async def test_resume_during_controller_quiescing_is_retryable_in_direct_app(
     app.state.services.inventory = SandboxAccess(
         SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), core_v1=cast(Any, core_v1)),
         default_policy_sets=set(),
-        caller=ServiceAccountRef(namespace=NAMESPACE, name="agentplane-app"),
+        caller=ServiceAccountRef(namespace=NAMESPACE, name="app"),
     )
     patches = list(custom_objects.patches)
 

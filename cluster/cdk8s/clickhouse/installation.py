@@ -535,7 +535,7 @@ def networkpolicy_chart(app: App) -> Chart:
                 ),
                 k8s.NetworkPolicyIngressRule(
                     from_=_from_namespace(
-                        cilium.AGENTPLANE_STAGING_PROXY.namespace, {"app.kubernetes.io/name": "agentplane-egress"}
+                        cilium.AGENTPLANE_STAGING_PROXY.namespace, {"app.kubernetes.io/name": "egress"}
                     ),
                     ports=_ports(client.HTTP.pod_port),
                 ),

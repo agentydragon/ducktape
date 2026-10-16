@@ -26,7 +26,7 @@ from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import env_name
 
-NAME = "agentplane-history-service"
+NAME = "history-service"
 TOKEN_AUDIENCE = "agentplane-history-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-history-service"
@@ -112,6 +112,7 @@ class HistoryService(Construct):
                 name="migrate",
                 env_variables={"AGENTPLANE_HISTORY_SERVICE_DATABASE_URL": database_url},
             ),
+            legacy_service_names=("agentplane-history-service",),
         )
         config.mount_into(workload.container, env=Settings.config_file_env)
         proxy = egress.proxy(env.namespace)

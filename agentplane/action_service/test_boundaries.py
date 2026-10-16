@@ -31,7 +31,7 @@ from agentplane.workload_auth.principal import (
 
 AUDIENCE = "action-service-test-audience"
 NAMESPACE = "agentplane-staging"
-SUBJECT = f"system:serviceaccount:{NAMESPACE}:agentplane-runner"
+SUBJECT = f"system:serviceaccount:{NAMESPACE}:sandbox-a"
 TOKEN_A = "opaque-bound-workload-a"
 TOKEN_B = "opaque-bound-workload-b"
 
@@ -39,7 +39,7 @@ TOKEN_B = "opaque-bound-workload-b"
 def principal(label: str) -> WorkloadPrincipal:
     return WorkloadPrincipal(
         namespace=NAMESPACE,
-        service_account_name="agentplane-runner",
+        service_account_name="sandbox-a",
         service_account_subject=SUBJECT,
         pod_name=f"sandbox-{label}-pod",
         pod_uid=f"pod-{label}-uid",

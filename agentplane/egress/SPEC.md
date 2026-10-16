@@ -108,7 +108,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 ## Upstream address
 
 - **A sandbox can read the rules that apply to it**, at
-  `http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's
+  `http://egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's
   existing HTTP(S) proxy, the same path it uses for every other destination. The answer names the
   subject it is of and the egress policies an active binding grants it: each rule's
   hosts, methods, paths, and where a credential is substituted, its placeholder, its operator-written

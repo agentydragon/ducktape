@@ -22,7 +22,7 @@ from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import env_name
 
-NAME = "agentplane-notifications"
+NAME = "notifications"
 WORKLOAD_CREDENTIAL = "agentplane-notifications-workload"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
@@ -80,7 +80,7 @@ class Notifications(Construct):
             content={
                 "namespace": env.namespace,
                 "token_audience": TOKEN_AUDIENCE,
-                "operator_reader_account": "agentplane-app",
+                "operator_reader_account": "app",
                 "notice_debounce": {"quiet_seconds": 60, "max_wait_seconds": 120},
                 "actions": {
                     "url": f"http://{actions.fqdn}:{actions.port.number}",
@@ -119,6 +119,7 @@ class Notifications(Construct):
             ),
             termination_grace=Duration.seconds(30),
             migrate=migrate_init_container(f"{_IMAGE}-migrate:unset", name="migrate", env_variables=variables),
+            legacy_service_names=("agentplane-notifications",),
         )
         role_name = NAME.removeprefix("agentplane-")
         Role(

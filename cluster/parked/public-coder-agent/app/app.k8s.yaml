@@ -582,7 +582,7 @@ spec:
               name: diagnostics
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
-              value: agentplane-egress.agentplane-staging.svc.cluster.local
+              value: egress.agentplane-staging.svc.cluster.local
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
               value: "8888"
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
@@ -717,7 +717,7 @@ spec:
               kubernetes.io/metadata.name: agentplane-staging
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: agentplane-egress
+              app.kubernetes.io/name: egress
     - ports:
         - port: 2222
           protocol: TCP

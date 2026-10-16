@@ -134,7 +134,7 @@ async def async_main(settings: Settings) -> None:
         inventory = SandboxAccess(
             SandboxInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects, core_v1=core_v1),
             default_policy_sets=settings.default_policy_sets,
-            caller=ServiceAccountRef(namespace=settings.sandbox_namespace, name="agentplane-app"),
+            caller=ServiceAccountRef(namespace=settings.sandbox_namespace, name="app"),
         )
         runner_control = SandboxControlClient(
             control_target=settings.runner_gateway_control_target,

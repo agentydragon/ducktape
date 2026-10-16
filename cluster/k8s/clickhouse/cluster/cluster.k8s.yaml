@@ -544,7 +544,7 @@ spec:
               kubernetes.io/metadata.name: agentplane-staging
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: agentplane-egress
+              app.kubernetes.io/name: egress
       ports:
         - port: 8123
           protocol: TCP

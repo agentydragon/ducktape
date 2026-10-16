@@ -74,7 +74,7 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-NAME = "agentplane-egress"
+NAME = "egress"
 _PROXY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-migrate"
 _LABELS = {"app.kubernetes.io/name": NAME}
@@ -382,13 +382,16 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             # The proxy matches a request's host on the exact string, so the in-cluster hosts are the
             # full names their clients spell.
             Rule.egress(
-                hosts=[llm_ingress.service(namespace).fqdn],
+                hosts=[llm_ingress.service(namespace).fqdn, f"agentplane-llm-ingress.{namespace}.svc.cluster.local"],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
                 credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
             Rule.egress(
-                hosts=[notifications.service(namespace).fqdn],
+                hosts=[
+                    notifications.service(namespace).fqdn,
+                    f"agentplane-notifications.{namespace}.svc.cluster.local",
+                ],
                 cluster_internal=True,
                 methods=[
                     PolicySetSpecRulesMethods.GET,
@@ -408,7 +411,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 credential_ref=PolicySetSpecRulesCredentialRef(name=notifications.WORKLOAD_CREDENTIAL),
             ),
             Rule.egress(
-                hosts=[actions.service(namespace).fqdn],
+                hosts=[actions.service(namespace).fqdn, f"agentplane-actions.{namespace}.svc.cluster.local"],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
                 paths=[
@@ -423,7 +426,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
             Rule.egress(
-                hosts=[agent_api(namespace).fqdn],
+                hosts=[agent_api(namespace).fqdn, f"agentplane-egress.{namespace}.svc.cluster.local"],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/openapi.json", "/v1/rules"],
@@ -799,6 +802,7 @@ class Egress(Construct):
                 f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=migrate_env
             ),
             tolerate_control_plane=True,
+            legacy_service_names=("agentplane-egress",),
         )
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
@@ -818,11 +822,9 @@ class Egress(Construct):
                 # Runner Pods, and the sandbox Actions' command boxes. command_sandbox.py imports this
                 # module, so its Pods are named here.
                 IngressRule.from_endpoints(
-                    runners.cilium, cilium.endpoint_labels(namespace, "agentplane-sandbox"), ports=[self.proxy.pod_port]
+                    runners.cilium, cilium.endpoint_labels(namespace, "sandbox"), ports=[self.proxy.pod_port]
                 ),
-                IngressRule.from_endpoints(
-                    cilium.endpoint_labels(namespace, "agentplane-app"), ports=[self.admin.pod_port]
-                ),
+                IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "app"), ports=[self.admin.pod_port]),
                 self.agent_api.pods.admit(self.agent_api.pod_port),
             ],
             egress=[

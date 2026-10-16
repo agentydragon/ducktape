@@ -56,7 +56,7 @@ class EgressCredentials(Construct):
             metadata=ApiObjectMetadata(name=f"{proxy_namespace}-egress", namespace=namespace),
             role=proxy_role,
         ).add_subjects(
-            ServiceAccount.from_service_account_name(self, "proxy", "agentplane-egress", namespace_name=proxy_namespace)
+            ServiceAccount.from_service_account_name(self, "proxy", "egress", namespace_name=proxy_namespace)
         )
 
 

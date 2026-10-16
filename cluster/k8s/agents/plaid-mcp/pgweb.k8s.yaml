@@ -158,7 +158,7 @@ spec:
   ingress:
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: agentplane-egress
+            app.kubernetes.io/name: egress
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

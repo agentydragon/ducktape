@@ -49,9 +49,7 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
 ) -> None:
     for namespace, docs in agentplane_manifests.items():
         templates = {doc["metadata"]["name"]: doc for doc in _templates(docs)}
-        app_config = one(
-            doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
-        )
+        app_config = one(doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config")
         presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
         key_copies = [
             doc
@@ -94,6 +92,28 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
         del args[i - 1 : i + 1]
         # No extra authority in generic runners, testing, or the egress sidecar.
         assert specialized == generic
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_legacy_sandbox_config_maps_mirror_current_data(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    """Existing Pod and VM specs keep these names until each incarnation is naturally replaced."""
+    docs = agentplane_manifests[namespace]
+    for current_name, legacy_name in (
+        ("runner-platform-instructions", "agentplane-runner-platform-instructions"),
+        ("sandbox-tool-config", "agentplane-sandbox-tool-config"),
+        ("runner-vm-config", "agentplane-runner-vm-config"),
+    ):
+        current = _by_name(docs, "ConfigMap", current_name)
+        compatibility = _by_name(docs, "ConfigMap", legacy_name)
+        assert compatibility["data"] == current["data"]
+
+    runner = next(template for template in _templates(docs) if template["metadata"]["name"] == "runner")
+    volumes = runner["spec"]["pod"]["spec"]["volumes"]
+    config_maps = {volume["name"]: volume["configMap"]["name"] for volume in volumes if "configMap" in volume}
+    assert config_maps["platform-instructions"] == "runner-platform-instructions"
+    assert config_maps["tool-config"] == "sandbox-tool-config"
 
 
 if __name__ == "__main__":

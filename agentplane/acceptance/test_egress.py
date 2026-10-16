@@ -56,7 +56,7 @@ PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
 # have to guess that GitHub wants `Bearer` -- both harnesses sent the placeholder bare and were
 # refused when it did not.
 ACCEPTANCE_NAMESPACE = os.environ.get("AGENTPLANE_ACCEPTANCE_NAMESPACE", "agentplane-testing")
-RULES_URL = f"http://agentplane-egress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local/v1/rules"
+RULES_URL = f"http://egress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local/v1/rules"
 # Whose PAT the policy substitutes: the identity GitHub reports back if substitution worked.
 BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.
@@ -67,7 +67,7 @@ UNLISTED_HOST = "example.com"
 # because an agent that cannot reach it has nothing to run -- so a sandbox that names no policy
 # still has this one.
 BASIC_POLICY = "basic"
-LLM_INGRESS_HOST = f"agentplane-llm-ingress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local"
+LLM_INGRESS_HOST = f"llm-ingress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local"
 
 # The proxy records a decision as it serves it; the app reads committed history over a separate hop, and a
 # each replica observes bindings asynchronously; acceptance checks actual read-only egress.

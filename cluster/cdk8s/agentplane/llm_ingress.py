@@ -33,7 +33,7 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-_NAME = "agentplane-llm-ingress"
+_NAME = "llm-ingress"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/agentplane-llm-ingress"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 
@@ -163,6 +163,14 @@ class LlmIngress(Construct):
             selector=deployment,
             ports=[self.service.port.service_port()],
         )
+        # Existing runner Pods have this hostname in their immutable container environment.
+        Service(
+            self,
+            "legacy-service",
+            metadata=ApiObjectMetadata(name="agentplane-llm-ingress", namespace=self.env.namespace),
+            selector=deployment,
+            ports=[self.service.port.service_port()],
+        )
 
     def _add_network_policy(self) -> None:
         # Only central egress can call the workload-authenticated listener. The
@@ -176,7 +184,7 @@ class LlmIngress(Construct):
             ingress=[
                 # egress.py imports this module, so the proxy's Pods are named here.
                 IngressRule.from_endpoints(
-                    cilium.endpoint_labels(self.env.namespace, "agentplane-egress"), ports=[self.service.pod_port]
+                    cilium.endpoint_labels(self.env.namespace, "egress"), ports=[self.service.pod_port]
                 )
             ],
             egress=[

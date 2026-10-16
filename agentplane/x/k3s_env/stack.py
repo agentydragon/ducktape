@@ -371,7 +371,7 @@ def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
             print(k3s.report())
             raise RuntimeError(f"Deployments not Available: {failed}")
         app_ip = k3s.kubectl(
-            "get", "pod", "-n", render.NAMESPACE, "-l", "app.kubernetes.io/name=agentplane-app",
+            "get", "pod", "-n", render.NAMESPACE, "-l", "app.kubernetes.io/name=app",
             "-o", "jsonpath={.items[0].status.podIP}",
         )  # fmt: skip
         token = k3s.kubectl(

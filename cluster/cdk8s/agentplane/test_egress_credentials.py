@@ -17,7 +17,7 @@ def test_only_the_proxy_reads_and_nothing_is_copied() -> None:
     bindings = [obj for obj in objects if obj["kind"] == "RoleBinding"]
     assert len(bindings) == 1
     assert bindings[0]["subjects"] == [
-        {"apiGroup": "", "kind": "ServiceAccount", "name": "agentplane-egress", "namespace": "agentplane-testing"}
+        {"apiGroup": "", "kind": "ServiceAccount", "name": "egress", "namespace": "agentplane-testing"}
     ]
 
 

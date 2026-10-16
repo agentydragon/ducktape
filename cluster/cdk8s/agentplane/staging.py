@@ -441,7 +441,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "notifications-github-webhook-route",
-        metadata=ApiObjectMetadata(name="agentplane-notifications-github-webhook", namespace=STAGING_NAMESPACE),
+        metadata=ApiObjectMetadata(name="notifications-github-webhook", namespace=STAGING_NAMESPACE),
         hostnames=[_NOTIFICATIONS_HOSTNAME],
         backend=notification_service,
         paths=["/v1/webhooks/github"],

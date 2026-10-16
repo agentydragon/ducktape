@@ -285,7 +285,7 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         assert binding["metadata"] == {"name": delegation_role, "namespace": namespace}
         assert binding["roleRef"] == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": delegation_role}
         assert binding["subjects"] == [
-            {"kind": "ServiceAccount", "name": "agentplane-policy-controller", "namespace": "agentplane-staging"}
+            {"kind": "ServiceAccount", "name": "policy-controller", "namespace": "agentplane-staging"}
         ]
 
         flux = flux_by_name[f"{delegation_name}{namespace}"]
@@ -377,9 +377,7 @@ def staging_manifest_docs(k8s_dir: Path) -> list[dict]:
 @pytest.fixture(scope="module")
 def staging_app_config(staging_manifest_docs: list[dict]) -> dict:
     app_config = one(
-        doc
-        for doc in staging_manifest_docs
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
+        doc for doc in staging_manifest_docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
     )
     config = yaml.safe_load(app_config["data"]["config.yaml"])
     assert isinstance(config, dict)

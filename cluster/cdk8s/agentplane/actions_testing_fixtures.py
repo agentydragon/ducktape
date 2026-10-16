@@ -39,14 +39,14 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRul
 
 _NAMESPACE = "agentplane-testing"
 
-MCP_EVERYTHING_NAME = "agentplane-mcp-everything"
+MCP_EVERYTHING_NAME = "mcp-everything"
 _MCP_EVERYTHING_IMAGE = (
     "docker.io/tzolov/mcp-everything-server@sha256:96c4aa07420dd2a8dee0315763a8ea27de72fd054483c781894f6280cd3f56e7"
 )
 MCP_EVERYTHING_PORT = 3001
 _MCP_EVERYTHING_LABELS = {"app.kubernetes.io/name": MCP_EVERYTHING_NAME}
 
-OAUTH_FIXTURE_NAME = "agentplane-oauth-fixture"
+OAUTH_FIXTURE_NAME = "oauth-fixture"
 _OAUTH_FIXTURE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-oauth-fixture"
 _OAUTH_FIXTURE_PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 OAUTH_FIXTURE_PORT = 8080
@@ -106,8 +106,8 @@ def _add_mcp_everything(scope: Construct) -> None:
         endpoint_selector=_MCP_EVERYTHING_LABELS,
         ingress=[
             IngressRule.from_endpoints(
-                cilium.endpoint_labels(_NAMESPACE, "agentplane-app"),
-                cilium.endpoint_labels(_NAMESPACE, "agentplane-actions"),
+                cilium.endpoint_labels(_NAMESPACE, "app"),
+                cilium.endpoint_labels(_NAMESPACE, "actions"),
                 ports=[MCP_EVERYTHING_PORT],
             )
         ],
@@ -126,7 +126,7 @@ def _add_mcp_everything(scope: Construct) -> None:
                 CiliumNetworkPolicySpecEndpointSelectorMatchExpressions(
                     key="app.kubernetes.io/name",
                     operator=CiliumNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
-                    values=["agentplane-app", "agentplane-actions"],
+                    values=["app", "actions"],
                 )
             ]
         ),
@@ -205,11 +205,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
         "oauth-fixture-networkpolicy",
         metadata=ApiObjectMetadata(name=OAUTH_FIXTURE_NAME.removeprefix("agentplane-"), namespace=_NAMESPACE),
         endpoint_selector=_OAUTH_FIXTURE_LABELS,
-        ingress=[
-            IngressRule.from_endpoints(
-                cilium.endpoint_labels(_NAMESPACE, "agentplane-actions"), ports=[OAUTH_FIXTURE_PORT]
-            )
-        ],
+        ingress=[IngressRule.from_endpoints(cilium.endpoint_labels(_NAMESPACE, "actions"), ports=[OAUTH_FIXTURE_PORT])],
         egress=[cilium.dns_egress(resolves=["*"]), dex.service().egress()],
         egress_deny=deny_all_egress(),
     )

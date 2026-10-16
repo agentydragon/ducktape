@@ -3767,51 +3767,51 @@ spec:
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-electric
+      name: electric
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-llm-ingress
+      name: llm-ingress
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-egress
+      name: egress
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-session-dispatcher
+      name: session-dispatcher
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-runner-gateway
+      name: runner-gateway
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-history-service
+      name: history-service
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-app
+      name: app
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-sandbox-controller
+      name: sandbox-controller
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-actions
+      name: actions
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-notifications
+      name: notifications
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-mcp-everything
+      name: mcp-everything
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-oauth-fixture
+      name: oauth-fixture
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
@@ -3819,7 +3819,7 @@ spec:
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-policy-controller
+      name: policy-controller
       namespace: agentplane-testing
     - apiVersion: cert-manager.io/v1
       kind: Certificate
@@ -3975,47 +3975,47 @@ spec:
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-electric
+      name: electric
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-llm-ingress
+      name: llm-ingress
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-egress
+      name: egress
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-session-dispatcher
+      name: session-dispatcher
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-runner-gateway
+      name: runner-gateway
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-history-service
+      name: history-service
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-app
+      name: app
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-sandbox-controller
+      name: sandbox-controller
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-actions
+      name: actions
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-notifications
+      name: notifications
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-policy-controller
+      name: policy-controller
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
       kind: Certificate

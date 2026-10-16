@@ -8,7 +8,7 @@ its construct path (`cdk8s.io/metadata.addr`), and a selector cannot change on a
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch
@@ -93,6 +93,7 @@ def add_service_workload(
     annotations: dict[str, str] | None = None,
     image_pull_policy: ImagePullPolicy = ImagePullPolicy.IF_NOT_PRESENT,
     tolerate_control_plane: bool = False,
+    legacy_service_names: Sequence[str] = (),
 ) -> ServiceWorkload:
     """`serves` are the ports of the one Service in front of the Pods, which share its name and
     labels with the ServiceAccount, Deployment and PDB. Mount volumes into the returned container."""
@@ -144,6 +145,17 @@ def add_service_workload(
         selector=deployment,
         ports=[ref.service_port() for ref in serves],
     )
+    # Running Sandbox Pods keep the Service DNS names rendered into their immutable Pod spec.
+    # Keep these explicit aliases pointed at the current Deployment until every old incarnation is
+    # gone; callers should use the short canonical name above when rendering new configuration.
+    for alias in legacy_service_names:
+        Service(
+            scope,
+            f"legacy-service-{alias}",
+            metadata=ApiObjectMetadata(name=alias, namespace=env.namespace),
+            selector=deployment,
+            ports=[ref.service_port() for ref in serves],
+        )
     if replicas.pdb_min_available is not None:
         k8s.KubePodDisruptionBudget(
             scope,

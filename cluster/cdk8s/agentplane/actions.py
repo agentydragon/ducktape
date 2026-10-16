@@ -46,7 +46,7 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-_NAME = "agentplane-actions"
+_NAME = "actions"
 _ACTIONS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service-migrate"
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -114,7 +114,7 @@ class Actions(Construct):
         settings = SettingsFile(
             self,
             "settings",
-            metadata=ApiObjectMetadata(name="agentplane-actions-settings", namespace=env.namespace),
+            metadata=ApiObjectMetadata(name="actions-settings", namespace=env.namespace),
             model=Settings,
             content=content,
             path="/etc/agentplane-actions/settings.yaml",
@@ -252,6 +252,7 @@ class Actions(Construct):
             # 20s execution drain + 5s forced persistence, with room for HTTP/adapter teardown.
             termination_grace=Duration.seconds(60),
             migrate=migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=env),
+            legacy_service_names=("agentplane-actions",),
             annotations={
                 "secret.reloader.stakater.com/reload": secret_reload,
                 # No configMapGenerator hash rolls the Deployment on settings changes
@@ -329,12 +330,8 @@ class Actions(Construct):
                 IngressRule.from_gateway(self.service.pod_port),
                 notifications.service(namespace).pods.admit(self.service.pod_port),
                 # egress.py and app.py import this module, so their Pods are named here.
-                IngressRule.from_endpoints(
-                    cilium.endpoint_labels(namespace, "agentplane-egress"), ports=[self.service.pod_port]
-                ),
-                IngressRule.from_endpoints(
-                    cilium.endpoint_labels(namespace, "agentplane-app"), ports=[self.service.pod_port]
-                ),
+                IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "egress"), ports=[self.service.pod_port]),
+                IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "app"), ports=[self.service.pod_port]),
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),

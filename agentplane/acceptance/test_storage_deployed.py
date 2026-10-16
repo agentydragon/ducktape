@@ -249,7 +249,7 @@ async def _probe(client: Client, name: str, cwd: str, workspace_dir: str, marker
 async def test_fresh_workspace_storage_survives_replacement(client: Client, base_url: str, case: str) -> None:
     # This test cannot be redirected to staging via the standard client fixture.
     assert base_url.rstrip("/") == "https://agentplane-testing.allegedly.works"
-    controller = await _object("deployment", "agentplane-sandbox-controller")
+    controller = await _object("deployment", "sandbox-controller")
     assert controller["status"].get("readyReplicas") == 1
     # The operator supplies the exact source-verified accepting pin before the run. A concurrent
     # image rollout fails this gate before any new-layout template is written.
@@ -273,7 +273,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
         runner["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})
     marker = f"storage-test-{uuid4().hex}"
     bootstrap = f"set -eu\nprintf '%s\\n' {marker} > /state/storage-acceptance-state\nprintf '%s\\n' {marker} > {workspace_dir}/storage-acceptance-workspace\nsync\n"
-    config = await _object("configmap", "agentplane-app-config")
+    config = await _object("configmap", "app-config")
     policies = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
     assert policies
     assert all(isinstance(policy, str) for policy in policies)

@@ -19,7 +19,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _GATEWAY_TOKEN_DIR = "/var/run/secrets/agentplane-runner-gateway"
 
-NAME = "agentplane-sandbox-controller"
+NAME = "sandbox-controller"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller"
 _GROUP = "agentplane.allegedly.works"

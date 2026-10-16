@@ -34,7 +34,7 @@ def test_public_route_exposes_protocol_paths_only(
     route = one(
         doc
         for doc in agentplane_manifests[namespace]
-        if doc["kind"] == "HTTPRoute" and doc["metadata"]["name"] == "agentplane-actions-mcp"
+        if doc["kind"] == "HTTPRoute" and doc["metadata"]["name"] == "actions-mcp"
     )
     paths = set()
     for rule in route["spec"]["rules"]:
@@ -87,11 +87,11 @@ def test_cross_owner_reader_is_explicit_and_json_encoded(
     deployment = one(
         doc
         for doc in agentplane_manifests[namespace]
-        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "agentplane-actions"
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
     )
     container = one(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "actions")
     readers = one(item for item in container["env"] if item["name"] == "AGENTPLANE_ACTIONS_READER_ACCOUNTS")
-    assert json.loads(readers["value"]) == [{"namespace": namespace, "name": "agentplane-notifications"}]
+    assert json.loads(readers["value"]) == [{"namespace": namespace, "name": "notifications"}]
     assert not any(arg.startswith("--reader-accounts") for arg in container["args"])
 
 

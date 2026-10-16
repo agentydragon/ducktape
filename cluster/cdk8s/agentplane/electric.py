@@ -31,7 +31,7 @@ _IMAGE = "docker.io/electricsql/electric:1.8.1@sha256:9b4cebe2d8f51fb3ebaeb156e4
 _STORAGE_DIR = "/var/lib/electric"
 _RUN_AS = 65534  # The pinned image owns /app as nobody but leaves Config.User empty.
 
-NAME = "agentplane-electric"
+NAME = "electric"
 _DATABASE = "sandbox_service"
 # Names the replication slot and publication, `electric_{slot,publication}_<stream_id>`; a new ID
 # would replicate from a fresh slot and leave the old one holding WAL.
@@ -125,9 +125,7 @@ class Electric(Construct):
             endpoint_selector=electric.pods.selector,
             # app.py imports this module, so the app's Pods are named here.
             ingress=[
-                IngressRule.from_endpoints(
-                    cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[electric.pod_port]
-                )
+                IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "app"), ports=[electric.pod_port])
             ],
             egress=[cilium.dns_egress(), database.egress(env.namespace)],
         )

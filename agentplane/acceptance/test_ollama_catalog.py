@@ -25,10 +25,10 @@ def _manifest(tmp_path: Path, harnesses: dict[str, list[str]]) -> Path:
     path.write_text(
         yaml.safe_dump_all(
             [
-                {"kind": "Service", "metadata": {"name": "agentplane-app", "namespace": "agentplane-testing"}},
+                {"kind": "Service", "metadata": {"name": "app", "namespace": "agentplane-testing"}},
                 {
                     "kind": "ConfigMap",
-                    "metadata": {"name": "agentplane-app-config", "namespace": "agentplane-testing"},
+                    "metadata": {"name": "app-config", "namespace": "agentplane-testing"},
                     "data": {"config.yaml": yaml.safe_dump(config, sort_keys=False)},
                 },
             ]

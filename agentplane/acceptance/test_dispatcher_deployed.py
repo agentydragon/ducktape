@@ -23,7 +23,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 # gazelle:include_dep @pypi//protobuf
 
 NAMESPACE = "agentplane-testing"
-SERVICE = "agentplane-session-dispatcher"
+SERVICE = "session-dispatcher"
 BOUND_SECONDS = 300
 type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
@@ -252,7 +252,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     assert deployment["spec"]["replicas"] == 1
     assert deployment["spec"]["strategy"]["type"] == "Recreate"
     image = deployment["spec"]["template"]["spec"]["containers"][0]["image"]
-    app_config = json.loads(await _kubectl("get", "configmap", "agentplane-app-config", "-o", "json"))
+    app_config = json.loads(await _kubectl("get", "configmap", "app-config", "-o", "json"))
     policies = yaml.safe_load(app_config["data"]["config.yaml"])["default_policy_sets"]
     assert isinstance(policies, list)
     assert policies
@@ -273,7 +273,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     async with AsyncExitStack() as stack:
         # TokenReview needs a bound workload identity, not an app HTTP session. Reuse an
         # existing app Pod as the token's binding object; this probe creates no caller Pods.
-        authentication, caller, _caller_uid = await _bound_caller("agentplane-app")
+        authentication, caller, _caller_uid = await _bound_caller("app")
         created = json.loads(
             await _kubectl(
                 "create",
@@ -466,13 +466,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
 @pytest.mark.timeout(600)
 async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notification_sends() -> None:
     deployments: dict[str, object] = {}
-    for name in (
-        SERVICE,
-        "agentplane-sandbox-controller",
-        "agentplane-runner-gateway",
-        "agentplane-app",
-        "agentplane-notifications",
-    ):
+    for name in (SERVICE, "sandbox-controller", "runner-gateway", "app", "notifications"):
         deployment = json.loads(await _kubectl("get", "deployment", name, "-o", "json"))
         assert deployment["status"].get("readyReplicas") == deployment["spec"]["replicas"], f"{name} is not Ready"
         deployments[name] = {
@@ -488,14 +482,11 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
     dispatcher_config = yaml.safe_load(
         json.loads(await _kubectl("get", "configmap", f"{SERVICE}-config", "-o", "json"))["data"]["config.yaml"]
     )
-    expected_wake_callers = [
-        {"namespace": NAMESPACE, "name": "agentplane-app"},
-        {"namespace": NAMESPACE, "name": "agentplane-notifications"},
-    ]
+    expected_wake_callers = [{"namespace": NAMESPACE, "name": "app"}, {"namespace": NAMESPACE, "name": "notifications"}]
     assert dispatcher_config["caller_accounts"] == expected_wake_callers
     assert dispatcher_config["wake_caller_accounts"] == expected_wake_callers
 
-    service_config = json.loads(await _kubectl("get", "configmap", "agentplane-app-config", "-o", "json"))
+    service_config = json.loads(await _kubectl("get", "configmap", "app-config", "-o", "json"))
     policies = yaml.safe_load(service_config["data"]["config.yaml"])["default_policy_sets"]
     assert isinstance(policies, list)
     assert policies
@@ -548,10 +539,8 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
         stopped = json.loads(await _kubectl("get", "sandbox", sandbox, "-o", "json"))
         initial_incarnation = stopped.get("status", {}).get("incarnation", {}).get("uid")
         evidence["initial_incarnation"] = initial_incarnation
-        app_authentication, app_pod, app_pod_uid = await _bound_caller("agentplane-app")
-        notification_authentication, notification_pod, notification_pod_uid = await _bound_caller(
-            "agentplane-notifications"
-        )
+        app_authentication, app_pod, app_pod_uid = await _bound_caller("app")
+        notification_authentication, notification_pod, notification_pod_uid = await _bound_caller("notifications")
         evidence["caller_pods"] = {
             "app": {"name": app_pod, "uid": app_pod_uid},
             "notifications": {"name": notification_pod, "uid": notification_pod_uid},

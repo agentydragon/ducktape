@@ -52,9 +52,7 @@ PROBER = Pods(namespace="gatus", labels=(("app.kubernetes.io/name", "gatus"),))
 # The agentplane-staging egress proxy: the caller of a service a sandbox reaches through it
 # (agentplane/egress_staging_credentials.py). Servers admit it through this and not through
 # agentplane/, so the proxy's config can import the servers it reaches.
-AGENTPLANE_STAGING_PROXY = Pods(
-    namespace="agentplane-staging", labels=(("app.kubernetes.io/name", "agentplane-egress"),)
-)
+AGENTPLANE_STAGING_PROXY = Pods(namespace="agentplane-staging", labels=(("app.kubernetes.io/name", "egress"),))
 
 
 def endpoint_labels(namespace: str, name: str) -> dict[str, str]:

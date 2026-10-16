@@ -25,7 +25,7 @@ bbr test //agentplane/egress/...
 - `informer.py`: list-and-watch of those kinds into each replica’s `Index`, and the `EgressReady`
   condition on each `PolicyBinding`, through the shared `agentplane/policy_sets.py`.
 - `rules_api.py`: the agent-facing
-  `agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
+  `egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
   independently authenticated FastAPI listener and shared `RulesProjection`; `addon.py` is the
   ordinary egress-policy/substitution gate. `decisions.py` defines admission records;
   `decision_log.py` queues them for `decision_store.py`. `admin.py` serves history, local
@@ -134,7 +134,7 @@ both appends the key to the local outgoing gRPC context and retains it in the ne
 ## Rules API
 
 Agents send an ordinary proxied HTTP `GET` to
-`http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` with
+`http://egress.agentplane-staging.svc.cluster.local/v1/rules` with
 `Authorization: Bearer agentplane-credential-agentplane-workload`. The placeholder is inert and
 published in nonsecret runner instructions. The default `basic` egress policy binds this exact
 host, method, and path to the `agentplane-workload` credential's `schemeToken` target.

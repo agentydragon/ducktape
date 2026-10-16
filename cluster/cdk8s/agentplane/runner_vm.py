@@ -37,7 +37,8 @@ from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
 
 NAME = "runner-vm"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset"  # image-pins/ sets the tag
-_CONFIG_MAP_NAME = "agentplane-runner-vm-config"
+_CONFIG_MAP_NAME = "runner-vm-config"
+_LEGACY_CONFIG_MAP_NAME = "agentplane-runner-vm-config"
 _WORKSPACE = "workspace"
 # The guest listens on nothing; a listed port keeps masquerade from forwarding every other port,
 # kubelet's probe of the relay's readiness port among them, to the guest.
@@ -79,16 +80,21 @@ class RunnerVmTemplate(Construct):
             platform_instructions=platform_instructions,
             console_autologin=env.vm_console_autologin,
         )
+        config_map_data = {
+            # Defaults are omitted: an image that predates a field rejects it, so only an environment
+            # that sets it needs the image that reads it.
+            "config.json": config.model_dump_json(exclude_defaults=True),
+            "kubeconfig": yaml_config(sandbox_pod.kubeconfig(str(CA_BUNDLE))),
+        }
+        ConfigMap(
+            self, "config", metadata=ApiObjectMetadata(name=_CONFIG_MAP_NAME, namespace=namespace), data=config_map_data
+        )
+        # A running Sandbox VM keeps the ConfigMap name rendered in its immutable VM spec.
         ConfigMap(
             self,
-            "config",
-            metadata=ApiObjectMetadata(name=_CONFIG_MAP_NAME, namespace=namespace),
-            data={
-                # Defaults are omitted: an image that predates a field rejects it, so only an environment
-                # that sets it needs the image that reads it.
-                "config.json": config.model_dump_json(exclude_defaults=True),
-                "kubeconfig": yaml_config(sandbox_pod.kubeconfig(str(CA_BUNDLE))),
-            },
+            "legacy-config",
+            metadata=ApiObjectMetadata(name=_LEGACY_CONFIG_MAP_NAME, namespace=namespace),
+            data=config_map_data,
         )
         template = container_disk_template(
             labels=labels,

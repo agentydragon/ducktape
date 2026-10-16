@@ -32,9 +32,9 @@ def stack() -> Iterator[Stack]:
 def _print_turn_diagnostics(stack: Stack) -> None:
     """The error alone does not say which hop refused."""
     for selector in (
-        "app.kubernetes.io/name=agentplane-app",
-        "app.kubernetes.io/name=agentplane-runner-gateway",
-        "app.kubernetes.io/name=agentplane-llm-ingress",
+        "app.kubernetes.io/name=app",
+        "app.kubernetes.io/name=runner-gateway",
+        "app.kubernetes.io/name=llm-ingress",
         f"agentplane.allegedly.works/sandbox={SANDBOX}",
     ):
         logs = stack.k3s.kubectl(

@@ -32,7 +32,7 @@ from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 AUDIENCE = "llm-ingress-test-audience"
-SUBJECT = f"system:serviceaccount:{SANDBOX_NAMESPACE}:agentplane-runner"
+SUBJECT = f"system:serviceaccount:{SANDBOX_NAMESPACE}:sandbox-a"
 TOKEN_A = "opaque-workload-token-a"
 TOKEN_B = "opaque-workload-token-b"
 WRONG_AUDIENCE_TOKEN = "opaque-wrong-audience-token"
@@ -196,7 +196,7 @@ async def test_two_workloads_share_one_backend_key_and_keep_distinct_verified_me
         "agentplane.namespace": SANDBOX_NAMESPACE,
         "agentplane.pod_name": "sandbox-a",
         "agentplane.pod_uid": "pod-a-uid",
-        "agentplane.service_account": "agentplane-runner",
+        "agentplane.service_account": "sandbox-a",
         "agentplane.service_account_subject": SUBJECT,
     }
     assert verified_metadata(backend.requests[1])["agentplane.pod_name"] == "sandbox-b"

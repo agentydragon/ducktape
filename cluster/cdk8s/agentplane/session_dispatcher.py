@@ -30,7 +30,7 @@ from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import env_name
 
-NAME = "agentplane-session-dispatcher"
+NAME = "session-dispatcher"
 TOKEN_AUDIENCE = NAME
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-session-dispatcher"

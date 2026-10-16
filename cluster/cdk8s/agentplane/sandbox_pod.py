@@ -57,7 +57,8 @@ _CA_BUNDLE_PATH = "/etc/ssl/certs/ca-certificates.crt"
 # Where Debian's JDKs keep the system trust store; Bazel's embedded JDK reads it only when told to.
 _JAVA_TRUST_STORE_PATH = "/etc/ssl/certs/java/cacerts"
 # Configuration files for the box's tools, one key each, mounted file by file.
-TOOL_CONFIG_MAP_NAME = "agentplane-sandbox-tool-config"
+TOOL_CONFIG_MAP_NAME = "sandbox-tool-config"
+_LEGACY_TOOL_CONFIG_MAP_NAME = "agentplane-sandbox-tool-config"
 TOOL_CONFIG_READER_ROLE_NAME = "agentplane-sandbox-tool-config-reader"
 # The grant catalog entry and the PolicySet that let a Sandbox read the tool config.
 TOOL_CONFIG_GRANT = "sandbox-tool-config"
@@ -158,22 +159,29 @@ def add_tool_config(scope: Construct, env: Environment) -> None:
     interception root; and Bazel scrubs a test's environment, so the box's egress environment reaches
     a test only when named here."""
     passthrough = " ".join(f"--test_env={var.name}" for var in egress_env())
+    tool_config_data = {
+        _BAZELRC_KEY: (
+            f"startup --host_jvm_args=-Djavax.net.ssl.trustStore={_JAVA_TRUST_STORE_PATH}\ncommon {passthrough}\n"
+        ),
+        _KUBECONFIG_KEY: yaml_config(kubeconfig(_CA_BUNDLE_PATH)),
+    }
     tool_config = ConfigMap(
         scope,
         "sandbox-tool-config",
         metadata=ApiObjectMetadata(name=TOOL_CONFIG_MAP_NAME, namespace=env.namespace),
-        data={
-            _BAZELRC_KEY: (
-                f"startup --host_jvm_args=-Djavax.net.ssl.trustStore={_JAVA_TRUST_STORE_PATH}\ncommon {passthrough}\n"
-            ),
-            _KUBECONFIG_KEY: yaml_config(kubeconfig(_CA_BUNDLE_PATH)),
-        },
+        data=tool_config_data,
+    )
+    legacy_tool_config = ConfigMap(
+        scope,
+        "legacy-sandbox-tool-config",
+        metadata=ApiObjectMetadata(name=_LEGACY_TOOL_CONFIG_MAP_NAME, namespace=env.namespace),
+        data=tool_config_data,
     )
     Role(
         scope,
         "sandbox-tool-config-reader-role",
         metadata=ApiObjectMetadata(name=TOOL_CONFIG_READER_ROLE_NAME, namespace=env.namespace),
-        rules=[RolePolicyRule(resources=[tool_config], verbs=["get"])],
+        rules=[RolePolicyRule(resources=[tool_config, legacy_tool_config], verbs=["get"])],
     )
 
 
@@ -192,10 +200,7 @@ def _egress_sidecar(env: Environment, extra_env: Sequence[k8s.EnvVar]) -> k8s.Co
         name=sidecar.CONTAINER_NAME,
         image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
         env=[
-            k8s.EnvVar(
-                name=env_name(sidecar.Settings, "proxy_host"),
-                value=f"agentplane-egress.{env.namespace}.svc.cluster.local",
-            ),
+            k8s.EnvVar(name=env_name(sidecar.Settings, "proxy_host"), value=egress.proxy(env.namespace).fqdn),
             k8s.EnvVar(name=env_name(sidecar.Settings, "proxy_port"), value=str(egress.PROXY_PORT)),
             k8s.EnvVar(name=env_name(sidecar.Settings, "listen_port"), value=str(SIDECAR_LISTEN_PORT)),
             k8s.EnvVar(name=env_name(sidecar.Settings, "readiness_host"), value=sidecar.READINESS_HOST),

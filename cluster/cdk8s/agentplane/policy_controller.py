@@ -19,7 +19,7 @@ from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Promethe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-NAME = "agentplane-policy-controller"
+NAME = "policy-controller"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-policy-controller"
 _HEALTH_PORT = 8081

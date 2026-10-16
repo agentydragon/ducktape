@@ -301,7 +301,7 @@ def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> S
             namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), core_v1=cast(CoreV1Api, core_v1)
         ),
         default_policy_sets=frozenset(),
-        caller=ServiceAccountRef(namespace=NAMESPACE, name="agentplane-app"),
+        caller=ServiceAccountRef(namespace=NAMESPACE, name="app"),
     )
 
 

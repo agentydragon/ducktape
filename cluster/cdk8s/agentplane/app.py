@@ -54,7 +54,7 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-NAME = "agentplane-app"
+NAME = "app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
 _LABELS = {"app.kubernetes.io/name": NAME}
@@ -88,7 +88,7 @@ class App(Construct):
         config = SettingsFile(
             self,
             "config",
-            metadata=ApiObjectMetadata(name="agentplane-app-config", namespace=env.namespace),
+            metadata=ApiObjectMetadata(name="app-config", namespace=env.namespace),
             model=Settings,
             content=env.app_config.model_dump(mode="json", exclude_unset=True),
             path="/etc/agentplane/config.yaml",
@@ -254,7 +254,7 @@ class App(Construct):
         https_route(
             self,
             "httproute",
-            metadata=ApiObjectMetadata(name=namespace, namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             hostnames=[self.env.app.hostname],
             backend=self.service,
             # A session stream stays attached for as long as the tab is open.

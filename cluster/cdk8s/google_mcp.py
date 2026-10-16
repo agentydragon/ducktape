@@ -169,7 +169,7 @@ class GoogleMcpApp(Construct):
             endpoint_selector=SERVICE.pods.selector,
             ingress=[
                 IngressRule.from_endpoints(
-                    cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[SERVICE.pod_port]
+                    cilium.endpoint_labels("agentplane-staging", "actions"), ports=[SERVICE.pod_port]
                 )
             ],
             egress=[

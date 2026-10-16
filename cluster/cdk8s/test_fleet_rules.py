@@ -228,7 +228,7 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
     """The pair that broke every `*.allegedly.works` name a proxy served: one policy pinning SNI on
     node:443, a sibling leaving that port open for the same Pods. Cilium enforces the pin per port
     on the endpoint across both policies, so the open rule silently stops being open."""
-    proxy = {"app.kubernetes.io/name": "agentplane-egress"}
+    proxy = {"app.kubernetes.io/name": "egress"}
     open_egress = _policy_for(
         "egress", [_https({"toEntities": ["world", "remote-node", "host"]})], namespace=_STAGING, labels=proxy
     )
@@ -251,7 +251,7 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
     # A selector naming a different Pod, and a namespaced policy in a namespace the other cannot
     # reach, both stay legal.
     elsewhere = _policy_for("elsewhere", pinned_egress["spec"]["egress"], namespace="elsewhere", labels=proxy)
-    another = {"app.kubernetes.io/name": "agentplane-app"}
+    another = {"app.kubernetes.io/name": "app"}
     other_pod = _policy_for("other-pod", pinned_egress["spec"]["egress"], namespace=_STAGING, labels=another)
     assert https_egress_sni_conflicts([open_egress, elsewhere]) == []
     assert https_egress_sni_conflicts([open_egress, other_pod]) == []
@@ -289,7 +289,7 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
     assert len(https_egress_sni_conflicts([open_egress, no_selector])) == 1
     expressions = _policy_for("expressions", pinned_egress["spec"]["egress"], namespace=_STAGING, labels={})
     expressions["spec"]["endpointSelector"]["matchExpressions"] = [
-        {"key": "app.kubernetes.io/name", "operator": "In", "values": ["agentplane-egress"]}
+        {"key": "app.kubernetes.io/name", "operator": "In", "values": ["egress"]}
     ]
     assert len(https_egress_sni_conflicts([open_egress, expressions])) == 1
     # The same shape inside one policy -- a pinned rule and an open one on 443 -- is the same

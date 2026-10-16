@@ -282,7 +282,7 @@ spec:
   ingress:
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: agentplane-actions
+            app.kubernetes.io/name: actions
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

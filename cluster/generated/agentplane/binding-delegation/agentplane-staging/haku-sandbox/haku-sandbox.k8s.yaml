@@ -39,5 +39,5 @@ roleRef:
   name: agentplane-staging-external-bindings
 subjects:
   - kind: ServiceAccount
-    name: agentplane-policy-controller
+    name: policy-controller
     namespace: agentplane-staging

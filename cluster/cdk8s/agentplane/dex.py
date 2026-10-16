@@ -322,9 +322,7 @@ def _add_network_policy(scope: Construct) -> None:
         ingress=[
             IngressRule.from_gateway(_SERVICE.pod_port),
             app_component.service(_NAMESPACE).pods.admit(_SERVICE.pod_port),
-            IngressRule.from_endpoints(
-                cilium.endpoint_labels(_NAMESPACE, "agentplane-oauth-fixture"), ports=[_SERVICE.pod_port]
-            ),
+            IngressRule.from_endpoints(cilium.endpoint_labels(_NAMESPACE, "oauth-fixture"), ports=[_SERVICE.pod_port]),
         ],
         egress=[cilium.dns_egress()],
         egress_deny=deny_all_egress(),
