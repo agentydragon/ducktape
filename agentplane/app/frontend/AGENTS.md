@@ -61,3 +61,5 @@ heading and content are visible before capture.
 
 After setup clicks, choose the pointer position explicitly before composing a scene. Scrolling
 can move a different hover target under a stationary pointer; hover scenes should hover deliberately.
+Hover containers mounted under the pointer may not receive `pointerenter`; move outside, then hover
+them deliberately.
