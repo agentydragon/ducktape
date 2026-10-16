@@ -157,7 +157,9 @@ async def _terminal(client: httpx.AsyncClient, request_id: str, token: str = "wo
 
 
 async def test_agent_docs_without_backend_startup(operator_idp: OperatorIdp) -> None:
-    async with await _client(create_autospec(ActionService, instance=True), operator_idp) as client:
+    service = create_autospec(ActionService, instance=True)
+    service.draining = False
+    async with await _client(service, operator_idp) as client:
         await assert_agent_docs(client)
 
 

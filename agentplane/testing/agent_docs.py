@@ -13,7 +13,7 @@ async def assert_agent_docs(client: httpx.AsyncClient) -> None:
         path = pending.pop()
         visited.add(path)
         response = await client.get(path)
-        assert response.status_code == 200, path
+        assert response.status_code == 200, (path, response.status_code, response.text)
         assert response.headers["content-type"].startswith("text/"), path
         assert response.text.startswith("# "), path
         for link in re.findall(r"\[[^\]]+\]\(([^)]+)\)", response.text):

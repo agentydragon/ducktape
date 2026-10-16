@@ -41,10 +41,10 @@ from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.model_selections import STAGING_APP_MODELS
 from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_128K, OLLAMA_QWEN_IQ4XS_256K
 
-# What a workload token may reach on the Actions service: the MCP endpoint, its schema and
+# What a workload token may reach on the Actions service: documentation, MCP, its schema and
 # the action-group/request API. The operator API (/v1/operator/*) and the OAuth endpoints
 # (/register, /token, ...) stay off this policy.
-_AGENT_FACING_PREFIXES = ("/mcp", "/openapi.json", "/v1/action-")
+_AGENT_FACING_PREFIXES = ("/llms.txt", "/docs/agents/", "/mcp", "/openapi.json", "/v1/action-")
 
 
 def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -121,7 +121,7 @@ def test_agent_egress_api_uses_its_canonical_service(
     rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule["hosts"])
     assert rule["hosts"] == [canonical_host]
     assert rule["methods"] == ["GET"]
-    assert rule["paths"] == ["/openapi.json", "/v1/rules"]
+    assert rule["paths"] == ["/llms.txt", "/docs/agents/**", "/openapi.json", "/v1/rules"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
