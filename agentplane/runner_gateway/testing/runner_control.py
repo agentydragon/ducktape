@@ -169,6 +169,12 @@ class ScriptedRunner(runner_control_pb2_grpc.RunnerServicer):
         return await self._queue(request, runner_control_pb2.OpenSessionResponse, context)
 
     @override
+    async def SubmitInput(
+        self, request: runner_control_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
+    ) -> runner_control_pb2.SubmitInputResponse:
+        return await self._queue(request, runner_control_pb2.SubmitInputResponse, context)
+
+    @override
     async def ResumeSession(
         self, request: runner_control_pb2.ResumeSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.ResumeSessionResponse:
