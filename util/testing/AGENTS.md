@@ -1,0 +1,3 @@
+- Construct `VisualPage` before navigation so it records errors from page load.
+- Captures check render and network health; tests own application readiness and interactions.
+- `.capture.json` sidecars are diagnostic outputs, not visual-review assets or baselines.

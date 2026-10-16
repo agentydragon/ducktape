@@ -79,6 +79,56 @@ async def test_opt_in_trace_uses_capture_identity_and_keeps_passing_run(
     assert zipfile.is_zipfile(harness.output_dir / "failing.trace.zip")
 
 
+async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(harness: VisualHarness) -> None:
+    async with harness.open("plain", viewport=Viewport(width=300, height=200, device_scale_factor=2)) as view:
+        await view.page.evaluate("""() => {
+            document.body.style.height = "1200px";
+            const history = document.createElement("div");
+            history.className = "history";
+            history.style.cssText = "position:absolute;left:10.25px;top:20.5px;width:80.5px;height:40px;overflow-y:auto";
+            const entry = document.createElement("div");
+            entry.className = "entry";
+            entry.style.cssText = "height:300px;width:100px";
+            history.append(entry);
+            document.body.append(history);
+            history.scrollTop = 17;
+            const input = document.createElement("input");
+            input.value = "sensitive-selection";
+            document.body.append(input);
+            input.focus();
+            input.setSelectionRange(2, 9, "forward");
+            window.scrollTo(0, 50);
+        }""")
+        await view.capture("viewport", scale="css")
+        await view.capture("cropped", target=view.page.locator(".entry"), scale="css")
+
+    viewport = json.loads((harness.output_dir / "viewport.capture.json").read_text())
+    assert viewport["capture"]["mode"] == "viewport"
+    assert viewport["capture"]["checks_passed"] is True
+    assert viewport["page"]["viewport"]["width"] == 300
+    assert viewport["page"]["viewport"]["height"] == 200
+    assert viewport["page"]["viewport"]["deviceScaleFactor"] == 2
+    assert viewport["page"]["viewport"]["scrollY"] == 50
+    assert viewport["page"]["document"]["focus"]["inputSelection"] == {"start": 2, "end": 9, "direction": "forward"}
+    assert viewport["page"]["target"] is None
+
+    cropped = json.loads((harness.output_dir / "cropped.capture.json").read_text())
+    assert cropped["capture"]["mode"] == "cropped_target"
+    assert cropped["page"]["target"]["rect"]["x"] == 10.25
+    assert cropped["page"]["target"]["screenshotClip"] == {"x": 10, "y": 4, "width": 100, "height": 300}
+    assert cropped["page"]["targetScrollAncestors"][0]["classes"] == ["history"]
+    assert cropped["page"]["targetScrollAncestors"][0]["scroll"]["top"] == 17
+    assert (
+        cropped["page"]["targetScrollAncestors"][0]["scroll"]["height"]
+        > cropped["page"]["targetScrollAncestors"][0]["scroll"]["clientHeight"]
+    )
+    assert "sensitive-selection" not in json.dumps([viewport, cropped])
+    assert json.loads((harness.output_dir / "visual-review.json").read_text())["assets"] == [
+        {"path": "viewport.png", "label": "viewport"},
+        {"path": "cropped.png", "label": "cropped"},
+    ]
+
+
 async def test_unnamed_capture_requires_case_identity(harness: VisualHarness) -> None:
     async with harness.open() as view:
         with pytest.raises(ValueError, match="capture needs a name"):
