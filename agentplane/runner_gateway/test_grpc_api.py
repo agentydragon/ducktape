@@ -222,15 +222,20 @@ async def test_resume_preserves_runner_error(token_file: Path) -> None:
     control = SandboxControlClient(control_target="unused", token_file=token_file, request_timeout_s=1)
     metadata = grpc.aio.Metadata(("x-runner-detail", "preserved"))
     upstream_error = ServiceError(grpc.StatusCode.UNAVAILABLE, "runner state volume is unavailable", metadata)
-    held_unary = AsyncMock(side_effect=upstream_error)
-    control.held_unary = held_unary  # type: ignore[method-assign]
+    runner_unary = AsyncMock(side_effect=upstream_error)
+    control.runner_unary = runner_unary  # type: ignore[method-assign]
+    session_id = str(uuid4())
 
     with pytest.raises(ServiceError) as rejected:
-        await control.runner(DESTINATION).resume(str(uuid4()))
+        await control.runner(DESTINATION).resume(session_id)
 
     assert rejected.value.details == "runner state volume is unavailable"
     assert rejected.value.trailing_metadata == metadata
-    assert held_unary.await_count == 1
+    assert runner_unary.await_count == 1
+    call = runner_unary.await_args
+    assert call is not None
+    assert call.args[0] == DESTINATION
+    assert call.args[2] == runner_control_pb2.ResumeSessionRequest(session_id=session_id)
 
 
 async def test_connection_not_held_error_detail_is_preserved(remote: RunnerGatewayClient) -> None:
