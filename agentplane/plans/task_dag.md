@@ -1635,6 +1635,11 @@ allowlist, and authenticated runner identity. Prove wrong audience, wrong Pod/Se
 controller submission to Dispatcher are rejected. This is a
 library/protocol foundation, not a deployed API or broadened grant.
 
+The Python auth baseline is `session_dispatcher/test_grpc_api.py` and
+`runner_gateway/test_grpc_api.py` for caller admission, plus `runner_gateway/test_runner_control.py`
+for the authenticated Runner peer. Go tests must assert equivalent public gRPC outcomes; these
+Python tests are baseline evidence, not Go parity.
+
 ### `DELIVERY_GO_GATEWAY` — port connection holder and proxy behavior
 
 **Depends on `DELIVERY_GO_PROTOCOL_AUTH`; independently dispatchable from the queue port.** Port
@@ -1643,6 +1648,13 @@ EndpointSlice writes and per-Sandbox proxy routing. Preserve `Runner.ListSession
 `Quiesce`, runner method policy, reconnect and stale-holder fences. A worker on another replica must
 still route through `<sandbox>-control`; do not replace the EndpointSlice with an in-process pointer.
 Compare behavior and failure recovery with the Python Gateway under two replicas.
+
+Current Python RBE baselines are `runner_gateway/test_lifecycle_control.py` (a caller on one replica
+reaches a runner held by another), `test_runner_control.py` (Connect identity, epochs and EndpointSlice
+fencing), and `test_runner_proxy.py` (proxy auth, refusal and status). The new
+`session_dispatcher/test_gateway_contract.py` additionally covers the public Dispatcher queue through
+the Gateway proxy and runner tunnel. Go acceptance still needs equivalent Go tests, including the
+two-replica path.
 
 ### `DELIVERY_GO_DISPATCHER` — port durable admission and queue recovery
 
@@ -1654,6 +1666,14 @@ generation fence, owner crash recovery and lost-response retry with the same ID.
 database/rows and the rule that a full request is stored before acceptance or wake; do not add a
 direct mode. Verify parity against a real PostgreSQL database and the current runner contract,
 including queued work surviving process replacement and replacement Sandbox UID fencing.
+
+Python RBE baselines are `session_dispatcher/test_grpc_api.py` (auth, queued receipts and same-ID
+idempotency), `test_gateway_contract.py` (queue receipt distinct from later Runner admission through
+Gateway), `test_startup.py` (queued work across Dispatcher restart), `test_delivery.py` (same-ID journal
+resolution after a lost admission reply), and `test_ownership.py` (Lease handoff and stale-generation
+fencing). The Go port still needs equivalent tests against its implementation. Keep
+`agentplane/acceptance:test_dispatcher_deployed` manual for deployed replica failover; do not add it
+to default CI.
 
 ### `DELIVERY_GO_LEGACY_WRAPPER` — preserve any Gateway wrapper still in use
 
