@@ -17,7 +17,11 @@ from agentplane.proto import runner_control_pb2, runner_gateway_pb2, runner_gate
 from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxDestination
 from agentplane.runner_gateway import session_lifecycle
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
-from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
+from agentplane.runner_gateway.lifecycle_control import (
+    CONNECTION_HELD_BY_ANOTHER_REPLICA,
+    ConnectionNotHeldError,
+    LifecycleControl,
+)
 from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
 from agentplane.sandboxes.errors import InventoryError, SandboxNotFoundError
 
@@ -39,13 +43,18 @@ class Resources(ServicerResources):
 
 def _runner_status(error: grpc.aio.AioRpcError) -> Status:
     """Preserve the Runner's status; this layer must not infer why the RPC failed."""
-    return error.code(), error.details() or ""
+    return Status(error.code(), error.details() or "", error.trailing_metadata())
+
+
+def _connection_not_held(error: ConnectionNotHeldError) -> Status:
+    return Status(grpc.StatusCode.UNAVAILABLE, str(error))
 
 
 # No Kubernetes wire responses or bearer data reach clients.
 errors = status_mapping(
     Abort((SandboxNotFoundError, SessionNotFoundError), (grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")),
     Abort(SessionConflictError, (grpc.StatusCode.ALREADY_EXISTS, "session ID already belongs to another Sandbox")),
+    Abort(ConnectionNotHeldError, _connection_not_held),
     Abort(grpc.aio.AioRpcError, _runner_status),
     Abort((ValueError, ParseError), (grpc.StatusCode.INVALID_ARGUMENT, "invalid service request")),
     Abort(InventoryError, (grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request")),
@@ -84,7 +93,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         Returns the Sandbox's binding."""
         binding = await self.resources.destinations.resolve(destination, writes=writes)
         if self.resources.control.holder(UUID(destination.sandbox_uid)) is None:
-            raise ConnectionNotHeldError("another replica holds this Sandbox's runner connection")
+            raise ConnectionNotHeldError(CONNECTION_HELD_BY_ANOTHER_REPLICA)
         return binding
 
     async def list_runner_sessions(self, destination: SandboxDestination) -> list[runner_pb2.SessionSummary]:

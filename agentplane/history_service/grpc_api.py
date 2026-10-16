@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.changes import ChangeSignal
-from agentplane.grpc.servicer import Abort, ServicerResources, Status, status_mapping
+from agentplane.grpc.servicer import Abort, ServicerResources, status_mapping
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.summaries import SummaryReader
@@ -43,7 +43,7 @@ class Resources(ServicerResources):
     watch_lease_s: float
 
 
-def _invalid_stored_entity(error: ValidationError) -> Status:
+def _invalid_stored_entity(error: ValidationError) -> tuple[grpc.StatusCode, str]:
     # Stored rows outside the published view contract are a server fault, not a bad request.
     logger.error("stored thread entity failed validation", exc_info=error)
     return grpc.StatusCode.INTERNAL, "stored thread entity is invalid"

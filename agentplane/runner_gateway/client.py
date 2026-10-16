@@ -164,12 +164,14 @@ class SandboxRunner:
         )
 
     async def resume(self, session_id: str) -> runner_pb2.Attached:
+        """Resume a stopped harness on the Runner holding this Sandbox's connection."""
+        request = runner_gateway_pb2.ResumeSessionRequest(
+            destination=sandboxes_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
+        )
         response = await self.control.held_unary(
             self.destination,
             lambda stub: stub.ResumeSession,
-            runner_gateway_pb2.ResumeSessionRequest(
-                destination=sandboxes_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
-            ),
+            request,
             timeout_s=self.control.lifecycle_timeout_s,
         )
         return response.attached

@@ -28,13 +28,27 @@ from agentplane.proto import grpc_tunnel_pb2
 
 logger = logging.getLogger(__name__)
 
+_TUNNEL_ENDED_BEFORE_CALLEE_ANSWER = "the tunnel ended before the callee answered"
+_TUNNEL_FAILED_WHILE_SENDING = "the tunnel failed while sending the call; the callee outcome is unknown"
+
 type Send = Callable[[grpc_tunnel_pb2.Call], Awaitable[None]]
 
 _CODES = {code.value[0]: code for code in grpc.StatusCode}
 
 
-def _status(code: grpc.StatusCode, details: str) -> grpc.aio.AioRpcError:
-    return grpc.aio.AioRpcError(code, grpc.aio.Metadata(), grpc.aio.Metadata(), details)
+def _status(
+    code: grpc.StatusCode, details: str, trailing_metadata: grpc.aio.Metadata | None = None
+) -> grpc.aio.AioRpcError:
+    return grpc.aio.AioRpcError(code, grpc.aio.Metadata(), trailing_metadata or grpc.aio.Metadata(), details)
+
+
+def _metadata(reply: grpc_tunnel_pb2.Reply) -> grpc.aio.Metadata:
+    return grpc.aio.Metadata(
+        *(
+            (item.key, item.text if item.WhichOneof("value") == "text" else item.binary)
+            for item in reply.trailing_metadata
+        )
+    )
 
 
 def _response_type(method: str) -> type[Message]:
@@ -68,13 +82,14 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
         self._ended = True
         if self._pending:
             logger.warning(
-                "Runner control tunnel ended with unanswered calls: %s; context_exception=%r", self._methods.copy(), exc
+                "Runner control tunnel ended with unanswered calls: %s; context_exception=%r",
+                {call_id: self._methods[call_id] for call_id in self._pending},
+                exc,
             )
         for waiting in self._pending.values():
             if not waiting.done():
-                waiting.set_exception(
-                    _status(grpc.StatusCode.UNAVAILABLE, "the tunnel ended before the callee answered")
-                )
+                details = _TUNNEL_ENDED_BEFORE_CALLEE_ANSWER
+                waiting.set_exception(_status(grpc.StatusCode.UNAVAILABLE, details))
         # Closing the channel cancels the calls still on it: let them raise their status first.
         if self._calls:
             await asyncio.wait(self._calls)
@@ -86,6 +101,7 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
             # Its caller's deadline passed first; the call's outcome is the callee's to keep.
             logger.info("Dropped the reply to call %d, which nothing awaits", reply.call_id)
             return
+        logger.debug("Received reply for tunnel call %d (%s)", reply.call_id, self._methods.get(reply.call_id))
         waiting.set_result(reply)
 
     @override
@@ -108,10 +124,12 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
         """Call `method` with the serialized `request` and return the serialized response, or raise the
         call's status as an `AioRpcError`. The callee sees the remaining `deadline_s`."""
         if self._ended:
-            raise _status(grpc.StatusCode.UNAVAILABLE, "the tunnel has ended")
+            details = "the tunnel has ended"
+            raise _status(grpc.StatusCode.UNAVAILABLE, details)
         call = grpc_tunnel_pb2.Call(call_id=next(self._call_ids), method=method, request=request)
         if deadline_s is not None:
             call.timeout.FromTimedelta(timedelta(seconds=deadline_s))
+        logger.debug("Forwarding tunnel call %d (%s); deadline_s=%s", call.call_id, method, deadline_s)
         waiting: asyncio.Future[grpc_tunnel_pb2.Reply] = asyncio.get_running_loop().create_future()
         self._pending[call.call_id] = waiting
         self._methods[call.call_id] = method
@@ -122,13 +140,11 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
             try:
                 await self._send(call)
             except grpc.aio.AioRpcError as error:
-                raise _status(error.code(), error.details() or "") from error
+                details = error.details() or ""
+                raise _status(error.code(), details, error.trailing_metadata()) from error
             except (grpc.RpcError, asyncio.InvalidStateError) as error:
                 logger.warning("Runner control tunnel send failed", exc_info=error)
-                raise _status(
-                    grpc.StatusCode.UNAVAILABLE,
-                    "the tunnel failed while sending the call; the callee outcome is unknown",
-                ) from error
+                raise _status(grpc.StatusCode.UNAVAILABLE, _TUNNEL_FAILED_WHILE_SENDING) from error
             try:
                 async with asyncio.timeout(deadline_s):
                     reply = await waiting
@@ -139,7 +155,15 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
             del self._methods[call.call_id]
             self._calls.discard(current)
         if reply.code != grpc.StatusCode.OK.value[0]:
-            raise _status(_CODES.get(reply.code, grpc.StatusCode.UNKNOWN), reply.details)
+            logger.info(
+                "Tunnel call %d (%s) received status %s: %s",
+                call.call_id,
+                method,
+                _CODES.get(reply.code, grpc.StatusCode.UNKNOWN).name,
+                reply.details,
+            )
+            raise _status(_CODES.get(reply.code, grpc.StatusCode.UNKNOWN), reply.details, _metadata(reply))
+        logger.debug("Tunnel call %d (%s) completed", call.call_id, method)
         return reply.response
 
 
@@ -163,5 +187,14 @@ async def relay(call: grpc_tunnel_pb2.Call, server: grpc.aio.Channel) -> grpc_tu
         passthrough: grpc.aio.UnaryUnaryMultiCallable[bytes, bytes] = server.unary_unary(call.method)
         response = await passthrough(call.request, timeout=timeout)
     except grpc.aio.AioRpcError as error:
-        return grpc_tunnel_pb2.Reply(call_id=call.call_id, code=error.code().value[0], details=error.details() or "")
+        reply = grpc_tunnel_pb2.Reply(
+            call_id=call.call_id, code=error.code().value[0], details=error.details() or ""
+        )
+        for key, value in error.trailing_metadata() or ():
+            item = reply.trailing_metadata.add(key=key)
+            if isinstance(value, bytes):
+                item.binary = value
+            else:
+                item.text = value
+        return reply
     return grpc_tunnel_pb2.Reply(call_id=call.call_id, response=response)

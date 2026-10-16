@@ -5,6 +5,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import grpc
@@ -17,7 +18,7 @@ from agentplane.grpc.calls import ServiceError, dial
 from agentplane.proto import command_pb2, runner_control_pb2, runner_gateway_pb2, runner_pb2, sandboxes_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner_gateway import wire
-from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources
@@ -189,6 +190,60 @@ async def test_runner_status_and_detail_are_preserved(
         await call
     assert rejected.value.code() == status
     assert rejected.value.details() == "test runner refuses the call"
+
+
+async def test_runner_status_and_metadata_survive_gateway_mapping(
+    resources: Resources, token_file: Path, engine: AsyncEngine, peer: ScriptedRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session_id = uuid4()
+    await register_on_fake_sandbox(engine, session_id)
+    details = "transport details can change independently"
+    metadata = grpc.aio.Metadata(("x-runner-detail", "preserved"), ("x-runner-bin", b"\x00\xff"))
+
+    runner = AsyncMock()
+    runner.ResumeSession.side_effect = grpc.aio.AioRpcError(
+        grpc.StatusCode.UNAVAILABLE, grpc.aio.Metadata(), metadata, details
+    )
+    monkeypatch.setattr(resources.control, "runner", lambda _sandbox_uid: runner)
+    request = runner_gateway_pb2.ResumeSessionRequest(
+        destination=sandboxes_pb2.SessionDestination(sandbox=DESTINATION, session_id=str(session_id))
+    )
+
+    async with service_client(resources, token_file) as remote:
+        with pytest.raises(ServiceError) as rejected:
+            await remote.unary(remote.stub.ResumeSession, request)
+
+    assert rejected.value.code == grpc.StatusCode.UNAVAILABLE
+    assert rejected.value.details == details
+    assert rejected.value.trailing_metadata == metadata
+
+
+async def test_resume_preserves_runner_error(token_file: Path) -> None:
+    control = SandboxControlClient(control_target="unused", token_file=token_file, request_timeout_s=1)
+    metadata = grpc.aio.Metadata(("x-runner-detail", "preserved"))
+    upstream_error = ServiceError(grpc.StatusCode.UNAVAILABLE, "runner state volume is unavailable", metadata)
+    held_unary = AsyncMock(side_effect=upstream_error)
+    control.held_unary = held_unary  # type: ignore[method-assign]
+
+    with pytest.raises(ServiceError) as rejected:
+        await control.runner(DESTINATION).resume(str(uuid4()))
+
+    assert rejected.value.details == "runner state volume is unavailable"
+    assert rejected.value.trailing_metadata == metadata
+    assert held_unary.await_count == 1
+
+
+async def test_connection_not_held_error_detail_is_preserved(remote: RunnerGatewayClient) -> None:
+    with pytest.raises(ServiceError) as rejected:
+        await remote.unary(
+            remote.stub.ResumeSession,
+            runner_gateway_pb2.ResumeSessionRequest(
+                destination=sandboxes_pb2.SessionDestination(sandbox=DESTINATION, session_id=str(uuid4()))
+            ),
+        )
+
+    assert rejected.value.code == grpc.StatusCode.UNAVAILABLE
+    assert rejected.value.details == "another replica holds this Sandbox's runner connection"
 
 
 async def test_command_uses_runner_ack_budget_not_unary_request_budget(

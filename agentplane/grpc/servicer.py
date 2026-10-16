@@ -15,7 +15,17 @@ from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, W
 
 logger = logging.getLogger(__name__)
 
-type Status = tuple[grpc.StatusCode, str]
+
+@dataclass(frozen=True)
+class Status:
+    """gRPC status code and details, optionally preserving trailing metadata."""
+
+    code: grpc.StatusCode
+    details: str
+    trailing_metadata: grpc.aio.Metadata | None = None
+
+
+type StatusResult = Status | tuple[grpc.StatusCode, str]
 
 
 @dataclass(frozen=True)
@@ -38,7 +48,7 @@ class Abort[E: Exception]:
     """Aborts an RPC that raised one of `errors` with `status`, or with the status derived from the error."""
 
     errors: type[E] | tuple[type[E], ...]
-    status: Status | Callable[[E], Status]
+    status: StatusResult | Callable[[E], StatusResult]
 
 
 def status_mapping(
@@ -63,9 +73,17 @@ def status_mapping(
         except Exception as error:
             for row in table:
                 if isinstance(error, row.errors):
-                    code, details = row.status(error) if callable(row.status) else row.status
+                    result = row.status(error) if callable(row.status) else row.status
+                    if isinstance(result, Status):
+                        code, details, trailing_metadata = result.code, result.details, result.trailing_metadata
+                    else:
+                        code, details = result
+                        trailing_metadata = None
                     logger.warning("answered %s (%s)", code.name, details, exc_info=error)
-                    await context.abort(code, details)
+                    if trailing_metadata is None:
+                        await context.abort(code, details)
+                    else:
+                        await context.abort(code, details, trailing_metadata=tuple(trailing_metadata))
             raise
 
     return errors

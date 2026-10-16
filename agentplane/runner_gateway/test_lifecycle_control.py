@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import cast
 from uuid import UUID, uuid4
 
 import grpc
@@ -16,8 +17,8 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc.calls import RefusedError, ServiceError
-from agentplane.grpc.tunnel import TunnelCaller
-from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_pb2
+from agentplane.grpc.tunnel import TunnelCaller, relay
+from agentplane.proto import command_pb2, event_log_pb2, grpc_tunnel_pb2, runner_control_pb2, runner_pb2
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
@@ -139,6 +140,54 @@ async def test_tunnel_send_preserves_grpc_status_and_detail() -> None:
 
     assert failed.value.code() == grpc.StatusCode.INTERNAL
     assert failed.value.details() == "control stream write failed"
+
+
+async def test_tunnel_end_marks_unanswered_call_as_outcome_unknown() -> None:
+    sent = asyncio.Event()
+
+    async def send(_call: object) -> None:
+        sent.set()
+
+    async with TunnelCaller(send) as tunnel:
+        call = asyncio.create_task(
+            tunnel.forward("/agentplane.proto.Runner/ResumeSession", b"request", deadline_s=None)
+        )
+        await sent.wait()
+
+    with pytest.raises(grpc.aio.AioRpcError) as failed:
+        await call
+
+    assert failed.value.code() == grpc.StatusCode.UNAVAILABLE
+    assert failed.value.details() == "the tunnel ended before the callee answered"
+
+
+async def test_tunnel_preserves_upstream_status_metadata() -> None:
+    metadata = grpc.aio.Metadata(("x-runner-detail", "preserved"), ("x-runner-bin", bytes((0, 255))))
+    upstream = grpc.aio.AioRpcError(
+        grpc.StatusCode.UNAVAILABLE, grpc.aio.Metadata(), metadata, "runner unavailable"
+    )
+
+    class FailingRunnerCall:
+        async def __call__(self, *_args: object, **_kwargs: object) -> bytes:
+            raise upstream
+
+    class FailingRunnerChannel:
+        def unary_unary(self, _method: str) -> FailingRunnerCall:
+            return FailingRunnerCall()
+
+    tunnel: TunnelCaller
+
+    async def send(call: grpc_tunnel_pb2.Call) -> None:
+        reply = await relay(call, cast(grpc.aio.Channel, FailingRunnerChannel()))
+        tunnel.answer(reply)
+
+    async with TunnelCaller(send) as tunnel:
+        with pytest.raises(grpc.aio.AioRpcError) as failed:
+            await tunnel.forward("/agentplane.proto.Runner/ResumeSession", b"request", deadline_s=None)
+
+    assert failed.value.code() == grpc.StatusCode.UNAVAILABLE
+    assert failed.value.details() == "runner unavailable"
+    assert tuple(failed.value.trailing_metadata() or ()) == tuple(metadata)
 
 
 async def test_a_create_whose_harness_failed_is_confirmed_and_started_on_retry(

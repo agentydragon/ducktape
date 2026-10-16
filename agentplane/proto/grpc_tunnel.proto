@@ -29,4 +29,14 @@ message Reply {
   string details = 3;
   // The serialized response message, with OK only.
   bytes response = 4;
+  // The callee's original trailing metadata, in order. Values retain their text/binary type.
+  repeated Metadata trailing_metadata = 5;
+}
+
+message Metadata {
+  string key = 1;
+  oneof value {
+    string text = 2;
+    bytes binary = 3;
+  }
 }

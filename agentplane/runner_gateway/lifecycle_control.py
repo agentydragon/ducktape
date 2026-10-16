@@ -27,6 +27,10 @@ class ConnectionNotHeldError(DestinationUnavailableError):
     Sandbox's control Service again and retries."""
 
 
+CONNECTION_HELD_BY_ANOTHER_REPLICA = "another replica holds this Sandbox's runner connection"
+CONNECTION_NOT_HELD_HERE = "this replica holds no current runner connection for the Sandbox"
+
+
 @dataclass(frozen=True)
 class RunnerConnection:
     """One `Connect` stream: its epoch, and the runner's service through it."""
@@ -72,5 +76,5 @@ class LifecycleControl:
         """The Sandbox's `Runner` service, through the connection this replica holds."""
         connection = self.holder(sandbox_uid)
         if connection is None:
-            raise ConnectionNotHeldError("this replica holds no current runner connection for the Sandbox")
+            raise ConnectionNotHeldError(CONNECTION_NOT_HELD_HERE)
         return connection.runner

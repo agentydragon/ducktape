@@ -23,9 +23,13 @@ class RefusedError(Exception):
 
 
 class ServiceError(ConnectionError):
-    def __init__(self, code: grpc.StatusCode, details: str | None) -> None:
+    def __init__(
+        self, code: grpc.StatusCode, details: str | None, trailing_metadata: grpc.aio.Metadata | None = None
+    ) -> None:
         super().__init__(f"{code.name}: {details}")
         self.code = code
+        self.details = details
+        self.trailing_metadata = trailing_metadata
 
 
 def dial(target: str) -> grpc.aio.Channel:
@@ -46,7 +50,7 @@ def raise_status(error: grpc.aio.AioRpcError) -> Never:
     _log_failure(error)
     if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
         raise TimeoutError(f"{error.code().name}: {error.details()}") from error
-    raise ServiceError(error.code(), error.details()) from error
+    raise ServiceError(error.code(), error.details(), error.trailing_metadata()) from error
 
 
 def _raise(error: grpc.aio.AioRpcError) -> Never:
