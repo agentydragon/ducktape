@@ -216,10 +216,9 @@ def foreign_clone_roots(repo: Path, output_user_root: Path) -> list[Path]:
     duplicating it here is simpler than threading a shared scan through both call sites (the
     bases-only CLI path already does the analogous two-pass thing for its PR-annotation step).
     """
-    # TODO: Add an age-based `/tmp` review pass for existing Bazel bases whose workspaces live
-    # there and same-project Git clone roots there, including clones not discoverable through a base.
-    # Define last-activity evidence per artifact; age should nominate candidates, while the
-    # existing live-process, lock/mount, and dirty/unique-work checks continue to govern pruning.
+    # TODO: Add an age-based `/tmp` review pass for same-project Git clone roots that are not
+    # discoverable through a Bazel output base. Dirty/unique-work and live-process checks must
+    # continue to govern removal.
     bases = output_base_gc.scan_output_user_root(output_user_root)
     return foreign_clone_gc.discover_foreign_clones(
         _retained_workspaces(bases), known_paths=_known_worktree_paths(repo), repo=repo
