@@ -838,7 +838,7 @@ flowchart TD
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     APP_NATIVE_RESUME_SURFACE[Approved: retain explicit resume UI; clarify wake-off affordance] --> APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume]
-    APP_NATIVE_RESUME_CONTRACT --> APP_NATIVE_RESUME_CUTOVER[Blocked: migrate direct native resume after unification]
+    APP_NATIVE_RESUME_CUTOVER[Dispatched: explicit resume through runner tunnel]
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
@@ -1163,23 +1163,23 @@ resume available and do not erase the suspended indicator or turn on wake permis
 
 ### `APP_NATIVE_RESUME_CONTRACT` — specify durable explicit native resume
 
-**Decision before implementation.** The explicit native-resume button may keep using Gateway
-through the unified-service cutover. Its later canonicalization makes Dispatcher the sole starter
+**Separate future decision; does not block the approved direct Runner resume migration.** Its later canonicalization makes Dispatcher the sole starter
 of runner work. Specify a durable Dispatcher operation, including caller-chosen retry ID, full
 destination/UID authority, authorization,
 admission before any wake, lost-response retry, and observable outcome. Decide whether it applies
 only to a Ready Sandbox or may also wake a suspended one; the existing Sandbox resume API is a
 distinct control. Do not add a new RPC or broaden wake grants before this contract is reviewed.
 
-### `APP_NATIVE_RESUME_CUTOVER` — migrate the app's explicit native-resume path
+### `APP_NATIVE_RESUME_CUTOVER` — route explicit app resume through the runner tunnel
 
-**Blocked on `APP_NATIVE_RESUME_CONTRACT` and verified `DELIVERY_UNIFIED_CUTOVER`.** Keep the
-existing Gateway path through unification; then land the reviewed Dispatcher receiver inside the
-unified service and pin it before changing the app caller. Preserve the **Resume harness** action,
-retained native identity/history, suspended-state indication and ordinary retries. If the reviewed UX also adds a
-Thread-page manual Sandbox wake button, use the separately authorized Sandbox resume path; do not
-label a native-harness call as Sandbox wake. Verify the new app image in testing and staging and
-external/pinned callers before narrowing Gateway authorization or deleting its legacy receiver.
+**Dispatched; operator-approved, 2026-10-16. Independent of Go unification.** Preserve the explicit
+**Resume harness** button and existing retained-spec/setup checks. The app already has the Thread's
+Sandbox name; `RunnerDirectory` resolves its current UID and owner. Call Runner `ResumeSession`
+through the reverse tunnel with the same complete identity metadata as tunneled `ListSessions`,
+without the Gateway Session registry lookup. This does not wake a suspended Sandbox or make
+wake-on-send mandatory. Verify the actual proxy path and pin the app image in testing and staging
+before deleting the legacy Gateway receiver. Durable Dispatcher resume remains a separate design
+question, not a prerequisite for this approved migration.
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
 
@@ -1202,11 +1202,9 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 ```mermaid
 flowchart TD
     HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
-    SANDBOX_DATABASE_RENAME[Unscheduled: name the sandbox_commands database for the Runner Gateway]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     SANDBOX_IDLE_EXPIRY[Candidate: idle runner Sandboxes suspend, section 7] -. same idleness question .-> ACTION_BOX_IDLE_REAPER
-    GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] -. makes moot .-> SANDBOX_DATABASE_RENAME
 ```
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
@@ -1218,14 +1216,6 @@ the database and role in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`) and ha
 `Database` and managed role adopt the new names; recreating the database under a new name would copy
 the log. Verify the History Service and Electric reconnect with no data movement. Update the
 `storage/migrate.py` and `cluster/cdk8s/agentplane/history_service.py` docstrings.
-
-### `SANDBOX_DATABASE_RENAME` — name the Runner Gateway's database for it
-
-**Unscheduled; operator, 2026-10-11 PDT: keep the name for now, not urgent.** `sandbox_commands` holds the Runner Gateway's Session registry and command
-admission; the Sandbox Service has no database. Rename it and its role and Secret for the gateway
-in place, as `HISTORY_DATABASE_RENAME` does, and point the Runner Gateway, its migration init
-container and `commands_database_url` at the new names. `database.py`'s comment on
-`sandbox_commands` follows.
 
 ### `ACTION_BOX_IDLE_REAPER` — delete Action boxes nobody uses
 
@@ -1326,14 +1316,14 @@ flowchart TD
     DISPATCHER_OPENING_ATTACHED_READ_RETIRE[Blocked: unmap the retired snapshot after writer rollout]
     DISPATCHER_OPENING_ATTACHED_READ_RETIRE -->|Unmapped-reader image Ready in testing and staging| DISPATCHER_OPENING_ATTACHED_COLUMN_DROP[Blocked: drop the retired snapshot column]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
-    GATEWAY_WRAPPER_RETIRE[Blocked: retire redundant Gateway APIs; preserve registry for current resume checks]
+    GATEWAY_WRAPPER_RETIRE[In progress: remove legacy Gateway wrappers]
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
-    GATEWAY_DATABASE_DROP[Blocked: drop the Session registry database after identity migration]
+    GATEWAY_DATABASE_DROP[Approved: drop Gateway database and its CNPG resources after rollout]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
-    GATEWAY_SESSION_REGISTRY_RETIRE[Blocked: settle native-resume registry reader, then retire registry]
-    APP_NATIVE_RESUME_CUTOVER --> GATEWAY_SESSION_REGISTRY_RETIRE
+    GATEWAY_SESSION_REGISTRY_RETIRE[Blocked: remove registry code and roll out]
+    GATEWAY_WRAPPER_RETIRE --> GATEWAY_SESSION_REGISTRY_RETIRE
     GATEWAY_SESSION_REGISTRY_RETIRE --> GATEWAY_DATABASE_DROP
 ```
 
@@ -1374,7 +1364,7 @@ Preserve each opening's Session ID, Sandbox identity, state, reason and timestam
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
-**Blocked on the Dispatcher-only app image rollout, `APP_NATIVE_RESUME_CUTOVER`,
+**Needs policy revision for the approved direct app Runner `ResumeSession` caller; do not revoke that path. Blocked on the Dispatcher-only app image rollout, `APP_NATIVE_RESUME_CUTOVER`,
 `GATEWAY_WRAPPER_RETIRE`,
 with their caller images pinned in both environments.** Today
 the gateway's runner proxy (`runner_gateway/runner_proxy.py`) lets every configured caller account call
@@ -1399,50 +1389,43 @@ pinned caller image sends it (the VM guest's runner wheel is a reader of the new
 The journal's `CommandAdmitted` event keeps storing the `Command` message, so stored history needs no
 migration and `Command` stays as that event's field type.
 
-### `GATEWAY_WRAPPER_RETIRE` — retire redundant live operations; retain placement registry
+### `GATEWAY_WRAPPER_RETIRE` — delete the legacy Gateway wrappers
 
-**Blocked on the explicit native-resume caller migration, the corresponding app image rollout and external/
-pinned-caller review for the remaining Gateway methods.** #10619 moved app archive and Notification
-membership reads to the per-Sandbox proxy; the `agentplane-app`, `agentplane-notifications` and
-`agentplane-runner-gateway` images tagged `...-354a3e0` are Ready in testing and staging. Those reads
-are complete, and Runner `ListSessions` remains for live inventory consumers. App and notification
-command sends go through Dispatcher. Retire Gateway
-`CreateSession`, `ResumeSession` and `SubmitCommand` only after their caller gates.
-`BatchGetSessionSandboxes` has no production in-repo caller; remove it with the registry API only
-after external/pinned caller review. Preserve
-`session_registry.py` and its database while `ResumeSession` still reads it: only Gateway
-`CreateSession` writes rows, so the app's current direct-resume path refuses Dispatcher-opened
-Sessions. Keep the runner control stream and proxy. Removing redundant Gateway APIs does not make
-`SANDBOX_DATABASE_RENAME` moot while the registry remains.
-Remove the `RunnerGatewayClient` helpers, wire types and test fixtures with the old methods after
-checking pinned/external callers; Notification's command/lifecycle timeout settings are already
-gone. Keep the app's `runner_gateway_lifecycle_timeout_s` until explicit resume has a reviewed new
-path. The app's Gateway API channel/target still powers its System health probe, so retain it
-until that health read is migrated. The separate Sandbox control target/token serve live runner
-reads. Remove strict config keys from manifests before deleting their settings readers.
+**Partially dispatched; operator-approved, 2026-10-16.** Delete `SubmitCommand` in its own PR against
+`devel`; production app and Notifications already use Dispatcher. Migrate meaningful test callers
+and remove wrapper-only tests, client helpers and protobuf types. Its removal does not wait for app
+Resume. Once `APP_NATIVE_RESUME_CUTOVER` is deployed, remove Gateway `ResumeSession`, `CreateSession`,
+`ListSessions` and `BatchGetSessionSandboxes` after verifying remaining pinned/external callers.
+Retire their test fixtures and wire helpers; keep Runner inventory, the reverse tunnel and proxy.
+The app's Gateway API target still powers its System health probe: migrate that probe before
+removing its channel/configuration. Remove strict settings from manifests before deleting readers.
 
-### `GATEWAY_SESSION_REGISTRY_RETIRE` — retire registry consumers only after resume review
+### `GATEWAY_SESSION_REGISTRY_RETIRE` — remove Gateway registry code and database access
 
-**Blocked on `APP_NATIVE_RESUME_CUTOVER`, wrapper callers and external/pinned clients.** The app no
-longer calls `BatchGetSessionSandboxes`: it routes direct native resume using the History-backed
-Sandbox name and a live runner list. `SandboxRunner.resume` still calls Gateway `ResumeSession`,
-which requires a `session_registry` row for that Sandbox UID. Only Gateway `CreateSession` writes
-the registry; production openings use Dispatcher, so their direct-resume path is currently refused.
-Migrate the retained explicit action to the reviewed Dispatcher contract, preserving UID and owner
-checks, before removing Gateway `ResumeSession` or its registry reader.
-`BatchGetSessionSandboxes` has no production in-repo caller; confirm external/pinned use before
-removing its method, client helper and `SessionSandbox` wire shape. Retain the registry and its data
-until all live readers/writers are retired and
-the separate operator-approved `GATEWAY_DATABASE_DROP`; never infer a missing UID from a same-name
-Sandbox.
+**Blocked on `GATEWAY_WRAPPER_RETIRE`.** `CreateSession` writes the `session` table;
+`ResumeSession` and `SubmitCommand` validate against it; `BatchGetSessionSandboxes` reads it.
+After those methods and their callers are gone, remove `SessionRegistry`, the ORM mapping and
+serving-process database access. Keep a transitional optional settings reader only while existing
+manifests still supply its key; its deletion belongs to `GATEWAY_DATABASE_DROP`. Roll the
+registry-free Gateway image to all replicas in testing and staging before dropping the database.
+Preserve runner-native state, History and the independent Dispatcher queue. Do not port this
+registry into Go.
 
-### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database
+### `GATEWAY_DATABASE_DROP` — remove Gateway's database and CNPG-managed resources
 
-**Blocked on `GATEWAY_WRAPPER_RETIRE` and `GATEWAY_SESSION_REGISTRY_RETIRE`; a data drop, merged by the operator.** Drop the database,
-its role, Secret, migration init container, old models/migrations and image publication wiring once
-the History Service holds every Session's Sandbox and all pinned gateways have stopped reading or
-writing this database. First remove strict config keys from manifests with an accepting receiver;
-only after that rollout delete their settings readers. This remains a separate data-drop PR.
+**Approved data-drop scope, 2026-10-16; blocked on the registry-free Gateway rollout in both
+environments. Separate PR, merged by the operator.** Drop the `session` table by dropping its
+`sandbox_commands` database once all readers/writers are gone. Remove its CNPG `Database` resource,
+managed role, generated credentials/Secret, migration init container, database URL manifest setting,
+and obsolete migration/image publication wiring. Verify the CNPG Database reclaim policy and actual
+SQL database/role deletion rather than assuming pruning the CR deletes the data. After manifests
+without the setting have reconciled, delete the remaining settings reader and migration sources.
+
+The CNPG **Cluster `postgres` is shared** with app, Actions, Egress, Notifications, History and
+Dispatcher (`cluster/cdk8s/agentplane/database.py`); retain that Cluster, operator and storage.
+This node removes Gateway's logical database and associated CNPG resources, not other services'
+data. No database rename is needed. `DELIVERY_GO_RETIREMENT_REBASE` then rebases the Go implementation
+onto this completed retirement before the unified Go PR may merge.
 
 ## Scope and retirement of stale gates
 
@@ -1474,7 +1457,7 @@ flowchart LR
     DELIVERY_GO_PROTOCOL_AUTH[Go proto and auth foundation]
     DELIVERY_GO_GATEWAY[Go tunnel and connection role]
     DELIVERY_GO_DISPATCHER[Go durable queue and delivery role]
-    DELIVERY_GO_LEGACY_WRAPPER[Required: port live Gateway resume wrapper]
+    DELIVERY_GO_RETIREMENT_REBASE[Merge gate: rebase Go after Gateway database retirement]
     DELIVERY_GO_INTEGRATION[One process, image and cdk8s deployment]
     DELIVERY_UNIFIED_CUTOVER[Atomic cutover and recovery verification]
     DELIVERY_OLD_RUNTIME_RETIRE[Retire obsolete runtime objects]
@@ -1491,12 +1474,11 @@ flowchart LR
     K3S_VM_IMAGE[Blocked: build a real VM fixture, section 10]
     DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_GATEWAY
     DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_DISPATCHER
-    DELIVERY_GO_PROTOCOL_AUTH --> DELIVERY_GO_LEGACY_WRAPPER
+    GATEWAY_DATABASE_DROP --> DELIVERY_GO_RETIREMENT_REBASE
     DELIVERY_GO_GATEWAY --> DELIVERY_GO_INTEGRATION
     DELIVERY_GO_DISPATCHER --> DELIVERY_GO_INTEGRATION
-    DELIVERY_GO_LEGACY_WRAPPER --> DELIVERY_GO_INTEGRATION
+    DELIVERY_GO_RETIREMENT_REBASE --> DELIVERY_GO_INTEGRATION
     DELIVERY_GO_INTEGRATION --> DELIVERY_UNIFIED_CUTOVER
-    DELIVERY_UNIFIED_CUTOVER --> APP_NATIVE_RESUME_CUTOVER
     DELIVERY_UNIFIED_CUTOVER --> DELIVERY_OLD_RUNTIME_RETIRE
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
@@ -1620,22 +1602,22 @@ fencing). The Go port still needs equivalent tests against its implementation. K
 `agentplane/acceptance:test_dispatcher_deployed` manual for deployed replica failover; do not add it
 to default CI.
 
-### `DELIVERY_GO_LEGACY_WRAPPER` — preserve Gateway resume through unification
+### `DELIVERY_GO_RETIREMENT_REBASE` — rebase Go implementation after Python database retirement
 
-**Required after the Go foundation; the app's explicit Resume path stays on Gateway for this
-cutover.** Port live `RunnerGateway.ResumeSession` behavior and its `sandbox_commands` Session
-registry to Go without changing the existing database schema or losing rows. Audit the other
-wrapper methods, tests, external and pinned callers and port each method still live at cutover;
-an in-repository caller inventory does not cover external clients. The later
-`APP_NATIVE_RESUME_CUTOVER` and `GATEWAY_WRAPPER_RETIRE` remain separate from the merger, as do
-`GATEWAY_SESSION_REGISTRY_RETIRE` and database deletion.
+**Merge gate; operator-approved, 2026-10-16. Blocked on `GATEWAY_DATABASE_DROP`.** Rebase the single
+Go implementation PR onto the landed Python wrapper/registry/database retirement. Remove the
+obsolete Gateway registry port, database configuration and Gateway Goose baseline/handoff code;
+keep Dispatcher queue migrations and data-preserving ownership handoff. Do not restore deleted
+wrappers or CNPG resources through the Go cutover. Review the combined diff and run affected Go
+integration checks on the rebased revision before merging. Independent Go Dispatcher and tunnel
+implementation work can continue while the Python cleanup rolls out.
 
 ### `DELIVERY_GO_INTEGRATION` — one process and deployment, separate front doors
 
-**Depends on both Go role ports and the live-wrapper port.** Wire a single process and
+**Depends on both Go role ports and the post-retirement Go rebase.** Wire a single process and
 image with distinct authenticated Dispatcher sender, Gateway API/proxy and runner `Connect`
-listeners. Keep the current PostgreSQL queue and registry databases, migration init containers and
-Secrets. In cdk8s, make one Deployment/ServiceAccount with reviewed union RBAC and per-listener
+listeners. Keep the Dispatcher PostgreSQL queue, its migration wiring and credentials; do not recreate
+the retired Gateway database. In cdk8s, make one Deployment/ServiceAccount with reviewed union RBAC and per-listener
 NetworkPolicy, while retaining `agentplane-session-dispatcher` and `agentplane-runner-gateway` as
 logical Service names and existing token audiences. Both Services select the unified Pods; the
 runner-control port and per-Sandbox control EndpointSlices still target the holder replica. Update
