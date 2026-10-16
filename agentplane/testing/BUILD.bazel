@@ -5,6 +5,7 @@ package(
     default_visibility = [
         "//agentplane/action_service:__pkg__",
         "//agentplane/app:__pkg__",
+        "//agentplane/crds:__pkg__",
         "//agentplane/egress:__pkg__",
         "//agentplane/history_service:__pkg__",
         "//agentplane/history_service/testing:__pkg__",
@@ -43,4 +44,19 @@ py_library(
     name = "agent_docs",
     srcs = ["agent_docs.py"],
     deps = ["@pypi//httpx"],
+)
+
+py_library(
+    name = "kubernetes_apiserver",
+    srcs = ["kubernetes_apiserver.py"],
+    data = [
+        "//agentplane/crds",  # keep: envtest installs these at startup
+        "//agentplane/testing/envtest:server",  # keep: fixture subprocess
+        "@envtest_kubernetes_linux_amd64//:assets",  # keep: pinned control-plane executables
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//kubernetes_asyncio",
+    ],
 )
