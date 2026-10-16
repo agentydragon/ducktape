@@ -42,6 +42,12 @@ ts_library(
     ],
 )
 
+js_library(
+    name = "spend_chart_order_probe_js",
+    testonly = True,
+    srcs = ["spend-chart-order-probe.js"],
+)
+
 spa_bundle(
     name = "bundle",
     entry_point = "main.js",
@@ -54,7 +60,11 @@ py_test(
     name = "visual_test",
     size = "large",
     srcs = ["visual_test.py"],
-    data = [":bundle"],
+    data = [
+        "spend-chart-order-probe.js",
+        ":bundle",
+        ":spend_chart_order_probe_js",
+    ],
     tags = ["visual"],
     deps = [
         "//:conftest",

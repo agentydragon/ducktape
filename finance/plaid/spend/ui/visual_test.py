@@ -11,13 +11,14 @@ import json
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from urllib.parse import urlparse
 
 import pytest
 import pytest_bazel
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from playwright.async_api import Locator, Page, Playwright, Route, expect
+from playwright.async_api import Locator, Page, Playwright, Response, Route, expect
 
 from finance.plaid.spend.allowance import (
     AllOf,
@@ -65,7 +66,7 @@ from finance.plaid.spend.models import (
     StatementReason,
     TransactionPeriodSummary,
 )
-from util.bazel.runfiles import get_required_path
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -76,6 +77,9 @@ from util.testing.visual_capture import VisualPage, playwright_trace
 pytest_plugins = ("util.playwright",)
 
 _UI_DIR = get_required_path("_main/finance/plaid/spend/ui/dist/index.html").parent
+_CHART_ORDER_PROBE_JS = get_required_path(
+    own_repo_rlocation("finance/plaid/spend/ui/spend-chart-order-probe.js")
+).read_text(encoding="utf-8")
 
 
 _FROZEN_NOW_MS = int(datetime(2026, 10, 15, tzinfo=UTC).timestamp() * 1000)
@@ -616,6 +620,114 @@ async def test_chart_transactions_start_before_view_finishes(page: Page, dashboa
     finally:
         release_view.set()
     await page.locator("canvas[aria-label]").wait_for()
+
+
+async def _run_spending_chart_order_probe(page: Page, dashboard_url: str, *, order: str) -> None:
+    gates = {name: asyncio.Event() for name in ("view", "events", "transactions")}
+    arrived = {name: asyncio.Event() for name in gates}
+    route_events: list[dict[str, str | int]] = []
+
+    def record(event: str, gate: str) -> None:
+        route_events.append({"sequence": len(route_events), "event": event, "gate": gate})
+
+    async def hold_route(route: Route, gate: str) -> None:
+        record("arrived", gate)
+        arrived[gate].set()
+        await gates[gate].wait()
+        record("continued", gate)
+        await route.continue_()
+
+    for gate in gates:
+        await page.route(f"**/api/v1/{gate}*", lambda route, route_gate=gate: hold_route(route, route_gate))
+
+    def record_response(response: Response) -> None:
+        path = urlparse(response.url).path.removeprefix("/api/v1/")
+        if path in gates:
+            record("response", path)
+
+    page.on("response", record_response)
+    output_dir = undeclared_outputs_dir() / f"spend-chart-order-{order}"
+    view = VisualPage(page, output_dir=output_dir, title="Spend")
+    await page.add_init_script(_CHART_ORDER_PROBE_JS)
+    await page.emulate_media(color_scheme="dark")
+    await page.set_viewport_size({"width": 390, "height": 844})
+
+    if order not in {"view-and-events-first", "transactions-first"}:
+        raise ValueError(f"unknown route order {order}")
+
+    async def continue_after_response(gate: str) -> None:
+        path = f"/api/v1/{gate}"
+        async with page.expect_response(lambda response: urlparse(response.url).path == path) as pending:
+            record("released", gate)
+            gates[gate].set()
+        response = await pending.value
+        await response.finished()
+
+    try:
+        await page.goto(dashboard_url, wait_until="domcontentloaded")
+        if order == "view-and-events-first":
+            await arrived["view"].wait()
+            await continue_after_response("view")
+            await arrived["events"].wait()
+            record("released", "events")
+            gates["events"].set()
+            await page.get_by_role("heading", name="Where you stand").wait_for()
+            await page.get_by_text("Live updates", exact=True).wait_for()
+            await arrived["transactions"].wait()
+            await continue_after_response("transactions")
+        else:
+            await arrived["transactions"].wait()
+            await continue_after_response("transactions")
+            await arrived["view"].wait()
+            await continue_after_response("view")
+            await page.get_by_role("heading", name="Where you stand").wait_for()
+            await arrived["events"].wait()
+            record("released", "events")
+            gates["events"].set()
+            await page.get_by_text("Live updates", exact=True).wait_for()
+
+        await page.locator("canvas[aria-label]").wait_for()
+        await page.wait_for_function(
+            "() => window.__spendChartProbe?.events.some(event => event.kind === 'after-draw')"
+        )
+        route_events.append({"sequence": len(route_events), "event": "capture-ready", "gate": order})
+
+        def index_of(event_name: str, gate_name: str) -> int:
+            return next(
+                index
+                for index, event in enumerate(route_events)
+                if event["event"] == event_name and event["gate"] == gate_name
+            )
+
+        if order == "view-and-events-first":
+            assert index_of("response", "view") < index_of("released", "transactions")
+            assert index_of("response", "events") < index_of("released", "transactions")
+        else:
+            assert index_of("response", "transactions") < index_of("released", "view")
+            assert index_of("response", "view") < index_of("released", "events")
+
+        await view.capture(
+            "dashboard-dark-390", label=f"390px dark chart, {order}", full_page=True, animations="disabled"
+        )
+        chart_events = await page.evaluate("() => window.__spendChartProbe.events")
+        assert any(event["kind"] == "before-update" for event in chart_events)
+        assert any(event["kind"] == "after-draw" for event in chart_events)
+        (output_dir / "ordering-probe.json").write_text(
+            json.dumps({"order": order, "route_events": route_events, "chart_events": chart_events}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        view.errors.assert_none(context=f"Spend chart order {order}")
+    finally:
+        for gate in gates.values():
+            gate.set()
+
+
+async def test_spending_chart_order_probe_view_and_events_first(page: Page, dashboard_url: str) -> None:
+    await _run_spending_chart_order_probe(page, dashboard_url, order="view-and-events-first")
+
+
+async def test_spending_chart_order_probe_transactions_first(page: Page, dashboard_url: str) -> None:
+    await _run_spending_chart_order_probe(page, dashboard_url, order="transactions-first")
 
 
 @pytest.mark.asyncio

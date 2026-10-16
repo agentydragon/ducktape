@@ -11,6 +11,7 @@ import {
   PointElement,
   Tooltip,
 } from "chart.js";
+import type { Plugin } from "chart.js";
 import type { components } from "./api/schema";
 
 Chart.register(
@@ -167,8 +168,10 @@ export function SpendingHistoryChart({
 
   useEffect(() => {
     if (!canvasRef.current || !transactions || !chart) return;
+    const diagnostics = (window as Window & { __spendChartProbePlugins?: Plugin<"bar">[] }).__spendChartProbePlugins;
     const instance = new Chart(canvasRef.current, {
       type: "bar",
+      plugins: diagnostics ?? [],
       data: {
         labels: chart.labels,
         datasets: chart.datasets,
