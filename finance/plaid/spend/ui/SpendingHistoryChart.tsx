@@ -176,10 +176,12 @@ export function SpendingHistoryChart({
       plugins: [
         {
           id: "visual-forensics",
+          beforeUpdate: (_rendered, args) => console.debug("chart-update-probe", args.mode, new Error().stack),
           afterDraw: (rendered) => {
             console.debug(
               "chart-probe",
               JSON.stringify({
+                minPadding: Reflect.get(rendered, "_minPadding"),
                 width: rendered.width,
                 height: rendered.height,
                 dpr: rendered.currentDevicePixelRatio,
@@ -194,6 +196,10 @@ export function SpendingHistoryChart({
                   Object.entries(rendered.scales).map(([key, scale]) => [
                     key,
                     {
+                      paddingLeft: Reflect.get(scale, "paddingLeft"),
+                      paddingRight: Reflect.get(scale, "paddingRight"),
+                      labelSizes: Reflect.get(scale, "_labelSizes"),
+                      margins: Reflect.get(scale, "_margins"),
                       left: scale.left,
                       right: scale.right,
                       top: scale.top,
