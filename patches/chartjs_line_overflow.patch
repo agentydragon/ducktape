@@ -1,0 +1,24 @@
+--- dist/chart.js
++++ dist/chart.js
+@@ -2173,7 +2173,8 @@
+  getMaxOverflow() {
+         const meta = this._cachedMeta;
+         const dataset = meta.dataset;
+-        const border = dataset.options && dataset.options.borderWidth || 0;
++        const options = this.resolveDatasetElementOptions(dataset.active ? 'active' : 'default');
++        const border = this.options.showLine ? options.borderWidth || 0 : 0;
+         const data = meta.data || [];
+         if (!data.length) {
+             return border;
+--- dist/chart.cjs
++++ dist/chart.cjs
+@@ -2175,7 +2175,8 @@
+  getMaxOverflow() {
+         const meta = this._cachedMeta;
+         const dataset = meta.dataset;
+-        const border = dataset.options && dataset.options.borderWidth || 0;
++        const options = this.resolveDatasetElementOptions(dataset.active ? 'active' : 'default');
++        const border = this.options.showLine ? options.borderWidth || 0 : 0;
+         const data = meta.data || [];
+         if (!data.length) {
+             return border;

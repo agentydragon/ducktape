@@ -607,6 +607,9 @@ npm.npm_translate_lock(
         "unrs-resolver",
     ],
     npmrc = "//:.npmrc",
+    # Line overflow must use the current options before the first layout, not the
+    # previous frame's options. Otherwise no-op updates move the x axis (#10719).
+    patches = {"chart.js@4.5.1": ["//patches:chartjs_line_overflow.patch"]},
     # Root pnpm-lock.yaml with workspace packages
     pnpm_lock = "//:pnpm-lock.yaml",
     # Hoist ESLint plugins for runtime discovery
