@@ -31,7 +31,7 @@ bb run //agentplane/policy_controller/cmd:policy-controller -- \
 It uses the in-cluster config or `KUBECONFIG`. Its ServiceAccount needs to list and watch
 PolicySets, PolicyBindings and ServiceAccounts, delete PolicyBindings, apply PolicyBinding status,
 read the referenced Roles and ClusterRoles, list and watch RoleBindings and ClusterRoleBindings
-cluster-wide, and patch and delete them where sets grant, with `bind` on each referenced role. It
+cluster-wide, and create, patch and delete them where sets grant, with `bind` on each referenced role. It
 serves metrics on `:8080` and `/healthz`/`/readyz` on `:8081`, and replicas elect a leader by a
 Lease in the policy namespace.
 

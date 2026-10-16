@@ -29,11 +29,12 @@ recreates it.
   bindings themselves: one deleted or edited by hand is restored.
 - A recreated ServiceAccount with a previous one's name gets new native bindings; those of the old
   account are deleted, since RBAC matches subjects by name alone.
-- The controller applies each managed native binding's labels, annotations, subjects and roleRef
-  with server-side apply. It deletes stale grants explicitly, including old ServiceAccount UIDs, and
-  replaces a managed binding if its immutable roleRef differs. An object at a desired name that
-  does not carry this controller's ownership labels and binding identity is a collision; it is never
-  adopted.
+- The controller claims a missing native binding name with create, then applies its managed labels,
+  annotations, subjects and roleRef with server-side apply. Existing bindings are checked uncached;
+  their UID and resourceVersion guard the apply against concurrent replacement or edits. It deletes
+  stale grants explicitly, including old ServiceAccount UIDs, and replaces a managed binding if its
+  immutable roleRef differs. An object at a desired name that does not carry this controller's
+  ownership labels and binding identity is a collision; it is never adopted.
 - The controller never creates a binding to a role that does not exist; it binds the role once it
   appears. It touches only native bindings carrying its label and its own policy namespace, so
   several Agentplane instances' controllers share a cluster.
