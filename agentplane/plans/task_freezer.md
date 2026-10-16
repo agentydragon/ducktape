@@ -56,7 +56,10 @@ On a selected rollout-following use case. Review Deployment identity/watch recov
 
 ### `AGENT_MESSAGE_CLASSIFICATION` — optional outbound content safeguards
 
-Only after an explicit leakage-review requirement. Never substitute classifiers for messaging RBAC or silently discard accepted messages.
+An optional later addition, explicitly outside v1 cross-agent communication and its prerequisites.
+See [information transfer and scope](multiagent_communication.md#information-transfer-and-v1-scope).
+Only after an explicit leakage-review requirement. Never substitute classifiers for messaging RBAC
+or silently discard accepted messages.
 
 ### `LIVE_CLEAN` — executor heartbeat retention cleanup
 

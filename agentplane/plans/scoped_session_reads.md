@@ -6,6 +6,11 @@ Review the choices below before implementing the policy. The durable raw Session
 history and its Thread fold live in the [History Service](../history_service/README.md),
 which today serves only its configured reader accounts.
 
+Exactly-one-compartment and SA-only grants below are candidate choices, not selected constraints.
+Compare them with the [cross-agent design space](multiagent_communication.md), including exact-Session
+grants, project/role relationships and a shared authorization system. Sending to a Session and
+reading either participant's transcript remain independent permissions.
+
 ## What is protected
 
 A logical Session has one stable public ID, its retained raw Events, associated native

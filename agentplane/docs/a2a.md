@@ -1,18 +1,18 @@
-# A2A suitability evaluation
+# A2A suitability for the harness/thread protocol
 
-Status: **evaluated and not adopted**. The evaluated A2A repository commit is
+Status: **evaluated and rejected for the harness/thread protocol**. Suitability for agent-to-agent
+communication remains open and was not evaluated here. The evaluated A2A repository commit is
 [`c0f30b35`](https://github.com/a2aproject/A2A/tree/c0f30b35390c59d2cc398a1100823a9115b97a20)
 (latest GitHub release `v1.0.1` on 2026-05-28).
 
 ## Decision
 
-Do not use A2A for Agentplane. It is not the harness-neutral control protocol, not the
-web UI API, not an agent-to-agent facade in this design, and not part of the initial or planned
-experiment matrix.
+Do not use A2A as Agentplane's harness/thread protocol. This decision does not reject A2A for
+agent-to-agent communication or an optional communication facade.
 
 A2A's intentionally opaque task boundary is useful for independently implemented agents that
-exchange tasks, messages, artifacts, and coarse status. Agentplane is solving a
-different problem: supervising native harnesses while preserving exact protocol evidence,
+exchange tasks, messages, artifacts, and coarse status. The harness/thread protocol supervises
+native harnesses while preserving exact protocol evidence,
 admission boundaries, queue and steering behavior, interruption, runtime fencing, and recovery.
 Using A2A here would require either hiding the evidence the control plane exists to understand or
 adding private extensions so extensive that A2A would no longer supply the neutral language.
@@ -70,7 +70,8 @@ A2A also does not define:
 - harness Thread start/resume evidence; or
 - uncertain dispatch after a crash near side effects.
 
-These remain in the private bridge protocol and PostgreSQL schema. No A2A projection is planned.
+These remain in the private bridge protocol and PostgreSQL schema. This evaluation selects no A2A
+projection of that protocol.
 
 ## Existing wrapper evidence
 
@@ -80,7 +81,7 @@ maps assistant text/reasoning/plan/diffs into artifacts, maps tool starts/outcom
 status messages, and uses A2A context ids for continuity. It is Apache-2.0 and has an offline echo
 backend.
 
-It remains useful only as external prior art and evidence that A2A can wrap a coding agent at an
+It is prior art and evidence that A2A can wrap a coding agent at an
 opaque task boundary. It is not the harness supervisor for this architecture. Its Claude paths use
 ACP or the Claude Agent SDK and do not own the exact CLI stream/control frames, queue/admission
 evidence, Kubernetes runtime fencing, bridge log, or crash-window recovery model required here.

@@ -62,8 +62,9 @@ spawn, manage, and delegate to a fleet of Codex agents on OpenAI models, on one 
 work Haku hands them involves only public data. Codex agents build generic, non-sensitive things
 in public (code, simulations, tooling; `finance/augur` is the model), and Haku slots the private
 data in afterwards, for instance to run a personalized simulation. Those agents hold only the
-tokens Rai is fine with OpenAI touching. In the full version a judge sits on the channel between
-Haku and the fleet and checks that nothing sensitive crosses it.
+tokens Rai is fine with OpenAI touching. A later, optional safeguard could put a classifier or
+judge on the channel between Haku and the fleet to check for sensitive content; it would not
+guarantee that nothing sensitive crosses. This is outside v1.
 
 Standing under it:
 
@@ -81,30 +82,31 @@ Missing:
   provider it talks to, and the tier pre-selects the credential set the proxy will substitute (the
   OpenAI-safe set), the transcripts the agent may read, and whether a judge sits on its channel.
   Each part stays separately configurable, and backends see the resolved parts, not the tier name.
-- **No delegation primitive.** The orchestrator uses the objects Rai uses: it creates a sandbox
+- **Delegation workflow.** One candidate uses the objects Rai uses: it creates a sandbox
   from a template its identity may use, opens a session, sends an `Input`, and reads the
   session's events. Its prompt tells it which templates and RBAC configurations it may create
-  without asking, that doing so is allowed, and how to start and monitor an agent. Nothing
-  called a task or a delegation exists; the A2A evaluation
-  ([`../docs/a2a.md`](../docs/a2a.md)) stays decided.
+  without asking, that doing so is allowed, and how to start and monitor an agent. This candidate
+  needs no additional task/delegation object. A2A for communication remains an
+  [open alternative](multiagent_communication.md#prior-art-and-protocol-scope); its
+  [harness/thread-protocol rejection](../docs/a2a.md) remains decided.
 - **Reading an agent without drowning.** The events stream carries every native frame and text
   delta; an orchestrator wants a turn's outcome and the assistant's final text. The thin
   addition is a kind filter on the events endpoint and on stored events, so the orchestrator
   subscribes to `TurnCompleted` and completed items only.
-- **The judge.** An agent on a trusted model that gets each message crossing a tier boundary and
-  decides whether to admit it, answering allow, redact, or block with a reason that goes back
-  to the sender as an input; a classifier only if the agent proves too slow or costly. The inbound direction (fleet to Haku) is the prompt-injection
-  direction and gets its own, different check. The judge's decisions are thread events, so a
-  leak that got through is findable.
+- **Optional future content safeguards.** A classifier or trusted-model judge could examine
+  cross-tier messages; outbound disclosure and inbound prompt injection are different concerns.
+  This is outside v1. Placement, allow/redact/block semantics, evidence and implementation remain
+  [open](multiagent_communication.md#information-transfer-and-v1-scope), and do not replace messaging
+  permissions.
 - **The orchestrator's identity on the API.** Haku creates and suspends sandboxes under
   its own Kubernetes identity, presenting an audience-scoped token the way the Ducktape agent does
   on staging today. What it may create is a permission on that identity, held wherever the app
   keeps policy; a SandboxTemplate is a Pod shape and carries no permission, because editing a
   template never changes a running Pod, while a permission on the identity can (Rai).
-- **Messaging in any topology.** Agents message each other back and forth through the same
-  inputs and events, and the graph is a mesh, not a tree: a specialist may talk to a sibling,
-  or back to the orchestrator, under the same tier rules and the same judge on any edge that
-  crosses a tier.
+- **Messaging in any topology.** A specialist may talk to a sibling or back to the orchestrator;
+  communication need not follow the launch tree. Each direction needs its own send permission,
+  independently of transcript reads. Delivery and optional future safeguards remain open in the
+  [communication design space](multiagent_communication.md).
 - **Subscriptions to lifecycle events.** An agent that spawned another subscribes to what happens
   to it, "this sandbox died" first of all, and gets that as an input; the same delivery path as
   an approval decision, with the sandbox inventory as the source.
@@ -200,8 +202,8 @@ Missing:
 
 - Story 1 lacks only standing grants as their own product: the proxy, the Action Service and
   approval delivery stand.
-- Story 2 has the proxy's per-identity credential sets and the thread store, and adds tiers,
-  the events kind filter, and the judge.
+- Story 2 has the proxy's per-identity credential sets and the thread store, and proposes tiers
+  and the events kind filter. A judge is an optional later addition.
 - Story 3 is story 2 with the orchestrator in the driver's seat and the fleet view on top.
 - Story 4 is the long-lived thread and memory-in-git on top of a resuming sandbox and `T1`; story 5
   is the event pipe on top of story 4, Haku's existing UI pipeline, and the approvals delivery
@@ -209,7 +211,7 @@ Missing:
 
 ## Open questions
 
-- Whether the judge is a classifier, a judge agent, or both in series, and what "sensitive"
+- Whether a future optional judge is a classifier, a judge agent, or both in series, and what "sensitive"
   means as data classes the judge is told about rather than left to infer.
 - How the ingress admits a workload: the sandbox identity's own token (TokenReview, as the
   egress proxy does) or a per-workload secret the deploy pipeline mints; the former needs no

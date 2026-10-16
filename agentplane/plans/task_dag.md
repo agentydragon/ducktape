@@ -212,6 +212,13 @@ These are operator-reviewable decisions, not permission to implement every possi
 be developed together, but publish a coherent shared identity/authority vocabulary before downstream
 APIs. Do not equate creating a resource, reading history, sending a message or receiving/acking it.
 
+[The design-space inventory](multiagent_communication.md) records the open alternatives, including
+static/GitOps manager-to-contributor rules and replacing the authorization machinery across services.
+Send and transcript-read permissions are independent in both directions. A2A is open at this
+communication boundary; its harness/thread-protocol rejection has a different scope. Transport
+facades are not prerequisite decisions, and content classification is outside v1. No implementation
+branch or new dependency is selected by that inventory.
+
 ```mermaid
 flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
