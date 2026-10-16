@@ -141,10 +141,13 @@ Session registry. That wrapper's retirement is separate from selecting an execut
 Dispatcher's proxy path. The registry cannot validate Sessions opened directly by Dispatcher because
 only Gateway `CreateSession` writes it; its remaining native-resume reader has its own migration gate.
 
-**Approved destination (operator, 2026-10-15):** every submission names its destination as
-the Sandbox UID, a persisted harness store ID, and the Agentplane Session ID. Queue and retry that
-tuple, locate the exact Sandbox, and let queued delivery wake only that target. Once the runner is
-reachable, it is authoritative for whether that Session/store exists; an unknown target is a
+**Public destination under renewed review (operator, 2026-10-15):** every submission must name the
+exact Sandbox UID and Agentplane Session ID. The operator is reconsidering whether a persisted
+harness store ID belongs in the caller's address at all. One candidate is public
+`(Sandbox UID, Session ID)` with the runner durably mapping the Session to its private store and
+native ID; the other exposes a store ID only if a real caller choice requires it. Queue and retry the
+selected full address, locate the exact Sandbox, and let queued delivery wake only that target. Once
+the runner is reachable, it is authoritative for whether that Session (and any selected public store) exists; an unknown target is a
 terminal delivery failure, not a reason to search other Sandboxes, create a Session, or substitute a
 same-name replacement. This lets offline delivery rely on the caller's destination tuple rather
 than a central Session-to-Sandbox placement registry. The Kubernetes UID-to-live-connection or
@@ -157,7 +160,7 @@ acceptance is a different outcome from Runner admission; name each stage explici
 present the queued receipt as proof that the runner admitted or the harness consumed the command.
 
 The API representation and resolver remain open: decide whether the request carries a Kubernetes
-namespace/name locator alongside UID or resolves by UID, and how the store ID is represented.
+namespace/name locator alongside UID or resolves by UID, and whether any store ID is public.
 Do not claim live Session membership can be verified while the runner is unavailable. Authenticate
 and authorize the sender before waking; preserve the UID identity fence, command idempotency and
 outcome semantics. Direct admission, if selected, remains online-only and never wakes; only the
@@ -213,10 +216,10 @@ Two choices remain open. A namespace/name plus mandatory UID request can use the
 namespace-local Kubernetes read and control Service as a locator; a UID-only request needs an
 authoritative UID-to-object resolver that works during suspension and rejects ambiguous or stale
 matches. Either representation must persist enough information to re-resolve the _same_ object and
-must never promote name-only discovery to an execution address. A persisted store ID fences a
-Session within its store; its wire representation and validation depend on the separate
-`HARNESS_IDENTITY_DESIGN` contract. This tuple does not choose one versus several harnesses or stores
-per runner.
+must never promote name-only discovery to an execution address. If the runner alone selects a store,
+its durable Session-to-store mapping must survive restart and a retry must not pick a different
+store. An exposed store ID would additionally fence that choice; its need and representation belong
+to `HARNESS_IDENTITY_DESIGN`. Neither address chooses one versus several harnesses or stores per runner.
 
 The decision must separately state: source/subscription authorization; destination namespace, name, UID
 and owner validation; current Session membership; permission to send; and the execution-time fence.
@@ -459,27 +462,30 @@ discoverable or read-only do not establish that one process can host multiple in
 interactive Sessions. Use the separate Codex and Claude characterization evidence before evaluating
 either alternative. These are design options, not implementation authorization.
 
-**Approved identity boundary (operator, 2026-10-15):** the durable public destination is
-`Sandbox UID + persisted harness store ID + Agentplane Session ID`. Process allocation and routing are internal to
-the runner; neither a PID nor a process incarnation is part of the durable address. The public API
-operates on stores and Sessions, not a `create Session on process` call. An adapter may arrange one
-Codex app-server process per store or the current Claude stream-json process per Session without
-exposing those restrictions as public process-allocation errors. Process instances may appear as
-diagnostic objects with hosted Sessions and status. The tuple works with one or several stores and
-processes per Runner; that policy and shared-store concurrency safety remain unsettled.
+**Approved process boundary; public store address reopened (operator, 2026-10-15):** process
+allocation and routing are internal to the runner. Neither a PID nor a process incarnation belongs
+in a durable public address, and there is no public `create Session on process` operation or refusal.
+The simpler candidate is `(Sandbox UID, Agentplane Session ID)`, with store/native/process mapping
+private to the runner. An exposed store ID remains an option only if callers need to choose a store.
+Creating a Session can select its harness kind while the runner manages a default store per kind;
+that is a candidate policy, not a settled one-versus-many store/process choice. An adapter may
+arrange one Codex app-server process per store or the current Claude stream-json process per
+Session. Process instances may appear as diagnostics with hosted Sessions/status. At-most-one
+process per store and shared-store concurrent safety remain open.
 
 The Sandbox UID must identify the exact incarnation; namespace/name may be a locator, but its wire
-syntax and UID resolver are open. A store ID names one durable runner-local lineage and is never
+syntax and UID resolver are open. A runner-owned store ID names one durable lineage and is never
 recycled, even after retirement; it is not a path or process. A public Session ID names a logical
-Session within that store; native Claude/Codex IDs are
-adapter-owned mappings and may collide across stores. Define authorization binding,
-unavailable/suspended lookup and store movement without promoting a same-name Sandbox replacement.
+Session, durably mapped to its selected private store and native Claude/Codex ID. Native IDs may
+collide across stores. Define authorization binding, unavailable/suspended lookup and store movement
+without promoting a same-name Sandbox replacement.
 
 **Recommended creation contract for review, not an approved ID-allocation decision:** keep
-client-chosen, globally unique public IDs for client-created root Sessions, with the exact `(Sandbox UID, store ID, Session
-ID)` and creation spec as the idempotency key. A retry with the same tuple and spec returns the same
-opening; reuse of the public ID with another store, Sandbox or spec conflicts. The runner first
-durably reserves the public ID and store binding, then asks the adapter to create a native Session,
+client-chosen, globally unique public IDs for client-created root Sessions. The exact `(Sandbox UID,
+Session ID)` and creation spec are the idempotency key; if a public store is selected, its ID also
+enters that key. A retry with the same address and spec returns the same opening; reuse of the public
+ID with another Sandbox, store or spec conflicts. The runner first durably reserves the public ID
+and its chosen private store binding, then asks the adapter to create a native Session,
 then durably records the harness-chosen native ID before reporting a completed opening. A queued
 opening is only acceptance; it does not assert native creation. Store a stable public-to-native
 mapping in runner-owned state, scoped by store, and reuse it after process or Runner restart. Do not
@@ -495,12 +501,13 @@ commit resolves by the same public ID. Claude's current adapter chooses a native
 that narrower path does not solve the harness-chosen-ID crash window in general. Specify the
 reservation/mapping format, native reconciliation proof, and failure status before implementation.
 
-**Store and Session lifecycle proposal for review:** a store has a durable ID, harness type and
-binding to the exact Sandbox UID; it survives process exit, Runner restart and Sandbox suspension.
-Creating or reusing a store is a store-level operation, while opening, resuming, stopping and
-changing model/effort are Session-level operations unless a harness proves an option is necessarily
-shared. A process has only ephemeral start/health/hosted-Session status and runner-selected capacity;
-it is never the API target for opening a Session. The runner may restart or replace a process without
+**Store and Session lifecycle proposal for review:** a store has a durable internal ID, harness type
+and binding to the exact Sandbox UID; it survives process exit, Runner restart and Sandbox suspension.
+The runner creates or reuses a store under its selected policy. Public store operations are needed
+only if callers truly need to choose or manage stores; the ordinary API opens, resumes, stops and
+changes model/effort on Sessions unless a harness proves an option is necessarily shared. A process
+has only ephemeral start/health/hosted-Session status and runner-selected capacity; it is never the
+API target for opening a Session. The runner may restart or replace a process without
 changing the store or public Session address. A stopped Session keeps its mapping and data for
 resume. Retiring a store stops new Sessions and requires an explicit policy for existing ones;
 deleting its authored native files is a separate, explicitly authorized data operation, never a
@@ -519,8 +526,8 @@ The `NATIVE_SUBAGENT_EXPOSURE` lane decides which children to project and whethe
 controllable; this identity contract does not presume Claude root multiplexing from the bounded
 single-root stream-json evidence or select one versus several processes per store.
 
-When a runner is reachable, a missing store or Session under the exact tuple is a terminal
-unknown-target result; no other store, process or same-name replacement is searched. When suspended
+When a runner is reachable, a missing public Session (or explicitly selected public store) is a
+terminal unknown-target result; no other store, process or same-name replacement is searched. When suspended
 or unreachable, queued acceptance cannot prove live membership and keeps the exact tuple until
 delivery. Loss of runner storage ends runner-owned state; retained History is not a native store or
 mapping reconstruction source. An unknown delivery response is handled by the same command ID,
@@ -540,8 +547,8 @@ across processes, and concurrent multi-process crash recovery remain untested. T
 single-session `--resume` tests cover restart of one root in a new process.
 
 Neither result decides how many processes or stores a Runner should use, whether concurrent Sessions
-may safely write one store, or which native children can be controlled. The approved public
-destination remains the Sandbox UID, store ID and Agentplane Session ID; these tests do not
+may safely write one store, or which native children can be controlled. The public store-ID question
+remains open; these tests do not
 authorize runtime changes.
 
 ## Runner delivery acceptance without History
