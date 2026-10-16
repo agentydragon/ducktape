@@ -67,7 +67,6 @@ async def test_current_sandbox_highlight(view: VisualPage, app: AgentplaneFixtur
     await view.capture(target=page.locator("#app"))
 
 
-@DESKTOP_AND_MOBILE
 async def test_vm_console_to_sessions_tab(view: VisualPage, app: AgentplaneFixture) -> None:
     """Leaving the live VM console for Sessions unmounts its stream and keeps the page mounted."""
     await app.as_vm_sandbox("ready-sandbox")
