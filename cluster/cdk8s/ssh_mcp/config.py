@@ -6,7 +6,8 @@ generated ssh-mcp ConfigMap and sshpiper Pipe cannot disagree.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
+from ipaddress import IPv4Address
 
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -33,17 +34,57 @@ SWITCH_AGENT_PUBLIC_KEY = "ssh_keys/home-switch-agentplane.pub"
 NEBULA_SUFFIX = ".nebula.allegedly.works"
 NEBULA_HOST_KEY = "ssh_keys/{name}-host-ed25519.pub"
 
-_WYRM2 = "wyrm2.nebula.allegedly.works"
-_RUGGED = "rugged.nebula.allegedly.works"
-_ATLAS = "atlas.nebula.allegedly.works"
-_SWITCH = str(HOME_LAN.switch)
+
+@dataclass(frozen=True)
+class NebulaDestination:
+    """An SSH destination addressed through Nebula."""
+
+    name: str
+
+    @property
+    def host(self) -> str:
+        return f"{self.name}{NEBULA_SUFFIX}"
+
+    @property
+    def host_key_file(self) -> str:
+        return NEBULA_HOST_KEY.format(name=self.name)
+
+
+@dataclass(frozen=True)
+class ServiceDestination:
+    """An SSH destination selected by a Kubernetes Service's Pod endpoints."""
+
+    service: ServiceRef
+    host_key_file: str
+
+    @property
+    def host(self) -> str:
+        return self.service.fqdn
+
+
+@dataclass(frozen=True)
+class LanDestination:
+    """An SSH destination addressed directly on the home LAN."""
+
+    address: IPv4Address
+    host_key_file: str
+
+    @property
+    def host(self) -> str:
+        return str(self.address)
+
+
+Destination = NebulaDestination | ServiceDestination | LanDestination
 
 
 @dataclass(frozen=True)
 class Target:
-    host: str
+    destination: Destination
     user: str
     identity_file: str
+
+    def ssh_settings(self) -> dict[str, str]:
+        return {"host": self.destination.host, "user": self.user, "identity_file": self.identity_file}
 
 
 @dataclass(frozen=True)
@@ -59,35 +100,47 @@ class SshMcpConfig:
     switch_agent_public_key: str
 
     @property
-    def nebula_hostnames(self) -> tuple[str, ...]:
-        """Unique mesh hostnames in the SSH target roster, preserving target order."""
-        return _nebula_hostnames(self.targets)
+    def destinations(self) -> tuple[Destination, ...]:
+        """Unique SSH destinations, grouped by their declared network path."""
+        return _ordered_destinations(self.targets)
 
 
-def _nebula_hostnames(targets: tuple[Target, ...]) -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys(
-            target.host.removesuffix(NEBULA_SUFFIX) for target in targets if target.host.endswith(NEBULA_SUFFIX)
-        )
-    )
-
-
-def _targets(devbox_host: str) -> tuple[Target, ...]:
+def _targets(devbox_ssh: ServiceRef) -> tuple[Target, ...]:
     """A missing identity file leaves a target listed as unavailable, never silently omitted."""
     return (
-        *_targets_for(_WYRM2, ("agentydragon", "root"), "keys", "wyrm2"),
-        *_targets_for(_RUGGED, ("agentydragon", "root"), "keys", "rugged"),
-        *_targets_for(devbox_host, ("root", "coder"), "keys-public-coder-devbox", "public-coder-devbox"),
-        *_targets_for(_ATLAS, ("root", "agentydragon"), "keys-atlas", "atlas"),
-        Target(_SWITCH, "agentplane", f"{CONFIG_DIR}/keys-agentplane/home-switch-agentplane"),
+        *_targets_for(NebulaDestination("wyrm2"), ("agentydragon", "root"), "keys", "wyrm2"),
+        *_targets_for(NebulaDestination("rugged"), ("agentydragon", "root"), "keys", "rugged"),
+        *_targets_for(
+            ServiceDestination(devbox_ssh, DEVBOX_HOST_KEY),
+            ("root", "coder"),
+            "keys-public-coder-devbox",
+            "public-coder-devbox",
+        ),
+        *_targets_for(NebulaDestination("atlas"), ("root", "agentydragon"), "keys-atlas", "atlas"),
+        Target(
+            LanDestination(HOME_LAN.switch, SWITCH_HOST_KEY),
+            "agentplane",
+            f"{CONFIG_DIR}/keys-agentplane/home-switch-agentplane",
+        ),
     )
 
 
 def _targets_for(
-    host: str, users: tuple[str, ...], identity_directory: str, identity_prefix: str
+    destination: Destination, users: tuple[str, ...], identity_directory: str, identity_prefix: str
 ) -> tuple[Target, ...]:
-    """Build targets whose identity paths share a directory and filename prefix."""
-    return tuple(Target(host, user, f"{CONFIG_DIR}/{identity_directory}/{identity_prefix}-{user}") for user in users)
+    """Build account targets whose identity paths share a directory and filename prefix."""
+    return tuple(
+        Target(destination, user, f"{CONFIG_DIR}/{identity_directory}/{identity_prefix}-{user}") for user in users
+    )
+
+
+def _ordered_destinations(targets: tuple[Target, ...]) -> tuple[Destination, ...]:
+    unique = tuple(dict.fromkeys(target.destination for target in targets))
+    return (
+        *(destination for destination in unique if isinstance(destination, NebulaDestination)),
+        *(destination for destination in unique if isinstance(destination, ServiceDestination)),
+        *(destination for destination in unique if isinstance(destination, LanDestination)),
+    )
 
 
 def _read_input(relative: str) -> str:
@@ -103,22 +156,20 @@ def load(devbox_ssh: ServiceRef) -> SshMcpConfig:
     """Read canonical key inputs and derive the SSH endpoint from its Service reference."""
     devbox_host = devbox_ssh.fqdn
     key_type, key, *_comment = _read_input(DEVBOX_HOST_KEY).split()
-    targets = _targets(devbox_host)
+    targets = _targets(devbox_ssh)
     settings: dict[str, object] = {
         "known_hosts_file": f"{CONFIG_DIR}/known_hosts",
         "command_timeout_seconds": 300,
         "connect_timeout_seconds": 10,
         "output_limit_bytes": 65536,
         "max_concurrent_executions": 4,
-        "targets": [asdict(target) for target in targets],
+        "targets": [target.ssh_settings() for target in targets],
     }
     SshSettings.model_validate(settings)
-    host_key = f"{key_type} {key}"
+    destinations = _ordered_destinations(targets)
     known_hosts = "".join(
-        f"{name}{NEBULA_SUFFIX} {_host_key(NEBULA_HOST_KEY.format(name=name))}\n" for name in _nebula_hostnames(targets)
+        f"{destination.host} {_host_key(destination.host_key_file)}\n" for destination in destinations
     )
-    known_hosts += f"{devbox_host} {host_key}\n"
-    known_hosts += f"{_SWITCH} {_host_key(SWITCH_HOST_KEY)}\n"
     agent_downstream_key = _read_input(AGENT_DOWNSTREAM_KEY)
     switch_agent_public_key = " ".join(_read_input(SWITCH_AGENT_PUBLIC_KEY).split()[:2])
     return SshMcpConfig(

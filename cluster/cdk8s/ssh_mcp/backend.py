@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from ipaddress import ip_address
-
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
 from cdk8s_plus_34 import (
     Capability,
@@ -37,7 +35,6 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import (
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
-from cluster.cdk8s.public_coder import devbox as public_coder_devbox
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.ssh_mcp.config import (
     BEARER_SECRET_KEY,
@@ -47,6 +44,9 @@ from cluster.cdk8s.ssh_mcp.config import (
     NAME,
     NAMESPACE,
     SERVICE,
+    LanDestination,
+    NebulaDestination,
+    ServiceDestination,
     SshMcpConfig,
 )
 from cluster.scripts.nebula_mesh import Mesh
@@ -73,31 +73,39 @@ def _config_map(scope: Construct, config: SshMcpConfig) -> ConfigMap:
 
 
 def _egress(mesh: Mesh, config: SshMcpConfig) -> list[CiliumNetworkPolicySpecEgress]:
-    rules = [
-        cilium.dns_egress(),
-        # Cluster nodes use Cilium's host/remote-node identities. A CIDR rule does not
-        # select their Nebula IPs unless policy-cidr-match-mode:nodes is enabled.
-        EgressRule.to_entities(Entity.HOST, Entity.REMOTE_NODE, ports=[22]),
-        # The devbox is an ordinary pod, while non-Kubernetes Nebula peers need to be
-        # selected by CIDR. Their membership and addresses come from nebula-mesh.json.
-        public_coder_devbox.SSH.egress(),
-    ]
-    external_ips = [
+    destinations = config.destinations
+    rules = [cilium.dns_egress()]
+    # Cilium treats cluster nodes as host/remote-node entities. A CIDR rule does not
+    # select their Nebula IPs unless policy-cidr-match-mode:nodes is enabled, so this
+    # permits SSH to all cluster nodes whenever any configured Nebula target is one.
+    if any(
+        isinstance(destination, NebulaDestination) and mesh.hosts[destination.name].role != "non-k8s"
+        for destination in destinations
+    ):
+        rules.append(EgressRule.to_entities(Entity.HOST, Entity.REMOTE_NODE, ports=[22]))
+
+    # Kubernetes Services are selected by their backend Pod endpoints.
+    rules.extend(
+        destination.service.egress() for destination in destinations if isinstance(destination, ServiceDestination)
+    )
+
+    nebula_ips = [
         f"{mesh.hosts[hostname].nebula_ip}/32"
-        for hostname in config.nebula_hostnames
+        for hostname in dict.fromkeys(
+            destination.name for destination in destinations if isinstance(destination, NebulaDestination)
+        )
         if mesh.hosts[hostname].role == "non-k8s"
     ]
-    if external_ips:
-        rules.append(EgressRule.to_cidrs(*external_ips, ports=[22]))
-    direct_ips: list[str] = []
-    for target in config.targets:
-        try:
-            address = ip_address(target.host)
-        except ValueError:
-            continue
-        direct_ips.append(f"{address}/{address.max_prefixlen}")
-    if direct_ips:
-        rules.append(EgressRule.to_cidrs(*direct_ips, ports=[22]))
+    if nebula_ips:
+        rules.append(EgressRule.to_cidrs(*nebula_ips, ports=[22]))
+
+    lan_ips = [
+        f"{destination.address}/{destination.address.max_prefixlen}"
+        for destination in destinations
+        if isinstance(destination, LanDestination)
+    ]
+    if lan_ips:
+        rules.append(EgressRule.to_cidrs(*lan_ips, ports=[22]))
     return rules
 
 
@@ -193,8 +201,9 @@ class SshMcp(Construct):
             JsonPatch.add(
                 "/spec/template/spec/hostAliases",
                 [
-                    k8s.HostAlias(ip=mesh.hosts[hostname].nebula_ip, hostnames=[f"{hostname}.nebula.allegedly.works"])
-                    for hostname in config.nebula_hostnames
+                    k8s.HostAlias(ip=mesh.hosts[destination.name].nebula_ip, hostnames=[destination.host])
+                    for destination in config.destinations
+                    if isinstance(destination, NebulaDestination)
                 ],
             )
         )
