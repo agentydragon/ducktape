@@ -32,7 +32,7 @@ class BlockingAdapter(UnexpectedAdapter):
         self.submit_finished = asyncio.Event()
         self.interrupt_started = asyncio.Event()
         self.interrupted_turn_ids: list[str] = []
-        self.model_changes: list[tuple[str, str]] = []
+        self.model_changes: list[tuple[str, str, int | None]] = []
 
     async def submit(self, command_id: str, text: str) -> None:
         assert (command_id, text) == ("input-1", "blocked native input")
@@ -44,8 +44,8 @@ class BlockingAdapter(UnexpectedAdapter):
         self.interrupted_turn_ids.append(turn_id)
         self.interrupt_started.set()
 
-    async def change_model(self, command_id: str, model: str) -> None:
-        self.model_changes.append((command_id, model))
+    async def change_model(self, command_id: str, model: str, *, context_budget_tokens: int | None = None) -> None:
+        self.model_changes.append((command_id, model, context_budget_tokens))
 
 
 class RunningProcess:
@@ -172,7 +172,7 @@ async def test_terminal_commands_release_scheduling_state_and_retry_is_deduplica
         ("unlisted", "qwen-128", {"qwen-128": 128 * 1024}),
     ],
 )
-async def test_a_model_change_with_a_different_or_missing_context_window_fails(
+async def test_a_model_change_with_a_different_or_missing_context_window_reaches_the_harness(
     tmp_path: Path, initial_model: str, requested_model: str, context_windows: dict[str, int]
 ) -> None:
     async with session_with_blocked_adapter(tmp_path, initial_model=initial_model, model_configs=context_windows) as (
@@ -187,14 +187,8 @@ async def test_a_model_change_with_a_different_or_missing_context_window_fails(
         if dispatch is not None:
             await dispatch
 
-        result = next(
-            entry.event
-            for entry in await session.journal.since(0, limit=16)
-            if entry.event.WhichOneof("observation") == "command_failed"
-        )
-        assert "requires a new thread" in result.command_failed.reason
-        assert "new session" in result.command_failed.reason
-        assert adapter.model_changes == []
+        assert adapter.model_changes == [("different-window", requested_model, context_windows.get(requested_model))]
+        assert not any(entry.event.HasField("command_failed") for entry in await session.journal.since(0, limit=16))
 
 
 async def test_a_same_window_model_change_reaches_the_harness(tmp_path: Path) -> None:
@@ -207,7 +201,7 @@ async def test_a_same_window_model_change_reaches_the_harness(tmp_path: Path) ->
         dispatch = session._normal_dispatch_task
         if dispatch is not None:
             await dispatch
-        assert adapter.model_changes == [("same-window", "qwen-128-alias")]
+        assert adapter.model_changes == [("same-window", "qwen-128-alias", 128 * 1024)]
 
 
 if __name__ == "__main__":

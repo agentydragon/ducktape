@@ -36,6 +36,8 @@ message HarnessExited {
   int32 exit_code = 1;
   bool stopped_by_runner = 2;
   string stopped_by_command_id = 3;
+  // The runner is resuming the same conversation with changed startup settings.
+  bool restarting = 4;
 }
 
 message HarnessLost {}

@@ -45,8 +45,12 @@ class HarnessAdapter(abc.ABC):
     async def interrupt(self, turn_id: str) -> None: ...
 
     @abc.abstractmethod
-    async def change_model(self, command_id: str, model: str) -> None:
+    async def change_model(self, command_id: str, model: str, *, context_budget_tokens: int | None = None) -> None:
         """Apply one model command, reporting its causal effect through the owning Session."""
+
+    @property
+    def has_pending_model_change(self) -> bool:
+        return False
 
     @abc.abstractmethod
     async def change_reasoning_effort(self, command_id: str, effort: str) -> None:

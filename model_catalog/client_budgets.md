@@ -102,7 +102,8 @@ or 372000 merely because a wrapper or OpenClaw uses those values.
   records 90%. Codex also has its own effective-window and metadata rules: do not
   treat that comment as an end-to-end validated threshold for every current binary.
 - Changing a model to one with a different configured window, including an absent
-  versus present override, requires a new thread. The runner rejects that live switch.
+  versus present override, restarts/resumes the harness between turns in the same Session and native
+  conversation. The selected budget is persisted on native confirmation.
 - Harness telemetry is another output: Codex reports
   `thread/tokenUsage/updated.tokenUsage.modelContextWindow`; Claude result frames
   report `modelUsage[*].contextWindow`. Acceptance probes record these as harness
@@ -291,8 +292,8 @@ flatten all per-model windows.
 
 Before implementing, test native tools/reasoning, reported effective windows,
 compaction, unknown/prefix-matching routes, and process restart/thread resume. Revisit
-Agentplane's persisted session budget and **different-window model-switch rejection**
-together; a static per-model catalogue does not automatically make that guard obsolete.
+Agentplane's persisted session budget and between-turn harness reconfiguration
+together; a static per-model catalogue does not automatically replace that lifecycle.
 Keep current behavior until those tests justify a change. No new budgets, model
 switching behavior, gateway configuration, or live probes are introduced by this note.
 

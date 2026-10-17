@@ -51,10 +51,14 @@ class ClaudeAdapter(HarnessAdapter):
     def __init__(self, session: Session, launch: ClaudeLaunch) -> None:
         self.session = session
         self.launch = launch
+        self._context_budget_tokens = session.record.total_context_budget_tokens
         # The facade only performs typed native I/O. Session still logs every receipt before this
         # adapter sees it and this adapter alone projects those frames into runner observations.
         self.harness = facade.ClaudeHarness(session)
         self._native_session_id = session.record.native_session_id or str(uuid4())
+        # Initialization alone creates no transcript to resume. A fresh adapter for a retained
+        # session must conservatively resume; only this adapter knows it has never sent input.
+        self._has_submitted_input = session.record.native_session_id is not None
         # User frame uuid to command data, until the harness confirms its native message.
         self._pending: dict[str, tuple[str, str]] = {}
         # `started` lifecycle UUIDs awaiting the representative replayed native user message. A
@@ -65,7 +69,7 @@ class ClaudeAdapter(HarnessAdapter):
         # frame for those inputs, so the lifecycle cohort itself is the native confirmation.
         self._tool_result_message: tuple[str, int] | None = None
         # Sent `set_model` requests by id, as (command id, model), until `on_frame` translates the answer.
-        self._model_changes: dict[str, tuple[str, str]] = {}
+        self._model_changes: dict[str, tuple[str, str, int | None]] = {}
         self._effort_changes: dict[str, tuple[str, str]] = {}
         self._message_id = ""
         # Content block index to item id for the message being streamed.
@@ -75,7 +79,7 @@ class ClaudeAdapter(HarnessAdapter):
         self._adapter_id = str(uuid4())
 
     def command(self) -> list[str]:
-        resume_id = self.session.record.native_session_id
+        resume_id = self.session.record.native_session_id if self._has_submitted_input else None
         return [
             *scenarios.command(
                 str(self.launch.binary),
@@ -101,7 +105,7 @@ class ClaudeAdapter(HarnessAdapter):
                 max_retries=MAX_RETRIES,
             ),
         }
-        if context_window := self.session.record.total_context_budget_tokens:
+        if context_window := self._context_budget_tokens:
             environment["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context_window)
         return environment
 
@@ -181,10 +185,15 @@ class ClaudeAdapter(HarnessAdapter):
         return answered_message_ids(messages), unparsed
 
     async def submit(self, command_id: str, text: str) -> None:
+        # A rejected set_model must not leave the previous model using the requested model's budget.
+        if self._context_budget_tokens != self.session.record.total_context_budget_tokens:
+            self._context_budget_tokens = self.session.record.total_context_budget_tokens
+            await self.session.reconfigure_harness(self)
         if not self.session.active_turn_id:
             await self.session.emit(
                 event_pb2.TurnStarted(turn_id=f"turn-{uuid4().hex}", model=self.session.record.model), sources=[]
             )
+        self._has_submitted_input = True
         frame = await self.harness.submit(text)
         self._pending[frame.uuid] = (command_id, text)
 
@@ -194,9 +203,12 @@ class ClaudeAdapter(HarnessAdapter):
         del turn_id  # Claude's native protocol only interrupts its current turn.
         await self.harness.signal_interrupt(cancel_queued=False, reason="agentplane")
 
-    async def change_model(self, command_id: str, model: str) -> None:
+    async def change_model(self, command_id: str, model: str, *, context_budget_tokens: int | None = None) -> None:
+        if context_budget_tokens != self._context_budget_tokens:
+            self._context_budget_tokens = context_budget_tokens
+            await self.session.reconfigure_harness(self)
         request = driver.set_model(model)
-        self._model_changes[request.request_id] = (command_id, model)
+        self._model_changes[request.request_id] = (command_id, model, context_budget_tokens)
         try:
             # `on_frame` records what the answer proves. Waiting for it keeps normal commands one at a time.
             await self.harness.request(request)
@@ -239,9 +251,9 @@ class ClaudeAdapter(HarnessAdapter):
             await self._confirm_tool_result_inputs(sources)
         match parsed:
             case wire.ControlResponseFrame(response=response) if response.request_id in self._model_changes:
-                command_id, model = self._model_changes.pop(response.request_id)
+                command_id, model, context_budget = self._model_changes.pop(response.request_id)
                 if response.subtype == "success":
-                    await self.session.model_changed(command_id, model, sources=sources)
+                    await self.session.model_changed(command_id, model, context_budget, sources=sources)
                 else:
                     await self.session._fail(
                         command_id, f"Claude Code refused model switch: {response.error}", sources=sources

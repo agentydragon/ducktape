@@ -51,7 +51,7 @@ class _TurnStart:
 
     command_id: str
     text: str
-    model_change: tuple[str, str] | None
+    model_change: tuple[str, str, int | None] | None
     effort_change: tuple[str, str] | None
 
 
@@ -59,27 +59,26 @@ class CodexAdapter(HarnessAdapter):
     def __init__(self, session: Session, launch: CodexLaunch) -> None:
         self.session = session
         self.launch = launch
+        self._context_budget_tokens = session.record.total_context_budget_tokens
         self._thread_id = session.record.native_session_id or ""
+        # An initialized thread has no persisted rollout until input is submitted. Only a fresh
+        # adapter can prove there is no conversation to retain when reloading startup settings.
+        self._has_submitted_input = session.record.native_session_id is not None
         self.harness = facade.CodexHarness(session, request_prefix="agentplane", client_name=CLIENT_NAME)
         self._adapter_id = str(uuid4())
         # Codex chooses the model in turn/start. A received ChangeModel remains here until a
         # subsequent user command actually starts a turn using it.
-        self._pending_model_changes: list[tuple[str, str]] = []
+        self._pending_model_changes: list[tuple[str, str, int | None]] = []
         self._pending_effort_changes: list[tuple[str, str]] = []
         # Sent `turn/start` requests by id, until `on_frame` translates Codex's answer.
         self._turn_starts: dict[wire.RequestId, _TurnStart] = {}
 
     def command(self) -> list[str]:
-        # TODO: Consider startup model_catalog_json for per-route windows instead of this global
-        # override. Validate full Codex capability entries, compaction, restart/resume, and the
-        # persisted-budget/model-switch guard; see model_catalog/client_budgets.md
-        # (Codex local model catalogue). Independent of the central proxy/logging decision.
-        context_window = self.session.record.total_context_budget_tokens
         return scenarios.command(
             str(self.launch.binary),
             endpoint=self.launch.base_url,
             max_retries=MAX_RETRIES,
-            model_context_window=context_window,
+            model_context_window=self._context_budget_tokens,
             multi_agent=True,
         )
 
@@ -97,7 +96,7 @@ class CodexAdapter(HarnessAdapter):
     async def handshake(self) -> str:
         await self.harness.initialize()
         record = self.session.record
-        if self._thread_id:
+        if self._thread_id and self._has_submitted_input:
             response = await self.harness.resume_thread(thread_id=self._thread_id)
             method = "thread/resume"
         else:
@@ -139,6 +138,19 @@ class CodexAdapter(HarnessAdapter):
 
     async def submit(self, command_id: str, text: str) -> None:
         model_change = await self._take_pending_model_change()
+        context_budget = (
+            model_change[2] if model_change is not None else self.session.record.total_context_budget_tokens
+        )
+        if context_budget != self._context_budget_tokens:
+            self._context_budget_tokens = context_budget
+            try:
+                await self.session.reconfigure_harness(self)
+            except RuntimeError as error:
+                if model_change is not None:
+                    await self.session._fail(
+                        model_change[0], f"could not update model context budget: {error}", sources=[]
+                    )
+                raise
         effort_change = await self._take_pending_effort_change()
         effort = effort_change[1] if effort_change is not None else self.session.record.reasoning_effort
         model = model_change[1] if model_change is not None else self.session.record.model
@@ -154,10 +166,14 @@ class CodexAdapter(HarnessAdapter):
     async def interrupt(self, turn_id: str) -> None:
         await self.harness.interrupt(thread_id=self._thread_id, turn_id=turn_id)
 
-    async def change_model(self, command_id: str, model: str) -> None:
-        self._pending_model_changes.append((command_id, model))
+    async def change_model(self, command_id: str, model: str, *, context_budget_tokens: int | None = None) -> None:
+        self._pending_model_changes.append((command_id, model, context_budget_tokens))
 
-    async def _take_pending_model_change(self) -> tuple[str, str] | None:
+    @property
+    def has_pending_model_change(self) -> bool:
+        return bool(self._pending_model_changes)
+
+    async def _take_pending_model_change(self) -> tuple[str, str, int | None] | None:
         """Choose the newest requested model for the next native turn.
 
         Earlier pending requests never changed a native selection, so they are terminal no-ops
@@ -168,7 +184,7 @@ class CodexAdapter(HarnessAdapter):
             return None
         *superseded, selected = self._pending_model_changes
         self._pending_model_changes = []
-        for command_id, _ in superseded:
+        for command_id, _, _ in superseded:
             await self.session._noop(
                 command_id, "superseded by a later model command before any Codex turn selected it", sources=[]
             )
@@ -260,6 +276,7 @@ class CodexAdapter(HarnessAdapter):
                 )
             await self.session._fail(start.command_id, reason, sources=sources)
             return
+        self._has_submitted_input = True
         if start.model_change is not None:
             # The answer proves Codex accepted the turn that selected this model. This, rather than
             # command receipt or a guessed future boundary, is its causal effect.

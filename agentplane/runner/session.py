@@ -75,6 +75,9 @@ class Session:
         # may be told is the published log's, `journal.recovery_state`.
         self.harness_running = journal.recovery_state.harness_running
         self.active_turn_id = journal.recovery_state.active_turn_id
+        self._turn_idle = asyncio.Event()
+        if not self.active_turn_id:
+            self._turn_idle.set()
         # Per-process only. A restarted runner consults the durable journal and intentionally
         # tries outstanding commands again using their original ids.
         self._dispatched_commands: set[str] = set()
@@ -93,6 +96,7 @@ class Session:
         # Replies the stdout reader has matched, held until the batch recording them commits.
         self._replies: list[tuple[_Request, NativeReceipt]] = []
         self._stopping = False
+        self._reconfiguring = False
         # Set under the session lock, so no harness starts once sealing has begun.
         self._sealing = journal.sealed_cursor is not None
         self._tearing_down = False
@@ -233,8 +237,10 @@ class Session:
                 self.harness_running = False
             case "turn_started":
                 self.active_turn_id = entry.event.turn_started.turn_id
+                self._turn_idle.clear()
             case "turn_completed":
                 self.active_turn_id = ""
+                self._turn_idle.set()
         self._scheduled_commands.difference_update(terminal_command_ids)
         self._dispatched_commands.difference_update(terminal_command_ids)
         self.activity_changed()
@@ -277,47 +283,71 @@ class Session:
             if self._sealing:
                 raise JournalSealedError("the session is sealed")
             adapter = self.make_adapter(self)
-            # The session's working directory is the spec's; a fresh one is created for the harness.
-            isolation = self.config.process_isolation
-            cwd = await ensure_workspace(
-                Path(self.record.cwd),
-                workspace_root=self.config.workspace_root,
-                agent_uid=isolation.agent_uid if isolation is not None else None,
-                agent_gid=isolation.agent_gid if isolation is not None else None,
-            )
-            process = HarnessProcess(
-                adapter.command(),
-                cwd=cwd,
-                environment=adapter.environment(),
-                state_owner_descriptor=self.state_owner_descriptor,
-                process_isolation=self.config.process_isolation,
-            )
-            await process.start()
-            self.process, self.adapter, self._stopping = process, adapter, False
-            self._tasks = [
-                asyncio.create_task(self._read_stdout(process, adapter), name=f"{self.session_id}-stdout"),
-                asyncio.create_task(self._read_stderr(process), name=f"{self.session_id}-stderr"),
-            ]
-            resumed = self.record.native_session_id is not None
-            try:
-                native_session_id = await adapter.handshake()
-            except BaseException as error:  # cleanup, then the failure reaches Open
-                self._stopping = True
-                await process.stop()
-                await asyncio.gather(*self._tasks, return_exceptions=True)
-                self.process, self.adapter = None, None
-                if not isinstance(error, Exception):
-                    raise
-                # A harness that died mid-handshake surfaces here as HarnessGoneError; its exit says why.
-                raise RuntimeError(f"harness handshake failed: {error!r}; {process.describe_exit()}") from error
-            if self.record.native_session_id != native_session_id:
-                self.record.native_session_id = native_session_id
-                self.store.write(self.session_id, self.record)
-            await self.emit(event_pb2.HarnessStarted(resumed=resumed, pid=process.native_pid), sources=[])
-            if resumed:
-                for turn_id in await self.journal.recovery_turns():
-                    await self.emit(await adapter.reconcile(turn_id, resumed=True), sources=[])
+            await self._start_harness(adapter)
             await self._reconcile_commands(recovering=True)
+
+    async def reconfigure_harness(self, adapter: HarnessAdapter) -> None:
+        """Reload startup-only settings between turns, retaining the native conversation and pending selections."""
+        await self._turn_idle.wait()
+        async with self._lock, self._shutdown_lock:
+            if self._sealing:
+                raise JournalSealedError("the session is sealed")
+            if self.adapter is not adapter or self.process is None or not self.running:
+                raise HarnessGoneError("the harness stopped before its model configuration could be updated")
+            self._stopping = True
+            self._reconfiguring = True
+            try:
+                await self.process.stop()
+                await asyncio.gather(*self._tasks)
+                await self._start_harness(adapter)
+            except Exception as error:
+                await self.emit(event_pb2.HarnessLaunchFailed(reason=str(error)), sources=[])
+                raise
+            finally:
+                self._reconfiguring = False
+
+    async def _start_harness(self, adapter: HarnessAdapter) -> None:
+        # The session's working directory is the spec's; a fresh one is created for the harness.
+        isolation = self.config.process_isolation
+        cwd = await ensure_workspace(
+            Path(self.record.cwd),
+            workspace_root=self.config.workspace_root,
+            agent_uid=isolation.agent_uid if isolation is not None else None,
+            agent_gid=isolation.agent_gid if isolation is not None else None,
+        )
+        process = HarnessProcess(
+            adapter.command(),
+            cwd=cwd,
+            environment=adapter.environment(),
+            state_owner_descriptor=self.state_owner_descriptor,
+            process_isolation=self.config.process_isolation,
+        )
+        await process.start()
+        self.process, self.adapter, self._stopping = process, adapter, False
+        self._tasks = [
+            asyncio.create_task(self._read_stdout(process, adapter), name=f"{self.session_id}-stdout"),
+            asyncio.create_task(self._read_stderr(process), name=f"{self.session_id}-stderr"),
+        ]
+        previous_native_id = self.record.native_session_id
+        try:
+            native_session_id = await adapter.handshake()
+        except BaseException as error:  # cleanup, then the failure reaches Open
+            self._stopping = True
+            await process.stop()
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+            self.process, self.adapter = None, None
+            if not isinstance(error, Exception):
+                raise
+            # A harness that died mid-handshake surfaces here as HarnessGoneError; its exit says why.
+            raise RuntimeError(f"harness handshake failed: {error!r}; {process.describe_exit()}") from error
+        if self.record.native_session_id != native_session_id:
+            self.record.native_session_id = native_session_id
+            self.store.write(self.session_id, self.record)
+        resumed = previous_native_id is not None and previous_native_id == native_session_id
+        await self.emit(event_pb2.HarnessStarted(resumed=resumed, pid=process.native_pid), sources=[])
+        if resumed:
+            for turn_id in await self.journal.recovery_turns():
+                await self.emit(await adapter.reconcile(turn_id, resumed=True), sources=[])
 
     async def command(self, command: command_pb2.Command) -> None:
         """Durably admit a command before arranging its potentially blocking native work."""
@@ -399,7 +429,7 @@ class Session:
             if not model:
                 await self._fail(command_id, "change_model.model is required", sources=[])
                 return
-            if model == self.record.model:
+            if model == self.record.model and not self.adapter.has_pending_model_change:
                 await self._noop(command_id, "the requested model is already active", sources=[])
                 return
             try:
@@ -408,19 +438,10 @@ class Session:
                 await self._fail(command_id, str(error), sources=[])
                 return
             requested_window = model_config.total_context_budget_tokens if model_config is not None else None
-            current_window = self.record.total_context_budget_tokens
-            if current_window != requested_window:
-                await self._fail(
-                    command_id,
-                    "changing to a model with a different configured context window requires a new thread; "
-                    "start a new session with the requested model",
-                    sources=[],
-                )
-                return
             await self.journal.dispatch_planned(command_id)
             self._dispatched_commands.add(command_id)
             try:
-                await self.adapter.change_model(command_id, model)
+                await self.adapter.change_model(command_id, model, context_budget_tokens=requested_window)
             except (HarnessGoneError, RuntimeError) as error:
                 self._dispatched_commands.discard(command_id)
                 await self._fail(command_id, str(error), sources=[])
@@ -475,13 +496,16 @@ class Session:
         observation = event_pb2.CommandNoop(command_id=command_id, reason=reason)
         await self.emit(observation, sources=sources, terminal_command_ids=[command_id])
 
-    async def model_changed(self, command_id: str, model: str, *, sources: Sequence[int]) -> None:
+    async def model_changed(
+        self, command_id: str, model: str, context_budget_tokens: int | None = None, *, sources: Sequence[int]
+    ) -> None:
         """Record a harness's causal model-selection effect, after it has really selected it."""
         stored = await self.journal.get(command_id)
         if stored is not None and stored.terminal_cursor is not None:
             return
         previous = self.record.model
         self.record.model = model
+        self.record.total_context_budget_tokens = context_budget_tokens
         self.store.write(self.session_id, self.record)
         await self.emit(
             event_pb2.ModelChanged(command_id=command_id, previous_model=previous, model=model),
@@ -712,7 +736,10 @@ class Session:
             self._stop_command_id = ""
         else:
             observation = event_pb2.HarnessExited(
-                exit_code=exit_code, stopped_by_runner=self._stopping, stopped_by_command_id=""
+                exit_code=exit_code,
+                stopped_by_runner=self._stopping,
+                stopped_by_command_id="",
+                restarting=self._reconfiguring,
             )
         await self.emit(observation, sources=[], terminal_command_ids=[stop_command_id] if stop_command_id else [])
         if self.active_turn_id:

@@ -62,7 +62,9 @@ class RecordedSession:
         if isinstance(observation, event_pb2.TurnStarted):
             self.active_turn_id = observation.turn_id
 
-    async def model_changed(self, command_id: str, model: str, *, sources: Sequence[int]) -> None:
+    async def model_changed(
+        self, command_id: str, model: str, context_budget_tokens: int | None = None, *, sources: Sequence[int]
+    ) -> None:
         self.record.model = model
         self.recorded.append(("model_changed", command_id, model, list(sources)))
 

@@ -34,7 +34,7 @@ class UnexpectedAdapter(HarnessAdapter):
     async def interrupt(self, turn_id: str) -> None:
         raise AssertionError(f"unexpected interrupt {turn_id!r}")
 
-    async def change_model(self, command_id: str, model: str) -> None:
+    async def change_model(self, command_id: str, model: str, *, context_budget_tokens: int | None = None) -> None:
         raise AssertionError(f"unexpected model command {(command_id, model)!r}")
 
     async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
