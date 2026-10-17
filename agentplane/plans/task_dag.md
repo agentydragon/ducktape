@@ -585,6 +585,8 @@ flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     K3S_STARTUP_COST[Candidate: profile remaining containerd import and startup cost]
+    RUNNER_HARNESS_DELIVERY_DESIGN[Decision: baked harnesses versus on-demand delivery]
+    RUNNER_HARNESS_DELIVERY_DESIGN -. measured packaging option .-> K3S_STARTUP_COST
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
     K3S_BUNDLED_SERVICES_SPIKE -. timing evidence .-> K3S_STARTUP_COST
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
@@ -643,6 +645,31 @@ The shared Python interpreter layers and matched lifecycle comparison are implem
 belongs in [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
 Preserve assertions and timeouts. The expensive lifecycle workflow stays **manual-only**;
 automatic triggers require a separate reviewed change. Language rewrites require Rai's decision.
+
+### `RUNNER_HARNESS_DELIVERY_DESIGN` — choose how runners obtain harness binaries
+
+**Decision; operator, 2026-10-16 PDT: investigate for k3s test latency.** Compare the current
+two-harness image, thinner images containing only the requested harness, and runners downloading
+pinned harness artifacts on demand from an independent Agentplane service or directly from
+OpenAI/Anthropic distribution endpoints. Decide whether the benefit justifies runtime delivery
+and its service/cache ownership, or whether image variants suffice. Any serving service must
+respect the backend dependency rule; the integration app cannot own this path.
+
+Start with a harness-free lifecycle image and a Claude-only model-smoke image as the simplest
+comparison: the four current lifecycle cases do not start either harness, while `test_env` starts
+Claude. Preserve real runner registration, bootstrap, quiesce, persistence and lifecycle assertions;
+keep real-harness coverage in the suites that execute harnesses. The
+[2026-10-16 profile](../x/k3s_env/README.md#current-go-fixture-2026-10-16) records a 577.6 MiB
+uncompressed harness layer among 1.41 GiB of distinct image layers, with 148.4 seconds in image
+import. These byte counts do not establish a proportional time saving.
+
+Exit: a measured recommendation and explicit operator choice. Compare equivalent scenarios and
+pins, separating image build/upload, action-input transfer, containerd import/unpack, harness
+fetch/cache hits and first usable Session. Include cold runs: moving bytes from an image to a
+service may only move the same transfer later, and fetching upstream still costs network and
+extraction time. Specify version/digest verification, atomic installation, concurrent requests,
+cache scope, unavailable-artifact behavior and allowed egress for any runtime-delivery proposal.
+No new artifact service or runtime-download implementation is selected by this node.
 
 ### `K3S_BUNDLED_SERVICES_SPIKE` — measure a less isolated control plane in real k3s
 
