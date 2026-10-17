@@ -44,7 +44,6 @@ py_library(
         "//mcp_infra:prefix",
         "//mcp_infra:resource_utils",
         "//mcp_infra:snapshots",
-        "//mcp_infra/resources:types",
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
@@ -187,6 +186,37 @@ py_test(
         "//openai_utils:model",
         "@pypi//pyhamcrest",
         "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_list_resources_null_filters",
+    srcs = ["test_list_resources_null_filters.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":resources_server",
+        "//:conftest",
+        "//mcp_infra:conftest",
+        "//mcp_infra:prefix",
+        "@pypi//fastmcp_slim",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_read_blocks",
+    srcs = ["test_read_blocks.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":resources_server",
+        "//:conftest",
+        "//mcp_infra:conftest",
+        "//mcp_infra:prefix",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],
 )

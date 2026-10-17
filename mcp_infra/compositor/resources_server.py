@@ -13,11 +13,8 @@ from pydantic import AnyUrl, BaseModel, ConfigDict, Field
 from mcp_infra.compositor.server import BaseCompositor
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import add_resource_prefix
-from mcp_infra.resources.types import ResourceEntry
 from mcp_infra.snapshots import RunningServerEntry
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-
-## ResourceEntry moved to adgn.mcp.resources.types to avoid cycles
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +33,12 @@ class ResourcesListArgs(OpenAIStrictModeBaseModel):
 
     server: MCPMountPrefix | None = Field(description="Filter by server name (None = all servers)")
     uri_prefix: str | None = Field(description="Restrict to URIs starting with this prefix (None = no filter)")
+
+
+class ResourceEntry(BaseModel):
+    server: MCPMountPrefix = Field(description="Origin MCP server mount prefix")
+    resource: mcp_types.Resource
+    model_config = ConfigDict(extra="forbid")
 
 
 class ResourcesListResult(BaseModel):
