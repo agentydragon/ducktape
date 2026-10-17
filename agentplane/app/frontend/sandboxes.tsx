@@ -21,6 +21,7 @@ import { type JSX, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { api, displayableError, type NewSandbox, type SandboxPresetView, type SandboxView } from "./client";
+import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
@@ -248,6 +249,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           checked={form.wake_on_send ?? false}
           onChange={(event) => setForm({ ...form, wake_on_send: event.currentTarget.checked })}
         />
+        <IdleSuspendField
+          seconds={form.idle_suspend_after_seconds}
+          onChange={(seconds) => setForm({ ...form, idle_suspend_after_seconds: seconds })}
+        />
         <Button onClick={() => void create()} disabled={nameError !== null || !form.template}>
           New sandbox
         </Button>
@@ -267,6 +272,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             <Table.Th visibleFrom="sm">Status</Table.Th>
             <Table.Th visibleFrom="sm">Node</Table.Th>
             <Table.Th visibleFrom="sm">Wake on message</Table.Th>
+            <Table.Th visibleFrom="sm">Suspend when idle (min)</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -275,6 +281,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             const ip = podIp(row);
             const node = `${row.pod?.node_name ?? "—"} ${ip ? `(${ip})` : ""}`;
             const state = <StateBadge row={row} />;
+            const deleting = row.phase === "Quiescing" || row.phase === "Tearing down";
             return (
               <Table.Tr key={row.name}>
                 <Table.Td>
@@ -296,6 +303,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                       }
                       onChange={(event) => void setWakePolicy(row, event.currentTarget.checked)}
                     />
+                    <Group gap="xs" wrap="nowrap">
+                      <Text size="sm">Suspend when idle (min)</Text>
+                      <IdleSuspendInput sandbox={row} disabled={deleting} onError={setError} />
+                    </Group>
                   </Stack>
                 </Table.Td>
                 <Table.Td visibleFrom="sm">{state}</Table.Td>
@@ -309,6 +320,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                     }
                     onChange={(event) => void setWakePolicy(row, event.currentTarget.checked)}
                   />
+                </Table.Td>
+                <Table.Td visibleFrom="sm">
+                  <IdleSuspendInput sandbox={row} disabled={deleting} onError={setError} />
                 </Table.Td>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <Group gap="xs" wrap="nowrap" justify="flex-end">

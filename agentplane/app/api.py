@@ -9,6 +9,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path as FilePath
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -69,6 +70,7 @@ from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.sandbox_models import (
     NewSandbox,
+    SandboxIdleSuspendChange,
     SandboxView,
     SandboxWakePolicyChange,
     create_request,
@@ -361,6 +363,18 @@ async def resume_sandbox(inventory: Inventory, name: str) -> None:
 async def set_sandbox_wake_policy(inventory: Inventory, name: str, change: SandboxWakePolicyChange) -> None:
     """Change whether messages may resume this exact Sandbox incarnation; this does not wake it."""
     await inventory.set_wake_on_send(name, uid=str(change.uid), wake_on_send=change.wake_on_send)
+
+
+@router.patch("/{name}/idle-suspend", status_code=status.HTTP_204_NO_CONTENT)
+async def set_sandbox_idle_suspend(inventory: Inventory, name: str, change: SandboxIdleSuspendChange) -> None:
+    """Change how long this exact Sandbox incarnation's runner must be idle before it is suspended."""
+    await inventory.set_idle_suspend_after(
+        name,
+        uid=str(change.uid),
+        idle_suspend_after=None
+        if change.idle_suspend_after_seconds is None
+        else timedelta(seconds=change.idle_suspend_after_seconds),
+    )
 
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)

@@ -140,8 +140,17 @@ async def test_threads_watch_stale(view: VisualPage, app: AgentplaneFixture) -> 
 
 @DESKTOP_AND_MOBILE
 async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.ADD_SUSPENDED_SANDBOXES)
     await app.mount_app("/sandboxes")
     await view.page.wait_for_selector('[aria-label="Wake on message for ready-sandbox"]', state="attached")
+    await view.check(context="fixture ready")
+    await view.capture(target=view.page.locator("#app"))
+
+
+async def test_sandbox_status_idle_suspended(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.ADD_SUSPENDED_SANDBOXES)
+    await app.mount_app("/sandboxes/idle-suspended-sandbox?tab=status")
+    await view.page.get_by_text("Suspends once its runner has been idle for 30 minutes.").wait_for(state="visible")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 

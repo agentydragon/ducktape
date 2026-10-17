@@ -56,6 +56,7 @@ const SANDBOXES: SandboxView[] = [
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "ready-sandbox" },
     wake_on_send: true,
+    idle_suspend_after_seconds: 3600,
     status: { conditions: [{ type: "Ready", status: "True", reason: "PodReady", lastTransitionTime: ago(HOUR) }] },
     phase: "Running",
     pod: {
@@ -145,6 +146,40 @@ const SANDBOXES: SandboxView[] = [
     pod: null,
   },
 ];
+
+/** One Sandbox suspended because its runner was idle, and one because a requester suspended it. */
+function addSuspendedSandboxes(): void {
+  SANDBOXES.push(
+    {
+      name: "idle-suspended-sandbox",
+      uid: "0f9c1d2e-0000-4000-8000-00000000b7c8",
+      namespace: "agentplane-visual",
+      created_at: ago(30 * HOUR),
+      operating_mode: "Suspended",
+      service_account: { namespace: "agentplane-visual", name: "idle-suspended-sandbox" },
+      wake_on_send: true,
+      idle_suspend_after_seconds: 1800,
+      suspended_by: "Idle",
+      status: { conditions: [{ type: "Ready", status: "False", reason: "Stopped" }] },
+      phase: "Suspended",
+      pod: null,
+    },
+    {
+      name: "requested-suspended-sandbox",
+      uid: "0f9c1d2e-0000-4000-8000-00000000d9e0",
+      namespace: "agentplane-visual",
+      created_at: ago(26 * HOUR),
+      operating_mode: "Suspended",
+      service_account: { namespace: "agentplane-visual", name: "requested-suspended-sandbox" },
+      wake_on_send: false,
+      idle_suspend_after_seconds: 7200,
+      suspended_by: "Requested",
+      status: { conditions: [{ type: "Ready", status: "False", reason: "Stopped" }] },
+      phase: "Suspended",
+      pod: null,
+    }
+  );
+}
 
 function addProvisioningSandbox(): void {
   SANDBOXES.push({
@@ -2989,6 +3024,7 @@ const visualHarness = {
     mount(<DisclosureVisual {...props} />);
   },
   addProvisioningSandbox,
+  addSuspendedSandboxes,
   queueOpenResponse(): void {
     queueOpenResponses = true;
   },

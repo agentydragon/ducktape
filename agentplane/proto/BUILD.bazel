@@ -178,6 +178,7 @@ proto_library(
     srcs = ["sandboxes.proto"],
     deps = [
         ":runner_proto",
+        "@protobuf//:duration_proto",
         "@protobuf//:struct_proto",
         "@protobuf//:timestamp_proto",
     ],

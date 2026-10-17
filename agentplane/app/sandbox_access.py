@@ -1,11 +1,12 @@
 """The operator's Sandbox writes, made by the app through Kubernetes.
 
 The app makes these Kubernetes calls for the operator who asked; the Sandbox Controller acts on
-the objects without editing their spec. Wake-on-send is a durable policy, separate from the request
-to resume a stopped Sandbox.
+the objects without editing their spec. Wake-on-send and idle suspension are durable policies,
+separate from the request to resume or suspend a Sandbox.
 """
 
 from collections.abc import AsyncIterator, Set
+from datetime import timedelta
 
 from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest, Sandbox
 from agentplane.sandboxes.inventory import SandboxInventory
@@ -44,6 +45,9 @@ class SandboxAccess:
 
     async def set_wake_on_send(self, name: str, *, uid: str, wake_on_send: bool) -> None:
         await self._inventory.set_wake_on_send(name, uid=uid, wake_on_send=wake_on_send)
+
+    async def set_idle_suspend_after(self, name: str, *, uid: str, idle_suspend_after: timedelta | None) -> None:
+        await self._inventory.set_idle_suspend_after(name, uid=uid, idle_suspend_after=idle_suspend_after)
 
     async def delete(self, name: str) -> None:
         await self._inventory.begin_teardown(name, uid=(await self.get(name)).uid)

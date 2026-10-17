@@ -8,11 +8,14 @@ kind and plural, so only the group tells them apart.
 from __future__ import annotations
 
 from collections.abc import Set
+from datetime import timedelta
 from enum import StrEnum
+from typing import Annotated
 from uuid import UUID
 
+import durationpy
 from kubernetes_asyncio import client as k8s_client
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, BeforeValidator, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from agentplane.crd_group import GROUP, VERSION
@@ -48,6 +51,18 @@ class OperatingMode(StrEnum):
     SUSPENDED = "Suspended"
 
 
+class SuspendedBy(StrEnum):
+    """Why the Sandbox Controller reports a Sandbox as suspended."""
+
+    IDLE = "Idle"
+    REQUESTED = "Requested"
+
+
+def _go_duration(value: object) -> object:
+    """`metav1.Duration` is a Go duration string (`1h30m0s`) on the wire."""
+    return durationpy.from_str(value) if isinstance(value, str) else value
+
+
 class _Wire(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True, frozen=True, alias_generator=to_camel)
 
@@ -72,6 +87,7 @@ class Spec(_Wire):
     wake_generation: int = 0
     policy_sets: Set[str] = frozenset()
     bootstrap: str | None = None
+    idle_suspend_after: Annotated[timedelta, BeforeValidator(_go_duration)] | None = None
 
 
 class Incarnation(_Wire):
@@ -84,7 +100,7 @@ class Incarnation(_Wire):
 class Status(_Wire):
     incarnation: Incarnation | None = None
     operating_mode: OperatingMode | None = None
-    suspended_by: str | None = None
+    suspended_by: SuspendedBy | None = None
     suspended_at_wake_generation: int | None = None
     conditions: list[Condition] = Field(default_factory=list)
 

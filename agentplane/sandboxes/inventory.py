@@ -12,7 +12,9 @@ import asyncio
 import json
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Set
+from datetime import timedelta
 
+import durationpy
 from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict
@@ -22,7 +24,7 @@ from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest, Sandbox
-from agentplane.sandbox_resource import OperatingMode
+from agentplane.sandbox_resource import OperatingMode, SuspendedBy
 from agentplane.sandboxes.console import stream_console
 from agentplane.sandboxes.errors import (
     InvalidSandboxError,
@@ -150,6 +152,11 @@ class SandboxInventory(SandboxReader):
                 "policySets": sorted(policy_sets),
                 "wakeOnSend": spec.wake_on_send,
                 **({"bootstrap": spec.bootstrap} if spec.bootstrap else {}),
+                **(
+                    {"idleSuspendAfter": durationpy.to_str(spec.idle_suspend_after.ToTimedelta())}
+                    if spec.HasField("idle_suspend_after")
+                    else {}
+                ),
             },
         }
         try:
@@ -194,6 +201,30 @@ class SandboxInventory(SandboxReader):
             {
                 "metadata": {"uid": uid, "resourceVersion": sandbox.metadata.resource_version},
                 "spec": {"wakeOnSend": wake_on_send},
+            },
+            _content_type=_MERGE_PATCH,
+        )
+
+    @_retry_on_conflict
+    async def set_idle_suspend_after(self, name: str, *, uid: str, idle_suspend_after: timedelta | None) -> None:
+        """Change how long this exact Sandbox incarnation's runner must be idle before it is suspended;
+        `None` turns idle suspension off."""
+        sandbox = await self._incarnation(name, uid=uid)
+        if sandbox.metadata.deletion_timestamp is not None:
+            raise SandboxTearingDownError(name)
+        if sandbox.spec.idle_suspend_after == idle_suspend_after:
+            return
+        await self._custom_objects.patch_namespaced_custom_object(
+            GROUP,
+            VERSION,
+            self._namespace,
+            sandbox_resource.SANDBOXES_PLURAL,
+            name,
+            {
+                "metadata": {"uid": uid, "resourceVersion": sandbox.metadata.resource_version},
+                "spec": {
+                    "idleSuspendAfter": None if idle_suspend_after is None else durationpy.to_str(idle_suspend_after)
+                },
             },
             _content_type=_MERGE_PATCH,
         )
@@ -291,7 +322,7 @@ class SandboxInventory(SandboxReader):
         if sandbox.running_reason() == "Quiescing":
             raise SandboxQuiescingError(name)
         idle_still_suspended = (
-            sandbox.status.suspended_by == "Idle"
+            sandbox.status.suspended_by is SuspendedBy.IDLE
             and sandbox.status.suspended_at_wake_generation == sandbox.spec.wake_generation
         )
         if sandbox.spec.running and not idle_still_suspended:

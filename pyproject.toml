@@ -178,6 +178,7 @@ dependencies = [
     "jupyter-client>=8.10.0",
     "kubernetes>=32.0",
     "kubernetes-asyncio>=26.1",
+    "durationpy>=0.11",
 
     "typing-extensions",
 

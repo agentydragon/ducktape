@@ -1,5 +1,6 @@
 /** Presentation of Kubernetes' raw Sandbox and Pod status objects. */
 import type { SandboxView } from "./client";
+import { durationLabel } from "./format_time";
 import type { SandboxStatusKind } from "./status_mark";
 
 type RawObject = Record<string, unknown>;
@@ -86,12 +87,26 @@ export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
   );
 }
 
+/** Why a Sandbox is suspended, as the views word it; null while it runs and until the controller reports. */
+export function suspensionReason(sandbox: SandboxView): "idle" | "on request" | null {
+  switch (sandbox.suspended_by) {
+    case "Idle":
+      return "idle";
+    case "Requested":
+      return "on request";
+    default:
+      return null;
+  }
+}
+
 export function sandboxSummary(sandbox: SandboxView): { label: string; kind: SandboxStatusKind } {
+  const reason = suspensionReason(sandbox);
+  const withReason = (label: string): string => (reason === null ? label : `${label} (${reason})`);
   if (sandbox.phase === "Unspecified") return { label: "Status unknown", kind: "pending" };
   if (sandbox.phase === "Tearing down") return { label: "Deleting", kind: "gone" };
   if (sandbox.phase === "Quiescing") return { label: "Quiescing", kind: "pending" };
-  if (sandbox.phase === "Suspending") return { label: "Suspending", kind: "pending" };
-  if (sandbox.phase === "Suspended") return { label: "Suspended", kind: "suspended" };
+  if (sandbox.phase === "Suspending") return { label: withReason("Suspending"), kind: "pending" };
+  if (sandbox.phase === "Suspended") return { label: withReason("Suspended"), kind: "suspended" };
   // Neutral nouns: a VM Sandbox has no Pod of its own to name here. The tooltip carries the Pod's phase.
   if (!sandbox.pod) return { label: "Not started", kind: "pending" };
   if (sandbox.pod.deleting) return { label: "Shutting down", kind: "gone" };
@@ -161,6 +176,14 @@ function conditionLine(condition: RawCondition): string {
 
 export function sandboxStatusDetail(sandbox: SandboxView): string {
   const lines = [`Sandbox: ${sandboxSummary(sandbox).label}`];
+  const reason = suspensionReason(sandbox);
+  if (reason !== null) {
+    lines.push(
+      reason === "idle" && sandbox.idle_suspend_after_seconds
+        ? `Suspended because its runner was idle for ${durationLabel(sandbox.idle_suspend_after_seconds)}`
+        : `Suspended ${reason}`
+    );
+  }
   lines.push(...rawConditions(sandbox.status).map((condition) => `Sandbox condition · ${conditionLine(condition)}`));
   if (sandbox.pod) {
     const status = sandbox.pod.status;

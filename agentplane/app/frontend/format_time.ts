@@ -1,4 +1,4 @@
-import { intlFormatDistance } from "date-fns";
+import { formatDuration, intervalToDuration, intlFormatDistance } from "date-fns";
 
 /** The time of day a timestamp falls at, to the minute, in the viewer's locale. */
 export function clockTime(value: string): string {
@@ -19,4 +19,9 @@ export function isoTime(value: string | number | Date): string {
 export function ageAgo(seconds: number): string {
   const now = Date.now();
   return timeAgo(now - seconds * 1000, now);
+}
+
+/** A length of time a reader takes in at a glance: "1 hour 30 minutes", not the 5400 seconds behind it. */
+export function durationLabel(seconds: number): string {
+  return formatDuration(intervalToDuration({ start: 0, end: seconds * 1000 }));
 }

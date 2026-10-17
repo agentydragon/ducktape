@@ -3,6 +3,7 @@ syntax = "proto3";
 
 package agentplane.proto.sandboxes;
 
+import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -35,6 +36,8 @@ message CreateSandboxRequest {
   optional string preset = 9;
   // Whether an incoming message may resume this Sandbox after suspension.
   bool wake_on_send = 10;
+  // How long its runner must stay idle before the controller suspends the Sandbox; absent, never.
+  google.protobuf.Duration idle_suspend_after = 11;
 }
 
 message SandboxBinding {
@@ -80,6 +83,10 @@ message Sandbox {
   SandboxPhase phase = 20;
   optional string preset = 21;
   bool wake_on_send = 22;
+  // How long its runner must stay idle before the controller suspends the Sandbox; absent, never.
+  google.protobuf.Duration idle_suspend_after = 23;
+  // Why the Sandbox is suspended, `Idle` or `Requested`; absent while it runs.
+  optional string suspended_by = 24;
 }
 
 // Where the Sandbox is in its lifecycle, derived from what the Sandbox Controller records: whether

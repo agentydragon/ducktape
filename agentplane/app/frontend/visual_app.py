@@ -45,6 +45,7 @@ class Scene(StrEnum):
     """A fixture builder taking no arguments; the value is its name on `window.agentplaneVisual`."""
 
     ADD_PROVISIONING_SANDBOX = "addProvisioningSandbox"
+    ADD_SUSPENDED_SANDBOXES = "addSuspendedSandboxes"
     LONG_PENDING_ACTION = "longPendingAction"
     HIDDEN_CODEPOINTS = "hiddenCodepoints"
     ENDED_ATTACHMENT = "endedAttachment"

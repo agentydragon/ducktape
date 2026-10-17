@@ -12,10 +12,13 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from agentplane.proto import sandboxes_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_resource import OperatingMode
+from agentplane.sandbox_resource import OperatingMode, SuspendedBy
 from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
+
+# Mirrors the CEL floor on `spec.idleSuspendAfter` in agentplane/sandboxes/api/types.go; the CRD is the authority.
+MIN_IDLE_SUSPEND_AFTER_SECONDS = 60
 
 SandboxName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=57)]
 
@@ -70,6 +73,11 @@ class NewSandbox(BaseModel):
     wake_on_send: bool = Field(
         default=False, description="Whether an incoming message may resume this Sandbox after suspension."
     )
+    idle_suspend_after_seconds: int | None = Field(
+        default=None,
+        ge=MIN_IDLE_SUSPEND_AFTER_SECONDS,
+        description="How long its runner must stay idle before the Sandbox is suspended; null never suspends it.",
+    )
 
 
 class SandboxWakePolicyChange(BaseModel):
@@ -79,6 +87,18 @@ class SandboxWakePolicyChange(BaseModel):
 
     uid: UUID
     wake_on_send: bool
+
+
+class SandboxIdleSuspendChange(BaseModel):
+    """The idle suspension time, fenced to the Sandbox incarnation the browser displayed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    uid: UUID
+    idle_suspend_after_seconds: int | None = Field(
+        ge=MIN_IDLE_SUSPEND_AFTER_SECONDS,
+        description="How long its runner must stay idle before the Sandbox is suspended; null turns it off.",
+    )
 
 
 class OwnerReferenceView(BaseModel):
@@ -125,6 +145,14 @@ class SandboxView(BaseModel):
     binding: SandboxBinding | None = Field(default=None, description="The bootstrap selected for this Sandbox.")
     preset: str | None = Field(default=None, description="The preset it was made from, when it was made from one.")
     wake_on_send: bool = Field(default=False, description="Whether an incoming message may resume this Sandbox.")
+    idle_suspend_after_seconds: int | None = Field(
+        default=None, description="How long its runner must stay idle before the Sandbox is suspended; null never."
+    )
+    suspended_by: SuspendedBy | None = Field(
+        default=None,
+        description="Why the Sandbox is suspended: its runner was idle for `idle_suspend_after_seconds`, "
+        "or a requester suspended it. Null while it runs and until the controller reports.",
+    )
     phase: SandboxPhase = Field(
         description="Unspecified means the controller has not reported an effective mode yet. "
         "Quiescing and Tearing down mean deletion was asked for: it seals and waits for its ingress, "
@@ -136,6 +164,8 @@ class SandboxView(BaseModel):
 def sandbox_view(value: sandboxes_pb2.Sandbox) -> SandboxView:
     data = MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
     data["phase"] = SandboxPhase[sandboxes_pb2.SandboxPhase.Name(value.phase).removeprefix("SANDBOX_PHASE_")]
+    if data.pop("idle_suspend_after", None) is not None:
+        data["idle_suspend_after_seconds"] = round(value.idle_suspend_after.ToTimedelta().total_seconds())
     return SandboxView.model_validate(data)
 
 
@@ -152,4 +182,10 @@ def sandbox_is_ready(view: SandboxView) -> bool:
 
 
 def create_request(value: NewSandbox) -> sandboxes_pb2.CreateSandboxRequest:
-    return ParseDict(value.model_dump(mode="json", exclude_none=True), sandboxes_pb2.CreateSandboxRequest())
+    request = ParseDict(
+        value.model_dump(mode="json", exclude_none=True, exclude={"idle_suspend_after_seconds"}),
+        sandboxes_pb2.CreateSandboxRequest(),
+    )
+    if value.idle_suspend_after_seconds is not None:
+        request.idle_suspend_after.FromSeconds(value.idle_suspend_after_seconds)
+    return request

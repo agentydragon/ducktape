@@ -388,6 +388,74 @@ async def test_wake_policy_changes_only_the_policy_and_checks_the_displayed_uid(
     assert stored["spec"]["wakeOnSend"] is True
 
 
+async def test_create_records_the_idle_suspension_time(
+    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    response = await client.post(
+        "/sandboxes", json={"name": "napper", "template": TEMPLATE, "idle_suspend_after_seconds": 5400}
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["idle_suspend_after_seconds"] == 5400
+    assert custom_objects.objects[(SANDBOXES_PLURAL, "napper")]["spec"]["idleSuspendAfter"] == "1h30m"
+
+
+async def test_create_refuses_an_idle_suspension_time_under_a_minute(
+    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    response = await client.post(
+        "/sandboxes", json={"name": "napper", "template": TEMPLATE, "idle_suspend_after_seconds": 59}
+    )
+
+    assert response.status_code == 422
+    assert (SANDBOXES_PLURAL, "napper") not in custom_objects.objects
+
+
+async def test_idle_suspension_time_is_set_and_cleared_on_the_displayed_incarnation(
+    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    stored = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
+    uid = stored["metadata"]["uid"]
+
+    response = await client.patch("/sandboxes/live/idle-suspend", json={"uid": uid, "idle_suspend_after_seconds": 1800})
+
+    assert response.status_code == 204
+    assert stored["spec"]["idleSuspendAfter"] == "30m"
+    assert stored["spec"]["running"] is True
+    assert custom_objects.patches[-1][2]["spec"] == {"idleSuspendAfter": "30m"}
+
+    replacement_uid = custom_objects.objects[(SANDBOXES_PLURAL, "fresh")]["metadata"]["uid"]
+    stale = await client.patch(
+        "/sandboxes/live/idle-suspend", json={"uid": replacement_uid, "idle_suspend_after_seconds": None}
+    )
+    assert stale.status_code == 404
+    assert stored["spec"]["idleSuspendAfter"] == "30m"
+
+    cleared = await client.patch("/sandboxes/live/idle-suspend", json={"uid": uid, "idle_suspend_after_seconds": None})
+    assert cleared.status_code == 204
+    assert "idleSuspendAfter" not in stored["spec"]
+    assert (await client.get("/sandboxes/live")).json()["idle_suspend_after_seconds"] is None
+
+
+async def test_the_idle_suspension_time_and_reason_are_reported_as_stored(
+    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    stored = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
+    assert (await client.get("/sandboxes/live")).json()["suspended_by"] is None
+
+    # The API server returns a `metav1.Duration` as Go writes it, not as the app wrote it.
+    stored["spec"]["idleSuspendAfter"] = "1h30m0s"
+    stored["status"]["suspendedBy"] = "Idle"
+    stored["status"]["suspendedAtWakeGeneration"] = 0
+    row = (await client.get("/sandboxes/live")).json()
+    assert row["idle_suspend_after_seconds"] == 5400
+    assert row["suspended_by"] == "Idle"
+
+    stored["status"]["suspendedBy"] = "Requested"
+    del stored["status"]["suspendedAtWakeGeneration"]
+    assert (await client.get("/sandboxes/live")).json()["suspended_by"] == "Requested"
+
+
 async def test_resume_during_controller_quiescing_is_retryable_in_direct_app(
     app: FastAPI, client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
 ) -> None:

@@ -310,3 +310,82 @@ it("flags an invalid typed name and refuses to create", async () => {
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   expect(button?.hasAttribute("disabled")).toBe(true);
 });
+
+it("sends the idle suspension time typed in minutes as seconds", async () => {
+  const { container } = await render();
+  await type(input(container, "Suspend when idle (minutes)"), "90");
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  await type(input(container, "Name"), "napper");
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  if (!button) throw new Error("Missing New sandbox button");
+  await act(async () => button.click());
+
+  expect(post).toHaveBeenCalledWith(
+    "/sandboxes",
+    expect.objectContaining({ body: expect.objectContaining({ idle_suspend_after_seconds: 5400 }) })
+  );
+});
+
+function idleInput(container: HTMLElement): HTMLInputElement {
+  const control = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Idle suspend minutes for test-created-sandbox"]'
+  );
+  if (!control) throw new Error("Missing existing Sandbox idle suspend input");
+  return control;
+}
+
+async function press(element: HTMLElement, key: string): Promise<void> {
+  await act(async () => {
+    element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+  });
+}
+
+it("shows a Sandbox's idle suspension time and saves an edit to the incarnation shown", async () => {
+  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, idle_suspend_after_seconds: 1800 }] };
+  const { container } = await render();
+  expect(idleInput(container).value).toBe("30");
+
+  const patch = vi.spyOn(api, "PATCH").mockResolvedValue({
+    data: undefined,
+    response: new Response(null, { status: 204 }),
+  } as never);
+  await type(idleInput(container), "45");
+  await press(idleInput(container), "Enter");
+
+  expect(patch).toHaveBeenCalledWith("/sandboxes/{name}/idle-suspend", {
+    params: { path: { name: CREATED.name } },
+    body: { uid: CREATED.uid, idle_suspend_after_seconds: 2700 },
+  });
+});
+
+it("turns idle suspension off when the time is cleared", async () => {
+  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, idle_suspend_after_seconds: 1800 }] };
+  const { container } = await render();
+  const patch = vi.spyOn(api, "PATCH").mockResolvedValue({
+    data: undefined,
+    response: new Response(null, { status: 204 }),
+  } as never);
+
+  await type(idleInput(container), "");
+  await press(idleInput(container), "Enter");
+
+  expect(patch).toHaveBeenCalledWith("/sandboxes/{name}/idle-suspend", {
+    params: { path: { name: CREATED.name } },
+    body: { uid: CREATED.uid, idle_suspend_after_seconds: null },
+  });
+});
+
+it("puts back the stored idle suspension time and reports a refused edit", async () => {
+  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, idle_suspend_after_seconds: 1800 }] };
+  const { container } = await render();
+  vi.spyOn(api, "PATCH").mockResolvedValue({
+    error: { detail: "Test edit refused" },
+    response: new Response(null, { status: 404 }),
+  } as never);
+
+  await type(idleInput(container), "45");
+  await press(idleInput(container), "Enter");
+
+  expect(idleInput(container).value).toBe("30");
+  expect(container.textContent).toContain("Test edit refused");
+});

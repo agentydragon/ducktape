@@ -44,6 +44,7 @@ import { Disclosure } from "./disclosure";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { MarkGlyph } from "./mark_glyph";
+import { durationLabel } from "./format_time";
 import { TimeAgo } from "./time_ago";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
@@ -59,6 +60,7 @@ import {
   sandboxReady,
   sandboxStatusDetail,
   sandboxSummary,
+  suspensionReason,
   type RawCondition,
 } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
@@ -186,7 +188,9 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
       ) : (
         <>
           <Text size="sm">
-            Sandbox {sandbox.phase.toLowerCase()}, created <TimeAgo value={sandbox.created_at} />
+            Sandbox {sandbox.phase.toLowerCase()}
+            {suspensionReason(sandbox) ? ` (${suspensionReason(sandbox)})` : ""}, created{" "}
+            <TimeAgo value={sandbox.created_at} />
             {sandbox.pod?.node_name ? `, Pod placed on ${sandbox.pod.node_name}` : ", Pod not placed"}
           </Text>
           {/* The account its Pod runs as is what every binding names, so the tabs below are its policy, not this
@@ -196,6 +200,11 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
             egress and action-policy bindings name.
           </Text>
           {sandbox.preset && <Text size="sm">Made from preset {sandbox.preset}.</Text>}
+          <Text size="sm">
+            {sandbox.idle_suspend_after_seconds
+              ? `Suspends once its runner has been idle for ${durationLabel(sandbox.idle_suspend_after_seconds)}.`
+              : "Never suspends for idleness."}
+          </Text>
           {sandbox.status && rawString(sandbox.status.phase) && (
             <Text size="sm">Sandbox status phase: {rawString(sandbox.status.phase)}</Text>
           )}

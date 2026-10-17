@@ -889,7 +889,6 @@ flowchart TD
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
-    SANDBOX_IDLE_EXPIRY[Candidate: the web app sets idle suspension and shows why a Sandbox is suspended] -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
@@ -903,7 +902,7 @@ flowchart TD
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     APP_NATIVE_RESUME_SURFACE[Approved: retain explicit resume UI; clarify wake-off affordance] --> APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume]
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
-    SANDBOX_IDLE_EXPIRY --> IDLE_SUSPEND_UI_DRIVE[Operator: drive auto-suspend and send-to-resume in staging]
+    IDLE_SUSPEND_UI_DRIVE[Operator: drive auto-suspend and send-to-resume in staging]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
 
@@ -1181,28 +1180,12 @@ candidate runtime, CI can build a guest without Attic, and a runtime experiment 
 rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` and
 `K3S_SHARED_PACKAGE_LAYERS` before adding image weight to that environment.
 
-### `SANDBOX_IDLE_EXPIRY` — set idle suspension from the web app and show why a Sandbox is suspended
-
-**Candidate; dispatched by the operator, 2026-10-17 UTC.** The controller half is implemented
-([control ADR](../docs/adr_sandbox_session_control.md), [Sandbox Controller SPEC](../sandbox_controller/SPEC.md)):
-optional `spec.idleSuspendAfter` (at least a minute; unset never suspends) and `status.suspendedBy`, `Idle` or
-`Requested`, published with the effective mode. Remaining is the integration app:
-
-- Set and clear `idleSuspendAfter` when a Sandbox is created and on an existing one, through the Kubernetes API like
-  the other spec fields (the controller owns the status). It is optional in the create form and the API.
-- Show why a Sandbox is suspended, "idle" or "on request", in every Sandbox view that shows its phase, and show
-  the configured idle time.
-
-Prerequisite: the CRD with `idleSuspendAfter` and the controller image that reads it are deployed (image before config),
-or the API server prunes the field. Exit evidence: published screenshots showing both reasons and the control, and an app test
-that creates a Sandbox with `idleSuspendAfter` and reads it back.
-
 ### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
 
 **Operator, 2026-10-15 UTC: assigned to the operator, not dispatchable to a worker.** A human drives the
 whole loop through the staging web app on a real Session and reports what the UI actually does: the
 Sandbox goes idle, suspends on its own, and a message typed into the composer reaches that stopped
-Session and brings it back end to end. The idle trigger is `SANDBOX_IDLE_EXPIRY`; the suspended composer
+Session and brings it back end to end. The idle trigger is `spec.idleSuspendAfter`, set in the Sandboxes list; the suspended composer
 and per-Sandbox wake-on-message policy are recorded as implemented and deployed, so this is acceptance of
 the pair **as experienced**, not a re-run of their unit coverage or the composer's own rollout checks.
 
@@ -1232,7 +1215,7 @@ message through the Dispatcher; and the wording agents act on. Test a suspend an
 background process, a terminal and workspace files, and a crash restart (no suspend) that reads
 differently.
 
-Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage), `SANDBOX_IDLE_EXPIRY`.
+Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage).
 
 ### `RUNNER_BUSY_TRACKING` — the runner counts terminals and background processes as busy
 
@@ -1322,7 +1305,6 @@ flowchart TD
     HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
-    SANDBOX_IDLE_EXPIRY[Candidate: the web app sets idle suspension and shows why a Sandbox is suspended] -. same idleness question .-> ACTION_BOX_IDLE_REAPER
 ```
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner

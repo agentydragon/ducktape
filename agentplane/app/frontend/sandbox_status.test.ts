@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SandboxView } from "./client";
-import { hasVmConsole, sandboxReady, sandboxSummary } from "./sandbox_status";
+import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 
 const UID = "00000000-0000-4000-8000-000000000001";
 
@@ -95,5 +95,26 @@ describe("a Sandbox's summary follows its phase over its Pod", () => {
       kind: "pending",
     });
     expect(sandboxReady({ ...sandbox([{ type: "Ready", status: "True" }]), operating_mode: null })).toBe(false);
+  });
+});
+
+describe("a suspended Sandbox says why it is suspended", () => {
+  const suspended: SandboxView = { ...sandbox([]), operating_mode: "Suspended", phase: "Suspended", pod: null };
+
+  it("names an idle suspension and the time that triggered it", () => {
+    const idle: SandboxView = { ...suspended, suspended_by: "Idle", idle_suspend_after_seconds: 5400 };
+    expect(sandboxSummary(idle)).toEqual({ label: "Suspended (idle)", kind: "suspended" });
+    expect(sandboxStatusDetail(idle)).toContain("Suspended because its runner was idle for 1 hour 30 minutes");
+  });
+
+  it("names a suspension a requester made", () => {
+    const requested: SandboxView = { ...suspended, suspended_by: "Requested" };
+    expect(sandboxSummary(requested)).toEqual({ label: "Suspended (on request)", kind: "suspended" });
+    expect(sandboxStatusDetail(requested)).toContain("Suspended on request");
+  });
+
+  it("names it while the Sandbox is still suspending, and says nothing before the controller reports", () => {
+    expect(sandboxSummary({ ...suspended, phase: "Suspending", suspended_by: "Idle" }).label).toBe("Suspending (idle)");
+    expect(sandboxSummary(suspended).label).toBe("Suspended");
   });
 });

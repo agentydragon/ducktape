@@ -65,6 +65,10 @@ def sandbox_view(
     )
     if sandbox.operating_mode is not None:
         view.operating_mode = sandbox.operating_mode.value
+    if sandbox.status.suspended_by is not None:
+        view.suspended_by = sandbox.status.suspended_by.value
+    if spec.idle_suspend_after is not None:
+        view.idle_suspend_after.FromTimedelta(spec.idle_suspend_after)
     return view
 
 

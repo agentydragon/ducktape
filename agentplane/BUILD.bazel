@@ -83,6 +83,7 @@ py_library(
         ":crd_group",
         ":policy_sets",
         "//util:kubernetes",
+        "@pypi//durationpy",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],

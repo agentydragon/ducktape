@@ -465,6 +465,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":format_time",
         ":status_mark",
     ],
 )
@@ -495,6 +496,18 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "idle_suspend",
+    srcs = ["idle_suspend.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "sandboxes",
     srcs = [
         "sandboxes.tsx",
@@ -507,6 +520,7 @@ ts_library(
     deps = [
         ":client",
         ":disclosure",
+        ":idle_suspend",
         ":lifecycle",
         ":live",
         ":sandbox_name",
@@ -833,6 +847,7 @@ ts_library(
         ":client",
         ":disclosure",
         ":egress",
+        ":format_time",
         ":json_view",
         ":lifecycle",
         ":live",
