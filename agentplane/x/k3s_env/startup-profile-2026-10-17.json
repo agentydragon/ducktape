@@ -1,0 +1,51 @@
+{
+  "source": "c8f0df8c77b2b843308e1f9855f07e8562111c31",
+  "invocation": "22cdbd11-6ee9-4bbf-b25c-6b811e3e4021",
+  "instrumentation_sha256": "14250f41980de275234be16317bfb4ef9f643088802b03aa7ebd03ccc60867fa",
+  "instrumentation": "Temporary cProfile around pytest_bazel.main, with dump in finally, plus direct undeclared_outputs dependency; removed after dispatch. Non-runtime README/measurement edits also accompanied this snapshot.",
+  "worker": "e371cdec-b7b4-40bb-b594-8ac328c689b3",
+  "action_seconds": 243.448086,
+  "profile_seconds": 210.492503298999,
+  "functions": {
+    "report": {
+      "calls": 1,
+      "self_seconds": 9.788e-5,
+      "cumulative_seconds": 1.904831103
+    },
+    "start": {
+      "calls": 1,
+      "self_seconds": 6.424000000000001e-5,
+      "cumulative_seconds": 18.641598669
+    },
+    "import_images": {
+      "calls": 1,
+      "self_seconds": 0.002628501,
+      "cumulative_seconds": 101.47460553900001
+    },
+    "running_stack": {
+      "calls": 2,
+      "self_seconds": 0.0068127890000000005,
+      "cumulative_seconds": 167.848644409
+    },
+    "kubectl": {
+      "calls": 44,
+      "self_seconds": 0.00098856,
+      "cumulative_seconds": 47.44837049
+    },
+    "importer_exit_wait": {
+      "cumulative_seconds": 70.560546035
+    },
+    "stack_apply_and_availability_kubectl": {
+      "cumulative_seconds": 43.685715519000006
+    },
+    "tarfile_add": {
+      "cumulative_seconds": 30.881131161000003
+    }
+  },
+  "tests": {
+    "test_create_reaches_running": 174.527,
+    "test_bootstrap_script_runs_in_the_sandbox": 8.364,
+    "test_suspend_and_resume_keep_the_state_volume": 14.856,
+    "test_delete_removes_the_sandbox": 10.109
+  }
+}

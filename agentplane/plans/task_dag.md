@@ -985,6 +985,10 @@ the expected saving from rewriting the streamer. Exit: a matched comparison of i
 resource use and total lifecycle time with unchanged lifecycle assertions, and a recommendation
 to adopt or discard the concurrency change.
 
+The [fresh startup profile](../x/k3s_env/README.md#startup-profile-2026-10-17) identifies the
+post-stream importer wait as the next profiling target. The native concurrency comparison and
+its adopt/discard decision remain open.
+
 ### `RUNNER_HARNESS_DELIVERY_DESIGN` — choose how runners obtain harness binaries
 
 **Decision; operator, 2026-10-16 PDT: investigate for k3s test latency.** Decide how a runner obtains
