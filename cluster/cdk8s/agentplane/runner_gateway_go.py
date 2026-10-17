@@ -14,12 +14,14 @@ from cdk8s_plus_34 import (
     ContainerSecurityContextProps,
     Cpu,
     CpuResources,
+    DeploymentStrategy,
     EnvFieldPaths,
     EnvValue,
     IApiResource,
     ImagePullPolicy,
     Job,
     MemoryResources,
+    PercentOrAbsolute,
     PodSecurityContextProps,
     RestartPolicy,
     Role,
@@ -205,6 +207,14 @@ class GoRunnerGateway(Construct):
                 memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
             ),
             termination_grace=Duration.seconds(60),
+            # A Recreate drops delivery and every runner connection, so the Gateway rolls
+            # (a surged replica is Ready before the old one goes) even where the environment recreates.
+            replica_profile=replace(
+                env.replicas,
+                strategy=DeploymentStrategy.rolling_update(
+                    max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
+                ),
+            ),
             create_service=False,
             migrate=migration,
             registry_secret_name=registry_secret_name,
