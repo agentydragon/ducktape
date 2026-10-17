@@ -6,17 +6,6 @@
   position: relative;
 }
 
-/* The user bubble and its sticky inspection headers share one opaque, theme-aware blue tint. */
-.agentplane-user-bubble.agentplane-evidence-owner {
-  --agentplane-surface: color-mix(in srgb, var(--mantine-color-body) 90%, var(--mantine-color-blue-6) 10%);
-  background-color: var(--agentplane-surface);
-}
-
-[data-mantine-color-scheme="dark"] .agentplane-user-bubble.agentplane-evidence-owner {
-  --agentplane-surface: color-mix(in srgb, var(--mantine-color-body) 85%, var(--mantine-color-blue-6) 15%);
-  background-color: var(--agentplane-surface);
-}
-
 .agentplane-evidence-owner .agentplane-evidence-toggle {
   position: absolute;
   top: 4px;

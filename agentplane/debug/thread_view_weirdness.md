@@ -79,5 +79,7 @@ Observed UI symptoms and user review decisions, without diagnosis.
   or separate switches is acceptable; neither arrangement has been selected.
 - Leave failed-call indicators as they are for now. An agent's nonzero command
   exit is not necessarily a sign of trouble.
+- Render user-message inspection below the message bubble at the thread's width,
+  rather than nesting diagnostics inside the bubble.
 - Defer polishing the observation/raw-frame layout, including narrow wrapping.
   That is separate from the reported dark-mode background mismatch.

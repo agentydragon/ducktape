@@ -241,7 +241,7 @@ export function EvidencePanel({ threadId, entity }: { threadId: string; entity: 
     <RetainedDisclosure
       id={id}
       summary={
-        <Text size="xs" c="dimmed">
+        <Text size="sm" c="dimmed">
           Evidence
         </Text>
       }

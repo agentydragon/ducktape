@@ -192,47 +192,49 @@ export function UserInputBubble({
   action?: { label: string; onClick: () => void };
 }): JSX.Element {
   return (
-    <Group
-      className="agentplane-user-message-row"
-      justify="flex-end"
-      align="flex-start"
-      gap="xs"
-      wrap="nowrap"
-      style={{ width: "100%" }}
-      data-command-id={commandId ?? entity?.entityId}
-    >
-      {(progress || action) && (
-        <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
-          {progress}
-          {action && (
-            <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
-              {action.label}
-            </Button>
-          )}
-        </Stack>
-      )}
-      <Paper
-        className="agentplane-user-bubble agentplane-evidence-owner"
-        data-message-phase={phase}
-        data-has-action={action ? "true" : undefined}
-        data-has-aside={progress || action ? "true" : undefined}
-        p="sm"
-        style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
+    <Stack gap="xs" style={{ width: "100%" }}>
+      <Group
+        className="agentplane-user-message-row"
+        justify="flex-end"
+        align="flex-start"
+        gap="xs"
+        wrap="nowrap"
+        style={{ width: "100%" }}
+        data-command-id={commandId ?? entity?.entityId}
       >
-        {entity && <EvidenceToggle entity={entity} />}
-        {entity ? (
-          <Body
-            reference={entity.inputRef}
-            format="text"
-            fallbackText={fallbackText}
-            onBodyLoaded={fallbackText === undefined ? undefined : onFallbackLoaded}
-          />
-        ) : text !== undefined ? (
-          <VerbatimText text={text} />
-        ) : null}
-        {entity && threadId && <EvidencePanel threadId={threadId} entity={entity} />}
-      </Paper>
-    </Group>
+        {(progress || action) && (
+          <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
+            {progress}
+            {action && (
+              <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
+                {action.label}
+              </Button>
+            )}
+          </Stack>
+        )}
+        <Paper
+          className="agentplane-user-bubble agentplane-evidence-owner"
+          data-message-phase={phase}
+          data-has-action={action ? "true" : undefined}
+          data-has-aside={progress || action ? "true" : undefined}
+          p="sm"
+          style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
+        >
+          {entity && <EvidenceToggle entity={entity} />}
+          {entity ? (
+            <Body
+              reference={entity.inputRef}
+              format="text"
+              fallbackText={fallbackText}
+              onBodyLoaded={fallbackText === undefined ? undefined : onFallbackLoaded}
+            />
+          ) : text !== undefined ? (
+            <VerbatimText text={text} />
+          ) : null}
+        </Paper>
+      </Group>
+      {entity && threadId && <EvidencePanel threadId={threadId} entity={entity} />}
+    </Stack>
   );
 }
 

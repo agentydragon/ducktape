@@ -546,18 +546,17 @@ async def test_thread_evidence_panel(view: VisualPage, app: AgentplaneFixture, a
     await expect(owner.locator("[data-evidence-observation]").first).to_be_visible()
     if anchor == "4":
         bubble = owner.locator(".agentplane-user-bubble")
-        heading = bubble.locator(".agentplane-disclosure-heading").first
-        bubble_background = await bubble.evaluate("element => getComputedStyle(element).backgroundColor")
-        heading_background = await heading.evaluate("element => getComputedStyle(element).backgroundColor")
-        assert heading_background == bubble_background, (
-            f"user evidence surface {heading_background} did not follow bubble {bubble_background}"
-        )
+        panel = owner.locator(".agentplane-disclosure").first
+        await expect(bubble.locator(".agentplane-disclosure")).to_have_count(0)
         bubble_box = await bubble.bounding_box()
-        heading_box = await heading.bounding_box()
+        panel_box = await panel.bounding_box()
+        owner_box = await owner.bounding_box()
         assert bubble_box is not None
-        assert heading_box is not None
-        assert heading_box["x"] >= bubble_box["x"] - 1
-        assert heading_box["x"] + heading_box["width"] <= bubble_box["x"] + bubble_box["width"] + 1
+        assert panel_box is not None
+        assert owner_box is not None
+        assert panel_box["y"] >= bubble_box["y"] + bubble_box["height"]
+        assert abs(panel_box["x"] - owner_box["x"]) <= 1
+        assert abs(panel_box["width"] - owner_box["width"]) <= 1
     await button.blur()
     await page.mouse.move(0, 0)
     await view.capture()

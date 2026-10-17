@@ -206,7 +206,7 @@ function streamingCursorDecoration(offset: number): Extension {
 
 const CODE_THEME = EditorView.theme({
   "&": {
-    backgroundColor: "var(--agentplane-surface, var(--mantine-color-body))",
+    backgroundColor: "var(--mantine-color-body)",
     border: "1px solid var(--mantine-color-default-border)",
     borderRadius: "var(--mantine-radius-sm)",
     color: "var(--mantine-color-text)",
