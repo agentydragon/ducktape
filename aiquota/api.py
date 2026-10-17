@@ -22,6 +22,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Protocol, cast
 
+import anyio
 import httpx
 import uvicorn
 from authlib.integrations.starlette_client import OAuth, OAuthError
@@ -142,26 +143,34 @@ class BackgroundCollector:
         self._interval = interval
         self.metrics = metrics
         self.has_persisted = False
+        self.is_running = False
 
     async def run(self) -> None:
-        while True:
-            await self.poll_once()
-            await asyncio.sleep(self._interval.total_seconds())
+        self.is_running = True
+        try:
+            while True:
+                await self.poll_once()
+                await asyncio.sleep(self._interval.total_seconds())
+        finally:
+            self.is_running = False
 
     async def poll_once(self) -> None:
         try:
             snapshot = await self._fetcher.fetch(force_refresh=True)
-            for provider in snapshot.quotas.providers:
-                self.metrics.provider_success.labels(provider=provider.provider).set(
-                    1 if isinstance(provider.last_output.result, FetchSuccess) else 0
-                )
+        except httpx.HTTPError, OSError:
+            self.metrics.polls.labels(result="error").inc()
+            logger.exception("aiquota quota fetch failed")
+            return
+        for provider in snapshot.quotas.providers:
+            self.metrics.provider_success.labels(provider=provider.provider).set(
+                1 if isinstance(provider.last_output.result, FetchSuccess) else 0
+            )
+        try:
             rows = await self._sink.write(snapshot)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
+        except httpx.HTTPError, OSError:
             self.metrics.polls.labels(result="error").inc()
             self.metrics.clickhouse_writes.labels(result="error").inc()
-            logger.exception("aiquota background collection failed")
+            logger.exception("aiquota ClickHouse write failed")
             return
         self.metrics.polls.labels(result="success").inc()
         self.metrics.clickhouse_writes.labels(result="success").inc()
@@ -186,18 +195,21 @@ class HistoryCollector:
         self._sink = sink
         self._interval = interval
         self.metrics = metrics
+        self.is_running = False
 
     async def run(self) -> None:
-        while True:
-            await self.poll_once()
-            await asyncio.sleep(self._interval.total_seconds())
+        self.is_running = True
+        try:
+            while True:
+                await self.poll_once()
+                await asyncio.sleep(self._interval.total_seconds())
+        finally:
+            self.is_running = False
 
     async def poll_once(self) -> None:
         try:
             rows = await self._sink.write_history(await self._fetcher.fetch_history())
-        except asyncio.CancelledError:
-            raise
-        except Exception:
+        except httpx.HTTPError, OSError:
             self.metrics.history_polls.labels(result="error").inc()
             logger.exception("aiquota history collection failed")
             return
@@ -402,17 +414,15 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        runners = {"aiquota-clickhouse-collector": collector, "aiquota-history-collector": history_collector}
-        tasks = [asyncio.create_task(runner.run(), name=name) for name, runner in runners.items() if runner is not None]
-        try:
-            yield
-        finally:
-            for task in tasks:
-                task.cancel()
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for result in results:
-                if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
-                    raise result
+        async with anyio.create_task_group() as tasks:
+            if collector is not None:
+                tasks.start_soon(collector.run, name="aiquota-clickhouse-collector")
+            if history_collector is not None:
+                tasks.start_soon(history_collector.run, name="aiquota-history-collector")
+            try:
+                yield
+            finally:
+                tasks.cancel_scope.cancel()
 
     app = FastAPI(title="aiquota API", version="1", lifespan=lifespan)
     app.state.bearer_token = bearer_token
@@ -425,8 +435,11 @@ def create_app(
 
     @app.get("/readyz")
     async def readyz() -> JSONResponse:
-        ready = collector is None or collector.has_persisted
-        return JSONResponse({"status": "ready" if ready else "collecting"}, status_code=200 if ready else 503)
+        if not all(runner is None or runner.is_running for runner in (collector, history_collector)):
+            return JSONResponse({"status": "unavailable"}, status_code=503)
+        if collector is None or collector.has_persisted:
+            return JSONResponse({"status": "ready"})
+        return JSONResponse({"status": "collecting"}, status_code=503)
 
     @app.get("/metrics")
     async def prometheus_metrics() -> PlainTextResponse:

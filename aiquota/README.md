@@ -127,9 +127,11 @@ remain separate from this balance.
 Raw response rows retain one year; typed quota observations retain five years.
 ClickHouse inserts use `JSONEachRow` over its internal HTTP endpoint with
 asynchronous inserts enabled, so small periodic batches are combined before
-creating MergeTree parts. Collection failures do not kill the API; `/readyz`
-becomes successful after the first persisted snapshot and Prometheus metrics
-report subsequent provider or ClickHouse failures.
+creating MergeTree parts. Recoverable provider and ClickHouse IO failures are
+logged and retried by the collectors. `/readyz` becomes successful after the
+first persisted snapshot while configured collectors are running; an unexpected
+collector failure stops the lifespan task group and makes `/readyz` fail.
+Prometheus metrics report recoverable provider or ClickHouse failures.
 
 ### Gauge resolution
 

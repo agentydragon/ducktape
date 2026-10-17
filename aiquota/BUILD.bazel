@@ -101,6 +101,8 @@ py_library(
         "//aiquota/render:view_model_lib",
         "//util/bazel:runfiles",
         "@pypi//authlib",
+        # keep: the pinned Gazelle parser does not accept api.py's Python 3.14 syntax.
+        "@pypi//anyio",
         "@pypi//fastapi",
         "@pypi//httpx",
         # keep: starlette.middleware.sessions imports it at runtime; no aiquota module
