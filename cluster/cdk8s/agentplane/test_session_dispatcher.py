@@ -1,13 +1,12 @@
 """The durable sender front door and workload grants survive Go delivery unification."""
 
-import re
 from typing import Any
 
 import pytest
 import pytest_bazel
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import app, notifications, runner_gateway, session_dispatcher, staging
+from cluster.cdk8s.agentplane import app, notifications, runner_gateway, session_dispatcher
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from util.settings_contract import env_name
 
@@ -56,7 +55,7 @@ def test_dispatcher_sender_identity_and_service_routing(
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_app_database_credentials_precede_url_in_workload_and_migration(
+def test_app_and_migration_use_same_database_uri_secret(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     deployment = one(
@@ -73,14 +72,12 @@ def test_app_database_credentials_precede_url_in_workload_and_migration(
 
     for container in containers:
         variables = container["env"]
-        positions = {variable["name"]: index for index, variable in enumerate(variables)}
         database_url = one(variable for variable in variables if variable["name"] == database_url_name)
-        references = set(re.findall(r"\$\(([^)]+)\)", database_url.get("value", "")))
-
-        assert references <= positions.keys()
-        assert all(positions[reference] < positions[database_url_name] for reference in references)
-        if namespace == staging.ENV.namespace:
-            assert references
+        assert database_url == {
+            "name": database_url_name,
+            "valueFrom": {"secretKeyRef": {"name": "postgres-app", "key": "uri"}},
+        }
+        assert not any(variable["name"].startswith("AGENTPLANE_DB_") for variable in variables)
 
 
 if __name__ == "__main__":
