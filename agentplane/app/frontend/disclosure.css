@@ -55,6 +55,8 @@
 }
 
 .agentplane-disclosure-summary-content {
+  display: flex;
+  align-items: center;
   min-width: 0;
   flex: 1;
   padding-block: 0;

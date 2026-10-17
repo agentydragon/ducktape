@@ -1439,6 +1439,10 @@ async def test_expanded_command_stays_collapsible(
             heading_center = heading_box["y"] + heading_box["height"] / 2
             assert abs(label_center - heading_center) <= 1, (label_box, heading_box)
             assert abs(control_box["height"] - heading_box["height"]) <= 1, (control_box, heading_box)
+            text_box = await heading.locator(".mantine-Text-root").first.bounding_box()
+            assert text_box is not None
+            text_center = text_box["y"] + text_box["height"] / 2
+            assert abs(text_center - heading_center) <= 1, (text_box, heading_box)
 
         preview_box = await call_heading.locator(".agentplane-step-preview").bounding_box()
         assert preview_box is not None
