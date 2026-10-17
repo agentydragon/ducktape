@@ -2,7 +2,7 @@
 
 import asyncio
 import multiprocessing
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from multiprocessing.process import BaseProcess
@@ -21,22 +21,34 @@ def _run(settings: Settings) -> None:
     asyncio.run(async_main(settings), loop_factory=PinnedDialEventLoop)
 
 
+async def expect_health(
+    admin_port: int, status: int, *, alive: Callable[[], bool], exit_description: Callable[[], str]
+) -> None:
+    """Until the admin listener on `admin_port` answers `/healthz` with `status`; fails at once if the proxy died."""
+    async with aiohttp.ClientSession() as client:
+        async for attempt in AsyncRetrying(stop=stop_after_delay(20), wait=wait_fixed(0.05), reraise=True):
+            with attempt:
+                assert alive(), f"proxy exited with {exit_description()}"
+                async with client.get(f"http://127.0.0.1:{admin_port}/healthz") as response:
+                    assert response.status == status
+                    await response.read()
+                    return
+    raise AssertionError("health retry exhausted")
+
+
 @dataclass
 class Replica:
     proxy_port: int
     admin_port: int
     process: BaseProcess
 
+    def terminate(self) -> None:
+        self.process.terminate()
+
     async def health(self, status: int) -> None:
-        async with aiohttp.ClientSession() as client:
-            async for attempt in AsyncRetrying(stop=stop_after_delay(20), wait=wait_fixed(0.05), reraise=True):
-                with attempt:
-                    assert self.process.is_alive(), f"proxy exited with {self.process.exitcode}"
-                    async with client.get(f"http://127.0.0.1:{self.admin_port}/healthz") as response:
-                        assert response.status == status
-                        await response.read()
-                        return
-        raise AssertionError("health retry exhausted")
+        await expect_health(
+            self.admin_port, status, alive=self.process.is_alive, exit_description=lambda: str(self.process.exitcode)
+        )
 
 
 @asynccontextmanager
