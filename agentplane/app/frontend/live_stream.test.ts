@@ -58,10 +58,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function follow(): void {
+function follow(silentAfterMs?: number): void {
   stop = followStream("/test/stream", {
     events: { snapshot: () => undefined },
     onConnection: (connection) => connections.push(connection),
+    silentAfterMs,
   });
 }
 
@@ -179,4 +180,61 @@ it("opens nothing once stopped, whatever it was waiting on", async () => {
   latest().frame();
   stop();
   expect(latest().readyState).toBe(FakeSource.CLOSED);
+});
+
+// A connection that dies without a close leaves the browser's source `OPEN`, and a retry nothing
+// answers leaves it `CONNECTING`; neither raises an `error` event again.
+it("replaces a source that has gone silent for longer than the server's interval, open or not", async () => {
+  const start = Date.now();
+  follow(45_000);
+  latest().frame();
+  await vi.advanceTimersByTimeAsync(44_999);
+  expect(sources).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(latest().readyState).toBe(FakeSource.CLOSED);
+  expect(connections.at(-1)).toEqual({
+    phase: "reconnecting",
+    since: start + 45_000,
+    attempt: 1,
+    lastError: "no frame for 45 s",
+  });
+
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(sources).toHaveLength(2);
+  latest().frame();
+  expect(connections.at(-1)).toMatchObject({ phase: "live" });
+
+  // A retry that never answers is silent too.
+  latest().fail(FakeSource.CONNECTING);
+  await vi.advanceTimersByTimeAsync(45_000);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(sources).toHaveLength(3);
+});
+
+it("keeps a source that frames keep arriving on, and one that never had a frame is replaced as well", async () => {
+  follow(45_000);
+  for (let frame = 0; frame < 10; frame++) {
+    await vi.advanceTimersByTimeAsync(15_000);
+    latest().frame();
+  }
+  expect(sources).toHaveLength(1);
+
+  stop();
+  sources = [];
+  follow(45_000);
+  await vi.advanceTimersByTimeAsync(45_000 + 1_000);
+  expect(sources).toHaveLength(2);
+});
+
+it("waits on no silence unless it is asked to, and no longer once stopped", async () => {
+  follow();
+  latest().frame();
+  await vi.advanceTimersByTimeAsync(10 * 60_000);
+  expect(sources).toHaveLength(1);
+
+  stop();
+  follow(45_000);
+  stop();
+  await vi.advanceTimersByTimeAsync(10 * 60_000);
+  expect(sources).toHaveLength(2);
 });
