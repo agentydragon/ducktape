@@ -1,7 +1,7 @@
 """The home MikroTik switch (CRS310): the `tf/gitops/home-switch` Terraform, and what it installs
 on the switch.
 
-Three RouterOS accounts, with credentials held in cluster Secrets and on the switch:
+RouterOS accounts, with credentials held in cluster Secrets and on the switch:
 
 - `tofu`: the full-access user the Terraform logs in as. `tf/gitops/home-switch/bootstrap.sh`
   creates it on the switch with a fresh password, which it writes to this directory's

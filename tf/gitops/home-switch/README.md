@@ -16,7 +16,7 @@ its label. Disconnected and unidentified ports have no managed label.
 tofu-controller plans it every 15 minutes, from a runner pod pinned to the home LAN node
 (`topology.kubernetes.io/zone: home-lan`), but unlike the other `tf/gitops` modules applies only a
 plan a person approves ([Approving a plan](#approving-a-plan)); the CR is generated in
-`cluster/cdk8s/monitoring/home_switch.py`. Three RouterOS accounts:
+`cluster/cdk8s/monitoring/home_switch.py`. RouterOS accounts:
 
 - `monitoring/home-switch-tofu-password`: the full-access `tofu` user this module logs in as.
   `bootstrap.sh` generates it and writes it to `cluster/k8s/home-switch/tofu-password.sops.yaml`.
@@ -71,7 +71,7 @@ kubectl patch terraform --namespace flux-system home-switch --field-manager=home
 The approval is a live patch rather than a commit: a plan's id names the `ducktape` revision it was
 planned at, which every merge to `devel` moves, including the one that would approve it. The
 generator leaves `approvePlan` unset, so Flux keeps the patch, and it approves only that one plan; if a merge replans in between,
-re-run the last two commands.
+repeat the plan lookup and patch commands.
 
 To plan now instead of at the next interval:
 
