@@ -30,7 +30,7 @@ from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredentia
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
-from util.settings_contract import env_name
+from cluster.cdk8s.settings_file import PodWiring, SettingsFile
 
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": NAMESPACE}
@@ -47,17 +47,28 @@ MATRIX_CREDENTIAL = "public-coder-matrix"
 TOKEN_VOLUME = "agentplane-egress-token"
 _TOKEN_DIR = "/var/run/agentplane-egress"
 SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
+_SETTINGS_CONFIG_MAP = "openclaw-egress-sidecar"
+_SETTINGS_VOLUME = "egress-sidecar-settings"
+_SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
 
 
-def relay_container() -> k8s.Container:
+def add_relay_settings(scope: Construct) -> PodWiring:
+    """The relay's settings ConfigMap, and what the Pod needs to mount it."""
+    return SettingsFile(
+        scope,
+        "egress-sidecar-settings",
+        metadata=ApiObjectMetadata(name=_SETTINGS_CONFIG_MAP, namespace=NAMESPACE),
+        model=sidecar_config.Settings,
+        content={"proxy_host": GATEWAY.fqdn, "proxy_port": GATEWAY.pod_port, "token_file": f"{_TOKEN_DIR}/token"},
+        path=_SETTINGS_PATH,
+    ).pod_wiring(volume_name=_SETTINGS_VOLUME, env=sidecar_config.Settings.config_file_env)
+
+
+def relay_container(settings: PodWiring) -> k8s.Container:
     return k8s.Container(
         name="egress-sidecar",
         image=f"{SIDECAR_IMAGE}:unset",
-        env=[
-            k8s.EnvVar(name=env_name(sidecar_config.Settings, "proxy_host"), value=GATEWAY.fqdn),
-            k8s.EnvVar(name=env_name(sidecar_config.Settings, "proxy_port"), value=str(GATEWAY.pod_port)),
-            k8s.EnvVar(name=env_name(sidecar_config.Settings, "token_file"), value=f"{_TOKEN_DIR}/token"),
-        ],
+        env=[settings.path_env],
         security_context=k8s.SecurityContext(
             run_as_non_root=True,
             run_as_user=1000,
@@ -76,7 +87,7 @@ def relay_container() -> k8s.Container:
             timeout_seconds=1,
             failure_threshold=1,
         ),
-        volume_mounts=[k8s.VolumeMount(name=TOKEN_VOLUME, mount_path=_TOKEN_DIR, read_only=True)],
+        volume_mounts=[k8s.VolumeMount(name=TOKEN_VOLUME, mount_path=_TOKEN_DIR, read_only=True), settings.mount],
     )
 
 

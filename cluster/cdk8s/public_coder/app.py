@@ -339,6 +339,7 @@ def _deployment(scope: Construct) -> None:
         ),
         automount_service_account_token=False,
     )
+    relay_settings = public_coder_egress.add_relay_settings(scope)
     k8s.KubeDeployment(
         scope,
         "deployment",
@@ -395,9 +396,10 @@ def _deployment(scope: Construct) -> None:
                             ],
                         )
                     ],
-                    containers=[_openclaw_container(), public_coder_egress.relay_container()],
+                    containers=[_openclaw_container(), public_coder_egress.relay_container(relay_settings)],
                     volumes=[
                         public_coder_egress.token_volume(),
+                        relay_settings.volume,
                         k8s.Volume(
                             name="data",
                             persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_STATE_CLAIM_NAME),

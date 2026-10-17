@@ -4,7 +4,7 @@ routes each Sandbox's runner reaches its services over."""
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
@@ -103,6 +103,22 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
         settings["configMap"]["name"] = generic_settings["configMap"]["name"]
         # No extra authority in generic runners, testing, or the egress sidecar.
         assert specialized == generic
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_runner_sidecar(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    docs = agentplane_manifests[namespace]
+
+    def settings(name: str) -> dict[str, Any]:
+        return cast(dict[str, Any], yaml.safe_load(_by_name(docs, "ConfigMap", name)["data"]["settings.yaml"]))
+
+    assert settings("launcher-relay-egress-sidecar") == {**settings("runner-egress-sidecar"), "listen_host": "0.0.0.0"}
+    policy = _by_name(docs, "ClusterPolicy", f"{namespace}-launcher-relay")
+    inject = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")
+    volumes = inject["mutate"]["patchStrategicMerge"]["spec"]["volumes"]
+    assert {"name": "egress-sidecar-settings", "configMap": {"name": "launcher-relay-egress-sidecar"}} in volumes
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)

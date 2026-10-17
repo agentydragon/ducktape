@@ -1,7 +1,7 @@
 """The egress relay of a VM Sandbox. KubeVirt builds a VM's virt-launcher Pod from the VirtualMachine,
 not from our SandboxTemplate's Pod, so this Kyverno policy adds the relay when the Pod is created: the
-same egress sidecar, settings file, routes and projected tokens as a runner Pod's (runner_sandbox.py),
-copied from the rendered runner template, so the two cannot drift.
+same egress sidecar, routes and projected tokens as a runner Pod's (runner_sandbox.py), copied from the
+rendered runner template, with settings rendered from the template's own so the two cannot drift.
 
 The guest reaches the relay at its masquerade gateway, `10.0.2.1`, on the ports a runner Pod's
 workload dials on loopback: the HTTP proxy and one listener per platform route (platform_routes.py).
@@ -45,7 +45,6 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import sidecar_config
 from cluster.cdk8s.agentplane import sandbox_pod
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
-from util.settings_contract import env_name
 
 LAUNCHER_LABELS = {"kubevirt.io": "virt-launcher"}
 # Where a masquerade-networked guest reaches its launcher Pod, and so the relay.
@@ -110,16 +109,17 @@ def _token_mounts(containers: str, token_volume: str) -> str:
 
 
 class LauncherRelayPolicy(ClusterPolicy):
-    """`runner_pod` is the runner SandboxTemplate's rendered Pod template, whose egress sidecar, the
-    token and settings volumes that sidecar mounts and pull secrets the relay copies."""
+    """`runner_pod` is the runner SandboxTemplate's rendered Pod template, whose egress sidecar, token
+    volume and pull secrets the relay copies. `settings_config_map` holds the relay's own sidecar
+    settings, which listen where the guest can reach; the runner fence keeps every other peer off
+    those ports."""
 
-    def __init__(self, scope: Construct, id: str, *, namespace: str, runner_pod: dict[str, Any]) -> None:
+    def __init__(
+        self, scope: Construct, id: str, *, namespace: str, runner_pod: dict[str, Any], settings_config_map: str
+    ) -> None:
         pod_spec = runner_pod["spec"]
         relay = dict(one(c for c in pod_spec["containers"] if c["name"] == sidecar_config.CONTAINER_NAME))
         token_volume = sandbox_pod.EGRESS_TOKEN_VOLUME_NAME
-        # The guest is outside the Pod's loopback; the runner fence keeps every other peer off these ports.
-        # The environment variable overrides the settings file's `listen_host`.
-        relay["env"] = [*relay["env"], {"name": env_name(sidecar_config.Settings, "listen_host"), "value": "0.0.0.0"}]
         # A runner Pod sets these Pod-wide; the launcher's own Pod security context is KubeVirt's.
         relay["securityContext"] = {
             **relay["securityContext"],
@@ -224,8 +224,11 @@ class LauncherRelayPolicy(ClusterPolicy):
                                 "imagePullSecrets": pod_spec["imagePullSecrets"],
                                 "containers": [relay],
                                 "volumes": [
-                                    one(v for v in pod_spec["volumes"] if v["name"] == name)
-                                    for name in (token_volume, sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME)
+                                    one(v for v in pod_spec["volumes"] if v["name"] == token_volume),
+                                    {
+                                        "name": sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME,
+                                        "configMap": {"name": settings_config_map},
+                                    },
                                 ],
                             }
                         }

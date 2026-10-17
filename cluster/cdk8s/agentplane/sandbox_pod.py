@@ -206,10 +206,16 @@ def workload_security_context() -> k8s.SecurityContext:
 
 
 def add_sidecar_settings(
-    scope: Construct, env: Environment, *, name: str, platform_routes: Mapping[str, PlatformRoute]
+    scope: Construct,
+    env: Environment,
+    *,
+    name: str,
+    platform_routes: Mapping[str, PlatformRoute],
+    listen_host: str | None = None,
 ) -> SettingsFile:
     """The ConfigMap `name` holding the settings of the egress sidecar of one Pod template, which
-    `pod_spec` mounts. Every Pod of a template gets the same file; nothing in it is per Pod."""
+    `pod_spec` mounts. Every Pod of a template gets the same file; nothing in it is per Pod.
+    `listen_host` is the interface the HTTP proxy and platform routes listen on; unset is loopback."""
     return SettingsFile(
         scope,
         f"{name}-settings",
@@ -221,6 +227,7 @@ def add_sidecar_settings(
             "listen_port": SIDECAR_LISTEN_PORT,
             "readiness_host": sidecar_config.READINESS_HOST,
             "readiness_port": sidecar_config.READINESS_PORT,
+            **({"listen_host": listen_host} if listen_host is not None else {}),
             "token_file": f"{_EGRESS_TOKEN_DIR}/token",
             "audience_token_files": {
                 audience: audience_token_file(audience) for audience in _SUBSTITUTABLE_AUDIENCE_FILES

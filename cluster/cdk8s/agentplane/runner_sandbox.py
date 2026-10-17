@@ -33,6 +33,7 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods, ServiceRef
+from cluster.cdk8s.settings_file import SettingsFile
 
 # Every runner template's Pod name label, and the runners' ServiceAccount and fence.
 NAME = "runner"
@@ -139,7 +140,11 @@ class RunnerSandbox(Construct):
         )
         if env.vm_sandboxes:
             launcher_relay.LauncherRelayPolicy(
-                self, "launcher-relay", namespace=namespace, runner_pod=template.spec["pod"]
+                self,
+                "launcher-relay",
+                namespace=namespace,
+                runner_pod=template.spec["pod"],
+                settings_config_map=template.add_launcher_relay_settings(name="launcher-relay-egress-sidecar"),
             )
             runner_vm.RunnerVmTemplate(
                 self,
@@ -295,13 +300,22 @@ class RunnerTemplate(Construct):
             ],
         )
 
-    def _add_sandbox_template(self, *, name: str, image: str) -> dict[str, Any]:
-        sidecar_settings = sandbox_pod.add_sidecar_settings(
+    def add_launcher_relay_settings(self, *, name: str) -> str:
+        """The sidecar settings of a VM launcher's relay, as ConfigMap `name`: this template's own, but
+        listening on every interface, because the guest is outside the Pod's loopback."""
+        return self._add_sidecar_settings(name=name, listen_host="0.0.0.0").config_map.name
+
+    def _add_sidecar_settings(self, *, name: str, listen_host: str | None = None) -> SettingsFile:
+        return sandbox_pod.add_sidecar_settings(
             self,
             self.env,
-            name=f"{name}-egress-sidecar",
+            name=name,
             platform_routes=platform_routes.sidecar_routes(self.env.namespace, control_service=self.control_service),
+            listen_host=listen_host,
         )
+
+    def _add_sandbox_template(self, *, name: str, image: str) -> dict[str, Any]:
+        sidecar_settings = self._add_sidecar_settings(name=f"{name}-egress-sidecar")
         pod = sandbox_pod.render_pod_template(
             _LABELS,
             sandbox_pod.pod_spec(

@@ -441,6 +441,18 @@ metadata:
   namespace: public-coder-agent
 automountServiceAccountToken: false
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openclaw-egress-sidecar
+  namespace: public-coder-agent
+data:
+  settings.yaml: |
+    proxy_host: egress.agentplane-staging.svc.cluster.local
+    proxy_port: 8888
+    token_file: /var/run/agentplane-egress/token
+immutable: false
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -581,12 +593,8 @@ spec:
             - mountPath: /diag
               name: diagnostics
         - env:
-            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
-              value: egress.agentplane-staging.svc.cluster.local
-            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
-              value: "8888"
-            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
-              value: /var/run/agentplane-egress/token
+            - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
+              value: /etc/agentplane-egress-sidecar/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -612,6 +620,9 @@ spec:
           volumeMounts:
             - mountPath: /var/run/agentplane-egress
               name: agentplane-egress-token
+              readOnly: true
+            - mountPath: /etc/agentplane-egress-sidecar
+              name: egress-sidecar-settings
               readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
@@ -649,6 +660,9 @@ spec:
                   audience: agentplane-egress
                   expirationSeconds: 600
                   path: token
+        - configMap:
+            name: openclaw-egress-sidecar
+          name: egress-sidecar-settings
         - name: data
           persistentVolumeClaim:
             claimName: public-coder-agent-state-v2

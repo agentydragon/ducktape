@@ -3552,6 +3552,36 @@ spec:
     layout:
       type: DirectoryTree
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: launcher-relay-egress-sidecar
+  namespace: agentplane-staging
+data:
+  settings.yaml: |
+    proxy_host: egress.agentplane-staging.svc.cluster.local
+    proxy_port: 8888
+    listen_port: 3128
+    readiness_host: 0.0.0.0
+    readiness_port: 3129
+    listen_host: 0.0.0.0
+    token_file: /var/run/agentplane-egress/token
+    audience_token_files:
+      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
+      agentplane-notifications: /var/run/agentplane-egress/notifications-token
+      agentplane-runner-control: /var/run/agentplane-egress/runner-control-token
+      agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
+    platform_routes:
+      control:
+        listen_port: 3130
+        upstream: runner-gateway.agentplane-staging.svc.cluster.local:8080
+        token_file: /var/run/agentplane-egress/runner-control-token
+      ingress:
+        listen_port: 3131
+        upstream: history-service.agentplane-staging.svc.cluster.local:8081
+        token_file: /var/run/agentplane-egress/runner-ingress-token
+immutable: false
+---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -3684,8 +3714,6 @@ spec:
               - env:
                   - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
                     value: /etc/agentplane-egress-sidecar/settings.yaml
-                  - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_HOST
-                    value: 0.0.0.0
                 image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
                 name: egress-sidecar
                 readinessProbe:
@@ -3745,7 +3773,7 @@ spec:
                         expirationSeconds: 600
                         path: runner-ingress-token
               - configMap:
-                  name: runner-egress-sidecar
+                  name: launcher-relay-egress-sidecar
                 name: egress-sidecar-settings
       name: inject-relay
     - context:

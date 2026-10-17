@@ -17,6 +17,7 @@ from cluster.validation.kyverno.apply import KyvernoApplyResult, apply_policy
 
 NAMESPACE = "launcher-relay-test"
 TOKEN_VOLUME = EGRESS_TOKEN_VOLUME_NAME
+RELAY_SETTINGS = "relay-test-relay-settings"
 RUNNER_POD = {
     "metadata": {"labels": {"app": "relay-test-runner"}},
     "spec": {
@@ -26,7 +27,7 @@ RUNNER_POD = {
             {
                 "name": "egress-sidecar",
                 "image": "sidecar:test",
-                "env": [{"name": "AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST", "value": "proxy.test"}],
+                "env": [{"name": "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE", "value": "/etc/relay-test/settings.yaml"}],
                 "securityContext": {"allowPrivilegeEscalation": False},
                 "volumeMounts": [
                     {"name": TOKEN_VOLUME, "mountPath": "/var/run/relay-test", "readOnly": True},
@@ -53,7 +54,9 @@ def owner(api_version: str, kind: str, uid: str) -> dict:
 @pytest.fixture(scope="module")
 def policy() -> dict:
     chart = Chart(App(), "test")
-    LauncherRelayPolicy(chart, "policy", namespace=NAMESPACE, runner_pod=deepcopy(RUNNER_POD))
+    LauncherRelayPolicy(
+        chart, "policy", namespace=NAMESPACE, runner_pod=deepcopy(RUNNER_POD), settings_config_map=RELAY_SETTINGS
+    )
     rendered: dict = Cdk8sTesting.synth(chart)[0]
     # The CLI's policy validation needs a cluster to check match conditions against and panics
     # without one; they narrow which requests reach the policy, not what it decides.
@@ -148,8 +151,10 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
     assert [v["name"] for v in spec["volumes"]] == [TOKEN_VOLUME, SIDECAR_SETTINGS_VOLUME_NAME]
     relay = one(c for c in spec["containers"] if c["name"] == "egress-sidecar")
     assert {mount["name"] for mount in relay["volumeMounts"]} == {TOKEN_VOLUME, SIDECAR_SETTINGS_VOLUME_NAME}
-    # The guest dials the relay from outside the Pod's loopback.
-    assert {"name": "AGENTPLANE_EGRESS_SIDECAR_LISTEN_HOST", "value": "0.0.0.0"} in relay["env"]
+    # The runner's settings listen on loopback; the guest dials the relay from outside it.
+    assert one(v for v in spec["volumes"] if v["name"] == SIDECAR_SETTINGS_VOLUME_NAME)["configMap"] == {
+        "name": RELAY_SETTINGS
+    }
     assert relay["securityContext"]["runAsNonRoot"] is True
     compute = one(c for c in spec["containers"] if c["name"] == "compute")
     assert not compute.get("volumeMounts")
