@@ -1,5 +1,5 @@
-"""The Alembic-style migrate initContainer shared by every Agentplane service (app,
-egress, actions): same resources and securityContext everywhere -- only the image and
+"""The migrate initContainer shared by every Agentplane service (app, egress,
+actions): same resources and securityContext everywhere -- only the image and
 migration env vary.
 """
 

@@ -95,6 +95,8 @@ def objects(
         "KUBERNETES_SERVICE_HOST": EnvValue.from_value(node_ip),
         "KUBERNETES_SERVICE_PORT": EnvValue.from_value("6443"),
     }
+    # The fixture's PostgreSQL has no TLS, which the Go PostgreSQL driver requires by default.
+    database_env = {"PGSSLMODE": EnvValue.from_value("disable")}
     app = Testing.app()
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
@@ -151,8 +153,9 @@ def objects(
         placement=None,
         registry_secret_name=None,
         service_cluster_ip="None",
-        container_env=kube_api_env,
+        container_env={**kube_api_env, **database_env},
         memory_limit=None,
+        migrate_env=database_env,
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         migrate_memory_limit=None,
     )
@@ -164,7 +167,6 @@ def objects(
         ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME): notifications.service(NAMESPACE).pods
     }
     dispatcher_callers = app_caller | notifications_caller
-    database_env = {"PGSSLMODE": EnvValue.from_value("disable")}
     control = runner_gateway_workload.runner_control_service(NAMESPACE, port=Port(name="grpc", number=8080))
     runner_gateway_workload.add_stable_services(chart, env, cluster_ip="None", control=control)
     runner_gateway_workload.RunnerGateway(

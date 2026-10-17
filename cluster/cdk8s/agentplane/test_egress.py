@@ -23,6 +23,7 @@ from cluster.cdk8s.agentplane.egress import (
     KUBERNETES_AUDIENCE,
     KUBERNETES_CREDENTIAL,
     KUBERNETES_HOST,
+    PROXY_SETTINGS,
     PUBLIC_INTERNET_POLICY,
     agent_api,
 )
@@ -175,7 +176,7 @@ def test_notifications_use_their_own_projected_audience(
     assert notification_rule["credentialRef"] == {"name": notifications.WORKLOAD_CREDENTIAL}
     credential = _by_name(docs, "EgressCredential", notifications.WORKLOAD_CREDENTIAL)
     assert credential["spec"]["source"]["projectedWorkloadToken"]["audience"] == notifications.TOKEN_AUDIENCE
-    settings = _by_name(docs, "ConfigMap", "egress-settings")["data"]["settings.yaml"]
+    settings = _by_name(docs, "ConfigMap", PROXY_SETTINGS)["data"]["settings.yaml"]
     proxy_settings = yaml.safe_load(settings)
     assert notifications.TOKEN_AUDIENCE in proxy_settings["projected_token_audiences"]
     notification_settings = yaml.safe_load(

@@ -136,14 +136,10 @@ py_library(
     name = "database_migrate",
     srcs = ["database_migrate.py"],
     data = ["//agentplane/egress/migrations:files"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
+    visibility = ["//agentplane:__subpackages__"],
     deps = [
         ":decision_tables",
         "//util:db_migrations",
-        "@pypi//pydantic_settings",
     ],
 )
 

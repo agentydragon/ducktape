@@ -45,7 +45,6 @@ from trust_manager_crds.io.cert_manager.trust import (
 )
 
 from agentplane.crd_group import GROUP
-from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.settings import Settings
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
@@ -76,8 +75,9 @@ from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "egress"
-_PROXY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress"
-_MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-migrate"
+PROXY_SETTINGS = f"{NAME}-proxy-settings"
+_PROXY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy"
+_MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate"
 _LABELS = {"app.kubernetes.io/name": NAME}
 PROXY_PORT = 8888
 # The API server's own ServiceAccount token audience (Talos `--api-audiences`, equal to
@@ -630,6 +630,7 @@ class Egress(Construct):
         service_cluster_ip: str | None = None,
         container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+        migrate_env: Mapping[str, EnvValue] | None = None,
         migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
         migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
     ) -> None:
@@ -646,6 +647,7 @@ class Egress(Construct):
         self.service_cluster_ip = service_cluster_ip
         self.container_env = container_env or {}
         self.memory_limit = memory_limit
+        self.migrate_env = migrate_env or {}
         self.migrate_pull_policy = migrate_pull_policy
         self.migrate_memory_limit = migrate_memory_limit
 
@@ -653,7 +655,7 @@ class Egress(Construct):
         settings = SettingsFile(
             self,
             "settings",
-            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=PROXY_SETTINGS, namespace=env.namespace),
             model=Settings,
             content={
                 "allowed_service_account_namespaces": [env.namespace, *env.egress.external_workload_namespaces],
@@ -795,7 +797,6 @@ class Egress(Construct):
     def _add_workload(self, settings: SettingsFile) -> ServiceWorkload:
         ca_secret = Secret.from_secret_name(self, "ca-secret-ref", self.env.egress.ca_secret_name)
         ca_volume = Volume.from_secret(self, "ca-volume", ca_secret, name="ca")
-        confdir_volume = Volume.from_empty_dir(self, "confdir-volume", "confdir")
         upstream_ca_volume = Volume.from_config_map(
             self,
             "upstream-ca-volume",
@@ -818,7 +819,6 @@ class Egress(Construct):
                 agent_api_port=self.agent_api.pod_port,
                 ca_cert="/etc/agentplane-egress/ca/tls.crt",
                 ca_key="/etc/agentplane-egress/ca/tls.key",
-                confdir="/var/lib/agentplane-egress",
                 upstream_ca_file=f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}",
                 token_audience=WORKLOAD_TOKEN_AUDIENCE,
             ),
@@ -834,7 +834,7 @@ class Egress(Construct):
             migrate=migrate_init_container(
                 f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
                 name="migrate",
-                env_variables={env_name(MigrationSettings, "database_url"): self.database_url},
+                env_variables={"DATABASE_URL": self.database_url, **self.migrate_env},
                 image_pull_policy=self.migrate_pull_policy,
                 memory_limit=self.migrate_memory_limit,
             ),
@@ -845,7 +845,6 @@ class Egress(Construct):
         )
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
-        workload.container.mount("/var/lib/agentplane-egress", confdir_volume)
         settings.mount_into(workload.container, env=Settings.config_file_env)
         return workload
 

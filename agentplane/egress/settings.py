@@ -1,20 +1,18 @@
-"""Egress Proxy deployment settings and configuration file name.
+"""Authoring schema for the Go egress proxy's deployment settings.
 
-CLEANUP(added 2026-10-17): Delete once `cluster/cdk8s/agentplane/egress.py` deploys the Go proxy. Until
-then it authors the flags of the pinned Python image, and `testing/go_replica.py` dumps it as the
-Go binary's settings file, which rejects a key the binary does not know.
+The reader is `go/cmd/config.go`, which rejects a key it does not know: keep the fields here to its keys.
 """
 
 from __future__ import annotations
 
 from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
-from agentplane.log_levels import LogLevels
+from agentplane.log_levels import LogLevel
 from util.yaml_file_settings import YamlFileSettings
 
 
@@ -43,12 +41,11 @@ class Settings(YamlFileSettings):
     agent_api_port: int = Field(default=8082, description="Agent-facing HTTP port serving /v1/rules.")
     ca_cert: Path = Field(description="PEM certificate of the interception CA the runner containers trust.")
     ca_key: Path = Field(description="PEM private key of the interception CA.")
-    confdir: Path = Field(description="Writable directory mitmproxy keeps its CA and issued leaves in.")
     upstream_ca_file: Path | None = Field(
         default=None,
         description="PEM bundle this proxy verifies destinations against. Needs the cluster's own CA on "
         "top of the public roots for a `clusterInternal` rule to reach the API server, whose serving "
-        "certificate no public root signs. Unset falls back to mitmproxy's bundled roots, which reach "
+        "certificate no public root signs. Unset falls back to the system roots, which reach "
         "public hosts only.",
     )
     token_audience: str = Field(min_length=1, description="Audience of the sidecars' projected tokens.")
@@ -59,15 +56,18 @@ class Settings(YamlFileSettings):
         "caller's own identity on; a credential naming an audience absent from it resolves to nothing.",
     )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
-    log_levels: LogLevels
+    log_levels: dict[Literal["root"], LogLevel] = Field(
+        default_factory=dict, description="Level of the `root` logger; unset is `INFO`."
+    )
 
-    resync_seconds: int = Field(default=300, gt=0, description="Watch lifetime; every kind is relisted this often.")
+    resync_seconds: int = Field(
+        default=300, ge=2, description="Watch lifetime; every kind is relisted this often. At least two."
+    )
     database_url: str = Field(repr=False, description="Shared diagnostic PostgreSQL database; migrated separately.")
     decision_history_size: int = Field(default=200, ge=1, le=1000)
     decision_retention_days: int = Field(default=7, ge=1, le=365)
     decision_queue_size: int = Field(default=2000, ge=1, le=100000)
     decision_batch_size: int = Field(default=100, ge=1, le=1000)
-    decision_flush_seconds: float = Field(default=5, gt=0, le=20)
     exempt_networks: list[IPv4Network | IPv6Network] = Field(
         default_factory=list,
         description="Networks an admitted host may resolve into although they are not globally reachable.",

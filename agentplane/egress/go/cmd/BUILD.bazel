@@ -61,5 +61,6 @@ oci_image(
         "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
+    visibility = ["//visibility:public"],
     workdir = "/",
 )

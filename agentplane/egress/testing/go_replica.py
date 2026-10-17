@@ -23,9 +23,6 @@ _MIGRATOR = get_required_path(
 )
 _GRACE_SECONDS = 55
 
-# Keys of `Settings` only the Python proxy reads: the Go binary rejects keys it does not know.
-_PYTHON_ONLY = {"confdir", "decision_flush_seconds"}
-
 
 async def expect_health(
     admin_port: int, status: int, *, alive: Callable[[], bool], exit_description: Callable[[], str]
@@ -87,8 +84,8 @@ class GoReplica:
 async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[GoReplica]:
     """The Go proxy on `settings`, after the Goose migrator has taken over `settings.database_url`.
 
-    The Go binary reads the same YAML keys the Python `Settings` model authors, so a key one side
-    gains without the other is rejected here rather than ignored.
+    The Go binary rejects a key it does not know, so a `Settings` field the binary lacks fails here
+    rather than being ignored.
     """
     database_url = (
         make_url(settings.database_url)
@@ -103,11 +100,7 @@ async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[Go
     assert migrator.returncode == 0, output.decode()
     config = directory / f"go-replica-{settings.listen_port}.yaml"
     config.touch(mode=0o600)
-    config.write_text(
-        json.dumps(
-            {**settings.model_dump(mode="json", exclude=_PYTHON_ONLY, exclude_none=True), "database_url": database_url}
-        )
-    )
+    config.write_text(json.dumps({**settings.model_dump(mode="json", exclude_none=True), "database_url": database_url}))
     stderr = config.with_suffix(".stderr")
     with stderr.open("wb") as log:
         process = await asyncio.create_subprocess_exec(

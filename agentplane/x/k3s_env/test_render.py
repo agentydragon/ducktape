@@ -46,7 +46,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     for workload, migration in {
         "actions": "agentplane-action-service-migrate",
         "app": "agentplane-app-migrate",
-        "egress": "agentplane-egress-migrate",
+        "egress": "agentplane-egress-history-migrate",
         "history-service": "agentplane-history-migrate",
         "notifications": "agentplane-notification-service-migrate",
     }.items():

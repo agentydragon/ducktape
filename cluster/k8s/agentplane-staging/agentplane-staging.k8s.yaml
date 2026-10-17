@@ -788,7 +788,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: egress-settings
+  name: egress-proxy-settings
   namespace: agentplane-staging
 data:
   settings.yaml: |
@@ -845,7 +845,6 @@ spec:
             - --agent-api-port=8082
             - --ca-cert=/etc/agentplane-egress/ca/tls.crt
             - --ca-key=/etc/agentplane-egress/ca/tls.key
-            - --confdir=/var/lib/agentplane-egress
             - --upstream-ca-file=/etc/agentplane-egress/upstream-ca/ca-certificates.crt
             - --token-audience=agentplane-egress
           env:
@@ -856,7 +855,7 @@ spec:
                   name: postgres-egress
             - name: AGENTPLANE_EGRESS_CONFIG_FILE
               value: /etc/agentplane-egress/settings/settings.yaml
-          image: git.allegedly.works/ducktape-ci/agentplane-egress:unset
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 3
@@ -906,10 +905,8 @@ spec:
             - mountPath: /etc/agentplane-egress/upstream-ca
               name: upstream-ca
               readOnly: true
-            - mountPath: /var/lib/agentplane-egress
-              name: confdir
             - mountPath: /etc/agentplane-egress/settings
-              name: configmap-egress-settings
+              name: configmap-egress-proxy-settings
               readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
@@ -917,12 +914,12 @@ spec:
         - name: forgejo-images-creds
       initContainers:
         - env:
-            - name: AGENTPLANE_EGRESS_DATABASE_URL
+            - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   key: uri
                   name: postgres-egress
-          image: git.allegedly.works/ducktape-ci/agentplane-egress-migrate:unset
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate:unset
           imagePullPolicy: Always
           name: migrate
           resources:
@@ -965,11 +962,9 @@ spec:
         - configMap:
             name: agentplane-staging-egress-upstream-ca
           name: upstream-ca
-        - emptyDir: {}
-          name: confdir
         - configMap:
-            name: egress-settings
-          name: configmap-egress-settings
+            name: egress-proxy-settings
+          name: configmap-egress-proxy-settings
 ---
 apiVersion: v1
 kind: Service
