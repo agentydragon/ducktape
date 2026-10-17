@@ -53,6 +53,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// The comparison fixture serves Kubernetes JSON, not the protobuf wire format.
+	config.ContentType = "application/json"
+	config.AcceptContentTypes = "application/json"
 	reviews, err := authentication.NewForConfig(config)
 	if err != nil {
 		return err
