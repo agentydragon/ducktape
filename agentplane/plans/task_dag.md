@@ -587,9 +587,7 @@ flowchart LR
     K3S_SHARED_PACKAGE_LAYERS[Candidate: share Python package layers]
     K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
     K3S_IMPORT_CONCURRENCY[Candidate: native containerd import and unpack concurrency]
-    K3S_RUNNER_IMAGE_SPLIT[PR ready: harness-specific test images]
-    RUNNER_HARNESS_DELIVERY_DESIGN[Decision: baked harnesses versus on-demand delivery]
-    K3S_RUNNER_IMAGE_SPLIT -. measurement informs .-> RUNNER_HARNESS_DELIVERY_DESIGN
+    RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
@@ -681,30 +679,19 @@ the expected saving from rewriting the streamer. Exit: a matched comparison of i
 resource use and total lifecycle time with unchanged lifecycle assertions, and a recommendation
 to adopt or discard the concurrency change.
 
-### `K3S_RUNNER_IMAGE_SPLIT` — measure harness-specific test images
-
-**PR ready; operator dispatch, 2026-10-16 PDT; current agent,
-[#10812](https://github.com/agentydragon/ducktape/pull/10812).** Land the measured harness-free
-lifecycle image and Claude-only model-smoke image. The real lifecycle comparison and Claude smoke
-passed; [profiles, performance and image inventories](../x/k3s_env/README.md#harness-specific-runner-comparison-2026-10-16)
-record the sample and its limits. Adoption is authorized by the operator; it does not settle
-deployment-wide harness delivery. Preserve the existing assertions and manual-only workflow.
-
 ### `RUNNER_HARNESS_DELIVERY_DESIGN` — choose how runners obtain harness binaries
 
-**Decision; operator, 2026-10-16 PDT: investigate for k3s test latency.** Compare the current
-two-harness image, thinner images containing only the requested harness, and runners downloading
-pinned harness artifacts on demand from an independent Agentplane service or directly from
-OpenAI/Anthropic distribution endpoints. Also compare separately pinned harness OCI images made
-available through mounts or an init container copying into a shared volume, without baking the
-harness into the runner image. Operator preference, 2026-10-16 PDT: eventual delivery should
-decouple harnesses from the runner image; narrower baked images are an interim optimization if
-measurement supports them. Decide delivery and service/cache ownership. Any serving service must
+**Decision; operator, 2026-10-16 PDT: investigate for k3s test latency.** Decide how a runner obtains
+a needed harness independently of its image: digest-pinned downloads from an independent
+Agentplane service or directly from OpenAI/Anthropic distribution endpoints, or separately pinned
+harness OCI images made available through mounts or an init container copying into a shared volume.
+Operator preference: eventual delivery should decouple harnesses from the runner image; the
+narrower test images are an interim optimization. Decide delivery and service/cache ownership. Any serving service must
 respect the backend dependency rule; the integration app cannot own this path.
 
-`K3S_RUNNER_IMAGE_SPLIT` supplies an initial measurement independently of this delivery decision.
-The [image-split comparison](../x/k3s_env/README.md#harness-specific-runner-comparison-2026-10-16)
+The [image-split comparison](https://github.com/agentydragon/ducktape/blob/41c322895f/agentplane/x/k3s_env/README.md#harness-specific-runner-comparison-2026-10-16)
 measures removal of unused harness payload; it does not measure runtime delivery of a needed harness.
+Its profiles and inventories are in [#10813](https://github.com/agentydragon/ducktape/pull/10813).
 
 Exit: a measured recommendation and explicit operator choice. Compare equivalent scenarios and
 pins, separating image build/upload, action-input transfer, containerd import/unpack, harness
