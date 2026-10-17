@@ -450,7 +450,7 @@
         "type": "prometheus",
         "uid": "mimir"
       },
-      "description": "Each row is one link or node over time. A blank stretch means Mimir has no samples for it: home was unreachable and the data was not (or not yet) replayed from a home buffer. The OVH-side Ready rows go Down during an outage; the rows scraped at home show what home itself saw once their buffer is replayed.",
+      "description": "Each row is one link or node over time. Gateway link queries combine exporter pod identities so replacements do not add rows; overlapping reports show Down if either reports Down. A blank stretch means Mimir has no samples for it: home was unreachable and the data was not (or not yet) replayed from a home buffer. The OVH-side Ready rows go Down during an outage; the rows scraped at home show what home itself saw once their buffer is replayed.",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -467,7 +467,7 @@
             "uid": "mimir"
           },
           "editorMode": "code",
-          "expr": "att_gateway_wan_up",
+          "expr": "min(att_gateway_wan_up)",
           "legendFormat": "Gateway WAN",
           "refId": "A",
           "range": true
@@ -478,7 +478,7 @@
             "uid": "mimir"
           },
           "editorMode": "code",
-          "expr": "att_gateway_optical_up",
+          "expr": "min(att_gateway_optical_up)",
           "legendFormat": "Gateway fiber",
           "refId": "B",
           "range": true
