@@ -784,6 +784,8 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 
 ```mermaid
 flowchart TD
+    DECLARATIVE_SESSIONS_DESIGN[Decision, unscheduled: Flux-managed Sessions and subscriptions]
+    SUBSCRIPTION_AUTHORIZATION_DESIGN[Subscription authorization decision, section 2] -. related authority design .-> DECLARATIVE_SESSIONS_DESIGN
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
@@ -808,6 +810,36 @@ flowchart TD
     SANDBOX_IDLE_EXPIRY --> IDLE_SUSPEND_UI_DRIVE[Operator: drive auto-suspend and send-to-resume in staging]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
+
+### `DECLARATIVE_SESSIONS_DESIGN` — long-running Sessions and managed subscriptions through Flux
+
+**Decision, unscheduled; operator idea, 2026-10-16 PDT.** Support a long-running Agentplane
+Session declared through Flux, with managed subscriptions such as “keep this Session subscribed
+to these GitHub notifications” or “keep it listening to a webhook at this URL.” Creation and
+ongoing reconciliation must work without starting the Session from the UI or keeping the
+integration app available. Long-running describes durable managed intent; decide separately
+whether the harness stays running or suspends and wakes on authorized events.
+
+Review a `Session` CRD, potentially with declarative subscription resources or references. Compare
+coexistence with service-owned Session records against replacing the relevant database authority;
+first inventory the current runner, Dispatcher, History and app responsibilities rather than
+assuming one database owns Sessions. Recommend evaluating Kubernetes-owned desired state with
+existing services retaining execution/history and Notification Service retaining subscription/inbox
+ownership. The operator must choose the resource boundaries and source of truth; no CRD or database
+replacement is selected by this task.
+
+Define stable identity and idempotent create/adopt/reconcile behavior, ownership of UI/API-created
+Sessions, spec edits and drift, restart recovery, deletion/suspension and retention of authored
+history. Specify how managed subscriptions are restored, updated and removed without duplication,
+and whether a webhook URL means provisioning an authenticated inbound endpoint or subscribing to
+an existing source. Reuse the subscription-authorization decision in section 2; declaring a resource
+must not implicitly grant source access, destination control or wake authority. Identify any actual
+implementation prerequisites after choosing the design, including wake policy if required.
+
+**Exit:** reviewed desired-state/runtime ownership and lifecycle contract, one illustrative Flux
+manifest for a Session with GitHub/webhook subscriptions, and independently finishable follow-up
+nodes with focused reconciliation/restart, duplicate-prevention and authorization acceptance.
+Recording this idea does not schedule implementation or lift the handoff pause.
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 
