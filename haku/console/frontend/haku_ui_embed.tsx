@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useRef, useState } from "react";
+import { type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import {
   geolocationApprovalQueueId,
@@ -391,11 +391,7 @@ export function HakuUiEmbed({
             : "Not found · Haku";
   }, [view]);
 
-  // The Agent UI bridge listener stays registered for the tab's whole life, reached through a ref rather
-  // than being an effect dependency. Re-subscribing whenever a handler it closes over changes would
-  // open a window in which a postMessage arrives with nothing listening, silently dropping a launch
-  // or geolocation reply — and the ref also keeps every handler current, which a dependency list
-  // naming only some of them would not.
+  // Keep one bridge subscription for the tab's lifetime while reading current render values.
   function onMessage(e: MessageEvent) {
     if (e.origin !== origin) return; // only Haku's UI origin may talk to the shell
     const msg = parseInbound(e.data);
@@ -473,13 +469,10 @@ export function HakuUiEmbed({
     }
   }
 
-  const onMessageRef = useRef(onMessage);
-  useEffect(() => {
-    onMessageRef.current = onMessage;
-  });
+  const handleMessage = useEffectEvent(onMessage);
 
   useEffect(() => {
-    const listener = (e: MessageEvent) => onMessageRef.current(e);
+    const listener = (e: MessageEvent) => handleMessage(e);
     window.addEventListener("message", listener);
     return () => window.removeEventListener("message", listener);
   }, []);
