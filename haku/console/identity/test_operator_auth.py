@@ -236,10 +236,6 @@ def test_every_unsafe_api_route_has_an_explicit_admission_boundary(make_client) 
         if path == "/auth/logout":
             assert operator_auth.require_operator not in calls, route.path
             assert operator_auth.require_operator_mutation_origin in calls, route.path
-        elif path in {"/mcp", "/mcp/{path:path}"}:
-            # Retired protocol tombstones are inert: every method returns 404 without state changes.
-            assert isinstance(route.original_route, APIRoute), route.path
-            assert route.original_route.endpoint.__name__ == "_retired_mcp", route.path
         else:
             assert operator_auth.require_operator in calls, route.path
             assert operator_auth.require_operator_mutation_origin in calls, route.path

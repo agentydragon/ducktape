@@ -484,11 +484,12 @@ UIDs; `OTHER` remains denied. Revert the Flux change and delete the dummy Secret
 This tests shared Role updates, not preset re-resolution; the static `claude-ai`
 identity temporarily gains access to only the dummy value too.
 
-Finally, through the external Haku OAuth MCP connection, call `sandbox.create`, poll
-`sandbox.get` until Ready, then `sandbox.exec` with `kubectl auth whoami` and the same
-metadata-only Coinbase read. The expected principal is the MCP sandbox's static
+Finally, through the connected Agentplane MCP client, call `sandbox__create`, poll
+`sandbox__get` until Ready, then call `sandbox__exec` with `kubectl auth whoami` and the same
+metadata-only Coinbase read. Approve the Action if Agentplane requests approval. The expected
+principal is the Agentplane sandbox's static
 `system:serviceaccount:agentplane-staging:claude-ai`, not either managed Sandbox SA.
-Dispose of the MCP sandbox with `sandbox.dispose`. Check that deleting the suspended
+Dispose of the sandbox with `sandbox__dispose`. Check that deleting the suspended
 managed Sandboxes removes their cross-namespace RoleBindings and ClusterRoleBindings;
 verify by the Sandbox UID annotation, without dumping Secret contents.
 
@@ -578,9 +579,11 @@ with `user.token` auth pointing at `https://kubeapi.allegedly.works`
 (the `HTTPRoute` in <../cdk8s/kube_api_proxy.py>).
 
 The session start hook (background command in the web profile) writes
-`~/.kube/config` to a real file for interactive `kubectl` use. MCP clients use
-the operator-linked Kubernetes passthrough exposed by `haku-console` instead
-of launching a local Kubernetes MCP process.
+`~/.kube/config` to a real file for interactive `kubectl` use. MCP clients should
+use connected Agentplane MCP Actions when configured for Kubernetes operations.
+Discover the available Actions and current policy, then verify the Action's execution
+identity against this RBAC source of truth; an MCP connection alone grants no Kubernetes
+permissions. See <agentplane_mcp_staging.md> for the staging MCP setup and boundary.
 
 ## Security Considerations
 

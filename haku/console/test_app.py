@@ -28,17 +28,6 @@ def test_metrics_not_swallowed_by_spa_fallback(make_client, tmp_path: Path) -> N
         assert "process_start_time_seconds" in c.get("/metrics").text
 
 
-def test_retired_mcp_is_not_served_or_swallowed_by_spa(make_client, tmp_path: Path) -> None:
-    static_dir = tmp_path / "dist"
-    static_dir.mkdir()
-    (static_dir / "index.html").write_text("<html>shell</html>", encoding="utf-8")
-    with make_client(static_dir=static_dir) as c:
-        for path in ("/mcp", "/mcp/", "/mcp/mcp"):
-            assert c.get(path).status_code == 404
-            assert c.post(path).status_code == 404
-        assert c.get("/healthz").json() == {"status": "ok"}
-
-
 def test_config_launch_routine_none_when_unconfigured(client) -> None:
     data = client.get("/api/config").json()
     assert data["launch_routine_url"] is None  # no launch capability configured

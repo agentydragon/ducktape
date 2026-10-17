@@ -10,8 +10,7 @@ linking) with a DB-revalidated canonical Operator session.
 The static SPA (served by nginx) stays public; on a 401 the frontend redirects to `/auth/login`,
 carrying the page it was on as `return_to` so re-authenticating does not lose the operator's place.
 Pending logins live in Postgres, not the session cookie — see `operator_login_flow.py`.
-`/healthz` and `/auth/*` are not under `/api/` and carry their own admission rules. `/mcp` is a
-retired-path tombstone that always returns 404.
+`/healthz` and `/auth/*` are not under `/api/` and carry their own admission rules.
 """
 
 from __future__ import annotations
@@ -53,8 +52,8 @@ SESSION_USER_KEY = "operator"
 OPERATOR_SESSION_MAX_AGE_SECONDS = 60 * 60
 _AGENT_ENROLLMENT_PATH_PREFIX = "/auth/agent-enrollment/"
 _MAX_RETURN_TO_LENGTH = 2048
-# Every top-level prefix the backend serves. A continuation must name a page the operator can be
-# returned to, so none of these qualify (`/auth/` has one exception, the enrollment interaction).
+# Backend and protocol paths are not page continuations. `/auth/` has one exception for the
+# operator enrollment interaction.
 _BACKEND_PATH_PREFIXES = ("/api/", "/auth/", "/mcp", "/healthz", "/.well-known/")
 # One automatic restart after a stale or superseded attempt, tracked in its own short-lived cookie
 # so the marker cannot be lost to (or evict) anything else the browser holds.

@@ -92,7 +92,7 @@ def _cache_control_for_path(path: str, status_code: int) -> str:
     # The app is authoritative for the cache policy of every backend surface it serves — nginx no
     # longer sets Cache-Control on proxied responses (haku/console/default.conf.template), so these
     # prefixes must be listed here, not there. Keep in sync with the proxied `location`s.
-    if path.startswith(("/api/", "/mcp", "/auth/", "/.well-known/", "/metrics")) or path == "/healthz":
+    if path.startswith(("/api/", "/auth/", "/metrics")) or path == "/healthz":
         return NO_STORE_CACHE_CONTROL
     return APP_SHELL_CACHE_CONTROL
 
@@ -266,18 +266,6 @@ def create_app(
         same_site="lax",
         max_age=operator_auth.OPERATOR_SESSION_MAX_AGE_SECONDS,
     )
-
-    # Keep a tombstone so a direct-dev SPA fallback cannot serve HTML at the retired protocol
-    # endpoint. Production nginx returns the same 404 before proxying.
-    @app.api_route("/mcp", methods=["GET", "POST", "DELETE"])
-    @app.api_route("/mcp/{path:path}", methods=["GET", "POST", "DELETE"])
-    async def _retired_mcp() -> Response:
-        return Response(status_code=404)
-
-    @app.api_route("/.well-known/oauth", methods=["GET"])
-    @app.api_route("/.well-known/oauth/{path:path}", methods=["GET"])
-    async def _retired_mcp_oauth_discovery() -> Response:
-        return Response(status_code=404)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.

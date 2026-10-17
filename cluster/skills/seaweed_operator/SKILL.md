@@ -18,9 +18,11 @@ which fixes the invariants below (names, `Retain` on credentials, grants).
 - Treat the SeaweedFS bucket and IAM key as external state, not disposable
   Kubernetes-only objects. Identify the physical bucket, current object count/size,
   IAM identity/key, target Secret, and owning Flux Kustomization first.
-- Prefer the connected `haku-console` Kubernetes passthrough for reads. Use the
-  `kubectl` escape hatch outside the sandbox only when the operator-linked RBAC
-  cannot inspect the needed object. Never print Secret data or access-key values.
+- Use connected Agentplane MCP Actions for reads when an appropriate Action is available.
+  Check its current policy and execution identity against <../../docs/agent_rbac.md>; an MCP
+  connection does not imply namespace coverage or Kubernetes permissions. Use the `kubectl`
+  escape hatch outside the sandbox only when the Action cannot inspect the needed object. Never
+  print Secret data or access-key values.
 - Before removing or moving a stateful Flux owner, follow the parent Kubernetes
   instructions for `prune`, `deletionPolicy`, suspension, and orphaning. Commit and
   push before reconciling Flux.

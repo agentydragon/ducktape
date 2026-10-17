@@ -260,9 +260,10 @@ Pass: `1` (or whatever var your `.envrc` exports).
 kubectl -n claude-sandbox get pods 2>&1 | tail -5
 ```
 
-Then use the connected `haku-console` Kubernetes passthrough MCP tool for the
-same namespace and compare. Pass: both succeed and agree; Haku's operator
-approval boundary must remain intact.
+Then use an Agentplane MCP Action configured to read the same namespace and compare. Confirm the
+Action's execution identity and current Agentplane policy; client-side MCP approval does not grant
+Kubernetes access. Pass: both reads succeed and agree within the access each identity is meant to
+have.
 
 **W2 — `$GITHUB_TOKEN` identifies as `agentydragon-agent`.**
 

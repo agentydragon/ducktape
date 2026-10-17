@@ -73,20 +73,9 @@ server {
     proxy_pass http://${HAKU_CONSOLE_API_UPSTREAM};
   }
 
-  # Retired MCP endpoint. Keep a 404 here so the SPA fallback cannot return index.html for protocol
-  # clients that still have the old URL configured.
-  location /mcp {
-    return 404;
-  }
-
   # Operator browser OIDC login (operator_auth router: /auth/login,/callback,/logout,/me).
   location /auth/ {
     proxy_pass http://${HAKU_CONSOLE_API_UPSTREAM};
-  }
-
-  # Retired MCP OAuth discovery URLs.
-  location ~ ^/\.well-known/oauth {
-    return 404;
   }
 
   location / {

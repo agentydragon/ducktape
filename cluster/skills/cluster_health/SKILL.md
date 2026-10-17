@@ -8,10 +8,10 @@ description: Scan cluster health — Flux kustomizations, pod status, recurring 
 Comprehensive cluster health scan. Collect results from all checks, then produce a
 single structured report with an actionable fix plan.
 
-Use the `haku-console` MCP server's connected Kubernetes passthrough tools for
-read queries. Haku routes these through the operator-linked Kubernetes MCP
-server and its approval policy; do not assume client-side MCP auto-approval
-bypasses that boundary.
+Use connected Agentplane MCP Actions for read queries when an Action supports them. Check the
+current Action policy and execution identity; an MCP connection or client-side approval does not
+imply namespace coverage or Kubernetes permissions. See <../../docs/agent_rbac.md> for the RBAC
+source of truth and <../../docs/agentplane_mcp_staging.md> for the staging MCP boundary.
 
 Fall back to `Bash(kubectl ...)` with `dangerouslyDisableSandbox: true` only for
 operations the SA cannot do (e.g., writing resources outside `claude-sandbox`,

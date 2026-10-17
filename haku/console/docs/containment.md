@@ -47,9 +47,8 @@ Haku could author hostile UI). Safety comes from the perimeter, not from trustin
 
 1. **Cross-origin isolation from the shell.** `haku-ui` is a different origin than `haku`,
    so the iframe cannot read the shell's DOM, cookies, or `localStorage`, and cannot call the
-   shell's capability API or Operator-authenticated `/mcp` path. Both reject the iframe's Origin;
-   the launch bearer is unreachable from
-   any browser context. The subdomain is **same-site** (`*.allegedly.works`): isolated
+   shell's capability API; that API rejects the iframe's Origin. The launch bearer is unreachable
+   from any browser context. The subdomain is **same-site** (`*.allegedly.works`): isolated
    from the shell, yet the Authentik SSO cookie isn't a blocked third-party cookie. Pinned by
    `sandbox="allow-scripts allow-same-origin allow-forms"` (**no `allow-popups`**, no
    `allow="fullscreen"`) and the shell CSP's `frame-src` for `haku-ui.allegedly.works` +
@@ -135,12 +134,6 @@ cross-origin boundary prevents the shell from reading the iframe document direct
 haku-ui renders its own launch dialog and posts `{type: "requestLaunch", id, prompt}`; the
 shell pops its top-layer confirm showing the prompt **verbatim**, and only then fires with
 the server-side bearer (see <../README.md> → _The capability tier_).
-
-### Tool calls — request path retired
-
-Haku Console no longer exposes `/mcp` or accepts new tool-call submissions. Its operator approval
-and history REST routes remain for persisted ledger rows, and the UI refreshes those views every 30
-seconds while a legacy row is being drained. There is no browser push channel for tool calls.
 
 ### `requestGeolocation` / `startGeolocationWatch` — read the operator's location (standing grant)
 

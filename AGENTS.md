@@ -23,14 +23,14 @@ mean session setup failed: **stop and recover first** via
 <devinfra/claude/claude_hook/docs/session_start_recovery.md>. Never bypass proxy/cert
 errors with `--noverify` or `SSL_VERIFY=false`; notify the user if recovery fails.
 
-## Kubernetes MCP Server (`haku-console`)
+## Agentplane MCP
 
-Prefer the `haku-console` MCP server's Kubernetes passthrough tools — they keep the
-operator-linked authorization boundary. RBAC source of truth:
-<cluster/docs/agent_rbac.md> — check it before assuming namespace
-coverage or write permissions. Escape hatch: `Bash(kubectl ...)` uses the personal (CLI)
-or session (web) kubeconfig for higher privileges. In-cluster OAuth MCP variants:
-<cluster/docs/mcp_oauth_authentik_notes.md>.
+Use the Agentplane MCP Actions connected to the current client when an appropriate Action is
+available. Discover the connected tools and current Action policy instead of assuming a group,
+namespace, or write permission is available. Kubernetes RBAC source of truth:
+<cluster/docs/agent_rbac.md>. Agentplane staging MCP setup and authorization boundaries:
+<cluster/docs/agentplane_mcp_staging.md>. `Bash(kubectl ...)` uses the personal (CLI) or session
+(web) kubeconfig and may have different privileges from an Agentplane Action.
 
 ## Sandbox
 

@@ -18,15 +18,14 @@ proxy outpost. The HTTPRoute points `haku.allegedly.works` at the standalone sta
 Service; its nginx proxies backend paths to the API Service. The retired `haku-dashboard`
 proxy provider and its deletion tombstone are gone.
 The operator browser-login provider is minted by `tf/gitops/agent-machine-access`; its credentials
-and the session-signing secret are mirrored into `haku-console-oidc`. The former Console MCP OAuth
-provider and `/mcp` protocol endpoint have been removed. nginx returns 404 for `/mcp` and its old
-OAuth discovery paths, while operator browser OAuth remains under `/auth/*`.
+and the session-signing secret are mirrored into `haku-console-oidc`. Operator browser OAuth remains
+under `/auth/*`.
 
 **nginx ↔ app routing invariant.** The standalone `static` nginx Deployment serves
-the SPA and proxies the app's top-level backend prefixes (`/api`, `/healthz`, and `/auth`; `/mcp` and its OAuth discovery paths return 404) to the `haku-console` API Service; everything else is
-the SPA catch-all. So a **new top-level backend prefix needs a matching `location` in
-`haku/console/default.conf.template`**, or it silently returns the SPA shell instead of reaching
-the app (the footgun that first bit `/mcp`). The static Deployment's
+the SPA and proxies the app's top-level backend prefixes (`/api`, `/healthz`, and `/auth`) to the
+`haku-console` API Service; everything else is the SPA catch-all. So a **new top-level backend
+prefix needs a matching `location` in `haku/console/default.conf.template`**, or it silently returns
+the SPA shell instead of reaching the app. The static Deployment's
 `HAKU_CONSOLE_API_UPSTREAM` is derived from the API Service's name and port. nginx sets response headers (CSP/Cache-Control/…) only
 on the static content it serves itself; the app owns the headers on everything proxied (`app.py`
 `_security_headers`), so the two no longer write the same policy twice. The static Deployment has
