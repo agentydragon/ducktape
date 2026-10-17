@@ -55,6 +55,7 @@ py_library(
         ":models",
         ":pdf_utils",
         "@pypi//httpx",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
 )
@@ -63,7 +64,10 @@ py_library(
     name = "parse_eob_listing",
     srcs = ["parse_eob_listing.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//beautifulsoup4"],
+    deps = [
+        "@pypi//beautifulsoup4",
+        "@pypi//more_itertools",
+    ],
 )
 
 py_binary(

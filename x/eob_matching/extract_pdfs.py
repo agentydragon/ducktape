@@ -19,6 +19,7 @@ import tempfile
 from pathlib import Path
 
 import httpx
+from more_itertools import unique_everseen
 from pydantic import BaseModel
 
 from x.eob_matching.models import EOBClaimsPageExtraction, EOBSummaryExtraction, PDFExtraction
@@ -142,13 +143,7 @@ def main() -> None:
     print(f"Found {len(pdfs)} PDFs", file=sys.stderr)
 
     # Deduplicate by content hash
-    seen: set[str] = set()
-    unique: list[Path] = []
-    for p in pdfs:
-        h = file_hash(p)
-        if h not in seen:
-            seen.add(h)
-            unique.append(p)
+    unique = list(unique_everseen(pdfs, key=file_hash))
     print(f"Unique: {len(unique)}", file=sys.stderr)
 
     results: list[PDFExtraction] = []

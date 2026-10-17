@@ -47,13 +47,7 @@ def _merge_pythonpath() -> str:
     paths) with os.environ PYTHONPATH.
     """
     existing = os.environ.get("PYTHONPATH", "").split(os.pathsep) if os.environ.get("PYTHONPATH") else []
-    merged: list[str] = []
-    seen: set[str] = set()
-    for p in [*sys.path, *existing]:
-        if p and p not in seen:
-            seen.add(p)
-            merged.append(p)
-    return os.pathsep.join(merged)
+    return os.pathsep.join(dict.fromkeys(p for p in [*sys.path, *existing] if p))
 
 
 #: Environment variables that ``_bazel_site_init`` reads to locate runfiles

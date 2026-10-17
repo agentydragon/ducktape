@@ -8,6 +8,8 @@ import re
 import sys
 from pathlib import Path
 
+from more_itertools import unique_everseen
+
 try:
     from bs4 import BeautifulSoup
 
@@ -34,12 +36,7 @@ def parse_from_html(path: Path) -> list[dict]:
         svc_m = re.search(r"Service Dates[:\s]*([\d/]+ - [\d/]+|\d{2}/\d{2}/\d{4})", block)
 
         claim_nums = re.findall(r"\b(20\d{2}[0-9A-Z]{5,})\b", block)
-        seen: set[str] = set()
-        unique_claims: list[str] = []
-        for c in claim_nums:
-            if c not in seen:
-                seen.add(c)
-                unique_claims.append(c)
+        unique_claims = list(unique_everseen(claim_nums))
 
         provider = ""
         if "Care Provider" in block:
@@ -87,13 +84,7 @@ def main() -> None:
     eobs = parse_from_html(HTML_PATH)
 
     # Deduplicate by (statement_date, claim set)
-    seen_keys: set[tuple[str, frozenset[str]]] = set()
-    unique_eobs: list[dict] = []
-    for e in eobs:
-        key = (e["statement_date"], frozenset(e["claim_nums"]))
-        if key not in seen_keys:
-            seen_keys.add(key)
-            unique_eobs.append(e)
+    unique_eobs = list(unique_everseen(eobs, key=lambda e: (e["statement_date"], frozenset(e["claim_nums"]))))
 
     all_claims = {cn for e in unique_eobs for cn in e["claim_nums"]}
     print(
