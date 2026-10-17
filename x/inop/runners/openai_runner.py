@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import aiodocker
+from fastmcp import ClientGroup
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
 
@@ -19,13 +20,11 @@ from agent_core.handler import BaseHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.transcript_handler import TranscriptHandler
-from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.constants import WORKING_DIR
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.exec.direct import DirectExecServer
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.docker.types import BindMount, ContainerExecServerConfig, DefaultValue, NetworkMode
-from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from x.inop.engine.models import (
     FinalOutput,
@@ -58,7 +57,7 @@ class OpenAIRunner(AgentRunner):
         self.workspace_path: Path | None = None
         self._exit_stack: AsyncExitStack | None = None
         self._agent: Agent | None = None
-        # Note: Compositor + Client are managed per-setup; no manager retained
+        # Note: FastMCP clients are managed per-setup; no manager retained
         self._openai_model = openai_model
         self._docker_client = docker_client
         # Optional: allow callers/tests to pass their own handlers
@@ -79,19 +78,16 @@ class OpenAIRunner(AgentRunner):
         server_factories = self._build_mcp_server_factories(setup)
 
         self._exit_stack = AsyncExitStack()
-        # Enter Compositor into exit stack for proper cleanup
-        comp = await self._exit_stack.enter_async_context(Compositor())
-        for name, factory in server_factories.items():
-            await comp.mount_inproc(MCPMountPrefix(name), factory(None))
+        clients = ClientGroup({name: Client(factory(None)) for name, factory in server_factories.items()})
+        await self._exit_stack.enter_async_context(clients)
         # Per-run transcript directory
         run_dir = Path.cwd() / "logs" / "agent" / "openai_runner"
         run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
         run_dir.mkdir(parents=True, exist_ok=True)
         default_handlers: list = [CompactDisplayHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")]
         handlers: list[BaseHandler] = self._handlers or default_handlers
-        mcp_client = await self._exit_stack.enter_async_context(Client(comp))
         agent = await Agent.create(
-            tool_provider=MCPToolProvider(mcp_client),
+            tool_provider=MCPToolProvider(clients),
             client=self._openai_model,
             reasoning_effort=self.reasoning_effort,
             handlers=handlers,

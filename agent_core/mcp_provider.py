@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastmcp import ClientGroup
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult as FastMCPCallToolResult
 from mcp import types as mcp_types
@@ -15,9 +16,9 @@ from agent_core.tool_provider import ImageContent, TextContent, ToolResult, Tool
 
 
 class MCPToolProvider:
-    """Tool provider that wraps a FastMCP Client."""
+    """Tool provider that wraps a FastMCP client or client group."""
 
-    def __init__(self, client: Client) -> None:
+    def __init__(self, client: Client | ClientGroup) -> None:
         self._client = client
 
     async def list_tools(self) -> list[ToolSchema]:
@@ -29,7 +30,11 @@ class MCPToolProvider:
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Execute a tool via the MCP client."""
-        fastmcp_result = await self._client.call_tool(name, arguments, raise_on_error=False)
+        if isinstance(self._client, ClientGroup):
+            route = await self._client.resolve_tool(name)
+            fastmcp_result = await route.client.call_tool(route.upstream_name, arguments, raise_on_error=False)
+        else:
+            fastmcp_result = await self._client.call_tool(name, arguments, raise_on_error=False)
         return fastmcp_result_to_tool_result(fastmcp_result)
 
 

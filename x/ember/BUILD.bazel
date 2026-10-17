@@ -170,9 +170,6 @@ py_library(
     deps = [
         ":config",
         ":matrix_client",
-        "//mcp_infra:mounted",
-        "//mcp_infra:prefix",
-        "//mcp_infra/compositor",
         "//mcp_infra/exec:direct",
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp_slim",

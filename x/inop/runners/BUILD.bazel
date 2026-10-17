@@ -52,8 +52,6 @@ py_library(
         "//agent_core:mcp_provider",
         "//agent_core:transcript_handler",
         "//mcp_infra:constants",
-        "//mcp_infra:prefix",
-        "//mcp_infra/compositor",
         "//mcp_infra/display:rich_display",
         "//mcp_infra/exec:direct",
         "//mcp_infra/exec/docker:server",

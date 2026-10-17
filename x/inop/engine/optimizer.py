@@ -43,14 +43,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import aiodocker
+from fastmcp import ClientGroup
 from fastmcp.client import Client
 
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.transcript_handler import TranscriptHandler
-from mcp_infra.compositor.compositor import Compositor
-from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto, UserMessage
 from x.inop.config import OptimizerConfig
 from x.inop.engine import runner_factory
@@ -83,8 +82,8 @@ from x.inop.prompting.truncation_utils import TruncationManager
 # Module logger; handler config is applied by DualOutputLogging.setup_logging()
 logger = logging.getLogger(__name__)
 
-# MCP mount prefix for prompt feedback server
-PROMPT_FEEDBACK_MOUNT_PREFIX = MCPMountPrefix("prompt_feedback")
+# ClientGroup key for the prompt feedback server.
+PROMPT_FEEDBACK_SERVER_NAME = "prompt_feedback"
 
 
 def setup_signal_handlers():
@@ -238,70 +237,62 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
 
     deps = _Deps()
 
-    # Build the MCP servers and session handle
-    # Build secured in-proc attach via factory and capture the handle directly
-    # Use Compositor as async context manager to ensure cleanup
-    async with Compositor() as comp:
-        _server, state = make_prompt_feedback_server_with_state(deps, feedback_provider)
-        await comp.mount_inproc(PROMPT_FEEDBACK_MOUNT_PREFIX, _server)
-        async with Client(comp) as mcp_client:
-            # Create Agent PE with system prompt at init
-            model = args.pe_model
-            # Build the expert prompt-engineer system message (same wording formerly in PromptEngineer.prompt_messages)
-            agent_description = "a coding agent"
-            task_description = (
-                "- Agent has access to a filesystem and a shell through tools. "
-                "Tasks should be solved by writing code files on disk using these tools, "
-                "not just shown to user in conversation.\n"
-            )
-            system_message = (
-                "You are an expert LLM prompt engineer. "
-                f"Your task is to design the best prompt for a LLM used as "
-                f"{agent_description}.\n"
-                f"{task_description}"
-                "- Agent has a fixed system prompt that teaches it how to use its tools (and other basics).\n"
-                "- Avoid giving your own instructions on how to use the tools - agent's baked-in tool use instructions "
-                "are already correct and additional conflicting instructions could easily make it worse.\n"
-                "- Each turn, you will propose a prompt. The agent will be run with that prompt on several tasks, "
-                "and you will receive information from these rollouts to help you design a better prompt.\n"
-                "- Your goal is to *find the best performing prompt you can* over *N turns* of (propose prompt1 -> "
-                "receive feedback1 -> propose prompt2 -> ...). You will be scored by the max score, not the last score.\n"
-                f"- The feedback will take the form of: {feedback_provider.verbal_description()}\n"
-            )
+    _server, state = make_prompt_feedback_server_with_state(deps, feedback_provider)
+    clients = ClientGroup({PROMPT_FEEDBACK_SERVER_NAME: Client(_server)})
+    async with clients:
+        # Create Agent PE with system prompt at init
+        model = args.pe_model
+        # Build the expert prompt-engineer system message (same wording formerly in PromptEngineer.prompt_messages)
+        agent_description = "a coding agent"
+        task_description = (
+            "- Agent has access to a filesystem and a shell through tools. "
+            "Tasks should be solved by writing code files on disk using these tools, "
+            "not just shown to user in conversation.\n"
+        )
+        system_message = (
+            "You are an expert LLM prompt engineer. "
+            f"Your task is to design the best prompt for a LLM used as "
+            f"{agent_description}.\n"
+            f"{task_description}"
+            "- Agent has a fixed system prompt that teaches it how to use its tools (and other basics).\n"
+            "- Avoid giving your own instructions on how to use the tools - agent's baked-in tool use instructions "
+            "are already correct and additional conflicting instructions could easily make it worse.\n"
+            "- Each turn, you will propose a prompt. The agent will be run with that prompt on several tasks, "
+            "and you will receive information from these rollouts to help you design a better prompt.\n"
+            "- Your goal is to *find the best performing prompt you can* over *N turns* of (propose prompt1 -> "
+            "receive feedback1 -> propose prompt2 -> ...). You will be scored by the max score, not the last score.\n"
+            f"- The feedback will take the form of: {feedback_provider.verbal_description()}\n"
+        )
 
-            # Write PE transcripts into the main optimization output directory
-            run_dir = args.base_dir
-            run_dir.mkdir(parents=True, exist_ok=True)
-            # TODO(mpokorny): A max-iterations abort handler and current ProposePromptNTimes can be exceeded under
-            # parallel_tool_calls if multiple calls are in flight when the budget flips. Centralize budget
-            # accounting at the server boundary or serialize within 1 of the limit to enforce a hard cap.
-            pe = await Agent.create(
-                tool_provider=MCPToolProvider(mcp_client),
-                client=model,
-                handlers=[
-                    ProposePromptNTimes(args.iterations),
-                    TranscriptHandler(events_path=run_dir / "events.jsonl"),
-                ],
-                tool_policy=RequireAnyTool(),
-            )
+        # Write PE transcripts into the main optimization output directory
+        run_dir = args.base_dir
+        run_dir.mkdir(parents=True, exist_ok=True)
+        # TODO(mpokorny): A max-iterations abort handler and current ProposePromptNTimes can be exceeded under
+        # parallel_tool_calls if multiple calls are in flight when the budget flips. Centralize budget
+        # accounting at the server boundary or serialize within 1 of the limit to enforce a hard cap.
+        pe = await Agent.create(
+            tool_provider=MCPToolProvider(clients),
+            client=model,
+            handlers=[ProposePromptNTimes(args.iterations), TranscriptHandler(events_path=run_dir / "events.jsonl")],
+            tool_policy=RequireAnyTool(),
+        )
 
-            # Insert user message with instructions
-            pe.process_message(UserMessage.text(system_message))
-            # Force N propose_prompt tool calls then abort (handled by ProposePromptNTimes registered above)
-            await pe.run()
+        # Insert user message with instructions
+        pe.process_message(UserMessage.text(system_message))
+        # Force N propose_prompt tool calls then abort (handled by ProposePromptNTimes registered above)
+        await pe.run()
 
-            # Read final state directly (in-proc) for logging only
-            last_prompt = state.last_prompt or ""
-            last_feedback = state.last_feedback or ""
+        # Read final state directly (in-proc) for logging only
+        last_prompt = state.last_prompt or ""
+        last_feedback = state.last_feedback or ""
 
-            logger.info(
-                "Optimization complete (MCP)",
-                extra={
-                    "last_prompt_preview": (last_prompt or "")[:160],
-                    "last_feedback_preview": (last_feedback or "")[:160],
-                },
-            )
-    # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
+        logger.info(
+            "Optimization complete (MCP)",
+            extra={
+                "last_prompt_preview": (last_prompt or "")[:160],
+                "last_feedback_preview": (last_feedback or "")[:160],
+            },
+        )
     return args.base_dir
 
 

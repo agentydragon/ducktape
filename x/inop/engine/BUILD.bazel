@@ -20,8 +20,6 @@ py_library(
         "//agent_core:loop_control",
         "//agent_core:mcp_provider",
         "//agent_core:transcript_handler",
-        "//mcp_infra:prefix",
-        "//mcp_infra/compositor",
         "//openai_utils:model",
         "//x/inop:config",
         "//x/inop:model_factory",

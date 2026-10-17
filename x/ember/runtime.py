@@ -9,7 +9,7 @@ import asyncio
 import contextlib
 import logging
 
-from fastmcp.client import Client
+from fastmcp import ClientGroup
 
 from agent_core.agent import Agent
 from agent_core.handler import RedirectOnTextMessageHandler
@@ -20,7 +20,7 @@ from openai_utils.model import SystemMessage, UserMessage
 from x.ember.config import EmberSettings
 from x.ember.handlers import EmberPersistenceHandler, EmberSleepHandler
 from x.ember.matrix_client import MatrixClient
-from x.ember.mcp_tools import EmberCompositor
+from x.ember.mcp_tools import make_ember_client_group
 from x.ember.python_session import ensure_kernel
 
 # Reminder injected when agent sends text instead of using tools
@@ -37,29 +37,15 @@ class EmberRuntime:
 
     Manages lifecycle of:
     - Matrix client for chat I/O
-    - EmberCompositor with MCP tools
+    - FastMCP client group with Ember's MCP tools
     - agent_core.Agent for LLM interaction (persistent across conversation turns)
     - Handlers for persistence and sleep control
 
     Use create() classmethod for initialization, not __init__ directly.
     """
 
-    def __init__(
-        self,
-        settings: EmberSettings,
-        matrix_client: MatrixClient,
-        compositor: EmberCompositor,
-        mcp_client: Client,
-        sleep_handler: EmberSleepHandler,
-        agent: Agent,
-    ) -> None:
+    def __init__(self, settings: EmberSettings) -> None:
         self._settings = settings
-        self._matrix_client = matrix_client
-        self._compositor = compositor
-        self._mcp_client = mcp_client
-        self._sleep_handler = sleep_handler  # Need reference for reset()
-        self._agent = agent
-
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
 
@@ -69,10 +55,7 @@ class EmberRuntime:
 
         This is the primary way to create a runtime - handles all async initialization.
         """
-        runtime = cls.__new__(cls)
-        runtime._settings = settings
-        runtime._task = None
-        runtime._stop_event = asyncio.Event()
+        runtime = cls(settings)
         await runtime._initialize()
         return runtime
 
@@ -92,18 +75,14 @@ class EmberRuntime:
             RedirectOnTextMessageHandler(TEXT_REMINDER),
         ]
 
-        # Set up compositor with MCP servers
-        self._compositor = EmberCompositor(
+        # Connect directly to the MCP tool servers.
+        self._client_group: ClientGroup = make_ember_client_group(
             workspace_path=self._settings.workspace_path,
             sleep_callback=self._sleep_handler.request_sleep,
             status_provider=self._matrix_client,
             sleep_policy=self._settings.openai.sleep_tool_policy,
         )
-        await self._compositor.__aenter__()
-
-        # Create MCP client from compositor
-        self._mcp_client = Client(self._compositor)
-        await self._mcp_client.__aenter__()
+        await self._client_group.__aenter__()
 
         # Create persistent agent
         model_client = build_client(
@@ -111,12 +90,11 @@ class EmberRuntime:
         )
 
         self._agent = await Agent.create(
-            tool_provider=MCPToolProvider(self._mcp_client),
+            tool_provider=MCPToolProvider(self._client_group),
             client=model_client,
             handlers=handlers,
             tool_policy=AllowAnyToolOrTextMessage(),
             reasoning_effort=self._settings.openai.reasoning_effort,
-            dynamic_instructions=self._compositor.render_agent_dynamic_instructions,
         )
 
         # Insert system prompt into agent's transcript
@@ -142,8 +120,7 @@ class EmberRuntime:
             self._task = None
 
         # Cleanup components
-        await self._mcp_client.__aexit__(None, None, None)
-        await self._compositor.__aexit__(None, None, None)
+        await self._client_group.__aexit__(None, None, None)
         await self._matrix_client.close()
 
         logger.info("Ember runtime stopped")

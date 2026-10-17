@@ -1,6 +1,6 @@
-"""MCP server providing ember's tools via compositor.
+"""FastMCP clients providing Ember's tools.
 
-This module creates an EmberCompositor that mounts:
+This module creates a ClientGroup containing:
 - ember-tools: sleep_until_user_message tool
 - exec: DirectExecServer (exec, read_image tools)
 """
@@ -12,12 +12,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
+from fastmcp import ClientGroup
+from fastmcp.client import Client
 from fastmcp.server import FastMCP
 
-from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.exec.direct import DirectExecServer
-from mcp_infra.mounted import Mounted
-from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from x.ember.config import (
     EnforcedSleepUntilUserMessagePolicy,
@@ -68,39 +67,23 @@ def _build_sleep_description(policy: SleepUntilUserMessagePolicy) -> str:
     )
 
 
-class EmberCompositor(Compositor):
-    """Compositor with ember's MCP servers pre-mounted.
+def make_ember_client_group(
+    *,
+    workspace_path: Path,
+    sleep_callback: Callable[[], None],
+    status_provider: ConversationStatusProvider | None,
+    sleep_policy: SleepUntilUserMessagePolicy,
+) -> ClientGroup:
+    """Create namespaced clients for Ember's sleep and exec tools.
 
-    Mounts:
-    - ember: sleep_until_user_message tool
-    - exec: DirectExecServer (exec, read_image tools)
+    The group keeps one direct FastMCP client per server and prefixes tool names
+    with ``ember_`` and ``exec_``.
     """
-
-    ember: Mounted[FastMCP]
-    exec: Mounted[DirectExecServer]
-
-    def __init__(
-        self,
-        *,
-        workspace_path: Path,
-        sleep_callback: Callable[[], None],
-        status_provider: ConversationStatusProvider | None,
-        sleep_policy: SleepUntilUserMessagePolicy,
-    ) -> None:
-        super().__init__()
-        self._workspace_path = workspace_path
-        self._sleep_callback = sleep_callback
-        self._status_provider = status_provider
-        self._sleep_policy = sleep_policy
-
-    async def __aenter__(self) -> EmberCompositor:
-        await super().__aenter__()
-        ember_server = _create_ember_sleep_server(
-            sleep_callback=self._sleep_callback, status_provider=self._status_provider, sleep_policy=self._sleep_policy
-        )
-        self.ember = await self.mount_inproc(MCPMountPrefix("ember"), ember_server)
-        self.exec = await self.mount_inproc(MCPMountPrefix("exec"), DirectExecServer(default_cwd=self._workspace_path))
-        return self
+    ember_server = _create_ember_sleep_server(
+        sleep_callback=sleep_callback, status_provider=status_provider, sleep_policy=sleep_policy
+    )
+    exec_server = DirectExecServer(default_cwd=workspace_path)
+    return ClientGroup({"ember": Client(ember_server), "exec": Client(exec_server)})
 
 
 def _create_ember_sleep_server(
