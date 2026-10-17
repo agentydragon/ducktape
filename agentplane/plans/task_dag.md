@@ -474,7 +474,6 @@ a block StorageClass does not itself make Pod and VM layouts interchangeable. Se
 
 ```mermaid
 flowchart LR
-    VM_EGRESS[Candidate: live launcher relay checks]
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
     VM_HARNESS_RESOURCE_LIMITS[Blocked: accept VM per-harness resource limits]
@@ -483,7 +482,6 @@ flowchart LR
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 10]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
-    VM_EGRESS --> VM_LIFECYCLE
     VM_HARNESS_RESOURCE_LIMITS --> VM_LIFECYCLE
     VM_GUEST_BUDGET_DERIVE --> VM_HARNESS_RESOURCE_LIMITS
     RUNNER_LAYERING_VM --> VM_HARNESS_RESOURCE_LIMITS
@@ -497,18 +495,6 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> KUBEVIRT_EXPERIMENT_RETIRE[Blocked: delete the KubeVirt experiment]
 ```
 
-### `VM_EGRESS` — check the launcher relay live
-
-**Candidate.** `agentplane-testing` deploys the launcher relay policy
-(`cluster/cdk8s/agentplane/launcher_relay.py`), which copies a runner Pod's egress sidecar, routes and
-tokens into the virt-launcher of a VM controlled by one of our Sandboxes. Production VM creation
-and outbound control are implemented. Verify the remaining security boundaries: no token reaches
-the guest; the proxy and each platform route answer the
-guest at `10.0.2.1`; the relay is ready, which needs the VM's masquerade interface to list ports so
-kubelet's probe on 3129 is not forwarded to the guest; the runner fence admits the launcher and
-another Sandbox's guest cannot reach it; a forged launcher is refused. Do not repeat the entire
-completed prototype matrix or require simultaneous cluster-wide disasters.
-
 ### `VM_HARNESS_RESOURCE_LIMITS` — accept per-harness resource limits on the VM guest
 
 **Blocked on `VM_GUEST_BUDGET_DERIVE` and `RUNNER_LAYERING_VM`; `K3S_VM_IMAGE` is an optional fixture.**
@@ -517,8 +503,7 @@ memory, task and workspace I/O limits. Exercise those limits on the slim guest: 
 respect the aggregate and per-harness budgets, and exhausting one harness's memory group must terminate
 that harness subtree while the Runner remains available. Preserve the existing process-group cleanup and state-owner lock
 behavior. The Sandbox is the security boundary; these cgroups enforce resource budgets, not
-confidentiality between co-resident Sessions or between a harness and its tool children. Cross-Sandbox
-launcher and relay security remains in `VM_EGRESS`.
+confidentiality between co-resident Sessions or between a harness and its tool children.
 
 ### `VM_INTRA_SANDBOX_HARDENING` — optional process and state hardening inside one Sandbox
 
@@ -534,9 +519,9 @@ gate VM resource acceptance or lifecycle work.
 
 ### `VM_LIFECYCLE` — integrated lifecycle verification
 
-**Blocked on the remaining egress and resource-limit checks.** Basic VM creation, Session execution,
+**Blocked on the resource-limit checks.** Basic VM creation, Session execution,
 retained-state suspend/resume and replacement are covered by the [acceptance suite](../acceptance/README.md).
-Combine that coverage with the remaining cross-Sandbox security and resource-limit evidence; do not
+Combine that coverage with the resource-limit evidence; do not
 repeat completed live runs just to assemble a capstone. Additional live faults need a concrete unresolved platform risk,
 not a Cartesian product of every component crash and lifecycle operation.
 

@@ -41,7 +41,6 @@ stay out of scope.
   plus per-harness memory OOM behavior: an over-budget harness subtree is killed while the Runner
   remains available. Preserve native tool cancellation, Runner crash recovery and competing-owner
   checks where they validate those existing contracts. The Sandbox is the security boundary; no
-  same-Sandbox process or Session-store isolation is required. Cross-Sandbox launcher and relay
-  protection remains in the `VM_EGRESS` gate.
+  same-Sandbox process or Session-store isolation is required.
 - **Resource budgets.** Check quotas and capacity for guest RAM plus QEMU overhead, disk helpers and
   the relay, and that a guest is not scheduled on a node without KVM.

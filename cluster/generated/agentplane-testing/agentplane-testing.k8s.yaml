@@ -3439,7 +3439,7 @@ spec:
   validationFailureAction: enforce
   webhookConfiguration:
     matchConditions:
-      - expression: "request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && object.spec.volumes.exists(v, v.name == 'egress-token'))"
+      - expression: "request.namespace == 'agentplane-testing' && (request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && object.spec.volumes.exists(v, v.name == 'egress-token')))"
         name: launcher-or-token-volume
 ---
 apiVersion: v1

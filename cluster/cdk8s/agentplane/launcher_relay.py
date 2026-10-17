@@ -14,9 +14,9 @@ PolicyBinding grants. The policy admits a launcher only when KubeVirt's controll
 VMI of a live VirtualMachine controlled by one of our Sandboxes, and that same Sandbox controls the
 ServiceAccount.
 
-Failure scope: the policy registers its own webhook, narrowed by match conditions to launcher Pods
-created in this namespace and to updates of Pods carrying the token volume. With Kyverno down, only VM
-Sandboxes fail to start; nothing else in the namespace or the cluster waits on it.
+Failure scope: the policy registers its own webhook, narrowed by match conditions to this namespace's
+launcher creates and updates of Pods carrying the token volume. With Kyverno down, only VM Sandboxes
+fail to start; nothing else in the namespace or the cluster waits on it.
 """
 
 from __future__ import annotations
@@ -150,6 +150,9 @@ class LauncherRelayPolicy(ClusterPolicy):
             for key, value in LAUNCHER_LABELS.items()
         )
         has_token_volume = f"has(object.spec.volumes) && object.spec.volumes.exists(v, v.name == '{token_volume}')"
+        # The webhook is cluster-wide and the rules' `namespaces` match applies only inside Kyverno, so
+        # without this an outage would fail every namespace's launchers.
+        in_namespace = f"request.namespace == '{namespace}'"
         super().__init__(
             scope,
             id,
@@ -163,7 +166,9 @@ class LauncherRelayPolicy(ClusterPolicy):
                 match_conditions=[
                     ClusterPolicySpecWebhookConfigurationMatchConditions(
                         name="launcher-or-token-volume",
-                        expression=f"request.operation == 'CREATE' ? ({is_launcher}) : ({has_token_volume})",
+                        expression=(
+                            f"{in_namespace} && (request.operation == 'CREATE' ? ({is_launcher}) : ({has_token_volume}))"
+                        ),
                     )
                 ]
             ),
