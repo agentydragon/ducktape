@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "identity",
+    srcs = ["identity.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/go/identity",
+    visibility = ["//agentplane/egress:__subpackages__"],
+    deps = [
+        "//agentplane/egress/go/decision",
+        "//agentplane/runner_gateway/go/auth",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "identity_test",
+    srcs = ["identity_test.go"],
+    embed = [":identity"],
+    deps = [
+        "//agentplane/egress/go/decision",
+        "//agentplane/runner_gateway/go/auth",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
+)
