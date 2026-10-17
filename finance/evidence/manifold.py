@@ -80,6 +80,7 @@ _BETS_SCHEMA = {
     "user_id": pl.String,
 }
 
+
 def bets_frame(data: bytes) -> pl.DataFrame:
     """Parse `bets.jsonl` bytes into a frame (file order preserved; `created_time` is UTC)."""
     bets = [ManifoldBet.model_validate_json(line) for line in data.splitlines() if line.strip()]

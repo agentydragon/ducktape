@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 def format_truncation_suffix(total: int, shown: int, item_name: str = "") -> str:
     """Return '... and N more {item_name}' or empty string if all shown.
 
