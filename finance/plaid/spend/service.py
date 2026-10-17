@@ -654,20 +654,8 @@ class SpendService:
                     self._listening.clear()
                     self._wake_subscribers()
                 if connection is not None:
-                    await self._close_listener_connection(connection)
+                    await connection.close(timeout=2)
             await asyncio.sleep(3)
-
-    async def _close_listener_connection(self, connection: asyncpg.Connection) -> None:
-        # Task-group cancellation must still release the LISTEN session; bound graceful shutdown, then terminate.
-        try:
-            with anyio.move_on_after(2, shield=True) as closing:
-                await connection.close()
-        except (asyncpg.PostgresError, asyncpg.InterfaceError, OSError, TimeoutError) as error:
-            connection.terminate()
-            logger.warning("Postgres spend listener close failed (%s); terminated", type(error).__name__)
-        else:
-            if closing.cancel_called:
-                connection.terminate()
 
     def _on_notification(self, connection: object, pid: int, channel: str, payload: object) -> None:
         del connection, pid, channel, payload
