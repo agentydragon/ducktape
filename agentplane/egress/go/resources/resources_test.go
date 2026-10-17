@@ -64,6 +64,9 @@ func TestCredentialFromAPITargets(t *testing.T) {
 			if err != nil || got.Targets[0] != tc.want {
 				t.Fatalf("got %#v, %v", got.Targets, err)
 			}
+			if declared := got.Targets[0].ToAPI(); declared != tc.target {
+				t.Errorf("ToAPI() = %#v, want the target as declared, %#v", declared, tc.target)
+			}
 		})
 	}
 }
