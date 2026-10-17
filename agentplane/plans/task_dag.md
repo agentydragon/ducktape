@@ -798,6 +798,7 @@ flowchart LR
     K3S_SHARED_PACKAGE_LAYERS[Candidate: share Python package layers]
     K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
     K3S_IMPORT_CONCURRENCY[Candidate: native containerd import and unpack concurrency]
+    EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
@@ -860,6 +861,11 @@ Python services still need the shared interpreter.
 Keep the fixture declarative: supply images and manifests, let Kubernetes reconcile, wait
 for readiness, then test. Startup dependency ordering belongs to Kubernetes; do not add
 PostgreSQL-first sequencing or a custom parallel import/unpack scheduler to the test harness.
+
+### `EGRESS_RELAY_RENAME` — rename the egress sidecar to relay
+
+**TODO; operator request, 2026-10-16.** Rename the egress sidecar to "relay" across code,
+configuration, image names and docs. Update all consumers atomically.
 
 ### `K3S_SHARED_PACKAGE_LAYERS` — share third-party Python package layers
 
