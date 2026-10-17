@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/go/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/go/history"
+	"github.com/agentydragon/ducktape/agentplane/egress/go/policy"
 	"github.com/google/uuid"
 )
 
@@ -38,12 +39,12 @@ type fakeHistory history.Health
 
 func (f fakeHistory) Health() history.Health { return history.Health(f) }
 
-type fakeIndex IndexStatus
+type fakeIndex policy.Status
 
-func (f fakeIndex) Status(time.Time) IndexStatus { return IndexStatus(f) }
+func (f fakeIndex) Status(time.Time) policy.Status { return policy.Status(f) }
 
 func healthyIndex() fakeIndex {
-	return fakeIndex{Available: true, Synced: true, StaleAfter: 15 * time.Minute, Ages: map[string]time.Duration{"secrets": 0}}
+	return fakeIndex{Available: true, Synced: true, StaleAfter: 15 * time.Minute, Ages: map[policy.Kind]time.Duration{policy.Secrets: 0}}
 }
 
 func serve(decisions Decisions, changes Changes, health HistoryHealth, index Index) *httptest.Server {
@@ -196,7 +197,7 @@ func TestHealthzIsTheIndexVerdictWithItsFacts(t *testing.T) {
 		status int
 	}{
 		{"healthy", healthyIndex(), http.StatusOK},
-		{"stale", fakeIndex{Synced: true, StaleAfter: 15 * time.Minute, Ages: map[string]time.Duration{"secrets": 20 * time.Minute}}, http.StatusServiceUnavailable},
+		{"stale", fakeIndex{Synced: true, StaleAfter: 15 * time.Minute, Ages: map[policy.Kind]time.Duration{policy.Secrets: 20 * time.Minute}}, http.StatusServiceUnavailable},
 		{"draining", fakeIndex{Synced: true, Draining: true, StaleAfter: time.Minute}, http.StatusServiceUnavailable},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -224,7 +225,7 @@ func TestHealthzIsTheIndexVerdictWithItsFacts(t *testing.T) {
 
 func TestHealthzRoundsAgesToTenthsOfASecond(t *testing.T) {
 	index := healthyIndex()
-	index.Ages = map[string]time.Duration{"secrets": 1234 * time.Millisecond}
+	index.Ages = map[policy.Kind]time.Duration{policy.Secrets: 1234 * time.Millisecond}
 	server := serve(nil, nil, fakeHistory{}, index)
 	defer server.Close()
 
