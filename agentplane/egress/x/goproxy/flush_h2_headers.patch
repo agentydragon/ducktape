@@ -1,0 +1,13 @@
+--- a/http2.go
++++ b/http2.go
+@@ -217,6 +217,10 @@
+ 
+ 	w.WriteHeader(resp.StatusCode)
+ 
++	// Initial gRPC metadata must arrive even when the upstream is still
++	// waiting for request messages before producing its first response body.
++	_ = http.NewResponseController(w).Flush()
++
+ 	if resp.Body != nil {
+ 		if shouldFlushStreaming(resp) {
+ 			// Streaming (gRPC/Connect/SSE/chunked): flush each chunk so it reaches the
