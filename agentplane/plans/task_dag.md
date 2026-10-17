@@ -270,10 +270,10 @@ flowchart TD
 Sandboxes and Sessions, with creator, manager and parent/provenance represented separately. Ask
 the operator to choose remaining addressing/ownership and delegation semantics. Use the agreed
 SA-level caller attribution and the [tentative Session-access rule direction](multiagent_communication.md#tentative-implementation-direction).
-Finalize the common rule/member-reference schema, concrete administrative RBAC and policy
-freshness/revocation contract without choosing a mandatory topology or requiring an auth-engine migration. No permission
-inheritance
-from an organizational edge or preset. Prefer Kubernetes resources for grants and explicit collection
+Finalize the common rule/member-reference schema, concrete administrative RBAC and freshness
+settings under the agreed [policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness),
+without choosing a mandatory topology or requiring an auth-engine migration. No permission
+inheritance from an organizational edge or preset. Prefer Kubernetes resources for grants and explicit collection
 membership, with separate CRs for individual Sandbox-to-collection enrollments so Flux and the app
 can own different memberships independently. Support name-based Sandbox references that follow
 recreation and UID-pinned references for a single instance; app launches default to UID pinning,
@@ -295,6 +295,9 @@ automatically add that authentication path to other backends. Keep this integrat
 the app. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and Connection
 representation/storage changes are outside this work.
 
+The app's existing auth path may remain a special case for v1. Reducing that special handling is
+optional, separately reviewed follow-up work and does not gate multiagent implementation.
+
 ### `SESSION_ACCESS_RULES` — shared Session-access rule support
 
 **Blocked on the reviewed common contract in `MULTIAGENT_MODEL`.** Extend PolicySet schemas with the
@@ -304,11 +307,13 @@ transcript-read and Session-inbox append operations against direct Sandbox targe
 explicit collection memberships represented by separate enrollment CRs.
 Honor both name-based and UID-pinned Sandbox member references without changing recorded Session
 associations when a Sandbox name is reused.
-Implement the selected freshness/revocation contract and preserve
-live bundle updates, existing binding lifecycle and additive overlapping grants. Cover mixed
+Implement independent watched policy views, initial-sync and configurable freshness checks, and
+asynchronous revocation under the agreed contract; no global replica acknowledgement is required.
+Preserve live bundle updates, existing binding lifecycle and additive overlapping grants. Cover mixed
 static/runtime SAs, allowed/denied operations and targets, empty collections, membership removal,
-overlap and both reference modes across Sandbox recreation. Backend enforcement and retained-history
-semantics remain in their respective nodes.
+overlap, initial sync, stale watches, independently advancing replicas and both reference modes
+across Sandbox recreation. Backend enforcement and retained-history semantics remain in their
+respective nodes.
 
 ### `THREAD_READ_POLICY_DESIGN` — scoped history read policy
 
@@ -330,7 +335,8 @@ Sandbox-scoped grants through shared Session-access rules at the owning backend 
 raw/native evidence, direct reads and feeds, including reconnect and revocation. Keep app-only UI
 folds separate. Test allowed/denied histories, two principals,
 deleted Sandboxes and revocation with deterministic service tests plus a bounded deployed auth check.
-Cover a listing-only caller separately from transcript/evidence reads and follows.
+Cover a listing-only caller separately from transcript/evidence reads and follows. Recheck stream
+authorization/freshness and stop Event emission on observed grant loss or stale required policy state.
 
 ### `AGENT_MESSAGING_DESIGN` — inbox messaging and notice contract
 
@@ -359,8 +365,9 @@ Dispatcher or adding selective event wake is future work, not a prerequisite.
 message-body byte limit backed by a database ceiling; reject oversized messages before acceptance
 without truncation and reject configurations above the ceiling. Select the default and ceiling.
 Implement server-authenticated sender provenance, shared Session-access rule enforcement, idempotent
-message IDs and honest acceptance receipts in the chosen authority. Check send permission at durable acceptance; later
-revocation blocks new sends without retracting accepted messages. Test denied pairs, spoofing,
+message IDs and honest acceptance receipts in the chosen authority. Check send permission at durable
+acceptance against a fresh local policy view; observed revocation blocks new sends without retracting
+accepted messages. Test denied pairs, spoofing,
 retry/conflict behavior, size bounds and this revocation boundary.
 
 ### `AGENT_MESSAGE_RECEPTION` — delivery, recovery and acknowledgement

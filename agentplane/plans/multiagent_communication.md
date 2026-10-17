@@ -62,6 +62,11 @@ per-Session sender identity is not required. For Sandbox-hosted Sessions, the mi
 target is their Sandbox; v1 has no individual-Session grants. Exact schemas and administrative RBAC
 scopes remain open; replacing the broader authorization machinery is a separate decision.
 
+**App auth scope agreed:** the app's existing auth path may remain a special case for v1.
+Reducing that special handling is an optional follow-up within the
+[broader auth review](external_access.md#compatibility-evaluation-github-kubernetes-http), rather
+than a multiagent prerequisite; no replacement app-auth path is selected.
+
 ### Target collections and launch enrollment
 
 Permissions apply to a Sandbox directly or through explicit target collections. Individual Session
@@ -286,10 +291,24 @@ scopes select permitted targets, while collections are not inbox recipients. Ses
 canonical state stay outside Kubernetes; this direction requires no Session CRs or projection of
 these rules into native Roles.
 
-Before implementation, finalize rule/membership schemas, concrete administrative RBAC, policy
-freshness and revocation, filtered enumeration and retained-history behavior. Existing send-revocation semantics
-below still apply: accepted inbox correspondence survives later loss of send permission. Revisit
+Before implementation, finalize rule/membership schemas, concrete administrative RBAC, freshness
+settings, filtered enumeration and retained-history behavior. The agreed propagation contract below
+applies; accepted inbox correspondence survives later loss of send permission. Revisit
 the representation if implementation exposes a poor fit or disproportionate maintenance cost.
+
+### Policy propagation and freshness
+
+**V1 direction agreed:** follow the existing Actions/egress pattern of independently watched
+policy state with freshness checks. Each enforcing backend evaluates its local view of PolicySets,
+PolicyBindings and collection memberships. Changes apply as replicas observe them; replicas can
+briefly disagree, and an edit is not an atomic cluster-wide authorization cutover.
+
+Refuse protected operations before initial sync or when required policy data exceeds a configurable
+freshness limit. A watch outage must not permit indefinite use of old grants. Re-evaluate
+authorization and freshness throughout transcript streams, and stop further Event emission when
+the replica observes loss of the required permission or its policy view becomes too stale.
+Independent overlapping grants still apply. Select concrete freshness/resync settings during
+implementation; no global replica-acknowledgement barrier is required for v1.
 
 ### Alternatives if the tentative direction needs revision
 
@@ -428,8 +447,9 @@ Choose offline behavior, ordering, duplicate handling, batching, retention and a
 Sending and explicit lifecycle controls remain different operations; v1 notice-triggered wake
 follows the Sandbox policy above, without a separate peer-wake grant.
 
-**V1 send revocation agreed:** check send authority at durable acceptance. Revocation blocks new
-sends but does not retract accepted correspondence, including messages not yet noticed or read.
+**V1 send revocation agreed:** check send authority at durable acceptance using the current fresh
+policy view. Observed revocation blocks new sends but does not retract accepted correspondence,
+including messages not yet noticed or read.
 Accepted messages remain available under the recipient's inbox permissions and the applicable
 retention and Sandbox-deletion rules; delivery does not recheck the sender's send authority.
 Controls may need different execution-time checks from correspondence. Bytes already read cannot
@@ -535,11 +555,11 @@ access control or silently discard accepted messages. The deferred item is
 | Workload replacement within a retained Sandbox     | How do authentication and grants follow the new workload while delivery remains bound to the retained Sandbox and Session?                                                        |
 | Sandbox deletion                                   | Are further delivery and continuation refused, outstanding commands ended and retained history still separately authorized?                                                       |
 | Revocation during a stream or queued operation     | Which policy revision applies, what stops, and what remains durably accepted? How does an outage affect enforcement?                                                              |
-| Human and agent using the same operation           | Can one model express both without implicit impersonation or merging request, approval and execution?                                                                             |
+| Human and agent using the same operation           | V1 may retain the app's auth path. Any later convergence must preserve caller attribution and distinct request, approval and execution authority.                                 |
 
 These cases should compare allowed/denied operations, authorized discovery, evidence and operational
 cost for the tentative direction and any replacement. Open decisions include identity continuity,
-grant and relationship ownership, exact rule/membership schemas, policy freshness and revocation,
+grant and relationship ownership, exact rule/membership schemas, freshness settings,
 remaining inbox/API semantics, optional protocol facades,
 provisioning/delegation, and migration across existing services. No runtime implementation or engine
 adoption is authorized by this document.

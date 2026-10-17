@@ -165,6 +165,10 @@ It does not wait for this evaluation or an engine migration.
 Any wider adoption proposal is independently reviewable and must identify its benefit, scope and
 migration cost. No new service or identity-platform migration is selected here.
 
+The operator is also open to reducing the app's special auth handling, but accepts keeping its
+existing path for multiagent v1. Review any simplification separately when a concrete benefit or
+operator prioritization motivates it; no common replacement path is selected or required.
+
 ### Compare against Agentplane's existing auth design
 
 Use the [policy-set decisions](../docs/adr_policy_sets.md) and

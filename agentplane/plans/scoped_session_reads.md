@@ -48,7 +48,8 @@ resource lifetime after Sandbox deletion remain explicit design questions.
 - Authenticate workload bearers through TokenReview, retaining verified SA/Pod incarnation evidence.
   Define grant carryover on same-name SA replacement in the chosen policy representation; do not
   assume a caller-supplied name proves an incarnation or trust a forwarded principal header.
-- Operator authentication remains separate. Ingestion/projecting service privileges must not become
+- Operator authentication may remain separate for v1; app-auth simplification is optional follow-up
+  work. Ingestion/projecting service privileges must not become
   a reusable all-history grant for a hosted agent.
 
 History enforces scoped authorization on its own API regardless of policy representation. Do not
@@ -75,23 +76,28 @@ reads require history-read permission. Filter before
 pagination and totals; an unauthorized ID responds as not found, without existence,
 cursor, native payload, or count leaks. Record scope and grant changes in their authoritative owner with audit evidence. Broadening
 access to retained history requires an authorized policy or membership edit, not an incidental
-preset update. Choose the consistency strategy for any projected policy data explicitly.
+preset update.
 
-Revocation takes effect on new requests and reconnects; active streams must stop
-before delivering further unauthorized Events. Use a durable policy version/epoch or
-per-entry authorization check rather than process-local cached grants or a one-time
-stream-open check. A revoked reader cannot undo bytes already delivered; the audit
-must record assignments, widening and revocation. History lag may be visible to an
-authorized reader but must not make a fold claim to cover Events beyond its cursor.
+Use the agreed [policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness):
+requests and reconnects evaluate the replica's current watched policy view. Changes propagate
+asynchronously, so replicas can briefly disagree. Refuse protected reads until initial sync and
+when the required view exceeds its configured freshness limit. Active streams must recheck
+authorization and freshness throughout their lifetime, stopping further Event emission when the
+replica observes loss of the required grant or its policy view becomes too stale. Authorizing only
+at stream-open is insufficient; no global replica-acknowledgement barrier is required for v1.
+A revoked reader cannot undo bytes already delivered; the audit must record assignments, widening
+and revocation. History lag may be visible to an authorized reader but must not make a fold claim
+to cover Events beyond its cursor.
 
 ## Implementation readiness and acceptance
 
 Before exposing scoped reads, finalize the tentative rule/membership schemas, concrete administrative RBAC,
-policy freshness/revocation, historical membership behavior and replacement semantics. Enforce the
+freshness settings, historical membership behavior and replacement semantics. Enforce the
 reviewed policy and immutable Sandbox association on every history path. Test two Sessions in one authorized
 Sandbox, an unrelated denied Sandbox, explicit collection enrollment/removal and an ungranted SA
 that discovers nothing. Cover deleted Sandboxes, same-name replacement, unknown associations,
-raw/native paths, filtering before pagination, two replicas and revocation during a follow. Include
+raw/native paths, filtering before pagination, initial sync, stale watches, replicas observing
+changes at different times and revocation during a follow. Include
 a listing-only SA that can enumerate the granted Sandbox's Sessions but cannot read their histories
 or evidence, follow Events or send without the respective additional grants.
 
