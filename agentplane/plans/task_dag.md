@@ -1702,7 +1702,6 @@ flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: durable queue or direct admission]
     DELIVERY_UNIFIED_CUTOVER[Candidate: record Go cutover acceptance]
     DELIVERY_OLD_RUNTIME_RETIRE[Retire obsolete runtime objects]
-    RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
@@ -1790,23 +1789,6 @@ remove any Gateway token projection no caller reads (the Go worker may need a Ga
 connection-holder replica; check each caller). Keep both stable Service front doors, per-Sandbox
 Services/EndpointSlices and the Dispatcher database. Search code, BUILD, chart, image automation, docs, CI and pinned VM
 artifacts for references before deleting definitions.
-
-### `RUNNER_INVENTORY_AUTHORITY_DESIGN` — distinguish live runner state from retained inventory
-
-**Candidate decision.** Trace every current `Runner.ListSessions` and History inventory caller. The
-runner read reports records and harness/setup state known to the current runner; History reports
-retained Events and folded Thread views, can lag, and can include deleted Sandboxes. App archive and
-resume checks, Notification subscription membership, and test drivers use live state today for
-different reasons. The Dispatcher no longer calls `ListSessions` to resolve `OpenSession` conflicts:
-identical retries return the existing attachment, while conflicting specs or setup fail. Decide
-whether each remaining caller requires live presence, retained identity/history or a narrower contract.
-
-**Recommendation for review:** retain a live read wherever an approved caller still needs live state;
-do not substitute History by name similarity. App archive/native resume and Notification membership
-still need the live read, so the conditional retirement node is removed. Retiring
-the old Gateway wrapper is a separate caller/pinned-image audit, even if `Runner.ListSessions`
-remains. Keep History `FindSessions` and summaries for retained app views; Notification's History
-journal reads are command-outcome evidence, not inventory.
 
 ### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign destination validation and send permission
 
