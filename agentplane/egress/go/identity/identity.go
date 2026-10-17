@@ -5,6 +5,7 @@ package identity
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -12,8 +13,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/go/decision"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // Rejection is a bearer that does not prove a workload identity, or an identity that could not be
@@ -70,7 +69,7 @@ func (v *Verifier) Identify(ctx context.Context, token string) (auth.Principal, 
 }
 
 func rejection(err error) *Rejection {
-	if status.Code(err) == codes.Unauthenticated {
+	if errors.Is(err, auth.ErrInvalidBearer) {
 		return &Rejection{Reason: decision.TokenRejected, Detail: err.Error()}
 	}
 	return &Rejection{Reason: decision.Unavailable, Detail: err.Error()}
