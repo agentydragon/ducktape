@@ -227,7 +227,7 @@ dependencies = [
     # requires mcp~=1.28.1; langchain-mcp-adapters requires mcp<2.0.0, tracked at
     # langchain-ai/langchain-mcp-adapters#578), which blocked the #5786 migration.
 
-    # git_commit_ai
+    # Mako template rendering
     "mako>=1.3",
 
     # gterm-theme

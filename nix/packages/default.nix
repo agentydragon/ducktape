@@ -367,10 +367,8 @@ rec {
   ducktape = mkWheel {
     pname = "ducktape";
     description = "Ducktape command-line tools";
-    mainProgram = "git-commit-ai";
     importsCheck = [
       "difftree.cli"
-      "git_commit_ai.cli"
       "gmail_archiver.main"
       "cluster.skills.proxmox_vm.vm_interact"
       "devinfra.gc.output_base_gc"
@@ -393,7 +391,6 @@ rec {
       typer
       python314Packages.fastmcp
       mcp
-      pyhamcrest
       click
       unidiff
       humanize

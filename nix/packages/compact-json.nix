@@ -1,5 +1,5 @@
 # compact-json: A JSON formatter that produces compact but human-readable output
-# Not in nixpkgs, packaged here for git-commit-ai dependency
+# Not in nixpkgs; used by mcp_infra/display/rich_display.py
 {
   lib,
   python314Packages,

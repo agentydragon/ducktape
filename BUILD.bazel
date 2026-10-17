@@ -291,7 +291,6 @@ py_package(
         "devinfra.gc",
         "devinfra.ws",
         "difftree",
-        "git_commit_ai",
         "gmail_api",
         "gmail_archiver",
         "gmail_archiver.cli",
@@ -307,7 +306,6 @@ py_package(
         # only collects files reachable from `deps`. The imports check in
         # nix/packages/default.nix guards against this regressing again.
         "//difftree:cli",
-        "//git_commit_ai:git_commit_ai_lib",
         "//gmail_archiver:main",
         "//cluster/skills/proxmox_vm:vm_interact",
         "//devinfra/gc:workspace_gc",
@@ -321,7 +319,6 @@ py_wheel(
     entry_points = {
         "console_scripts": [
             "workspace-gc = devinfra.gc.workspace_gc:main",
-            "git-commit-ai = git_commit_ai.cli:main",
             "difftree = difftree.cli:main",
             "gmail-archiver = gmail_archiver.main:app",
             "vm-interact = cluster.skills.proxmox_vm.vm_interact:app",
@@ -330,7 +327,6 @@ py_wheel(
     },
     python_requires = ">=3.14",
     requires = [
-        # git_commit_ai deps
         "aiodocker",
         "anyio",
         "compact-json",
@@ -341,7 +337,6 @@ py_wheel(
         "mcp",
         "openai",
         "pydantic>=2.0",
-        "pyhamcrest",
         "pygit2>=1.14",
         "rich",
         "structlog",

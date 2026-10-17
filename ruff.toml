@@ -146,7 +146,6 @@ known-first-party = [
     "ducktape_llm_common",
     "ember",
     "finance",
-    "git_commit_ai",
     "gmail_api",
     "gmail_archiver",
     "gnome",

@@ -79,10 +79,6 @@ the authoritative one.
 
 ## Known limitations
 
-- `git_commit_ai/script_handler.py` uses PEP 695 type-parameter-default syntax
-  (`type ScriptGen[T = None]`) that 2.3.2's tree-sitter grammar cannot parse: gazelle
-  warns and may emit wrong deps for it; its deps carry `# keep`. Try a further plugin
-  upgrade (rebasing the patch) before hand-managing that target.
 - Plugin 2.x can also delete `py_library`/`py_test` rules whose `srcs` files were
   deleted, but only under a gazelle release carrying
   [bazel-gazelle#2362](https://github.com/bazel-contrib/bazel-gazelle/pull/2362);
