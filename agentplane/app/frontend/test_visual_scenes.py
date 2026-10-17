@@ -184,6 +184,7 @@ async def test_actions(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.check(context="fixture ready")
     await view.capture(target=page.locator("#app"))
 
+    await app.mount_app("/actions/70000000-0000-4000-8000-000000000006")
     audit_toggle = page.get_by_role("button", name="Request audit details", exact=True)
     await expect(audit_toggle).to_be_visible()
     await audit_toggle.click()
