@@ -8,13 +8,13 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/go/upstream",
     visibility = ["//agentplane/egress:__subpackages__"],
+    deps = ["@dev_dny_code_ssrf//:ssrf"],
 )
 
 go_test(
     name = "upstream_test",
     srcs = [
         "classify_test.go",
-        "cpython_verdicts_test.go",
         "resolver_test.go",
     ],
     embed = [":upstream"],
