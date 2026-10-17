@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "upstream",
+    srcs = [
+        "classify.go",
+        "resolver.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/go/upstream",
+    visibility = ["//agentplane/egress:__subpackages__"],
+)
+
+go_test(
+    name = "upstream_test",
+    srcs = [
+        "classify_test.go",
+        "cpython_verdicts_test.go",
+        "resolver_test.go",
+    ],
+    embed = [":upstream"],
+)
