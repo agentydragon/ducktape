@@ -13,7 +13,7 @@ import logging
 from collections.abc import AsyncIterator, Collection, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 
@@ -97,6 +97,7 @@ from agentplane.testing.fake_apiserver import (
 )
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import pick_free_port
 
 
@@ -562,7 +563,7 @@ async def test_forged_proxy_authorization_never_becomes_dynamic_credential(
 
 @asynccontextmanager
 async def recording_grpc_upstream(
-    keypair: tuple[bytes, bytes] | None,
+    keypair: tuple[bytes, bytes] | None, *, finished: asyncio.Event | None = None
 ) -> AsyncIterator[tuple[int, asyncio.Queue[tuple[tuple[str, str], ...]]]]:
     """A gRPC server recording metadata on unary and bidirectional calls: TLS with a keypair, else plaintext."""
     requests: asyncio.Queue[tuple[tuple[str, str], ...]] = asyncio.Queue()
@@ -576,9 +577,13 @@ async def recording_grpc_upstream(
     async def stream(request_iterator: AsyncIterator[bytes], context: grpc.aio.ServicerContext) -> AsyncIterator[bytes]:
         metadata = context.invocation_metadata() or ()
         await requests.put(tuple((str(item[0]), str(item[1])) for item in metadata))
-        async for request in request_iterator:
-            yield b"upstream:" + request
-        context.set_trailing_metadata((("buildbuddy-test-trailer", "ok"),))
+        try:
+            async for request in request_iterator:
+                yield b"upstream:" + request
+            context.set_trailing_metadata((("buildbuddy-test-trailer", "ok"),))
+        finally:
+            if finished is not None:
+                finished.set()
 
     server = grpc.aio.server()
     server.add_generic_rpc_handlers(
@@ -1326,6 +1331,267 @@ async def test_matrix_json_login_through_real_proxy(
     assert secret_value not in evidence
     assert "@bot:test" not in evidence
     assert any(decision["substituted"] for decision in json.loads(evidence))
+
+
+_CONTRACT_CREDENTIAL = "transport-contract"
+_CONTRACT_PATH = "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream"
+
+
+@pytest.fixture(params=["mitmproxy", "goproxy"])
+async def contract_port(request: pytest.FixtureRequest, proxy: ProxyUnderTest) -> AsyncIterator[int]:
+    """Run identical socket assertions through the current service and Go lab candidate.
+
+    The existing proxy fixture owns throwaway roots, a real informer and controlled TokenReview
+    API. The Go lab reads a fixture snapshot; this comparison does not claim informer parity.
+    """
+    proxy.fake.put(SECRETS_PLURAL, secret(_CONTRACT_CREDENTIAL, {"key": "contract-secret"}))
+    proxy.fake.put(
+        CREDENTIALS_PLURAL,
+        credential(
+            _CONTRACT_CREDENTIAL,
+            secret_name=_CONTRACT_CREDENTIAL,
+            key="key",
+            targets=[{"header": "x-buildbuddy-api-key", "method": TargetMethod.WHOLE_VALUE}],
+        ),
+    )
+    proxy.fake.put(
+        POLICY_SETS_PLURAL,
+        egress_policy_set(
+            _CONTRACT_CREDENTIAL,
+            [
+                {
+                    "hosts": [UPSTREAM_HOST],
+                    "paths": ["/contract", "/contract-sse", "/contract-ws", _CONTRACT_PATH],
+                    "credentialRef": {"name": _CONTRACT_CREDENTIAL},
+                }
+            ],
+        ),
+    )
+    await bind_to_a(proxy, _CONTRACT_CREDENTIAL, _CONTRACT_CREDENTIAL)
+    if request.param == "mitmproxy":
+        yield proxy.proxy_port
+        return
+    snapshot = proxy.tmp_path / "transport-snapshot.json"
+    snapshot.touch(mode=0o600)
+    # Only the supported subset enters this lab snapshot. The current service still
+    # obtains its policy/credentials through its ordinary informer and Secret watch.
+    snapshot.write_text(
+        json.dumps(
+            {
+                "Sets": [proxy.fake.objects[POLICY_SETS_PLURAL][_CONTRACT_CREDENTIAL]],
+                "Bindings": [
+                    policy_binding("contract", subject=SUBJECT_A.model_dump(), policy_sets=[_CONTRACT_CREDENTIAL])
+                    | {"metadata": {"name": "contract", "namespace": proxy.fake.namespace_of[POLICY_BINDINGS_PLURAL]}}
+                ],
+                "Credentials": {_CONTRACT_CREDENTIAL: {"Header": "x-buildbuddy-api-key", "Value": "contract-secret"}},
+                "FreshUntil": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
+            }
+        )
+    )
+    ca, key = write_ca(proxy.interception_ca, proxy.tmp_path, "contract-interception")
+    roots, _ = write_ca(proxy.upstream_ca, proxy.tmp_path, "contract-upstream")
+    binary = get_required_path(own_repo_rlocation("agentplane/egress/x/goproxy/cmd/goproxy_lab_/goproxy_lab"))
+    process = await asyncio.create_subprocess_exec(
+        str(binary),
+        f"--snapshot={snapshot}",
+        f"--ca={ca}",
+        f"--key={key}",
+        f"--roots={roots}",
+        f"--kubeconfig={kubeconfig(proxy.tmp_path / 'contract-kubeconfig', proxy.fake.port)}",
+        f"--audience={AUDIENCE}",
+        f"--namespace={SANDBOX_NAMESPACE}",
+        f"--fixture-host={UPSTREAM_HOST}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        assert process.stdout is not None
+        async with asyncio.timeout(15):
+            ready = await process.stdout.readline()
+        assert ready, "Go lab exited without publishing its listener"
+        yield int(json.loads(ready)["port"])
+    finally:
+        if process.returncode is None:
+            process.terminate()
+        async with asyncio.timeout(10):
+            _, stderr = await process.communicate()
+        assert process.returncode in (0, -15), stderr.decode()
+
+
+async def test_shared_transport_header_substitution(proxy: ProxyUnderTest, contract_port: int) -> None:
+    async with (
+        aiohttp.ClientSession() as client,
+        client.get(
+            proxy.url("/contract"),
+            proxy=f"http://127.0.0.1:{contract_port}",
+            proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+            ssl=client_tls_context(proxy.interception_ca),
+            headers={"x-buildbuddy-api-key": placeholder_of(_CONTRACT_CREDENTIAL)},
+        ) as response,
+    ):
+        assert response.status == 200
+        await response.read()
+    assert one(proxy.upstream.requests)[2]["x-buildbuddy-api-key"] == "contract-secret"
+    assert "proxy-authorization" not in one(proxy.upstream.requests)[2]
+
+
+async def test_shared_transport_incremental_sse_and_websocket(proxy: ProxyUnderTest, contract_port: int) -> None:
+    finish = asyncio.Event()
+
+    async def sse(request: web.Request) -> web.StreamResponse:
+        response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+        await response.prepare(request)
+        await response.write(b"data: first\n\n")
+        await finish.wait()
+        await response.write_eof()
+        return response
+
+    async def websocket(request: web.Request) -> web.WebSocketResponse:
+        response = web.WebSocketResponse()
+        await response.prepare(request)
+        async for message in response:
+            assert message.type is aiohttp.WSMsgType.TEXT
+            await response.send_str(f"upstream:{message.data}")
+        return response
+
+    app = web.Application()
+    app.router.add_get("/contract-sse", sse)
+    app.router.add_get("/contract-ws", websocket)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(
+        runner,
+        "127.0.0.1",
+        0,
+        ssl_context=server_tls_context(*issue_leaf(proxy.upstream_ca, UPSTREAM_HOST, proxy.tmp_path)),
+    )
+    await site.start()
+    port = one(runner.addresses)[1]
+    try:
+        async with aiohttp.ClientSession() as client:
+            async with client.get(
+                f"https://{UPSTREAM_HOST}:{port}/contract-sse",
+                proxy=f"http://127.0.0.1:{contract_port}",
+                proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                ssl=client_tls_context(proxy.interception_ca),
+            ) as response:
+                assert response.status == 200
+                async with asyncio.timeout(5):
+                    assert await response.content.readline() == b"data: first\n"
+                # The server is still waiting here: completion cannot explain the read.
+                assert not finish.is_set()
+                finish.set()
+                await response.read()
+            async with client.ws_connect(
+                f"https://{UPSTREAM_HOST}:{port}/contract-ws",
+                proxy=f"http://127.0.0.1:{contract_port}",
+                proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                ssl=client_tls_context(proxy.interception_ca),
+            ) as websocket_client:
+                await websocket_client.send_str("first")
+                async with asyncio.timeout(5):
+                    assert (await websocket_client.receive()).data == "upstream:first"
+                await websocket_client.send_str("second")
+                async with asyncio.timeout(5):
+                    assert (await websocket_client.receive()).data == "upstream:second"
+    finally:
+        finish.set()
+        await runner.cleanup()
+
+
+async def test_shared_transport_denial_has_zero_upstream_tcp_accepts(proxy: ProxyUnderTest, contract_port: int) -> None:
+    accepted: list[asyncio.StreamWriter] = []
+    observed = asyncio.Event()
+
+    async def accept(_reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        accepted.append(writer)
+        observed.set()
+        writer.close()
+        await writer.wait_closed()
+
+    # Plain raw TCP sees accepts even if the proxy would fail its subsequent TLS
+    # handshake. Counting aiohttp handlers would miss this security boundary.
+    async with await asyncio.start_server(accept, "127.0.0.1", 0) as upstream:
+        port = upstream.sockets[0].getsockname()[1]
+        async with (
+            aiohttp.ClientSession() as client,
+            client.get(
+                f"https://{UPSTREAM_HOST}:{port}/not-admitted",
+                proxy=f"http://127.0.0.1:{contract_port}",
+                proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                ssl=client_tls_context(proxy.interception_ca),
+            ) as response,
+        ):
+            assert response.status == 403
+            await response.read()
+        assert accepted == []
+        # Positive control proves the accept counter is attached to a live socket.
+        _, writer = await asyncio.open_connection("127.0.0.1", port)
+        async with asyncio.timeout(5):
+            await observed.wait()
+        writer.close()
+        await writer.wait_closed()
+        assert len(accepted) == 1
+
+
+@pytest.mark.parametrize("tls", [True, False], ids=["tls-h2", "h2c"])
+async def test_shared_transport_interactive_grpc_before_eof(
+    proxy: ProxyUnderTest, contract_port: int, monkeypatch: pytest.MonkeyPatch, tls: bool
+) -> None:
+    keypair = read_keypair(*issue_leaf(proxy.upstream_ca, UPSTREAM_HOST, proxy.tmp_path)) if tls else None
+    token_file = proxy.tmp_path / "contract-hop-token"
+    token_file.write_text(TOKEN_A)
+    finished = asyncio.Event()
+    async with (
+        recording_grpc_upstream(keypair, finished=finished) as (port, requests),
+        SidecarProcess(proxy_host="127.0.0.1", proxy_port=contract_port, token_file=token_file) as sidecar,
+    ):
+        monkeypatch.setenv("https_proxy" if tls else "grpc_proxy", f"http://127.0.0.1:{sidecar.listen_port}")
+        monkeypatch.setenv("no_proxy", "")
+        channel = (
+            grpc.aio.secure_channel(
+                f"{UPSTREAM_HOST}:{port}",
+                grpc.ssl_channel_credentials(root_certificates=proxy.interception_ca.cert_pem),
+            )
+            if tls
+            else grpc.aio.insecure_channel(f"{UPSTREAM_HOST}:{port}")
+        )
+        async with channel:
+            call = channel.stream_stream(
+                _CONTRACT_PATH, request_serializer=lambda value: value, response_deserializer=lambda value: value
+            )(metadata=(("x-buildbuddy-api-key", placeholder_of(_CONTRACT_CREDENTIAL)),), timeout=10)
+            for message in (b"first", b"second"):
+                await call.write(message)
+                assert await call.read() == b"upstream:" + message
+            await call.done_writing()
+            assert await call.read() is grpc.aio.EOF
+            assert dict(await call.trailing_metadata() or ())["buildbuddy-test-trailer"] == "ok"
+            assert finished.is_set()
+            finished.clear()
+            deadline = channel.stream_stream(
+                _CONTRACT_PATH, request_serializer=lambda value: value, response_deserializer=lambda value: value
+            )(metadata=(("x-buildbuddy-api-key", placeholder_of(_CONTRACT_CREDENTIAL)),), timeout=1)
+            await deadline.write(b"before-deadline")
+            assert await deadline.read() == b"upstream:before-deadline"
+            with pytest.raises(grpc.aio.AioRpcError) as expired:
+                await deadline.read()
+            assert expired.value.code() is grpc.StatusCode.DEADLINE_EXCEEDED
+            async with asyncio.timeout(5):
+                await finished.wait()
+            finished.clear()
+            cancelled = channel.stream_stream(
+                _CONTRACT_PATH, request_serializer=lambda value: value, response_deserializer=lambda value: value
+            )(metadata=(("x-buildbuddy-api-key", placeholder_of(_CONTRACT_CREDENTIAL)),), timeout=10)
+            await cancelled.write(b"before-cancel")
+            assert await cancelled.read() == b"upstream:before-cancel"
+            assert cancelled.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await cancelled.read()
+            async with asyncio.timeout(5):
+                await finished.wait()
+    headers = dict(await requests.get())
+    assert headers["x-buildbuddy-api-key"] == "contract-secret"
+    assert "proxy-authorization" not in headers
 
 
 if __name__ == "__main__":

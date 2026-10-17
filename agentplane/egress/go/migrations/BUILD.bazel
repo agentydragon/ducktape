@@ -1,0 +1,30 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//devinfra/python:defs.bzl", "py_test")
+
+go_library(
+    name = "migrations",
+    srcs = ["migrations.go"],
+    embedsrcs = glob(["history/*.sql"]),
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/go/migrations",
+    visibility = ["//agentplane/egress:__subpackages__"],
+    deps = ["//agentplane/postgres/goosehandoff"],
+)
+
+py_test(
+    name = "test_migrations",
+    size = "medium",
+    srcs = ["test_migrations.py"],
+    data = ["//agentplane/egress/go/migrations/cmd:egress-history-migrate"],
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//agentplane/egress:conftest",
+        "//agentplane/egress:database_migrate",
+        "//util/bazel:runfiles",
+        "//util/testing:postgres",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

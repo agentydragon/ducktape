@@ -1052,12 +1052,27 @@ egress proxy as a header substitution, as the staging `claude-ai` Sandboxes' `BU
 
 ## 6. Existing access and lifecycle follow-ups
 
+### `GOPROXY_SPIKE` — central egress GoProxy feasibility
+
+**In review; operator-selected exception, worker `/root/goproxy_spike`, reported 2026-10-17
+02:43 UTC (2026-10-16 PDT).** Draft [#10816](https://github.com/agentydragon/ducktape/pull/10816). Branch `spike/central-goproxy`, isolated worktree
+`/tmp/ducktape-worktrees/2026-10-16-goproxy-spike`, base `d558dcc30d`. Explore a small central
+transport candidate using shared Go policy types and authentication interfaces; evaluate real
+kube-apiserver/etcd envtest for CRD/list/watch/revocation. Independent of the runner-side
+`EGRESS_SIDECAR_GO` conversion; no deployment activation or merge is authorized.
+
+Exit: a focused draft PR, comparable real-socket contracts where feasible, and an honest
+GoProxy suitability recommendation with exact revisions/invocations, unsupported features and
+security/streaming gaps. Details and current observations belong in the
+[component investigation](../egress/debug/2026_10_16_goproxy_spike.md). Rai merges manually.
+
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current
 source/deployment state with the relevant owner when dispatching; old acceptance notes are not live
 observations. New database work follows the task-specific review and rollout requirements.
 
 ```mermaid
 flowchart LR
+    GOPROXY_SPIKE[In review: central GoProxy transport feasibility]
     PC_EGRESS[Unscheduled: prune OpenClaw-only wiring from the Iron proxy]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]

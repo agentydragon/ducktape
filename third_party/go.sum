@@ -35,6 +35,8 @@ cloud.google.com/go/trace v1.11.6 h1:2O2zjPzqPYAHrn3OKl029qlqG6W8ZdYaOWRyr8NgMT4
 cloud.google.com/go/trace v1.11.6/go.mod h1:GA855OeDEBiBMzcckLPE2kDunIpC72N+Pq8WFieFjnI=
 code.cloudfoundry.org/clock v1.59.0 h1:qH/jamlKJX5ViQSt08td9QFnZiqc+VER2pUXnluj+H8=
 code.cloudfoundry.org/clock v1.59.0/go.mod h1:M0p5X+TwhnApXGzFGs/sU8aD31LEHQILD8cgpPPUJSM=
+code.dny.dev/ssrf v0.3.0 h1:QDbeKauc3vR5/w9TwlhVYAQwK15cECL7sHkCUUT55ms=
+code.dny.dev/ssrf v0.3.0/go.mod h1:5thKUcQNqSxzz5TVBRkvHZOGmfRM3vI+WU2GGx9xUbw=
 cyphar.com/go-pathrs v0.2.1 h1:9nx1vOgwVvX1mNBWDu93+vaceedpbsDqo+XuBGL40b8=
 cyphar.com/go-pathrs v0.2.1/go.mod h1:y8f1EMG7r+hCuFf/rXsKqMJrJAUoADZGNh5/vZPKcGc=
 dario.cat/mergo v1.0.2 h1:85+piFYR1tMbRrLcDwR18y4UKJ3aH1Tbzi24VRW1TK8=
@@ -320,6 +322,8 @@ github.com/go-git/go-git/v5 v5.17.0/go.mod h1:f82C4YiLx+Lhi8eHxltLeGC5uBTXSFa6PC
 github.com/go-jose/go-jose/v4 v4.1.0 h1:cYSYxd3pw5zd2FSXk2vGdn9igQU2PS8MuxrCOCl0FdY=
 github.com/go-jose/go-jose/v4 v4.1.0/go.mod h1:GG/vqmYm3Von2nYiB2vGTXzdoNKE5tix5tuc6iAd+sw=
 github.com/go-jose/go-jose/v4 v4.1.4 h1:moDMcTHmvE6Groj34emNPLs/qtYXRVcd6S7NHbHz3kA=
+github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 h1:UADEEmDKgfXbtnGJZ97beY5XLo9ZechG1nlU4KnRrkE=
+github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3/go.mod h1:tphK2c80bpPhMOI4v6bIc2xWywPfbqi1Z06+RcrMkDg=
 github.com/go-logr/logr v0.1.0/go.mod h1:ixOQHD9gLJUVQQ2ZOR7zLEifBX6tGkNJF4QyIY7sIas=
 github.com/go-logr/logr v0.2.0/go.mod h1:z6/tIYblkpsD+a4lm/fGIIU9mZ+XfAiaFtq7xTgseGU=
 github.com/go-logr/logr v1.2.0/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
