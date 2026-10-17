@@ -265,7 +265,9 @@ Sandboxes and Sessions, with creator, manager and parent/provenance represented 
 the operator to choose remaining addressing/ownership and delegation semantics. Use the agreed
 SA-level caller attribution and compare the [multiagent authorization options](multiagent_communication.md#multiagent-authorization-options)
 without choosing a mandatory topology or requiring an auth-engine migration. No permission inheritance
-from an organizational edge or preset. Review how native harness children could later be ingested:
+from an organizational edge or preset. Prefer Kubernetes resources for grants and explicit collection
+membership, with other storage allowed if concrete implementation friction warrants it. Storage
+does not choose the operation evaluator. Review how native harness children could later be ingested:
 linked execution in the same Sandbox trust boundary versus independently provisioned Sandboxes,
 addressability, observability and which controls must remain unavailable. Native integration itself
 stays frozen; this decision must allow explicit exclusion rather than require its implementation.

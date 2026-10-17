@@ -70,8 +70,14 @@ independent overlapping grants remain.
 V1 uses explicit enrollment, not computed selection. An app preset can supply initial collection
 memberships when launching a Sandbox, subject to launch/enrollment authorization. Later removal
 sticks: reconciliation or opening another Session must not silently re-enroll it. Preset edits
-change defaults for future launches rather than recomputing existing memberships. Grant and
-collection administration, their storage and their concrete API remain to be designed.
+change defaults for future launches rather than recomputing existing memberships.
+
+**Storage preference agreed:** start with Kubernetes resources for grants and explicit collection
+membership, managed through GitOps or authorized runtime edits. This is a preference, not a hard
+requirement: another store is acceptable if concrete implementation friction justifies it while
+preserving the agreed authorization semantics and administration boundary. Resource kinds, schemas
+and authorized writers remain open. Storing configuration in Kubernetes does not select native RBAC
+as the evaluator for multiagent operations.
 
 ## Live permission bundles
 

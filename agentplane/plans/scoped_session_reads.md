@@ -26,8 +26,9 @@ come from the same History Service.
 Retained history must be readable when the original Pod, Sandbox CR and PVC are gone.
 History owns the durable Session ID and its recorded Sandbox association. The chosen policy
 representation must keep the facts needed for authorized historical reads after live Kubernetes
-objects disappear; policy storage and membership behavior after deletion remain explicit design
-questions.
+objects disappear. Follow the [Kubernetes-resource storage preference](multiagent_communication.md#target-collections-and-launch-enrollment),
+with alternatives allowed on concrete implementation friction; historical membership and policy
+resource lifetime after Sandbox deletion remain explicit design questions.
 
 ## Scope, identity and enforcement
 
