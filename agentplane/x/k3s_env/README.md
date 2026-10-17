@@ -26,6 +26,10 @@ the Bazel-built OCI image layouts into containerd, applies the rendered stack an
 readiness. It uses the pinned K3s binary from Bazel runfiles, so lifecycle actions do not download K3s
 at runtime.
 
+Node readiness and the appearance of the bundled DNS/storage Deployments share a 180-second
+bootstrap deadline. API probes have bounded subprocess timeouts and stop when k3s exits;
+bootstrap failures include the last probe result and k3s log tail and stop the server process.
+
 The image list includes the Go Runner Gateway and Goose queue migration images. A fast
 [`test_render`](BUILD.bazel) check validates this fixture composition and its endpoint/Service wiring
 without starting Kubernetes. The `test_lifecycle` target exercises the full model-free stack and has

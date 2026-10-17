@@ -115,6 +115,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":conftest",
         ":fixture_chart",
         ":fixture_database",
         "//:conftest",
@@ -136,6 +137,7 @@ py_library(
         _K3S_BINARY,
     ] + [":" + name + "_layout" for name in _IMAGES],
     deps = [
+        ":bootstrap",
         ":fixture_chart",
         "//agentplane/acceptance:conftest",
         "//util/bazel:runfiles",
@@ -160,6 +162,7 @@ py_test(
     exec_properties = _K3S_EXEC_PROPERTIES,
     tags = _K3S_TAGS,
     deps = [
+        ":conftest",
         ":fixture_chart",
         ":stack",
         "//:conftest",
@@ -191,6 +194,7 @@ py_test(
     exec_properties = _K3S_EXEC_PROPERTIES,
     tags = _K3S_TAGS,
     deps = [
+        ":conftest",
         ":fixture_chart",
         ":stack",
         "//:conftest",
@@ -255,5 +259,32 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "bootstrap",
+    srcs = ["bootstrap.py"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":bootstrap",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_bootstrap",
+    srcs = ["test_bootstrap.py"],
+    deps = [
+        ":bootstrap",
+        ":conftest",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

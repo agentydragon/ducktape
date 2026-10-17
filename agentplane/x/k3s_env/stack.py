@@ -25,11 +25,13 @@ import yaml
 
 from agentplane.acceptance.conftest import AUDIENCE, TESTING_SERVICE_ACCOUNT
 from agentplane.x.k3s_env import fixture_chart
+from agentplane.x.k3s_env.bootstrap import Bootstrap
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 
 DEPLOY_TIMEOUT_SECONDS = 480
+BOOTSTRAP_TIMEOUT_SECONDS = 180
 # k3s's default Pod CIDR.
 POD_CIDR = "10.42.0.0/16"
 
@@ -143,25 +145,39 @@ class K3s:
             stdout=log,
             stderr=subprocess.STDOUT,
         )
-        deadline = time.monotonic() + 180
-        while time.monotonic() < deadline:
-            if self.kubeconfig.exists() and "env" in self.kubectl("get", "nodes", "-o", "name", check=False):
-                break
-            time.sleep(1)
-        ready = self.kubectl("wait", "--for=condition=Ready", "node/env", "--timeout=180s", check=False)
-        if "condition met" not in ready:
-            raise RuntimeError(f"k3s not ready (exit={process.poll()}): {ready}\n{self.log_path.read_text()[-6000:]}")
-        self._serve_dns_and_api_on_node()
-        # host-gw routes Pod traffic but does not translate it: without this, Pods cannot reach the internet.
-        iptables = self.data_dir / "data/current/bin/aux/iptables"  # the copy k3s ships; the host has none
-        run(str(iptables), "-t", "nat", "-A", "POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE")
+        bootstrap = Bootstrap(
+            process=process,
+            binary=self.binary,
+            kubeconfig=self.kubeconfig,
+            log_path=self.log_path,
+            deadline=time.monotonic() + BOOTSTRAP_TIMEOUT_SECONDS,
+        )
+        try:
+            bootstrap.wait_for(
+                "get", "node/env", "-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}", expected="True"
+            )
+            self._serve_dns_and_api_on_node(bootstrap)
+            # host-gw routes Pod traffic but does not translate it: without this, Pods cannot reach the internet.
+            iptables = self.data_dir / "data/current/bin/aux/iptables"  # the copy k3s ships; the host has none
+            run(
+                str(iptables), "-t", "nat", "-A", "POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE"
+            )
+        except BaseException:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            raise
         return process
 
-    def _serve_dns_and_api_on_node(self) -> None:
+    def _serve_dns_and_api_on_node(self, bootstrap: Bootstrap) -> None:
         """Without kube-proxy the `kube-dns` ClusterIP is dead: CoreDNS listens on the node IP instead."""
         for name in ("coredns", "local-path-provisioner"):
-            while "not found" in self.kubectl("-n", "kube-system", "get", f"deploy/{name}", check=False):
-                time.sleep(1)
+            bootstrap.wait_for(
+                "-n", "kube-system", "get", f"deploy/{name}", "-o", "name", expected=f"deployment.apps/{name}"
+            )
             self.kubectl(
                 "-n", "kube-system", "set", "env", f"deploy/{name}",
                 f"KUBERNETES_SERVICE_HOST={self.node_ip}", "KUBERNETES_SERVICE_PORT=6443",
