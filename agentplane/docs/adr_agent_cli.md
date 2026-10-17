@@ -6,8 +6,9 @@ deployment change. It specifies the command-line contract for the transport dire
 service and interface at a time; see
 [API transports and agent workflows](runner_delivery_and_harness_design.md#api-transports-and-agent-workflows)).
 
-`agentplane` is a client of the Actions and Notifications HTTP APIs that agents already call with
-`curl` through the egress proxy. It adds no authority, no state and no backend path. What it takes
+`agentplane` is a client of the HTTP APIs that agents already call with `curl` through the egress
+proxy: the Action Service, the Notification Service and the Egress rules API. It adds no authority,
+no state and no backend path. What it takes
 off each agent is the part `curl` leaves to every model turn: JSON quoting, the idempotency and
 recovery protocol, long waits, telling an egress refusal from a service refusal, and exit status.
 The HTTP routes stay the reference; the served `/llms.txt` guides and `/openapi.json` keep describing
@@ -20,28 +21,31 @@ an agent scripting from its shell. None owns state the others lack.
 
 ## Commands
 
-Two command groups, each configured and failing independently: `agentplane actions` needs only the
-Action Service, `agentplane notifications` only the Notification Service. A group whose
-configuration is absent exits `2` naming the missing variable and leaves the other usable.
+One command group per service, each configured and failing independently: `agentplane actions`
+needs only the Action Service, `agentplane notifications` only the Notification Service,
+`agentplane egress` only the Egress rules API. A group whose configuration is absent exits `2`
+naming the missing variable and leaves the others usable. Output, configuration, errors and exit
+codes below are shared by every group, so another service joins as one more group under them.
 
-| Command                                                                                                                                      | Request                                                                                      |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `actions groups`                                                                                                                             | `GET /v1/action-groups`                                                                      |
-| `actions list [GROUP]`                                                                                                                       | the same, one Action per line                                                                |
-| `actions show GROUP/ACTION`                                                                                                                  | `GET /v1/action-groups/{group}/actions/{action}`                                             |
-| `actions policy`                                                                                                                             | `GET /v1/action-policy`                                                                      |
-| `actions submit GROUP/ACTION --key KEY --title TEXT [--description TEXT] [--arguments JSON\|@FILE\|-] [--wait [--until decision\|terminal]]` | `POST /v1/action-requests`, then `wait`                                                      |
-| `actions get {ID \| --key KEY}`                                                                                                              | `GET /v1/action-requests/{id}` or `?idempotency_key=`                                        |
-| `actions result {ID \| --key KEY}`                                                                                                           | as `get`, then the stored result                                                             |
-| `actions wait {ID \| --key KEY} [--until decision\|terminal]`                                                                                | `GET /v1/action-requests/{id}` with a wait ([needed](#server-operations-the-contract-needs)) |
-| `actions requests [--state STATE]...`                                                                                                        | `GET /v1/action-requests` ([needs paging](#server-operations-the-contract-needs))            |
-| `actions events ID [--after SEQUENCE]`                                                                                                       | `GET /v1/action-requests/{id}/events`                                                        |
-| `actions cancel ID`                                                                                                                          | `POST /v1/action-requests/{id}/cancel`                                                       |
-| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY]`                    | `POST /v1/subscriptions`                                                                     |
-| `notifications subscriptions`                                                                                                                | `GET /v1/subscriptions`                                                                      |
-| `notifications subscription ID`                                                                                                              | `GET /v1/subscriptions/{id}`                                                                 |
-| `notifications renew ID [--lifetime-days N]`                                                                                                 | `GET`, then `PATCH` with the read `version`                                                  |
-| `notifications cancel ID`                                                                                                                    | `DELETE /v1/subscriptions/{id}`                                                              |
+| Command                                                                                                                                        | Request                                                                                      |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `actions groups`                                                                                                                               | `GET /v1/action-groups`                                                                      |
+| `actions list [GROUP]`                                                                                                                         | the same, one Action per line                                                                |
+| `actions show GROUP/ACTION`                                                                                                                    | `GET /v1/action-groups/{group}/actions/{action}`                                             |
+| `actions policy`                                                                                                                               | `GET /v1/action-policy`                                                                      |
+| `actions submit GROUP/ACTION [--key KEY] --title TEXT [--description TEXT] [--arguments JSON\|@FILE\|-] [--wait [--until decision\|terminal]]` | `POST /v1/action-requests`, then `wait`                                                      |
+| `actions get {ID \| --key KEY}`                                                                                                                | `GET /v1/action-requests/{id}` or `?idempotency_key=`                                        |
+| `actions result {ID \| --key KEY}`                                                                                                             | as `get`, then the stored result                                                             |
+| `actions wait {ID \| --key KEY} [--until decision\|terminal]`                                                                                  | `GET /v1/action-requests/{id}` with a wait ([needed](#server-operations-the-contract-needs)) |
+| `actions requests [--state STATE]...`                                                                                                          | `GET /v1/action-requests` ([needs paging](#server-operations-the-contract-needs))            |
+| `actions events ID [--after SEQUENCE]`                                                                                                         | `GET /v1/action-requests/{id}/events`                                                        |
+| `actions cancel ID`                                                                                                                            | `POST /v1/action-requests/{id}/cancel`                                                       |
+| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY]`                      | `POST /v1/subscriptions`                                                                     |
+| `notifications subscriptions`                                                                                                                  | `GET /v1/subscriptions`                                                                      |
+| `notifications subscription ID`                                                                                                                | `GET /v1/subscriptions/{id}`                                                                 |
+| `notifications renew ID [--lifetime-days N]`                                                                                                   | `GET`, then `PATCH` with the read `version`                                                  |
+| `notifications cancel ID`                                                                                                                      | `DELETE /v1/subscriptions/{id}`                                                              |
+| `egress rules`                                                                                                                                 | `GET /v1/rules`                                                                              |
 
 Every command takes `--json` and `--timeout`; list commands take `--limit` and `--after`.
 
@@ -51,8 +55,11 @@ Left out on purpose:
   subscription in the inbox, so it stays an explicit `curl` step until a review of its own. The
   other `github` subjects (`issue`, `branch`, `commit`) would take `subscribe` the same way; only
   `pr` is specified here.
-- **Following an Action by subscription,** the Egress rules API, and operator routes. The CLI never
-  calls `/v1/operator/...`.
+- **Following an Action by subscription,** and operator and cluster-internal routes. The CLI never
+  calls `/v1/operator/...` or the egress `/decisions` read side.
+- **Selecting rules by host, method or path.** `egress rules` prints the caller's view and `jq`
+  selects from it; the matching semantics belong to the proxy, so a CLI-side matcher would be a
+  second copy to drift. A selector is a change to the Egress rules API.
 - **Client-side argument validation.** `submit` sends `--arguments` as given; the service validates
   against the current schema, so there is one validator to drift.
 
@@ -68,8 +75,8 @@ typing a caller would have to guess.
   script uses `--json`.
 - **Never TTY-dependent.** An agent's shell may or may not allocate a terminal, so output mode,
   color, paging and prompting do not depend on one. The CLI never prompts.
-- **stdout carries the answer, stderr the diagnostics.** After an error (exit `1`-`5` or `16`)
-  stdout is empty. The outcome exits (`10`-`15`, `17`, `18`) print what the command answered: the
+- **stdout carries the answer, stderr the diagnostics.** After an error (exit `1`-`5` or `15`)
+  stdout is empty. The outcome exits (`10`-`14`, `16`, `17`) print what the command answered: the
   receipt, or the cancellation result.
 - **Timestamps** are RFC 3339 UTC, as the services emit them.
 - **`result`** prints the stored `execution.result` when the Action succeeded: the tool's own answer
@@ -83,11 +90,11 @@ The deployment already prints these values into the platform instructions; the C
 the environment of the harness and of every command it runs. There are no config files and no
 discovery calls, so no command depends on a service it does not talk to.
 
-| Variable                                                               | Set by                                 | Value                                                                                                                           |
-| ---------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_NOTIFICATIONS_URL`               | deployment (`--harness-env`)           | the base URLs the platform instructions list                                                                                    |
-| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL` | deployment (`--harness-env`)           | the inert placeholders (`agentplane-credential-agentplane-workload`, `agentplane-credential-agentplane-notifications-workload`) |
-| `AGENTPLANE_DESTINATION`                                               | the runner, when it launches a Session | the JSON object the instructions already end with: `{"destination_ref": {...}, "session_id": "..."}`                            |
+| Variable                                                                                               | Set by                                 | Value                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                      | deployment (`--harness-env`)           | the base URLs the platform instructions list                                                                                                                                                               |
+| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | deployment (`--harness-env`)           | the inert placeholders the instructions list per service (`agentplane-credential-agentplane-workload` for Actions and Egress, `agentplane-credential-agentplane-notifications-workload` for Notifications) |
+| `AGENTPLANE_DESTINATION`                                                                               | the runner, when it launches a Session | the JSON object the instructions already end with: `{"destination_ref": {...}, "session_id": "..."}`                                                                                                       |
 
 `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` are the harness environment's existing
 proxy and trust settings; the CLI uses them as `curl` does. `notifications subscribe` also accepts
@@ -130,7 +137,8 @@ is the proxy denying. The error names a gRPC status code, so the vocabulary surv
 ```
 
 `source` is `service`, `egress`, `sidecar` or `client`; `reason` is the egress `reason=` token when
-there is one. In text mode the same fields print as one line on stderr. The mapping from HTTP:
+there is one. `egress` here is the proxy refusing a call from any group, not the Egress rules API,
+whose own refusals are `service`. In text mode the same fields print as one line on stderr. The mapping from HTTP:
 
 | HTTP                                              | gRPC code                           | Exit |
 | ------------------------------------------------- | ----------------------------------- | ---- |
@@ -145,6 +153,21 @@ there is one. In text mode the same fields print as one line on stderr. The mapp
 Exit codes say what the caller should do next. `0` and `128 + signal` follow shell convention; no
 code is `126` or `127`.
 
+**Exit status is the platform's answer, never a payload's.** It reports whether the platform did
+what was asked, from the service's own state (for an Action, its `state`). The CLI never reads
+what a service passes through: an Action's `execution.result`, a notification's payload, the
+contents of an egress rule. A sandbox script that exits `3` is a `succeeded` Action whose
+`execution.result.exit` holds the `3`, so `submit --wait` exits `0`; an MCP tool's `isError: true`
+is the same. A number the CLI returns is never a script's, even when they coincide. A caller that
+needs the payload's verdict reads it, and the CLI has no wiring specific to one kind of Action:
+
+```bash
+agentplane actions submit GROUP/ACTION --title TEXT --arguments @args.json --wait --json |
+  jq -e '.execution.result.exit.exit_code == 0'
+```
+
+Codes below `11` are shared by every group and never change meaning:
+
 | Exit | Meaning                                                                                                  | Next step                                     |
 | ---- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
 | `0`  | Success. For `wait`, `result` and `submit --wait`: the awaited condition holds and the Action succeeded. | Proceed.                                      |
@@ -154,14 +177,20 @@ code is `126` or `127`.
 | `4`  | Conflict: a repeated idempotency key, a stale subscription `version`, or a cancelled key.                | Read the existing object.                     |
 | `5`  | Not found, or not owned by this account.                                                                 |                                               |
 | `10` | Deadline reached before the condition. The current receipt is on stdout.                                 | Keep waiting, or subscribe.                   |
-| `11` | Denied.                                                                                                  | Report the Decision note.                     |
-| `12` | Failed without a result.                                                                                 | Report `execution.error`.                     |
-| `13` | Cancelled.                                                                                               |                                               |
-| `14` | `execution_unknown`.                                                                                     | Check the effects; never replay.              |
-| `15` | The Action succeeded and its result is flagged `isError: true` (an MCP tool's own error answer).         | Read the result.                              |
-| `16` | `submit`: the response was lost and a lookup by the same key found nothing.                              | Run `get --key` later; never resubmit.        |
-| `17` | `cancel`: `too_late`; dispatch was already claimed.                                                      | Follow the original to its outcome.           |
-| `18` | `cancel`: `already_finished`.                                                                            | Read the original; do not repeat work.        |
+
+A group defines outcome codes only for answers the caller must branch on, from `11` up. They are
+allocated here once and never reused, so a script's `case` on an exit status means the same thing
+whichever group it called. `notifications` and `egress` define none. The `actions` outcomes:
+
+| Exit | Meaning                                                                     | Next step                              |
+| ---- | --------------------------------------------------------------------------- | -------------------------------------- |
+| `11` | Denied.                                                                     | Report the Decision note.              |
+| `12` | Failed without a result.                                                    | Report `execution.error`.              |
+| `13` | Cancelled.                                                                  |                                        |
+| `14` | `execution_unknown`.                                                        | Check the effects; never replay.       |
+| `15` | `submit`: the response was lost and a lookup by the same key found nothing. | Run `get --key` later; never resubmit. |
+| `16` | `cancel`: `too_late`; dispatch was already claimed.                         | Follow the original to its outcome.    |
+| `17` | `cancel`: `already_finished`.                                               | Read the original; do not repeat work. |
 
 `cancel` exits `0` only for `cancelled` and `already_cancelled`: exit `0` is the condition under
 which the [recovery guide](../action_service/docs/agents/recovery.md) allows an independent
@@ -169,15 +198,18 @@ alternative.
 
 ## Submitting
 
-`--key` is required and is the caller's, never generated: a generated key is lost with the output
-of a killed process, and a repeated key is refused, so the request would become unrecoverable.
-The CLI never sends a second `POST` for a key. The Action Service's contract: a repeated key is
-refused, and the request is recovered by reading it by key.
+`--key` is optional. Absent, the CLI generates a random UUID and writes it to stderr before sending
+the `POST` (`idempotency key: KEY`, or `{"idempotency_key": "KEY"}` under `--json`), so a killed
+process leaves it in the captured stderr; the receipt on stdout carries it too. A repeated key is
+refused, so the key is the only handle on a request whose response is lost: a caller retrying a
+failed `submit` passes the printed key as `--key`, and a retry without it is a new request. The CLI
+never sends a second `POST` for a key. The Action Service's contract: a repeated key is refused,
+and the request is recovered by reading it by key.
 
 - `409` on `submit` exits `4`. The text says the key is in use and names `get --key`.
 - After a failure that may have left the first `POST` committed (connection lost after the request
   was sent, a `5xx`), the CLI makes **one** lookup by the same key. Found: it prints that receipt
-  and exits as if the response had arrived. Not found: it exits `16`. Admission may still be
+  and exits as if the response had arrived. Not found: it exits `15`. Admission may still be
   running, so absence is not proof; the caller looks again later. The CLI has no retry timer here.
 - `--wait` is `submit` followed by `wait` on the returned ID, with `wait`'s options and exit codes.
 
@@ -273,6 +305,11 @@ The system overview diagrams do not change: the CLI adds no service and no traff
   every outcome exit of `wait`, `result` and `cancel`.
 - A `submit` that loses its response sends one `POST` and at most one lookup, and never a second
   `POST`.
+- A `submit` without `--key` writes its generated key to stderr before the `POST`, and `get --key`
+  with that key finds the request.
+- An Action that `succeeded` exits `0` whatever its result says (a nonzero script exit,
+  `isError: true`), and the result is printed untouched.
+- Each group works with the other groups' configuration absent.
 - A `wait` honors its budget across dropped connections and leaves the Action untouched on
   `SIGTERM`.
 - One run through the real proxy on `agentplane-testing`: the environment variables, the CA trust
@@ -282,25 +319,15 @@ The system overview diagrams do not change: the CLI adds no service and no traff
 
 Each answers in one word; the recommendation is first.
 
-1. **Include `actions submit` and `actions cancel`?** _yes_ / no. The approved scope lists reads,
-   waiting and PR subscriptions. Waiting on requests the agent submitted through `curl` is half a
-   workflow, and quoting JSON arguments plus the key-recovery protocol are the costliest `curl`
-   parts.
-2. **Exit non-zero for non-success outcomes by default?** _yes_ / opt-in. See
-   [Rejected alternatives](#rejected-alternatives).
-3. **Exit `15` for a succeeded Action whose result has `isError: true`?** _yes_ / no. A tool's own
-   error answer completes the Action as `succeeded` (`tool_results.py`); without the code, `&&`
-   treats it as success.
-4. **Build now, from the services' published OpenAPI documents?** _now_ / after the services move
-   to the facade. No service has been selected to move first, and both services are Python with
-   OpenAPI today, so waiting leaves agents on `curl` indefinitely. The client is generated, never
-   hand-written; gRPC-Gateway's generator can emit an OpenAPI document too (the spike does not
-   exercise it), so the generator would stay when a service migrates, and regenerated types fail
-   the build where a wire shape changed.
-5. **Language: Go** / Python in the runner wheel. Go starts in milliseconds where a Python CLI
+1. **Should any exit code reflect a payload?** _no_ / yes, for the two payloads the Action Service
+   types: an MCP tool's `isError: true` and a sandbox script's `exit`. A tool's error answer and a
+   script's nonzero exit both complete the Action as `succeeded` (`tool_results.py`,
+   `sandbox/executor.py`), so `submit --wait && deploy` proceeds after either. _No_ keeps the CLI
+   free of wiring for one kind of Action or service, and every guide for such a group then shows
+   the `jq` check above. _Yes_ adds codes after `17`, with no renumbering.
+2. **Language: Go** / Python in the runner wheel. Go starts in milliseconds where a Python CLI
    imports Pydantic and httpx on every call, is one static binary, and follows the services'
    direction. Python would reuse the wheel's release pin and the existing typer dependency.
-6. **Require `--key`?** _required_ / generated and printed. Reasons in [Submitting](#submitting).
 
 ## Rejected alternatives
 

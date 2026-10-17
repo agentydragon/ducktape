@@ -1839,7 +1839,7 @@ into one repo-wide migration. No service has been selected for the first cutover
 **Drafted for operator review; the interface direction is approved.** The command and JSON contract
 is [the agent CLI ADR](../docs/adr_agent_cli.md): commands, output, credentials, errors and exit
 codes, pagination, waits, interruption, the Action Service changes it needs and the rollout order.
-Question for review: its [six decisions](../docs/adr_agent_cli.md#decisions-for-review), each with a
+Question for review: its [decisions for review](../docs/adr_agent_cli.md#decisions-for-review), each with a
 recommended default. Approval replaces this node with the ADR's rollout steps as nodes.
 
 **Deliverable:** operator approval of the ADR. This is design only; no CLI, prompt or API change is
