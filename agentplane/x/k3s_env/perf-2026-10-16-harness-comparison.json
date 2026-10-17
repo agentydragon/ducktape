@@ -1,0 +1,310 @@
+{
+  "base_source": "3fba7794f4278bc66d41d9ceb11dd2ee08656ac3",
+  "profiler_patch_sha256": "cc5fcec68449bcab4047704ec6fbb686a981335fa665543641528a5403a9909d",
+  "variants": {
+    "baseline": {
+      "invocation": "9f7b5851-71e2-4c62-b60e-a18334a90dee",
+      "source": "6be9f0afd0e4ca0a261563de6eb92700a1160198",
+      "runs": [
+        {
+          "run": 1,
+          "status": "PASSED",
+          "profile_digest": "1d57e36173d2b9ee5c09f427195b2367a334fbdd497fa273917bd3b46600061a/911645",
+          "profile_uri": "bytestream://remote.buildbuddy.io/blobs/1d57e36173d2b9ee5c09f427195b2367a334fbdd497fa273917bd3b46600061a/911645",
+          "cprofile_total_seconds": 435.615710551,
+          "functions": {
+            "running_stack": {
+              "primitive_calls": 2,
+              "calls": 2,
+              "self_seconds": 0.004285728,
+              "cumulative_seconds": 373.82907125900005
+            },
+            "import_images": {
+              "primitive_calls": 1,
+              "calls": 1,
+              "self_seconds": 0.005611410000000001,
+              "cumulative_seconds": 254.76008128200002
+            },
+            "start": {
+              "primitive_calls": 1,
+              "calls": 1,
+              "self_seconds": 0.000861895,
+              "cumulative_seconds": 53.448006665
+            },
+            "kubectl": {
+              "primitive_calls": 44,
+              "calls": 44,
+              "self_seconds": 0.001067479,
+              "cumulative_seconds": 63.065191348000006
+            }
+          },
+          "pytest_xml": {
+            "tests": "4",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "time": "432.870"
+          },
+          "action_digest": {
+            "hash": "04172f92a9b63009744bba4318f47e16204d5cefd691f3b6da09d72467a949a4",
+            "sizeBytes": "505"
+          },
+          "worker": "aaca8e1e-afe6-4191-9772-f7f5d4906558",
+          "execution_seconds": 496.665637,
+          "input_fetch_wall_seconds": 4.050438,
+          "executor_metadata": {
+            "worker": "aaca8e1e-afe6-4191-9772-f7f5d4906558",
+            "queuedTimestamp": "2026-10-17T01:41:30.336137Z",
+            "workerStartTimestamp": "2026-10-17T01:41:30.394276Z",
+            "workerCompletedTimestamp": "2026-10-17T01:49:51.853623Z",
+            "inputFetchStartTimestamp": "2026-10-17T01:41:30.935430Z",
+            "inputFetchCompletedTimestamp": "2026-10-17T01:41:34.985868Z",
+            "executionStartTimestamp": "2026-10-17T01:41:34.985869Z",
+            "executionCompletedTimestamp": "2026-10-17T01:49:51.651506Z",
+            "outputUploadStartTimestamp": "2026-10-17T01:49:51.651506Z",
+            "outputUploadCompletedTimestamp": "2026-10-17T01:49:51.853623Z",
+            "ioStats": {
+              "fileDownloadCount": "5646",
+              "fileDownloadSizeBytes": "1761309097",
+              "fileDownloadDurationUsec": "500559367",
+              "fileUploadCount": "11",
+              "fileUploadSizeBytes": "1197371",
+              "fileUploadDurationUsec": "201966"
+            },
+            "usageStats": {
+              "peakMemoryBytes": "3301478400",
+              "cpuNanos": "1442132354000",
+              "networkStats": {}
+            },
+            "doNotCache": true
+          }
+        },
+        {
+          "run": 2,
+          "status": "PASSED",
+          "profile_digest": "4cbc4e64bd8f2ef3d47f8ac26f8223da26be5be00ba62cc74aeea4c246c9d309/911216",
+          "profile_uri": "bytestream://remote.buildbuddy.io/blobs/4cbc4e64bd8f2ef3d47f8ac26f8223da26be5be00ba62cc74aeea4c246c9d309/911216",
+          "cprofile_total_seconds": 248.78130161899963,
+          "functions": {
+            "import_images": {
+              "primitive_calls": 1,
+              "calls": 1,
+              "self_seconds": 0.0015752910000000001,
+              "cumulative_seconds": 94.82107918000001
+            },
+            "start": {
+              "primitive_calls": 1,
+              "calls": 1,
+              "self_seconds": 8.9683e-5,
+              "cumulative_seconds": 16.720568436
+            },
+            "running_stack": {
+              "primitive_calls": 2,
+              "calls": 2,
+              "self_seconds": 0.0027479180000000002,
+              "cumulative_seconds": 174.834030516
+            },
+            "kubectl": {
+              "primitive_calls": 44,
+              "calls": 44,
+              "self_seconds": 0.0014676770000000001,
+              "cumulative_seconds": 62.574821521000004
+            }
+          },
+          "pytest_xml": {
+            "tests": "4",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "time": "246.869"
+          },
+          "action_digest": {
+            "hash": "32794bcc4192bc59e7ae805a3dbdd7a6f96f54066d2800739dc52b28637df45d",
+            "sizeBytes": "505"
+          },
+          "worker": "7312defb-6d4a-43c4-afb0-7729a15546ce",
+          "execution_seconds": 290.346744,
+          "input_fetch_wall_seconds": 5.08886,
+          "executor_metadata": {
+            "worker": "7312defb-6d4a-43c4-afb0-7729a15546ce",
+            "queuedTimestamp": "2026-10-17T01:41:30.395983Z",
+            "workerStartTimestamp": "2026-10-17T01:41:30.405991Z",
+            "workerCompletedTimestamp": "2026-10-17T01:46:26.274648Z",
+            "inputFetchStartTimestamp": "2026-10-17T01:41:30.750253Z",
+            "inputFetchCompletedTimestamp": "2026-10-17T01:41:35.839113Z",
+            "executionStartTimestamp": "2026-10-17T01:41:35.839113Z",
+            "executionCompletedTimestamp": "2026-10-17T01:46:26.185857Z",
+            "outputUploadStartTimestamp": "2026-10-17T01:46:26.185858Z",
+            "outputUploadCompletedTimestamp": "2026-10-17T01:46:26.274648Z",
+            "ioStats": {
+              "fileDownloadCount": "9440",
+              "fileDownloadSizeBytes": "2389065882",
+              "fileDownloadDurationUsec": "295344834",
+              "fileUploadCount": "11",
+              "fileUploadSizeBytes": "1178000",
+              "fileUploadDurationUsec": "88624"
+            },
+            "usageStats": {
+              "peakMemoryBytes": "3327340544",
+              "cpuNanos": "915038285000",
+              "networkStats": {}
+            },
+            "doNotCache": true
+          }
+        }
+      ]
+    },
+    "candidate": {
+      "invocation": "63f952b3-aec8-4b50-a3fa-4effb82a9fc1",
+      "source": "834596309be051694a1e78967c1f9ce0d41d57a7",
+      "runs": [
+        {
+          "run": 1,
+          "status": "PASSED",
+          "profile_digest": "c8c8bcaedd5c1f69ef0643c54e0c9cc64a35e241b12099ae87c5cc6b1636e5fc/911251",
+          "profile_uri": "bytestream://remote.buildbuddy.io/blobs/c8c8bcaedd5c1f69ef0643c54e0c9cc64a35e241b12099ae87c5cc6b1636e5fc/911251",
+          "cprofile_total_seconds": 208.0526187349995,
+          "functions": {
+            "running_stack": {
+              "primitive_calls": 2,
+              "calls": 2,
+              "self_seconds": 0.0010298010000000001,
+              "cumulative_seconds": 159.307244945
+            },
+            "start": {
+              "primitive_calls": 1,
+              "calls": 1,
+              "self_seconds": 7.647e-5,
+              "cumulative_seconds": 18.735700855
+            },
+            "import_images": {
+              "primitive_calls": 1,
+              "calls": 1,
+              "self_seconds": 0.001337651,
+              "cumulative_seconds": 87.738533313
+            },
+            "kubectl": {
+              "primitive_calls": 44,
+              "calls": 44,
+              "self_seconds": 0.00105436,
+              "cumulative_seconds": 52.198269804000006
+            }
+          },
+          "pytest_xml": {
+            "tests": "4",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "time": "206.497"
+          },
+          "action_digest": {
+            "hash": "c8bbc56e86298ed0cf7af58a658b6a5e99ec09a90493b7d4f4b9d1e32afd5c74",
+            "sizeBytes": "505"
+          },
+          "worker": "5ac56964-24d3-492a-9ea0-d1af3ecf75d1",
+          "execution_seconds": 244.867697,
+          "input_fetch_wall_seconds": 1.028506,
+          "executor_metadata": {
+            "worker": "5ac56964-24d3-492a-9ea0-d1af3ecf75d1",
+            "queuedTimestamp": "2026-10-17T01:49:04.310182Z",
+            "workerStartTimestamp": "2026-10-17T01:49:04.367222Z",
+            "workerCompletedTimestamp": "2026-10-17T01:53:10.845213Z",
+            "inputFetchStartTimestamp": "2026-10-17T01:49:04.717456Z",
+            "inputFetchCompletedTimestamp": "2026-10-17T01:49:05.745962Z",
+            "executionStartTimestamp": "2026-10-17T01:49:05.745963Z",
+            "executionCompletedTimestamp": "2026-10-17T01:53:10.613660Z",
+            "outputUploadStartTimestamp": "2026-10-17T01:53:10.613661Z",
+            "outputUploadCompletedTimestamp": "2026-10-17T01:53:10.845213Z",
+            "ioStats": {
+              "fileDownloadCount": "138",
+              "fileDownloadSizeBytes": "818498095",
+              "fileDownloadDurationUsec": "245719256",
+              "fileUploadCount": "11",
+              "fileUploadSizeBytes": "1187430",
+              "fileUploadDurationUsec": "231354"
+            },
+            "usageStats": {
+              "peakMemoryBytes": "3329703936",
+              "cpuNanos": "695592092000",
+              "networkStats": {}
+            },
+            "doNotCache": true
+          }
+        },
+        {
+          "run": 2,
+          "status": "PASSED",
+          "profile_digest": "c4900c3e1d39829be73d981730f1c4c3685df32e1dad64d7156706d7c3b2dfe5/911263",
+          "profile_uri": "bytestream://remote.buildbuddy.io/blobs/c4900c3e1d39829be73d981730f1c4c3685df32e1dad64d7156706d7c3b2dfe5/911263",
+          "cprofile_total_seconds": 226.98752818099925,
+          "functions": {
+            "import_images": {
+              "primitive_calls": 1,
+              "calls": 1,
+              "self_seconds": 0.001544019,
+              "cumulative_seconds": 109.469986722
+            },
+            "running_stack": {
+              "primitive_calls": 2,
+              "calls": 2,
+              "self_seconds": 0.001076319,
+              "cumulative_seconds": 180.034130683
+            },
+            "start": {
+              "primitive_calls": 1,
+              "calls": 1,
+              "self_seconds": 6.93e-5,
+              "cumulative_seconds": 19.091289588000002
+            },
+            "kubectl": {
+              "primitive_calls": 44,
+              "calls": 44,
+              "self_seconds": 0.0009853800000000001,
+              "cumulative_seconds": 50.770263632
+            }
+          },
+          "pytest_xml": {
+            "tests": "4",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "time": "225.422"
+          },
+          "action_digest": {
+            "hash": "97998ddd985792c4bb557c26b57ebd13521dce89218e84b2a8b94dc806d82e8b",
+            "sizeBytes": "505"
+          },
+          "worker": "1e09c634-7833-4073-8376-aee72b0db4fc",
+          "execution_seconds": 267.634729,
+          "input_fetch_wall_seconds": 1.837329,
+          "executor_metadata": {
+            "worker": "1e09c634-7833-4073-8376-aee72b0db4fc",
+            "queuedTimestamp": "2026-10-17T01:49:04.311878Z",
+            "workerStartTimestamp": "2026-10-17T01:49:04.372534Z",
+            "workerCompletedTimestamp": "2026-10-17T01:53:34.435741Z",
+            "inputFetchStartTimestamp": "2026-10-17T01:49:04.801766Z",
+            "inputFetchCompletedTimestamp": "2026-10-17T01:49:06.639095Z",
+            "executionStartTimestamp": "2026-10-17T01:49:06.639096Z",
+            "executionCompletedTimestamp": "2026-10-17T01:53:34.273825Z",
+            "outputUploadStartTimestamp": "2026-10-17T01:53:34.273825Z",
+            "outputUploadCompletedTimestamp": "2026-10-17T01:53:34.435741Z",
+            "ioStats": {
+              "fileDownloadCount": "694",
+              "fileDownloadSizeBytes": "990170088",
+              "fileDownloadDurationUsec": "269365351",
+              "fileUploadCount": "11",
+              "fileUploadSizeBytes": "1169878",
+              "fileUploadDurationUsec": "161582"
+            },
+            "usageStats": {
+              "peakMemoryBytes": "3324665856",
+              "cpuNanos": "804784764000",
+              "networkStats": {}
+            },
+            "doNotCache": true
+          }
+        }
+      ]
+    }
+  }
+}
