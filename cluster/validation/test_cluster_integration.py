@@ -550,6 +550,7 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
             ("ClusterRole", "cluster-diagnostics-reader", None),
             ("Role", "claude-ai-coinbase-reader", "agentplane-staging"),
             ("Role", "agentplane-testing-operator", "agentplane-testing"),
+            ("Role", "agentplane-dispatcher-acceptance", "agentplane-testing"),
             ("Role", "agentplane-testing-login-reader", "public-coder-agent"),
             ("Role", "claude-ai-sandbox-reader", "agentplane-staging"),
             ("Role", "agent-haku-console-metadata-reader", "haku-console"),
@@ -642,6 +643,11 @@ def test_agent_permission_denials(
     denied |= {
         Permission("agentplane-staging", "agentplane.allegedly.works", "sandboxes", verb)
         for verb in ("create", "patch", "delete")
+    }
+    denied |= {
+        Permission("agentplane-testing", "", "serviceaccounts/token", "create", "sandbox-controller"),
+        Permission("agentplane-testing", "apps", "deployments", "patch", "app"),
+        Permission("agentplane-staging", "apps", "deployments/scale", "patch", "runner-gateway"),
     }
     denied |= {
         Permission(namespace, "kustomize.toolkit.fluxcd.io", "kustomizations", "patch")

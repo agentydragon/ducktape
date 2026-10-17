@@ -49,6 +49,7 @@ from cluster.cdk8s.agentplane import (
     notifications,
     policy_controller,
     policy_controller_rbac,
+    runner_gateway,
     sandbox_pod,
 )
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
@@ -381,6 +382,46 @@ class AcceptanceToken(Construct):
         )
 
 
+class DispatcherAcceptance(Construct):
+    """Lets `claude-ai` run `//agentplane/acceptance:test_dispatcher_deployed`, which calls the
+    Dispatcher as the app and notifications and fails the Runner Gateway over between replicas.
+
+    Testing only, like `AgentRbac`. A token bound to a live Pod is that Pod's account toward the
+    Gateway, so the token rule names exactly the Gateway's two wake callers rather than
+    `serviceaccounts/token` in general. Pod `delete` cannot name the Gateway's Pod ahead of time and
+    covers every Pod here; their owners recreate them.
+    """
+
+    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+        super().__init__(scope, id)
+        gateway = runner_gateway.NAME
+        role = Role(
+            self,
+            "role",
+            metadata=ApiObjectMetadata(name="agentplane-dispatcher-acceptance", namespace=env.namespace),
+            rules=[
+                RolePolicyRule(
+                    resources=[
+                        named_resource("", "serviceaccounts/token", app_component.NAME),
+                        named_resource("", "serviceaccounts/token", notifications.NAME),
+                    ],
+                    verbs=["create"],
+                ),
+                RolePolicyRule(resources=[named_resource("apps", "deployments", gateway)], verbs=["patch"]),
+                RolePolicyRule(
+                    resources=[named_resource("apps", "deployments/scale", gateway)], verbs=["get", "patch", "update"]
+                ),
+                RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["delete"]),
+            ],
+        )
+        RoleBinding(
+            self,
+            "rolebinding",
+            metadata=ApiObjectMetadata(name="claude-ai-dispatcher-acceptance", namespace=env.namespace),
+            role=role,
+        ).add_subjects(access.CLAUDE_AI.imported(self, "claude-ai-sa"))
+
+
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
     TestingNamespaceResourceLimits(chart, "namespace-resource-limits", ENV.namespace)
@@ -388,6 +429,7 @@ def chart(app: App) -> Chart:
     # `AgentRbac`'s own docstring for why it must not be in staging's.
     AgentRbac(chart, "rbac", ENV)
     AcceptanceToken(chart, "acceptance-token", ENV)
+    DispatcherAcceptance(chart, "dispatcher-acceptance", ENV)
     command_sandbox.CommandSandbox(
         chart, "command-sandbox", ENV, image_pull_secret_name=sandbox_pod.SECRET_NAME
     ).add_platform_resources()

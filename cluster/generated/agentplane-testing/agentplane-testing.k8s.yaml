@@ -5002,6 +5002,68 @@ subjects:
     name: haku-agent
     namespace: agentplane-staging
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-dispatcher-acceptance
+  namespace: agentplane-testing
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - app
+    resources:
+      - serviceaccounts/token
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resourceNames:
+      - notifications
+    resources:
+      - serviceaccounts/token
+    verbs:
+      - create
+  - apiGroups:
+      - apps
+    resourceNames:
+      - runner-gateway
+    resources:
+      - deployments
+    verbs:
+      - patch
+  - apiGroups:
+      - apps
+    resourceNames:
+      - runner-gateway
+    resources:
+      - deployments/scale
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claude-ai-dispatcher-acceptance
+  namespace: agentplane-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-dispatcher-acceptance
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: claude-ai
+    namespace: agentplane-staging
+---
 apiVersion: v1
 kind: PodTemplate
 metadata:

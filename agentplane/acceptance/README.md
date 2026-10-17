@@ -102,7 +102,8 @@ Deployment, and direct Pod probes use the shared gRPC listener on `8080`.
 The `queue` case checks authenticated submission to a stopped Sandbox, durable queueing, and
 runner admission after an explicit start. It uses a fixture Sandbox and the testing app's workload
 identity for TokenReview; it does not call app HTTP or run a model turn. Run it on the authorized
-operator host:
+operator host or from a `claude-ai` Sandbox (the testing-only
+[Dispatcher acceptance grant](../../cluster/docs/agent_rbac.md#dispatcher-acceptance-grant-claude-ai-only)):
 
 ```bash
 bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
