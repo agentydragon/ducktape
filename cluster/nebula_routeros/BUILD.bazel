@@ -25,6 +25,9 @@ go_binary(
     goarch = "arm",
     goos = "linux",
     pure = "on",
+    # The global Python and JavaScript lint aspects cannot run on this
+    # cross-compiled Go target.
+    tags = ["no-lint", "no-mypy"],
 )
 
 oci_image(
