@@ -287,11 +287,6 @@
       "test": "//agentplane/runner_gateway/...",
       "registry": "forgejo"
     },
-    "agentplane-runner-gateway-go": {
-      "target": "//agentplane/runner_gateway:image",
-      "test": "//agentplane/runner_gateway/...",
-      "registry": "forgejo"
-    },
     "agentplane-runner-gateway-queue-migrate": {
       "target": "//agentplane/runner_gateway/migrations:image",
       "test": "//agentplane/runner_gateway/migrations/...",

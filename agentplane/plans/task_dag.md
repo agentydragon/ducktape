@@ -1608,13 +1608,12 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 
 ```mermaid
 flowchart TD
-    REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
+    REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit]
 ```
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
-**Blocked on `GATEWAY_RENAME`**, which removes the
-remaining transitional pieces. Sweep devel for unused modules, functions, settings, proto
+**Candidate.** Sweep devel for unused modules, functions, settings, proto
 fields, tables and columns; one name per concept across code, settings, manifests, protos and docs
 (Runner Gateway, History Service, ingress, control; Session for the raw stream,
 Thread for its projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.md` files and
@@ -1703,7 +1702,6 @@ items below; this direction does not authorize runtime changes.
 ```mermaid
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: durable queue or direct admission]
-    GATEWAY_RENAME[Candidate: drop Go from the Gateway's names]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
@@ -1776,15 +1774,6 @@ mode remains the owner of wake-to-deliver.
 The existing `agentplane/x/k3s_env` suite already runs without the CNPG operator, KubeVirt, Cilium or cert-manager,
 against one plain PostgreSQL Deployment and the Go Gateway; this node is about removing the PostgreSQL dependency
 itself. Direct admission and new sender grants remain separate decisions.
-
-### `GATEWAY_RENAME` — the Gateway is just the Gateway
-
-**Candidate.** The operator no longer wants the "Go" qualifier on the Gateway or Dispatcher. Names, docs, comments, the
-cdk8s module and the image's pins and `_IMAGE` are done. Remaining: delete the old `agentplane-runner-gateway-go` entries
-from `devinfra/ci/image_targets.json` and `forgejo_registry/image_automation.py` (and the generated ImageRepository,
-ImagePolicy and Receiver entry), once both environments run the Gateway from `agentplane-runner-gateway`. Leave the
-dated measurement files under `agentplane/x/k3s_env` as recorded, and the other Go ports (egress sidecar, LLM ingress)
-under their own names.
 
 ### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign destination validation and send permission
 

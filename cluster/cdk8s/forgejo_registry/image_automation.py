@@ -52,7 +52,6 @@ IMAGES = (
     "agentplane-oauth-fixture",
     "agentplane-policy-controller",
     "agentplane-runner-gateway",
-    "agentplane-runner-gateway-go",
     "agentplane-runner-gateway-queue-migrate",
     "agentplane-runner-vm",
     "agentplane-sandbox",
