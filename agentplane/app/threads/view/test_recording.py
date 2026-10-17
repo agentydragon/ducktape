@@ -50,6 +50,7 @@ class _HarnessOutputRecorder:
             event_source_id=uuid4(),
             native_session_id="codex-thread",
         )
+        self.resuming = True
         self.active_turn_id = ""
         self.observations: list[tuple[Observation, list[int]]] = []
 
