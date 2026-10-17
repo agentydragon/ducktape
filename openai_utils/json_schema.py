@@ -20,7 +20,7 @@ from pydantic_core import core_schema
 # Keys that are expected to be added as siblings to $ref by Pydantic
 # (e.g., Field(description=...) adds "description" alongside $ref).
 # These are safe to merge: the sibling value takes precedence.
-_ALLOWED_REF_SIBLING_KEYS = frozenset({"description", "title", "default", "examples"})
+_ALLOWED_REF_SIBLING_KEYS = {"description", "title", "default", "examples"}
 
 _DEFS_REF_PREFIX = "#/$defs/"
 

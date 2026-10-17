@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 _INTERRUPT_GRACE_S = 15
 
 # Commands a sealing Session still admits and runs: they end work rather than start it.
-DRAINING_OPERATIONS = frozenset({"interrupt_turn", "stop_runner_session"})
+DRAINING_OPERATIONS = {"interrupt_turn", "stop_runner_session"}
 
 
 class HarnessGoneError(RuntimeError):

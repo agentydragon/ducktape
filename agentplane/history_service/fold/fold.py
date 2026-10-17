@@ -207,23 +207,21 @@ class ProjectionBatch:
     payload_writes: tuple[PayloadWrite, ...]
 
 
-_SILENT = frozenset({"native", "harness_stderr", "debug_checkpoint", "journal_reopened"})
-_LIFECYCLE = frozenset(
-    {
-        "turn_started",
-        "turn_completed",
-        "model_changed",
-        "reasoning_effort_changed",
-        "harness_started",
-        "harness_exited",
-        "harness_lost",
-        "harness_launch_failed",
-        "setup_started",
-        "setup_output",
-        "setup_finished",
-        "setup_interrupted",
-    }
-)
+_SILENT = {"native", "harness_stderr", "debug_checkpoint", "journal_reopened"}
+_LIFECYCLE = {
+    "turn_started",
+    "turn_completed",
+    "model_changed",
+    "reasoning_effort_changed",
+    "harness_started",
+    "harness_exited",
+    "harness_lost",
+    "harness_launch_failed",
+    "setup_started",
+    "setup_output",
+    "setup_finished",
+    "setup_interrupted",
+}
 
 
 def initial(source_id: str, projection_epoch: str) -> ViewState:

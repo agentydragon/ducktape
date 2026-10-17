@@ -42,7 +42,7 @@ _TURN_STATUSES: dict[wire.TurnStatus | str, event_pb2.TurnStatus] = {
     wire.TurnStatus.FAILED: event_pb2.TURN_STATUS_FAILED,
 }
 # Fields of an unmodeled tool item that describe its outcome rather than its arguments.
-_OUTCOME_FIELDS = frozenset({"status", "aggregatedOutput", "exitCode", "durationMs", "processId", "agentsStates"})
+_OUTCOME_FIELDS = {"status", "aggregatedOutput", "exitCode", "durationMs", "processId", "agentsStates"}
 
 
 @dataclass(frozen=True)

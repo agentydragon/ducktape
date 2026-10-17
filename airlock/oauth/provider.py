@@ -15,7 +15,7 @@ from airlock.oauth.config import OAuth2ProviderConfig
 logger = logging.getLogger(__name__)
 
 
-ACCESS_TOKEN_FIELDS: frozenset[str] = frozenset({"access_token", "token_type", "expires_at", "scope"})
+ACCESS_TOKEN_FIELDS: set[str] = {"access_token", "token_type", "expires_at", "scope"}
 ALL_TOKEN_FIELDS: frozenset[str] = frozenset({"access_token", "refresh_token", "token_type", "expires_at", "scope"})
 
 

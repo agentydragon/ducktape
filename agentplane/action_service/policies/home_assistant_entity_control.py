@@ -31,25 +31,23 @@ ServiceName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9_]+$")]
 # Argument keys that cannot widen what the call touches: the target itself is checked separately,
 # and the rest only shape the response. `ws_command` is deliberately absent: it is a raw websocket
 # escape hatch that bypasses the domain/service/entity triple entirely.
-_REVIEWED_ARGUMENTS = frozenset(
-    {
-        # keep-sorted start
-        "data",
-        "domain",
-        "entity_id",
-        "result_attribute_keys",
-        "result_fields",
-        "return_response",
-        "service",
-        "verbose",
-        "wait",
-        # keep-sorted end
-    }
-)
+_REVIEWED_ARGUMENTS = {
+    # keep-sorted start
+    "data",
+    "domain",
+    "entity_id",
+    "result_attribute_keys",
+    "result_fields",
+    "return_response",
+    "service",
+    "verbose",
+    "wait",
+    # keep-sorted end
+}
 
 # Keys that redirect a service call at something other than `entity_id`. Home Assistant resolves
 # any of these to a target set, so one inside `data` would silently widen an otherwise-scoped call.
-_RETARGETING_KEYS = frozenset({"entity_id", "target", "area_id", "device_id", "label_id"})
+_RETARGETING_KEYS = {"entity_id", "target", "area_id", "device_id", "label_id"}
 
 
 class HomeAssistantEntityControl(Kind):

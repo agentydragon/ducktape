@@ -122,48 +122,44 @@ OPERATOR_CRDS: dict[str, set[str]] = {
 CRD_TO_OPERATOR: dict[str, str] = {kind: operator for operator, kinds in OPERATOR_CRDS.items() for kind in kinds}
 
 # API groups the Kubernetes API server serves without a CRD.
-BUILT_IN_API_GROUPS = frozenset(
-    {
-        "",
-        "admissionregistration.k8s.io",
-        "apiextensions.k8s.io",
-        "apiregistration.k8s.io",
-        "apps",
-        "authentication.k8s.io",
-        "authorization.k8s.io",
-        "autoscaling",
-        "batch",
-        "certificates.k8s.io",
-        "coordination.k8s.io",
-        "discovery.k8s.io",
-        "events.k8s.io",
-        "flowcontrol.apiserver.k8s.io",
-        "internal.apiserver.k8s.io",
-        "networking.k8s.io",
-        "node.k8s.io",
-        "policy",
-        "rbac.authorization.k8s.io",
-        "resource.k8s.io",
-        "scheduling.k8s.io",
-        "storage.k8s.io",
-        "storagemigration.k8s.io",
-    }
-)
+BUILT_IN_API_GROUPS = {
+    "",
+    "admissionregistration.k8s.io",
+    "apiextensions.k8s.io",
+    "apiregistration.k8s.io",
+    "apps",
+    "authentication.k8s.io",
+    "authorization.k8s.io",
+    "autoscaling",
+    "batch",
+    "certificates.k8s.io",
+    "coordination.k8s.io",
+    "discovery.k8s.io",
+    "events.k8s.io",
+    "flowcontrol.apiserver.k8s.io",
+    "internal.apiserver.k8s.io",
+    "networking.k8s.io",
+    "node.k8s.io",
+    "policy",
+    "rbac.authorization.k8s.io",
+    "resource.k8s.io",
+    "scheduling.k8s.io",
+    "storage.k8s.io",
+    "storagemigration.k8s.io",
+}
 
 # API groups whose CRDs exist before any Kustomization in the graph applies. A rendered
 # kind outside these groups, BUILT_IN_API_GROUPS and OPERATOR_CRDS fails validation.
-BOOTSTRAP_API_GROUPS = frozenset(
-    {
-        # Flux, from `flux bootstrap` (cluster/k8s/flux/flux-system/gotk-components.yaml).
-        "helm.toolkit.fluxcd.io",
-        "image.toolkit.fluxcd.io",
-        "kustomize.toolkit.fluxcd.io",
-        "notification.toolkit.fluxcd.io",
-        "source.extensions.fluxcd.io",
-        "source.toolkit.fluxcd.io",
-        # Cilium, which registers its own CRDs, and the Gateway API CRDs it requires: both
-        # from cluster/terraform/main/cilium.tf.
-        "cilium.io",
-        "gateway.networking.k8s.io",
-    }
-)
+BOOTSTRAP_API_GROUPS = {
+    # Flux, from `flux bootstrap` (cluster/k8s/flux/flux-system/gotk-components.yaml).
+    "helm.toolkit.fluxcd.io",
+    "image.toolkit.fluxcd.io",
+    "kustomize.toolkit.fluxcd.io",
+    "notification.toolkit.fluxcd.io",
+    "source.extensions.fluxcd.io",
+    "source.toolkit.fluxcd.io",
+    # Cilium, which registers its own CRDs, and the Gateway API CRDs it requires: both
+    # from cluster/terraform/main/cilium.tf.
+    "cilium.io",
+    "gateway.networking.k8s.io",
+}

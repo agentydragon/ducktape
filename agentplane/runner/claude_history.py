@@ -15,7 +15,7 @@ from agentplane.proto import event_pb2
 from agentplane.runner.recovery import ObservedItem
 
 # The block types Claude treats as thinking when it decides what to send the model again.
-_THINKING_TYPES = frozenset({"thinking", "redacted_thinking"})
+_THINKING_TYPES = {"thinking", "redacted_thinking"}
 
 
 class TranscriptMessage(BaseModel):

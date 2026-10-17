@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Entries a call sends beyond the latest acknowledgement before it waits for more.
 IN_FLIGHT = 1024
 # Only an operator resolves these, so they back off at the maximum and are logged as errors.
-OPERATOR_CODES = frozenset({grpc.StatusCode.PERMISSION_DENIED, grpc.StatusCode.FAILED_PRECONDITION})
+OPERATOR_CODES = {grpc.StatusCode.PERMISSION_DENIED, grpc.StatusCode.FAILED_PRECONDITION}
 
 
 class _Push:

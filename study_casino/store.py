@@ -798,8 +798,8 @@ def _time_bucket_stats(date: str, events: list[GameEventRead]) -> TimeBucketStat
 # strategy diagnostics (by dealer upcard, by doubled-or-not) where all
 # outcomes can occur and the percent columns carry information.
 
-_BJ_WIN_OUTCOMES: frozenset[BlackjackOutcomeKind] = frozenset({"blackjack", "win", "dealerBust"})
-_BJ_LOSS_OUTCOMES: frozenset[BlackjackOutcomeKind] = frozenset({"lose", "bust"})
+_BJ_WIN_OUTCOMES: set[BlackjackOutcomeKind] = {"blackjack", "win", "dealerBust"}
+_BJ_LOSS_OUTCOMES: set[BlackjackOutcomeKind] = {"lose", "bust"}
 
 # 2..9 keep their literal rank; J/Q/K collapse to "10" (same value to the
 # dealer); "A" is kept separate because soft-17 logic and bust risk differ

@@ -87,7 +87,7 @@ ROTATIONS = Config(
 # this is deployment wiring, not input read by the rotator; keep only that namespace
 # exception here, keyed by credentials_dir.name, and derive copied Secret names from the
 # model entries below.
-_FORGEJO_NAMESPACE_CREDENTIALS = frozenset({"haku", "claude"})
+_FORGEJO_NAMESPACE_CREDENTIALS = {"haku", "claude"}
 
 
 def _unique_credentials(rotations: list[Rotation]) -> tuple[Rotation, ...]:

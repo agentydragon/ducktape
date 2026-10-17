@@ -17,8 +17,8 @@ from urllib.request import Request, build_opener
 
 from agentplane.capture.records import ConnectionDroppedRecord, ProxyErrorRecord, RequestRecord, ResponseChunkRecord
 
-_SAFE_HEADERS = frozenset({"content-type", "content-encoding", "accept", "user-agent"})
-_FORBIDDEN_HEADERS = frozenset({"authorization", "proxy-authorization", "cookie", "set-cookie"})
+_SAFE_HEADERS = {"content-type", "content-encoding", "accept", "user-agent"}
+_FORBIDDEN_HEADERS = {"authorization", "proxy-authorization", "cookie", "set-cookie"}
 Record = Callable[[RequestRecord | ResponseChunkRecord | ConnectionDroppedRecord | ProxyErrorRecord], None]
 
 

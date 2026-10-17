@@ -647,6 +647,7 @@ metadata = Base.metadata
 # release after the one that stopped naming it, because `maxUnavailable: 0` keeps the previous image
 # serving through the roll and that image selects every column it maps. `test_agent_authority_schema`
 # excludes these from its ORM-versus-database comparison, which is otherwise exact.
-UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
-    {("agents", "auto_approval_policy"), ("enrollment_interactions", "auto_approval_policy")}
-)
+UNMAPPED_COLUMNS_PENDING_DROP: set[tuple[str, str]] = {
+    ("agents", "auto_approval_policy"),
+    ("enrollment_interactions", "auto_approval_policy"),
+}

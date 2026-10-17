@@ -96,19 +96,17 @@ _BROWSER_SECRET_BYTES = 32
 # in. These are the transport-level errnos that mean "the database is unreachable", not
 # an application-level OSError subclass (e.g. AgentAccessProfileManagedByDeploymentError
 # is a PermissionError, itself an OSError).
-_TRANSIENT_SOCKET_ERRNOS = frozenset(
-    {
-        errno.ECONNREFUSED,
-        errno.ECONNRESET,
-        errno.ECONNABORTED,
-        errno.EPIPE,
-        errno.EHOSTUNREACH,
-        errno.EHOSTDOWN,
-        errno.ENETUNREACH,
-        errno.ENETDOWN,
-        errno.ETIMEDOUT,
-    }
-)
+_TRANSIENT_SOCKET_ERRNOS = {
+    errno.ECONNREFUSED,
+    errno.ECONNRESET,
+    errno.ECONNABORTED,
+    errno.EPIPE,
+    errno.EHOSTUNREACH,
+    errno.EHOSTDOWN,
+    errno.ENETUNREACH,
+    errno.ENETDOWN,
+    errno.ETIMEDOUT,
+}
 
 _T = TypeVar("_T")
 

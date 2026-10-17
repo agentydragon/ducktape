@@ -8,13 +8,11 @@ from datetime import UTC, datetime
 
 from mitmproxy import http
 
-PATHS = frozenset(
-    {
-        "/v1/code/github/batch-branch-status",
-        "/v1/code/github/compare-refs",
-        "/v1/code/github/org-connection/installations-status",
-    }
-)
+PATHS = {
+    "/v1/code/github/batch-branch-status",
+    "/v1/code/github/compare-refs",
+    "/v1/code/github/org-connection/installations-status",
+}
 
 
 @dataclass(frozen=True)

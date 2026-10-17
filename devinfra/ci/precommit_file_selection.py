@@ -9,15 +9,13 @@ from pathlib import Path
 
 Runner = Callable[..., subprocess.CompletedProcess[bytes]]
 
-ANSIBLE_CONFIGURATION_PATHS = frozenset(
-    {
-        ".ansible-lint.yaml",
-        ".github/scripts/run-ansible-lint.sh",
-        ".github/workflows/ansible-lint.yml",
-        ".github/workflows/pre-commit.yml",
-        ".pre-commit-config.yaml",
-    }
-)
+ANSIBLE_CONFIGURATION_PATHS = {
+    ".ansible-lint.yaml",
+    ".github/scripts/run-ansible-lint.sh",
+    ".github/workflows/ansible-lint.yml",
+    ".github/workflows/pre-commit.yml",
+    ".pre-commit-config.yaml",
+}
 
 
 def needs_ansible_roles(event_name: str, changed_paths: list[str] | None) -> bool:

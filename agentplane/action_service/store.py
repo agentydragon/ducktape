@@ -73,25 +73,23 @@ _TERMINAL_ACTION_STATE = {
     ExecutionState.EXECUTION_UNKNOWN: ActionState.EXECUTION_UNKNOWN,
 }
 
-_SECRET_KEYS = frozenset(
-    {
-        # keep-sorted start
-        "accesstoken",
-        "apikey",
-        "authorization",
-        "clientsecret",
-        "cookie",
-        "credential",
-        "credentials",
-        "password",
-        "privatekey",
-        "refreshtoken",
-        "secret",
-        "setcookie",
-        "token",
-        # keep-sorted end
-    }
-)
+_SECRET_KEYS = {
+    # keep-sorted start
+    "accesstoken",
+    "apikey",
+    "authorization",
+    "clientsecret",
+    "cookie",
+    "credential",
+    "credentials",
+    "password",
+    "privatekey",
+    "refreshtoken",
+    "secret",
+    "setcookie",
+    "token",
+    # keep-sorted end
+}
 
 
 class ActionStore:

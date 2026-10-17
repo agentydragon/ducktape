@@ -69,28 +69,25 @@ def _is_int(value: object) -> TypeIs[int]:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-_CLAUDE_DELTAS: dict[str, tuple[DeltaTemplate, str, tuple[frozenset[str], ...]]] = {
-    "text_delta": (DeltaTemplate.CLAUDE_TEXT, "text", (frozenset({"type", "text"}),)),
+_CLAUDE_DELTAS: dict[str, tuple[DeltaTemplate, str, tuple[set[str], ...]]] = {
+    "text_delta": (DeltaTemplate.CLAUDE_TEXT, "text", ({"type", "text"},)),
     "thinking_delta": (
         DeltaTemplate.CLAUDE_THINKING,
         "thinking",
-        (frozenset({"type", "thinking"}), frozenset({"type", "thinking", "estimated_tokens"})),
+        ({"type", "thinking"}, {"type", "thinking", "estimated_tokens"}),
     ),
-    "input_json_delta": (DeltaTemplate.CLAUDE_INPUT_JSON, "partial_json", (frozenset({"type", "partial_json"}),)),
+    "input_json_delta": (DeltaTemplate.CLAUDE_INPUT_JSON, "partial_json", ({"type", "partial_json"},)),
 }
 
-_CODEX_DELTAS: dict[str, tuple[DeltaTemplate, frozenset[str]]] = {
-    "item/agentMessage/delta": (
-        DeltaTemplate.CODEX_AGENT_MESSAGE,
-        frozenset({"threadId", "turnId", "itemId", "delta"}),
-    ),
+_CODEX_DELTAS: dict[str, tuple[DeltaTemplate, set[str]]] = {
+    "item/agentMessage/delta": (DeltaTemplate.CODEX_AGENT_MESSAGE, {"threadId", "turnId", "itemId", "delta"}),
     "item/reasoning/summaryTextDelta": (
         DeltaTemplate.CODEX_REASONING_SUMMARY,
-        frozenset({"threadId", "turnId", "itemId", "delta", "summaryIndex"}),
+        {"threadId", "turnId", "itemId", "delta", "summaryIndex"},
     ),
     "item/commandExecution/outputDelta": (
         DeltaTemplate.CODEX_COMMAND_OUTPUT,
-        frozenset({"threadId", "turnId", "itemId", "delta"}),
+        {"threadId", "turnId", "itemId", "delta"},
     ),
 }
 

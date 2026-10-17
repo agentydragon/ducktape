@@ -508,7 +508,7 @@ def _regularize_covariance(factor_names: tuple[str, ...], covariance: np.ndarray
 # are named data here — a symbol the fit holds no such view on is simply absent, and gets the
 # default coupling. Promote to fitted config once the model carries a per-symbol asset-class
 # catalog.
-_CRYPTO_SYMBOLS: frozenset[SecuritySymbol] = frozenset({SecuritySymbol("btc"), SecuritySymbol("eth")})
+_CRYPTO_SYMBOLS: set[SecuritySymbol] = {SecuritySymbol("btc"), SecuritySymbol("eth")}
 _PRIVATE_EQUITY_COUPLES_WITH = SecurityKey(symbol=SP500_SYMBOL)
 
 

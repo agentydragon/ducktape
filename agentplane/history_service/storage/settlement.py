@@ -36,29 +36,25 @@ class Target:
 
 # Observations that may signal a harness or runner problem. A span holding one keeps every packet,
 # so the frames stay available to turn into a harness/runner test.
-_ANOMALIES = frozenset(
-    {
-        "command_failed",
-        "harness_stderr",
-        "harness_lost",
-        "harness_exited",
-        "harness_launch_failed",
-        "conversation_reconciled",
-        "turn_completed",
-    }
-)
+_ANOMALIES = {
+    "command_failed",
+    "harness_stderr",
+    "harness_lost",
+    "harness_exited",
+    "harness_launch_failed",
+    "conversation_reconciled",
+    "turn_completed",
+}
 
-_TEMPLATES: dict[Field, frozenset[DeltaTemplate]] = {
-    Field.TEXT: frozenset(
-        {
-            DeltaTemplate.CLAUDE_TEXT,
-            DeltaTemplate.CLAUDE_THINKING,
-            DeltaTemplate.CODEX_AGENT_MESSAGE,
-            DeltaTemplate.CODEX_REASONING_SUMMARY,
-        }
-    ),
-    Field.ARGUMENTS: frozenset({DeltaTemplate.CLAUDE_INPUT_JSON}),
-    Field.OUTPUT: frozenset({DeltaTemplate.CODEX_COMMAND_OUTPUT}),
+_TEMPLATES: dict[Field, set[DeltaTemplate]] = {
+    Field.TEXT: {
+        DeltaTemplate.CLAUDE_TEXT,
+        DeltaTemplate.CLAUDE_THINKING,
+        DeltaTemplate.CODEX_AGENT_MESSAGE,
+        DeltaTemplate.CODEX_REASONING_SUMMARY,
+    },
+    Field.ARGUMENTS: {DeltaTemplate.CLAUDE_INPUT_JSON},
+    Field.OUTPUT: {DeltaTemplate.CODEX_COMMAND_OUTPUT},
 }
 
 

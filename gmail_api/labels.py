@@ -87,7 +87,7 @@ class SystemLabel(StrEnum):
     CATEGORY_FORUMS = "CATEGORY_FORUMS"
 
 
-SYSTEM_LABEL_IDS = frozenset(SystemLabel)
+SYSTEM_LABEL_IDS = set(SystemLabel)
 
 
 def is_system_label(label_id: str) -> bool:

@@ -23,32 +23,30 @@ import pygit2
 _STALE_BASE_ERROR_THRESHOLD = 30
 
 # Bazel commands recognized by bb remote (from BuildBuddy cli/parser/bazelrc).
-_BAZEL_COMMANDS = frozenset(
-    {
-        # keep-sorted start
-        "analyze-profile",
-        "aquery",
-        "build",
-        "canonicalize-flags",
-        "clean",
-        "coverage",
-        "cquery",
-        "dump",
-        "fetch",
-        "help",
-        "info",
-        "license",
-        "mobile-install",
-        "print_action",
-        "query",
-        "run",
-        "shutdown",
-        "sync",
-        "test",
-        "version",
-        # keep-sorted end
-    }
-)
+_BAZEL_COMMANDS = {
+    # keep-sorted start
+    "analyze-profile",
+    "aquery",
+    "build",
+    "canonicalize-flags",
+    "clean",
+    "coverage",
+    "cquery",
+    "dump",
+    "fetch",
+    "help",
+    "info",
+    "license",
+    "mobile-install",
+    "print_action",
+    "query",
+    "run",
+    "shutdown",
+    "sync",
+    "test",
+    "version",
+    # keep-sorted end
+}
 
 
 @dataclass

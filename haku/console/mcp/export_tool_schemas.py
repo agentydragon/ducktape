@@ -45,26 +45,24 @@ GROCY_SF_SERVER_ID = "grocy-sf"
 
 # grocy-sf is reflected only for the batch tools the console renders previews for; the rest of
 # its surface isn't used by the frontend and shouldn't gate schema generation.
-_SERVER_TOOL_ALLOWLIST: dict[str, frozenset[str]] = {
-    GROCY_SF_SERVER_ID: frozenset(
-        {
-            "stock_add",
-            "stock_consume",
-            "stock_entry_edit",
-            "stock_get",
-            "locations_list",
-            "products_create",
-            "products_list",
-            "product_groups_list",
-            "quantity_units_list",
-            "products_edit",
-            "shopping_list_get",
-            "shopping_lists_list",
-            "shopping_list_items_add",
-            "shopping_list_items_remove",
-            "shopping_list_item_edit",
-        }
-    )
+_SERVER_TOOL_ALLOWLIST: dict[str, set[str]] = {
+    GROCY_SF_SERVER_ID: {
+        "stock_add",
+        "stock_consume",
+        "stock_entry_edit",
+        "stock_get",
+        "locations_list",
+        "products_create",
+        "products_list",
+        "product_groups_list",
+        "quantity_units_list",
+        "products_edit",
+        "shopping_list_get",
+        "shopping_lists_list",
+        "shopping_list_items_add",
+        "shopping_list_items_remove",
+        "shopping_list_item_edit",
+    }
 }
 
 _DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
@@ -73,44 +71,42 @@ _DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 # constructs the frontend's z.fromJSONSchema adapter is reviewed and tested against.
 # A newly-published FastMCP construct should fail generation until the adapter gains a
 # test for it, rather than silently weakening a trusted approval preview.
-_FRONTEND_SCHEMA_KEYWORDS = frozenset(
-    {
-        "additionalProperties",
-        "allOf",
-        "anyOf",
-        "const",
-        "default",
-        "description",
-        "enum",
-        "exclusiveMaximum",
-        "exclusiveMinimum",
-        # `format` (e.g. "date") and `uniqueItems` (from Python `set` fields) appear in the grocy
-        # batch tools' schemas; z.fromJSONSchema honors both. See test_export_mcp_tool_schemas.
-        "format",
-        "items",
-        "maxItems",
-        "maxLength",
-        "maximum",
-        "minItems",
-        "minLength",
-        "minimum",
-        "multipleOf",
-        "oneOf",
-        "pattern",
-        "properties",
-        # Annotation-only (no validation semantics): Pydantic stamps computed fields readOnly in
-        # serialization schemas; z.fromJSONSchema ignores it.
-        "readOnly",
-        "required",
-        "title",
-        "type",
-        "uniqueItems",
-    }
-)
-_SCHEMA_MAP_KEYWORDS = frozenset({"properties"})
+_FRONTEND_SCHEMA_KEYWORDS = {
+    "additionalProperties",
+    "allOf",
+    "anyOf",
+    "const",
+    "default",
+    "description",
+    "enum",
+    "exclusiveMaximum",
+    "exclusiveMinimum",
+    # `format` (e.g. "date") and `uniqueItems` (from Python `set` fields) appear in the grocy
+    # batch tools' schemas; z.fromJSONSchema honors both. See test_export_mcp_tool_schemas.
+    "format",
+    "items",
+    "maxItems",
+    "maxLength",
+    "maximum",
+    "minItems",
+    "minLength",
+    "minimum",
+    "multipleOf",
+    "oneOf",
+    "pattern",
+    "properties",
+    # Annotation-only (no validation semantics): Pydantic stamps computed fields readOnly in
+    # serialization schemas; z.fromJSONSchema ignores it.
+    "readOnly",
+    "required",
+    "title",
+    "type",
+    "uniqueItems",
+}
+_SCHEMA_MAP_KEYWORDS = {"properties"}
 _SCHEMA_ARRAY_KEYWORDS = frozenset({"allOf", "anyOf", "oneOf"})
 _SCHEMA_VALUE_KEYWORDS = frozenset({"additionalProperties", "items"})
-_FORBIDDEN_REFERENCE_KEYWORDS = frozenset({"$defs", "$ref", "definitions"})
+_FORBIDDEN_REFERENCE_KEYWORDS = {"$defs", "$ref", "definitions"}
 
 
 class _InertCollaborator:

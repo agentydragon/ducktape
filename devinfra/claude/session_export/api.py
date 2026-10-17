@@ -38,7 +38,7 @@ CCR_BETA = "ccr-byoc-2025-07-29"  # sent by the first-party clients; the list ro
 EVENTS_PAGE_LIMIT = 500  # server maximum
 SESSIONS_PAGE_LIMIT = 100
 USER_AGENT = "claude-session-export/0.1 (personal data export)"  # the default python UA gets a Cloudflare challenge
-_RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+_RETRY_STATUSES = {429, 500, 502, 503, 504}
 _MAX_ATTEMPTS = 6
 
 # The web client restarts an event stream that has been silent this long, so the server sends something at

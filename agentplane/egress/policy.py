@@ -41,7 +41,7 @@ from agentplane.policy_sets import (
 from agentplane.subjects import ServiceAccountRef
 
 CONNECT = "CONNECT"
-WATCHED_KINDS = frozenset({CREDENTIALS_PLURAL, POLICY_SETS_PLURAL, POLICY_BINDINGS_PLURAL, "secrets"})
+WATCHED_KINDS = {CREDENTIALS_PLURAL, POLICY_SETS_PLURAL, POLICY_BINDINGS_PLURAL, "secrets"}
 
 
 class DenyReason(StrEnum):

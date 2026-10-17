@@ -26,7 +26,7 @@ class Vpa(StrEnum):
     AUTO = "auto"
 
 
-_POLICY_LABELS = frozenset({_GOLDILOCKS_ENABLED_LABEL, VPA_UPDATE_MODE_LABEL, *AgentReadable})
+_POLICY_LABELS = {_GOLDILOCKS_ENABLED_LABEL, VPA_UPDATE_MODE_LABEL, *AgentReadable}
 
 
 def _labels(name: str, vpa: Vpa, labels: Mapping[str, str] | None) -> dict[str, str]:

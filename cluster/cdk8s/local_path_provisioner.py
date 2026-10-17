@@ -31,7 +31,7 @@ _OVH_SSD = "local-path-ovh-ssd"
 _HOME_SSD = "local-path-home-ssd"
 # Classes provisioning onto SSD. OVH's tier=ssd nodes are exactly its control planes, so
 # a Cluster on local-path-ovh-ssd must tolerate them (cnpg.py).
-SSD_STORAGE_CLASSES = frozenset({_OVH_SSD, _HOME_SSD})
+SSD_STORAGE_CLASSES = {_OVH_SSD, _HOME_SSD}
 
 
 def _node_path(node: str, path: str) -> dict[str, object]:
@@ -102,7 +102,7 @@ _CLASSES = {
     _HOME_SSD: _Class(ReclaimPolicy.RETAIN, {_REGION: "home", _TIER: "ssd"}),
 }
 # All of them are node-local: a local-path volume is a directory on one node.
-NODE_LOCAL_STORAGE_CLASSES = frozenset(_CLASSES)
+NODE_LOCAL_STORAGE_CLASSES = set(_CLASSES)
 
 
 def _storage_classes(scope: Construct) -> None:

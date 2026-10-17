@@ -2,7 +2,7 @@
 
 from tana.domain.nodes import BaseNode
 
-_WRAPPER_DOC_TYPES = frozenset({"workspace", "viewDef", "layout"})
+_WRAPPER_DOC_TYPES = {"workspace", "viewDef", "layout"}
 
 
 def is_wrapper(node: BaseNode) -> bool:

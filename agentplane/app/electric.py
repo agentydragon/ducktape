@@ -37,10 +37,18 @@ _ENTITY_COLUMNS = (
 _CHUNK_COLUMNS = "thread_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
 # Electric's own protocol parameters, including the two its client adds when recovering a handle, and
 # the SSE flag it sends under both its current and its deprecated name.
-_PASSTHROUGH_QUERY = frozenset(
-    {"offset", "handle", "live", "live_sse", "experimental_live_sse", "cursor", "log", "expired_handle", "cache-buster"}
-)
-_APP_QUERY = frozenset({"projection_epoch"})
+_PASSTHROUGH_QUERY = {
+    "offset",
+    "handle",
+    "live",
+    "live_sse",
+    "experimental_live_sse",
+    "cursor",
+    "log",
+    "expired_handle",
+    "cache-buster",
+}
+_APP_QUERY = {"projection_epoch"}
 # How long a scope read waits for a thread's first fold: Electric's own long-poll hold, which the
 # deployment leaves at its default, so whatever already carries a live shape request carries this.
 SCOPE_HOLD_SECONDS = 20.0
@@ -60,26 +68,24 @@ _ENTITY_SUBSETS = {
     f"entity_kind = '{EntityKind.COMMAND}' AND entity_id = ANY($1)",
 }
 _BODY = re.compile(r"\(owner_id = \$\d+ AND generation = \$\d+\)")
-_RESPONSE_HEADERS = frozenset(
-    {
-        # keep-sorted start
-        "cache-control",
-        "content-encoding",
-        "content-type",
-        "electric-cursor",
-        "electric-handle",
-        "electric-has-data",
-        "electric-internal-known-error",
-        "electric-offset",
-        "electric-schema",
-        "electric-snapshot",
-        "electric-up-to-date",
-        "etag",
-        "retry-after",
-        "vary",
-        # keep-sorted end
-    }
-)
+_RESPONSE_HEADERS = {
+    # keep-sorted start
+    "cache-control",
+    "content-encoding",
+    "content-type",
+    "electric-cursor",
+    "electric-handle",
+    "electric-has-data",
+    "electric-internal-known-error",
+    "electric-offset",
+    "electric-schema",
+    "electric-snapshot",
+    "electric-up-to-date",
+    "etag",
+    "retry-after",
+    "vary",
+    # keep-sorted end
+}
 
 
 class ThreadScopeResponse(BaseModel):

@@ -15,7 +15,7 @@ from finance.budget.wire import (
 )
 
 _MONTH_COLUMN_LENGTH = 7  # "YYYY-MM"
-_FORMULA_TRIGGERS = frozenset(("=", "+", "-", "@", "\t", "\r"))
+_FORMULA_TRIGGERS = {"=", "+", "-", "@", "\t", "\r"}
 
 
 def _text_field(value: str) -> str:

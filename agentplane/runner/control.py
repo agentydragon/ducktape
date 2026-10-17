@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 
 # Only an operator resolves a refused token, so it backs off at the maximum.
-OPERATOR_CODES = frozenset({grpc.StatusCode.PERMISSION_DENIED})
+OPERATOR_CODES = {grpc.StatusCode.PERMISSION_DENIED}
 
 
 class HarnessStoppedError(Exception):

@@ -19,178 +19,174 @@ def _skip_env_prefix(parts: list[str]) -> int:
 
 
 # Any-args auto-allowed (simplified — real validator has regex constraints)
-_BUILTIN_CMDS = frozenset(
-    [
-        # keep-sorted start
-        "basename",
-        "cal",
-        "cat",
-        "cd",
-        "cmp",
-        "column",
-        "comm",
-        "cut",
-        "df",
-        "diff",
-        "dirname",
-        "du",
-        "echo",
-        "expand",
-        "expr",
-        "false",
-        "find",
-        "fmt",
-        "fold",
-        "free",
-        "getconf",
-        "groups",
-        "head",
-        "hexdump",
-        "id",
-        "locale",
-        "ls",
-        "nl",
-        "nproc",
-        "numfmt",
-        "od",
-        "paste",
-        "pr",
-        "printf",
-        "readlink",
-        "realpath",
-        "rev",
-        "seq",
-        "sleep",
-        "stat",
-        "strings",
-        "tac",
-        "tail",
-        "test",
-        "tr",
-        "true",
-        "tsort",
-        "type",
-        "uname",
-        "unexpand",
-        "uptime",
-        "wc",
-        "which",
-        # keep-sorted end
-    ]
-)
+_BUILTIN_CMDS = {
+    # keep-sorted start
+    "basename",
+    "cal",
+    "cat",
+    "cd",
+    "cmp",
+    "column",
+    "comm",
+    "cut",
+    "df",
+    "diff",
+    "dirname",
+    "du",
+    "echo",
+    "expand",
+    "expr",
+    "false",
+    "find",
+    "fmt",
+    "fold",
+    "free",
+    "getconf",
+    "groups",
+    "head",
+    "hexdump",
+    "id",
+    "locale",
+    "ls",
+    "nl",
+    "nproc",
+    "numfmt",
+    "od",
+    "paste",
+    "pr",
+    "printf",
+    "readlink",
+    "realpath",
+    "rev",
+    "seq",
+    "sleep",
+    "stat",
+    "strings",
+    "tac",
+    "tail",
+    "test",
+    "tr",
+    "true",
+    "tsort",
+    "type",
+    "uname",
+    "unexpand",
+    "uptime",
+    "wc",
+    "which",
+    # keep-sorted end
+}
 
 # Commands auto-allowed with safe-flags only (validated per-flag by Claude Code).
 # The scanner treats these as auto-allowed since the command name is recognized.
-_FLAG_VALIDATED_CMDS = frozenset(
-    [
-        # keep-sorted start
-        "arch",
-        "base64",
-        "date",
-        "egrep",
-        "fd",
-        "fdfind",
-        "fgrep",
-        "file",
-        "grep",
-        "help",
-        "history",
-        "hostname",
-        "ifconfig",
-        "info",
-        "jq",
-        "lsof",
-        "man",
-        "md5sum",
-        "netstat",
-        "pgrep",
-        "ps",
-        "pyright",
-        "rg",
-        "sed",
-        "sha1sum",
-        "sha256sum",
-        "sort",
-        "ss",
-        "tput",
-        "tree",
-        "uniq",
-        "xargs",
-        # keep-sorted end
-    ]
-)
+_FLAG_VALIDATED_CMDS = {
+    # keep-sorted start
+    "arch",
+    "base64",
+    "date",
+    "egrep",
+    "fd",
+    "fdfind",
+    "fgrep",
+    "file",
+    "grep",
+    "help",
+    "history",
+    "hostname",
+    "ifconfig",
+    "info",
+    "jq",
+    "lsof",
+    "man",
+    "md5sum",
+    "netstat",
+    "pgrep",
+    "ps",
+    "pyright",
+    "rg",
+    "sed",
+    "sha1sum",
+    "sha256sum",
+    "sort",
+    "ss",
+    "tput",
+    "tree",
+    "uniq",
+    "xargs",
+    # keep-sorted end
+}
 
 # Commands auto-allowed exactly (no args or very specific arg patterns)
-_EXACT_CMDS = frozenset(["pwd", "whoami", "alias"])
+_EXACT_CMDS = {"pwd", "whoami", "alias"}
 
 # Exact forms: command + specific args
-_EXACT_FORMS = frozenset(
-    ["claude -h", "claude --help", "node -v", "node --version", "python --version", "python3 --version", "ip addr"]
-)
+_EXACT_FORMS = {
+    "claude -h",
+    "claude --help",
+    "node -v",
+    "node --version",
+    "python --version",
+    "python3 --version",
+    "ip addr",
+}
 
-_GIT_READONLY = frozenset(
-    [
-        # keep-sorted start
-        "blame",
-        "branch",
-        "cat-file",
-        "config",
-        "describe",
-        "diff",
-        "for-each-ref",
-        "grep",
-        "log",
-        "ls-files",
-        "ls-remote",
-        "merge-base",
-        "name-rev",
-        "reflog",
-        "remote",
-        "rev-list",
-        "rev-parse",
-        "shortlog",
-        "show",
-        "status",
-        "tag",
-        "worktree",
-        # keep-sorted end
-    ]
-)
+_GIT_READONLY = {
+    # keep-sorted start
+    "blame",
+    "branch",
+    "cat-file",
+    "config",
+    "describe",
+    "diff",
+    "for-each-ref",
+    "grep",
+    "log",
+    "ls-files",
+    "ls-remote",
+    "merge-base",
+    "name-rev",
+    "reflog",
+    "remote",
+    "rev-list",
+    "rev-parse",
+    "shortlog",
+    "show",
+    "status",
+    "tag",
+    "worktree",
+    # keep-sorted end
+}
 
-_GH_READONLY = frozenset(
-    [
-        # keep-sorted start
-        "auth status",
-        "issue list",
-        "issue status",
-        "issue view",
-        "label list",
-        "pr checks",
-        "pr diff",
-        "pr list",
-        "pr status",
-        "pr view",
-        "release list",
-        "release view",
-        "repo view",
-        "run list",
-        "run view",
-        "search code",
-        "search commits",
-        "search issues",
-        "search prs",
-        "search repos",
-        "workflow list",
-        "workflow view",
-        # keep-sorted end
-    ]
-)
+_GH_READONLY = {
+    # keep-sorted start
+    "auth status",
+    "issue list",
+    "issue status",
+    "issue view",
+    "label list",
+    "pr checks",
+    "pr diff",
+    "pr list",
+    "pr status",
+    "pr view",
+    "release list",
+    "release view",
+    "repo view",
+    "run list",
+    "run view",
+    "search code",
+    "search commits",
+    "search issues",
+    "search prs",
+    "search repos",
+    "workflow list",
+    "workflow view",
+    # keep-sorted end
+}
 
-_DOCKER_READONLY = frozenset(["ps", "images", "logs", "inspect"])
+_DOCKER_READONLY = {"ps", "images", "logs", "inspect"}
 
-_KUBECTL_READONLY = frozenset(
-    ["get", "describe", "logs", "top", "api-resources", "api-versions", "version", "cluster-info"]
-)
+_KUBECTL_READONLY = {"get", "describe", "logs", "top", "api-resources", "api-versions", "version", "cluster-info"}
 
 
 def is_builtin_allowed(cmd: str) -> bool:
