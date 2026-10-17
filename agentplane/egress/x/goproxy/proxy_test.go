@@ -299,12 +299,14 @@ func TestInteractiveH2AndH2CTrailersCredentialAndCancellation(t *testing.T) {
 }
 
 func TestRejectsUntrustedCAAndWrongHostname(t *testing.T) {
-	for _, name := range []string{"untrusted", "wrong-host"} {
+	for _, name := range []string{"untrusted", "wrong-host", "interception-root"} {
 		t.Run(name, func(t *testing.T) {
 			l := newLab(t)
 			host := fixtureHost
 			if name == "untrusted" {
 				l.upstreamCA, _ = makeCA(t, "untrusted")
+			} else if name == "interception-root" {
+				l.upstreamCA = l.options.CA
 			} else {
 				host = "other.test"
 			}
@@ -324,6 +326,8 @@ func TestRejectsUntrustedCAAndWrongHostname(t *testing.T) {
 }
 
 func TestPinnedDialDoesNotResolveAgain(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
 	l := newLab(t)
 	upstream, counted := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("pinned")) }))
 	// upstream.test has no system DNS entry. A hostname dial instead of the literal
@@ -348,6 +352,37 @@ func TestPinnedDialDoesNotResolveAgain(t *testing.T) {
 	}
 	if string(data) != "pinned" || calls.Load() != 1 || counted.accepts.Load() != 1 {
 		t.Fatalf("dial: body=%q DNS=%d TCP=%d", data, calls.Load(), counted.accepts.Load())
+	}
+}
+
+func TestRevocationDuringDNSAndMixedForbiddenAnswersNeverDial(t *testing.T) {
+	for _, scenario := range []string{"revoked-during-dns", "mixed-answers"} {
+		t.Run(scenario, func(t *testing.T) {
+			l := newLab(t)
+			upstream, counted := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("denied DNS admission reached upstream") }))
+			l.options.Resolve = func(context.Context, string, string) ([]netip.Addr, error) {
+				if scenario == "revoked-during-dns" {
+					l.mu.Lock()
+					l.snapshot.Bindings = nil
+					l.mu.Unlock()
+				}
+				addresses := []netip.Addr{netip.MustParseAddr("127.0.0.1")}
+				if scenario == "mixed-answers" {
+					addresses = append(addresses, netip.MustParseAddr("::ffff:169.254.169.254"))
+				}
+				return addresses, nil
+			}
+			l.start(t)
+			_, connection := l.tunnel(t, portOf(upstream), true)
+			response, err := connection.RoundTrip(request(bounded(t), portOf(upstream), "/allowed", true, nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if response.StatusCode != 403 || counted.accepts.Load() != 0 {
+				t.Fatalf("denied after DNS: status=%d TCP=%d", response.StatusCode, counted.accepts.Load())
+			}
+		})
 	}
 }
 
@@ -445,8 +480,8 @@ func TestIncrementalSSEAndWebSocket(t *testing.T) {
 	// WebSocket upgrades require HTTP/1 on both legs; HTTP/2 extended CONNECT is
 	// a different protocol and intentionally outside this spike.
 	proxyURL, _ := url.Parse(l.proxy.URL)
-	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL), TLSClientConfig: &tls.Config{RootCAs: l.roots}, ProxyConnectHeader: http.Header{"Proxy-Authorization": {"Bearer valid"}}}, Timeout: 5 * time.Second}
-	req, _ := http.NewRequest("GET", "https://"+fixtureHost+":"+portOf(upstream)+"/ws", nil)
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL), TLSClientConfig: &tls.Config{RootCAs: l.roots}, ProxyConnectHeader: http.Header{"Proxy-Authorization": {"Bearer valid"}}}}
+	req, _ := http.NewRequestWithContext(bounded(t), "GET", "https://"+fixtureHost+":"+portOf(upstream)+"/ws", nil)
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Sec-WebSocket-Version", "13")

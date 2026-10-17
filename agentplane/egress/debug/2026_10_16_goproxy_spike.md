@@ -62,7 +62,29 @@ The lab creates a transport per admitted request to prevent connection pooling/c
 bypassing its request pin; throughput/pooling costs remain an explicit production design question.
 IPv6 and complete reserved-address policy require further work before any production use.
 
-## Decision pending socket evidence
+## First CI results and required patch
+
+Draft [#10816](https://github.com/agentydragon/ducktape/pull/10816), head `690358ca34`, tested
+with GitHub's merge commit in [CI 38995208063](https://github.com/agentydragon/ducktape/actions/runs/38995208063),
+[test invocation 9be02e8c-1189-5f91-bcbf-f103aa8573e7](https://app.buildbuddy.io/invocation/9be02e8c-1189-5f91-bcbf-f103aa8573e7):
+
+- `//agentplane/egress:test_proxy` passed all 47 cases, including identical current/Go HTTP
+  whole-value substitution and interactive TLS/h2c gRPC reads before request EOF with trailers.
+- `transport_test` ran and failed at the two TLS/h2c header-only-open response cases and the
+  Go WebSocket client's duplex-body assertion. No other Go case reported a failure, including
+  real envtest list/watch binding deletion on a held H2 connection, zero-TCP denial, bad CA/host,
+  literal pin dialing and existing-connection binding/staleness/identity cleanup.
+- The H2 failure is a real library behavior: `http2.go` writes initial response headers but
+  waits on the first body read before flushing them. An upstream sending headers and waiting
+  for a later client message can stall a client waiting for initial metadata. A tiny pinned
+  `flush_h2_headers.patch` flushes after `WriteHeader`; the failing contract is retained.
+- The WebSocket assertion was a test-client issue: Go `http.Client.Timeout` wraps the 101 body
+  in a reader that hides its `io.Writer`. The fixture now uses a request context deadline,
+  preserving the duplex body. The independent aiohttp WebSocket comparison remains required.
+- Repository-wide test summary was 1466 passing, one failing target. This was a red run;
+  compilation and unrelated passing tests do not make the spike accepted.
+
+## Decision pending patched socket evidence
 
 Do not select GoProxy for central production replacement from compilation or source inspection.
 The spike must report actual protocol/security outcomes and any required upstream patches or

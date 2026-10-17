@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+exports_files(["flush_h2_headers.patch"])
+
 go_library(
     name = "goproxy",
     srcs = ["proxy.go"],
