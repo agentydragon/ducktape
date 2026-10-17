@@ -12,6 +12,31 @@ is decrypted by the environment-level Flux consumer. The consumer explicitly che
 trust-manager-generated CA ConfigMap and Bundle because the ConfigMap is created
 asynchronously outside the artifact.
 
+## Harness lifecycle image promotion
+
+The shared `all-images` automation writes new tags to `image-pins/` entries carrying a Flux Setters
+marker. During the runner-owned lifecycle rollout, this directory omits markers from the app and
+runner-gateway image pairs, the notification-service pair, `runner`, `runner-ducktape`, and the
+runner VM image. Their current staging tags stay fixed while `agentplane-testing-image-pins` keeps
+tracking CI tags.
+
+After testing has applied and accepted a release, record the exact tags from
+`cluster/k8s/agentplane-testing-image-pins/kustomization.yaml`. Keep new staging starts disabled and
+confirm the Runner Pod query returns no rows:
+
+```bash
+kubectl get pods -n agentplane-staging \
+  -l app.kubernetes.io/name=agentplane-runner \
+  --field-selector=status.phase=Running
+```
+
+Update the held `newTag` values in this directory to those tested tags, without restoring the Flux
+markers yet. The `agentplane-staging` and `agentplane-staging-delivery` Flux Kustomizations consume
+this Component from the repo source after the change reaches `devel`; no direct cluster apply is
+needed. Keep the existing Sandbox objects and their UIDs and storage. Verify the staging rollout and
+the lifecycle acceptance before restoring the `:tag` markers on the held entries to resume automatic
+staging promotion.
+
 ## Action policies
 
 This environment's Git-managed Action policy sets and the `PolicyBinding`s for labeled caller
