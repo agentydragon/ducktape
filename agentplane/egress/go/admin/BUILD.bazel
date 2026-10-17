@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//agentplane/egress/go/decision",
         "//agentplane/egress/go/history",
+        "//agentplane/egress/go/policy",
     ],
 )
 
@@ -18,6 +19,7 @@ go_test(
     deps = [
         "//agentplane/egress/go/decision",
         "//agentplane/egress/go/history",
+        "//agentplane/egress/go/policy",
         "@com_github_google_uuid//:uuid",
     ],
 )

@@ -68,7 +68,12 @@ func New(options Options) (*Proxy, error) {
 		return nil, err
 	}
 	p := &Proxy{options: options, leaves: leaves, producer: uuid.New(), flights: newFlights()}
-	p.server = &http.Server{Handler: http.HandlerFunc(p.serve), ReadHeaderTimeout: 30 * time.Second, ErrorLog: log.New(io.Discard, "", 0)}
+	p.server = &http.Server{
+		Handler: http.HandlerFunc(p.serve), ReadHeaderTimeout: 30 * time.Second, ErrorLog: log.New(io.Discard, "", 0),
+		ConnContext: func(ctx context.Context, _ net.Conn) context.Context {
+			return context.WithValue(ctx, connectionIDKey{}, uuid.NewString())
+		},
+	}
 	return p, nil
 }
 
@@ -87,6 +92,9 @@ func (p *Proxy) Drain(ctx context.Context) error {
 	return errors.Join(err, p.server.Close())
 }
 
+// connectionIDKey carries the identifier of the client connection a request arrived on.
+type connectionIDKey struct{}
+
 // connection is the authenticated state of one client connection, which a tunnel's requests share:
 // their headers are behind the tunnel's TLS, so what the CONNECT presented is what applies.
 type connection struct {
@@ -96,12 +104,20 @@ type connection struct {
 	auth *authenticated
 }
 
+// newConnection starts the state of a request that arrived on the accepted connection, whose
+// identifier the decisions it leads to share.
+func newConnection(r *http.Request) *connection {
+	return &connection{id: r.Context().Value(connectionIDKey{}).(string)}
+}
+
 func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodConnect:
 		p.connect(w, r)
 	case r.URL.IsAbs():
-		p.forward(w, r, &connection{id: uuid.NewString()})
+		// Only the identifier is shared along the client connection: a plain request proves its own
+		// bearer, so one without inherits nothing.
+		p.forward(w, r, newConnection(r))
 	default:
 		http.Error(w, "proxy requests only", http.StatusBadRequest)
 	}
@@ -114,7 +130,7 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "CONNECT needs host:port", http.StatusBadRequest)
 		return
 	}
-	client := &connection{id: uuid.NewString()}
+	client := newConnection(r)
 	verdict, _ := p.gate(r, client, nil, host, portNumber)
 	if denied, ok := verdict.(policy.Denied); ok {
 		deny(w, denied.Reason)

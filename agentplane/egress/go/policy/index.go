@@ -45,8 +45,10 @@ type PolicySet struct {
 type Index struct {
 	staleAfter time.Duration
 
-	mu          sync.RWMutex
-	sets        map[string]PolicySet
+	mu   sync.RWMutex
+	sets map[string]PolicySet
+	// refused holds why each set with an egress rule that does not parse grants this proxy nothing.
+	refused     map[string]string
 	bindings    map[string]policyapi.PolicyBinding
 	credentials map[string]resources.Credential
 	secrets     map[string]resources.Secret
@@ -65,6 +67,7 @@ func NewIndex(staleAfter time.Duration) *Index {
 	return &Index{
 		staleAfter:  staleAfter,
 		sets:        map[string]PolicySet{},
+		refused:     map[string]string{},
 		bindings:    map[string]policyapi.PolicyBinding{},
 		credentials: map[string]resources.Credential{},
 		secrets:     map[string]resources.Secret{},
@@ -77,6 +80,35 @@ func NewIndex(staleAfter time.Duration) *Index {
 func (i *Index) Available(now time.Time) bool {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
+	return i.available(now)
+}
+
+// Status is the facts Available rests on, read at one moment.
+type Status struct {
+	Available bool
+	// Synced is whether every watched kind has been listed once.
+	Synced   bool
+	Draining bool
+	// StaleAfter is how long a watched kind may go without completing a cycle.
+	StaleAfter time.Duration
+	// Ages is the time since each recorded kind last completed a cycle.
+	Ages map[Kind]time.Duration
+}
+
+// Status reads the verdict and the ages it rests on under one lock, so they cannot disagree.
+func (i *Index) Status(now time.Time) Status {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	ages := make(map[Kind]time.Duration, len(i.cycles))
+	for kind, completed := range i.cycles {
+		ages[kind] = now.Sub(completed)
+	}
+	return Status{
+		Available: i.available(now), Synced: i.synced, Draining: i.draining, StaleAfter: i.staleAfter, Ages: ages,
+	}
+}
+
+func (i *Index) available(now time.Time) bool {
 	if i.draining || !i.synced {
 		return false
 	}
@@ -124,8 +156,10 @@ func (i *Index) PutPolicySet(set *policyapi.PolicySet) {
 	if err != nil {
 		slog.Warn("PolicySet refused", "policySet", set.Name, "error", err)
 		delete(i.sets, set.Name)
+		i.refused[set.Name] = err.Error()
 		return
 	}
+	delete(i.refused, set.Name)
 	i.sets[set.Name] = parsed
 }
 
@@ -133,6 +167,36 @@ func (i *Index) DeletePolicySet(name string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	delete(i.sets, name)
+	delete(i.refused, name)
+}
+
+// Refusal is a set whose egress rule does not parse, and why.
+type Refusal struct{ Set, Reason string }
+
+// Resolution is what the sets a binding names give this proxy. A missing or refused set takes
+// nothing from the others.
+type Resolution struct {
+	Missing []string
+	Refused []Refusal
+	// Rules is the egress rules of the sets that did parse.
+	Rules int
+}
+
+// Resolve reports how the named sets stand, in the order named.
+func (i *Index) Resolve(names []string) Resolution {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	var resolution Resolution
+	for _, name := range names {
+		if set, ok := i.sets[name]; ok {
+			resolution.Rules += len(set.Rules)
+		} else if reason, ok := i.refused[name]; ok {
+			resolution.Refused = append(resolution.Refused, Refusal{Set: name, Reason: reason})
+		} else {
+			resolution.Missing = append(resolution.Missing, name)
+		}
+	}
+	return resolution
 }
 
 func parseSet(set *policyapi.PolicySet) (PolicySet, error) {

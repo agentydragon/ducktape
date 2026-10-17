@@ -31,3 +31,14 @@ py_library(
         "@pypi//aiohttp",
     ],
 )
+
+py_library(
+    name = "go_replica",
+    srcs = ["go_replica.py"],
+    deps = [
+        ":replica",
+        "//agentplane/egress:settings",
+        "//util/bazel:runfiles",
+        "@pypi//sqlalchemy",
+    ],
+)

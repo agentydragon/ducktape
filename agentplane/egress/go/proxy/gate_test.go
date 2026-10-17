@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"runtime"
 	"strconv"
 	"strings"
@@ -162,6 +163,41 @@ func TestAdmittedRequestIsSubstitutedAndLosesItsHopHeaders(t *testing.T) {
 		*record.Address != "127.0.0.1" || *record.Binding != "runner" || *record.Policy != "egress" || *record.Rule != 0 ||
 		*record.SourcePodUID != "uid-pod-1" || record.Subject.Name != "runner" || record.Host != fixtureHost {
 		t.Errorf("status %d, record %+v", response.StatusCode, record)
+	}
+}
+
+func TestPlainRequestsOnOneClientConnectionShareAConnectionID(t *testing.T) {
+	l := newLab(t)
+	upstream := plainUpstream(t, func(http.ResponseWriter, *http.Request) {})
+	proxyURL, err := url.Parse("http://" + l.address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(client *http.Client, path string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(bounded(t), "GET", "http://"+fixtureHost+":"+portOf(upstream)+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header["Proxy-Authorization"] = bearerHeader["Proxy-Authorization"]
+		response, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+	}
+	first := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	second := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	get(first, "/allowed")
+	get(first, "/refused")
+	get(second, "/allowed")
+	got := l.records.all()
+	if len(got) != 3 {
+		t.Fatalf("%d decisions, want 3", len(got))
+	}
+	if got[0].ConnectionID != got[1].ConnectionID || got[0].ConnectionID == got[2].ConnectionID {
+		t.Errorf("connection IDs %q, %q, %q: want the first client's requests to share one, the second's to differ",
+			got[0].ConnectionID, got[1].ConnectionID, got[2].ConnectionID)
 	}
 }
 

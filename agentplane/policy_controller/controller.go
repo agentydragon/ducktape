@@ -143,7 +143,7 @@ func (r *Reconciler) expand(ctx context.Context, binding *policyapi.PolicyBindin
 		return desired, "ApplyFailed", strings.Join(missingRoles, "; "), nil
 	}
 	if len(missingSets) > 0 {
-		return desired, "PolicySetUnavailable", "missing PolicySets: " + strings.Join(missingSets, ", "), nil
+		return desired, policyapi.PolicySetUnavailable, "missing PolicySets: " + strings.Join(missingSets, ", "), nil
 	}
 	return desired, "Applied", fmt.Sprintf("%d native bindings", len(desired)), nil
 }
@@ -376,16 +376,9 @@ func (r *Reconciler) applyCondition(ctx context.Context, binding *policyapi.Poli
 	if reason == "Applied" {
 		status = metav1.ConditionTrue
 	}
-	conditions := slices.Clone(binding.Status.Conditions)
-	if !meta.SetStatusCondition(&conditions, metav1.Condition{
-		Type: KubernetesReady, Status: status, Reason: reason, Message: message, ObservedGeneration: binding.Generation,
-	}) {
+	patch := binding.PrepareConditionApply(metav1.Condition{Type: KubernetesReady, Status: status, Reason: reason, Message: message})
+	if patch == nil {
 		return nil
-	}
-	patch := &policyapi.PolicyBinding{
-		TypeMeta:   metav1.TypeMeta{APIVersion: policyapi.GroupVersion.String(), Kind: "PolicyBinding"},
-		ObjectMeta: metav1.ObjectMeta{Name: binding.Name, Namespace: binding.Namespace},
-		Status:     policyapi.Status{Conditions: []metav1.Condition{*meta.FindStatusCondition(conditions, KubernetesReady)}},
 	}
 	// The CRD has no generated apply configuration; an unstructured one carries the same fields.
 	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(patch)

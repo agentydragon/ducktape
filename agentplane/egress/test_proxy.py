@@ -10,10 +10,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator, Collection, Mapping
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Callable, Collection, Mapping
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
+from enum import StrEnum
+from functools import partial
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 
@@ -63,7 +65,8 @@ from agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from agentplane.egress.resources import Rule, TargetMethod, placeholder_of
 from agentplane.egress.rules_api import RulesProjection, create_rules_app
 from agentplane.egress.settings import Settings
-from agentplane.egress.testing.replica import kubeconfig, replica
+from agentplane.egress.testing.go_replica import GoReplica, go_replica
+from agentplane.egress.testing.replica import Replica, kubeconfig, replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.egress.testing.tls import (
     CertificateAuthority,
@@ -97,7 +100,6 @@ from agentplane.testing.fake_apiserver import (
 )
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import pick_free_port
 
 
@@ -1066,7 +1068,31 @@ async def test_one_tls_connection_carries_every_admitted_request(
     assert len({row.connection_id for row in await decision_log.store.recent(SUBJECT_A)}) == 1
 
 
-def replica_settings(tmp_path: Path, name: str, *, api_port: int, ca: tuple[Path, Path], database_url: str) -> Settings:
+class Backend(StrEnum):
+    MITMPROXY = "mitmproxy"
+    GOPROXY = "goproxy"
+
+
+StartReplica = Callable[[Settings], AbstractAsyncContextManager[Replica | GoReplica]]
+
+
+@pytest.fixture(params=list(Backend))
+def start_replica(request: pytest.FixtureRequest, tmp_path: Path) -> StartReplica:
+    """The same black-box tests, run against the Python proxy and the Go binary."""
+    if request.param is Backend.MITMPROXY:
+        return replica
+    return partial(go_replica, directory=tmp_path)
+
+
+def replica_settings(
+    tmp_path: Path,
+    name: str,
+    *,
+    api_port: int,
+    ca: tuple[Path, Path],
+    database_url: str,
+    upstream_ca_file: Path | None = None,
+) -> Settings:
     """A replica process watching the fake API server on `api_port`, on ports of its own."""
     cert, key = ca
     return Settings(
@@ -1085,13 +1111,17 @@ def replica_settings(tmp_path: Path, name: str, *, api_port: int, ca: tuple[Path
         agent_api_host="127.0.0.1",
         agent_api_port=pick_free_port(),
         token_audience=AUDIENCE,
-        resync_seconds=1,
+        upstream_ca_file=upstream_ca_file,
+        # The Go informer's watch period is whole seconds, two at the least.
+        resync_seconds=2,
         database_url=database_url,
         exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
     )
 
 
-async def test_health_reports_ready_only_once_the_tunnel_accepts(tmp_path: Path, history_db_url: str) -> None:
+async def test_health_reports_ready_only_once_the_tunnel_accepts(
+    tmp_path: Path, history_db_url: str, start_replica: StartReplica
+) -> None:
     """Readiness gates every Service this Pod backs, and the tunnel is the one that carries traffic.
 
     mitmproxy binds appreciably later than the admin server does, so an admin server started first
@@ -1104,14 +1134,14 @@ async def test_health_reports_ready_only_once_the_tunnel_accepts(tmp_path: Path,
     async with fake_apiserver() as api:
         seed(api)
         settings = replica_settings(tmp_path, "readiness", api_port=api.port, ca=ca, database_url=history_db_url)
-        async with replica(settings) as running:
+        async with start_replica(settings) as running:
             _, writer = await asyncio.open_connection("127.0.0.1", running.proxy_port)
             writer.close()
             await writer.wait_closed()
 
 
 async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
-    tmp_path: Path, history_db_url: str, decision_log: DecisionLog
+    tmp_path: Path, history_db_url: str, decision_log: DecisionLog, start_replica: StartReplica
 ) -> None:
     ca = make_ca("test-replica-ca")
     cert, key = write_ca(ca, tmp_path, "replica")
@@ -1126,7 +1156,11 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             replica_settings(tmp_path, f"replica-{i}", api_port=fake.port, ca=(cert, key), database_url=history_db_url)
             for i, fake in enumerate([first_api, second_api])
         ]
-        async with replica(settings[0]) as first, replica(settings[1]) as second, aiohttp.ClientSession() as client:
+        async with (
+            start_replica(settings[0]) as first,
+            start_replica(settings[1]) as second,
+            aiohttp.ClientSession() as client,
+        ):
 
             async def get(port: int, path: str, expected: int) -> None:
                 async with client.get(
@@ -1187,6 +1221,40 @@ async def test_drain_closes_listener_but_completes_admitted_request(proxy: Proxy
     finally:
         proxy.upstream.slow_release.set()
         await asyncio.gather(pending, draining, return_exceptions=True)
+
+
+async def test_go_proxy_finishes_an_admitted_request_after_sigterm(tmp_path: Path, history_db_url: str) -> None:
+    """Termination takes the Pod out of rotation at once, yet lets the request already admitted finish."""
+    ca = make_ca("test-sigterm-ca")
+    cert, key = write_ca(ca, tmp_path, "sigterm")
+    async with (
+        fake_apiserver() as api,
+        recording_upstream(*issue_leaf(ca, UPSTREAM_HOST, tmp_path)) as upstream,
+        aiohttp.ClientSession() as client,
+    ):
+        seed(api)
+        settings = replica_settings(tmp_path, "sigterm", api_port=api.port, ca=(cert, key), database_url=history_db_url)
+        async with go_replica(settings, directory=tmp_path) as running:
+
+            async def slow_status() -> int:
+                async with client.get(
+                    f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/slow",
+                    proxy=f"http://127.0.0.1:{running.proxy_port}",
+                    headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                ) as response:
+                    await response.read()
+                    return response.status
+
+            pending = asyncio.create_task(slow_status())
+            await asyncio.wait_for(upstream.slow_started.wait(), 10)
+            running.terminate()
+            await running.health(503)
+            with pytest.raises(ConnectionRefusedError):
+                await asyncio.open_connection("127.0.0.1", running.proxy_port)
+            assert not pending.done()
+            upstream.slow_release.set()
+            assert await asyncio.wait_for(pending, 10) == 200
+    assert len(upstream.requests) == 1
 
 
 PROJECTED_CREDENTIAL = "kubernetes-workload"
@@ -1337,12 +1405,13 @@ _CONTRACT_CREDENTIAL = "transport-contract"
 _CONTRACT_PATH = "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream"
 
 
-@pytest.fixture(params=["mitmproxy", "goproxy"])
-async def contract_port(request: pytest.FixtureRequest, proxy: ProxyUnderTest) -> AsyncIterator[int]:
-    """Run identical socket assertions through the current service and Go lab candidate.
+@pytest.fixture(params=list(Backend))
+async def contract_port(
+    request: pytest.FixtureRequest, proxy: ProxyUnderTest, history_db_url: str
+) -> AsyncIterator[int]:
+    """Run identical socket assertions through the Python proxy and the Go binary.
 
-    The existing proxy fixture owns throwaway roots, a real informer and controlled TokenReview
-    API. The Go lab reads a fixture snapshot; this comparison does not claim informer parity.
+    Both watch the one fake API server `proxy` seeded, each with its own informer.
     """
     proxy.fake.put(SECRETS_PLURAL, secret(_CONTRACT_CREDENTIAL, {"key": "contract-secret"}))
     proxy.fake.put(
@@ -1368,54 +1437,19 @@ async def contract_port(request: pytest.FixtureRequest, proxy: ProxyUnderTest) -
         ),
     )
     await bind_to_a(proxy, _CONTRACT_CREDENTIAL, _CONTRACT_CREDENTIAL)
-    if request.param == "mitmproxy":
+    if request.param is Backend.MITMPROXY:
         yield proxy.proxy_port
         return
-    snapshot = proxy.tmp_path / "transport-snapshot.json"
-    snapshot.touch(mode=0o600)
-    # Only the supported subset enters this lab snapshot. The current service still
-    # obtains its policy/credentials through its ordinary informer and Secret watch.
-    snapshot.write_text(
-        json.dumps(
-            {
-                "Sets": [proxy.fake.objects[POLICY_SETS_PLURAL][_CONTRACT_CREDENTIAL]],
-                "Bindings": [
-                    policy_binding("contract", subject=SUBJECT_A.model_dump(), policy_sets=[_CONTRACT_CREDENTIAL])
-                    | {"metadata": {"name": "contract", "namespace": proxy.fake.namespace_of[POLICY_BINDINGS_PLURAL]}}
-                ],
-                "Credentials": {_CONTRACT_CREDENTIAL: {"Header": "x-buildbuddy-api-key", "Value": "contract-secret"}},
-                "FreshUntil": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
-            }
-        )
+    settings = replica_settings(
+        proxy.tmp_path,
+        "contract",
+        api_port=proxy.fake.port,
+        ca=write_ca(proxy.interception_ca, proxy.tmp_path, "contract-interception"),
+        database_url=history_db_url,
+        upstream_ca_file=write_ca(proxy.upstream_ca, proxy.tmp_path, "contract-upstream")[0],
     )
-    ca, key = write_ca(proxy.interception_ca, proxy.tmp_path, "contract-interception")
-    roots, _ = write_ca(proxy.upstream_ca, proxy.tmp_path, "contract-upstream")
-    binary = get_required_path(own_repo_rlocation("agentplane/egress/x/goproxy/cmd/goproxy_lab_/goproxy_lab"))
-    process = await asyncio.create_subprocess_exec(
-        str(binary),
-        f"--snapshot={snapshot}",
-        f"--ca={ca}",
-        f"--key={key}",
-        f"--roots={roots}",
-        f"--kubeconfig={kubeconfig(proxy.tmp_path / 'contract-kubeconfig', proxy.fake.port)}",
-        f"--audience={AUDIENCE}",
-        f"--namespace={SANDBOX_NAMESPACE}",
-        f"--fixture-host={UPSTREAM_HOST}",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        assert process.stdout is not None
-        async with asyncio.timeout(15):
-            ready = await process.stdout.readline()
-        assert ready, "Go lab exited without publishing its listener"
-        yield int(json.loads(ready)["port"])
-    finally:
-        if process.returncode is None:
-            process.terminate()
-        async with asyncio.timeout(10):
-            _, stderr = await process.communicate()
-        assert process.returncode in (0, -15), stderr.decode()
+    async with go_replica(settings, directory=proxy.tmp_path) as running:
+        yield running.proxy_port
 
 
 async def test_shared_transport_header_substitution(proxy: ProxyUnderTest, contract_port: int) -> None:

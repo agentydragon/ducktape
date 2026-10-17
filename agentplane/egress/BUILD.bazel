@@ -265,8 +265,9 @@ py_test(
     size = "medium",
     srcs = ["test_proxy.py"],
     data = [
+        "//agentplane/egress/go/cmd:egress-proxy",
+        "//agentplane/egress/go/migrations/cmd:egress-history-migrate",
         "//agentplane/egress/sidecar:egress-sidecar",
-        "//agentplane/egress/x/goproxy/cmd:goproxy_lab",
     ],
     requires_docker = True,
     deps = [
@@ -286,6 +287,7 @@ py_test(
         "//:conftest",
         "//agentplane:kubernetes_watch",
         "//agentplane:policy_sets",
+        "//agentplane/egress/testing:go_replica",
         "//agentplane/egress/testing:replica",
         "//agentplane/egress/testing:sidecar_process",
         "//agentplane/egress/testing:tls",
@@ -293,7 +295,6 @@ py_test(
         "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",
         "//util:net",
-        "//util/bazel:runfiles",
         "@pypi//aiohttp",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
@@ -461,7 +462,7 @@ py_test(
 py_library(
     name = "rules_api",
     srcs = ["rules_api.py"],
-    data = glob(["docs/agents/**"]),
+    data = ["//agentplane/egress/docs:agents"],
     deps = [
         ":agent_view",
         ":policy",

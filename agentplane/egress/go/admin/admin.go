@@ -13,6 +13,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/go/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/go/history"
+	"github.com/agentydragon/ducktape/agentplane/egress/go/policy"
 )
 
 // Decisions reads a subject's retained decisions; a nil subject selects the refusals that never
@@ -31,23 +32,9 @@ type HistoryHealth interface {
 	Health() history.Health
 }
 
-// IndexStatus is the policy index as `/healthz` reports it.
-type IndexStatus struct {
-	// Available is whether the proxy may admit traffic: the index is complete, every watched kind is
-	// fresh, and the proxy is not draining.
-	Available bool
-	// Synced is whether every watched kind has listed once.
-	Synced   bool
-	Draining bool
-	// StaleAfter is how long a watched kind may go without completing a list-and-watch cycle.
-	StaleAfter time.Duration
-	// Ages is the time since each watched kind last completed a cycle.
-	Ages map[string]time.Duration
-}
-
 // Index is read once per `/healthz` request, so the verdict and the ages it rests on agree.
 type Index interface {
-	Status(now time.Time) IndexStatus
+	Status(now time.Time) policy.Status
 }
 
 // New serves the admin API.
@@ -149,7 +136,7 @@ func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
 		RefreshedSecondsAgo: make(map[string]float64, len(status.Ages)),
 	}
 	for kind, age := range status.Ages {
-		body.RefreshedSecondsAgo[kind] = math.Round(age.Seconds()*10) / 10
+		body.RefreshedSecondsAgo[string(kind)] = math.Round(age.Seconds()*10) / 10
 	}
 	code := http.StatusOK
 	if !status.Available {
