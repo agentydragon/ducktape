@@ -1,9 +1,10 @@
-// Package auth authenticates Pod-bound workload tokens for the unified Runner Gateway.
+// Package auth authenticates Pod-bound workload tokens for Agentplane services.
 // Each API surface constructs its own Resolver with its own audience and namespace policy.
 package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -19,6 +20,11 @@ const (
 	podNameClaim  = "authentication.kubernetes.io/pod-name"
 	podUIDClaim   = "authentication.kubernetes.io/pod-uid"
 	accountPrefix = "system:serviceaccount:"
+)
+
+var (
+	ErrInvalidBearer = errors.New("invalid workload bearer")
+	ErrUnavailable   = errors.New("workload authentication unavailable")
 )
 
 // Account is the ServiceAccount identity used by caller and method allowlists.
@@ -62,38 +68,55 @@ func NewResolver(reviews TokenReviews, audience string, namespaces []string) (*R
 	return &Resolver{reviews: reviews, audience: audience, namespaces: allowed}, nil
 }
 
-// Resolve accepts exactly one Bearer metadata value and requires the reviewed audience,
-// ServiceAccount UID and singular Pod binding claims. It performs a TokenReview on every call.
+// Resolve adapts gRPC metadata to ResolveAuthorization. HTTP callers use the same
+// authorization parser and TokenReview policy directly.
 func (r *Resolver) Resolve(ctx context.Context) (Principal, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok || len(md.Get("authorization")) != 1 {
-		return Principal{}, status.Error(codes.Unauthenticated, "invalid workload bearer")
+	if !ok {
+		return Principal{}, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 	}
-	value := md.Get("authorization")[0]
+	principal, err := r.ResolveAuthorization(ctx, md.Get("authorization"))
+	switch {
+	case errors.Is(err, ErrInvalidBearer):
+		return Principal{}, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+	case errors.Is(err, ErrUnavailable):
+		return Principal{}, status.Error(codes.Unavailable, ErrUnavailable.Error())
+	default:
+		return principal, err
+	}
+}
+
+// ResolveAuthorization accepts exactly one Bearer value and requires the reviewed audience,
+// ServiceAccount UID and singular Pod binding claims. It performs a TokenReview on every call.
+func (r *Resolver) ResolveAuthorization(ctx context.Context, values []string) (Principal, error) {
+	if len(values) != 1 {
+		return Principal{}, ErrInvalidBearer
+	}
+	value := values[0]
 	if !strings.HasPrefix(value, "Bearer ") || strings.TrimSpace(value[7:]) == "" || strings.ContainsAny(value[7:], " \t\r\n") {
-		return Principal{}, status.Error(codes.Unauthenticated, "invalid workload bearer")
+		return Principal{}, ErrInvalidBearer
 	}
 	review, err := r.reviews.Create(ctx, &authenticationv1.TokenReview{
 		Spec: authenticationv1.TokenReviewSpec{Token: value[7:], Audiences: []string{r.audience}},
 	}, metav1.CreateOptions{})
 	if err != nil {
-		return Principal{}, status.Error(codes.Unavailable, "workload authentication unavailable")
+		return Principal{}, ErrUnavailable
 	}
 	if review == nil || !review.Status.Authenticated || !slices.Contains(review.Status.Audiences, r.audience) {
-		return Principal{}, status.Error(codes.Unauthenticated, "invalid workload bearer")
+		return Principal{}, ErrInvalidBearer
 	}
 	parts := strings.Split(review.Status.User.Username, ":")
 	if len(parts) != 4 || parts[0]+":"+parts[1]+":" != accountPrefix || parts[2] == "" || parts[3] == "" {
-		return Principal{}, status.Error(codes.Unauthenticated, "invalid workload bearer")
+		return Principal{}, ErrInvalidBearer
 	}
 	if _, ok := r.namespaces[parts[2]]; !ok {
-		return Principal{}, status.Error(codes.Unauthenticated, "invalid workload bearer")
+		return Principal{}, ErrInvalidBearer
 	}
 	extra := review.Status.User.Extra
 	podName, okName := oneClaim(extra[podNameClaim])
 	podUID, okUID := oneClaim(extra[podUIDClaim])
 	if !okName || !okUID || review.Status.User.UID == "" {
-		return Principal{}, status.Error(codes.Unauthenticated, "invalid workload bearer")
+		return Principal{}, ErrInvalidBearer
 	}
 	return Principal{
 		Account:           Account{Namespace: parts[2], Name: parts[3]},

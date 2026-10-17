@@ -1,4 +1,4 @@
-"""Deployment settings for the authenticated LLM ingress."""
+"""Authoring schema for the Go LLM ingress deployment settings."""
 
 from pathlib import Path
 from typing import ClassVar

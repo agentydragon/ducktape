@@ -10,10 +10,10 @@ go_library(
     visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
         "//agentplane/proto:session_dispatcher_go_proto",
-        "//agentplane/runner_gateway/go/auth",
         "//agentplane/runner_gateway/go/dispatcher",
         "//agentplane/runner_gateway/go/gateway",
         "//agentplane/sandboxes/api",
+        "//agentplane/workload_auth/go/auth",
         "@com_github_go_logr_logr//:logr",
         "@com_github_lib_pq//:pq",
         "@io_k8s_apimachinery//pkg/runtime",

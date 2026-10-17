@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
 
 type accountFlags []auth.Account

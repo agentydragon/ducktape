@@ -6,7 +6,7 @@ import (
 	"time"
 
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"
 	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"

@@ -3,11 +3,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "auth",
     srcs = ["auth.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth",
-    visibility = [
-        "//agentplane/runner_gateway:__subpackages__",
-        "//agentplane/runner_gateway/go:__subpackages__",
-    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth",
+    visibility = ["//agentplane:__subpackages__"],
     deps = [
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

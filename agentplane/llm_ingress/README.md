@@ -1,9 +1,10 @@
 # Agentplane LLM workload ingress
 
-This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. The
+This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. Its runtime is a Go binary; Python models remain for deployment
+authoring and the runner-facing model-config contract. The
 central egress proxy substitutes the caller's already-authenticated Pod-bound workload token into
 an ordinary `Authorization: Bearer` header. This service resolves that bearer with the shared
-`WorkloadPrincipalAuthenticator`, removes it, and forwards the request to LiteLLM with one
+Go workload-auth resolver, removes it, and forwards the request to LiteLLM with one
 server-held virtual key.
 
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
@@ -73,3 +74,12 @@ Each environment projects selected routes through the explicit runner budget map
 into `LlmIngressProps.models`, then `settings.py`'s configuration schema. `models.py` owns the lightweight
 `ModelConfig` API contract shared by ingress, runner, and config generation.
 These are configured harness overrides, not a catalog of every known model capacity.
+
+## Contract tests
+
+`test_ingress` starts the Bazel-built Go process against fake Kubernetes and LiteLLM HTTP servers.
+It exercises the deployed YAML/flag/environment configuration path and the actual network listener.
+
+```sh
+bbr test //agentplane/llm_ingress/...
+```

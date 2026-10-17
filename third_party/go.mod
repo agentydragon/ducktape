@@ -31,6 +31,9 @@ require kubevirt.io/api v1.8.2
 // Direct dependencies for agentplane/runner_gateway/go
 require github.com/go-logr/logr v1.4.4
 
+// Direct dependencies for agentplane/llm_ingress/go
+require gopkg.in/yaml.v3 v3.0.1
+
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
@@ -78,7 +81,6 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.42.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (
