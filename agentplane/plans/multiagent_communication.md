@@ -408,6 +408,17 @@ Protocol facades can be evaluated later without changing the reviewed SA and ope
 policy. Protocol roles or room membership cannot silently grant history reads, controls or reverse
 send authority. Do not introduce another command queue duplicating Dispatcher admission/retries.
 
+### Inbox read and acknowledgement authority
+
+**V1 direction agreed:** retain owner-SA-scoped inbox read/ack checks, with the receiving Sandbox's
+SA as the owner of its Session inboxes. Sessions in that Sandbox share this authority. V1 adds no
+delegable inbox-read or inbox-acknowledgement operations. A grant to send or read transcripts does
+not confer authority to read or acknowledge another Sandbox's inboxes.
+
+Delegated inbox reading and acknowledgement are
+[potential follow-up work](task_freezer.md#delegated_inbox_access--delegated-inbox-reading-and-acknowledgement),
+not v1 prerequisites.
+
 ### Batching and wake behavior
 
 **V1 direction agreed:** retain the current ownership and per-Sandbox wake-on-message policy.

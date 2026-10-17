@@ -29,6 +29,13 @@ concrete external-client receiving workflow. V1 OAuth clients can make permitted
 bound SAs, but recipients are Sandbox-hosted Sessions. A future external inbox would need its own
 address and delivery/read mechanism; it does not imply moving Connection storage to Kubernetes.
 
+### `DELEGATED_INBOX_ACCESS` — delegated inbox reading and acknowledgement
+
+Explicitly deferred by the operator, 2026-10-16. Revisit on an operator-prioritized need for another
+SA to inspect or acknowledge a Sandbox's inbox entries. V1 keeps read/ack owner-SA-scoped and
+defines no delegable operations for either. If promoted, evaluate reading and acknowledgement as
+independent grants at Sandbox granularity, separate from send and transcript-read authority.
+
 ### `NOTIFICATION_DISPATCHER_OWNERSHIP` — review notification and Dispatcher ownership
 
 Operator-requested future consideration, 2026-10-16; revisit when explicitly prioritized or a

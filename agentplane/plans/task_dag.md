@@ -349,7 +349,8 @@ recipient opt-in, allowlist or approval.
 Peer sends do not require source subscriptions. Generalize the current service around inbox/messaging in one
 deployment initially, with optional subscription/source integrations; leave Dispatcher separate.
 Use `subscription` for source-following and `notice` for the batched inbox prompt. The exact service
-name, send API, discovery metadata fields and read/ack administration remain open.
+name, send API and discovery metadata fields remain open. Inbox read/ack retains the receiving
+Sandbox's owner-SA boundary; v1 adds no delegable inbox-read or acknowledgement permissions.
 OAuth-bound SAs can be senders; v1 does not provide inboxes for externally running agents.
 Distinguish accepted, noticed, admitted, handled and task-success evidence. Define retention, limits,
 deduplication and offline/deleted-recipient behavior. Reading a transcript grants neither send nor ack.
@@ -376,7 +377,9 @@ revocation boundary.
 ### `AGENT_MESSAGE_RECEPTION` — delivery, recovery and acknowledgement
 
 **Blocked on ingress contract/implementation.** Implement selected recipient read/delivery/ack
-operations, batching and recovery of unread work. Test recipient-access revocation, deleted recipients,
+operations under the receiving Sandbox's owner-SA checks, batching and recovery of unread work.
+Delegated inbox reading and acknowledgement remain frozen. Test owner-scoped read/ack,
+recipient-access revocation, deleted recipients,
 ordinary offline catch-up and duplicate delivery without leaking payloads. Accepted correspondence
 survives sender send-permission revocation, subject to recipient inbox permissions and retention;
 cover unread messages across that boundary. Notices use the current trusted
