@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -58,9 +57,12 @@ async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[Go
         .set(drivername="postgresql", query={"sslmode": "disable"})
         .render_as_string(hide_password=False)
     )
-    await asyncio.to_thread(
-        subprocess.run, [_MIGRATOR, "--database-url", database_url], capture_output=True, timeout=60, check=True
+    migrator = await asyncio.create_subprocess_exec(
+        _MIGRATOR, "--database-url", database_url, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
     )
+    async with asyncio.timeout(60):
+        output, _ = await migrator.communicate()
+    assert migrator.returncode == 0, output.decode()
     config = directory / f"go-replica-{settings.listen_port}.yaml"
     config.touch(mode=0o600)
     config.write_text(
