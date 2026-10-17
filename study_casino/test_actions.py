@@ -1,7 +1,5 @@
-"""Every ActionResult variant must round-trip to its own type on the wire and
-through stored idempotent replays. During reader preparation the union still
-accepts untagged results; tagging and discrimination land in later rollout phases.
-"""
+"""Every tagged ActionResult variant must round-trip to its own type on the wire
+and through stored idempotent replays."""
 
 from __future__ import annotations
 
@@ -96,7 +94,8 @@ _EXAMPLES: list[BaseModel] = [
 
 
 def test_examples_cover_every_variant() -> None:
-    assert {type(e) for e in _EXAMPLES} == set(get_args(ActionResult))
+    variants, *_metadata = get_args(ActionResult)
+    assert {type(e) for e in _EXAMPLES} == set(get_args(variants))
 
 
 @pytest.mark.parametrize("example", _EXAMPLES, ids=lambda e: type(e).__name__)

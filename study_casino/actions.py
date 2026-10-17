@@ -9,7 +9,7 @@ other tabs of the same user know to refetch). Every action carries a
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
@@ -35,10 +35,9 @@ class ActionRequest(BaseModel):
 # ── Per-endpoint result shapes (the `result` field of `ActionResponse`) ──────
 #
 # Every action endpoint puts a different payload into `ActionResponse.result`.
-# Every new result emits its own literal `kind`. The union remains structural
-# while older stored results may lack tags; model defaults fill those on replay.
-# After backfilling, the final rollout phase enables Pydantic discrimination.
-# Rollout: docs/action_result_discriminators.md.
+# Each variant has an explicit `kind` discriminator. Constructors supply the
+# literal default; serialized input must carry the tag. Migration 0006 backfills
+# older server-action ledger results. Rollout: docs/action_result_discriminators.md.
 
 
 class SessionCompleteResult(BaseModel):
@@ -182,7 +181,7 @@ class BlackjackHandStateResult(BaseModel):
     settlement: BlackjackSettlement | None
 
 
-ActionResult = (
+ActionResult = Annotated[
     SessionCompleteResult
     | SessionAddPastResult
     | SessionCreditsDeltaResult
@@ -196,8 +195,9 @@ ActionResult = (
     | ResetResult
     | SlotsActionResult
     | RouletteActionResult
-    | BlackjackHandStateResult
-)
+    | BlackjackHandStateResult,
+    Field(discriminator="kind"),
+]
 
 
 class ActionResponse(BaseModel):
