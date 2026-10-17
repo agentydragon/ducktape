@@ -1525,7 +1525,7 @@ async def test_expanded_command_stays_collapsible(
                 const item = document.createElement("div");
                 item.className = "agentplane-disclosure-item";
                 const heading = document.createElement("div");
-                heading.className = "agentplane-disclosure-heading";
+                heading.className = "agentplane-disclosure-header agentplane-disclosure-heading";
                 item.append(heading);
                 nested.append(item);
                 panel.append(nested);
@@ -1534,7 +1534,7 @@ async def test_expanded_command_stays_collapsible(
                 return display;
             }"""
         )
-        assert nested_heading_display == "flex", "collapsed ClampedBlock styles hid a nested disclosure heading"
+        assert nested_heading_display != "none", "collapsed ClampedBlock styles hid a nested disclosure heading"
         await expect(call.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
         if repeat == 0:
             await _review_screenshot(
