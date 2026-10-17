@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -40,7 +40,7 @@ def ensure_database_exists(base_config: DatabaseConfig, database_name: str) -> N
             result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": database_name})
 
             if not result.fetchone():
-                with conn.connection.cursor() as cursor:
+                with closing(conn.connection.cursor()) as cursor:
                     cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
 
 
