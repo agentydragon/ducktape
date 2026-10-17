@@ -964,7 +964,7 @@ configuration, image names and docs. Update all consumers atomically.
 ### `EGRESS_RELAY_CONFIGMAP` — sidecar settings from a mounted ConfigMap
 
 **Candidate; operator, 2026-10-17 PDT: a ConfigMap, as several changes, landing before
-[`EGRESS_GO_CUTOVER`](#egress_go_cutover--run-the-go-egress-proxy-in-the-cluster).** The sandbox egress
+the Go egress proxy replaces the Python one in the cluster.** The sandbox egress
 sidecar and the VM launcher relay take their settings from `AGENTPLANE_EGRESS_SIDECAR_*` environment
 variables that `cluster/cdk8s/agentplane/sandbox_pod.py` writes into each Pod and the Kyverno policy
 copies into the launcher relay. Read them from a file in a mounted ConfigMap instead, the way the
@@ -1066,33 +1066,12 @@ egress proxy as a header substitution, as the staging `claude-ai` Sandboxes' `BU
 
 ## 6. Existing access and lifecycle follow-ups
 
-### `EGRESS_GO_CUTOVER` — run the Go egress proxy in the cluster
-
-**Blocked on [#10816](https://github.com/agentydragon/ducktape/pull/10816) merging and CI publishing the
-two Go images** (`agentplane-egress-proxy`, `agentplane-egress-history-migrate`). #10816 holds the
-whole Go port and deletes the Python proxy source; testing and staging still run the last pinned Python
-image, whose flags `cluster/cdk8s/agentplane/egress.py` still renders. Image before config: register
-both names in `cluster/cdk8s/forgejo_registry/image_automation.py` with testing and staging
-`image-pins`, wait for the pins to land, then swap the Deployment to the Go image and its settings
-file under a new ConfigMap name, and the Alembic init container for the Go migrator (it takes over
-the Alembic-stamped database, see the [egress README](../egress/README.md#decision-history)). Testing
-first, then staging. Runs after the first `EGRESS_RELAY_CONFIGMAP` change lands. The same change
-restores the `egress` and `egress_migrate` images the k3s fixture loads (its manual tests cannot start
-without a proxy until then), deletes `egress/settings.py` and `MigrationSettings`, and updates the
-README diagram.
-
-Exit: testing, then staging, serve a request with a substituted credential and a refusal through the
-Go proxy with the pinned Go image, and both history databases carry `egress_goose_version`. Left to
-follow, each its own change: k8s codegen for the informer's types, upstream connection reuse, idle
-tunnel timeouts, metrics. Rai merges manually.
-
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current
 source/deployment state with the relevant owner when dispatching; old acceptance notes are not live
 observations. New database work follows the task-specific review and rollout requirements.
 
 ```mermaid
 flowchart LR
-    EGRESS_GO_CUTOVER[Blocked: #10816 merge and published Go images]
     PC_EGRESS[Unscheduled: prune OpenClaw-only wiring from the Iron proxy]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]

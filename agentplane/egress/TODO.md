@@ -16,3 +16,8 @@ enforcement half moving into the Pod the enforcement is against.
 
 Neither is obviously right. Settle it before a third credential source picks a side by accident,
 and fold the answer into the SPEC rather than leaving both shapes described.
+
+## Go proxy follow-ups
+
+Each is its own change: Kubernetes codegen for the informer's types, upstream connection reuse, idle
+tunnel timeouts, and metrics.

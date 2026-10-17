@@ -31,12 +31,12 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 ## Go service images
 
-The Go relay, LLM ingress, Runner Gateway, queue migrator, Policy Controller and Sandbox
-Controller use the pinned `gcr.io/distroless/static-debian13:nonroot` base. Their binaries are
-built with `pure = "on"`; images retain explicit UID/GID `1000:1000` and working directory `/`.
-The base supplies CA certificates and timezone data. LLM ingress retains the repository's
-explicit CA bundle layer. These images have no shell; runners and Python services use their
-own runtime images.
+The Go relay, Egress proxy and its history migrator, LLM ingress, Runner Gateway, queue migrator,
+Policy Controller and Sandbox Controller use the pinned `gcr.io/distroless/static-debian13:nonroot`
+base. Their binaries are built with `pure = "on"`; images retain explicit UID/GID `1000:1000` and
+working directory `/`. The base supplies CA certificates and timezone data. LLM ingress and the
+Egress proxy retain the repository's explicit CA bundle layer. These images have no shell; runners
+and Python services use their own runtime images.
 
 ## System overview
 
