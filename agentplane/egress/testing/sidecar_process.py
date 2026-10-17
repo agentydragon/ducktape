@@ -82,9 +82,13 @@ class SidecarProcess:
         if self._readiness_port is None:
             self._readiness_port = allocated["readiness"]
         for name, config in routes.items():
-            if config.get("listen_port") == 0:
-                config["listen_port"] = allocated[f"route:{name}"]
-            self._route_ports[name] = int(config["listen_port"])
+            port = config.get("listen_port")
+            if port == 0:
+                port = allocated[f"route:{name}"]
+                config["listen_port"] = port
+            if not isinstance(port, int):
+                raise TypeError(f"platform route {name!r} listen_port must be an integer")
+            self._route_ports[name] = port
         env = {
             "AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST": self._proxy_host,
             "AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT": str(self._proxy_port),
@@ -140,7 +144,8 @@ class SidecarProcess:
                     raise RuntimeError(f"Go sidecar exited with {self.process.returncode}: {self._logs()}")
                 try:
                     async with session.get(
-                        f"http://{self._readiness_host}:{self.readiness_port}/readyz", timeout=0.5
+                        f"http://{self._readiness_host}:{self.readiness_port}/readyz",
+                        timeout=aiohttp.ClientTimeout(total=0.5),
                     ) as response:
                         if response.status == 200:
                             return

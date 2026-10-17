@@ -108,8 +108,8 @@ async def test_unary_call_replaces_auth_preserves_metadata_deadline_and_trailers
         b"abc", metadata=(("authorization", "Bearer placeholder"), ("x-session", "s-1")), timeout=30
     )
     assert await call == b"cba"
-    assert (await call.initial_metadata())[0] == ("x-upstream-header", "header-value")
-    assert (await call.trailing_metadata())[0] == ("x-upstream-trailer", "trailer-value")
+    assert dict(await call.initial_metadata())["x-upstream-header"] == "header-value"
+    assert dict(await call.trailing_metadata())["x-upstream-trailer"] == "trailer-value"
     (seen,) = route_channel.upstream.seen
     assert seen.method == UNARY
     assert seen.metadata["authorization"] == "Bearer route-token-1"
@@ -137,8 +137,8 @@ async def test_stream_flows_both_ways_without_waiting_for_client_half_close(rout
     assert await call.read() == b"dc"
     await call.done_writing()
     assert await call.read() is grpc.aio.EOF
-    assert (await call.initial_metadata())[0] == ("x-upstream-header", "header-value")
-    assert (await call.trailing_metadata())[0] == ("x-upstream-trailer", "trailer-value")
+    assert dict(await call.initial_metadata())["x-upstream-header"] == "header-value"
+    assert dict(await call.trailing_metadata())["x-upstream-trailer"] == "trailer-value"
 
 
 async def test_arbitrary_method_passes_through_without_service_protos(route_channel: RouteUnderTest) -> None:
@@ -163,7 +163,7 @@ async def test_missing_token_refuses_without_calling_upstream(route_channel: Rou
 
 
 async def test_cancellation_reaches_upstream(route_channel: RouteUnderTest) -> None:
-    call = route_channel.channel.stream_stream(BLOCKING)()
+    call: grpc.aio.StreamStreamCall[bytes, bytes] = route_channel.channel.stream_stream(BLOCKING)()
     await call.write(b"stop")
     await asyncio.wait_for(route_channel.upstream.blocking_started.wait(), timeout=2)
     call.cancel()
