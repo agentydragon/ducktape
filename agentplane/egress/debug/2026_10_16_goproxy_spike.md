@@ -109,20 +109,49 @@ no deployed central proxy was replaced or exercised.
 | Existing-connection revocation/staleness/auth cleanup | Existing current-service tests retained                                 | Binding deletion, snapshot expiry, invalid replacement bearer and changed Pod UID all refuse later streams                       |
 | Real Kubernetes API policy source                     | Existing Python fake remains for comparison                             | Real CRD create/list/watch/delete, shared egress fields preserved, next held-connection request refused                          |
 
-**Recommendation: GoProxy is feasible as the central transport library for a separately reviewed
-service port, with the pinned header-flush patch and explicit wrappers.** A secure transport with
-independent upstream roots and no environment proxy, a dial hook that receives only an approved
-literal address, per-inner-request policy/auth gates, and a dedicated pinned h2c transport are
-required. GoProxy's defaults are unsuitable at this boundary. Stock v1.9.2 alone fails the
-initial-metadata contract; the retained regression now passes with the four-line patch.
+**Recommendation: build the central transport on the standard library, not GoProxy** (next
+section). GoProxy v1.9.2 is feasible only with the pinned four-line header-flush patch: stock
+v1.9.2 fails the initial-metadata contract, and the retained regression passes with the patch.
+Either transport needs a secure transport with independent upstream roots and no environment
+proxy, a dial hook that receives only an approved literal address, per-inner-request policy/auth
+gates, and prior-knowledge h2c upstream. GoProxy's defaults are unsuitable at this boundary.
 
 The experiment does not authorize production replacement. Complete the documented policy,
 credential, watch/freshness, API/history, error projection and lifecycle behaviors in a separate
 port before discussing cutover. Preserve a decision after DNS, prevent H2 pooling/coalescing
 from escaping the approved address, and keep metadata/body credentials bound to the current
 principal. The lab avoids pooling by creating a transport per admitted request; production pool
-ownership and throughput remain open. Upstreaming/removing the small patch is maintenance work,
-not a reason to weaken the header-only-open contract. No performance claim was measured here.
+ownership and throughput remain open. No performance claim was measured here.
+
+## Standard-library transport
+
+Why the patch is needed: GoProxy's h2 MITM handler (`handleH2MitmStream`, `http2.go`) calls
+`WriteHeader` and then blocks reading the first upstream body bytes. `net/http`'s h2 server
+writes the HEADERS frame only on the first body write or `Flush`, so an upstream that sends
+headers and then waits for a client message never delivers initial metadata. GoProxy flushes each
+body chunk but not the headers. `httputil.ReverseProxy` flushes headers on a timer
+started before the first body read ("so headers get flushed even if body writes are delayed",
+`copyResponse`); a proxy that mirrors `ReverseProxy` for streaming misses this unless it copies
+the timer. GoProxy's h2 MITM is recent (merged 2026-08-06, [#785](https://github.com/elazarl/goproxy/pull/785)); v1.9.2 is the
+latest release and the issue tracker has no report of this.
+
+`proxy.go` replaces GoProxy with a CONNECT hijack, a leaf certificate signed per handshake, one
+`net/http` server per tunnel (ALPN selects h2 or HTTP/1.1; cleartext selects h1 or prior-knowledge
+h2c) and `httputil.ReverseProxy` per admitted request. Unchanged: the identity, admission,
+credential and address-pin gates, and every test file except one added case.
+
+- `transport_test` passes on the unpatched path, [invocation b63d6d6f](https://app.buildbuddy.io/invocation/b63d6d6f-d1e2-444d-99d9-ccd00a8b151e),
+  including interactive TLS and h2c gRPC, trailers, cancellation, SSE, WebSocket, zero-TCP denial,
+  pinned dial and existing-connection revocation.
+- `//agentplane/egress:test_proxy` passes all 51 shared cases, the Go variants included,
+  [invocation 766b457a](https://app.buildbuddy.io/invocation/766b457a-82ab-4aba-9815-72e9a63f3435).
+- The module, the `MODULE.bazel` override and the patch are gone. The single-use upstream transport
+  honors `DisableKeepAlives` for HTTP/2 too, so the x/net h2c transport and its close-idle wrapper
+  are not needed. The added case asserts the upstream connection closes after its only response;
+  with keep-alives on it fails for TLS and h2c ([invocation 1e363c3d](https://app.buildbuddy.io/invocation/1e363c3d-e530-4669-a2d5-aba9288372e5)).
+
+Not ported, as in the GoProxy lab: hijacked CONNECT connections are outside `http.Server`
+shutdown, so graceful drain must track tunnels itself (GoProxy hijacks the same way).
 
 ## Envtest recommendation
 
