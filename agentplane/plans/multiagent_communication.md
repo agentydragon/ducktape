@@ -68,10 +68,18 @@ capabilities. Independent per-SA grants can add rights on unrelated Sandboxes or
 resources, optionally temporarily. Removing collection membership ends collection-derived grants;
 independent overlapping grants remain.
 
-V1 uses explicit enrollment, not computed selection. An app preset can supply initial collection
+**V1 membership storage agreed:** each collection CR contains an explicit Sandbox member list;
+separate membership resources are not selected. An app preset can supply initial collection
 memberships when launching a Sandbox, subject to launch/enrollment authorization. Later removal
 sticks: reconciliation or opening another Session must not silently re-enroll it. Preset edits
-change defaults for future launches rather than recomputing existing memberships.
+change defaults for future launches rather than recomputing existing memberships. No computed
+selection is needed for v1.
+
+Define member references, authorized writers and GitOps/runtime removal ownership before implementation.
+Where separate apply managers share the list, use suitable
+[map/set merge semantics](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy)
+for entry-level ownership; field ownership does not authorize writes. Reconsider separate membership
+objects only if independent enrollment object lifecycles become useful.
 
 **Storage preference agreed:** start with Kubernetes resources for grants and explicit collection
 membership, managed through GitOps or authorized runtime edits. This is a preference, not a hard

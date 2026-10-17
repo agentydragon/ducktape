@@ -270,7 +270,7 @@ flowchart TD
 Sandboxes and Sessions, with creator, manager and parent/provenance represented separately. Ask
 the operator to choose remaining addressing/ownership and delegation semantics. Use the agreed
 SA-level caller attribution and the [tentative Session-access rule direction](multiagent_communication.md#tentative-implementation-direction).
-Finalize the common rule/membership schema, trusted administration and policy freshness/revocation
+Finalize the common rule/member-reference schema, trusted administration and policy freshness/revocation
 contract without choosing a mandatory topology or requiring an auth-engine migration. No permission
 inheritance
 from an organizational edge or preset. Prefer Kubernetes resources for grants and explicit collection
@@ -287,7 +287,8 @@ stays frozen; this decision must allow explicit exclusion rather than require it
 tentative Session-access rule family and implement shared rule-reading/evaluation code for API owners.
 Reuse existing SA authentication and PolicyBindings. Match independently grantable listing,
 transcript-read and Session-inbox append operations against direct Sandbox targets or current
-explicit collection membership. Implement the selected freshness/revocation contract and preserve
+explicit member lists on collection CRs; v1 does not require separate membership resources.
+Implement the selected freshness/revocation contract and preserve
 live bundle updates, existing binding lifecycle and additive overlapping grants. Cover mixed
 static/runtime SAs, allowed/denied operations and targets, empty collections, membership removal and
 overlap. Backend enforcement and retained-history semantics remain in their respective nodes.
