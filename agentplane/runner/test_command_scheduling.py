@@ -192,8 +192,9 @@ async def test_a_model_change_with_a_different_or_missing_context_window_fails(
             for entry in await session.journal.since(0, limit=16)
             if entry.event.WhichOneof("observation") == "command_failed"
         )
-        assert "requires a new thread" in result.command_failed.reason
-        assert "new session" in result.command_failed.reason
+        assert "changes the configured context budget" in result.command_failed.reason
+        assert "Agentplane currently sets only when the harness starts" in result.command_failed.reason
+        assert "Start a new session with the requested model as a workaround" in result.command_failed.reason
         assert adapter.model_changes == []
 
 

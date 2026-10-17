@@ -412,8 +412,8 @@ class Session:
             if current_window != requested_window:
                 await self._fail(
                     command_id,
-                    "changing to a model with a different configured context window requires a new thread; "
-                    "start a new session with the requested model",
+                    "This model switch changes the configured context budget, which Agentplane currently sets "
+                    "only when the harness starts. Start a new session with the requested model as a workaround.",
                     sources=[],
                 )
                 return
