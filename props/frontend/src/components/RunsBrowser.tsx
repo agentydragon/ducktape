@@ -43,6 +43,8 @@ function statusColor(status: AgentRunStatus): string {
       return "green";
     case "timed_out":
       return "yellow";
+    case "startup_failed":
+      return "red";
     default:
       return "gray";
   }

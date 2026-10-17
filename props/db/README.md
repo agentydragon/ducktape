@@ -48,6 +48,19 @@ Tests never touch production data: they run against their own databases.
    props sync
    ```
 
+## Run startup status and upgrades
+
+`startup_failed` means the host could not start a container and hand it to a run
+collector. Cancellation remains `cancelled`; a container that exits is `exited`
+with its exit code. The status is stored in `agent_run_status_enum` and returned
+through the run API, including status filters and aggregate counts.
+
+Apply the enum migration before starting a backend that can write
+`startup_failed`. Stop older backend readers before starting that version: they
+cannot decode the new stored enum value. PostgreSQL cannot remove this enum
+value in place, so rollback requires a compatible reader and a deliberate
+schema/data migration rather than `alembic downgrade`.
+
 ## Database Users
 
 ### postgres (admin)

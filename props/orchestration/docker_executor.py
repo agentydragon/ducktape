@@ -156,7 +156,15 @@ class DockerExecutor:
         )
         logger.info("Created container %s", name)
 
-        await container.start()
+        try:
+            await container.start()
+        except BaseException:
+            # Docker create succeeded, but no handle was returned to the registry.
+            try:
+                await container.delete(force=True)
+            except Exception:
+                logger.exception("Failed to delete container %s after start failed", name)
+            raise
         logger.info("Started container %s", name)
         return DockerContainerHandle(container=container, name=name)
 

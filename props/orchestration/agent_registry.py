@@ -50,6 +50,7 @@ from types import TracebackType
 from uuid import UUID, uuid4
 
 import httpx
+from sqlalchemy import update
 
 from props.core.agent_types import (
     AgentType,
@@ -453,9 +454,19 @@ class AgentRegistry:
         and updates DB status. Await the returned handle to block until completion;
         call kill_and_delete() to stop early.
         """
-        handle = await self._create_container(
-            agent_run_id, image=image, name=name, extra_labels=extra_labels, annotations=annotations
-        )
+        try:
+            handle = await self._create_container(
+                agent_run_id, image=image, name=name, extra_labels=extra_labels, annotations=annotations
+            )
+        except (asyncio.CancelledError, Exception) as error:
+            status = (
+                AgentRunStatus.CANCELLED if isinstance(error, asyncio.CancelledError) else AgentRunStatus.STARTUP_FAILED
+            )
+            try:
+                self._finalize_run_if_in_progress(agent_run_id, status=status, container_exit_code=None)
+            except Exception:
+                logger.exception("Failed to finalize run %s after startup ended", agent_run_id)
+            raise
         detached = asyncio.Event()
         task = asyncio.create_task(self._collect_run(agent_run_id, handle, timeout_seconds, detached))
         return AgentRunHandle(task, handle.name, agent_run_id, detached)
@@ -623,13 +634,13 @@ class AgentRegistry:
     ) -> None:
         """Start an already-created agent run in a background task and return immediately.
 
-        The task holds a model parallelism slot for the run's whole duration and finalizes
-        the run as CANCELLED on cancellation/error. The run row must already exist (via
+        The task holds a model parallelism slot for the run's whole duration. The run row must already exist (via
         _create_run). Lets HTTP handlers return the agent_run_id without blocking until the
         container exits. The task is stashed in _running_agents to prevent GC.
         """
 
         async def _run() -> None:
+            handle: AgentRunHandle | None = None
             try:
                 async with self._model_slot(model):
                     handle = await self._start_agent(
@@ -644,7 +655,9 @@ class AgentRegistry:
             except Exception:
                 logger.exception("Unhandled error in background agent run %s", agent_run_id)
                 self._finalize_run_if_in_progress(
-                    agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None
+                    agent_run_id,
+                    status=AgentRunStatus.STARTUP_FAILED if handle is None else AgentRunStatus.CANCELLED,
+                    container_exit_code=None,
                 )
 
         task = asyncio.create_task(_run(), name=container_name)
@@ -888,13 +901,11 @@ class AgentRegistry:
         IN_PROGRESS — idempotent across reconciles and safe for orphan runs that
         another path may already have finalized."""
         with self._db.session() as session:
-            run = session.get(AgentRun, agent_run_id)
-            if run is None:
-                logger.warning("Agent run %s not found while finalizing; deleting pod anyway", agent_run_id)
-                return
-            if run.status != AgentRunStatus.IN_PROGRESS:
-                return
-            run.status = status
-            run.container_exit_code = container_exit_code
+            result = session.execute(
+                update(AgentRun)
+                .where(AgentRun.agent_run_id == agent_run_id, AgentRun.status == AgentRunStatus.IN_PROGRESS)
+                .values(status=status, container_exit_code=container_exit_code)
+            )
             session.commit()
-            logger.info("Finalized agent run %s -> %s", agent_run_id, status)
+            if result.rowcount:
+                logger.info("Finalized agent run %s -> %s", agent_run_id, status)

@@ -18,12 +18,10 @@ Dumps are independent test evidence, not migration code.
 Provenance: schema-only CI artifact from the original chain at f481072738,
 BuildBuddy invocation 529ec531-065b-5cdc-b113-51a1b6d56572,
 //props/db/migrations:test_schema_baseline, test.outputs/props_schema.sql.
-The test compares a normalized dump digest against that independent capture and
-checks that an at-head upgrade preserves object OIDs and the salt. This uses only
-an isolated PostgreSQL testcontainer. PostgreSQL version banners, psql restriction
-keys, blank lines and dump comments are excluded from the digest, not schema SQL.
+The original test compared a normalized dump digest against that independent
+capture. The current test checks that an at-head upgrade preserves the schema
+dump, object OIDs and salt, using only an isolated PostgreSQL testcontainer.
 
 Future schema changes are ordinary child revisions. The squash equivalence check
-is landing evidence, not a requirement to freeze this schema forever: retire its
-historical digest assertion when advancing the schema, retaining current-schema
-and at-head no-op tests. Specimen snapshots are not part of this migration tree.
+is landing evidence, not a requirement to freeze this schema forever. Specimen
+snapshots are not part of this migration tree.

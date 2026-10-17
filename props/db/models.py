@@ -121,7 +121,7 @@ class AgentRunStatus(StrEnum):
     """Unified status for all agent types (critic, grader, prompt_optimizer, etc.).
 
     Terminal states: EXITED (check container_exit_code for success/failure),
-    TIMED_OUT, CANCELLED.
+    TIMED_OUT, CANCELLED, STARTUP_FAILED.
     """
 
     IN_PROGRESS = "in_progress"
@@ -132,6 +132,7 @@ class AgentRunStatus(StrEnum):
     # The pod is deleted; this records a terminal status so the run doesn't leak
     # as IN_PROGRESS forever.
     CANCELLED = "cancelled"
+    STARTUP_FAILED = "startup_failed"
 
 
 class PydanticColumn[T: BaseModel](TypeDecorator[T]):
