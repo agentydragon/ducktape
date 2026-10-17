@@ -31,7 +31,8 @@ execution sequence. This is a priority decision, not a technical dependency.
   choices and broader authorization-system evaluation, separate from multiagent implementation
 - [Cross-agent communication and authorization](multiagent_communication.md) — agreed SA attribution,
   Sandbox scopes, explicit collections, live bundles and Session inboxes; shared inbox/messaging
-  service with subscriptions and batched notices; open permission/API and lifecycle-control choices
+  service with subscriptions and batched notices; open permission/API choices, agent lifecycle
+  delegation deferred
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
 - [Kubernetes grants through PolicySets](kubernetes_rbac_groups.md) — accounts without a

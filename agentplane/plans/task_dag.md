@@ -238,14 +238,12 @@ flowchart TD
     AGENT_MESSAGE_INGRESS[Blocked: authorized send API and durable receipts]
     AGENT_MESSAGE_RECEPTION[Blocked: receiving, recovery and acknowledgement]
     AGENT_MESSAGING[Capstone: end-to-end agent messaging]
-    SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN[Decision: suspend/resume and wake-policy grants]
     THREAD_CREATE_POLICY[Decision: opening a session in an existing Sandbox]
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
     MULTIAGENT_MODEL --> THREAD_READ_POLICY_DESIGN
     MULTIAGENT_MODEL --> AGENT_MESSAGING_DESIGN
-    MULTIAGENT_MODEL --> SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN
     MULTIAGENT_MODEL --> THREAD_CREATE_POLICY
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
@@ -322,6 +320,8 @@ operations, batching and recovery of unread work. Test revoked/deleted recipient
 catch-up and duplicate delivery without leaking payloads. Notices use the current trusted
 Notifications-to-Dispatcher path and per-Sandbox wake-on-message policy; do not require a separate
 peer/source wake grant. Deletion never retargets mail to a replacement Sandbox.
+Explain suspended-recipient and wake behavior to agents; support scoped destination-Sandbox CR
+reads where configured, independently of send permission.
 
 ### `AGENT_MESSAGING` — integrated messaging capstone
 
@@ -331,14 +331,10 @@ multi-replica retry cases belong in automated tests; no real provider outage req
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` — suspend/resume and wake-policy grants
-
-**Decision requested by the operator; no rights selected yet.** Review explicit suspend, explicit
-resume and editing automatic-wake policy as operations on Sandbox targets/collections. Distinguish
-those controls from v1 send permission and the target's existing wake-on-any-message policy. Compare
-native Kubernetes RBAC with narrow backend-enforced operations; granting general Sandbox patch
-access can also change unrelated spec fields. Preserve lifecycle guards and define which principals
-may grant these capabilities. This review does not authorize a new lifecycle queue or service.
+V1 keeps explicit suspend/resume and wake-setting edits as operator controls, preserving existing
+trusted backend automation. Agent lifecycle delegation is
+[deferred](task_freezer.md#sandbox_lifecycle_authorization_design--delegated-lifecycle-controls),
+not a messaging prerequisite; see the [agreed scope](multiagent_communication.md#batching-and-wake-behavior).
 
 ### `THREAD_CREATE_POLICY` — authorize session creation separately
 

@@ -316,9 +316,20 @@ With this policy, notice timing and batching determine when accumulated inbox co
 a wake. Keep that decision in Notifications for v1. Event/source-specific wake switches and moving
 Notification Service responsibilities into Dispatcher are separate future design questions in the
 [freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership),
-not prerequisites or assumed changes to v1. Explicit suspend/resume authorization remains an open
-control-policy decision. Separately grantable suspend, resume and wake-policy editing have been
-proposed, but their separation and scope have not yet been agreed.
+not prerequisites or assumed changes to v1.
+
+**V1 lifecycle scope agreed:** keep explicit suspend/resume and wake-setting edits as operator
+controls; defer agent lifecycle delegation. Existing controller/Dispatcher automation continues
+under its trusted service authority. Messaging and history-read grants imply no lifecycle edits.
+Explain suspension and wake behavior to agents, and configure scoped read access to destination
+Sandbox CRs where useful so communicating agents can inspect status and `spec.wakeOnSend`.
+That read access is a separate permission, not implicit in send authority.
+
+The intended longer-term experience is wake-on-message by default, with suspension/resume usually
+transparent to users and agents. This direction does not change current defaults or require granular
+lifecycle management in v1. Revisit delegated controls only on a concrete need; the
+[lifecycle authorization review](task_freezer.md#sandbox_lifecycle_authorization_design--delegated-lifecycle-controls)
+is deferred.
 
 An envelope could retain an idempotent message ID, authenticated sender, resolved destination,
 correlation/reply reference and content. V1 authenticates the caller at Sandbox/SA level; any
