@@ -332,7 +332,7 @@ resource "routeros_container_config" "this" {
 
 resource "routeros_interface_veth" "nebula" {
   name    = "nebula-veth"
-  address = "${local.container_ip}/30"
+  address = ["${local.container_ip}/30"]
   gateway = local.router_veth_ip
   comment = "Nebula container for switch management overlay."
 }
