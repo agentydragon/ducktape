@@ -96,6 +96,8 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	if err != nil {
 		return nil, errors.New("could not load Kubernetes client configuration")
 	}
+	kubeconfig.ContentType = "application/json"
+	kubeconfig.AcceptContentTypes = "application/json"
 	return kubeconfig, nil
 }
 
