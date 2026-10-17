@@ -1,5 +1,5 @@
 import { Badge, Button, Group, Paper, Select, Table, Text, Title } from "@mantine/core";
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 
 import {
   AGENT_RUN_STATUS_VALUES,
@@ -93,28 +93,34 @@ export default function RunsBrowser({
     return result;
   }, [offset, statusFilter, agentTypeFilter, initialDefinitionId, initialSplit, initialKind]);
 
-  const loadRuns = useCallback(async () => {
-    setLoading(true);
-    try {
-      const result = await fetchRuns(filters);
-      setRuns(result?.runs ?? []);
-      setTotalCount(result?.total_count ?? 0);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unknown error");
-      setRuns([]);
-      setTotalCount(0);
-    } finally {
-      setLoading(false);
-    }
-  }, [filters]);
-
   useEffect(() => {
     if (skipInitialFetch.current) {
       skipInitialFetch.current = false;
       return;
     }
-    void loadRuns();
-  }, [loadRuns]);
+
+    let current = true;
+    setLoading(true);
+    void fetchRuns(filters)
+      .then((result) => {
+        if (!current) return;
+        setRuns(result?.runs ?? []);
+        setTotalCount(result?.total_count ?? 0);
+      })
+      .catch((error: unknown) => {
+        if (!current) return;
+        toast.error(error instanceof Error ? error.message : "Unknown error");
+        setRuns([]);
+        setTotalCount(0);
+      })
+      .finally(() => {
+        if (current) setLoading(false);
+      });
+
+    return () => {
+      current = false;
+    };
+  }, [filters]);
 
   const sortedRuns = useMemo(() => {
     return [...runs].sort((left, right) => {
