@@ -81,7 +81,9 @@ class RecordedSession:
     async def _fail(self, command_id: str, reason: str, *, sources: list[int]) -> None:
         self.failures.append((command_id, reason, sources))
 
-    async def model_changed(self, command_id: str, model: str, *, sources: list[int]) -> None:
+    async def model_changed(
+        self, command_id: str, model: str, context_budget_tokens: int | None = None, *, sources: list[int]
+    ) -> None:
         self.model_changes.append((command_id, model, sources))
 
     async def reasoning_effort_changed(self, command_id: str, effort: str, *, sources: list[int]) -> None:

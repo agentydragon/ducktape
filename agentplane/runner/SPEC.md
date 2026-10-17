@@ -61,8 +61,13 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   The runner consumes this field to set Claude's
   `CLAUDE_CODE_MAX_CONTEXT_TOKENS` or Codex's `model_context_window`; routes without an override use
   the harness's normal metadata. The resolved value is retained in the runner's session record so a
-  resume uses the same compaction window. Model changes across different resolved windows require a
-  new session.
+  resume uses the same compaction window. Model changes retain the Session and native conversation.
+  An empty Codex native thread with no submitted input may be replaced before it has a persisted
+  conversation; the Agentplane Session stays the same. When the resolved budget changes, the runner
+  waits for the active turn to finish and restarts/resumes
+  the harness with the new startup settings. Codex applies a queued selection on the next input.
+  The selected model and budget are persisted only after native confirmation. A restart exit carries
+  `restarting`, so readers can distinguish it from a stopped Session.
 - A session survives the runner process. A runner that starts on a state directory loads every
   session in it; what the previous runner had running is reported as lost (below).
 - `ListSessions` returns every session in the state directory with its spec, harness state,

@@ -113,7 +113,11 @@ class SessionFollow:
             raise StreamClosedError
         self._cursor = entry.cursor
         self.seen.append(entry)
-        if entry.cursor > self.attached.last_cursor and event.HasField("harness_exited"):
+        if (
+            entry.cursor > self.attached.last_cursor
+            and event.HasField("harness_exited")
+            and not event.harness_exited.restarting
+        ):
             self._ended = True
         if event.HasField("setup_finished"):
             self._ended = event.setup_finished.exit_code != 0

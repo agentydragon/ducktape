@@ -979,3 +979,35 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_model_changes",
+    size = "medium",
+    srcs = ["test_model_changes.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: exercises the pinned native harnesses
+        "@claude_code_cli_linux_x64//:claude",  # keep: exercises the pinned native harnesses
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":config",
+        ":conftest",
+        ":model_config",
+        ":runner",
+        "//:conftest",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner/testing:driver",
+        "//agentplane/runner/testing:events",
+        "//agentplane/runner/testing:fixtures",
+        "//agentplane/runner/testing:launches",
+        "//agentplane/runner/testing:scripted_model",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
