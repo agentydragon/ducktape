@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from fastmcp import FastMCP
     from fastmcp.client import Client
 
-from mcp_infra.stubs.typed_stubs import TypedClient
+from mcp_infra.testing.stubs.typed_stubs import TypedClient
 
 
 class ServerStub:

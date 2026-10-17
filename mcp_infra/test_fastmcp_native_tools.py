@@ -9,7 +9,7 @@ from fastmcp.server.context import Context
 from pydantic import BaseModel, Field
 
 from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.stubs.typed_stubs import TypedClient
+from mcp_infra.testing.stubs.typed_stubs import TypedClient
 from mcp_infra.tool_schemas import extract_tool_input_schemas, extract_tool_schemas
 
 

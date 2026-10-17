@@ -20,8 +20,8 @@ from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.resources_server import ResourcesServer
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
 from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.stubs.resources_stub import ResourcesServerStub
-from mcp_infra.stubs.typed_stubs import TypedClient
+from mcp_infra.testing.stubs.resources_stub import ResourcesServerStub
+from mcp_infra.testing.stubs.typed_stubs import TypedClient
 from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp  # avoid fixture collision
 from util.bazel.subprocess import python_env
 

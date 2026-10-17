@@ -7,7 +7,7 @@ from mcp_infra.compositor.resources_server import (
     ResourcesListResult,
     ResourceTemplatesListResult,
 )
-from mcp_infra.stubs.server_stubs import ServerStub
+from mcp_infra.testing.stubs.server_stubs import ServerStub
 
 
 class ResourcesServerStub(ServerStub):

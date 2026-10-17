@@ -8,7 +8,7 @@ py_test(
         ":prefix",
         ":tool_schemas",
         "//:conftest",
-        "//mcp_infra/stubs:typed_stubs",
+        "//mcp_infra/testing/stubs:typed_stubs",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest_bazel",

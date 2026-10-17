@@ -212,7 +212,7 @@ py_test(
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "//mcp_infra/exec/docker:server",
-        "//mcp_infra/stubs:typed_stubs",
+        "//mcp_infra/testing/stubs:typed_stubs",
         "//mcp_infra/testing:simple_servers",
         "//util/exec:models",
         "//util/exec:subprocess",

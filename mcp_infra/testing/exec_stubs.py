@@ -1,6 +1,6 @@
 """Typed stubs for exec MCP servers."""
 
-from mcp_infra.stubs.server_stubs import ServerStub
+from mcp_infra.testing.stubs.server_stubs import ServerStub
 from util.exec.models import BaseExecResult
 from util.exec.subprocess import DirectExecArgs
 
