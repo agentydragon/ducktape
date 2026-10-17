@@ -90,6 +90,17 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
         i = args.index("BBR_BUILDBUDDY_API_KEY_FILE")
         assert args[i - 1] == "--harness-env"
         del args[i - 1 : i + 1]
+        settings = next(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
+        generic_settings = next(
+            volume for volume in generic["pod"]["spec"]["volumes"] if volume["name"] == "egress-sidecar-settings"
+        )
+        # Each template owns its sidecar settings ConfigMap; the specialization adds none.
+        assert settings["configMap"]["name"] == "runner-ducktape-egress-sidecar"
+        assert (
+            _by_name(docs, "ConfigMap", settings["configMap"]["name"])["data"]
+            == _by_name(docs, "ConfigMap", generic_settings["configMap"]["name"])["data"]
+        )
+        settings["configMap"]["name"] = generic_settings["configMap"]["name"]
         # No extra authority in generic runners, testing, or the egress sidecar.
         assert specialized == generic
 

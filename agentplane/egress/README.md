@@ -39,10 +39,12 @@ bbr test //agentplane/egress/...
 - `sidecar/`: the Go runtime behind image `agentplane-egress-sidecar`. It reads the Pod's
   projected token for every HTTP request or CONNECT and forwards it as `Proxy-Authorization`.
   It also hosts direct generic gRPC routes to Agentplane services, replacing authorization with
-  that service's projected token on every call. The runtime uses no Python interpreter.
-- `sidecar_config.py` and `platform_routes.py`: Python settings and route models used by cdk8s to
-  emit the existing environment schema. The process entry point and both forwarding paths live in
-  Go; `platform_routes.py` does not serve traffic.
+  that service's projected token on every call. The runtime uses no Python interpreter. Its
+  settings come from the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, then
+  `AGENTPLANE_EGRESS_SIDECAR_*` env, then flags, each over the one before.
+- `sidecar_config.py` and `platform_routes.py`: Python settings and route models cdk8s renders each
+  Sandbox template's sidecar settings ConfigMap from. The process entry point and both forwarding
+  paths live in Go; `platform_routes.py` does not serve traffic.
 - `testing/`: the fake API server and the throwaway CAs the tests run against.
 
 ## Running

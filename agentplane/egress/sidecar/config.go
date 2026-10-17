@@ -7,8 +7,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
+
+	"gopkg.in/yaml.v3"
 )
+
+const configFileEnv = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 
 type platformRouteConfig struct {
 	ListenPort int    `json:"listen_port"`
@@ -28,6 +33,21 @@ type config struct {
 	ReadinessPort      int
 }
 
+// fileConfig is the settings file named by AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE; the keys are the
+// environment variable names without their prefix, lower-cased. A key the file omits keeps its default.
+type fileConfig struct {
+	ProxyHost          *string           `json:"proxy_host"`
+	ProxyPort          *int              `json:"proxy_port"`
+	TokenFile          *string           `json:"token_file"`
+	AudienceTokenFiles map[string]string `json:"audience_token_files"`
+	PlatformRoutes     json.RawMessage   `json:"platform_routes"`
+	ListenHost         *string           `json:"listen_host"`
+	ListenPort         *int              `json:"listen_port"`
+	ReadinessHost      *string           `json:"readiness_host"`
+	ReadinessPort      *int              `json:"readiness_port"`
+}
+
+// loadConfig applies defaults, then the settings file, then getenv, then args.
 func loadConfig(args []string, getenv func(string) string) (config, error) {
 	c := config{
 		ProxyPort:     8888,
@@ -37,6 +57,11 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 		ReadinessPort: 3129,
 	}
 	var err error
+	if path := getenv(configFileEnv); path != "" {
+		if err = readSettingsFile(path, &c); err != nil {
+			return config{}, err
+		}
+	}
 	if c.ProxyPort, err = envInt(getenv, "AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT", c.ProxyPort); err != nil {
 		return config{}, err
 	}
@@ -46,17 +71,21 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 	if c.ReadinessPort, err = envInt(getenv, "AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT", c.ReadinessPort); err != nil {
 		return config{}, err
 	}
-	c.ProxyHost = getenv("AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST")
-	c.TokenFile = getenv("AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE")
+	c.ProxyHost = envString(getenv, "AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST", c.ProxyHost)
+	c.TokenFile = envString(getenv, "AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE", c.TokenFile)
 	c.ListenHost = envString(getenv, "AGENTPLANE_EGRESS_SIDECAR_LISTEN_HOST", c.ListenHost)
 	c.ReadinessHost = envString(getenv, "AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST", c.ReadinessHost)
-	c.AudienceTokenFiles, err = decodeJSON[map[string]string](getenv("AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES"))
-	if err != nil {
-		return config{}, fmt.Errorf("AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES: %w", err)
+	if value := getenv("AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES"); value != "" {
+		c.AudienceTokenFiles, err = decodeJSON[map[string]string](value)
+		if err != nil {
+			return config{}, fmt.Errorf("AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES: %w", err)
+		}
 	}
-	c.PlatformRoutes, err = decodePlatformRoutes(getenv("AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES"))
-	if err != nil {
-		return config{}, fmt.Errorf("AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES: %w", err)
+	if value := getenv("AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES"); value != "" {
+		c.PlatformRoutes, err = decodePlatformRoutes(value)
+		if err != nil {
+			return config{}, fmt.Errorf("AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES: %w", err)
+		}
 	}
 	if c.AudienceTokenFiles == nil {
 		c.AudienceTokenFiles = map[string]string{}
@@ -98,6 +127,55 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 		return config{}, err
 	}
 	return c, nil
+}
+
+// readSettingsFile overlays the YAML object in path onto c. The file is converted to JSON and read
+// with the strictness of the environment and flag forms: an unknown key, an unknown route key or a
+// route missing a key is an error.
+func readSettingsFile(path string, c *config) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var document any
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if _, isObject := document.(map[string]any); !isObject {
+		return fmt.Errorf("%s: expected a YAML object", path)
+	}
+	asJSON, err := json.Marshal(document)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	var file fileConfig
+	decoder := json.NewDecoder(bytes.NewReader(asJSON))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&file); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	overlay(&c.ProxyHost, file.ProxyHost)
+	overlay(&c.ProxyPort, file.ProxyPort)
+	overlay(&c.TokenFile, file.TokenFile)
+	overlay(&c.ListenHost, file.ListenHost)
+	overlay(&c.ListenPort, file.ListenPort)
+	overlay(&c.ReadinessHost, file.ReadinessHost)
+	overlay(&c.ReadinessPort, file.ReadinessPort)
+	if file.AudienceTokenFiles != nil {
+		c.AudienceTokenFiles = file.AudienceTokenFiles
+	}
+	if file.PlatformRoutes != nil {
+		if c.PlatformRoutes, err = decodePlatformRoutes(string(file.PlatformRoutes)); err != nil {
+			return fmt.Errorf("%s: platform_routes: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func overlay[T any](to, from *T) {
+	if from != nil {
+		*to = *from
+	}
 }
 
 func envString(getenv func(string) string, name, fallback string) string {

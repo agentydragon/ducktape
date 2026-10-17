@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import socket
+import tempfile
 from collections import defaultdict
 from collections.abc import Mapping
 from contextlib import suppress
@@ -12,8 +12,11 @@ from pathlib import Path
 from types import MappingProxyType
 
 import aiohttp
+import yaml
 
+from agentplane.egress.sidecar_config import Settings
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from util.settings_contract import settings_file
 
 _BINARY = get_required_path(own_repo_rlocation("agentplane/egress/sidecar/egress-sidecar_/egress-sidecar"))
 
@@ -56,6 +59,7 @@ class SidecarProcess:
         self._stderr_task: asyncio.Task[None] | None = None
         self._stderr: list[str] = []
         self._route_ports: dict[str, int] = {}
+        self._settings_dir = tempfile.TemporaryDirectory()
 
     async def __aenter__(self) -> SidecarProcess:
         routes = {}
@@ -90,19 +94,24 @@ class SidecarProcess:
             if not isinstance(port, int):
                 raise TypeError(f"platform route {name!r} listen_port must be an integer")
             self._route_ports[name] = port
-        env = {
-            "AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST": self._proxy_host,
-            "AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT": str(self._proxy_port),
-            "AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE": str(self._token_file),
-            "AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES": json.dumps(
-                {audience: str(path) for audience, path in self._audience_token_files.items()}
-            ),
-            "AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES": json.dumps(routes),
-            "AGENTPLANE_EGRESS_SIDECAR_LISTEN_HOST": self._listen_host,
-            "AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT": str(self._listen_port),
-            "AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST": self._readiness_host,
-            "AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT": str(self._readiness_port),
-        }
+        # The settings file as the cdk8s renderer writes it: its keys checked against the Python model.
+        settings = settings_file(
+            Settings,
+            {
+                "proxy_host": self._proxy_host,
+                "proxy_port": self._proxy_port,
+                "token_file": str(self._token_file),
+                "audience_token_files": {audience: str(path) for audience, path in self._audience_token_files.items()},
+                "platform_routes": routes,
+                "listen_host": self._listen_host,
+                "listen_port": self._listen_port,
+                "readiness_host": self._readiness_host,
+                "readiness_port": self._readiness_port,
+            },
+        )
+        settings_path = Path(self._settings_dir.name) / "settings.yaml"
+        settings_path.write_text(yaml.safe_dump(settings))
+        env = {Settings.config_file_env: str(settings_path)}
         self.process = await asyncio.create_subprocess_exec(
             str(_BINARY), stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE, env=env
         )
@@ -156,6 +165,12 @@ class SidecarProcess:
         raise TimeoutError(f"Go sidecar did not become ready: {self._logs()}")
 
     async def _stop(self) -> None:
+        try:
+            await self._stop_process()
+        finally:
+            self._settings_dir.cleanup()
+
+    async def _stop_process(self) -> None:
         if self.process is None:
             return
         if self.process.returncode is None:

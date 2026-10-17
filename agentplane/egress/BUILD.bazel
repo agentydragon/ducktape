@@ -360,6 +360,7 @@ py_library(
     ],
     deps = [
         ":platform_routes",
+        "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],

@@ -296,12 +296,19 @@ class RunnerTemplate(Construct):
         )
 
     def _add_sandbox_template(self, *, name: str, image: str) -> dict[str, Any]:
+        sidecar_settings = sandbox_pod.add_sidecar_settings(
+            self,
+            self.env,
+            name=f"{name}-egress-sidecar",
+            platform_routes=platform_routes.sidecar_routes(self.env.namespace, control_service=self.control_service),
+        )
         pod = sandbox_pod.render_pod_template(
             _LABELS,
             sandbox_pod.pod_spec(
                 self.env,
                 workload=self._runner_container(image),
                 service_account_name=NAME,
+                sidecar_settings=sidecar_settings,
                 workload_volumes=[
                     k8s.Volume(
                         name=_PLATFORM_INSTRUCTIONS_VOLUME,
@@ -321,10 +328,7 @@ class RunnerTemplate(Construct):
                         else []
                     ),
                 ],
-                sidecar_env=[
-                    platform_routes.sidecar_env(self.env.namespace, control_service=self.control_service),
-                    *self.workload_env,
-                ],
+                sidecar_env=self.workload_env,
                 sidecar_resources=self.sidecar_resources,
                 image_pull_secret_name=self.image_pull_secret_name,
             ),

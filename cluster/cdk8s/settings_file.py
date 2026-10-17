@@ -3,16 +3,27 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import ConfigMap, Container, EnvValue, Volume
+from cdk8s_plus_34 import ConfigMap, Container, EnvValue, Volume, k8s
 from constructs import Construct
 from pydantic import BaseModel
 
 from cluster.cdk8s.config_format import yaml_config
 from util.settings_contract import settings_file
+
+
+@dataclass(frozen=True)
+class PodWiring:
+    """What a settings file adds to a Pod spec: the volume, the container's mount of it, and the
+    environment variable that names the file."""
+
+    volume: k8s.Volume
+    mount: k8s.VolumeMount
+    path_env: k8s.EnvVar
 
 
 class SettingsFile(Construct):
@@ -40,6 +51,14 @@ class SettingsFile(Construct):
             "config-map",
             metadata=metadata,
             data={self._path.name: yaml_config(settings_file(model, content, supplied=supplied))},
+        )
+
+    def pod_wiring(self, *, volume_name: str, env: str) -> PodWiring:
+        """`mount_into` for a container written as core Pod types, as in a Pod template."""
+        return PodWiring(
+            volume=k8s.Volume(name=volume_name, config_map=k8s.ConfigMapVolumeSource(name=self.config_map.name)),
+            mount=k8s.VolumeMount(name=volume_name, mount_path=str(self._path.parent), read_only=True),
+            path_env=k8s.EnvVar(name=env, value=str(self._path)),
         )
 
     def mount_into(self, container: Container, *, env: str) -> None:

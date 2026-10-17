@@ -12,10 +12,11 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP, VERSION
 from cluster.cdk8s.agentplane.launcher_relay import CONTROLLER_USERNAME, LAUNCHER_LABELS, LauncherRelayPolicy
+from cluster.cdk8s.agentplane.sandbox_pod import EGRESS_TOKEN_VOLUME_NAME, SIDECAR_SETTINGS_VOLUME_NAME
 from cluster.validation.kyverno.apply import KyvernoApplyResult, apply_policy
 
 NAMESPACE = "launcher-relay-test"
-TOKEN_VOLUME = "relay-test-token"
+TOKEN_VOLUME = EGRESS_TOKEN_VOLUME_NAME
 RUNNER_POD = {
     "metadata": {"labels": {"app": "relay-test-runner"}},
     "spec": {
@@ -27,11 +28,15 @@ RUNNER_POD = {
                 "image": "sidecar:test",
                 "env": [{"name": "AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST", "value": "proxy.test"}],
                 "securityContext": {"allowPrivilegeEscalation": False},
-                "volumeMounts": [{"name": TOKEN_VOLUME, "mountPath": "/var/run/relay-test", "readOnly": True}],
+                "volumeMounts": [
+                    {"name": TOKEN_VOLUME, "mountPath": "/var/run/relay-test", "readOnly": True},
+                    {"name": SIDECAR_SETTINGS_VOLUME_NAME, "mountPath": "/etc/relay-test", "readOnly": True},
+                ],
             },
         ],
         "volumes": [
             {"name": "unrelated", "configMap": {"name": "relay-test-config"}},
+            {"name": SIDECAR_SETTINGS_VOLUME_NAME, "configMap": {"name": "relay-test-settings"}},
             {
                 "name": TOKEN_VOLUME,
                 "projected": {"sources": [{"serviceAccountToken": {"audience": "relay-test", "path": "token"}}]},
@@ -140,8 +145,9 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
     assert spec["serviceAccountName"] == "sandbox-a"
     assert spec["automountServiceAccountToken"] is False
     assert spec["imagePullSecrets"] == [{"name": "relay-test-pull"}]
-    assert [v["name"] for v in spec["volumes"]] == [TOKEN_VOLUME]
+    assert [v["name"] for v in spec["volumes"]] == [TOKEN_VOLUME, SIDECAR_SETTINGS_VOLUME_NAME]
     relay = one(c for c in spec["containers"] if c["name"] == "egress-sidecar")
+    assert {mount["name"] for mount in relay["volumeMounts"]} == {TOKEN_VOLUME, SIDECAR_SETTINGS_VOLUME_NAME}
     # The guest dials the relay from outside the Pod's loopback.
     assert {"name": "AGENTPLANE_EGRESS_SIDECAR_LISTEN_HOST", "value": "0.0.0.0"} in relay["env"]
     assert relay["securityContext"]["runAsNonRoot"] is True

@@ -1,7 +1,7 @@
 """The egress relay of a VM Sandbox. KubeVirt builds a VM's virt-launcher Pod from the VirtualMachine,
 not from our SandboxTemplate's Pod, so this Kyverno policy adds the relay when the Pod is created: the
-same egress sidecar, routes and projected tokens as a runner Pod's (runner_sandbox.py), copied from the
-rendered runner template, so the two cannot drift.
+same egress sidecar, settings file, routes and projected tokens as a runner Pod's (runner_sandbox.py),
+copied from the rendered runner template, so the two cannot drift.
 
 The guest reaches the relay at its masquerade gateway, `10.0.2.1`, on the ports a runner Pod's
 workload dials on loopback: the HTTP proxy and one listener per platform route (platform_routes.py).
@@ -43,6 +43,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import sidecar_config
+from cluster.cdk8s.agentplane import sandbox_pod
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
 from util.settings_contract import env_name
 
@@ -110,13 +111,14 @@ def _token_mounts(containers: str, token_volume: str) -> str:
 
 class LauncherRelayPolicy(ClusterPolicy):
     """`runner_pod` is the runner SandboxTemplate's rendered Pod template, whose egress sidecar, the
-    volume that sidecar mounts and pull secrets the relay copies."""
+    token and settings volumes that sidecar mounts and pull secrets the relay copies."""
 
     def __init__(self, scope: Construct, id: str, *, namespace: str, runner_pod: dict[str, Any]) -> None:
         pod_spec = runner_pod["spec"]
         relay = dict(one(c for c in pod_spec["containers"] if c["name"] == sidecar_config.CONTAINER_NAME))
-        token_volume = one(relay["volumeMounts"])["name"]
+        token_volume = sandbox_pod.EGRESS_TOKEN_VOLUME_NAME
         # The guest is outside the Pod's loopback; the runner fence keeps every other peer off these ports.
+        # The environment variable overrides the settings file's `listen_host`.
         relay["env"] = [*relay["env"], {"name": env_name(sidecar_config.Settings, "listen_host"), "value": "0.0.0.0"}]
         # A runner Pod sets these Pod-wide; the launcher's own Pod security context is KubeVirt's.
         relay["securityContext"] = {
@@ -221,7 +223,10 @@ class LauncherRelayPolicy(ClusterPolicy):
                                 "automountServiceAccountToken": False,
                                 "imagePullSecrets": pod_spec["imagePullSecrets"],
                                 "containers": [relay],
-                                "volumes": [one(v for v in pod_spec["volumes"] if v["name"] == token_volume)],
+                                "volumes": [
+                                    one(v for v in pod_spec["volumes"] if v["name"] == name)
+                                    for name in (token_volume, sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME)
+                                ],
                             }
                         }
                     ),

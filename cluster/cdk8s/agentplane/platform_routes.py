@@ -9,22 +9,18 @@ Neither an egress policy nor the central proxy is involved.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import k8s
 from constructs import Construct
 
-from agentplane.egress import sidecar_config
 from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
 from cluster.cdk8s.agentplane import history_service, runner_gateway, sandbox_pod
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef
-from util.settings_contract import env_name
 
 
 @dataclass(frozen=True)
@@ -57,17 +53,16 @@ def routes(namespace: str, *, control_service: ServiceRef | None = None) -> tupl
     return control(namespace, service=control_service), ingress(namespace)
 
 
-def sidecar_env(namespace: str, *, control_service: ServiceRef | None = None) -> k8s.EnvVar:
-    """The sidecar's `platform_routes` setting, as its environment variable."""
-    value = {
+def sidecar_routes(namespace: str, *, control_service: ServiceRef | None = None) -> dict[str, PlatformRoute]:
+    """The sidecar's `platform_routes` setting."""
+    return {
         route.name: PlatformRoute(
             listen_port=route.listen_port,
             upstream=f"{route.service.fqdn}:{route.service.pod_port}",
             token_file=Path(sandbox_pod.audience_token_file(route.audience)),
-        ).model_dump(mode="json")
+        )
         for route in routes(namespace, control_service=control_service)
     }
-    return k8s.EnvVar(name=env_name(sidecar_config.Settings, "platform_routes"), value=json.dumps(value))
 
 
 def runner_args(namespace: str) -> list[str]:

@@ -3283,6 +3283,35 @@ data:
     human-facing dates and times; check `date` when needed. Use UTC or an explicit offset in API timestamps.
 immutable: false
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: runner-egress-sidecar
+  namespace: agentplane-staging
+data:
+  settings.yaml: |
+    proxy_host: egress.agentplane-staging.svc.cluster.local
+    proxy_port: 8888
+    listen_port: 3128
+    readiness_host: 0.0.0.0
+    readiness_port: 3129
+    token_file: /var/run/agentplane-egress/token
+    audience_token_files:
+      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
+      agentplane-notifications: /var/run/agentplane-egress/notifications-token
+      agentplane-runner-control: /var/run/agentplane-egress/runner-control-token
+      agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
+    platform_routes:
+      control:
+        listen_port: 3130
+        upstream: runner-gateway.agentplane-staging.svc.cluster.local:8080
+        token_file: /var/run/agentplane-egress/runner-control-token
+      ingress:
+        listen_port: 3131
+        upstream: history-service.agentplane-staging.svc.cluster.local:8081
+        token_file: /var/run/agentplane-egress/runner-ingress-token
+immutable: false
+---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: SandboxTemplate
 metadata:
@@ -3420,22 +3449,8 @@ spec:
               subPath: kubeconfig
           workingDir: /state
         - env:
-            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
-              value: egress.agentplane-staging.svc.cluster.local
-            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
-              value: "8888"
-            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
-              value: "3128"
-            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
-              value: 0.0.0.0
-            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
-              value: "3129"
-            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
-              value: /var/run/agentplane-egress/token
-            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
-            - name: AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES
-              value: '{"control": {"listen_port": 3130, "upstream": "runner-gateway.agentplane-staging.svc.cluster.local:8080", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "history-service.agentplane-staging.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
+            - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
+              value: /etc/agentplane-egress-sidecar/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -3460,6 +3475,9 @@ spec:
           volumeMounts:
             - mountPath: /var/run/agentplane-egress
               name: egress-token
+              readOnly: true
+            - mountPath: /etc/agentplane-egress-sidecar
+              name: egress-sidecar-settings
               readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
@@ -3504,6 +3522,9 @@ spec:
                   audience: agentplane-runner-ingress
                   expirationSeconds: 600
                   path: runner-ingress-token
+        - configMap:
+            name: runner-egress-sidecar
+          name: egress-sidecar-settings
         - configMap:
             name: runner-platform-instructions
           name: platform-instructions
@@ -3661,22 +3682,8 @@ spec:
             automountServiceAccountToken: false
             containers:
               - env:
-                  - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
-                    value: egress.agentplane-staging.svc.cluster.local
-                  - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
-                    value: "8888"
-                  - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
-                    value: "3128"
-                  - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
-                    value: 0.0.0.0
-                  - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
-                    value: "3129"
-                  - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
-                    value: /var/run/agentplane-egress/token
-                  - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-                    value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
-                  - name: AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES
-                    value: '{"control": {"listen_port": 3130, "upstream": "runner-gateway.agentplane-staging.svc.cluster.local:8080", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "history-service.agentplane-staging.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
+                  - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
+                    value: /etc/agentplane-egress-sidecar/settings.yaml
                   - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_HOST
                     value: 0.0.0.0
                 image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
@@ -3707,6 +3714,9 @@ spec:
                   - mountPath: /var/run/agentplane-egress
                     name: egress-token
                     readOnly: true
+                  - mountPath: /etc/agentplane-egress-sidecar
+                    name: egress-sidecar-settings
+                    readOnly: true
             imagePullSecrets:
               - name: forgejo-images-creds
             serviceAccountName: "{{account.metadata.name}}"
@@ -3734,6 +3744,9 @@ spec:
                         audience: agentplane-runner-ingress
                         expirationSeconds: 600
                         path: runner-ingress-token
+              - configMap:
+                  name: runner-egress-sidecar
+                name: egress-sidecar-settings
       name: inject-relay
     - context:
         - name: vmiOwner
@@ -5524,6 +5537,35 @@ spec:
     deletionPolicy: Retain
     name: buildbuddy-api-key
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: runner-ducktape-egress-sidecar
+  namespace: agentplane-staging
+data:
+  settings.yaml: |
+    proxy_host: egress.agentplane-staging.svc.cluster.local
+    proxy_port: 8888
+    listen_port: 3128
+    readiness_host: 0.0.0.0
+    readiness_port: 3129
+    token_file: /var/run/agentplane-egress/token
+    audience_token_files:
+      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
+      agentplane-notifications: /var/run/agentplane-egress/notifications-token
+      agentplane-runner-control: /var/run/agentplane-egress/runner-control-token
+      agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
+    platform_routes:
+      control:
+        listen_port: 3130
+        upstream: runner-gateway.agentplane-staging.svc.cluster.local:8080
+        token_file: /var/run/agentplane-egress/runner-control-token
+      ingress:
+        listen_port: 3131
+        upstream: history-service.agentplane-staging.svc.cluster.local:8081
+        token_file: /var/run/agentplane-egress/runner-ingress-token
+immutable: false
+---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: SandboxTemplate
 metadata:
@@ -5668,22 +5710,8 @@ spec:
               readOnly: true
           workingDir: /state
         - env:
-            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
-              value: egress.agentplane-staging.svc.cluster.local
-            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
-              value: "8888"
-            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
-              value: "3128"
-            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
-              value: 0.0.0.0
-            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
-              value: "3129"
-            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
-              value: /var/run/agentplane-egress/token
-            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
-            - name: AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES
-              value: '{"control": {"listen_port": 3130, "upstream": "runner-gateway.agentplane-staging.svc.cluster.local:8080", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "history-service.agentplane-staging.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
+            - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
+              value: /etc/agentplane-egress-sidecar/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -5708,6 +5736,9 @@ spec:
           volumeMounts:
             - mountPath: /var/run/agentplane-egress
               name: egress-token
+              readOnly: true
+            - mountPath: /etc/agentplane-egress-sidecar
+              name: egress-sidecar-settings
               readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
@@ -5752,6 +5783,9 @@ spec:
                   audience: agentplane-runner-ingress
                   expirationSeconds: 600
                   path: runner-ingress-token
+        - configMap:
+            name: runner-ducktape-egress-sidecar
+          name: egress-sidecar-settings
         - configMap:
             name: runner-platform-instructions
           name: platform-instructions
@@ -5828,6 +5862,26 @@ spec:
               protocol: TCP
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sandbox-egress-sidecar
+  namespace: agentplane-staging
+data:
+  settings.yaml: |
+    proxy_host: egress.agentplane-staging.svc.cluster.local
+    proxy_port: 8888
+    listen_port: 3128
+    readiness_host: 0.0.0.0
+    readiness_port: 3129
+    token_file: /var/run/agentplane-egress/token
+    audience_token_files:
+      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
+      agentplane-notifications: /var/run/agentplane-egress/notifications-token
+      agentplane-runner-control: /var/run/agentplane-egress/runner-control-token
+      agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
+immutable: false
+---
+apiVersion: v1
 kind: PodTemplate
 metadata:
   name: sandbox
@@ -5902,20 +5956,8 @@ template:
             readOnly: true
             subPath: bazel.bazelrc
       - env:
-          - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
-            value: egress.agentplane-staging.svc.cluster.local
-          - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
-            value: "8888"
-          - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
-            value: "3128"
-          - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
-            value: 0.0.0.0
-          - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
-            value: "3129"
-          - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
-            value: /var/run/agentplane-egress/token
-          - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-            value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
+          - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
+            value: /etc/agentplane-egress-sidecar/settings.yaml
         image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
         name: egress-sidecar
         readinessProbe:
@@ -5940,6 +5982,9 @@ template:
         volumeMounts:
           - mountPath: /var/run/agentplane-egress
             name: egress-token
+            readOnly: true
+          - mountPath: /etc/agentplane-egress-sidecar
+            name: egress-sidecar-settings
             readOnly: true
     imagePullSecrets:
       - name: forgejo-images-creds
@@ -5983,6 +6028,9 @@ template:
                 audience: agentplane-runner-ingress
                 expirationSeconds: 600
                 path: runner-ingress-token
+      - configMap:
+          name: sandbox-egress-sidecar
+        name: egress-sidecar-settings
 ---
 apiVersion: v1
 kind: PodTemplate
@@ -6061,20 +6109,8 @@ template:
           - mountPath: /home/runner
             name: home
       - env:
-          - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
-            value: egress.agentplane-staging.svc.cluster.local
-          - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
-            value: "8888"
-          - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
-            value: "3128"
-          - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
-            value: 0.0.0.0
-          - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
-            value: "3129"
-          - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
-            value: /var/run/agentplane-egress/token
-          - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-            value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
+          - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
+            value: /etc/agentplane-egress-sidecar/settings.yaml
         image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
         name: egress-sidecar
         readinessProbe:
@@ -6099,6 +6135,9 @@ template:
         volumeMounts:
           - mountPath: /var/run/agentplane-egress
             name: egress-token
+            readOnly: true
+          - mountPath: /etc/agentplane-egress-sidecar
+            name: egress-sidecar-settings
             readOnly: true
     imagePullSecrets:
       - name: forgejo-images-creds
@@ -6142,6 +6181,9 @@ template:
                 audience: agentplane-runner-ingress
                 expirationSeconds: 600
                 path: runner-ingress-token
+      - configMap:
+          name: sandbox-egress-sidecar
+        name: egress-sidecar-settings
       - emptyDir:
           sizeLimit: 20Gi
         name: home

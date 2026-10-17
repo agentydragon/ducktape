@@ -81,6 +81,9 @@ class CommandSandbox(Construct):
         self.sidecar_resources = sidecar_resources
         self.sidecar_env = sidecar_env
         mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
+        self.sidecar_settings = sandbox_pod.add_sidecar_settings(
+            self, env, name=f"{NAME}-egress-sidecar", platform_routes={}
+        )
         _pod_template(
             self,
             "podtemplate",
@@ -136,6 +139,7 @@ def _pod_template(
             workload=workload,
             service_account_name=None,
             workload_volumes=volumes,
+            sidecar_settings=scope.sidecar_settings,
             sidecar_env=scope.sidecar_env,
             sidecar_resources=scope.sidecar_resources,
             image_pull_secret_name=scope.image_pull_secret_name,

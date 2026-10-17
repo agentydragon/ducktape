@@ -1,11 +1,13 @@
 """Authoring model for the Agentplane egress sidecar's Go process settings."""
 
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 
 from agentplane.egress.platform_routes import PlatformRoute
+from util.yaml_file_settings import YamlFileSettings
 
 CONTAINER_NAME = "egress-sidecar"
 REFUSED_HEADER = "x-agentplane-egress-sidecar"
@@ -15,9 +17,11 @@ READINESS_HOST = "0.0.0.0"
 READINESS_PORT = 3129
 
 
-class Settings(BaseSettings):
-    """The Go runtime reads the matching `--flags` and `AGENTPLANE_EGRESS_SIDECAR_*` values."""
+class Settings(YamlFileSettings):
+    """The Go runtime reads the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, then the
+    matching `AGENTPLANE_EGRESS_SIDECAR_*` values, then the `--flags`, each over the one before."""
 
+    config_file_env: ClassVar[str] = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_EGRESS_SIDECAR_", cli_parse_args=True, cli_kebab_case=True)
 
     proxy_host: str = Field(description="Host of the central egress proxy every request is relayed to.")
