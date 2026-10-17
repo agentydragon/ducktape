@@ -170,8 +170,7 @@ class SshMcp(Construct):
         # The home switch is reachable from the home-LAN node. Keep the backend
         # there so its egress follows the same routed path as the tofu runner.
         pod_policy.place(
-            deployment,
-            node_scheduling.Placement(node_selector={"topology.kubernetes.io/zone": "home-lan"}),
+            deployment, node_scheduling.Placement(node_selector={"topology.kubernetes.io/zone": "home-lan"})
         )
         config_volume = Volume.from_config_map(self, "config-volume", config_map)
         deployment.containers[0].mount(CONFIG_DIR, config_volume, read_only=True)
