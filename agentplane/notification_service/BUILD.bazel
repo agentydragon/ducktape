@@ -225,7 +225,7 @@ py_test(
         "//agentplane/runner:platform_instructions",
         "//agentplane/runner:sandbox_launch",
         "//agentplane/runner/testing:scripted_model",
-        "//agentplane/runner_gateway/testing:go_service",
+        "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/sandboxes/testing:api_server",
         "//agentplane/workload_auth:principal",
         "@pypi//grpcio",

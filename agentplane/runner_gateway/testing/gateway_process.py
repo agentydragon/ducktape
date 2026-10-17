@@ -1,4 +1,4 @@
-"""Run the unified Go Runner Gateway against a supplied Kubernetes API and PostgreSQL."""
+"""Run the Runner Gateway against a supplied Kubernetes API and PostgreSQL."""
 
 from __future__ import annotations
 
@@ -56,15 +56,15 @@ def _migrate(database_url: str, log_path: Path) -> None:
         )
     except subprocess.TimeoutExpired as error:
         log_path.write_text(f"migration timed out\nstdout:\n{error.stdout!r}\nstderr:\n{error.stderr!r}")
-        raise RuntimeError(f"Go Runner Gateway migration timed out; see {log_path}") from error
+        raise RuntimeError(f"Runner Gateway migration timed out; see {log_path}") from error
     if result.returncode != 0:
         log_path.write_text(f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}")
-        raise RuntimeError(f"Go Runner Gateway migration failed with {result.returncode}; see {log_path}")
+        raise RuntimeError(f"Runner Gateway migration failed with {result.returncode}; see {log_path}")
 
 
 @dataclass
-class GoService:
-    """Addresses and process controls for one full unified Go Gateway process."""
+class GatewayProcess:
+    """Addresses and process controls for one full Gateway process."""
 
     process: asyncio.subprocess.Process
     target: str
@@ -83,13 +83,13 @@ class GoService:
     async def _check_process(self) -> None:
         if self.process.returncode is not None:
             raise RuntimeError(
-                f"Go Runner Gateway exited with {self.process.returncode}; see undeclared output {self.log_path}"
+                f"Runner Gateway exited with {self.process.returncode}; see undeclared output {self.log_path}"
             )
 
     async def wait_for_runner(
         self, client: SandboxControlClient, destination: SandboxDestination, *, timeout_s: float = 15
     ) -> None:
-        """Probe the real Go proxy until the Runner Connect stream is serving calls."""
+        """Probe the real Runner proxy until the Runner Connect stream is serving calls."""
         deadline = asyncio.get_running_loop().time() + timeout_s
         while True:
             await self._check_process()
@@ -101,14 +101,14 @@ class GoService:
                     raise
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
-                raise TimeoutError(f"Go Runner proxy did not connect to Sandbox {destination.sandbox}")
+                raise TimeoutError(f"Runner proxy did not connect to Sandbox {destination.sandbox}")
             await asyncio.sleep(min(0.05, remaining))
 
     @asynccontextmanager
     async def connected_runner(
         self, runner: Runner, *, token: str, proxy_client: SandboxControlClient, destination: SandboxDestination
     ) -> AsyncIterator[None]:
-        """Connect a native Python Runner to this Go process and wait for proxy readiness."""
+        """Connect a native Python Runner to this process and wait for proxy readiness."""
         client = runner_control.RunnerControlClient(
             runner_control.RunnerService(runner),
             target=self.target,
@@ -118,7 +118,7 @@ class GoService:
             facts=runner.facts,
             facts_changed=runner.facts_changed,
         )
-        async with background(client.run(), name="native Runner to Go Gateway"):
+        async with background(client.run(), name="native Runner to Gateway"):
             await self.wait_for_runner(proxy_client, destination)
             yield
 
@@ -134,7 +134,7 @@ class GoService:
             await self.process.wait()
 
 
-async def _while_running[T](service: GoService, operation: Awaitable[T], *, timeout_s: float) -> T:
+async def _while_running[T](service: GatewayProcess, operation: Awaitable[T], *, timeout_s: float) -> T:
     operation_task = asyncio.ensure_future(operation)
     exit_task = asyncio.create_task(service.process.wait())
     try:
@@ -143,7 +143,7 @@ async def _while_running[T](service: GoService, operation: Awaitable[T], *, time
         )
         if exit_task in done:
             raise RuntimeError(
-                f"Go Runner Gateway exited with {service.process.returncode}; see undeclared output {service.log_path}"
+                f"Runner Gateway exited with {service.process.returncode}; see undeclared output {service.log_path}"
             )
         if operation_task not in done:
             raise TimeoutError
@@ -155,7 +155,7 @@ async def _while_running[T](service: GoService, operation: Awaitable[T], *, time
         await asyncio.gather(operation_task, exit_task, return_exceptions=True)
 
 
-async def _wait_health(service: GoService, target: str, *, timeout_s: float) -> None:
+async def _wait_health(service: GatewayProcess, target: str, *, timeout_s: float) -> None:
     async with dial(target) as channel:
         await _while_running(service, channel.channel_ready(), timeout_s=timeout_s)
         response = await _while_running(
@@ -168,7 +168,7 @@ async def _wait_health(service: GoService, target: str, *, timeout_s: float) -> 
     await service._check_process()
 
 
-async def _wait_ready(service: GoService, *, timeout_s: float) -> None:
+async def _wait_ready(service: GatewayProcess, *, timeout_s: float) -> None:
     deadline = asyncio.get_running_loop().time() + timeout_s
     while True:
         await service._check_process()
@@ -181,14 +181,12 @@ async def _wait_ready(service: GoService, *, timeout_s: float) -> None:
         except ConnectionError, grpc.aio.AioRpcError, TimeoutError:
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
-                raise TimeoutError(
-                    f"Go Runner Gateway did not become healthy; see undeclared output {service.log_path}"
-                )
+                raise TimeoutError(f"Runner Gateway did not become healthy; see undeclared output {service.log_path}")
             await asyncio.sleep(min(0.05, remaining))
 
 
 @asynccontextmanager
-async def go_service(
+async def run_gateway(
     kubeconfig: Path,
     *,
     database_url: str,
@@ -200,8 +198,8 @@ async def go_service(
     runner_audience: str,
     runner_proxy_token_file: Path,
     startup_timeout_s: float = 30,
-) -> AsyncIterator[GoService]:
-    """Migrate the supplied database, then run the full Go Gateway using production flags.
+) -> AsyncIterator[GatewayProcess]:
+    """Migrate the supplied database, then run the full Gateway using production flags.
 
     The Kubernetes API and PostgreSQL clone are owned by the caller. The migration runner
     performs the same Alembic-to-Goose handoff used by the deployed process, before its server
@@ -240,7 +238,7 @@ async def go_service(
         process = await asyncio.create_subprocess_exec(
             *arguments, env=environment, stdout=log_file, stderr=subprocess.STDOUT
         )
-        service = GoService(process=process, target=f"127.0.0.1:{port}", log_path=log_path)
+        service = GatewayProcess(process=process, target=f"127.0.0.1:{port}", log_path=log_path)
         try:
             await _wait_ready(service, timeout_s=startup_timeout_s)
             yield service

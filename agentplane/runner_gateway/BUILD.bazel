@@ -6,17 +6,17 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 pkg_tar(
-    name = "go_binary_layer",
+    name = "binary_layer",
     srcs = [":runner-gateway"],
     package_dir = "/usr/local/bin",
 )
 
 oci_image(
-    name = "go_image",
+    name = "image",
     base = "@distroless_static_debian13_linux_amd64",
     entrypoint = ["/usr/local/bin/runner-gateway"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":go_binary_layer"],
+    tars = [":binary_layer"],
     user = "1000:1000",
     visibility = ["//visibility:public"],
     workdir = "/",

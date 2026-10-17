@@ -85,7 +85,7 @@ _IMAGES = {
     "notification_service_migrate": "//agentplane/notification_service:migration_image",
     "policy_controller": "//agentplane/policy_controller:image",
     "postgres": "@postgres_18_minimal_linux_amd64",
-    "runner_gateway_go": "//agentplane/runner_gateway:go_image",
+    "runner_gateway": "//agentplane/runner_gateway:image",
     "runner_gateway_queue_migrate": "//agentplane/runner_gateway/migrations:image",
     "sandbox_controller": "//agentplane/sandbox_controller:image",
 }
@@ -246,7 +246,7 @@ py_library(
         "//cluster/cdk8s/agentplane:policy_controller",
         "//cluster/cdk8s/agentplane:policy_controller_rbac",
         "//cluster/cdk8s/agentplane:runner_gateway",
-        "//cluster/cdk8s/agentplane:runner_gateway_go",
+        "//cluster/cdk8s/agentplane:runner_gateway_workload",
         "//cluster/cdk8s/agentplane:runner_sandbox",
         "//cluster/cdk8s/agentplane:sandbox_controller",
         "//cluster/cdk8s/agentplane:sandbox_pod",

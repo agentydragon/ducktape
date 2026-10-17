@@ -11,7 +11,7 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   and an MCP endpoint over OAuth.
-- [Runner Gateway](runner_gateway/README.md): one Go process serving the runner control stream,
+- [Runner Gateway](runner_gateway/README.md): one process serving the runner control stream,
   authorized live Runner proxy and [Session Dispatcher](session_dispatcher/README.md) durable queue.
   Serving waits for a root-owned queue migration ([deployment](runner_gateway/README.md#deployment)).
 - [History Service](history_service/README.md): retained Session history, read by the
@@ -54,7 +54,7 @@ flowchart LR
     app[Integration app]
     subgraph services[Agentplane services]
         direction TB
-        gw[Runner Gateway: Go queue, proxy and tunnel]
+        gw[Runner Gateway: queue, proxy and tunnel]
         sandboxctl[Sandbox Controller]
         policy[Policy Controller]
         hs[History Service]
@@ -135,7 +135,7 @@ and owns a separate PostgreSQL database. See the [indexing README](indexing/READ
 ```mermaid
 flowchart LR
     app[Integration app]
-    subgraph unified[Go Runner Gateway]
+    subgraph unified[Runner Gateway]
         dispatcher[Dispatcher API and durable delivery]
         gateway[Runner proxy and control tunnel]
     end
@@ -320,7 +320,7 @@ source are retired; the History Service retains its database and authored histor
   The History Service retains the existing `sandbox_service` database; no database or authored
   history is removed with the Sandbox Service Deployment. The history and Dispatcher databases are drawn.
 - **Sandbox lifecycle and runner control.** The app writes requested Sandbox state and operator
-  grants to Kubernetes; the Sandbox Controller reconciles resources and owns status. The Go Runner Gateway
+  grants to Kubernetes; the Sandbox Controller reconciles resources and owns status. The Runner Gateway
   implements Dispatcher Session openings and durable command admission/delivery alongside its runner
   control stream and authorized live runner access. The app reads
   current runner inventory and explicitly resumes a retained harness through the Sandbox control

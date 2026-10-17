@@ -39,7 +39,7 @@ from cluster.cdk8s.agentplane import (
     policy_controller,
     policy_controller_rbac,
     runner_gateway,
-    runner_gateway_go,
+    runner_gateway_workload,
     runner_sandbox,
     sandbox_controller,
     sandbox_pod,
@@ -55,8 +55,8 @@ from cluster.cdk8s.service_ref import Port, ServiceRef
 NAMESPACE = testing.ENV.namespace
 RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
-GO_RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset"
-GO_QUEUE_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
+RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset"
+QUEUE_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
 DISPATCHER_PORT = 8080
 
 
@@ -164,12 +164,12 @@ def objects(
         ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME): notifications.service(NAMESPACE).pods
     }
     dispatcher_callers = app_caller | notifications_caller
-    go_database_env = {"PGSSLMODE": EnvValue.from_value("disable")}
-    control = runner_gateway_go.runner_control_service(NAMESPACE, port=Port(name="grpc", number=8080))
-    runner_gateway_go.add_stable_services(chart, env, cluster_ip="None", control=control)
-    runner_gateway_go.GoRunnerGateway(
+    database_env = {"PGSSLMODE": EnvValue.from_value("disable")}
+    control = runner_gateway_workload.runner_control_service(NAMESPACE, port=Port(name="grpc", number=8080))
+    runner_gateway_workload.add_stable_services(chart, env, cluster_ip="None", control=control)
+    runner_gateway_workload.RunnerGateway(
         chart,
-        "runner-gateway-go",
+        "runner-gateway",
         env,
         dispatcher_callers=dispatcher_callers,
         gateway_callers=dispatcher_callers,
@@ -182,9 +182,9 @@ def objects(
         control=control,
         migration=ContainerProps(
             name="goose-migrate",
-            image=GO_QUEUE_MIGRATOR_IMAGE,
+            image=QUEUE_MIGRATOR_IMAGE,
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            env_variables={"DATABASE_URL": dispatcher_database_url, **go_database_env},
+            env_variables={"DATABASE_URL": dispatcher_database_url, **database_env},
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(25)), memory=MemoryResources(request=Size.mebibytes(64))
             ),
@@ -192,7 +192,7 @@ def objects(
         ),
         registry_secret_name=None,
         placement=None,
-        container_env={**kube_api_env, **go_database_env},
+        container_env={**kube_api_env, **database_env},
         memory_limit=None,
     )
     control_target = f"{control.fqdn}:{control.port.number}"
@@ -281,7 +281,7 @@ def objects(
         gateway_control_target=control_target,
         history=history_service.service(NAMESPACE),
         history_audience=history_service.TOKEN_AUDIENCE,
-        dispatcher=runner_gateway_go.dispatcher_service(NAMESPACE),
+        dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         callers=[egress.proxy(NAMESPACE).pods, app_component.service(NAMESPACE).pods],
         placement=None,

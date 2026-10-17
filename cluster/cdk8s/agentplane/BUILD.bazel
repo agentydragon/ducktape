@@ -609,7 +609,7 @@ py_library(
         ":llm_ingress",
         ":notifications",
         ":runner_gateway",
-        ":runner_gateway_go",
+        ":runner_gateway_workload",
         ":runner_sandbox",
         ":sandbox_controller",
         ":sandbox_pod",
@@ -729,7 +729,7 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":runner_gateway_go",
+        ":runner_gateway_workload",
         ":staging",
         ":staging_grants",
         ":testing",
@@ -960,8 +960,8 @@ py_library(
 )
 
 py_library(
-    name = "runner_gateway_go",
-    srcs = ["runner_gateway_go.py"],
+    name = "runner_gateway_workload",
+    srcs = ["runner_gateway_workload.py"],
     deps = [
         ":app",
         ":database",
@@ -994,9 +994,9 @@ py_library(
 )
 
 py_test(
-    name = "test_runner_gateway_go",
+    name = "test_runner_gateway_workload",
     size = "medium",
-    srcs = ["test_runner_gateway_go.py"],
+    srcs = ["test_runner_gateway_workload.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
@@ -1004,7 +1004,7 @@ py_test(
         ":conftest",
         ":notifications",
         ":runner_gateway",
-        ":runner_gateway_go",
+        ":runner_gateway_workload",
         ":sandbox_controller",
         ":session_dispatcher",
         ":staging",

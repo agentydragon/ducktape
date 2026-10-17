@@ -1,9 +1,9 @@
 # Session Dispatcher
 
 The durable command queue is the Dispatcher role of the
-[Go Runner Gateway](../runner_gateway/README.md). Python App and Notification callers use the
+[Runner Gateway](../runner_gateway/README.md). Python App and Notification callers use the
 unchanged Session Dispatcher gRPC contract; the stable Dispatcher Service maps its port `8080`
-to the shared Go listener on `8080`. The Go worker delivers through the Runner proxy once
+to the shared listener on `8080`. The worker delivers through the Runner proxy once
 the exact Sandbox is ready, with per-Sandbox Lease and PostgreSQL generation fencing.
 
 This package retains the immutable Alembic migration history and its dependencies for the Goose
@@ -75,7 +75,7 @@ Sandboxes) or a retry deadline. Each replica also renews its owned Leases every 
 ## Running
 
 The serving binary and image live under `//agentplane/runner_gateway` and
-`//agentplane/runner_gateway:go_image`. Go uses explicit audience/caller flags, a projected
+`//agentplane/runner_gateway:image`. It uses explicit audience/caller flags, a projected
 Gateway token for calls to other holder replicas, and
 `AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. Apply the Goose queue migrator before
 serving; `grpc.health.v1` is available on the shared listener. The retained `:migrate` and

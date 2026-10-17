@@ -72,7 +72,7 @@ from cluster.cdk8s.agentplane import (
     binding_delegation,
     db_backups as agentplane_staging_db_backups,
     generation as agentplane_generation,
-    runner_gateway_go,
+    runner_gateway_workload,
     staging,
     testing,
 )
@@ -1618,12 +1618,12 @@ def generate_manifests(root: Path) -> None:
     agentplane_testing_delivery_artifact = artifact(
         "agentplane-testing-delivery", testing.ENV.delivery_output_dir, testing.ENV.image_pins
     )
-    runner_gateway_go.serving(
+    runner_gateway_workload.serving(
         flux_chart,
         write_directory(
             root,
             agentplane_testing_delivery_artifact,
-            functools.partial(runner_gateway_go.serving_chart, env=testing.ENV),
+            functools.partial(runner_gateway_workload.serving_chart, env=testing.ENV),
             components=[posixpath.relpath(testing.ENV.image_pins, testing.ENV.delivery_output_dir)],
         ),
         agentplane_testing_kustomization,
@@ -1667,12 +1667,12 @@ def generate_manifests(root: Path) -> None:
     agentplane_staging_delivery_artifact = artifact(
         "agentplane-staging-delivery", staging.ENV.delivery_output_dir, staging.ENV.image_pins
     )
-    runner_gateway_go.serving(
+    runner_gateway_workload.serving(
         flux_chart,
         write_directory(
             root,
             agentplane_staging_delivery_artifact,
-            functools.partial(runner_gateway_go.serving_chart, env=staging.ENV),
+            functools.partial(runner_gateway_workload.serving_chart, env=staging.ENV),
             components=[posixpath.relpath(staging.ENV.image_pins, staging.ENV.delivery_output_dir)],
         ),
         agentplane_staging_kustomization,

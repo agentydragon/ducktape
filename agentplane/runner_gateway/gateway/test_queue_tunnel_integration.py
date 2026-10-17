@@ -1,4 +1,4 @@
-"""Exercise a committed Dispatcher queue row through the Go Gateway tunnel."""
+"""Exercise a committed Dispatcher queue row through the Gateway tunnel."""
 
 import os
 import subprocess

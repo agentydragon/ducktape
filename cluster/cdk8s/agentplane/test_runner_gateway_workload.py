@@ -1,4 +1,4 @@
-"""The staged Go cutover keeps stable Service addresses for one authenticated gRPC listener."""
+"""The Gateway keeps stable Service addresses for one authenticated gRPC listener."""
 
 from typing import Any, cast
 
@@ -12,7 +12,7 @@ from cluster.cdk8s.agentplane import (
     app,
     notifications,
     runner_gateway,
-    runner_gateway_go,
+    runner_gateway_workload,
     sandbox_controller,
     session_dispatcher,
     staging,
@@ -25,7 +25,7 @@ def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str
     return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
-def _go_objects() -> list[dict[str, Any]]:
+def _gateway_objects() -> list[dict[str, Any]]:
     env = staging.ENV
     chart = Chart(Cdk8sTesting.app(), "candidate", disable_resource_name_hashes=True)
     callers = {
@@ -35,7 +35,7 @@ def _go_objects() -> list[dict[str, Any]]:
     database_url = (
         SecretRef(namespace=env.namespace, name="postgres-session-dispatcher").key("uri").env_value(chart, "database")
     )
-    runner_gateway_go.GoRunnerGateway(
+    runner_gateway_workload.RunnerGateway(
         chart,
         "runner-gateway",
         env,
@@ -51,10 +51,10 @@ def _go_objects() -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
-def test_go_gateway_preserves_services_and_fences_listener_ingress() -> None:
-    docs = _go_objects()
+def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
+    docs = _gateway_objects()
     root = Chart(Cdk8sTesting.app(), "root-services", disable_resource_name_hashes=True)
-    runner_gateway_go.add_stable_services(root, staging.ENV)
+    runner_gateway_workload.add_stable_services(root, staging.ENV)
     root_docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(root))
     assert not [doc for doc in docs if doc["kind"] == "Service"]
     deployment = _resource(docs, "Deployment", runner_gateway.NAME)
@@ -134,9 +134,9 @@ def test_migration_job_is_force_recreated_when_the_pinned_image_changes() -> Non
         .key("uri")
         .env_value(chart, "database")
     )
-    runner_gateway_go.QueueMigration(chart, "migration", staging.ENV, database_url=database_url)
+    runner_gateway_workload.QueueMigration(chart, "migration", staging.ENV, database_url=database_url)
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    job = _resource(docs, "Job", runner_gateway_go.MIGRATION_JOB)
+    job = _resource(docs, "Job", runner_gateway_workload.MIGRATION_JOB)
     # A Job's pod template is immutable; Flux recreates it only on this annotation.
     assert job["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/force"] == "enabled"
     pod = job["spec"]["template"]["spec"]

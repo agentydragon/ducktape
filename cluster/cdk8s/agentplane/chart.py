@@ -21,7 +21,7 @@ from cluster.cdk8s.agentplane import (
     llm_ingress,
     notifications,
     runner_gateway,
-    runner_gateway_go,
+    runner_gateway_workload,
     runner_sandbox,
     sandbox_controller,
     sandbox_pod,
@@ -111,8 +111,8 @@ def environment_chart(app: App, env: Environment) -> Chart:
     notifications_caller = {
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
-    runner_gateway_go.add_stable_services(chart, env)
-    runner_gateway_go.QueueMigration(chart, "queue-migration", env, database_url=dispatcher_database_url)
+    runner_gateway_workload.add_stable_services(chart, env)
+    runner_gateway_workload.QueueMigration(chart, "queue-migration", env, database_url=dispatcher_database_url)
     history_service.HistoryService(
         chart,
         "history-service",

@@ -1,4 +1,4 @@
-"""The durable sender front door and workload grants survive Go delivery unification."""
+"""The durable sender front door and workload grants survive the Dispatcher and Gateway sharing one workload."""
 
 from typing import Any
 

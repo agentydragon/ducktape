@@ -1,4 +1,4 @@
-"""Real Actions → notification inbox → Go Dispatcher/Runner Gateway and History → both harnesses, no app."""
+"""Real Actions → notification inbox → Dispatcher/Runner Gateway and History → both harnesses, no app."""
 
 import asyncio
 import json
@@ -47,7 +47,7 @@ from agentplane.runner.platform_instructions import render_platform_instructions
 from agentplane.runner.runner import Runner
 from agentplane.runner.sandbox_launch import SandboxIdentity
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
-from agentplane.runner_gateway.testing.go_service import go_service
+from agentplane.runner_gateway.testing.gateway_process import run_gateway
 from agentplane.sandboxes.testing.api_server import NAMESPACE, SANDBOX, SandboxCluster, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -132,7 +132,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
         token_file = tmp_path / "delegate-token"
         token_file.write_text(delegate_token)
         gateway = await stack.enter_async_context(
-            go_service(
+            run_gateway(
                 cluster.server.kubeconfig,
                 database_url=dispatcher_db_url,
                 namespace=cluster.inventory.namespace,
@@ -356,7 +356,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 first_id = committed_responses[0].command_id
                 assert first_id == attempted_id
                 assert len(attempted_ids) == 1
-                # The Go RPC committed the first request, but the notification caller lost its response.
+                # The Dispatcher RPC committed the first request, but the notification caller lost its response.
                 await step_until_submit_count(2)
                 assert len(attempted_ids) == 2
                 assert attempted_ids == [first_id, first_id]

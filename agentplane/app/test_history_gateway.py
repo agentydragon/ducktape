@@ -150,7 +150,7 @@ async def test_history_resume_propagates_runner_not_found(
             opening = await bridge.create_session(SANDBOX, uuid4(), spec)
             thread_id = UUID(opening.session_id)
 
-            # Gateway Go tests enforce the incarnation fence. This peer scripts NOT_FOUND so the
+            # The Runner Gateway's tests enforce the incarnation fence. This peer scripts NOT_FOUND so the
             # App test checks only that resume errors survive the client boundary.
             endpoint.peer.reject_next_list_sessions(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
             with pytest.raises(ServiceError) as refused:

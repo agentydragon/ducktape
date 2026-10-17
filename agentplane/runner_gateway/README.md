@@ -1,6 +1,6 @@
 # Runner Gateway
 
-The Go Runner Gateway combines durable Session Dispatcher admission and delivery with the
+The Runner Gateway combines durable Session Dispatcher admission and delivery with the
 runners' outbound [RunnerControl stream](../docs/runner_control.md) and the identity-fenced
 Runner proxy. One gRPC listener on `:8080` serves Dispatcher, the Runner proxy and runner `Connect`,
 with separate authentication and authorization for each service. The app and Notification service use
@@ -15,14 +15,14 @@ conversation and from Runner admission.
 
 ## Source and tests
 
-- `go/main.go`, `go/config.go`: process, listener wiring and deployment flags.
-- `go/gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
-- `go/dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
-- `go/migrations/`: Goose migrations and the data-preserving Dispatcher Alembic handoff.
+- `main.go`, `config.go`: process, listener wiring and deployment flags.
+- `gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
+- `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
+- `migrations/`: Goose migrations and the data-preserving Dispatcher Alembic handoff.
 - `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and
-  the real Go fixture for cross-language acceptance.
+  `gateway_process.py` runs the real binary for cross-language acceptance.
 
-Build `//agentplane/runner_gateway:runner-gateway` or `//agentplane/runner_gateway:go_image`.
+Build `//agentplane/runner_gateway:runner-gateway` or `//agentplane/runner_gateway:image`.
 The migrator image is `//agentplane/runner_gateway/migrations:image`; serving never applies
 migrations. Integration tests exercise real PostgreSQL and queue-to-runner tunnels on RBE.
 The cross-language Notification acceptance runs a real Kubernetes API server and etcd through

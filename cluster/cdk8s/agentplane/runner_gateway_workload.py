@@ -1,4 +1,7 @@
-"""Unified Go delivery workload, gated by the root-owned queue migration."""
+"""The Gateway workload and its queue migration, served only while the root-owned migration is Ready.
+
+The stable addresses stay in `runner_gateway.py`: the app and Notification service import them, and this
+module imports both of those."""
 
 from __future__ import annotations
 
@@ -67,7 +70,7 @@ _DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
 
 
 def dispatcher_service(namespace: str) -> ServiceRef:
-    """Keep the sender's DNS and Service port; target the shared Go listener."""
+    """Keep the sender's DNS and Service port; target the shared listener."""
     return ServiceRef(
         name=session_dispatcher.NAME,
         port=Port(name="grpc", number=_GRPC_PORT),
@@ -77,7 +80,7 @@ def dispatcher_service(namespace: str) -> ServiceRef:
 
 
 def runner_control_service(namespace: str, *, port: Port | None = None) -> ServiceRef:
-    """The Go listener behind a caller-selected control Service port."""
+    """The shared listener behind a caller-selected control Service port."""
     control = runner_gateway.runner_control(namespace)
     return control if port is None else replace(control, port=port)
 
@@ -89,7 +92,7 @@ def _account(account: ServiceAccountRef) -> str:
 def add_stable_services(
     scope: Construct, env: Environment, *, cluster_ip: str | None = None, control: ServiceRef | None = None
 ) -> None:
-    """Keep stable Services in their root Flux owner, targeting the shared Go listener."""
+    """Keep stable Services in their root Flux owner, targeting the shared listener."""
     proxy = runner_gateway.service(env.namespace)
     control = control or runner_control_service(env.namespace)
     dispatcher = dispatcher_service(env.namespace)
@@ -136,7 +139,7 @@ def add_stable_services(
     )
 
 
-class GoRunnerGateway(Construct):
+class RunnerGateway(Construct):
     """One workload with three authenticated services on one listener; the root retains its Services."""
 
     def __init__(
@@ -160,7 +163,7 @@ class GoRunnerGateway(Construct):
     ) -> None:
         super().__init__(scope, id)
         if not dispatcher_callers or not gateway_callers:
-            raise ValueError("Go Runner Gateway needs explicit Dispatcher and proxy caller grants")
+            raise ValueError("Runner Gateway needs explicit Dispatcher and proxy caller grants")
         if not wake_callers <= dispatcher_callers.keys():
             raise ValueError("wake callers must also be Dispatcher callers")
 
@@ -302,7 +305,7 @@ class QueueMigration(Construct):
     """The Goose Job for the existing Agentplane root Kustomization.
 
     The root owns PostgreSQL and its Secret, so it also owns this Job and checks
-    its completion. A separate Go serving Kustomization depends on that root.
+    its completion. A separate serving Kustomization depends on that root.
     Flux force-recreates the Job when image automation changes the migrator tag
     (a Job's pod template is immutable). The migrator and serving images advance
     independently: <agentplane/runner_gateway/README.md> § Schema changes.
@@ -365,7 +368,7 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
         ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace).pods,
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods,
     }
-    GoRunnerGateway(
+    RunnerGateway(
         chart,
         "runner-gateway",
         env,

@@ -1,4 +1,4 @@
-"""Run the Go store parity tests against the actual Alembic dispatcher schema."""
+"""Run the store parity tests against the actual Alembic dispatcher schema."""
 
 import os
 import subprocess
@@ -39,7 +39,7 @@ def test_go_store_against_current_schema(postgres_admin_url: str, database_names
             timeout=90,
             check=False,
         )
-        assert result.returncode == 0, f"Go store integration tests failed:\n{result.stdout}\n{result.stderr}"
+        assert result.returncode == 0, f"Store integration tests failed:\n{result.stdout}\n{result.stderr}"
 
 
 if __name__ == "__main__":

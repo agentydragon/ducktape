@@ -14,7 +14,7 @@ def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any
     return matches[0]
 
 
-def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
+def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     docs = fixture_chart.objects(
         node_ip="192.0.2.20",
         ca_cert="fixture-ca\n",
@@ -66,13 +66,13 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
     gateway = _resource(docs, "Deployment", fixture_chart.RUNNER_GATEWAY)
     pod = gateway["spec"]["template"]["spec"]
     container = pod["containers"][0]
-    assert container["image"] == fixture_chart.GO_RUNNER_GATEWAY_IMAGE
+    assert container["image"] == fixture_chart.RUNNER_GATEWAY_IMAGE
     assert {port["name"]: port["containerPort"] for port in container["ports"]} == {"grpc": 8080}
     database_env = next(
         entry for entry in container["env"] if entry["name"] == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     )
     migrator = next(entry for entry in pod["initContainers"] if entry["name"] == "goose-migrate")
-    assert migrator["image"] == fixture_chart.GO_QUEUE_MIGRATOR_IMAGE
+    assert migrator["image"] == fixture_chart.QUEUE_MIGRATOR_IMAGE
     assert (
         next(entry for entry in migrator["env"] if entry["name"] == "DATABASE_URL")["valueFrom"]
         == database_env["valueFrom"]

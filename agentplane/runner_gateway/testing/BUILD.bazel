@@ -22,8 +22,8 @@ py_library(
 )
 
 py_library(
-    name = "go_service",
-    srcs = ["go_service.py"],
+    name = "gateway_process",
+    srcs = ["gateway_process.py"],
     data = [
         "//agentplane/runner_gateway:runner-gateway",
         "//agentplane/runner_gateway/migrations/cmd:runner-gateway-queue-migrate",
