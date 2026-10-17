@@ -22,6 +22,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   Sandbox scopes, explicit collections, live bundles and Session inboxes; shared inbox/messaging
   service with subscriptions and batched notices; tentative service-enforced PolicySet rules,
   remaining schema/API decisions and deferred agent lifecycle delegation
+- [Agent CLI](agent_cli.md) — proposed `agentplane` command, JSON and exit-code contract for
+  Actions, notifications and egress rules, with one open exit-code question
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
 - [Kubernetes grants through PolicySets](kubernetes_rbac_groups.md) — accounts without a

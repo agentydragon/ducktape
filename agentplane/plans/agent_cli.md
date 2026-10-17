@@ -1,11 +1,12 @@
 # Agent CLI: commands, JSON and exit codes
 
 Status: **proposed, awaiting operator approval.** The [settled decisions](#settled-decisions) are
-the operator's; one [question](#decisions-for-review) is open. This document authorizes no CLI, API,
-prompt or deployment change. It specifies the command-line contract for the transport direction approved on
+the operator's; one [question](#decisions-for-review) is open. On approval the contract graduates to
+a doc under `docs/` and the rollout becomes DAG nodes. This plan authorizes no CLI, API, prompt or
+deployment change. It specifies the command-line contract for the transport direction approved on
 2026-10-15 (gRPC internally, a gRPC-Gateway HTTP/JSON facade, and an ergonomic CLI, adopted one
 service and interface at a time; see
-[API transports and agent workflows](runner_delivery_and_harness_design.md#api-transports-and-agent-workflows)).
+[API transports and agent workflows](../docs/runner_delivery_and_harness_design.md#api-transports-and-agent-workflows)).
 
 `agentplane` is a client of the HTTP APIs that agents already call with `curl` through the egress
 proxy: the Action Service, the Notification Service and the Egress rules API. It adds no authority,
@@ -108,7 +109,7 @@ Credential scope:
   configured base URL, follows no redirect, never prints it, and has no flag to supply another
   credential, bypass the proxy, or skip certificate verification.
 - Authority is whatever the egress proxy substitutes for the placeholder: the Sandbox's
-  ServiceAccount, exactly as for `curl` ([workload authentication](workload_authentication.md)).
+  ServiceAccount, exactly as for `curl` ([workload authentication](../docs/workload_authentication.md)).
   `actions policy` names that account in `subject`.
 - A destination and Session ID address an inbox. They are not credentials.
 - Variable names avoid `TOKEN`, `KEY` and `SECRET`, which a harness that filters credential-looking
@@ -347,7 +348,7 @@ Operator, 2026-10-17:
 ## Rejected alternatives
 
 - **MCP as the agent's only route.** One model turn per call and no piping. MCP stays an additional
-  surface ([principles](principles.md#agent-facing-affordances-are-scriptable-apis)).
+  surface ([principles](../docs/principles.md#agent-facing-affordances-are-scriptable-apis)).
 - **Exit `0` whenever an answer arrives, with an opt-in flag for failure** (as
   `gh run watch --exit-status`). Approval is not execution success, and `execution_unknown` is not
   permission to retry, yet `agentplane actions wait ID && deploy` would proceed on a denied or
@@ -355,7 +356,7 @@ Operator, 2026-10-17:
 - **Output mode chosen by TTY detection.** Whether an agent's shell tool allocates a terminal varies
   by harness, so the same command would print different things.
 - **Credential discovery from `GET /v1/rules` on each call.** Every command would depend on the
-  Egress rules API being up, against [independent failure](principles.md#components-roll-and-fail-independently).
+  Egress rules API being up, against [independent failure](../docs/principles.md#components-roll-and-fail-independently).
 - **A CLI-owned JSON schema over the service's.** A mirrored type set drifts from the service; the
   service's JSON stays the contract, and a service migration updates the CLI atomically.
 - **Polling in the CLI for `wait`, or an `events --follow` over polling.** Waiting is event-driven

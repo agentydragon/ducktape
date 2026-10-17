@@ -1837,13 +1837,13 @@ into one repo-wide migration. No service has been selected for the first cutover
 ### `AGENT_API_TOOLING_DESIGN` — preserve ergonomic, scriptable agent workflows
 
 **Drafted for operator review; the interface direction is approved.** The command and JSON contract
-is [the agent CLI ADR](../docs/adr_agent_cli.md): commands, output, credentials, errors and exit
+is [the agent CLI plan](agent_cli.md): commands, output, credentials, errors and exit
 codes, pagination, waits, interruption, the Action Service changes it needs and the rollout order.
-The operator settled its [other decisions](../docs/adr_agent_cli.md#settled-decisions) (2026-10-17).
-Question for review: whether [any exit code reflects a payload](../docs/adr_agent_cli.md#decisions-for-review),
-recommended no. Approval replaces this node with the ADR's rollout steps as nodes.
+The operator settled its [other decisions](agent_cli.md#settled-decisions) (2026-10-17).
+Question for review: whether [any exit code reflects a payload](agent_cli.md#decisions-for-review),
+recommended no. Approval replaces this node with the plan's rollout steps as nodes.
 
-**Deliverable:** operator approval of the ADR. This is design only; no CLI, prompt or API change is
+**Deliverable:** operator approval of the plan. This is design only; no CLI, prompt or API change is
 authorized.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping

@@ -397,9 +397,9 @@ facade and CLI; a transport conversion must not weaken a service's existing perm
 
 Agent tooling should support both concise commands and composable JSON for listing Action groups and
 Actions, inspecting an Action schema, reading the authenticated caller's own Action status/results,
-waiting for completion, and subscribing to or cancelling GitHub PR notifications. The proposed CLI
-contract is the [agent CLI ADR](adr_agent_cli.md). No runtime API or CLI implementation is
-authorized by this direction alone.
+waiting for completion, and subscribing to or cancelling GitHub PR notifications. The detailed CLI
+contract remains a separate DAG item. No runtime API or CLI implementation is authorized by this
+direction alone.
 
 ## Harness process, store and Session identity
 
