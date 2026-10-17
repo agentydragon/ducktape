@@ -671,6 +671,8 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/home-switch/**"
           to: "@artifact/cluster/k8s/home-switch/"
+        - from: "@repo/cluster/k8s/home-switch/image-pins/**"
+          to: "@artifact/cluster/k8s/home-switch/image-pins/"
       name: monitoring-home-switch
       originRevision: "@repo"
     - copy:
@@ -795,6 +797,14 @@ spec:
     - copy:
         - from: "@repo/tf/gitops/home-switch/**"
           to: "@artifact/tf/gitops/home-switch/"
+        - from: "@repo/nebula-mesh.json"
+          to: "@artifact/"
+        - from: "@repo/secrets/nebula/ca.crt"
+          to: "@artifact/secrets/nebula/"
+        - from: "@repo/secrets/nebula/home-switch.crt"
+          to: "@artifact/secrets/nebula/"
+        - from: "@repo/secrets/nebula/home-switch.sops.key"
+          to: "@artifact/secrets/nebula/"
       name: tf-gitops-home-switch
       originRevision: "@repo"
     - copy:
