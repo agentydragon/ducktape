@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/go/decision"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

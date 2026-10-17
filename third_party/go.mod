@@ -35,7 +35,10 @@ require github.com/go-logr/logr v1.4.4
 require gopkg.in/yaml.v3 v3.0.1
 
 // Direct dependencies for agentplane/egress/go
-require github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3
+require (
+	code.dny.dev/ssrf v0.3.0
+	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3
+)
 
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
