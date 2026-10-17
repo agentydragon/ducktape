@@ -220,7 +220,7 @@ def main(_):
             if errors > 0:
                 raise RuntimeError(f"{errors} errors")
 
-            unmatched_ids = set(external_transaction_by_external_id.keys()) - matched_external_ids
+            unmatched_ids = external_transaction_by_external_id.keys() - matched_external_ids
             print()
             print("Unmatched in external system:")
 

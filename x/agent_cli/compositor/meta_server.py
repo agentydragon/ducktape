@@ -56,7 +56,7 @@ class CompositorMetaServer(FastMCP):
         async def servers_list() -> str:
             """Return list of all mounted server names for discovery."""
             entries = await self._compositor.server_entries()
-            return json.dumps(list(entries.keys()))
+            return json.dumps(list(entries))
 
         @self.resource(
             _SERVER_STATE_URI_TEMPLATE,

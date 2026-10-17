@@ -64,7 +64,7 @@ def cluster(repo_root: Path) -> ParsedCluster:
     kusts = [k for path, k in parsed.kustomize_files.items() if path.parent.resolve() in local_dirs]
 
     async def _build_all() -> list[KustomizeBuildResult]:
-        return list(await asyncio.gather(*[run_kustomize_build(k) for k in kusts]))
+        return await asyncio.gather(*[run_kustomize_build(k) for k in kusts])
 
     parsed.build_results = asyncio.run(_build_all())
     return parsed

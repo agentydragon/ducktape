@@ -183,7 +183,7 @@ class RpcRegistry:
         return deco
 
     def list_methods(self) -> list[str]:
-        return list(self._handlers.keys())
+        return list(self._handlers)
 
     async def dispatch(
         self, req: Request, deps: ServiceDependencies, writer, start_time: datetime

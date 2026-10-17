@@ -210,7 +210,7 @@ def sync():
 
     SYNCED_DIR_PATH.mkdir(exist_ok=True, parents=True)
 
-    new_arxiv_ids = set(should_exist.keys()) - set(existing_arxiv_id_to_filename.keys())
+    new_arxiv_ids = should_exist.keys() - existing_arxiv_id_to_filename.keys()
     # Sort by priority.
     new_arxiv_ids = sorted(
         new_arxiv_ids, key=lambda aid: should_exist[aid].priority if should_exist[aid].priority is not None else 200

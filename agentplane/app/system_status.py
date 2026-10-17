@@ -83,4 +83,4 @@ class SystemStatusChecker:
         )
 
     async def check_all(self) -> list[ComponentStatus]:
-        return list(await asyncio.gather(*(self._check(probe) for probe in self._probes)))
+        return await asyncio.gather(*(self._check(probe) for probe in self._probes))

@@ -402,7 +402,7 @@ class ActionService:
             caller=caller,
             bindings=resolve_bindings(self._policies, caller),
         )
-        return list(await asyncio.gather(*(self._ask(provider, context) for provider in self._providers)))
+        return await asyncio.gather(*(self._ask(provider, context) for provider in self._providers))
 
     async def _ask(self, provider: PolicySetDecisionProvider, context: DecisionContext) -> ProviderVote:
         try:

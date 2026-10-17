@@ -162,7 +162,7 @@ class WtDaemon:
 
         self.gitstatusd_service = GitstatusdService(
             get_client=lambda p: self.gitstatusd_clients.get(wt.wtid) if (wt := get_known_worktree(p)) else None,
-            iter_client_paths=lambda: list(self.known_worktrees.keys()),
+            iter_client_paths=lambda: list(self.known_worktrees),
             ensure_watcher_for_path=lambda p: (
                 self._ensure_git_watcher(get_known_worktree(p)) if get_known_worktree(p) else asyncio.sleep(0)
             ),

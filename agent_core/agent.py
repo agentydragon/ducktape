@@ -127,8 +127,8 @@ def _validate_schema_strict_compatible(schema: dict[str, Any], tool_name: str) -
 
             properties = subschema.get("properties", {})
             required = set(subschema.get("required", []))
-            if properties and set(properties.keys()) != required:
-                missing = set(properties.keys()) - required
+            if properties and set(properties) != required:
+                missing = set(properties) - required
                 raise RuntimeError(
                     f"Tool '{tool_name}' at {path}: all properties must be in 'required'. "
                     f"Missing: {missing}. "

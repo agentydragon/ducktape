@@ -119,7 +119,7 @@ def validate_openai_strict_mode_schema(schema: dict[str, Any], model_name: str =
         # OpenAI strict mode: "required is required to be supplied and to be an array
         # including every key in properties"
         if "properties" in obj:
-            property_keys = set(obj["properties"].keys())
+            property_keys = set(obj["properties"])
             required_keys = set(obj.get("required", []))
             missing_required = property_keys - required_keys
 
@@ -143,7 +143,7 @@ def validate_openai_strict_mode_schema(schema: dict[str, Any], model_name: str =
 
         # Check for $ref with additional keywords (besides $ref itself)
         if "$ref" in obj:
-            extra_keys = set(obj.keys()) - {"$ref"}
+            extra_keys = set(obj) - {"$ref"}
             if extra_keys:
                 errors.append(f"{path}: $ref cannot have additional keywords {extra_keys}")
 

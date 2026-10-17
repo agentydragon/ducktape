@@ -262,7 +262,7 @@ def register_batch_tools(
             except Exception as exc:
                 return error(item, exc)
 
-        return list(await asyncio.gather(*(_one(item) for item in items)))
+        return await asyncio.gather(*(_one(item) for item in items))
 
     async def _resolve_id(client: GrocyClient, entity_type: EntityType, ref: int | str) -> int:
         return (await client.resolve_entity(entity_type, ref)).id
@@ -832,7 +832,7 @@ def register_batch_tools(
             except Exception as e:
                 return StockEntryError(entry_id=item.entry_id, error=_format_exc(e))
 
-        return list(await asyncio.gather(*[_edit_one(item) for item in items]))
+        return await asyncio.gather(*[_edit_one(item) for item in items])
 
     @mcp.tool()
     async def products_list(

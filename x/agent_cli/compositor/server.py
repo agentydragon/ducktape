@@ -607,7 +607,7 @@ class BaseCompositor(FastMCP):
     # ---- Internals ----------------------------------------------------------
     async def _mount_names(self) -> list[str]:
         async with self._mount_lock:
-            return list(self._mounts.keys())
+            return list(self._mounts)
 
     # ---- Slot factory (transport-agnostic) ---------------------------------
 

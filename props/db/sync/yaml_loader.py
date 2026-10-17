@@ -235,7 +235,7 @@ class YAMLIssue(BaseModel):
             for occ in self.occurrences:
                 if occ.relevant_files is None:
                     # Auto-infer from files keys
-                    occ.relevant_files = list(occ.files.keys())
+                    occ.relevant_files = list(occ.files)
         return self
 
     def to_true_positive(self, tp_id: str, snapshot_slug: SnapshotSlug) -> SyncTruePositive:

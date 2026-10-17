@@ -38,8 +38,8 @@ def sync_model_metadata_with_session(session: Session, config: PropsConfig) -> S
     logger.info(f"Syncing model_metadata table (source: {len(source_models)} models)...")
 
     db_models = {m.model_id: m for m in session.query(ModelMetadata).all()}
-    source_model_ids = set(source_models.keys())
-    db_model_ids = set(db_models.keys())
+    source_model_ids = set(source_models)
+    db_model_ids = set(db_models)
 
     added = 0
     updated = 0

@@ -89,7 +89,7 @@ class GrocyClient(httpx2.AsyncClient):
         if (row := by_name.get(ref.lower())) is not None:
             return Resolved(id=int(row["id"]), name=str(row["name"]))
 
-        close = get_close_matches(ref.lower(), list(by_name.keys()), n=5, cutoff=0.4)
+        close = get_close_matches(ref.lower(), list(by_name), n=5, cutoff=0.4)
         suggestions = [str(by_name[match]["name"]) for match in close] if close else all_names[:10]
         raise ValueError(f"No {entity_label} named {ref!r}. Similar: {suggestions}")
 

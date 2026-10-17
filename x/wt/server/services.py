@@ -32,7 +32,7 @@ class WorktreeIndexService:
         idx = self._get_index()
         if not idx:
             return []
-        return list(idx.by_path.keys())
+        return list(idx.by_path)
 
     def get_by_name(self, name: str) -> DiscoveredWorktree | None:
         idx = self._get_index()
