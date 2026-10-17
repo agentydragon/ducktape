@@ -241,9 +241,8 @@ result for the new Go composition. Breaks found on the way, in order:
   `litellm-key-cheap-experiments`, and llm-ingress and the egress rules dial `https://litellm.allegedly.works`
   instead of the cluster-internal Service.
 
-Not yet reached: Service port≠targetPort under headless Services (egress is 80→8082; only the agent-facing
-rules URL uses it) and Dex/OIDC public hostnames. The k3s lifecycle tests use stub KubeVirt CRDs and no
-Cilium, so they do not validate those integrations or real external identity.
+The fixture omits Dex/OIDC public-hostname flows, KubeVirt and Cilium, so it does not validate
+those integrations or real external identity.
 
 The [historical image inventory](k3s_image_inventory_2026_10_14.md) records the layer and unpacked-file
 breakdown for the 21-image Python-service snapshot before Sandbox Service image retirement and this

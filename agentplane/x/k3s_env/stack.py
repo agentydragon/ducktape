@@ -80,7 +80,7 @@ class K3s:
         self.binary = binary
         self.kubeconfig = work / "kubeconfig"
         self.data_dir = Path("/var/lib/k3s-env")
-        # The address Pods use to reach host-side processes: the apiserver and the cluster DNS.
+        # The node address published by k3s.
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.connect(("192.0.2.1", 9))
             self.node_ip: str = probe.getsockname()[0]
