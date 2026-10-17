@@ -69,7 +69,8 @@ Sandbox never makes its old histories belong to a newly created same-name Sandbo
 ## Read and revocation behavior
 
 Session listing is a distinct, weaker read-type permission, independently grantable from sending;
-it exposes bounded metadata without transcript content or evidence. Its exact fields remain open.
+it exposes bounded metadata without transcript content or evidence. Its
+[fields](multiagent_communication.md#sandbox-session-discovery-and-provisioning) are selected.
 Enumeration and transcript access use the **same Sandbox scope**, with their respective permissions.
 Direct Event/history fetch, evidence/frame lookup, retained follow and (if later implemented) folded
 reads require history-read permission. Filter before

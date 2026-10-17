@@ -257,7 +257,7 @@ if concrete implementation friction warrants it. Storage is separate from the se
 service-enforced evaluator direction. Review how native harness children could later be ingested:
 linked execution in the same Sandbox trust boundary versus independently provisioned Sandboxes,
 addressability, observability and which controls must remain unavailable. Native integration itself
-stays frozen; this decision must allow explicit exclusion rather than require its implementation.
+stays frozen, and v1 excludes native children from the messaging and access model.
 
 Membership CR writes use ordinary Kubernetes RBAC, initially granted to operator/GitOps and trusted
 provisioning. Read/send grants confer no membership administration; explicit administrative grants
@@ -299,7 +299,7 @@ individual-Session grants or computed collection selection. Presets
 may seed authorized launch enrollment; subsequent removals persist. Reading a Session resolves its
 recorded Sandbox identity, and all Sessions in that Sandbox use the same scope. Defaults expose
 no existing histories to workloads. Session listing is a distinct, weaker read-type permission,
-independent from send; select its metadata fields and raw history read/follow behavior. Read does not
+independent from send; its metadata fields are selected, and raw history read/follow behavior remains to design. Read does not
 imply send/create, and no folded-read API is required for v1. Cover discovery, linked evidence, live-feed
 revocation and unknown historical associations. Do not block this on a messaging transport.
 
@@ -324,8 +324,9 @@ The sender's append grant supplies the authorization for acceptance; v1 requires
 recipient opt-in, allowlist or approval.
 Peer sends do not require source subscriptions. Generalize the current service around inbox/messaging in one
 deployment initially, with optional subscription/source integrations; leave Dispatcher separate.
-Use `subscription` for source-following and `notice` for the batched inbox prompt. The exact service
-name, send API and discovery metadata fields remain open. Inbox read/ack retains the receiving
+Use `subscription` for source-following and `notice` for the batched inbox prompt. The service keeps
+its name for now, the send API is HTTP JSON, and the [discovery fields](multiagent_communication.md#sandbox-session-discovery-and-provisioning)
+are selected. Inbox read/ack retains the receiving
 Sandbox's owner-SA boundary; v1 adds no delegable inbox-read or acknowledgement permissions.
 The [sender-facing receipt contract](multiagent_communication.md#sender-facing-receipts) is
 selected: the sender queries a message it sent for notice coverage and acknowledgement, and not found
@@ -345,7 +346,7 @@ Dispatcher or adding selective event wake is future work, not a prerequisite.
 
 **Blocked on messaging decision and its selected prerequisites.** Implement a configurable inbox-service
 message-body byte limit backed by a database ceiling; reject oversized messages before acceptance
-without truncation and reject configurations above the ceiling. Select the default and ceiling.
+without truncation and reject configurations above the ceiling. Default 32 KiB, ceiling 256 KiB.
 Implement server-authenticated sender provenance, shared Session-access rule enforcement, idempotent
 message IDs and honest acceptance receipts in the chosen authority. Implement the sender's receipt
 query from the inbox coverage and acknowledgement cursors, visible only to the authenticated sender.
