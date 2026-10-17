@@ -82,6 +82,7 @@ py_library(
         "//agentplane:changes",
         "//agentplane:subjects",
         "@pypi//httpx",
+        "@pypi//httpx_sse",
     ],
 )
 

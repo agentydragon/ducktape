@@ -12,6 +12,7 @@ import asyncio
 import logging
 
 import httpx
+from httpx_sse import SSEError, aconnect_sse
 
 from agentplane.changes import ChangeSignal
 from agentplane.egress.decisions import Decision
@@ -45,14 +46,15 @@ class DecisionsClient:
         stream ends or fails, so a reader learns of a loss as promptly as of a change."""
         while True:
             try:
-                async with self._http.stream(
-                    "GET", "/decisions/changes", timeout=httpx.Timeout(5, read=CHANGES_READ_TIMEOUT_S)
-                ) as response:
-                    response.raise_for_status()
+                async with aconnect_sse(
+                    self._http, "GET", "/decisions/changes", timeout=httpx.Timeout(5, read=CHANGES_READ_TIMEOUT_S)
+                ) as event_source:
+                    event_source.response.raise_for_status()
                     self.watching = True
-                    async for line in response.aiter_lines():
-                        if line.startswith("event:"):
-                            self.changes.notify()
+                    async for _ in event_source.aiter_sse():
+                        self.changes.notify()
+            except SSEError as error:
+                logger.warning("egress proxy change stream returned invalid SSE: %r", error)
             except httpx.HTTPError as error:
                 logger.warning("egress proxy change stream failed: %r", error)
             finally:
