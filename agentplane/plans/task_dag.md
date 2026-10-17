@@ -281,6 +281,12 @@ linked execution in the same Sandbox trust boundary versus independently provisi
 addressability, observability and which controls must remain unavailable. Native integration itself
 stays frozen; this decision must allow explicit exclusion rather than require its implementation.
 
+Include OAuth-bound static SAs as subjects by namespace/name and define their external receiving
+scope/address independently of Sandbox targets. Review Connections as candidate recipient objects
+and whether Kubernetes representation helps; no Connection migration is selected. The current
+Action Service owns Connection authority, and sharing SA assignment does not automatically add
+OAuth bearer admission to other backends. Keep this integration independent of the app.
+
 ### `SESSION_ACCESS_RULES` — shared Session-access rule support
 
 **Blocked on the reviewed common contract in `MULTIAGENT_MODEL`.** Extend PolicySet schemas with the
@@ -316,7 +322,7 @@ Cover a listing-only caller separately from transcript/evidence reads and follow
 
 ### `AGENT_MESSAGING_DESIGN` — inbox messaging and notice contract
 
-**Decision; v1 inbox delivery selected.** Address messages to individual Sessions, authorize sends
+**Decision; v1 inbox delivery selected.** Address Sandbox-hosted recipients by Session, authorize sends
 at Sandbox granularity using the tentative shared Session-access rules, and reuse the existing
 durable inbox/read/ack and batched-notice machinery. The send operation appends to a Session inbox;
 its payload is separate from transcript reads and the platform-generated notice.
@@ -324,6 +330,8 @@ Peer sends do not require source subscriptions. Generalize the current service a
 deployment initially, with optional subscription/source integrations; leave Dispatcher separate.
 Use `subscription` for source-following and `notice` for the batched inbox prompt. The exact service
 name, send API, discovery metadata fields, recipient opt-in and read/ack administration remain open.
+For OAuth peers without a Sandbox, define external inbox addressing, read/ack ownership and
+authentication; the Sandbox-qualified Session path alone does not satisfy receiving.
 Distinguish accepted, noticed, admitted, handled and task-success evidence. Define retention, limits,
 deduplication and offline/deleted-recipient behavior. Reading a transcript grants neither send nor ack.
 

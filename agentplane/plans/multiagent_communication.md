@@ -18,6 +18,10 @@ Implementation gates remain in the [task DAG](task_dag.md#3-multiagent-decisions
   `read_history(X, Y)` and `read_history(Y, X)` imply none of one another. A reply or correlation
   reference confers no permission. A named role may explicitly bundle grants without making those
   implications intrinsic to messaging.
+- OAuth-connected clients must be able to send and receive as peers, including clients without
+  an Agentplane Sandbox. Their policy subject is their verified bound Kubernetes SA; preserve
+  namespace/name assignment for static Flux-managed SAs. Receiving also needs a recipient/inbox
+  address: SA identity alone does not define that address or its lifecycle.
 - Communication should be an additive, optional capability. Running a harness, using Actions or
   reading history should not require deploying the entire communication system. The integration
   app remains a client of independently usable backends ([service boundaries](../docs/service_boundaries.md)).
@@ -54,8 +58,8 @@ boundaries below are such constraints.
 
 **Caller attribution agreed with the operator, 2026-10-16:** Sandbox/ServiceAccount-level caller
 attribution is sufficient for v1, as for existing Kubernetes and Action permissions. Authenticated
-per-Session sender identity is not required. The minimum authorization target is a Sandbox, covering
-its Sessions; v1 has no individual-Session grants. Rule and collection schemas and administration
+per-Session sender identity is not required. For Sandbox-hosted Sessions, the minimum authorization
+target is their Sandbox; v1 has no individual-Session grants. Rule and collection schemas and administration
 remain open; replacing the broader authorization machinery is a separate decision.
 
 ### Target collections and launch enrollment
@@ -68,7 +72,7 @@ capabilities. Independent per-SA grants can add rights on unrelated Sandboxes or
 resources, optionally temporarily. Removing collection membership ends collection-derived grants;
 independent overlapping grants remain.
 
-**V1 membership storage agreed:** each collection CR contains an explicit Sandbox member list;
+**Initial v1 membership storage choice:** each collection CR contains an explicit Sandbox member list;
 separate membership resources are not selected. An app preset can supply initial collection
 memberships when launching a Sandbox, subject to launch/enrollment authorization. Later removal
 sticks: reconciliation or opening another Session must not silently re-enroll it. Preset edits
@@ -78,8 +82,10 @@ selection is needed for v1.
 Define member references, authorized writers and GitOps/runtime removal ownership before implementation.
 Where separate apply managers share the list, use suitable
 [map/set merge semantics](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy)
-for entry-level ownership; field ownership does not authorize writes. Reconsider separate membership
-objects only if independent enrollment object lifecycles become useful.
+for entry-level ownership; field ownership does not authorize writes. Mixed Flux/webapp ownership
+is a concrete reason to reconsider separate membership objects as well as independent enrollment
+lifecycles; no replacement for the member-list choice has been selected. Supporting OAuth callers
+does not itself require SA identities to be collection members. External recipient scopes remain open.
 
 **Storage preference agreed:** start with Kubernetes resources for grants and explicit collection
 membership, managed through GitOps or authorized runtime edits. This is a preference, not a hard
@@ -252,8 +258,8 @@ targets:
   sandboxCollections: [developers]
 ```
 
-Support direct Sandbox targets as well as explicit collections. The backend authenticates the SA,
-resolves the addressed Session to its recorded Sandbox, and allows the operation if any current
+Support direct Sandbox targets as well as explicit collections. For Sandbox-hosted Session operations,
+the backend authenticates the SA, resolves the Session to its recorded Sandbox, and allows the operation if any current
 bound rule matches that operation and Sandbox, directly or through current collection membership.
 Share rule-reading and evaluation code while enforcing each backend's own API, including paths
 that bypass Dispatcher. Preserve live bundle edits, membership changes, expiry and additive
@@ -323,8 +329,9 @@ any broader change explicitly.
 ## Message storage, delivery and agent tools
 
 **V1 direction agreed:** reuse the Notification Service's durable inboxes for agent correspondence.
-Messages address a particular Session, with send permission checked against its Sandbox. There is
-no shared Sandbox inbox in v1. Inbox ownership remains SA-level; per-Session routing does not
+Sandbox-hosted recipients are addressed by Session, with send permission checked against the Sandbox.
+There is no shared Sandbox inbox in v1. External receiving addresses are an open design question
+below. Inbox ownership remains SA-level; per-Session routing does not
 provide isolation between co-resident Sessions.
 
 ### Vocabulary and service ownership
@@ -428,6 +435,23 @@ object references without requiring shared filesystems; storage, retention and r
 separate questions.
 
 ## Discovery, session creation and Sandbox launch
+
+### OAuth peers and external recipients
+
+OAuth clients act as their verified bound SA, using the same PolicySet/Binding assignment model
+as workload callers. The current [Connection authority](../action_service/connections.py) lives in
+Action Service/PostgreSQL; the app presents its operator UI. The existing inbox API authenticates
+workload tokens and requires a qualified Sandbox/Session destination, so OAuth bearer admission
+and an external receiving address are additional design work, not already supplied by SA assignment.
+
+A Connection is a candidate external recipient scope, distinct from the caller SA and the concrete
+inbox address. Consider Kubernetes representation of its identity/binding metadata if useful for
+policy targeting and administration; no Connection storage migration is selected. Define whether
+receiving addresses a Connection or a particular external conversation/mailbox, and distinguish
+metadata ownership from OAuth grant, revocation and protocol state. Preserve independent backend
+use and trusted authentication; do not fabricate Pod identity for an external client.
+
+### Sandbox Session discovery and provisioning
 
 **V1 discovery direction agreed:** listing a Sandbox's Sessions is a distinct read-type permission,
 weaker than reading their transcripts and independently grantable from sending. Enumeration exposes
