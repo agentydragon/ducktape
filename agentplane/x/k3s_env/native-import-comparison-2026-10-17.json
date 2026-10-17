@@ -1,0 +1,148 @@
+{
+  "source": "1290a748c5d1275b95b69ee354383413987dada4",
+  "instrumentation_sha256": "67ec43e87956b57bad2f07d266de37cc2a7ff7b844c3a4fe8883bb97ea9e3620",
+  "invocations": {
+    "transfer": "a96dd4cc-aa24-4d86-9e19-ec51aa1f6837",
+    "local": "b216fbed-50a4-421f-b9f0-fd042b37f2bd"
+  },
+  "input_manifest_sha256": "fb65366d88c5d74953f682c864694aa20dfea01049d2787a7009b62ab9b3e519",
+  "image_tags": [
+    "git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-app-migrate:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-egress-migrate:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-egress:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset",
+    "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
+    "git.allegedly.works/ducktape-ci/runner:unset"
+  ],
+  "distinct_blobs": 91,
+  "distinct_blob_bytes": 910772050,
+  "samples": {
+    "transfer": [
+      {
+        "run": 1,
+        "worker": "5ac56964-24d3-492a-9ea0-d1af3ecf75d1",
+        "action_seconds": 227.421064,
+        "profile_seconds": 193.82435570499982,
+        "phases": {
+          "start": 21.485030695000003,
+          "running_stack": 146.487424491,
+          "import_images": 76.193257929
+        },
+        "tests": {
+          "test_create_reaches_running": 155.189,
+          "test_bootstrap_script_runs_in_the_sandbox": 6.337,
+          "test_suspend_and_resume_keep_the_state_volume": 14.79,
+          "test_delete_removes_the_sandbox": 14.106
+        }
+      },
+      {
+        "run": 2,
+        "worker": "1e09c634-7833-4073-8376-aee72b0db4fc",
+        "action_seconds": 233.176319,
+        "profile_seconds": 195.40088822400043,
+        "phases": {
+          "start": 18.82569977,
+          "running_stack": 150.952259746,
+          "import_images": 82.660994665
+        },
+        "tests": {
+          "test_create_reaches_running": 159.728,
+          "test_bootstrap_script_runs_in_the_sandbox": 6.403,
+          "test_suspend_and_resume_keep_the_state_volume": 14.709,
+          "test_delete_removes_the_sandbox": 12.056
+        }
+      }
+    ],
+    "local": [
+      {
+        "run": 1,
+        "worker": "5ac56964-24d3-492a-9ea0-d1af3ecf75d1",
+        "action_seconds": 235.354062,
+        "profile_seconds": 202.80188762500035,
+        "phases": {
+          "start": 18.965122967000003,
+          "running_stack": 153.309984939,
+          "import_images": 85.109961188
+        },
+        "tests": {
+          "test_create_reaches_running": 162.291,
+          "test_bootstrap_script_runs_in_the_sandbox": 8.573,
+          "test_suspend_and_resume_keep_the_state_volume": 15.492,
+          "test_delete_removes_the_sandbox": 14.036
+        }
+      },
+      {
+        "run": 2,
+        "worker": "1e09c634-7833-4073-8376-aee72b0db4fc",
+        "action_seconds": 230.314792,
+        "profile_seconds": 199.4077401029996,
+        "phases": {
+          "import_images": 81.286277303,
+          "running_stack": 149.928052192,
+          "start": 20.456081846
+        },
+        "tests": {
+          "test_create_reaches_running": 159.037,
+          "test_bootstrap_script_runs_in_the_sandbox": 8.87,
+          "test_suspend_and_resume_keep_the_state_volume": 15.164,
+          "test_delete_removes_the_sandbox": 13.922
+        }
+      }
+    ]
+  },
+  "means": {
+    "transfer": {
+      "action_seconds": 230.29869150000002,
+      "phases": {
+        "start": 20.155365232500003,
+        "running_stack": 148.71984211850003,
+        "import_images": 79.427126297
+      },
+      "tests": {
+        "test_create_reaches_running": 157.45850000000002,
+        "test_bootstrap_script_runs_in_the_sandbox": 6.369999999999999,
+        "test_suspend_and_resume_keep_the_state_volume": 14.7495,
+        "test_delete_removes_the_sandbox": 13.081
+      }
+    },
+    "local": {
+      "action_seconds": 232.834427,
+      "phases": {
+        "start": 19.7106024065,
+        "running_stack": 151.6190185655,
+        "import_images": 83.19811924550001
+      },
+      "tests": {
+        "test_create_reaches_running": 160.664,
+        "test_bootstrap_script_runs_in_the_sandbox": 8.721499999999999,
+        "test_suspend_and_resume_keep_the_state_volume": 15.328,
+        "test_delete_removes_the_sandbox": 13.979
+      }
+    }
+  },
+  "method": {
+    "command_template": "bbr test --nocache_test_results --runs_per_test=2 --test_env=K3S_IMPORT_MODE=MODE --test_output=errors //agentplane/x/k3s_env:test_lifecycle",
+    "order": ["transfer batch of two", "local batch of two"],
+    "runtime_switch": "Temporary K3S_IMPORT_MODE=local adds only --local to ctr images import; no --no-unpack, custom scheduler, assertion or timeout change.",
+    "profile": "Same temporary cProfile wrapper in each run; removed after measurement.",
+    "input_manifest_hash": "SHA-256 of the common import-inputs.json after deleting mode and serializing with sorted keys and compact separators. All four blob lists, sizes and image tags compare equal.",
+    "limits": [
+      "Two profiled samples per variant; not alternated or randomized.",
+      "Per-worker effect changes sign; overlapping ranges do not establish a small regression.",
+      "Measurements exclude failed pre-dispatch DNS attempts and outer-runner provisioning."
+    ]
+  },
+  "recommendation": "Retain transfer mode. No useful speedup from the tested native --local pipeline; no default change justified by this sample."
+}

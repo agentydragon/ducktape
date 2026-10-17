@@ -988,8 +988,9 @@ to adopt or discard the concurrency change.
 The [native containerd profile](../x/k3s_env/README.md#containerd-import-tail) identifies parallel
 layer extraction and filesystem writes. The pinned `v2.0.5-k3s2` transfer importer has no unpack-limit
 configuration and constructs an unrestricted unpacker. A bounded-tuning experiment needs a runtime
-with that control; supported `--local` mode would instead compare native pipelines. The experiment
-and adopt/discard decision remain open; no upgrade or import-mode change is selected.
+with that control. The [matched native `--local` comparison](../x/k3s_env/README.md#native-transfer-versus-local-import-2026-10-17)
+passed but found no useful speedup; retain transfer mode. Any bounded-concurrency experiment and
+its runtime choice remain open; no upgrade or import-mode change is selected.
 
 ### `RUNNER_HARNESS_DELIVERY_DESIGN` — choose how runners obtain harness binaries
 

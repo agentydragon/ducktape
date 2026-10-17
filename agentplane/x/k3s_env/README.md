@@ -107,6 +107,48 @@ and [Python control invocation](https://app.buildbuddy.io/invocation/503ae967-96
 source and the control patch digest. The control can be reproduced by restoring `agentplane/llm_ingress/` from the parent of #10848
 on the stated base. These unprofiled runs do not separate import/unpack from service startup.
 
+### Native transfer versus local import, 2026-10-17
+
+Two fresh profiled lifecycle actions per mode used source
+`1290a748c5d1275b95b69ee354383413987dada4`, the same temporary cProfile wrapper, and the same
+lifecycle cases, assertions and timeouts. `K3S_IMPORT_MODE=local` temporarily added only `--local`
+to `ctr images import`; the transfer mode used the existing command. No `--no-unpack` or custom
+import scheduler was used. The instrumentation patch SHA-256 is
+`67ec43e87956b57bad2f07d266de37cc2a7ff7b844c3a4fe8883bb97ea9e3620`; instrumentation is not retained.
+
+[Transfer-mode results](https://app.buildbuddy.io/invocation/a96dd4cc-aa24-4d86-9e19-ec51aa1f6837)
+and [local-mode results](https://app.buildbuddy.io/invocation/b216fbed-50a4-421f-b9f0-fd042b37f2bd)
+retain test XML, cProfile data and `import-inputs.json` for each run.
+[Extracted measurements](native-import-comparison-2026-10-17.json) retain the source, workers,
+per-case results and common input-manifest hash. All four manifests match after excluding the mode:
+18 image tags, 91 distinct OCI blobs and 910,772,050 blob bytes. This includes manifests/configs,
+not just layer payloads; it is not unpacked storage usage.
+
+| Mean of two runs (seconds)                                | Transfer | `--local` |
+| --------------------------------------------------------- | -------: | --------: |
+| TestRunner execution                                      |  230.299 |   232.834 |
+| `K3s.import_images`                                       |   79.427 |    83.198 |
+| `K3s.start`                                               |   20.155 |    19.711 |
+| `running_stack` setup and teardown                        |  148.720 |   151.619 |
+| Create and wait for Sandbox Ready, including shared setup |  157.459 |   160.664 |
+| Suspend and resume                                        |   14.750 |    15.328 |
+| Delete                                                    |   13.081 |    13.979 |
+
+Every action passed all four cases. The same two workers ran both variants:
+
+| Worker                                 | Transfer action (s) | Local action (s) |
+| -------------------------------------- | ------------------: | ---------------: |
+| `5ac56964-24d3-492a-9ea0-d1af3ecf75d1` |             227.421 |          235.354 |
+| `1e09c634-7833-4073-8376-aee72b0db4fc` |             233.176 |          230.315 |
+
+**Retain transfer mode.** `--local` averaged 2.536 s (1.1%) slower overall and 3.771 s (4.7%)
+slower in import, with overlapping ranges and opposite per-worker directions. This provides no evidence of a
+useful speedup and does not justify a default change. Two samples per mode, transfer first and
+local second, cannot establish a small regression or steady-state effect. Both variants were
+profiled, and import/setup/Ready rows overlap; do not add them or compare these totals as an
+uninstrumented baseline. End-to-end Ready and lifecycle outcomes include any unpack work deferred
+past import. Failed DNS attempts before dispatch are excluded from these execution timings.
+
 ### Startup profile, 2026-10-17
 
 A fresh [profiled lifecycle run](https://app.buildbuddy.io/invocation/22cdbd11-6ee9-4bbf-b25c-6b811e3e4021)
@@ -180,8 +222,8 @@ exist on this pin, and changing download limits does not bound this archive-impo
 
 **Next experiment:** shared Python package layers (`K3S_SHARED_PACKAGE_LAYERS`) directly target
 repeated file extraction. For `K3S_IMPORT_CONCURRENCY`, a bounded-tuning comparison first needs a
-runtime exposing that control; the pinned CLI's supported `--local` import mode is a separate native
-pipeline comparison, not a concurrency knob. Keep inputs, lifecycle assertions and timeouts fixed
+runtime exposing that control. The [native `--local` comparison](#native-transfer-versus-local-import-2026-10-17)
+found no useful speedup; retain the transfer pipeline. Keep inputs, lifecycle assertions and timeouts fixed
 for any importer comparison, and count deferred unpack through Pod readiness. No runtime upgrade,
 import-mode change, scheduler or measured saving is selected by this profile.
 
