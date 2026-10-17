@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Sequence
-from typing import Annotated, Final, Literal
+from collections.abc import Callable, Iterator, Sequence
+from typing import Annotated, Any, Final, Literal
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
-from fastmcp.tools.function_tool import FunctionTool
 from mcp import types as mcp_types
 from mcp.shared.exceptions import MCPError
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field
@@ -265,10 +264,10 @@ class ResourcesServer(FastMCP):
     """
 
     # Tool references
-    list_tool: FunctionTool
-    list_templates_tool: FunctionTool
-    read_tool: FunctionTool
-    read_blocks_tool: FunctionTool
+    list_tool: Callable[..., Any]
+    list_templates_tool: Callable[..., Any]
+    read_tool: Callable[..., Any]
+    read_blocks_tool: Callable[..., Any]
 
     def __init__(self, *, compositor: BaseCompositor):
         """Create a Resources MCP server.

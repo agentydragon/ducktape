@@ -11,7 +11,6 @@ from typing import Any
 
 import pytest
 from fastmcp import FastMCP
-from fastmcp.tools import Tool
 from pydantic import BaseModel
 
 from agent_core.testing.mcp.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput, EchoOutput
@@ -42,7 +41,11 @@ class MCPDecoratorMock(DecoratorMock):
     """
 
     def call_roundtrip[S: FastMCP, U: BaseModel](
-        self, mounted: Mounted[S], tool: Tool, arguments: dict[str, Any] | BaseModel, output_type: type[U]
+        self,
+        mounted: Mounted[S],
+        tool: str | Callable[..., Any],
+        arguments: dict[str, Any] | BaseModel,
+        output_type: type[U],
     ) -> Generator[FunctionCallItem, ResponsesRequest, U]:
         """Create tool call and yield roundtrip generator."""
         args = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
@@ -79,7 +82,7 @@ class DockerExecMock(MCPDecoratorMock):
     ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
         """Yield exec call, receive response, return typed result."""
         args: dict[str, Any] = {"cmd": cmd, "timeout_ms": timeout_ms, "cwd": cwd}
-        return self.call_roundtrip(self._runtime, self._runtime.server.exec_tool, args, BaseExecResult)
+        return self.call_roundtrip(self._runtime, ContainerExecServer.EXEC_TOOL_NAME, args, BaseExecResult)
 
 
 class EchoMock(MCPDecoratorMock):

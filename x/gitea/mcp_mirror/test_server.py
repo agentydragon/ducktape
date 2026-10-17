@@ -4,7 +4,6 @@ import pytest
 import pytest_bazel
 
 from x.gitea.mcp_mirror import server
-from x.gitea.mcp_mirror.server import TriggerMirrorSyncArgs
 
 
 class _DummyResponse:
@@ -54,7 +53,9 @@ async def test_trigger_mirror_sync_success(
     monkeypatch.setattr(server, "_resolve_owner", lambda *_: "mirror-user")
 
     async with make_typed_mcp(gitea_mirror_server) as (client, _):
-        await client.trigger_mirror_sync(TriggerMirrorSyncArgs(url="https://example.com/org/repo.git"))
+        input_model = client.models["trigger_mirror_sync"].Input
+        assert input_model is not None
+        await client.trigger_mirror_sync(input_model(url="https://example.com/org/repo.git"))
 
     assert [call[0] for call in post_calls] == [
         "https://gitea.local/api/v1/repos/migrate",
@@ -82,7 +83,9 @@ async def test_trigger_sync_bubbles_mirror_error(
 
     async with make_typed_mcp(gitea_mirror_server) as (client, _):
         # Error assertion path: expect tool error and capture message
-        err_msg = await client.error("trigger_mirror_sync")(TriggerMirrorSyncArgs(url="https://example.com/org/repo"))
+        input_model = client.models["trigger_mirror_sync"].Input
+        assert input_model is not None
+        err_msg = await client.error("trigger_mirror_sync")(input_model(url="https://example.com/org/repo"))
         assert "boom" in err_msg or "HTTP 500" in err_msg
 
 

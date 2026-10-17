@@ -151,7 +151,6 @@ py_test(
         "//agent_core/testing:matchers",
         "//agent_core/testing:responses",
         "//agent_core/testing/mcp:responses",
-        "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "//mcp_infra/testing:simple_servers",
         "//openai_utils:model",

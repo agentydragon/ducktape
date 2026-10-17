@@ -6,13 +6,12 @@ import asyncio
 import json
 import re
 from collections.abc import Callable
-from typing import Annotated, Any, Final, Literal
+from typing import Annotated, Any, Final, Literal, cast
 
 import pytest
 import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp.tools.function_tool import FunctionTool
 from hamcrest import anything, assert_that, contains_string, greater_than_or_equal_to, has_entries, has_length
 from more_itertools import one
 from pydantic import BaseModel, ConfigDict, Field
@@ -25,7 +24,6 @@ from agent_core.testing.matchers import assert_function_call_output_structured, 
 from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_core.testing.responses import DecoratorMock, ResponsesFactory
 from agent_core.tool_provider import ImageContent, TextContent, ToolResult
-from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import SendMessageInput
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, SystemMessage, UserMessage
@@ -73,7 +71,7 @@ def rendezvous_server() -> FastMCP:
 class ValidationServer(FastMCP):
     """FastMCP server with a tool that validates input strictly."""
 
-    send_message_tool: FunctionTool
+    send_message_tool: Callable[..., dict[str, Any]]
 
     def __init__(self):
         super().__init__("validator")
@@ -107,7 +105,7 @@ async def test_tool_error_continues_turn(compositor, mcp_tool_provider, validati
     5. Successfully complete
     """
     mounted = await compositor.mount_inproc(MCPMountPrefix("validator"), validation_server)
-    tool_name = build_mcp_function(mounted.prefix, mounted.server.send_message_tool.name)
+    tool_name = mounted.tool_name(mounted.server.send_message_tool)
 
     @DecoratorMock.mock()
     def mock(m: DecoratorMock):
@@ -533,7 +531,7 @@ async def test_agent_compositor_native_tool_request_schema(compositor, mcp_tool_
             if reference is None:
                 return schema
             definition_name = reference.rsplit("/", 1)[-1]
-            return params_b["$defs"][definition_name]
+            return cast(dict[str, Any], params_b["$defs"][definition_name])
 
         nested_def = resolve_definition(props["nested"])
         assert nested_def["properties"]["regex"]["pattern"] == r"^\d{5}$"

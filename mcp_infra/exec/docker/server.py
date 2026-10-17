@@ -9,6 +9,7 @@ FastMCP server: per-session Docker container exec.
 from __future__ import annotations
 
 import inspect
+from collections.abc import Awaitable, Callable
 from pathlib import PurePosixPath
 from typing import Annotated, Any
 
@@ -17,7 +18,6 @@ import mcp.types as mcp_types
 from fastmcp.dependencies import Depends
 from fastmcp.server import FastMCP
 from fastmcp.server.context import Context
-from fastmcp.tools.function_tool import FunctionTool
 from pydantic import Field, WithJsonSchema, create_model
 
 from mcp_infra.exec.docker.container_session import (
@@ -157,7 +157,7 @@ class ContainerExecServer(FastMCP):
     CONTAINER_INFO_URI = "resource://container.info"
 
     # Tool reference (assigned in __init__ after tool registration)
-    exec_tool: FunctionTool
+    exec_tool: Callable[..., Awaitable[BaseExecResult]]
 
     @staticmethod
     def file_uri(path: str) -> str:
@@ -274,7 +274,7 @@ class ContainerExecServer(FastMCP):
 
         if isinstance(cwd_policy, ModelChooses):
 
-            async def exec(
+            async def exec_model_chooses(
                 *,
                 cmd: DockerExecCommand,
                 timeout_ms: DockerExecTimeout,
@@ -284,6 +284,10 @@ class ContainerExecServer(FastMCP):
                 context: Context,
             ) -> BaseExecResult:
                 return await run_exec(cmd, timeout_ms, cwd, env, user, context)
+
+            self.exec_tool = self.tool(name=self.EXEC_TOOL_NAME, description=_exec_description, output_schema=None)(
+                exec_model_chooses
+            )
 
         else:
             if isinstance(cwd_policy, AlwaysSetTo):
@@ -298,7 +302,7 @@ class ContainerExecServer(FastMCP):
                 # select the configured default.
                 cwd_default = inspect.Parameter.empty
 
-            async def exec(
+            async def exec_with_configured_cwd(
                 *,
                 cmd: DockerExecCommand,
                 timeout_ms: DockerExecTimeout,
@@ -309,7 +313,9 @@ class ContainerExecServer(FastMCP):
             ) -> BaseExecResult:
                 return await run_exec(cmd, timeout_ms, cwd, env, user, context)
 
-        self.exec_tool = self.tool(description=_exec_description, output_schema=None)(exec)
+            self.exec_tool = self.tool(name=self.EXEC_TOOL_NAME, description=_exec_description, output_schema=None)(
+                exec_with_configured_cwd
+            )
 
         # Register file:// resource template for reading files from container
         async def read_container_file(path: str, ctx: Context) -> str:

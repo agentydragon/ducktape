@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlparse
 
 import httpx
 from fastmcp.server import FastMCP
-from fastmcp.tools.function_tool import FunctionTool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
@@ -36,20 +36,9 @@ class MirrorError(RuntimeError):
     pass
 
 
-class TriggerMirrorSyncArgs(BaseModel):
-    url: str
-    model_config = ConfigDict(extra="forbid")
-
-
 class TriggerMirrorSyncResponse(BaseModel):
     """Response matching Gitea's mirror-sync behavior (returns nothing)."""
 
-    model_config = ConfigDict(extra="forbid")
-
-
-class GetRepoInfoArgs(BaseModel):
-    owner: str
-    repo: str
     model_config = ConfigDict(extra="forbid")
 
 
@@ -226,8 +215,8 @@ class GiteaMirrorServer(FastMCP):
     """
 
     # Tool references (assigned in __init__ after tool registration)
-    trigger_mirror_sync_tool: FunctionTool
-    get_repo_info_tool: FunctionTool
+    trigger_mirror_sync_tool: Callable[[str], TriggerMirrorSyncResponse]
+    get_repo_info_tool: Callable[[str, str], GiteaRepoInfo]
 
     def __init__(self, *, base_url: str | None = None, token: str | None = None):
         """Create a Gitea mirror MCP server.

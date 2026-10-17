@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 import sys
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -11,7 +12,6 @@ import mcp.types as mcp_types
 from fastmcp.server import FastMCP
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
-from fastmcp.tools.function_tool import FunctionTool
 from pydantic import Field
 
 from mcp_infra.exec.read_image import validate_and_encode_image
@@ -25,7 +25,7 @@ class DirectExecServer(FastMCP):
     """Direct (unsandboxed) exec MCP server with typed tool access."""
 
     # Tool references (assigned in __init__)
-    exec_tool: FunctionTool
+    exec_tool: Callable[..., Awaitable[BaseExecResult]]
 
     def __init__(
         self,

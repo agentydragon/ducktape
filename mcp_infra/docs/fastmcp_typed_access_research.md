@@ -14,22 +14,25 @@ Tool/resource access in FastMCP is string-based (`tool_manager.get_tool(name)`).
 
 ## Recommended Patterns
 
-### 1. Server Subclasses with Class Constants
+### 1. Server Subclasses with Callable Tool Attributes
 
 ```python
+from collections.abc import Awaitable, Callable
+from typing import ClassVar
+
 class RuntimeServer(FastMCP):
     # Class constants -- usable without server instance (tests, policy eval)
     EXEC_TOOL_NAME: ClassVar[str] = "exec"
     CONTAINER_INFO_URI: ClassVar[str] = "resource://container.info"
 
-    # Instance attributes -- typed access when server exists
-    exec_tool: FunctionTool
+    # FastMCP's decorator returns the registered function, not a Tool object.
+    exec_tool: Callable[..., Awaitable[ExecResult]]
 
     def __init__(self, docker_client):
         super().__init__("Runtime Server")
-        @self.tool(name=self.EXEC_TOOL_NAME)
-        async def exec_impl(input: ExecInput) -> ExecResult: ...
-        self.exec_tool = exec_impl
+        @self.tool
+        async def exec(input: ExecInput) -> ExecResult: ...
+        self.exec_tool = exec
 
         @self.resource(self.CONTAINER_INFO_URI)
         async def container_info() -> dict: ...
