@@ -1,6 +1,6 @@
 # Sandbox and Session control: who owns what
 
-Status: **decided; see [Decisions](#decisions) for when each was settled. Idle suspension waits on the sealed-journal reopen (D3) being built.**
+Status: **decided; see [Decisions](#decisions) for when each was settled.**
 
 Scope: the responsibilities split across the services and custom resources that run a Sandbox (Pod
 or VM) and deliver work to the Sessions in it. This covers the control Service, readiness and
@@ -408,9 +408,12 @@ controller re-issues the idempotent `Quiesce` when it finds a Sandbox that shoul
 whose Lease shows no stage. A controller restart between its `Quiesce` call and the stage reaching the Lease
 depends on the cause. For an operator suspend or delete the controller re-evaluates and re-issues `Quiesce`, which
 is safe because a repeat into a runner already in lameduck succeeds. For an idle suspend a restarted controller
-starts its idle timer fresh and has no token to send, so it issues nothing: the runner is already in lameduck, the
-stage reaches the Lease (written at once, retried from the gateway's copy), and the controller adopts the quiesce
-from there. The gap is the gateway's immediate Lease write. A runner that never progresses is caught by a deadline the controller
+starts its idle timer fresh and has no token to send, so it issues nothing. The runner is already in lameduck and
+the stage reaches the Lease (written at once, retried from the gateway's copy), but nothing records that the
+controller meant to suspend: a wake may have raced it. The controller therefore seals that incarnation and, as the
+Sandbox is to run, replaces it. The same holds when a wake bumps `spec.wakeGeneration` during the idle `Quiesce`,
+which fails the status write that records the suspension on its stale resource version. It costs one incarnation and
+loses no wake. The gap is the gateway's immediate Lease write. A runner that never progresses is caught by a deadline the controller
 requeues for, not by periodic checks, and ends as a stuck `Quiescing` Sandbox whose finalizer an
 operator removes by hand. Rejected: a server-streaming `Quiesce` held open by the controller (it
 is lost on every gateway rollout and ties up a connection per quiescing Sandbox for no fact the
@@ -599,8 +602,10 @@ quiesce started during a History Service outage can sit in lameduck, refusing ne
 
 Decided (operator, 2026-10-14): suspension uses the first: the runner publishes `idleSince`, absent while it is busy
 (carried like other runner facts in D2), and the Sandbox Controller runs the timer against
-`spec.idleSuspendAfter`, then suspends through the D3 sequence. The timer is restartable because
-the facts live in the runner and Lease, not in controller memory. The Dispatcher keeps no pending mark
+`spec.idleSuspendAfter`, then suspends through the D3 sequence. The facts that define idleness live in the runner and
+Lease; the elapsed time is controller memory, from its first sight of each `idleSince` value, so a restart starts the
+wait over. `idleSuspendAfter` is at least a minute, which bounds how often a refused or failing request repeats.
+The Dispatcher keeps no pending mark
 and the controller reads nothing from it; a message racing a suspend is handled by the conditional `Quiesce` (D3).
 
 **Per Session and per Sandbox.** The UI shows the idle time of a _Session_; suspension needs the aggregate over _all Sessions_ in the Sandbox. The runner computes both from the same per-Session facts: a Sandbox is busy while any Session is busy (or a background process or attached terminal runs), and its `idleSince` is when the last of them went idle. Only the Sandbox aggregate goes on the Lease. Per-Session idle times stay out of Kubernetes (the boundary in requirement 8): their number is unbounded, they change with every turn, and no controller decision needs them. The activity stream is the History Service's: it already folds the runner's events into `SessionSummary` (`last_turn_status`, `last_model_activity_at`) and serves `watch_session_summaries`, so a per-Session `idleSince`, derived from the turn start and end events it ingests, is one more folded field on that summary and the stream carries it to listeners (the UI, the notification service). It is display-only: suspension never reads it. A background process or attached terminal belongs to no Session, so it counts only in the Sandbox aggregate. While a Sandbox is suspended nothing new is ingested, so each Session reads idle since its last turn ended.
@@ -717,8 +722,10 @@ stateDiagram-v2
 edit them, so the controller's idle timer does not write the spec. It writes a status fact,
 `status.suspendedBy: Idle`, recording the `spec.wakeGeneration` it suspended at; a writer (the Dispatcher or the app) wakes by
 bumping `spec.wakeGeneration`, and the controller runs the Sandbox when `spec.running` holds and the generation
-differs from the recorded one. "Suspended" then has two distinguishable causes, `Desired` (spec.running false)
-and `Idle`, and an operator hold (`spec.wakeOnSend: false`) is distinguishable from an idle suspend.
+differs from the recorded one. "Suspended" then has two distinguishable causes, which the controller publishes in
+`status.suspendedBy` together with the effective mode: `Requested` (`spec.running` false, whoever cleared it) and `Idle`.
+A requester that clears `spec.running` of an idle-suspended Sandbox takes the reason over. An operator hold
+(`spec.wakeOnSend: false`) is distinguishable from an idle suspend.
 
 - Suspend and delete both run the D3 sequence; a suspended, already-quiesced Sandbox deletes without
   waking (`quiescedIncarnation`).
@@ -812,6 +819,7 @@ sequenceDiagram
 | `spec.wakeOnSend: false` holds a Sandbox suspended against wake-on-send and gates the feature                    | Decided | 2026-10-13 | D4             |
 | Per-Session idle for the UI is a folded History Service field; the Sandbox aggregate rides the Lease             | Decided | 2026-10-13 | D4             |
 | Idle suspension is `status.suspendedBy: Idle` plus a `spec.wakeGeneration` bump to wake                          | Decided | 2026-10-14 | Lifecycle      |
+| Every suspension records why in `status.suspendedBy` (`Idle` or `Requested`), and the web app shows it           | Decided | 2026-10-17 | Lifecycle      |
 | The six wire phases stay; finer states are reasons on conditions                                                 | Decided | 2026-10-14 | Lifecycle      |
 | There is no Sandbox Service: the app creates, deletes, suspends and resumes Sandboxes through the Kubernetes API | Decided | 2026-10-14 | Proposed split |
 | The VM serial console moves into the app                                                                         | Decided | 2026-10-14 | Proposed split |

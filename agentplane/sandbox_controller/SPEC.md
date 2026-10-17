@@ -27,6 +27,10 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   the rest of this section calls running: `spec.running`, unless the controller suspended the Sandbox
   for idleness (`status.suspendedBy: Idle`) and `spec.wakeGeneration` still equals
   `status.suspendedAtWakeGeneration`. Readers of `spec.running` read the mode instead.
+- `status.suspendedBy` says why a Sandbox is suspended and is absent while it runs: `Requested` when
+  `spec.running` is clear, `Idle` when the controller suspended it for idleness. A requester that
+  clears `spec.running` of an idle-suspended Sandbox replaces `Idle` with `Requested`.
+  `status.suspendedAtWakeGeneration` is set exactly with `Idle`.
 - While `spec.running` is set, the Sandbox has exactly one Pod, named after it and controlled by
   it, with the template's state volume backed by the PVC. A Pod that goes away or ends while the
   Sandbox is running is replaced by a new incarnation on the same PVC.
@@ -39,6 +43,15 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   to seal.
 - A resumed Sandbox whose Pod is already sealed gets a new incarnation, as a sealed runner takes no
   new Sessions.
+- Optional `spec.idleSuspendAfter`, a duration of at least one minute, suspends an idle Sandbox. Unset,
+  the controller never suspends it for idleness. Once the runner has been idle that long, timed on
+  the controller's clock from when it first saw that idle period, the controller asks the runner to
+  quiesce only if it is still idle since then, and the Sandbox is suspended as for a cleared
+  `spec.running`. A runner that is busy again, or idle since another instant, refuses, and the wait
+  starts over; a controller restart also restarts it. Terminals and background processes do not
+  count as work. Idleness never deletes a Sandbox.
+- A wake that lands while an idle suspension is being recorded replaces the incarnation: the runner is
+  already sealed to new work, and the Sandbox is to run.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing
   either never changes a running Pod or VM, its kind included.
 - Each Pod and VM carries the spec rendered from the template when it started

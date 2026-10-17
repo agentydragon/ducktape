@@ -68,8 +68,10 @@ type Reconciler struct {
 	// Reads the Lease the Runner Gateway writes for each connection, and, set up with a manager, watches
 	// them: a new connection, or a runner reconnecting, enqueues its Sandbox.
 	Leases client.Reader
-	// The current time, for the liveness of a connection Lease.
+	// The current time, for the liveness of a connection Lease and the idle timers.
 	Now func() time.Time
+
+	idle idleTimers
 }
 
 // StateVolumeName is the Sandbox's state PVC.
@@ -117,6 +119,7 @@ func (w workload) incarnation() *corev1.Pod {
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl.Result, error) {
 	var sandbox sandboxapi.Sandbox
 	if err := r.Get(ctx, req.NamespacedName, &sandbox); err != nil {
+		r.idle.forget(req.NamespacedName)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	w, err := r.workload(ctx, &sandbox)
@@ -124,6 +127,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 	if !sandbox.DeletionTimestamp.IsZero() {
+		r.idle.forget(req.NamespacedName)
 		if !controllerutil.ContainsFinalizer(&sandbox, StateVolumeFinalizer) {
 			return ctrl.Result{}, nil
 		}
@@ -156,7 +160,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 	} else if gate == nil {
 		gate = launchGate
 	}
-	if blocked == nil && (!sandboxRunning(&sandbox) || sandboxQuiescing(&sandbox)) {
+	var idle idleCheck
+	if blocked == nil && sandboxRunning(&sandbox) && !sandboxQuiescing(&sandbox) {
+		if idle, err = r.suspendIfIdle(ctx, &sandbox, w); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	if blocked == nil && (idle.lameduck || !sandboxRunning(&sandbox) || sandboxQuiescing(&sandbox)) {
 		if blocked, err = r.quiesceBeforeStop(ctx, &sandbox, w); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -166,7 +176,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
-	return r.updateStatus(ctx, &sandbox, w, blocked)
+	result, err := r.updateStatus(ctx, &sandbox, w, blocked)
+	result.RequeueAfter = earliest(result.RequeueAfter, idle.recheck)
+	return result, err
 }
 
 func (r *Reconciler) workload(ctx context.Context, sandbox *sandboxapi.Sandbox) (workload, error) {
@@ -360,7 +372,7 @@ func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, r
 	if err := r.Status().Update(ctx, sandbox); err != nil {
 		return nil, fmt.Errorf("recording quiesce attempt for %s: %w", sandbox.Name, err)
 	}
-	result, err := r.Quiescer.Quiesce(ctx, sandbox)
+	result, err := r.Quiescer.Quiesce(ctx, sandbox, nil)
 	if err != nil {
 		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
@@ -583,6 +595,7 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 	status := sandbox.Status.DeepCopy()
 	status.Incarnation = nil
 	status.OperatingMode = sandboxOperatingMode(sandbox)
+	status.SuspendedBy, status.SuspendedAtWakeGeneration = sandboxSuspension(sandbox)
 	if pod := w.incarnation(); pod != nil {
 		status.Incarnation = &sandboxapi.Incarnation{Name: pod.Name, UID: string(pod.UID)}
 	}

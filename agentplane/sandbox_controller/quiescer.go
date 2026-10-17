@@ -8,6 +8,8 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runnerclient"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 )
@@ -23,9 +25,11 @@ type QuiesceResult struct {
 	Quiescing bool
 }
 
-// Quiescer asks a Sandbox's runner to seal every Session.
+// Quiescer asks a Sandbox's runner to seal every Session. A non-nil ifIdleSince makes the request
+// conditional: a runner that is busy, or idle since another instant, refuses with `ABORTED` instead of
+// beginning to quiesce.
 type Quiescer interface {
-	Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox) (QuiesceResult, error)
+	Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, ifIdleSince *time.Time) (QuiesceResult, error)
 }
 
 // GatewayQuiescer calls `Runner.Quiesce` through the Runner Gateway's proxy, at the Sandbox's own
@@ -38,8 +42,12 @@ type GatewayQuiescer struct {
 	TokenFile string
 }
 
-func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox) (QuiesceResult, error) {
+func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, ifIdleSince *time.Time) (QuiesceResult, error) {
 	target := runnerclient.ExpandTarget(g.Target, sandbox.Name, sandbox.Namespace)
+	request := &runnerpb.QuiesceRequest{}
+	if ifIdleSince != nil {
+		request.IfIdleSince = timestamppb.New(*ifIdleSince)
+	}
 	var response *runnerpb.QuiesceResponse
 	called := false
 	err := runnerclient.WithClient(ctx, runnerclient.Config{
@@ -48,7 +56,7 @@ func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbo
 	}, func(ctx context.Context, client runnercontrolpb.RunnerClient) error {
 		called = true
 		var err error
-		response, err = client.Quiesce(ctx, &runnerpb.QuiesceRequest{})
+		response, err = client.Quiesce(ctx, request)
 		return err
 	})
 	if err != nil {

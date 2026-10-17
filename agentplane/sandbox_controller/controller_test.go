@@ -595,16 +595,19 @@ func TestStateVolumeTheSandboxDoesNotOwnIsNotUsed(t *testing.T) {
 	}
 }
 
-// fakeQuiescer answers every seal with result, or err.
+// fakeQuiescer answers every seal with result, or err, and remembers the idle-since token of the last
+// conditional request.
 type fakeQuiescer struct {
-	result QuiesceResult
-	err    error
-	calls  int
-	before func()
+	result      QuiesceResult
+	err         error
+	calls       int
+	before      func()
+	ifIdleSince *time.Time
 }
 
-func (f *fakeQuiescer) Quiesce(context.Context, *sandboxapi.Sandbox) (QuiesceResult, error) {
+func (f *fakeQuiescer) Quiesce(_ context.Context, _ *sandboxapi.Sandbox, ifIdleSince *time.Time) (QuiesceResult, error) {
 	f.calls++
+	f.ifIdleSince = ifIdleSince
 	if f.before != nil {
 		f.before()
 	}
@@ -1173,7 +1176,8 @@ func TestAnIdleSuspendedSandboxStopsUntilItsWakeGenerationIsBumped(t *testing.T)
 func TestAStoppedSandboxIsSuspended(t *testing.T) {
 	r, c := newReconciler(t, false, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	if got := getSandbox(t, c).Status.OperatingMode; got != sandboxapi.OperatingModeSuspended {
-		t.Errorf("operating mode = %s, want Suspended", got)
+	suspended := getSandbox(t, c)
+	if suspended.Status.OperatingMode != sandboxapi.OperatingModeSuspended || suspended.Status.SuspendedBy == nil || *suspended.Status.SuspendedBy != sandboxapi.SuspendedByRequested {
+		t.Errorf("operating mode = %s, suspendedBy = %v, want Suspended by Requested", suspended.Status.OperatingMode, suspended.Status.SuspendedBy)
 	}
 }

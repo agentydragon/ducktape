@@ -61,6 +61,17 @@ spec:
                   once, before its first Session.
                 maxLength: 65536
                 type: string
+              idleSuspendAfter:
+                description: 'IdleSuspendAfter is how long the Sandbox''s runner must
+                  stay idle before the controller suspends the
+
+                  Sandbox, at least a minute. Unset, the controller never suspends
+                  it for idleness.'
+                maxLength: 32
+                type: string
+                x-kubernetes-validations:
+                - message: idleSuspendAfter is at least one minute
+                  rule: duration(self) >= duration('1m')
               policySets:
                 description: PolicySets names the PolicySets in the Sandbox's namespace
                   its ServiceAccount is bound to.
@@ -215,13 +226,14 @@ spec:
                 minimum: 0
                 type: integer
               suspendedBy:
-                description: 'SuspendedBy is set while the controller keeps a Sandbox
-                  stopped that `spec.running` says to run, and
+                description: 'SuspendedBy is why the Sandbox is suspended. `Idle`
+                  keeps a Sandbox stopped that `spec.running` says to run,
 
-                  SuspendedAtWakeGeneration is the `spec.wakeGeneration` it stopped
+                  and SuspendedAtWakeGeneration is the `spec.wakeGeneration` it stopped
                   it at.'
                 enum:
                 - Idle
+                - Requested
                 type: string
               volumes:
                 properties:
@@ -304,8 +316,10 @@ spec:
                 type: object
             type: object
             x-kubernetes-validations:
-            - message: suspendedBy and suspendedAtWakeGeneration are set together
-              rule: has(self.suspendedBy) == has(self.suspendedAtWakeGeneration)
+            - message: suspendedAtWakeGeneration is set exactly when suspendedBy is
+                Idle
+              rule: has(self.suspendedAtWakeGeneration) == (has(self.suspendedBy)
+                && self.suspendedBy == 'Idle')
         required:
         - spec
         type: object

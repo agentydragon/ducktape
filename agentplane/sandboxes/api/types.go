@@ -96,6 +96,12 @@ type SandboxSpec struct {
 	// +kubebuilder:default=0
 	// +kubebuilder:validation:Minimum=0
 	WakeGeneration int64 `json:"wakeGeneration,omitempty"`
+	// IdleSuspendAfter is how long the Sandbox's runner must stay idle before the controller suspends the
+	// Sandbox, at least a minute. Unset, the controller never suspends it for idleness.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:MaxLength=32
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1m')",message="idleSuspendAfter is at least one minute"
+	IdleSuspendAfter *metav1.Duration `json:"idleSuspendAfter,omitempty"`
 	// PolicySets names the PolicySets in the Sandbox's namespace its ServiceAccount is bound to.
 	// +listType=set
 	// +kubebuilder:validation:items:MinLength=1
@@ -119,7 +125,7 @@ type QuiesceAttempt struct {
 	AttemptedAt  metav1.Time `json:"attemptedAt"`
 }
 
-// +kubebuilder:validation:XValidation:rule="has(self.suspendedBy) == has(self.suspendedAtWakeGeneration)",message="suspendedBy and suspendedAtWakeGeneration are set together"
+// +kubebuilder:validation:XValidation:rule="has(self.suspendedAtWakeGeneration) == (has(self.suspendedBy) && self.suspendedBy == 'Idle')",message="suspendedAtWakeGeneration is set exactly when suspendedBy is Idle"
 type SandboxStatus struct {
 	Volumes     *SandboxVolumes `json:"volumes,omitempty"`
 	Incarnation *Incarnation    `json:"incarnation,omitempty"`
@@ -130,8 +136,8 @@ type SandboxStatus struct {
 	// OperatingMode is whether the controller runs the Sandbox: the one derivation every reader of
 	// `spec.running` reads instead.
 	OperatingMode OperatingMode `json:"operatingMode,omitempty"`
-	// SuspendedBy is set while the controller keeps a Sandbox stopped that `spec.running` says to run, and
-	// SuspendedAtWakeGeneration is the `spec.wakeGeneration` it stopped it at.
+	// SuspendedBy is why the Sandbox is suspended. `Idle` keeps a Sandbox stopped that `spec.running` says to run,
+	// and SuspendedAtWakeGeneration is the `spec.wakeGeneration` it stopped it at.
 	SuspendedBy *SuspendedBy `json:"suspendedBy,omitempty"`
 	// +kubebuilder:validation:Minimum=0
 	SuspendedAtWakeGeneration *int64 `json:"suspendedAtWakeGeneration,omitempty"`
@@ -172,10 +178,15 @@ const (
 	OperatingModeSuspended OperatingMode = "Suspended"
 )
 
-// +kubebuilder:validation:Enum=Idle
+// +kubebuilder:validation:Enum=Idle;Requested
 type SuspendedBy string
 
-const SuspendedByIdle SuspendedBy = "Idle"
+const (
+	// The controller suspended the Sandbox because its runner stayed idle for `spec.idleSuspendAfter`.
+	SuspendedByIdle SuspendedBy = "Idle"
+	// A requester cleared `spec.running`.
+	SuspendedByRequested SuspendedBy = "Requested"
+)
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status

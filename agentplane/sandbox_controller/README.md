@@ -71,6 +71,16 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   watch events and controller restarts. The controller never holds a runner connection. A Sandbox
   with no connection Lease, the Runner Gateway's record that a runner ever connected, has nothing to
   seal and is deleted without `Quiesced`.
+- **The idle timer is controller memory, started at its first sight of each `idle-since` value.**
+  The runner's clock never counts, so skew cannot suspend early; a restart starts every timer
+  over and suspends up to one `idleSuspendAfter` later. The controller sends the value as
+  `Quiesce(if_idle_since)`: work that arrived after the decision makes the runner refuse with
+  `ABORTED` and the timer starts over. Another failure retries at the quiesce deadline.
+- **A wake during the idle `Quiesce` is not lost.** The accepted request is recorded by the status
+  write that follows, at the wake generation read before the call, so a wake in between fails that
+  write on the stale resource version. The next reconcile finds a runner in lameduck with no
+  recorded cause; the Sandbox is to run, so the stop path seals it and replaces the incarnation.
+  A restart between the call and the write ends the same way, at the cost of one incarnation.
 - **`RunnerConnected` watches the Lease.** A new connection, a different runner Pod or a change in
   the runner's published facts (quiesce stage, idle-since, bootstrap state, valid only while
   the Lease's `pod-uid` is the incarnation's) enqueues the Sandbox; renewals do not. Time is not an

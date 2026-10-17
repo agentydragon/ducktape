@@ -904,7 +904,7 @@ flowchart TD
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
-    SANDBOX_IDLE_EXPIRY[Candidate: suspend idle Sandboxes] -. related .-> AGENT_RESUME_NOTICE
+    SANDBOX_IDLE_EXPIRY[Candidate: the web app sets idle suspension and shows why a Sandbox is suspended] -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
@@ -1196,28 +1196,21 @@ candidate runtime, CI can build a guest without Attic, and a runtime experiment 
 rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` and
 `K3S_SHARED_PACKAGE_LAYERS` before adding image weight to that environment.
 
-### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
+### `SANDBOX_IDLE_EXPIRY` — set idle suspension from the web app and show why a Sandbox is suspended
 
-**Candidate; later than cleanup in the operator priority.** The effective-mode reader and
-nonblocking Quiesce writer are deployed. Controller retry and runner outage coverage are complete. An idle runner
-Sandbox suspends: it is sealed, then the Pod or VM goes, freeing memory and compute, and the Sandbox, its
-ServiceAccount, bindings and state PVC stay, so a later resume uses the same PVC. Nothing deletes a
-Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
-[the Sandbox lifecycle API](../sandboxes/README.md) and the seal. What a resume gets back of the
-workspace follows the declared [storage layout](../docs/sandbox_storage.md). Idle is a Sandbox-level fact: every Session in the Sandbox
-is idle. The control design (`docs/adr_sandbox_session_control.md`) puts the policy in the Sandbox
-controller: `spec.idleSuspendAfter`, a timer the controller measures from the `idleSince`
-fact the runner publishes (the connection Lease facts), so it needs no History Service and
-survives a controller restart. Busy covers a delivery under way, the bootstrap, a turn, a command and a setup script. A background or
-durable process or an attached terminal does not count (operator, 2026-10-14), so a suspend ends them (`RUNNER_BUSY_TRACKING`). The controller's idle timer does not edit the spec: it
-writes `status.suspendedBy: Idle` with the `spec.wakeGeneration` it suspended at. Automatic suspension is
-`Quiesce` with `if_idle_since`: the runner refuses it on a token mismatch or when busy (`ABORTED`, as
-for a Sandbox already in lameduck; `FAILED_PRECONDITION` is terminal), and there is
-no ingress-health gate. Suspension waits for the Sandbox bootstrap and every
-Session's setup (running setups are a runner fact; the Sandbox is `Ready` False with reason `SuspendPending`); deletion does not wait. A Sandbox that is quiescing refuses resume. Action Service boxes are `ACTION_BOX_IDLE_REAPER`'s, which
-only ever deletes.
+**Candidate; dispatched by the operator, 2026-10-17 UTC.** The controller half is implemented
+([control ADR](../docs/adr_sandbox_session_control.md), [Sandbox Controller SPEC](../sandbox_controller/SPEC.md)):
+optional `spec.idleSuspendAfter` (at least a minute; unset never suspends) and `status.suspendedBy`, `Idle` or
+`Requested`, published with the effective mode. Remaining is the integration app:
 
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
+- Set and clear `idleSuspendAfter` when a Sandbox is created and on an existing one, through the Kubernetes API like
+  the other spec fields (the controller owns the status). It is optional in the create form and the API.
+- Show why a Sandbox is suspended, "idle" or "on request", in every Sandbox view that shows its phase, and show
+  the configured idle time.
+
+Prerequisite: the CRD with `idleSuspendAfter` and the controller image that reads it are deployed (image before config),
+or the API server prunes the field. Exit evidence: published screenshots showing both reasons and the control, and an app test
+that creates a Sandbox with `idleSuspendAfter` and reads it back.
 
 ### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
 
@@ -1344,7 +1337,7 @@ flowchart TD
     HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
-    SANDBOX_IDLE_EXPIRY[Candidate: idle runner Sandboxes suspend, section 7] -. same idleness question .-> ACTION_BOX_IDLE_REAPER
+    SANDBOX_IDLE_EXPIRY[Candidate: the web app sets idle suspension and shows why a Sandbox is suspended] -. same idleness question .-> ACTION_BOX_IDLE_REAPER
 ```
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner

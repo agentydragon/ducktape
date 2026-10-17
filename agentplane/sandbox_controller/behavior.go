@@ -20,6 +20,21 @@ func sandboxOperatingMode(s *sandboxapi.Sandbox) sandboxapi.OperatingMode {
 	return sandboxapi.OperatingModeSuspended
 }
 
+// sandboxSuspension is why the Sandbox is suspended and, for an idle suspension, the wake generation it holds
+// at: neither while the Sandbox runs. A requester that clears `spec.running` of an idle-suspended Sandbox
+// takes over the reason.
+func sandboxSuspension(s *sandboxapi.Sandbox) (*sandboxapi.SuspendedBy, *int64) {
+	switch {
+	case sandboxRunning(s):
+		return nil, nil
+	case !s.Spec.Running:
+		requested := sandboxapi.SuspendedByRequested
+		return &requested, nil
+	default:
+		return s.Status.SuspendedBy, s.Status.SuspendedAtWakeGeneration
+	}
+}
+
 // sessionsQuiesced reports whether every Session was sealed.
 func sandboxSessionsQuiesced(s *sandboxapi.Sandbox) bool {
 	return meta.IsStatusConditionTrue(s.Status.Conditions, sandboxapi.ConditionQuiesced)

@@ -119,9 +119,40 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
         assert rejected.value.status == 422, repr(rejected.value.body)
 
         with_status["status"]["suspendedAtWakeGeneration"] = 0
-        await api.replace_namespaced_custom_object_status(
-            GROUP, VERSION, NAMESPACE, "sandboxes", "suspension", with_status
+        current = cast(
+            dict[str, Any],
+            await api.replace_namespaced_custom_object_status(
+                GROUP, VERSION, NAMESPACE, "sandboxes", "suspension", with_status
+            ),
         )
+
+        for status, valid in [
+            ({"suspendedBy": "Requested"}, True),
+            ({"suspendedBy": "Requested", "suspendedAtWakeGeneration": 0}, False),
+            ({"suspendedAtWakeGeneration": 0}, False),
+            ({"suspendedBy": "Unrecognised"}, False),
+        ]:
+            candidate = {**current, "status": status}
+            if valid:
+                current = cast(
+                    dict[str, Any],
+                    await api.replace_namespaced_custom_object_status(
+                        GROUP, VERSION, NAMESPACE, "sandboxes", "suspension", candidate
+                    ),
+                )
+                continue
+            with pytest.raises(ApiException) as rejected:
+                await api.replace_namespaced_custom_object_status(
+                    GROUP, VERSION, NAMESPACE, "sandboxes", "suspension", candidate
+                )
+            assert rejected.value.status == 422, f"{status}: {rejected.value.body!r}"
+
+        for index, (idle_suspend_after, valid) in enumerate(
+            [("30m", True), ("1h30m0s", True), ("1m", True), ("59s", False), ("0s", False), ("soon", False)]
+        ):
+            await _create(
+                api, "sandboxes", f"idle-{index}", {"template": "opaque", "idleSuspendAfter": idle_suspend_after}, valid
+            )
 
 
 if __name__ == "__main__":

@@ -422,7 +422,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	staleDestination := destination.DeepCopy()
 	staleDestination.UID = types.UID("replaced-sandbox-uid")
 	staleCtx, cancelStale := context.WithTimeout(context.Background(), 5*time.Second)
-	_, staleErr := quiescer.Quiesce(staleCtx, staleDestination)
+	_, staleErr := quiescer.Quiesce(staleCtx, staleDestination, nil)
 	cancelStale()
 	if status.Code(staleErr) != codes.NotFound {
 		t.Fatalf("controller Quiesce accepted a replaced Sandbox: %v", staleErr)
@@ -432,7 +432,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		result, callErr := quiescer.Quiesce(ctx, destination)
+		result, callErr := quiescer.Quiesce(ctx, destination, nil)
 		if callErr == nil && result.Quiescing {
 			callErr = status.Error(codes.Internal, "controller did not observe the runner's completed Quiesce")
 		}
@@ -452,6 +452,32 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := <-controllerCall; err != nil {
+		t.Fatal(err)
+	}
+
+	// A conditional Quiesce reaches the runner with the idle-since token the controller observed.
+	idleSince := time.Date(2026, 10, 17, 3, 0, 0, 123456000, time.UTC)
+	conditionalCall := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, callErr := quiescer.Quiesce(ctx, destination, &idleSince)
+		conditionalCall <- callErr
+	}()
+	conditional := receiveTunnelCall(t, runnerStream)
+	var conditionalRequest runnerpb.QuiesceRequest
+	if err := proto.Unmarshal(conditional.GetRequest(), &conditionalRequest); err != nil {
+		t.Fatal(err)
+	}
+	if !conditionalRequest.GetIfIdleSince().AsTime().Equal(idleSince) {
+		t.Fatalf("the runner received if_idle_since %v, want %v", conditionalRequest.GetIfIdleSince().AsTime(), idleSince)
+	}
+	if err := runnerStream.Send(&runnercontrolpb.RunnerFrame{Frame: &runnercontrolpb.RunnerFrame_Reply{
+		Reply: &tunnelpb.Reply{CallId: conditional.GetCallId(), Response: quiesced},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-conditionalCall; err != nil {
 		t.Fatal(err)
 	}
 
