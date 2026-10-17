@@ -18,31 +18,6 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
-### Handoff snapshot — 2026-10-16 UTC
-
-**The handoff pause remains except operator-selected lanes.** On 2026-10-16 Rai selected Go delivery
-rollout preparation, the workload-tools VM prototype and current K3s profiling. Live Go activation
-still needs its reviewed fenced cutover. Other projects remain paused. The following change is implemented on a review branch, **not merged**;
-its published-head checks passed when checked for this handoff. Recheck GitHub before resuming.
-Rai merges every PR by hand; do not merge or enable auto-merge.
-
-| Open PR / exact reviewed head                                               | Scope                          | Remaining gate                                                                                          |
-| --------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| [#10734](https://github.com/agentydragon/ducktape/pull/10734), `39522ca3ab` | 8 GiB guest and testing limits | Parked pending owner review of the passing workload-image proof; then resume guest/resource acceptance. |
-
-This PR also edits this DAG. When rebasing it after this handoff, preserve the current status,
-remaining gates and Sandbox trust-boundary decision; do not restore its older planning snapshot.
-Delete the corresponding review row when it merges; remove implementation-only nodes and retain
-acceptance nodes until their unfinished rollout checks pass.
-No replacement implementation should be dispatched for code already in this PR.
-
-Operator priority remains usable VM Sandboxes and retiring obsolete paths. The Gateway wrapper,
-registry/database and migration-artifact retirements are complete; they are not cutover prerequisites
-still awaiting an image. The Go branch has already been rebased after that retirement. The Sandbox
-is the isolation boundary: intra-Sandbox hardening is an explicitly deferred, nonblocking TODO.
-The console deferred-attachment task was not started. Detailed parked work remains below; a
-candidate label is not permission to restart dispatch while Rai's pause remains in effect.
-
 ## 1. Session schema and identity follow-up
 
 ```mermaid
@@ -972,7 +947,7 @@ implementation prerequisites after choosing the design, including wake policy if
 **Exit:** reviewed desired-state/runtime ownership and lifecycle contract, one illustrative Flux
 manifest for a Session with GitHub/webhook subscriptions, and independently finishable follow-up
 nodes with focused reconciliation/restart, duplicate-prevention and authorization acceptance.
-Recording this idea does not schedule implementation or lift the handoff pause.
+Recording this idea does not schedule implementation.
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 
@@ -1583,22 +1558,22 @@ wrapper/registry retirement is complete.
 Flux ownership handoff and adds Go image discovery. The merged
 [#10786](https://github.com/agentydragon/ducktape/pull/10786) pins the published Go server and Goose digests, keeps database/Secrets/stable Services
 and the migration Job under the root, and gates a separate Go serving Kustomization on that exact
-completed migration. Testing activation is merged; staging activation is separately in review.
+completed migration. Testing activation ([#10787](https://github.com/agentydragon/ducktape/pull/10787))
+and staging activation ([#10796](https://github.com/agentydragon/ducktape/pull/10796)) are merged.
 The Python serving implementations were already removed; the configuration removes their
 remaining deployment/configuration sources and image automation, retaining historical Alembic
 handoff fixtures. See the [rollout procedure](../docs/go_delivery_rollout.md).
 
 Live preflight on 2026-10-16 found both environments running Python and both Dispatcher databases
 at `0007_drop_opening_attached`. That read-only preflight is not backup/restore or cutover acceptance.
-Staging still requires its backup/restore preflight and writer fence before activation.
+Staging's backup/restore preflight and writer fence were required before its activation.
 
 ### `DELIVERY_UNIFIED_CUTOVER` — switch owners without losing admitted work
 
-**Testing activation #10787 is merged; staging activation is in review.** Testing preservation
-and manual writer-fence gates were waived by the operator; testing acceptance remains unverified.
-Before merging staging activation, verify testing acceptance and staged artifacts, complete staging's
-backup/restore preflight and stop/delete both staging Python Deployments. Staging remains held
-until that activation merges. The testing-only waiver does not apply to staging.
+**Testing activation #10787 and staging activation #10796 are merged (2026-10-16 UTC); cutover
+acceptance is not recorded as verified for either.** Testing preservation and manual writer-fence
+gates were waived by the operator; the waiver does not apply to staging, whose backup/restore
+preflight, writer fence and Python Deployment stop/delete are not recorded as complete here.
 Recheck the
 operator's prerequisite that neither service depends on History: the 2026-10-15 entrypoints,
 settings, chart and runtime call paths have no History client/call/config, while runner ingress and
