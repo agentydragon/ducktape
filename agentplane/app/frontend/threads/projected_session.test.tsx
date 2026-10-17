@@ -870,6 +870,14 @@ it("does not send a retained command whose admission it already holds", async ()
 it.each([
   ["sandbox_resuming", "Sandbox is waking; message is queued"],
   ["wake_on_send_disabled", "Message is queued; wake on message is off, so resume the Sandbox manually to send it"],
+  [
+    'sandbox_wake_failed: sandboxes.agentplane.allegedly.works "box" is forbidden: cannot update resource "sandboxes"',
+    'Dispatcher could not wake the Sandbox through Kubernetes and keeps retrying: sandboxes.agentplane.allegedly.works "box" is forbidden: cannot update resource "sandboxes"',
+  ],
+  [
+    "runner_unreachable: Unavailable: lost runner reply",
+    "Dispatcher could not reach the runner and keeps retrying: Unavailable: lost runner reply",
+  ],
 ])("shows a queued Dispatcher receipt for %s without offering a retry", async (reason, expectedLabel) => {
   const queued = message("queued-by-dispatcher");
   new LocalCommands(THREAD.id).remember(queued);

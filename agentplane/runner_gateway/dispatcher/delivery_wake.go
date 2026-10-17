@@ -181,7 +181,7 @@ func (w *DeliveryWorker) wakeFor(ctx context.Context, work queuedWork, sandbox S
 		default:
 			w.backoff(work.key, work.workID())
 			w.Logger.Warn("Sandbox wake request unavailable", "sandbox", sandbox.Name, "error", err)
-			return w.noteWaiting(ctx, work, owner, "delivery_unavailable")
+			return w.noteWaiting(ctx, work, owner, "sandbox_wake_failed: "+err.Error())
 		}
 	}
 	if !requested {

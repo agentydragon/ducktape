@@ -127,8 +127,10 @@ func sandboxSnapshot(object *sandboxapi.Sandbox) (SandboxSnapshot, error) {
 }
 
 // WakeForSend rereads the exact Sandbox UID immediately before deciding to
-// update. The object's resourceVersion makes the update conditional on the
-// decision's read; a conflict repeats the read and durable callback.
+// write. The object's resourceVersion makes the write conditional on the
+// decision's read; a conflict repeats the read and durable callback. The write
+// is a patch of the two desired-state fields because the Runner Gateway's Role
+// grants `patch` on Sandboxes, not `update`.
 func (k *KubernetesSandboxes) WakeForSend(ctx context.Context, name, uid string, beforeResume func(int64) error) (bool, error) {
 	for attempt := 0; attempt < 5; attempt++ {
 		var object sandboxapi.Sandbox
@@ -169,9 +171,10 @@ func (k *KubernetesSandboxes) WakeForSend(ctx context.Context, name, uid string,
 				return false, err
 			}
 		}
-		object.Spec.Running = true
-		object.Spec.WakeGeneration = generation + 1
-		if err := k.objects.Update(ctx, &object); apierrors.IsConflict(err) {
+		resumed := object.DeepCopy()
+		resumed.Spec.Running = true
+		resumed.Spec.WakeGeneration = generation + 1
+		if err := k.objects.Patch(ctx, resumed, client.MergeFromWithOptions(&object, client.MergeFromWithOptimisticLock{})); apierrors.IsConflict(err) {
 			continue
 		} else if err != nil {
 			return false, err

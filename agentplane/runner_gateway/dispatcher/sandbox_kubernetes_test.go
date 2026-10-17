@@ -6,11 +6,14 @@ import (
 	"testing"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 const sandboxTestUID = "00000000-0000-4000-8000-000000000001"
@@ -34,13 +37,21 @@ func sandboxObject() *sandboxapi.Sandbox {
 	}
 }
 
+// sandboxClient writes as the Runner Gateway's ServiceAccount does: its Role grants `patch` on
+// Sandboxes and not `update`, which the fake client would otherwise accept.
 func sandboxClient(t *testing.T, objects ...client.Object) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	return clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	return clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).
+		WithInterceptorFuncs(interceptor.Funcs{Update: func(_ context.Context, _ client.WithWatch, obj client.Object, _ ...client.UpdateOption) error {
+			return apierrors.NewForbidden(
+				schema.GroupResource{Group: sandboxapi.GroupVersion.Group, Resource: "sandboxes"}, obj.GetName(),
+				errors.New("the runner-gateway Role does not grant update"),
+			)
+		}}).Build()
 }
 
 func TestSandboxSnapshotAndGuardedIdleWake(t *testing.T) {

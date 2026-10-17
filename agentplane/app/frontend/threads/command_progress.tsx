@@ -19,6 +19,32 @@ export type CommandSubject = "input" | "model" | "effort" | "other";
 
 type LightState = "done" | "waiting" | "uncertain" | "failed" | "future";
 
+/** Reasons the Dispatcher gives as `<reason>: <detail>`, where the detail names the failure it met. */
+function waitingReasonLabel(reason: string | null | undefined): string | null | undefined {
+  const detailOf = (prefix: string): string | null =>
+    reason?.startsWith(`${prefix}:`) ? reason.slice(prefix.length + 1).trim() : null;
+  const deadline = detailOf("wake_deadline_expired");
+  if (deadline !== null) return `Sandbox did not become Ready within 10 minutes: ${deadline}`;
+  const wake = detailOf("sandbox_wake_failed");
+  if (wake !== null) return `Dispatcher could not wake the Sandbox through Kubernetes and keeps retrying: ${wake}`;
+  const runner = detailOf("runner_unreachable");
+  if (runner !== null) return `Dispatcher could not reach the runner and keeps retrying: ${runner}`;
+  switch (reason) {
+    case "sandbox_resuming":
+      return "Sandbox is waking; message is queued";
+    case "wake_on_send_disabled":
+      return "Message is queued; wake on message is off, so resume the Sandbox manually to send it";
+    case "sandbox_suspended":
+      return "Sandbox is suspended; message is queued until someone resumes it";
+    case "sandbox_not_ready":
+      return "Sandbox is not ready; message is queued";
+    case "runner_refused_work":
+      return "Waiting for Sandbox to resume";
+    default:
+      return reason;
+  }
+}
+
 export function CommandProgress({
   stage,
   subject,
@@ -56,21 +82,7 @@ export function CommandProgress({
     unknown: "Outcome unknown",
     refused: "Command refused",
   };
-  const reasonLabel = reason?.startsWith("wake_deadline_expired:")
-    ? `Sandbox did not become Ready within 10 minutes: ${reason.slice("wake_deadline_expired:".length).trim()}`
-    : reason === "sandbox_resuming"
-      ? "Sandbox is waking; message is queued"
-      : reason === "wake_on_send_disabled"
-        ? "Message is queued; wake on message is off, so resume the Sandbox manually to send it"
-        : reason === "sandbox_suspended"
-          ? "Sandbox is suspended; message is queued until someone resumes it"
-          : reason === "sandbox_not_ready"
-            ? "Sandbox is not ready; message is queued"
-            : reason === "runner_refused_work"
-              ? "Waiting for Sandbox to resume"
-              : reason === "delivery_unavailable"
-                ? "Delivery is temporarily unavailable"
-                : reason;
+  const reasonLabel = waitingReasonLabel(reason);
   const description =
     stage === "local" && !local
       ? "Waiting for Dispatcher"

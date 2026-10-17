@@ -415,7 +415,7 @@ func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation, op
 	grpcStatus, okay := status.FromError(err)
 	if !okay {
 		w.backoff(sessionID, workID)
-		return QueueState, "delivery_unavailable"
+		return QueueState, "runner_unreachable: " + err.Error()
 	}
 	switch grpcStatus.Code() {
 	case codes.Aborted:
@@ -423,7 +423,7 @@ func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation, op
 		return QueueState, "runner_refused_work"
 	case codes.Unavailable, codes.DeadlineExceeded:
 		w.backoff(sessionID, workID)
-		return QueueState, "delivery_unavailable"
+		return QueueState, fmt.Sprintf("runner_unreachable: %s: %s", grpcStatus.Code(), grpcStatus.Message())
 	case codes.FailedPrecondition:
 		if operation == "stop_runner_session" {
 			return "NO_OP", "nothing_running"

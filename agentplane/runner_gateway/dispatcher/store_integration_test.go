@@ -22,7 +22,9 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	authenticationv1 "k8s.io/api/authentication/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/util/workqueue"
 )
 
@@ -430,6 +432,12 @@ func (w *exhaustedWakeBudget) WakeForSend(_ context.Context, _, _ string, before
 	return false, beforeResume(WakeLimit + 1)
 }
 
+type failingWake struct{ err error }
+
+func (w failingWake) WakeForSend(context.Context, string, string, func(int64) error) (bool, error) {
+	return false, w.err
+}
+
 type testLease struct{ store *Store }
 
 func (l testLease) Acquire(ctx context.Context, _, uid string) (*Owner, error) {
@@ -536,7 +544,7 @@ func TestWorkerRetainsBackoffAcrossUncertainReplies(t *testing.T) {
 	for attempt, delay := range []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second} {
 		state, reason := worker.deliveryFailure("session", "command", sandboxUID, "pod-1", "submit_input",
 			status.Error(codes.Unavailable, "uncertain reply"))
-		if state != QueueState || reason != "delivery_unavailable" {
+		if state != QueueState || reason != "runner_unreachable: Unavailable: uncertain reply" {
 			t.Fatalf("attempt %d: %s %s", attempt+1, state, reason)
 		}
 		if got := worker.limiter.NumRequeues("session"); got != attempt+1 {
@@ -660,6 +668,41 @@ func TestWorkerDeliversWakeLimitedWorkAfterSandboxBecomesReady(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("ready work reached Runner but was not durably admitted")
+}
+
+func TestWorkerQueuesWithTheKubernetesFailureThatBlockedAWake(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+	const uid = "00000000-0000-4000-8000-000000000074"
+	const sandboxName = "sandbox-wake-forbidden"
+	caller := Account{Namespace: "agentplane", Name: "wake-forbidden-test"}
+	if _, err := store.Enqueue(ctx, "wake-forbidden-session", sandboxName, uid,
+		input("wake-forbidden-command", "hello"), &caller); err != nil {
+		t.Fatal(err)
+	}
+	forbidden := apierrors.NewForbidden(
+		schema.GroupResource{Group: "agentplane.allegedly.works", Resource: "sandboxes"}, sandboxName,
+		errors.New("the Role does not grant this verb"),
+	)
+	leases := testLease{store: store}
+	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
+		Name: sandboxName, Namespace: "agentplane", UID: uid, Incarnation: "old-pod",
+		Blocker: "sandbox_suspended", WakeOnSend: true,
+	}}, Wake: failingWake{forbidden}, Leases: leases, Runner: &acceptingRunner{calls: make(chan string, 1)}}
+	worker.init()
+	defer worker.queue.ShutDown()
+	owner, err := leases.Acquire(ctx, sandboxName, uid)
+	if err != nil || owner == nil {
+		t.Fatalf("acquire owner: %+v %v", owner, err)
+	}
+	worker.owners[uid] = *owner
+	if err := worker.processSession(ctx, "wake-forbidden-session"); err != nil {
+		t.Fatal(err)
+	}
+	row, err := store.GetDispatch(ctx, "wake-forbidden-command")
+	if err != nil || row.State != QueueState || row.Reason != "sandbox_wake_failed: "+forbidden.Error() {
+		t.Fatalf("the failed wake was not named: %+v %v", row, err)
+	}
 }
 
 func TestWorkerNotificationPreservesFailureBackoff(t *testing.T) {
@@ -804,7 +847,7 @@ func TestWorkerRetriesUncertainRunnerReplyUnderCurrentOwner(t *testing.T) {
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
 			row, err := store.GetDispatch(ctx, "worker-input")
-			if err == nil && row.State == state && (state != QueueState || row.Reason == "delivery_unavailable") {
+			if err == nil && row.State == state && (state != QueueState || row.Reason == "runner_unreachable: Unavailable: lost runner reply") {
 				return row
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -813,7 +856,7 @@ func TestWorkerRetriesUncertainRunnerReplyUnderCurrentOwner(t *testing.T) {
 		return nil
 	}
 	queued := waitState(QueueState)
-	if queued.Reason != "delivery_unavailable" {
+	if queued.Reason != "runner_unreachable: Unavailable: lost runner reply" {
 		t.Fatalf("uncertain reply should retry: %+v", queued)
 	}
 	if time.Until(worker.retryFor("worker-session").until) <= 0 {
