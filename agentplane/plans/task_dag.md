@@ -36,6 +36,8 @@ Retain the data-preserving rollback procedure. No Action Service or other databa
 ```mermaid
 flowchart LR
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history]
+    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service's responsibilities]
+    NOTIFICATION_SERVICE_SPLIT -. related .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
     SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
@@ -63,6 +65,28 @@ the one service besides the History Service fold that derives state from Session
 `CommandAdmitted` entry says the runner admitted it, but not that the harness executed it or that
 the message reached the model's context; today that needs the history. Decide where that
 outcome is recorded before the Notification Service stops reading history.
+
+### `NOTIFICATION_SERVICE_SPLIT` — split, move or rename the Notification Service's responsibilities
+
+**Unscheduled; operator, 2026-10-17 PDT: some renaming and refactoring around this service at some
+point.** The service (`agentplane/notification_service/`) has grown to several responsibilities:
+
+- mailboxes, their high-water marks and the get API;
+- listening to webhooks, currently GitHub's;
+- subscriptions, by which an inbox gets messages when a listener notices something;
+- direct agent-to-inbox messages;
+- deciding to send a notice to a Session because its mailbox holds new unacknowledged messages,
+  possibly waking it if suspended, possibly with debounce by time or count, or a check of the Session's
+  history so no second notice goes out before the Session has started executing tools or reasoning
+  since the last notice or acknowledgement.
+
+Decide which stay, which move to other services, and what the remaining service is called. The inbox
+messaging nodes of section 3 (`AGENT_MESSAGING_DESIGN` and the nodes it feeds) record the service name as
+open and keep v1 in one deployment; this node is the later restructuring, not a prerequisite for them.
+Related: whether notice delivery belongs with the Dispatcher
+([freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership)),
+and the history-free notice outcome (`NOTIFICATION_COMMAND_OUTCOME_DESIGN`), which bears on the notice
+decision's last clause.
 
 ### `SESSION_INPUT_METADATA` — later typed annotations on input commands
 
@@ -230,6 +254,9 @@ flowchart TD
     SESSION_ACCESS_RULES --> AGENT_MESSAGE_INGRESS
     AGENT_MESSAGING_DESIGN --> AGENT_MESSAGE_INGRESS
     AGENT_MESSAGE_INGRESS --> AGENT_MESSAGE_RECEPTION
+    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service, section 2] -. related .-> AGENT_MESSAGING_DESIGN
+    NOTIFICATION_SERVICE_SPLIT -. related .-> AGENT_MESSAGE_INGRESS
+    NOTIFICATION_SERVICE_SPLIT -. related .-> AGENT_MESSAGE_RECEPTION
     AGENT_MESSAGE_RECEPTION --> AGENT_MESSAGING
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
