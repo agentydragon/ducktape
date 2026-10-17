@@ -5,8 +5,9 @@
 # downloaded-archive repository_cache into ~/.cache/bazel/_bazel_$USER. This
 # module adds the local action cache/CAS for local and no-RBE debugging builds.
 # Bazel 9 also has a local repo_contents_cache; hosts can pin its path and GC
-# policy here. See devinfra/docs/bazel_worktree_cache_sharing.md for its scope
-# and the remaining symlink-safety follow-up.
+# policy here and opt into repository-cache hardlinks when the cache and output
+# bases share a filesystem. See devinfra/docs/bazel_worktree_cache_sharing.md
+# for its scope and the remaining symlink-safety follow-up.
 #
 # The bazelisk binary cache needs no wiring here: it already defaults to the
 # user-global ~/.cache/bazelisk, and its Claude-sandbox write grant lives with
@@ -58,6 +59,15 @@ in
       default = "5m";
       description = "Value for Bazel's --repo_contents_cache_gc_idle_delay.";
     };
+
+    repositoryCacheHardlinks = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Whether to enable Bazel's --experimental_repository_cache_hardlinks.
+        Requires the repository cache and output bases to share a filesystem.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -67,6 +77,9 @@ in
       build --disk_cache=${bazelDiskCache}
       build --experimental_disk_cache_gc_max_size=${cfg.diskCacheGcMaxSize}
       build --experimental_disk_cache_gc_max_age=14d
+      ${lib.optionalString cfg.repositoryCacheHardlinks ''
+        common --experimental_repository_cache_hardlinks
+      ''}
       ${lib.optionalString (cfg.repoContentsCache != null) ''
         common --repo_contents_cache=${cfg.repoContentsCache}
         common --repo_contents_cache_gc_max_age=${cfg.repoContentsCacheGcMaxAge}

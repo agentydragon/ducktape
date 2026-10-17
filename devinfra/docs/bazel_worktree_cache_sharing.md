@@ -108,7 +108,9 @@ On `rugged`, the whole `~/.cache/bazel` tree is on the same btrfs filesystem.
 On `wyrm2`, `~/.cache/bazel` is one 300G SSD filesystem for output bases and all
 repository and action caches. The repository cache and output bases now share a
 filesystem, satisfying the same-filesystem prerequisite for
-`--experimental_repository_cache_hardlinks`; the flag remains off by default.
+`--experimental_repository_cache_hardlinks`. Wyrm2 enables that flag so Bazel
+hardlinks repository-cache hits into external repositories instead of copying
+them. Other hosts leave the experimental flag disabled by default.
 
 ## Implementation
 
@@ -119,7 +121,10 @@ Lives in the shared `nix/home/modules/bazel-cache.nix` module (option
 the repo contents cache to a `contents` subdirectory of the repository cache.
 The module pins that path and its GC settings only when a host sets
 `repoContentsCache`; Wyrm2 does so, while other hosts retain Bazel's own
-defaults. The module owns the exact rc flags and directory-creation wiring.
+defaults. `repositoryCacheHardlinks` opts a host into Bazel's experimental
+repository-cache hardlink flag; Wyrm2 enables it because its repository cache
+and output bases share the same filesystem. The module owns the exact rc flags
+and directory-creation wiring.
 The other per-host knob is `diskCacheGcMaxSize` — Wyrm2 keeps it below the
 `200G` default because its `cache/disk` shares a 300G SSD with per-worktree
 output bases and repository caches.

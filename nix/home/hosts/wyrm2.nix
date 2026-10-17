@@ -45,6 +45,7 @@
   ducktape.bazelCache = {
     enable = true;
     diskCacheGcMaxSize = "80G";
+    repositoryCacheHardlinks = true;
     repoContentsCache = "${config.xdg.cacheHome}/bazel/_bazel_${config.home.username}/cache/repos/v1/contents";
   };
 
