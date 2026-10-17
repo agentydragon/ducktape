@@ -1,9 +1,10 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path", "go_test")
 load("//devinfra/go:controller_gen.bzl", "controller_deepcopy")
 
 go_library(
     name = "api",
     srcs = [
+        "conditions.go",
         "doc.go",
         "scheme.go",
         "types.go",
@@ -12,11 +13,19 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/policy/api",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/runtime/schema",
         "@io_k8s_sigs_controller_runtime//pkg/scheme",
     ],
+)
+
+go_test(
+    name = "api_test",
+    srcs = ["conditions_test.go"],
+    embed = [":api"],
+    deps = ["@io_k8s_apimachinery//pkg/apis/meta/v1:meta"],
 )
 
 go_library(
