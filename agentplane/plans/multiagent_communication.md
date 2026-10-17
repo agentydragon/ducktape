@@ -72,20 +72,20 @@ capabilities. Independent per-SA grants can add rights on unrelated Sandboxes or
 resources, optionally temporarily. Removing collection membership ends collection-derived grants;
 independent overlapping grants remain.
 
-**Initial v1 membership storage choice:** each collection CR contains an explicit Sandbox member list;
-separate membership resources are not selected. An app preset can supply initial collection
-memberships when launching a Sandbox, subject to launch/enrollment authorization. Later removal
-sticks: reconciliation or opening another Session must not silently re-enroll it. Preset edits
-change defaults for future launches rather than recomputing existing memberships. No computed
-selection is needed for v1.
+**V1 membership storage choice:** use separate membership CRs, each representing one Sandbox's
+enrollment in one collection. Flux and the app can own different enrollment objects independently,
+rather than sharing a member list embedded in the collection CR. Exact kinds, schemas and Sandbox
+reference semantics remain open.
+
+An app preset can supply initial collection memberships when launching a Sandbox, subject to
+launch/enrollment authorization. Later removal sticks: preset reconciliation or opening another
+Session must not silently re-enroll it. Preset edits change defaults for future launches rather
+than recomputing existing memberships. No computed selection is needed for v1.
 
 Define member references, authorized writers and GitOps/runtime removal ownership before implementation.
-Where separate apply managers share the list, use suitable
-[map/set merge semantics](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy)
-for entry-level ownership; field ownership does not authorize writes. Mixed Flux/webapp ownership
-is a concrete reason to reconsider separate membership objects as well as independent enrollment
-lifecycles; no replacement for the member-list choice has been selected. Collections select Sandbox
-targets; supporting OAuth caller SAs through PolicyBindings does not require SA collection members.
+Separate object ownership does not authorize writes or establish a runtime override of GitOps
+desired state. Collections select Sandbox targets; supporting OAuth caller SAs through PolicyBindings
+does not require SA collection members.
 
 **Storage preference agreed:** start with Kubernetes resources for grants and explicit collection
 membership, managed through GitOps or authorized runtime edits. This is a preference, not a hard

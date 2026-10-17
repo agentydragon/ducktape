@@ -274,8 +274,9 @@ Finalize the common rule/member-reference schema, trusted administration and pol
 contract without choosing a mandatory topology or requiring an auth-engine migration. No permission
 inheritance
 from an organizational edge or preset. Prefer Kubernetes resources for grants and explicit collection
-membership, with other storage allowed if concrete implementation friction warrants it. Storage
-is separate from the selected service-enforced evaluator direction. Review how native harness
+membership, with separate CRs for individual Sandbox-to-collection enrollments so Flux and the app
+can own different memberships independently. Other storage remains allowed if concrete implementation
+friction warrants it. Storage is separate from the selected service-enforced evaluator direction. Review how native harness
 children could later be ingested:
 linked execution in the same Sandbox trust boundary versus independently provisioned Sandboxes,
 addressability, observability and which controls must remain unavailable. Native integration itself
@@ -293,7 +294,7 @@ representation/storage changes are outside this work.
 tentative Session-access rule family and implement shared rule-reading/evaluation code for API owners.
 Reuse existing SA authentication and PolicyBindings. Match independently grantable listing,
 transcript-read and Session-inbox append operations against direct Sandbox targets or current
-explicit member lists on collection CRs; v1 does not require separate membership resources.
+explicit collection memberships represented by separate enrollment CRs.
 Implement the selected freshness/revocation contract and preserve
 live bundle updates, existing binding lifecycle and additive overlapping grants. Cover mixed
 static/runtime SAs, allowed/denied operations and targets, empty collections, membership removal and
