@@ -35,7 +35,7 @@ A Sandbox reaches it only through the egress proxy under the `runner-ingress` po
 The first accepted announcement binds the Session to the pushing ServiceAccount (namespace, name,
 UID) in `session_history`; other accounts get `PERMISSION_DENIED`. Entries commit through
 `Store.append`, which accepts exact replays and refuses gaps and conflicting entries, and each
-acknowledgement follows its commit. The ingress reads at most 16 decoded frames ahead and commits
+acknowledgement follows its commit. The ingress queues at most 16 decoded frames and commits
 at most 128 entries or 1 MiB of serialized entries per transaction (one oversized entry forms its
 own transaction); a full queue applies backpressure to the stream.
 
