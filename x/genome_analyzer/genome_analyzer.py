@@ -17,6 +17,7 @@ import pandas as pd
 import requests
 from jinja2 import Template
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 
 class Variant(BaseModel):
@@ -294,22 +295,13 @@ class GenomicAnalyzer:
                 headers = {"content-type": "application/json"}
                 body = {"ids": batch, "fields": "dbsnp.rsid,cadd.phred,clinvar,gnomad_genome.af.af,pharmgkb"}
 
-                # Add retry logic for network issues
-                response = None
-                for attempt in range(3):
-                    try:
-                        response = requests.post(url, json=body, headers=headers, timeout=120)
-                        break
-                    except requests.exceptions.ConnectionError, requests.exceptions.Timeout:
-                        if attempt < 2:
-                            wait_time = (2**attempt) * 5  # 5, 10, 20 seconds
-                            print(f"    Network error, retrying in {wait_time}s...")
-                            time.sleep(wait_time)
-                        else:
-                            raise
-
-                if response is None:
-                    raise RuntimeError("MyVariant request returned no response")
+                response = Retrying(
+                    retry=retry_if_exception_type((requests.exceptions.ConnectionError, requests.exceptions.Timeout)),
+                    stop=stop_after_attempt(3),
+                    wait=wait_exponential(multiplier=5),
+                    before_sleep=lambda state: print(f"    Network error, retrying in {state.upcoming_sleep:g}s..."),
+                    reraise=True,
+                )(requests.post, url, json=body, headers=headers, timeout=120)
 
                 if response.status_code == 200:
                     # Parse response with Pydantic
