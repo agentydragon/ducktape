@@ -64,7 +64,7 @@ export function OutputBlock({
   name: string;
   note?: string;
   text: string;
-  /** Keep the recorded payload byte-for-byte in a view that promises its raw contents. */
+  /** Preserve the recorded output text, including its final newline. */
   raw?: boolean;
   expansion?: Expansion;
   /** Retain the nested output disclosure while a tool row leaves the DOM. */

@@ -105,7 +105,8 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
         await expect(output).to_have_attribute("data-expanded", "true")
         history = page.get_by_role("region", name="Thread history")
         run_steps = page.locator(".agentplane-run-steps").first
-        run_card = run_steps.locator("xpath=ancestor::*[@data-open][1]")
+        run_anchor = await run_steps.evaluate("element => element.closest('[data-thread-anchor]').dataset.threadAnchor")
+        run_card = history.locator(f'[data-thread-anchor="{run_anchor}"] > .agentplane-collapsible-card')
         run_heading = run_card.locator(
             ":scope > .agentplane-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
         )
@@ -719,7 +720,9 @@ async def test_shell_call_raw_arguments_and_json_output(shell_calls: VisualPage)
     page = view.page
     await _open_tool_run(page)
     call = page.locator(".agentplane-step-details").filter(has_text="Test Bank")
-    await call.get_by_role("switch", name="Show raw arguments and output").check()
+    await _focus(page, call.locator(".agentplane-step-controls"))
+    await call.get_by_text("Raw", exact=True).click()
+    await expect(call.get_by_role("switch", name="Show raw arguments and output")).to_be_checked()
     await expect(call.locator(".agentplane-clamped-block[data-label='Arguments']")).to_be_visible()
     await expect(call.locator(".agentplane-clamped-block[data-label='Command']")).to_have_count(0)
     await expect(call.locator(".agentplane-output-disclosure .agentplane-code-block")).to_contain_text(

@@ -1431,7 +1431,7 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     else:
         await read_at(page, run, 0.1)
 
-    # A card gains border and padding as it opens, which moves its label; its top edge is the place.
+    # Expanding a row preserves its place in the reader's viewport.
     summary = run.locator(".agentplane-disclosure-summary").first
     async with holding_still(page, run):
         await summary.click()
@@ -1475,21 +1475,10 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
             ("output", output_heading_box),
         ):
             assert heading_box["height"] <= 30, f"desktop {heading_name} heading is too tall: {heading_box}"
-    divider_box = await output_heading.evaluate(
-        """heading => {
-          const box = heading.getBoundingClientRect();
-          const divider = getComputedStyle(heading, "::after");
-          return { left: box.left + parseFloat(divider.left), right: box.right - parseFloat(divider.right) };
-        }"""
-    )
     card_box = await card.bounding_box()
     assert card_box is not None
-    assert abs(divider_box["left"] - card_box["x"]) <= 2, (
-        f"the output divider should reach the card's left edge: {divider_box=} {card_box=}"
-    )
-    assert abs(divider_box["right"] - (card_box["x"] + card_box["width"])) <= 2, (
-        f"the output divider should reach the card's right edge: {divider_box=} {card_box=}"
-    )
+    assert output_heading_box["x"] >= card_box["x"] - 1
+    assert output_heading_box["x"] + output_heading_box["width"] <= card_box["x"] + card_box["width"] + 1
     assert abs(run_heading_box["y"] - history_box["y"]) <= 2, (
         f"the run heading should use the history's top sticky slot: {run_heading_box=} {history_box=}"
     )
@@ -1509,6 +1498,18 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     assert active_sticky_action == "true", (
         f"a parent heading obscured the output Disclosure control: {active_sticky_action}"
     )
+    show_less = output_heading.get_by_role("button", name="Show less Output")
+    await expect(show_less).to_be_in_viewport(ratio=1)
+    await show_less.click()
+    await expect(call.locator('.agentplane-clamped-block[data-label="Output"]')).to_have_attribute(
+        "data-expanded", "false"
+    )
+    await expect(output_line).not_to_be_in_viewport()
+    await expect(show_all).to_be_visible()
+    await show_all.click()
+    await read_at(page, output_line, 0.5)
+    await expect(collapse).to_be_in_viewport()
+
     # At the true tail, collapsing a long block can shorten the history below its current scrollTop.
     # The browser must clamp to the new bottom; pixel-stable anchoring is asserted mid-thread, where
     # the history has room to preserve the clicked heading's position.

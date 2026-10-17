@@ -17,6 +17,7 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _heading_top,
     _height,
     _in_viewport,
+    _open_run,
     _open_tool_run,
     _scroll_to,
     _scroll_to_copy,
@@ -222,7 +223,9 @@ async def test_output_heading_releases_after_content(view: VisualPage, app: Agen
 async def test_disclosure_control_reaches_card_edges(shell_calls: VisualPage, state: str) -> None:
     view = shell_calls
     page = view.page
-    if state != "collapsed-hover":
+    if state == "tool-hover":
+        await _open_run(page)
+    elif state != "collapsed-hover":
         await _open_tool_run(page)
     if state == "tool-hover":
         control = (

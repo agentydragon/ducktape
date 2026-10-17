@@ -447,7 +447,7 @@ function CommandCallControls({
       style={fullWidth ? { width: "100%" } : undefined}
     >
       <CommandExecutionMetadata call={call} />
-      <Group gap="xs" wrap="nowrap">
+      <Group gap="xs" wrap="nowrap" style={{ marginInlineStart: "auto" }}>
         <RawSwitch
           raw={raw}
           onChange={onRawChange}
@@ -513,12 +513,7 @@ function ToolCard({
             )}
             {argumentsBody !== null &&
               (call && !raw ? (
-                <CommandCallView
-                  description={call.description}
-                  command={call.command}
-                  notes={call.notes}
-                  expansion={input}
-                />
+                <CommandCallView command={call.command} notes={call.notes} expansion={input} />
               ) : (
                 <div>
                   <ClampedBlock
