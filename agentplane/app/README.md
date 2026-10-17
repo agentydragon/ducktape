@@ -143,12 +143,14 @@ already present in the History archive returns its `CommandAdmitted` entry witho
 call. Otherwise the browser keeps Retry and never Cancel after an unconfirmed result, because the
 Dispatcher may have stored the command despite a lost reply.
 
-The app reads later state at `GET /threads/{id}/commands/{command_id}/dispatch`; queued and delivering
-are distinct from runner admission, and neither admission nor `HARNESS_CONFIRMED` is presented as an
-effect. History remains the authority for command outcomes. The browser retains the command locally
-until History projects its admission or command row; the app adds no command queue. Deploy the Session
-Dispatcher and authorize the app ServiceAccount before rolling out an app image that requires this
-setting.
+The browser follows the Dispatcher's later state of the commands it still holds as queued or delivering
+at `GET /threads/{id}/dispatches/stream?command_id=…` (SSE): a snapshot of those commands at connect
+and whenever the Dispatcher's `WatchDispatches` reports a change, with a command the Dispatcher holds no
+row for listed as `absent`, and a heartbeat after 15 s of quiet. Queued and delivering are distinct from
+runner admission, and neither admission nor `HARNESS_CONFIRMED` is presented as an effect. History
+remains the authority for command outcomes. The browser retains the command locally until History
+projects its admission or command row; the app adds no command queue. Deploy the Session Dispatcher
+and authorize the app ServiceAccount before rolling out an app image that requires this setting.
 
 The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
 runner Pod does not clear the inventory. Harness state and turn IDs in that table are last observed

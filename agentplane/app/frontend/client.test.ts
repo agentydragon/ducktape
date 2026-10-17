@@ -1,15 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
-import {
-  api,
-  commandDispatch,
-  interruptTurn,
-  submitInput,
-  CommandSubmissionRefused,
-  HttpError,
-  threadObservations,
-} from "./client";
+import { api, interruptTurn, submitInput, CommandSubmissionRefused, HttpError, threadObservations } from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";
 
 afterEach(() => {
@@ -167,22 +159,6 @@ it("accepts a tagged archived admission after a deleted Sandbox", async () => {
         cursor: 1n,
         event: { observation: { case: "commandAdmitted", value: { command: { commandId: input.commandId } } } },
       },
-    });
-  } finally {
-    api.eject(middleware);
-  }
-});
-
-it("treats a removed dispatch as unknown after Sandbox deletion", async () => {
-  const middleware = { onRequest: () => Response.json({ detail: "dispatch not found" }, { status: 404 }) };
-  api.use(middleware);
-  try {
-    await expect(commandDispatch("thread", input.commandId)).resolves.toEqual({
-      commandId: input.commandId,
-      sessionId: "thread",
-      state: "DELIVERY_STATE_UNKNOWN",
-      reason: "sandbox_deleted",
-      admission: null,
     });
   } finally {
     api.eject(middleware);
