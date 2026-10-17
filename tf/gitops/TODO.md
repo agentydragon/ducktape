@@ -18,5 +18,7 @@
       presentation.
 - [ ] Review Nebula private-key access for `home-switch`: compare the existing
       node-key SOPS recipients and decryption paths with the cluster ToFu runner's
-      decrypt-and-write path, including whether the key enters Terraform state in
-      etcd; decide whether a narrower recipient or delivery path would reduce access.
+      decrypt-and-write path; trace the cluster age key in Kubernetes Secret and
+      decrypted Nebula key in PostgreSQL state and RouterOS storage, then decide
+      whether a narrower recipient or delivery path is warranted before approving
+      the first switch plan.
