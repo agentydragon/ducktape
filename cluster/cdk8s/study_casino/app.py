@@ -271,19 +271,9 @@ def _deployment(scope: Construct) -> None:
                             ports=[_SERVICE.port.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="STUDY_CASINO_IMAGE_TAG", value=_PLACEHOLDER_TAG),
-                                # Compose the SQLAlchemy URL from the CNPG-generated secret. The
-                                # `$(VAR)` syntax in env values is resolved by the kubelet from
-                                # earlier-defined env vars in the same container. `+psycopg`
-                                # forces SQLAlchemy to pick the psycopg v3 driver.
-                                POSTGRES.app_secret.key("user").env_var("PG_USER"),
-                                POSTGRES.app_secret.key("password").env_var("PG_PASSWORD"),
-                                POSTGRES.app_secret.key("host").env_var("PG_HOST"),
-                                POSTGRES.app_secret.key("port").env_var("PG_PORT"),
-                                POSTGRES.app_secret.key("dbname").env_var("PG_DBNAME"),
-                                k8s.EnvVar(
-                                    name="STUDY_CASINO_DATABASE_URL",
-                                    value="postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@$(PG_HOST):$(PG_PORT)/$(PG_DBNAME)",
-                                ),
+                                # CNPG's URI selects this role and database; the store selects
+                                # psycopg when it opens SQLAlchemy's generic PostgreSQL URI.
+                                POSTGRES.app_secret.key("uri").env_var("STUDY_CASINO_DATABASE_URL"),
                                 # Comma-separated. Admins can manage other users' prize catalogs
                                 # via /admin/*; non-admins can redeem but not create or delete.
                                 k8s.EnvVar(name="STUDY_CASINO_ADMIN_USERS", value="agentydragon"),
