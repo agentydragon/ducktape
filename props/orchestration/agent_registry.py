@@ -901,11 +901,12 @@ class AgentRegistry:
         IN_PROGRESS — idempotent across reconciles and safe for orphan runs that
         another path may already have finalized."""
         with self._db.session() as session:
-            result = session.execute(
+            finalized_run_id = session.scalar(
                 update(AgentRun)
                 .where(AgentRun.agent_run_id == agent_run_id, AgentRun.status == AgentRunStatus.IN_PROGRESS)
                 .values(status=status, container_exit_code=container_exit_code)
+                .returning(AgentRun.agent_run_id)
             )
             session.commit()
-            if result.rowcount:
+            if finalized_run_id is not None:
                 logger.info("Finalized agent run %s -> %s", agent_run_id, status)
