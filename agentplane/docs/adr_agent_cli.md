@@ -1,16 +1,17 @@
 # Agent CLI: commands, JSON and exit codes
 
-Status: **proposed, awaiting operator review.** This document authorizes no CLI, API, prompt or
-deployment change. It specifies the command-line contract for the transport direction approved on
+Status: **proposed, awaiting operator approval.** The [settled decisions](#settled-decisions) are
+the operator's; one [question](#decisions-for-review) is open. This document authorizes no CLI, API,
+prompt or deployment change. It specifies the command-line contract for the transport direction approved on
 2026-10-15 (gRPC internally, a gRPC-Gateway HTTP/JSON facade, and an ergonomic CLI, adopted one
 service and interface at a time; see
 [API transports and agent workflows](runner_delivery_and_harness_design.md#api-transports-and-agent-workflows)).
 
 `agentplane` is a client of the HTTP APIs that agents already call with `curl` through the egress
 proxy: the Action Service, the Notification Service and the Egress rules API. It adds no authority,
-no state and no backend path. What it takes
-off each agent is the part `curl` leaves to every model turn: JSON quoting, the idempotency and
-recovery protocol, long waits, telling an egress refusal from a service refusal, and exit status.
+no state and no backend path. What it takes off each agent is the part `curl` leaves to every model
+turn: JSON quoting, the idempotency and recovery protocol, long waits, telling an egress refusal
+from a service refusal, and exit status.
 The HTTP routes stay the reference; the served `/llms.txt` guides and `/openapi.json` keep describing
 them.
 
@@ -315,19 +316,33 @@ The system overview diagrams do not change: the CLI adds no service and no traff
 - One run through the real proxy on `agentplane-testing`: the environment variables, the CA trust
   and the credential presentation are deployment facts a fake server cannot show.
 
-## Decisions for review
+## Settled decisions
 
-Each answers in one word; the recommendation is first.
+Operator, 2026-10-17:
+
+- `actions submit` and `actions cancel` are part of the CLI, beside the reads, waits and
+  subscriptions.
+- An Action that did not succeed exits non-zero by default
+  ([Errors and exit codes](#errors-and-exit-codes)).
+- The idempotency key on `submit` is optional and generated when absent
+  ([Submitting](#submitting)).
+- The CLI is not an Actions tool: `notifications` and `egress` are groups beside `actions`, under
+  the shared rules, and it has no wiring specific to shell-execution Actions yet.
+- Build timing is not decided here. When building starts, the CLI is written against the services
+  as they are then, and rebased as they change.
+- Language is Go or Python in the runner wheel, whichever the implementer picks. Go starts in
+  milliseconds where a Python CLI imports Pydantic and httpx on every call and is one static
+  binary; Python reuses the wheel's release pin and the existing typer dependency.
+
+## Decisions for review
 
 1. **Should any exit code reflect a payload?** _no_ / yes, for the two payloads the Action Service
    types: an MCP tool's `isError: true` and a sandbox script's `exit`. A tool's error answer and a
    script's nonzero exit both complete the Action as `succeeded` (`tool_results.py`,
    `sandbox/executor.py`), so `submit --wait && deploy` proceeds after either. _No_ keeps the CLI
    free of wiring for one kind of Action or service, and every guide for such a group then shows
-   the `jq` check above. _Yes_ adds codes after `17`, with no renumbering.
-2. **Language: Go** / Python in the runner wheel. Go starts in milliseconds where a Python CLI
-   imports Pydantic and httpx on every call, is one static binary, and follows the services'
-   direction. Python would reuse the wheel's release pin and the existing typer dependency.
+   the `jq` check above. _Yes_ adds codes after `17`, with no renumbering. The recommendation is
+   first.
 
 ## Rejected alternatives
 
