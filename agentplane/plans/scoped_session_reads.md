@@ -9,9 +9,11 @@ which today serves only its configured reader accounts.
 SA-level caller attribution and Sandbox-level authorization are agreed. Reads may request an
 individual Session, but the permission covers its Sandbox's histories. V1 supports explicit target
 collections and launch-time membership defaults; it has no individual-Session grants or computed
-collection selection. Compare native Kubernetes RBAC and additional service-enforced `PolicySet` rules
-under the [multiagent authorization options](multiagent_communication.md#multiagent-authorization-options).
-No broader auth-engine replacement is a prerequisite. Sending and reading remain independent.
+collection selection. The [tentative implementation direction](multiagent_communication.md#tentative-implementation-direction)
+is service-enforced Session-access `PolicySet` rules assigned through existing `PolicyBinding`s,
+with shared evaluation code and enforcement by History on its own API. Exact schemas remain open;
+the representation may be revisited if implementation does not work well. No broader auth-engine
+replacement is a prerequisite. Sending and reading remain independent.
 
 ## What is protected
 
@@ -81,9 +83,9 @@ authorized reader but must not make a fold claim to cover Events beyond its curs
 
 ## Implementation readiness and acceptance
 
-Before exposing scoped reads, select the permission representation, trusted grant/membership
-writers, historical membership behavior and replacement semantics. Enforce the reviewed policy
-and immutable Sandbox association on every history path. Test two Sessions in one authorized
+Before exposing scoped reads, finalize the tentative rule/membership schemas, trusted writers,
+policy freshness/revocation, historical membership behavior and replacement semantics. Enforce the
+reviewed policy and immutable Sandbox association on every history path. Test two Sessions in one authorized
 Sandbox, an unrelated denied Sandbox, explicit collection enrollment/removal and an ungranted SA
 that discovers nothing. Cover deleted Sandboxes, same-name replacement, unknown associations,
 raw/native paths, filtering before pagination, two replicas and revocation during a follow. Include

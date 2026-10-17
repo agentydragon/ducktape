@@ -159,8 +159,9 @@ operations fall where.
 
 **Deferred evaluation, separate from multiagent implementation.** Revisit when a concrete missing
 capability or demonstrated maintenance cost motivates broader auth changes. Multiagent permission
-design compares [incremental options](multiagent_communication.md#multiagent-authorization-options)
-on the existing SA/policy foundation; it does not wait for this evaluation or an engine migration.
+design tentatively selects [service-enforced Session-access PolicySet rules](multiagent_communication.md#tentative-implementation-direction)
+on the existing SA/policy foundation, subject to revision if implementation does not work well.
+It does not wait for this evaluation or an engine migration.
 Any wider adoption proposal is independently reviewable and must identify its benefit, scope and
 migration cost. No new service or identity-platform migration is selected here.
 

@@ -13,6 +13,10 @@ one deployment, with optional source integrations. Peer messages enter a Session
 subscriptions follow sources and produce other entries. A batched notice tells the Session to
 inspect its inbox. Peer messaging must work with Actions/GitHub sources disabled.
 
+Peer sends follow the [tentative Session-access rule direction](multiagent_communication.md#tentative-implementation-direction):
+existing PolicySets/Bindings grant a Session-inbox append operation on Sandbox or collection scopes,
+enforced by this service using shared rule evaluation. Exact rule and API schemas remain open.
+
 Use `subscription` for source-following and `notice` for the inbox prompt. The exact service name
 and code/deployment rename remain open; this plan still uses Notification Service for the existing
 component. Dispatcher retains command admission, wake and delivery. Moving more responsibilities

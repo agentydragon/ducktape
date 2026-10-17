@@ -1,7 +1,8 @@
 # Cross-agent communication and authorization: design space
 
-Status: **v1 directions agreed; permission representation and API details remain open**. This records
-requirements, selected directions and remaining questions; it authorizes no runtime implementation.
+Status: **service-enforced Session-access PolicySet rules tentatively selected for v1**. Exact rule,
+collection and API schemas remain open. This records design directions, not implemented behavior;
+the operator may revisit the choice if implementation does not work well.
 Implementation gates remain in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations).
 
 ## Requirements and preferences
@@ -12,7 +13,7 @@ Implementation gates remain in the [task DAG](task_dag.md#3-multiagent-decisions
   configurable workflow examples, not Agentplane agent categories or required topology.
 - Static configuration should be able to express reusable rules such as “this project's manager
   may perform these operations on its contributors.” GitOps and Kubernetes are plausible places
-  to author that configuration; this preference does not select its representation or evaluator.
+  to author that configuration; the tentative evaluator direction is recorded below.
 - Sending and transcript reads are independent, directed permissions: `send(X, Y)`,
   `read_history(X, Y)` and `read_history(Y, X)` imply none of one another. A reply or correlation
   reference confers no permission. A named role may explicitly bundle grants without making those
@@ -54,7 +55,7 @@ boundaries below are such constraints.
 **Caller attribution agreed with the operator, 2026-10-16:** Sandbox/ServiceAccount-level caller
 attribution is sufficient for v1, as for existing Kubernetes and Action permissions. Authenticated
 per-Session sender identity is not required. The minimum authorization target is a Sandbox, covering
-its Sessions; v1 has no individual-Session grants. Collection/grant representation and administration
+its Sessions; v1 has no individual-Session grants. Rule and collection schemas and administration
 remain open; replacing the broader authorization machinery is a separate decision.
 
 ### Target collections and launch enrollment
@@ -76,8 +77,8 @@ change defaults for future launches rather than recomputing existing memberships
 membership, managed through GitOps or authorized runtime edits. This is a preference, not a hard
 requirement: another store is acceptable if concrete implementation friction justifies it while
 preserving the agreed authorization semantics and administration boundary. Resource kinds, schemas
-and authorized writers remain open. Storing configuration in Kubernetes does not select native RBAC
-as the evaluator for multiagent operations.
+and authorized writers remain open. Storage and operation evaluation are separate choices; the
+tentative service-enforced rule direction below builds on this storage preference.
 
 ## Live permission bundles
 
@@ -115,7 +116,8 @@ Source inventory checked on 2026-10-16 against `f11947bf7a`; this is not a live 
 | Provisioning      | [Sandbox inventory](../sandboxes/inventory.py) submits CRs; the [controller](../sandbox_controller/identity.go) creates a dedicated SA and binds the Sandbox's selected policy sets. | Constrained agent launch, delegation and session-create authority remain design work.                                                        |
 
 The [scoped-read plan](scoped_session_reads.md) applies the agreed Sandbox minimum and explicit
-collections to retained history; its permission representation and administration remain open. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
+collections to retained history and the tentative Session-access rule family; its exact schema and
+administration remain open. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
 already calls for comparing reusable authorization systems rather than inventing a universal broker.
 
 ### Current identity and policy wiring
@@ -210,12 +212,11 @@ using “its contributors” must define that relation in configuration. Who may
 underlying facts is itself an authority decision; self-editable labels cannot establish trusted
 membership.
 
-Compare native RBAC plus a constrained grant/template controller, CRDs compiled into an authorization
-engine, and Git-authored engine policy with runtime membership elsewhere. Decide whether a rule
-applies live to future contributors or snapshots membership, how exceptions combine, and how GitOps
-interacts with runtime/expiring grants. Shared bundle definition edits must remain live for current
-members under either membership model. A GitOps reconciliation must not recreate a revoked or
-expired runtime grant accidentally. No CRD or rule syntax is selected here.
+Implement the tentative rule family below against current explicit target membership and existing
+SA assignments. Finish the grant/membership administration and GitOps/runtime ownership contracts.
+Shared definition edits remain live for current assignees, and independent overlapping grants
+remain additive. GitOps reconciliation must not recreate a revoked or expired runtime grant
+accidentally. Exact CRD and rule syntax remain open.
 
 Model and effort controls may need argument constraints as well as target permissions. Moving a
 Session with private context to another provider is a data-disclosure decision; switching providers
@@ -224,16 +225,62 @@ does not remove sensitive material already in that context.
 ## Multiagent authorization options
 
 Build on the existing SA identities, live permission bundles and service ownership in the
-[policy-set design](../docs/adr_policy_sets.md). Compare ways to authorize the new operations without
-requiring a replacement of the authorization already used by Kubernetes, egress or Actions.
-Candidates include the following; no rule schema or implementation is selected, and the list is
-not exhaustive.
+[policy-set design](../docs/adr_policy_sets.md), preserving the authorization already used by
+Kubernetes, egress and Actions.
 
-| Candidate                                          | How it could fit the existing design                                                                                                                                                                                                     | Questions to evaluate                                                                                                                                                                                                                                               |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native Kubernetes RBAC                             | Represent multiagent permissions as resource/verb/name scopes. Existing `PolicySet` Kubernetes rules can assign the referenced Roles through the Policy Controller. Backends could delegate access checks through `SubjectAccessReview`. | Which resources, subresources and verbs represent each operation? How are Sandbox authorization targets mapped from Session addresses? What authorization objects, if any, must outlive Sandbox deletion? How are lists filtered and argument constraints enforced? |
-| Additional service-enforced `PolicySet` rule types | Add rules for multiagent operations, assigned through the same SA `PolicyBinding`s. Resource-owning backends read and enforce their rule types, as egress and Actions do today.                                                          | Which target scopes and trusted relationship facts are needed? Can they stay understandable without an expanding collection of special-case evaluators? How do readers handle updates, discovery and revocation?                                                    |
-| A justified combination                            | Use Kubernetes grants for the scopes they express and explicit backend checks for additional constraints.                                                                                                                                | Which check is authoritative for each fact? Are checks cumulative restrictions or alternative grants? What does the extra layer solve, and how are bypasses and competing permission stores avoided?                                                                |
+### Tentative implementation direction
+
+**Selected with the operator, 2026-10-16, subject to revision:** add service-enforced Session-access
+rules to existing `PolicySet`s and assign them through existing SA `PolicyBinding`s. This follows
+the typed-rule pattern already used by egress and Actions. Kubernetes RBAC controls administration
+of the policy and collection resources; the resource-owning services enforce Session operations.
+
+Illustrative rule syntax, not a selected CRD schema or an implemented rule type:
+
+```yaml
+type: session_access
+operations: [list_sessions, read_transcript, append_inbox]
+targets:
+  sandboxCollections: [developers]
+```
+
+Support direct Sandbox targets as well as explicit collections. The backend authenticates the SA,
+resolves the addressed Session to its recorded Sandbox, and allows the operation if any current
+bound rule matches that operation and Sandbox, directly or through current collection membership.
+Share rule-reading and evaluation code while enforcing each backend's own API, including paths
+that bypass Dispatcher. Preserve live bundle edits, membership changes, expiry and additive
+overlapping grants; listing, transcript reads and sending remain independently grantable.
+
+The send operation appends correspondence to a particular Session's inbox. Its raw peer payload
+is stored there; the platform-generated notice is a separate delivery effect. Sandbox/collection
+scopes select permitted targets, while collections are not inbox recipients. Session addressing and
+canonical state stay outside Kubernetes; this direction requires no Session CRs or projection of
+these rules into native Roles.
+
+Before implementation, finalize rule/membership schemas, authorized writers, policy freshness and
+revocation, filtered enumeration and retained-history behavior. Existing send-revocation semantics
+below still apply: accepted inbox correspondence survives later loss of send permission. Revisit
+the representation if implementation exposes a poor fit or disproportionate maintenance cost.
+
+### Alternatives if the tentative direction needs revision
+
+Both native RBAC and service-enforced rules can use PolicySets/Bindings for assignment. The
+distinction is how operation/target rules are represented and evaluated, not PolicySets versus
+Kubernetes RBAC. Alternatives remain available without requiring their implementation first.
+
+| Candidate                                 | How it could fit the existing design                                                                                                                                               | Questions to evaluate                                                                                                                                                                                                              |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native RBAC with collection projection    | Represent Session operations using Sandbox-scoped authorization attributes. Generate Roles from collection membership and assign them through existing PolicySet Kubernetes rules. | A Role per collection and independent permission, or configured bundle, needs new Role reconciliation and constrained write authority; today's Policy Controller only maintains bindings. Empty membership must produce no grants. |
+| Native RBAC with backend scope resolution | Backends resolve the Sandbox and its collections, then submit access reviews for direct or collection scopes.                                                                      | Avoids Role expansion, but authorization attributes must faithfully distinguish the Session operation, Sandbox boundary and collection selector. Collections are not inbox recipients.                                             |
+| RBAC-gated named policies                 | A domain policy defines operations/targets; native RBAC grants `use` of that policy. Existing PolicySet Kubernetes rules can assign the referenced Roles.                          | Keeps native assignment but adds policy interpretation and Roles for named policies. Compare the extra layer with direct PolicyBinding enrollment.                                                                                 |
+
+Related precedents are [Knative EventPolicy](https://knative.dev/v1.21-docs/eventing/features/authorization/)
+for domain-specific delivery policy, [Argo CD](https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac/)
+for application permissions stored in Kubernetes configuration, and
+[OpenShift SCCs](https://docs.redhat.com/en/documentation/openshift_container_platform/4.12/html/authentication_and_authorization/managing-pod-security-policies)
+for RBAC-granted `use` of a named policy. These are patterns to adapt, not products or their
+organizational models selected for Agentplane. Namespace-scoped Roles/ClusterRoles are another
+option, but require reviewing namespace lifecycle/layout and target-collection binding fan-out.
 
 For the native-RBAC option, [SubjectAccessReview](https://kubernetes.io/docs/reference/access-authn-authz/authorization/#checking-api-access)
 allows a service to ask the API server about another caller's access. The backend must derive that
@@ -245,7 +292,8 @@ Session history or execution state into Kubernetes. Inspect
 request-body constraints and relationship expressiveness against actual use cases. A broad list
 permission does not by itself provide permission-filtered Session discovery.
 
-Compare every candidate using the same cases below: mixed static and runtime-created SAs, live
+Validate the tentative direction, and any replacement, using the same cases below: mixed static
+and runtime-created SAs, live
 bundle edits across services, overlapping grants, and independent send/read/control rights on
 concrete Sandbox targets, with Session IDs used only as operation addresses. Configuration must express different topologies without
 requiring agent categories. Identify who may author definitions, enroll SAs or change trusted
@@ -432,7 +480,7 @@ allow/redact/block behavior, latency and false decisions remain open. It must no
 access control or silently discard accepted messages. The deferred item is
 [`AGENT_MESSAGE_CLASSIFICATION`](task_freezer.md#agent_message_classification--optional-outbound-content-safeguards).
 
-## Cases to resolve before choosing an implementation
+## Cases to resolve before implementation
 
 | Case                                               | Questions it distinguishes                                                                                                                                                        |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -449,7 +497,8 @@ access control or silently discard accepted messages. The deferred item is
 | Human and agent using the same operation           | Can one model express both without implicit impersonation or merging request, approval and execution?                                                                             |
 
 These cases should compare allowed/denied operations, authorized discovery, evidence and operational
-cost across candidate models. Open decisions include identity continuity, grant and relationship
-ownership, policy authoring/evaluation/storage, remaining inbox/API semantics, optional protocol facades,
+cost for the tentative direction and any replacement. Open decisions include identity continuity,
+grant and relationship ownership, exact rule/membership schemas, policy freshness and revocation,
+remaining inbox/API semantics, optional protocol facades,
 provisioning/delegation, and migration across existing services. No runtime implementation or engine
 adoption is authorized by this document.
