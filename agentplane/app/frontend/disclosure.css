@@ -44,16 +44,20 @@
   min-width: 0;
   flex: 1 1 0;
   min-height: 2.75rem;
+  display: flex;
+  align-items: center;
   padding-block: 0;
-  padding-inline: var(--mantine-spacing-xs);
+  padding-inline-start: calc((var(--agentplane-disclosure-depth, 0) + 1) * var(--mantine-spacing-xs));
+  padding-inline-end: var(--mantine-spacing-xs);
   border-radius: inherit;
   font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-sm);
 }
 
 .agentplane-disclosure-summary-content {
   min-width: 0;
   flex: 1;
-  padding-block: var(--mantine-spacing-xs);
+  padding-block: 0;
 }
 
 .agentplane-disclosure-heading[data-expanded="true"] {
@@ -62,11 +66,7 @@
 
 @media (min-width: 48rem) {
   .agentplane-disclosure-heading > .agentplane-disclosure-summary {
-    min-height: 1.75rem;
-  }
-
-  .agentplane-disclosure-summary-content {
-    padding-block: 0;
+    min-height: 2rem;
   }
 }
 
@@ -81,12 +81,28 @@
 }
 
 .agentplane-disclosure-content {
-  padding: var(--mantine-spacing-xs);
+  padding: 0;
 }
 
-/* One left inset per level, with a common right edge for nested controls. */
-.agentplane-collapsible-card .agentplane-disclosure-content {
-  padding-inline-end: 0;
+.agentplane-disclosure-body {
+  min-width: 0;
+  padding-block: var(--mantine-spacing-xs);
+  padding-inline-start: calc(var(--agentplane-disclosure-depth, 0) * var(--mantine-spacing-xs));
+  padding-inline-end: var(--mantine-spacing-xs);
+}
+
+.agentplane-disclosure-static {
+  min-height: 2.75rem;
+  font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-sm);
+  padding-inline-start: calc((var(--agentplane-disclosure-depth, 0) + 1) * var(--mantine-spacing-xs));
+  padding-inline-end: var(--mantine-spacing-xs);
+}
+
+@media (min-width: 48rem) {
+  .agentplane-disclosure-static {
+    min-height: 2rem;
+  }
 }
 
 .agentplane-collapsible-card .agentplane-collapsible-card {
@@ -105,14 +121,6 @@
   > .agentplane-disclosure-item
   > .agentplane-disclosure-heading {
   display: none;
-}
-
-.agentplane-clamped-block[data-expanded="false"]
-  > .agentplane-clamped-disclosure
-  > .agentplane-disclosure-item
-  > .agentplane-disclosure-panel
-  > .agentplane-disclosure-content {
-  padding: 0;
 }
 
 .agentplane-clamped-collapse {

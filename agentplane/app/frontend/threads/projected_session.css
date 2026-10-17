@@ -68,25 +68,7 @@
   min-width: 0;
   align-items: baseline;
   gap: var(--mantine-spacing-xs);
-  line-height: 1.4;
-}
-
-/* Disclosure's general 2.75rem touch target and label padding are right for a standalone
-   heading, but add a blank band around every folded step in an already expanded run.
-   Keep the opened step's normal heading size, and only tighten these nested closed controls. */
-.agentplane-run-steps
-  .agentplane-step-details
-  .agentplane-disclosure-heading[data-expanded="false"]
-  > .agentplane-disclosure-summary {
-  min-height: 1.5rem;
-  padding-block: 0;
-}
-
-.agentplane-run-steps
-  .agentplane-step-details
-  .agentplane-disclosure-heading[data-expanded="false"]
-  .agentplane-disclosure-summary-content {
-  padding-block: 0;
+  line-height: var(--mantine-line-height-sm);
 }
 
 /* A run packs its one-line steps together, but an opened one is a card, and keeps the room between
@@ -99,12 +81,6 @@
 .agentplane-step-static {
   min-width: 0;
   flex: 1;
-}
-
-.agentplane-step-details .agentplane-disclosure-summary {
-  display: flex;
-  min-width: 0;
-  align-items: center;
 }
 
 .agentplane-step-summary {
@@ -138,17 +114,10 @@
   justify-content: flex-end;
 }
 
-.agentplane-step-details .agentplane-disclosure-summary[aria-expanded="true"] .agentplane-step-summary {
-  flex-wrap: nowrap;
-  white-space: nowrap;
-}
-
 /* Static reasoning rows align with disclosure labels at the same nesting level. */
 .agentplane-step-static {
   display: flex;
   align-items: center;
-  min-height: 1.5rem;
-  padding-inline: var(--mantine-spacing-xs);
 }
 
 /* A streaming step breathes, as its status in the line; one that stopped short is blue and still. */

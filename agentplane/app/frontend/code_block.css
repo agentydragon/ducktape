@@ -135,6 +135,8 @@
   color: var(--agentplane-code-title);
 }
 
+.agentplane-command-code .cm-editor,
+.agentplane-command-code .agentplane-code-block-placeholder,
 .agentplane-output-code .cm-editor,
 .agentplane-output-code .agentplane-code-block-placeholder {
   border: 0;

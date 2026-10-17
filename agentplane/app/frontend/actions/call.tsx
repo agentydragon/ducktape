@@ -2,7 +2,7 @@ import { Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 
 import { serviceAccountKey } from "../client";
-import { Disclosure } from "../disclosure";
+import { Disclosure, DisclosureBody } from "../disclosure";
 import { JsonView } from "../json_view";
 import { RawSwitch } from "../raw_switch";
 import type { ActionRequestView } from "./client";
@@ -52,12 +52,14 @@ function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.E
       }
       keepMounted
     >
-      <Stack gap={2} mt={4}>
-        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-          Request <Code>{request.id}</Code>
-        </Text>
-        {grant && <ExternalGrantFields grant={grant} />}
-      </Stack>
+      <DisclosureBody>
+        <Stack gap={2}>
+          <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+            Request <Code>{request.id}</Code>
+          </Text>
+          {grant && <ExternalGrantFields grant={grant} />}
+        </Stack>
+      </DisclosureBody>
     </Disclosure>
   );
 }

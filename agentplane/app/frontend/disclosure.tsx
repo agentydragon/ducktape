@@ -1,10 +1,20 @@
 import { Accordion } from "@mantine/core";
-import { createContext, type JSX, type ReactNode, useCallback, useContext, useLayoutEffect, useState } from "react";
+import {
+  createContext,
+  type CSSProperties,
+  type JSX,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useState,
+} from "react";
 
 import "./disclosure.css";
 
 interface StickyStackPosition {
   top: number;
+  depth: number;
   /** Higher rows paint over descendants as they leave their containing disclosure. */
   zIndex: number;
 }
@@ -13,6 +23,7 @@ export const DISCLOSURE_STICKY_Z_INDEX = 100;
 
 const StickyStackContext = createContext<StickyStackPosition>({
   top: 0,
+  depth: 0,
   zIndex: DISCLOSURE_STICKY_Z_INDEX,
 });
 
@@ -42,8 +53,34 @@ function useStickyRowHeight() {
 function childStackPosition(parent: StickyStackPosition, rowHeight: number): StickyStackPosition {
   return {
     top: parent.top + rowHeight,
+    depth: parent.depth + 1,
     zIndex: parent.zIndex - 1,
   };
+}
+
+/** Terminal content owns its gutters; a panel containing nested disclosures leaves their
+ * frames full-width. Depth indents labels and reading content, never the surrounding frame. */
+export function DisclosureBody({ children }: { children: ReactNode }): JSX.Element {
+  const { depth } = useContext(StickyStackContext);
+  return (
+    <div className="agentplane-disclosure-body" style={disclosureIndent(depth)}>
+      {children}
+    </div>
+  );
+}
+
+function disclosureIndent(depth: number): CSSProperties {
+  return { "--agentplane-disclosure-depth": depth } as CSSProperties;
+}
+
+/** A non-interactive step shares the disclosure row's typography, spacing and nesting inset. */
+export function DisclosureRow({ children, className }: { children: ReactNode; className: string }): JSX.Element {
+  const { depth } = useContext(StickyStackContext);
+  return (
+    <div className={`agentplane-disclosure-static ${className}`} style={disclosureIndent(depth)}>
+      {children}
+    </div>
+  );
 }
 
 /** A shared Mantine Accordion with optional controlled state. Its controls keep Mantine's styles,
@@ -83,6 +120,7 @@ export function Disclosure({
   return (
     <Accordion
       className={`agentplane-disclosure${className ? ` ${className}` : ""}`}
+      style={disclosureIndent(stackPosition.depth)}
       transitionDuration={0}
       keepMounted={keepMounted}
       keepMountedMode={keepMounted ? "display-none" : undefined}

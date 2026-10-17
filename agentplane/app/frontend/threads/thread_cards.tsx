@@ -4,6 +4,7 @@ import { type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState 
 
 import { ClampedBlock, lineCount } from "../clamped_block";
 import { InlineCode } from "../code_block";
+import { DisclosureBody } from "../disclosure";
 import { COMMAND_MAX_HEIGHT_REM, CommandCallView, OutputBlock } from "../command_view";
 import { HighlightedText } from "../json_view";
 import { Markdown } from "../markdown";
@@ -246,7 +247,9 @@ function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; fo
   const id = payloadDisclosureId(body.reference);
   return (
     <RetainedDisclosure id={id} summary={label}>
-      <Body {...body} />
+      <DisclosureBody>
+        <Body {...body} />
+      </DisclosureBody>
     </RetainedDisclosure>
   );
 }
@@ -347,7 +350,11 @@ function ReasoningPreview({
       open={open}
       onOpenChange={setOpen}
     >
-      {body !== null && <Markdown source={body} />}
+      {body !== null && (
+        <DisclosureBody>
+          <Markdown source={body} />
+        </DisclosureBody>
+      )}
     </StepLine>
   );
 }
@@ -399,7 +406,7 @@ function DiscardedCard({ id, summary, children }: { id: string; summary: string;
           </Text>
         }
       >
-        <Stack gap="xs" mt="xs" className="agentplane-evidence-owner">
+        <Stack gap={0} className="agentplane-evidence-owner">
           {children}
         </Stack>
       </RetainedDisclosure>
@@ -505,13 +512,20 @@ function ToolCard({
         const argumentsBody = args?.body ?? null;
         const call = argumentsBody === null ? null : parseCommandCall(state.tool_name, argumentsBody);
         const detail = (
-          <Stack gap="xs">
-            <RecoveryNotes state={state} tool />
-            {entity.textRef && <Body reference={entity.textRef} format="markdown" />}
-            {args && argumentsBody === null && (
-              <Text c="dimmed" aria-busy={!args.error}>
-                Loading complete revision…
-              </Text>
+          <Stack gap={0}>
+            {(state.recovery === RecoveryDisposition.UNKNOWN ||
+              state.recovery === RecoveryDisposition.REVISED ||
+              entity.textRef ||
+              (args && argumentsBody === null)) && (
+              <DisclosureBody>
+                <RecoveryNotes state={state} tool />
+                {entity.textRef && <Body reference={entity.textRef} format="markdown" />}
+                {args && argumentsBody === null && (
+                  <Text c="dimmed" aria-busy={!args.error}>
+                    Loading complete revision…
+                  </Text>
+                )}
+              </DisclosureBody>
             )}
             {argumentsBody !== null &&
               (call && !raw ? (
@@ -523,7 +537,7 @@ function ToolCard({
                     lines={lineCount(argumentsBody)}
                     label="Arguments"
                     header={
-                      <Text size="xs" c="dimmed" mb={4}>
+                      <Text size="sm" c="dimmed">
                         Arguments
                       </Text>
                     }
@@ -551,27 +565,29 @@ function ToolCard({
         if (discardedId !== null) {
           return (
             <DiscardedCard id={discardedId} summary={`${state.tool_name || "Tool"}: discarded context`}>
-              <Text size="sm" c="dimmed">
-                Discarded context does not undo tool side effects or change its recorded execution outcome.
-              </Text>
-              <Group justify="space-between" wrap="wrap">
-                <Group gap="xs">{itemStatus([entity], live)}</Group>
-                {call ? (
-                  <CommandCallControls
-                    call={call}
-                    raw={raw}
-                    onRawChange={setRaw}
-                    hasOutput={entity.outputRef !== null}
-                    fullWidth={false}
-                  >
-                    <EvidenceToggle entity={entity} />
-                  </CommandCallControls>
-                ) : (
-                  <Group gap="xs" wrap="nowrap">
-                    <EvidenceToggle entity={entity} />
-                  </Group>
-                )}
-              </Group>
+              <DisclosureBody>
+                <Text size="sm" c="dimmed">
+                  Discarded context does not undo tool side effects or change its recorded execution outcome.
+                </Text>
+                <Group justify="space-between" wrap="wrap">
+                  <Group gap="xs">{itemStatus([entity], live)}</Group>
+                  {call ? (
+                    <CommandCallControls
+                      call={call}
+                      raw={raw}
+                      onRawChange={setRaw}
+                      hasOutput={entity.outputRef !== null}
+                      fullWidth={false}
+                    >
+                      <EvidenceToggle entity={entity} />
+                    </CommandCallControls>
+                  ) : (
+                    <Group gap="xs" wrap="nowrap">
+                      <EvidenceToggle entity={entity} />
+                    </Group>
+                  )}
+                </Group>
+              </DisclosureBody>
               {detail}
               <EvidencePanel threadId={threadId} entity={entity} />
             </DiscardedCard>
@@ -585,7 +601,7 @@ function ToolCard({
               preview={
                 args &&
                 (argumentsBody === null ? (
-                  <Text component="span" c="dimmed" aria-busy={!args.error}>
+                  <Text component="span" size="sm" c="dimmed" aria-busy={!args.error}>
                     {args.error ? "Preview unavailable" : "Loading preview…"}
                   </Text>
                 ) : call && !call.description ? (
@@ -619,7 +635,7 @@ function ToolCard({
               open={open}
               onOpenChange={setOpen}
             >
-              <Box mt="xs">{detail}</Box>
+              {detail}
             </StepLine>
             <EvidencePanel threadId={threadId} entity={entity} />
           </CollapsibleCard>
@@ -755,10 +771,19 @@ export function EntityCard({
             <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
           )
         ) : (
-          <Text c="dimmed">Reasoning</Text>
+          <Text size="sm" c="dimmed">
+            Reasoning
+          </Text>
         )
       ) : (
-        entity.textRef && <Body reference={entity.textRef} format="markdown" streaming={streamingText} />
+        entity.textRef &&
+        (discardedId !== null ? (
+          <DisclosureBody>
+            <Body reference={entity.textRef} format="markdown" streaming={streamingText} />
+          </DisclosureBody>
+        ) : (
+          <Body reference={entity.textRef} format="markdown" streaming={streamingText} />
+        ))
       )}
       <EvidencePanel threadId={threadId} entity={entity} />
     </>
@@ -859,10 +884,8 @@ function recoveryBadge(recovery: number): StatusBadge | null {
   }
 }
 
-/** The collapsible shell a run, a lifecycle group, or a standalone reasoning step shares: collapsed,
- * it shows nothing but its one line -- a run/group's `summary`, or reasoning's own "Reasoning"
- * disclosure -- so the full card padding and border its opened content warrants would only pad out
- * that one line. */
+/** The shell shared by runs, lifecycle groups, tools and standalone reasoning. It reserves the
+ * same border in both states; disclosure rows and terminal bodies own their spacing. */
 export function CollapsibleCard({
   open,
   children,

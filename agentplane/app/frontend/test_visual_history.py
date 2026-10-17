@@ -78,7 +78,7 @@ async def test_reported_rollout_run(reported_rollout: VisualPage, position: str)
     ids=["false-desktop", "false-mobile", "true-desktop", "true-mobile"],
 )
 @pytest.mark.parametrize("color_scheme", ["light", "dark"])
-async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_output: bool) -> None:
+async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_output: bool, viewport: Viewport) -> None:
     page = completed_rollout.page
     await _rollout_start(completed_rollout)
     await _open_run(page)
@@ -143,15 +143,42 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
             )
         geometry = [
             await heading.evaluate(
-                "element => { const label = element.querySelector('.mantine-Text-root'); "
-                "const chevron = element.querySelector('.mantine-Accordion-chevron'); "
-                "return {left: label.getBoundingClientRect().left, "
-                "right: chevron.getBoundingClientRect().right, size: getComputedStyle(label).fontSize}; }"
+                """element => {
+                    const bounds = element.getBoundingClientRect();
+                    const control = element.querySelector('.agentplane-disclosure-summary');
+                    const label = element.querySelector('.agentplane-disclosure-summary-content');
+                    const chevron = element.querySelector('.mantine-Accordion-chevron');
+                    const controlBounds = control.getBoundingClientRect();
+                    const labelBounds = label.getBoundingClientRect();
+                    return {
+                        left: labelBounds.left,
+                        right: chevron.getBoundingClientRect().right,
+                        headingLeft: bounds.left,
+                        headingRight: bounds.right,
+                        headingHeight: bounds.height,
+                        controlHeight: controlBounds.height,
+                        labelCenterOffset: labelBounds.top + labelBounds.height / 2 - (bounds.top + bounds.height / 2),
+                        size: getComputedStyle(label).fontSize
+                    };
+                }"""
             )
             for heading in (run_heading, call_heading, output_heading)
         ]
         assert len({item["size"] for item in geometry}) == 1, geometry
         assert max(item["right"] for item in geometry) - min(item["right"] for item in geometry) <= 1, geometry
+        assert max(item["headingLeft"] for item in geometry) - min(item["headingLeft"] for item in geometry) <= 1, (
+            geometry
+        )
+        assert max(item["headingRight"] for item in geometry) - min(item["headingRight"] for item in geometry) <= 1, (
+            geometry
+        )
+        expected_header_height = 44 if viewport.width < 768 else 32
+        assert max(item["headingHeight"] for item in geometry) - min(item["headingHeight"] for item in geometry) <= 1, (
+            geometry
+        )
+        assert all(abs(item["headingHeight"] - expected_header_height) <= 1 for item in geometry), geometry
+        assert all(abs(item["controlHeight"] - item["headingHeight"]) <= 1 for item in geometry), geometry
+        assert all(abs(item["labelCenterOffset"]) <= 1 for item in geometry), geometry
         indents = [geometry[index + 1]["left"] - geometry[index]["left"] for index in range(2)]
         assert min(indents) > 0, indents
         assert abs(indents[0] - indents[1]) <= 1, indents

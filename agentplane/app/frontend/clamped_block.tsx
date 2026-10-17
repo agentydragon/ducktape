@@ -1,7 +1,7 @@
 import { UnstyledButton } from "@mantine/core";
 import { type JSX, type ReactNode, useLayoutEffect, useState } from "react";
 
-import { Disclosure } from "./disclosure";
+import { Disclosure, DisclosureBody } from "./disclosure";
 
 /** How many lines `text` has, a final newline ending its last line rather than starting another. */
 export function lineCount(text: string): number {
@@ -94,21 +94,23 @@ export function ClampedBlock({
   return (
     <div className="agentplane-clamped-block" data-expanded={expanded} data-label={label}>
       {stickyCollapse ? (
-        <>
-          {!expanded && header}
-          <Disclosure
-            className="agentplane-clamped-disclosure"
-            summary={header ?? label}
-            open={true}
-            onOpenChange={setExpanded}
-          >
+        <Disclosure
+          className="agentplane-clamped-disclosure"
+          summary={header ?? label}
+          open={true}
+          onOpenChange={setExpanded}
+        >
+          <DisclosureBody>
+            {!expanded && header}
             {body}
-          </Disclosure>
-        </>
+          </DisclosureBody>
+        </Disclosure>
       ) : (
         <>
-          {header}
-          {body}
+          <DisclosureBody>
+            {header}
+            {body}
+          </DisclosureBody>
           {expanded && (
             <UnstyledButton
               className="agentplane-clamped-collapse"

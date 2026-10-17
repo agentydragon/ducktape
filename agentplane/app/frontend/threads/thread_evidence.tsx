@@ -9,6 +9,7 @@ import {
   type EvidencePage,
   type NativeFramePage,
 } from "../client";
+import { DisclosureBody } from "../disclosure";
 import { JsonView } from "../json_view";
 import { ChronologicalDebugIcon } from "./chronological_debug";
 import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
@@ -62,33 +63,35 @@ function EvidenceFramesPage({
       });
   };
   return (
-    <Stack gap="xs">
-      {error && <Text c="red">{error}</Text>}
-      {page?.frames.map((frame) =>
-        frame.availability === "present" ? (
-          <JsonView key={frame.source_sequence} value={frame.entry} />
-        ) : (
-          <Text size="xs" key={frame.source_sequence}>
-            Raw frame {frame.source_sequence} unavailable
-          </Text>
-        )
-      )}
-      {!page && error && (
-        <Button loading={loading} onClick={() => load()}>
-          Retry raw frames
-        </Button>
-      )}
-      {afterSequence !== "0" && (
-        <Button variant="subtle" disabled={loading} onClick={() => load()}>
-          First frames
-        </Button>
-      )}
-      {page?.next_after_sequence && (
-        <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_sequence ?? "0")}>
-          Load more frames
-        </Button>
-      )}
-    </Stack>
+    <DisclosureBody>
+      <Stack gap="xs">
+        {error && <Text c="red">{error}</Text>}
+        {page?.frames.map((frame) =>
+          frame.availability === "present" ? (
+            <JsonView key={frame.source_sequence} value={frame.entry} />
+          ) : (
+            <Text size="xs" key={frame.source_sequence}>
+              Raw frame {frame.source_sequence} unavailable
+            </Text>
+          )
+        )}
+        {!page && error && (
+          <Button loading={loading} onClick={() => load()}>
+            Retry raw frames
+          </Button>
+        )}
+        {afterSequence !== "0" && (
+          <Button variant="subtle" disabled={loading} onClick={() => load()}>
+            First frames
+          </Button>
+        )}
+        {page?.next_after_sequence && (
+          <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_sequence ?? "0")}>
+            Load more frames
+          </Button>
+        )}
+      </Stack>
+    </DisclosureBody>
   );
 }
 
@@ -150,7 +153,11 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
   };
   return (
     <Stack gap="xs">
-      {error && <Text c="red">{error}</Text>}
+      {error && (
+        <DisclosureBody>
+          <Text c="red">{error}</Text>
+        </DisclosureBody>
+      )}
       {page?.observations.map((observation) => (
         <Stack gap="xs" key={observation.observation_cursor} data-evidence-observation={observation.observation_cursor}>
           {observation.has_native ? (
@@ -161,22 +168,30 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
               observationCursor={observation.observation_cursor}
             />
           ) : (
-            <Group key={observation.observation_cursor} justify="space-between" wrap="nowrap" gap="xs">
-              <Text size="xs">Observation {observation.observation_cursor} has no native frame</Text>
-              <ChronologicalDebugIcon observationCursor={observation.observation_cursor} />
-            </Group>
+            <DisclosureBody key={observation.observation_cursor}>
+              <Group justify="space-between" wrap="nowrap" gap="xs">
+                <Text size="xs">Observation {observation.observation_cursor} has no native frame</Text>
+                <ChronologicalDebugIcon observationCursor={observation.observation_cursor} />
+              </Group>
+            </DisclosureBody>
           )}
         </Stack>
       ))}
-      {page?.next_after_cursor && (
-        <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_cursor ?? "0")}>
-          Load more evidence
-        </Button>
-      )}
-      {afterCursor !== "0" && (
-        <Button variant="subtle" disabled={loading} onClick={() => load()}>
-          First evidence
-        </Button>
+      {(page?.next_after_cursor || afterCursor !== "0") && (
+        <DisclosureBody>
+          <Stack gap="xs">
+            {page?.next_after_cursor && (
+              <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_cursor ?? "0")}>
+                Load more evidence
+              </Button>
+            )}
+            {afterCursor !== "0" && (
+              <Button variant="subtle" disabled={loading} onClick={() => load()}>
+                First evidence
+              </Button>
+            )}
+          </Stack>
+        </DisclosureBody>
       )}
     </Stack>
   );

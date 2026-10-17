@@ -9,7 +9,7 @@ import {
   type ArchivedObservationEntry,
   type ObservationPage,
 } from "../client";
-import { Disclosure } from "../disclosure";
+import { Disclosure, DisclosureBody } from "../disclosure";
 import { JsonView } from "../json_view";
 
 type PageRequest = { before?: string; after?: string };
@@ -60,7 +60,9 @@ function Observation({
         </>
       }
     >
-      <ObservationEntry threadId={threadId} cursor={observation.cursor} />
+      <DisclosureBody>
+        <ObservationEntry threadId={threadId} cursor={observation.cursor} />
+      </DisclosureBody>
     </Disclosure>
   );
 }

@@ -6,7 +6,7 @@ import { type JSX, useState } from "react";
 
 import { ClampedBlock, lineCount } from "./clamped_block";
 import { CodeBlock } from "./code_block";
-import { Disclosure } from "./disclosure";
+import { Disclosure, DisclosureBody } from "./disclosure";
 import { HighlightedText } from "./json_view";
 
 export const COMMAND_MAX_HEIGHT_REM = 10;
@@ -31,22 +31,36 @@ export function CommandCallView({
   expansion?: Expansion;
 }): JSX.Element {
   return (
-    <Stack gap={4}>
-      {description && <Text size="sm">{description}</Text>}
-      {target && <CodeBlock text={target} presentation="label" />}
+    <Stack gap={0}>
+      {(description || target) && (
+        <DisclosureBody>
+          <Stack gap={4}>
+            {description && <Text size="sm">{description}</Text>}
+            {target && <CodeBlock text={target} presentation="label" />}
+          </Stack>
+        </DisclosureBody>
+      )}
       <ClampedBlock
         maxHeightRem={COMMAND_MAX_HEIGHT_REM}
         lines={lineCount(command)}
         label="Command"
         expansion={expansion}
       >
-        <CodeBlock text={command} language="bash" />
+        <div className="agentplane-command-code">
+          <CodeBlock text={command} language="bash" />
+        </div>
       </ClampedBlock>
-      {notes.map((note) => (
-        <Text key={note} size="xs" c="dimmed">
-          {note}
-        </Text>
-      ))}
+      {notes.length > 0 && (
+        <DisclosureBody>
+          <Stack gap={4}>
+            {notes.map((note) => (
+              <Text key={note} size="xs" c="dimmed">
+                {note}
+              </Text>
+            ))}
+          </Stack>
+        </DisclosureBody>
+      )}
     </Stack>
   );
 }

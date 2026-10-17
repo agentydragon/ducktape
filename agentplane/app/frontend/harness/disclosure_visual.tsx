@@ -2,7 +2,7 @@ import { Stack, Text } from "@mantine/core";
 import { type JSX } from "react";
 
 import { ClampedBlock } from "../clamped_block";
-import { Disclosure } from "../disclosure";
+import { Disclosure, DisclosureBody } from "../disclosure";
 
 const ABOVE_COPY = Array.from(
   { length: 4 },
@@ -144,23 +144,27 @@ export function DisclosureVisual({
                 }
                 defaultOpen
               >
-                <Stack gap="md">
-                  <Text component="p" data-demo-target="outer-paragraph" size="sm" m={0}>
-                    This outer panel contains nested reasoning and tool-call disclosures.
-                  </Text>
-                  <Disclosure
-                    className="demo-inner"
-                    summary={<Summary title={innerTitle} />}
-                    summaryAside={
-                      <Text component="span" size="xs" c="dimmed">
-                        Complete
-                      </Text>
-                    }
-                    defaultOpen
-                  >
-                    {toolOutput ? (
-                      <>
-                        {beforeOutput && (
+                <DisclosureBody>
+                  <Stack gap="md">
+                    <Text component="p" data-demo-target="outer-paragraph" size="sm" m={0}>
+                      This outer panel contains nested reasoning and tool-call disclosures.
+                    </Text>
+                  </Stack>
+                </DisclosureBody>
+                <Disclosure
+                  className="demo-inner"
+                  summary={<Summary title={innerTitle} />}
+                  summaryAside={
+                    <Text component="span" size="xs" c="dimmed">
+                      Complete
+                    </Text>
+                  }
+                  defaultOpen
+                >
+                  {toolOutput ? (
+                    <>
+                      {beforeOutput && (
+                        <DisclosureBody>
                           <Stack gap="md">
                             {TOOL_OUTPUT_BEFORE_COPY.map((paragraph, index) => (
                               <Text
@@ -174,34 +178,36 @@ export function DisclosureVisual({
                               </Text>
                             ))}
                           </Stack>
-                        )}
-                        <Disclosure
-                          className="demo-output"
-                          summary={<Summary title="Tool output" />}
-                          summaryAside={
-                            <Text component="span" size="xs" c="dimmed">
-                              20 results
-                            </Text>
-                          }
-                          defaultOpen={outputOpen}
-                        >
-                          <ClampedBlock maxHeightRem={8} expansion={[true, () => undefined]} stickyCollapse={false}>
-                            <Stack gap="md">
-                              {TOOL_OUTPUT.map((paragraph, index) => (
-                                <Text
-                                  key={index}
-                                  component="p"
-                                  data-demo-target={index === 6 ? "output-paragraph" : undefined}
-                                  size="sm"
-                                  m={0}
-                                >
-                                  {paragraph}
-                                </Text>
-                              ))}
-                            </Stack>
-                          </ClampedBlock>
-                        </Disclosure>
-                        {afterOutput && (
+                        </DisclosureBody>
+                      )}
+                      <Disclosure
+                        className="demo-output"
+                        summary={<Summary title="Tool output" />}
+                        summaryAside={
+                          <Text component="span" size="xs" c="dimmed">
+                            20 results
+                          </Text>
+                        }
+                        defaultOpen={outputOpen}
+                      >
+                        <ClampedBlock maxHeightRem={8} expansion={[true, () => undefined]} stickyCollapse={false}>
+                          <Stack gap="md">
+                            {TOOL_OUTPUT.map((paragraph, index) => (
+                              <Text
+                                key={index}
+                                component="p"
+                                data-demo-target={index === 6 ? "output-paragraph" : undefined}
+                                size="sm"
+                                m={0}
+                              >
+                                {paragraph}
+                              </Text>
+                            ))}
+                          </Stack>
+                        </ClampedBlock>
+                      </Disclosure>
+                      {afterOutput && (
+                        <DisclosureBody>
                           <Stack gap="md">
                             {TOOL_OUTPUT_FOLLOWING_COPY.map((paragraph, index) => (
                               <Text
@@ -215,9 +221,11 @@ export function DisclosureVisual({
                               </Text>
                             ))}
                           </Stack>
-                        )}
-                      </>
-                    ) : (
+                        </DisclosureBody>
+                      )}
+                    </>
+                  ) : (
+                    <DisclosureBody>
                       <Stack gap="md">
                         {NESTED_COPY.map((paragraph, index) => (
                           <Text
@@ -231,8 +239,10 @@ export function DisclosureVisual({
                           </Text>
                         ))}
                       </Stack>
-                    )}
-                  </Disclosure>
+                    </DisclosureBody>
+                  )}
+                </Disclosure>
+                <DisclosureBody>
                   <Stack gap="md">
                     {NESTED_FOLLOWING_COPY.map((paragraph, index) => (
                       <Text
@@ -246,7 +256,7 @@ export function DisclosureVisual({
                       </Text>
                     ))}
                   </Stack>
-                </Stack>
+                </DisclosureBody>
               </Disclosure>
               <Stack gap="md">
                 {outsideCopy.map((paragraph, index) => (
@@ -265,25 +275,29 @@ export function DisclosureVisual({
           ) : (
             <>
               <Disclosure className="demo-main" summary={<Summary title="Section details" />} defaultOpen={open}>
-                <Stack gap="md">
-                  {short ? (
+                {short ? (
+                  <DisclosureBody>
                     <Text size="sm">
                       This short panel fits in the viewport, so its Control stays in normal document flow.
                     </Text>
-                  ) : (
-                    LONG_COPY.map((paragraph, index) => (
-                      <Text
-                        key={index}
-                        component="p"
-                        data-demo-target={index === 6 ? "long-paragraph" : undefined}
-                        size="sm"
-                        m={0}
-                      >
-                        {paragraph}
-                      </Text>
-                    ))
-                  )}
-                </Stack>
+                  </DisclosureBody>
+                ) : (
+                  <DisclosureBody>
+                    <Stack gap="md">
+                      {LONG_COPY.map((paragraph, index) => (
+                        <Text
+                          key={index}
+                          component="p"
+                          data-demo-target={index === 6 ? "long-paragraph" : undefined}
+                          size="sm"
+                          m={0}
+                        >
+                          {paragraph}
+                        </Text>
+                      ))}
+                    </Stack>
+                  </DisclosureBody>
+                )}
               </Disclosure>
               <Stack gap="md">
                 {(followingSection ? FOLLOWING_COPY : outsideCopy).map((paragraph, index) => (

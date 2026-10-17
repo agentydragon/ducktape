@@ -40,7 +40,7 @@ import {
   type ThreadView,
 } from "./client";
 import { ActionPolicySection, BoundPolicySection } from "./actions/policy";
-import { Disclosure } from "./disclosure";
+import { Disclosure, DisclosureBody } from "./disclosure";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { MarkGlyph } from "./mark_glyph";
@@ -725,16 +725,18 @@ export function SandboxPage({
               </Stack>
             )}
             <Disclosure summary="Standing instructions" keepMounted>
-              <Textarea
-                aria-label="Standing instructions"
-                description={
-                  inheritsDefaults ? "From this Sandbox's configured preset; editable for this thread" : undefined
-                }
-                autosize
-                minRows={2}
-                value={instructions}
-                onChange={(event) => setInstructions(event.currentTarget.value)}
-              />
+              <DisclosureBody>
+                <Textarea
+                  aria-label="Standing instructions"
+                  description={
+                    inheritsDefaults ? "From this Sandbox's configured preset; editable for this thread" : undefined
+                  }
+                  autosize
+                  minRows={2}
+                  value={instructions}
+                  onChange={(event) => setInstructions(event.currentTarget.value)}
+                />
+              </DisclosureBody>
             </Disclosure>
             <TextInput
               label="Working directory"
@@ -743,14 +745,16 @@ export function SandboxPage({
               onChange={(event) => setCwdTemplate(event.currentTarget.value)}
             />
             <Disclosure summary="Thread setup script" keepMounted>
-              <Textarea
-                aria-label="Thread setup script"
-                description="Runs once in the resolved working directory before the harness starts"
-                autosize
-                minRows={2}
-                value={setupScript}
-                onChange={(event) => setSetupScript(event.currentTarget.value)}
-              />
+              <DisclosureBody>
+                <Textarea
+                  aria-label="Thread setup script"
+                  description="Runs once in the resolved working directory before the harness starts"
+                  autosize
+                  minRows={2}
+                  value={setupScript}
+                  onChange={(event) => setSetupScript(event.currentTarget.value)}
+                />
+              </DisclosureBody>
             </Disclosure>
             <Table>
               <Table.Thead>
