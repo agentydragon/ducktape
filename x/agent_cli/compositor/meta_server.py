@@ -4,8 +4,8 @@ import json
 
 from fastmcp.server import FastMCP
 
-from mcp_infra.compositor.server import BaseCompositor
 from mcp_infra.prefix import MCPMountPrefix
+from x.agent_cli.compositor.server import BaseCompositor
 
 _SERVER_STATE_URI_TEMPLATE = "compositor://{server}/state"
 

@@ -8,7 +8,7 @@ Aggregates multiple MCP servers behind a single interface with tool namespacing,
 
 - **Mount prefix** (`MCPMountPrefix`): tools namespaced as `{prefix}_{tool}`. ALWAYS use `MCPMountPrefix` type, NEVER raw strings. ALWAYS use `build_mcp_function(prefix, tool)` from `mcp_infra.naming` to construct prefixed names.
 - **Server name**: just `FastMCP(name=...)` metadata. Nothing outside the server should care.
-- Standard prefixes: `RESOURCES_MOUNT_PREFIX`, `COMPOSITOR_META_MOUNT_PREFIX` (from `mcp_infra.constants`). `ContainerExecServer.RUNTIME_MOUNT_PREFIX` is on the server class.
+- Standard prefixes: `RESOURCES_MOUNT_PREFIX`, `COMPOSITOR_META_MOUNT_PREFIX` (from `x.agent_cli.compositor.constants`). `ContainerExecServer.RUNTIME_MOUNT_PREFIX` is on the server class.
 - Resource URIs: typed attributes on server classes (e.g., `CompositorMetaServer.server_state_resource`).
 
 ## Architecture
@@ -32,7 +32,7 @@ Guarantees: cannot leak containers (AsyncExitStack), cannot double-enter (atomic
 
 ## Implementation
 
-- `mcp_infra/src/mcp_infra/compositor/server.py` -- Compositor class
-- `mcp_infra/src/mcp_infra/compositor/mount.py` -- Mount class
+- `x/agent_cli/compositor/server.py` -- Compositor implementation
+- `x/agent_cli/compositor/mount.py` -- Mount class
 
-Reference: <fastmcp_lifecycle_analysis.md>
+Reference: <../../../mcp_infra/docs/fastmcp_lifecycle_analysis.md>

@@ -29,7 +29,7 @@ Two tools form the v0 surface:
 | FastAPI app    | `app.py`                | `/healthz`, `/control/*` endpoints         |
 | Config         | `config.py`             | TOML config + env overrides                |
 | Matrix client  | `matrix_client.py`      | Room polling, debounce, invite acceptance  |
-| MCP tools      | `mcp_tools.py`          | Compositor: exec + sleep tool surfaces     |
+| MCP tools      | `mcp_tools.py`          | `ClientGroup` for exec and sleep tool surfaces |
 | Handlers       | `handlers.py`           | Sleep, persistence, text-redirect handlers |
 | Python session | `python_session.py`     | Persistent IPython kernel                  |
 | System prompt  | `system_prompt.md.mako` | Mako template with embedded examples       |

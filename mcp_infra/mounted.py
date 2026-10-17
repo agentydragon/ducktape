@@ -48,7 +48,7 @@ class Mounted[T: FastMCP]:
             Fully-qualified tool name (e.g., "lint_submit_submit_result")
 
         Example:
-            submit_tool_name = comp.lint_submit.tool_name(comp.lint_submit.server.submit_result_tool)
+            submit_tool_name = runtime.tool_name(runtime.server.exec_tool)
         """
         tool_name = tool if isinstance(tool, str) else tool.__name__
         return build_mcp_function(self.prefix, tool_name)
@@ -65,6 +65,6 @@ class Mounted[T: FastMCP]:
             Prefixed URI string
 
         Example:
-            prefixed = comp.compositor_meta.add_resource_prefix("compositor://servers")
+            prefixed = runtime.add_resource_prefix("resource://runtime/info")
         """
         return add_resource_prefix(uri, self.prefix)

@@ -7,7 +7,7 @@ from mako.template import Template
 from mako_utils.preprocessor import markdown_heading_preprocessor
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.snapshots import ServerEntry
+from x.agent_cli.compositor.snapshots import ServerEntry
 
 
 def render_compositor_instructions(states: dict[MCPMountPrefix, ServerEntry]) -> str:
@@ -24,7 +24,7 @@ def render_compositor_instructions(states: dict[MCPMountPrefix, ServerEntry]) ->
 
     # Load template from package resources and render
     template_name = "compositor_instructions.md.mako"
-    template_pkg = "mcp_infra.compositor.templates"
+    template_pkg = "x.agent_cli.compositor.templates"
     template_text = resources.files(template_pkg).joinpath(template_name).read_text("utf-8")
     template = Template(template_text, preprocessor=markdown_heading_preprocessor)
     result: str = template.render(states=states, build_mcp_function=build_mcp_function)

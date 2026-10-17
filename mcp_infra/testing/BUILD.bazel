@@ -33,12 +33,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":simple_servers",
-        "//mcp_infra:prefix",
-        "//mcp_infra/compositor",
-        "//mcp_infra/compositor:resources_server",
         "//mcp_infra/exec/docker:types",
         "//mcp_infra/testing:stdio_app",
-        "//mcp_infra/testing/stubs:resources_stub",
         "//mcp_infra/testing/stubs:typed_stubs",
         "//util/bazel:subprocess",
         "@pypi//aiodocker",

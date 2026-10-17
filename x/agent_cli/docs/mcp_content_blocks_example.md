@@ -255,7 +255,7 @@ Here's how the resources server would look if we eliminated windowing and used `
 
 ```python
 from mcp import types as mcp_types
-from mcp_infra.compositor.server import Compositor
+from x.agent_cli.compositor.server import Compositor
 from mcp_infra.notifying_fastmcp import NotifyingFastMCP
 
 def make_simple_resources_server(compositor: Compositor) -> NotifyingFastMCP:

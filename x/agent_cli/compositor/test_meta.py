@@ -7,8 +7,8 @@ from mcp import types as mcp_types
 from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
 
-from mcp_infra.compositor.meta_server import _SERVER_STATE_URI_TEMPLATE
-from mcp_infra.snapshots import RunningServerEntry, ServerEntry
+from x.agent_cli.compositor.meta_server import _SERVER_STATE_URI_TEMPLATE
+from x.agent_cli.compositor.snapshots import RunningServerEntry, ServerEntry
 
 _BACKEND = "backend"
 _SERVERS_LIST_URI = "compositor://servers"

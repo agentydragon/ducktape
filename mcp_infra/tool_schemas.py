@@ -1,4 +1,4 @@
-"""Extract tool schemas from FastMCP servers for RichDisplayHandler.
+"""Extract tool schemas from FastMCP servers for CompactDisplayHandler.
 
 Introspects tool return types from FastMCP server instances to build
 schema registries for typed display rendering.

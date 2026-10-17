@@ -10,11 +10,11 @@ from mcp import types as mcp_types
 from mcp.shared.exceptions import MCPError
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field
 
-from mcp_infra.compositor.server import BaseCompositor
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import add_resource_prefix
-from mcp_infra.snapshots import RunningServerEntry
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from x.agent_cli.compositor.server import BaseCompositor
+from x.agent_cli.compositor.snapshots import RunningServerEntry
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class ResourcesReadArgs(OpenAIStrictModeBaseModel):
     )
 
 
-# No compositor meta resources here; see adgn.mcp.compositor.meta_server
+# No compositor meta resources here; see x.agent_cli.compositor.meta_server
 
 
 class _MimeBase(BaseModel):

@@ -16,12 +16,8 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.server import FastMCP
 
-from mcp_infra.compositor.compositor import Compositor
-from mcp_infra.compositor.resources_server import ResourcesServer
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
-from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp  # avoid fixture collision
-from mcp_infra.testing.stubs.resources_stub import ResourcesServerStub
 from mcp_infra.testing.stubs.typed_stubs import TypedClient
 from util.bazel.subprocess import python_env
 
@@ -39,24 +35,6 @@ def make_container_opts(image: str, *, working_dir: Path = Path("/test/workspace
         allow_env_field=True,
         cwd_policy=DefaultValue(value=working_dir),
     )
-
-
-@pytest.fixture
-async def compositor():
-    """Fresh Compositor instance for each test with automatic lifecycle management.
-
-    The compositor is entered as a context manager automatically, so tests can
-    mount servers and use it immediately without explicit 'async with'.
-    """
-    async with Compositor() as comp:
-        yield comp
-
-
-@pytest.fixture
-async def compositor_client(compositor):
-    """Client connected to the compositor."""
-    async with Client(compositor) as client:
-        yield client
 
 
 @pytest.fixture
@@ -94,47 +72,8 @@ def make_typed_mcp():
 
 
 @pytest.fixture
-async def resources_server(compositor):
-    """Resources server for the compositor."""
-    return ResourcesServer(compositor=compositor)
-
-
-@pytest.fixture
-async def resources_client(resources_server):
-    """Client for the resources server."""
-    async with Client(resources_server) as client:
-        yield client
-
-
-@pytest.fixture
-async def typed_resources_client(resources_server, resources_client):
-    """Typed stub for the resources server."""
-    return ResourcesServerStub.from_server(resources_server, resources_client)
-
-
-@pytest.fixture
 def stdio_echo_spec() -> StdioMCPServer:
     """Launch packaged echo server module via -m as a stdio spec."""
     return StdioMCPServer(
         command=sys.executable, args=["-m", "mcp_infra.testing.stdio_app"], env=python_env(inherit=False)
     )
-
-
-@pytest.fixture
-def make_compositor():
-    """Async helper to open a Compositor and yield (Client, Compositor).
-
-    Usage:
-        async with make_compositor({"name": server, ...}) as (client, comp):
-            ...
-    """
-
-    @asynccontextmanager
-    async def _open(servers: dict[str, FastMCP]):
-        async with Compositor() as comp:
-            for name, srv in servers.items():
-                await comp.mount_inproc(MCPMountPrefix(name), srv)
-            async with Client(comp) as sess:
-                yield sess, comp
-
-    return _open

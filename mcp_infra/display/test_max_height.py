@@ -1,4 +1,4 @@
-"""Tests for MaxHeight wrapper in rich_display."""
+"""Tests for the compact display height wrapper."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest_bazel
 from rich.console import Console
 from rich.text import Text
 
-from mcp_infra.display.rich_display import MaxHeight
+from mcp_infra.display.compact_display import MaxHeight
 
 
 def test_max_height_with_wrapping():

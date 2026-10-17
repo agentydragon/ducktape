@@ -38,7 +38,7 @@ class RuntimeServer(FastMCP):
         async def container_info() -> dict: ...
 ```
 
-### 2. Compositor Recipes (mount prefix SSOT)
+### 2. Agent CLI Compositor Recipes (mount prefix SSOT)
 
 ```python
 @dataclass

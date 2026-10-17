@@ -1,18 +1,14 @@
-"""Rich-based display handler that renders events immediately."""
+"""Compact Rich-based display handler for agent events."""
 
 from __future__ import annotations
 
-import logging
 import shlex
 from typing import TYPE_CHECKING, Any
 
 from compact_json import Formatter
 from pydantic import TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
-from rich import box
 from rich.console import Console, ConsoleOptions, RenderableType
-from rich.json import JSON
-from rich.panel import Panel
 from rich.segment import Segment
 from rich.text import Text
 
@@ -29,11 +25,7 @@ from util.exec.models import BaseExecResult, ExecStream, TruncatedStream
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
 
-    from mcp_infra.compositor.compositor import Compositor
-
-logger = logging.getLogger(__name__)
-
-DEFAULT_MAX_LINES = 20  # Default maximum lines for rendered content (both Panel height and truncation)
+DEFAULT_MAX_LINES = 20
 
 TurnEventType = UserText | AssistantText | ToolCall | ToolCallOutput | ReasoningItem
 
@@ -90,198 +82,6 @@ class MaxHeight:
             yield Segment(f"... ({len(lines) - self.max_height} more lines)\n")
 
 
-class RichDisplayHandler(BaseHandler):
-    """Rich-based display handler that renders events immediately.
-
-    Renders each event as it arrives with Rich formatting.
-    Each event is limited to max_lines (controls both Panel height and content truncation).
-
-    Automatically extracts tool result schemas from FastMCP servers.
-    """
-
-    def __init__(
-        self,
-        *,
-        max_lines: int = DEFAULT_MAX_LINES,
-        console: Console | None = None,
-        prefix: str = "",
-        servers: dict[MCPMountPrefix, FastMCP] | None = None,
-    ) -> None:
-        self._max_lines = max_lines
-        self._console = console or Console()
-        self._prefix = prefix
-
-        if servers:
-            self._tool_input_schemas = extract_tool_input_schemas(servers)
-            self._tool_schemas = extract_tool_schemas(servers)
-        else:
-            self._tool_input_schemas = {}
-            self._tool_schemas = {}
-
-        self._calls: dict[str, ToolCall] = {}
-
-    @classmethod
-    async def from_compositor(
-        cls,
-        compositor: Compositor,
-        *,
-        max_lines: int = DEFAULT_MAX_LINES,
-        console: Console | None = None,
-        prefix: str = "",
-    ) -> RichDisplayHandler:
-        """Create handler with schemas extracted from compositor."""
-        servers = await compositor.get_inproc_servers()
-        return cls(max_lines=max_lines, console=console, prefix=prefix, servers=servers)
-
-    # Observer hooks ---------------------------------------------------------
-
-    def on_user_text_event(self, evt: UserText) -> None:
-        self._render_event(evt)
-
-    def on_assistant_text_event(self, evt: AssistantText) -> None:
-        self._render_event(evt)
-
-    def on_tool_call_event(self, evt: ToolCall) -> None:
-        self._calls[evt.call_id] = evt
-        self._render_event(evt)
-
-    def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        self._render_event(evt)
-
-    def on_reasoning(self, item: ReasoningItem) -> None:
-        self._render_event(item)
-
-    def on_response(self, evt: Response) -> None:
-        pass  # No buffering, events already rendered
-
-    # Rendering --------------------------------------------------------------
-
-    def _render_event(self, event: TurnEventType) -> None:
-        renderable = self._create_renderable(event)
-        self._console.print(renderable)
-
-    def _panel(
-        self, content: RenderableType, title: str, color: str, *, bold: bool = False, border: bool = False
-    ) -> Panel:
-        """Create a Panel with colored title and height-constrained content.
-
-        Uses MaxHeight wrapper to truncate tall content while keeping short content compact.
-        Uses horizontal-only box (no left/right borders).
-        Prepends prefix to title.
-        """
-        style = f"bold {color}" if bold else color
-        # Incorporate prefix into title as a Text object (no markup interpretation)
-        full_title = f"{self._prefix}{title}" if self._prefix else title
-        formatted_title = Text(full_title, style=style)
-
-        constrained_content = MaxHeight(content, self._max_lines)
-
-        kwargs: dict[str, object] = {"title": formatted_title, "box": box.HORIZONTALS}
-        if border:
-            kwargs["border_style"] = color
-        return Panel(constrained_content, **kwargs)  # type: ignore[arg-type]
-
-    def _format_exec_input(self, input_data: Any) -> Text:
-        lines = []
-
-        timeout_sec = input_data.timeout_ms / 1000
-        lines.append(f"Timeout: {timeout_sec:.1f}s")
-
-        unwrapped = _unwrap_shell_command(input_data.cmd)
-        if unwrapped:
-            lines.append(unwrapped)
-        else:
-            quoted = " ".join(shlex.quote(part) for part in input_data.cmd)
-            lines.append(quoted)
-
-        return Text("\n".join(lines))
-
-    def _format_exec_result(self, result: BaseExecResult) -> Text:
-        lines = []
-
-        exit_status = result.exit
-        if exit_status.kind == "exited":
-            lines.append(f"Exit: {exit_status.exit_code} | Duration: {result.duration_ms}ms")
-        elif exit_status.kind == "killed":
-            lines.append(f"Killed: signal {exit_status.signal} | Duration: {result.duration_ms}ms")
-        elif exit_status.kind == "timed_out":
-            lines.append(f"Exit: timed out | Duration: {result.duration_ms}ms")
-
-        if isinstance(result.stdout, TruncatedStream):
-            stdout_text = result.stdout.truncated_text + "\n[truncated]"
-        else:
-            stdout_text = result.stdout
-
-        if stdout_text:
-            lines.append(f"\nStdout:\n{stdout_text}")
-
-        if isinstance(result.stderr, TruncatedStream):
-            stderr_text = result.stderr.truncated_text + "\n[truncated]"
-        else:
-            stderr_text = result.stderr
-
-        if stderr_text:
-            lines.append(f"\nStderr:\n{stderr_text}")
-
-        return Text("\n".join(lines))
-
-    def _create_renderable(self, event: TurnEventType) -> RenderableType:
-        if isinstance(event, UserText):
-            return self._panel(Text(event.text), "User", "blue", bold=True, border=True)
-
-        if isinstance(event, AssistantText):
-            return self._panel(Text(event.text), "Assistant", "green", bold=True, border=True)
-
-        if isinstance(event, ToolCall):
-            parsed = parse_json_or_none(event.args_json)
-            args = parsed if parsed is not None else {"_raw": event.args_json or "{}"}
-
-            tool_key = parse_tool_name(event.name)
-            if tool_key in self._tool_input_schemas and parsed is not None:
-                try:
-                    input_type = self._tool_input_schemas[tool_key]
-                    typed_input = TypeAdapter(input_type).validate_python(parsed)
-
-                    # TODO: replace duck-type check with a proper marker (e.g. a
-                    # base class or Protocol) so the display layer doesn't guess.
-                    if hasattr(typed_input, "cmd") and hasattr(typed_input, "timeout_ms"):
-                        formatted = self._format_exec_input(typed_input)
-                        return self._panel(formatted, f"▶ {event.name}", "cyan")
-                except ValidationError:
-                    pass  # Fall through to default JSON rendering
-
-            return self._panel(JSON.from_data(args), f"▶ {event.name}", "cyan")
-
-        if isinstance(event, ToolCallOutput):
-            call = self._calls.get(event.call_id)
-            label = f"◀ {call.name}" if call else "◀ tool_output"
-
-            display_data: Any = extract_display_data(event.result)
-
-            if isinstance(display_data, dict) and call:
-                tool_key = parse_tool_name(call.name)
-                if tool_key in self._tool_schemas:
-                    try:
-                        result_type = self._tool_schemas[tool_key]
-                        display_data = TypeAdapter(result_type).validate_python(display_data)
-                    except ValidationError:
-                        pass  # Keep raw data
-
-            if isinstance(display_data, str):
-                return self._panel(Text(display_data), label, "yellow")
-
-            if isinstance(display_data, BaseExecResult):
-                formatted = self._format_exec_result(display_data)
-                return self._panel(formatted, label, "yellow")
-
-            return self._panel(JSON.from_data(display_data), label, "yellow")
-
-        if isinstance(event, ReasoningItem):
-            return Text("💭 reasoning...", style="dim")
-
-        return Text(str(event))
-
-
 class CompactDisplayHandler(BaseHandler):
     """Compact display handler with Claude Code-style formatting.
 
@@ -316,22 +116,6 @@ class CompactDisplayHandler(BaseHandler):
             self._tool_schemas = {}
 
         self._calls: dict[str, ToolCall] = {}
-
-    @classmethod
-    async def from_compositor(
-        cls,
-        compositor: Compositor,
-        *,
-        max_lines: int = DEFAULT_MAX_LINES,
-        console: Console | None = None,
-        prefix: str = "",
-        show_token_usage: bool = True,
-    ) -> CompactDisplayHandler:
-        """Create handler with schemas extracted from compositor."""
-        servers = await compositor.get_inproc_servers()
-        return cls(
-            max_lines=max_lines, console=console, prefix=prefix, servers=servers, show_token_usage=show_token_usage
-        )
 
     # Observer hooks ---------------------------------------------------------
 

@@ -10,8 +10,8 @@ import pytest_bazel
 from fastmcp.server import FastMCP
 from hamcrest import assert_that, contains_inanyorder, has_length
 
-from mcp_infra.compositor.resources_server import ResourcesListArgs
 from mcp_infra.prefix import MCPMountPrefix
+from x.agent_cli.compositor.resources_server import ResourcesListArgs
 
 
 def _make_origin_with_resource() -> FastMCP:

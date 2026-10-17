@@ -1,13 +1,13 @@
 """Typed stubs for resources MCP server."""
 
-from mcp_infra.compositor.resources_server import (
+from mcp_infra.testing.stubs.server_stubs import ServerStub
+from x.agent_cli.compositor.resources_server import (
     ReadBlocksArgs,
     ReadBlocksResult,
     ResourcesListArgs,
     ResourcesListResult,
     ResourceTemplatesListResult,
 )
-from mcp_infra.testing.stubs.server_stubs import ServerStub
 
 
 class ResourcesServerStub(ServerStub):

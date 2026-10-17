@@ -1,17 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
-    name = "resources_stub",
-    testonly = True,
-    srcs = ["resources_stub.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":server_stubs",
-        "//mcp_infra/compositor:resources_server",
-    ],
-)
-
-py_library(
     name = "server_stubs",
     testonly = True,
     srcs = ["server_stubs.py"],

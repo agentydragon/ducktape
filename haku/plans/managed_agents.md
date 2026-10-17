@@ -111,8 +111,7 @@ headless-MCP-auth mechanism the PLAN's _MCP auth provisioning_ spike was for:
 Candidate servers to wire (each already has or could expose a gated public route):
 `haku-console` (already wired this way: a `static_bearer` bound to the console's
 aggregated `/mcp`), the Google Workspace MCP, and the
-`cluster/k8s/agents/*-mcp` fleet, optionally fronted by the `mcp_infra` compositor as
-a single endpoint.
+`cluster/k8s/agents/*-mcp` fleet.
 
 ### Two caveats that shape the source split
 

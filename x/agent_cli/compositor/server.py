@@ -26,19 +26,19 @@ from fastmcp.server import FastMCP
 from mcp import types as mcp_types
 from pydantic import AnyUrl, ValidationError
 
-from mcp_infra.compositor.mount import Mount
-from mcp_infra.compositor.rendering import render_compositor_instructions
-from mcp_infra.mount_types import MountEvent
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.snapshots import (
+from mcp_infra.tool_schemas import extract_tool_input_schemas, extract_tool_schemas
+from x.agent_cli.compositor.mount import Mount
+from x.agent_cli.compositor.mount_types import MountEvent
+from x.agent_cli.compositor.rendering import render_compositor_instructions
+from x.agent_cli.compositor.snapshots import (
     FailedServerEntry,
     InitializingServerEntry,
     RunningServerEntry,
     SamplingSnapshot,
     ServerEntry,
 )
-from mcp_infra.tool_schemas import extract_tool_input_schemas, extract_tool_schemas
 
 if TYPE_CHECKING:
     from pydantic import BaseModel

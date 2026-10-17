@@ -20,7 +20,7 @@ class MCPMountPrefix(str):
     """Validated MCP mount prefix (str subclass with validating constructor).
 
     Used in tool names as: {prefix}_{tool}
-    Used in mount operations: compositor.mount_inproc(name=prefix, server=...)
+    Used by the agent CLI compositor to identify mounted servers.
 
     Pattern: lowercase letter followed by lowercase letters/digits/underscores
     Length: 1-50 characters (all current prefixes are < 20 chars)

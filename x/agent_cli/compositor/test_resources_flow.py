@@ -9,10 +9,10 @@ from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.mcp.responses import MCPDecoratorMock
-from mcp_infra.compositor.resources_server import ResourcesReadArgs
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, UserMessage
+from x.agent_cli.compositor.resources_server import ResourcesReadArgs
 
 
 async def test_model_reads_container_info_with_stubbed_openai(

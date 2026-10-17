@@ -7,6 +7,7 @@ Register in downstream packages via conftest.py:
 from __future__ import annotations
 
 import pytest
+from fastmcp.client import Client
 from fastmcp.server import FastMCP
 
 from agent_core.mcp_provider import MCPToolProvider
@@ -14,7 +15,6 @@ from agent_core.testing.mcp.echo_server import make_echo_server
 from agent_core.tool_provider import ToolProvider
 
 # ---- MCP fixtures ----
-# Note: compositor and compositor_client fixtures are in mcp_infra.testing.fixtures
 
 
 @pytest.fixture
@@ -24,34 +24,23 @@ def echo_server() -> FastMCP:
 
 
 @pytest.fixture
-def echo_spec(echo_server) -> dict[str, FastMCP]:
-    """In-proc FastMCP server spec for echo tests."""
-    return {"echo": echo_server}
-
-
-@pytest.fixture
-async def mcp_client_echo(make_compositor, echo_spec):
+async def mcp_client_echo(echo_server):
     """Plain MCP client with echo server (no policy gateway).
 
-    For tests that don't need policy approval but need a simple MCP server.
-    Using plain Compositor avoids Docker overhead and potential timeouts.
-
-    Note: Requires mcp_infra.testing.fixtures to be registered for make_compositor.
+    For tests that need a simple MCP server but not a policy gateway.
     """
-    async with make_compositor(echo_spec) as (client, _comp):
+    async with Client(echo_server) as client:
         yield client
 
 
 @pytest.fixture
-def mcp_tool_provider(compositor_client) -> ToolProvider:
-    """MCPToolProvider wrapping compositor_client.
-
-    Use this fixture instead of manually wrapping compositor_client.
-    """
-    return MCPToolProvider(compositor_client)
+async def mcp_tool_provider() -> ToolProvider:
+    """Provider connected to an empty server for tests that make no MCP calls."""
+    async with Client(FastMCP("empty")) as client:
+        yield MCPToolProvider(client)
 
 
 @pytest.fixture
 def mcp_tool_provider_echo(mcp_client_echo) -> ToolProvider:
-    """MCPToolProvider wrapping echo-only client (no compositor)."""
+    """MCPToolProvider wrapping the echo-only client."""
     return MCPToolProvider(mcp_client_echo)

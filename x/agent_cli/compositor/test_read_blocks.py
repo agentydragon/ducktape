@@ -3,8 +3,8 @@
 import pytest_bazel
 from fastmcp.server import FastMCP
 
-from mcp_infra.compositor.resources_server import ReadBlocksArgs
 from mcp_infra.prefix import MCPMountPrefix
+from x.agent_cli.compositor.resources_server import ReadBlocksArgs
 
 
 async def test_read_blocks_single_text_block_full(compositor, typed_resources_client):

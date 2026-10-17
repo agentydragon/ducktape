@@ -16,7 +16,7 @@ from syrupy.assertion import SnapshotAssertion
 
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.tool_provider import ToolResult
-from mcp_infra.display.rich_display import CompactDisplayHandler
+from mcp_infra.display.compact_display import CompactDisplayHandler
 from mcp_infra.exec.docker.server import ContainerExecServer, _make_exec_input_model
 from mcp_infra.exec.docker.types import DefaultValue
 from mcp_infra.naming import build_mcp_function

@@ -1,4 +1,4 @@
-"""Mount event types shared between compositor and resources."""
+"""Mount event types emitted by the agent CLI compositor."""
 
 from enum import StrEnum
 

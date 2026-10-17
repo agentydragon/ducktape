@@ -9,10 +9,10 @@ import pytest
 import pytest_bazel
 from fastmcp.server import FastMCP
 
-from mcp_infra.compositor.compositor import Compositor
-from mcp_infra.compositor.mount import Mount, MountState
-from mcp_infra.compositor.server import CompositorState
 from mcp_infra.prefix import MCPMountPrefix
+from x.agent_cli.compositor.compositor import Compositor
+from x.agent_cli.compositor.mount import Mount, MountState
+from x.agent_cli.compositor.server import CompositorState
 
 
 async def test_compositor_state_transitions():

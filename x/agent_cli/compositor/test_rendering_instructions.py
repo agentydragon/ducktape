@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest_bazel
 from mcp import types
 
-from mcp_infra.compositor.rendering import render_compositor_instructions
 from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.snapshots import RunningServerEntry
+from x.agent_cli.compositor.rendering import render_compositor_instructions
+from x.agent_cli.compositor.snapshots import RunningServerEntry
 
 
 def test_render_single_running_with_instructions() -> None:

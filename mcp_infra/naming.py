@@ -12,7 +12,7 @@ and tool name; the tool portion may itself contain underscores.
 
 
 def build_mcp_function(server: MCPMountPrefix, tool: str) -> str:
-    """Return the fully-qualified tool name for the aggregated compositor surface.
+    """Return the fully-qualified tool name for an aggregated MCP server surface.
 
     Args:
         server: Mount prefix (already validated via MCPMountPrefix type)

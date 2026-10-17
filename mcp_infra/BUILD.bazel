@@ -61,13 +61,6 @@ py_library(
     name = "constants",
     srcs = ["constants.py"],
     visibility = ["//:__subpackages__"],
-    deps = [":prefix"],
-)
-
-py_library(
-    name = "mount_types",
-    srcs = ["mount_types.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(
@@ -137,18 +130,6 @@ py_library(
     srcs = ["resource_utils.py"],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "snapshots",
-    srcs = ["snapshots.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":prefix",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
-    ],
 )
 
 py_library(

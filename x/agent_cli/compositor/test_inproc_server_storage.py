@@ -11,9 +11,9 @@ import pytest_bazel
 from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.server import FastMCP
 
-from mcp_infra.compositor.compositor import Compositor
-from mcp_infra.compositor.mount import Mount
 from mcp_infra.prefix import MCPMountPrefix
+from x.agent_cli.compositor.compositor import Compositor
+from x.agent_cli.compositor.mount import Mount
 
 
 async def test_compositor_get_inproc_server_returns_server(compositor):

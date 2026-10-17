@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from mcp_infra.compositor.meta_server import CompositorMetaServer
-from mcp_infra.compositor.resources_server import ResourcesServer
-from mcp_infra.compositor.server import BaseCompositor
-from mcp_infra.constants import COMPOSITOR_META_MOUNT_PREFIX, RESOURCES_MOUNT_PREFIX
 from mcp_infra.mounted import Mounted
+from x.agent_cli.compositor.constants import COMPOSITOR_META_MOUNT_PREFIX, RESOURCES_MOUNT_PREFIX
+from x.agent_cli.compositor.meta_server import CompositorMetaServer
+from x.agent_cli.compositor.resources_server import ResourcesServer
+from x.agent_cli.compositor.server import BaseCompositor
 
 
 class Compositor(BaseCompositor):
