@@ -22,7 +22,7 @@ from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from pydantic import TypeAdapter
 from sqlalchemy import create_engine, delete, select
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from study_casino.actions import ActionResult, ImportData
@@ -170,7 +170,10 @@ class SqlStore:
     """Shared-schema store; one engine per process, every method takes `username`."""
 
     def __init__(self, database_url: str) -> None:
-        self._engine: Engine = create_engine(database_url)
+        url = make_url(database_url)
+        if url.drivername == "postgresql":
+            url = url.set(drivername="postgresql+psycopg")
+        self._engine: Engine = create_engine(url)
         _run_alembic_migrations(self._engine)
         self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
 

@@ -311,33 +311,11 @@ spec:
         - env:
             - name: STUDY_CASINO_IMAGE_TAG
               value: unset
-            - name: PG_USER
-              valueFrom:
-                secretKeyRef:
-                  key: user
-                  name: study-casino-db-app
-            - name: PG_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  key: password
-                  name: study-casino-db-app
-            - name: PG_HOST
-              valueFrom:
-                secretKeyRef:
-                  key: host
-                  name: study-casino-db-app
-            - name: PG_PORT
-              valueFrom:
-                secretKeyRef:
-                  key: port
-                  name: study-casino-db-app
-            - name: PG_DBNAME
-              valueFrom:
-                secretKeyRef:
-                  key: dbname
-                  name: study-casino-db-app
             - name: STUDY_CASINO_DATABASE_URL
-              value: postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@$(PG_HOST):$(PG_PORT)/$(PG_DBNAME)
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: study-casino-db-app
             - name: STUDY_CASINO_ADMIN_USERS
               value: agentydragon
             - name: STUDY_CASINO_OIDC_ISSUER
