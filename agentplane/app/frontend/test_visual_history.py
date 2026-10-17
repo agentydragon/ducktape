@@ -718,16 +718,26 @@ async def test_shell_call_command_and_output(shell_calls: VisualPage, call_text:
 async def test_shell_call_raw_arguments_and_json_output(shell_calls: VisualPage) -> None:
     view = shell_calls
     page = view.page
-    await _open_tool_run(page)
-    call = page.locator(".agentplane-step-details").filter(has_text="Test Bank")
+    await _open_run(page)
+    call = (
+        page.locator(".agentplane-step-details")
+        .filter(has=page.locator(".agentplane-step-title:text-is('Shell')"))
+        .first
+    )
+    await call.locator(".agentplane-disclosure-summary").first.click()
     await _focus(page, call.locator(".agentplane-step-controls"))
     await call.locator("label").filter(has_text=re.compile(r"^Raw$")).click()
     await expect(call.get_by_role("switch", name="Show raw arguments and output")).to_be_checked()
-    await expect(call.locator(".agentplane-clamped-block[data-label='Arguments']")).to_be_visible()
+    arguments = call.locator(".agentplane-clamped-block[data-label='Arguments']")
+    await expect(arguments).to_be_visible()
     await expect(call.locator(".agentplane-clamped-block[data-label='Command']")).to_have_count(0)
     await expect(call.locator(".agentplane-output-disclosure .agentplane-code-block")).to_contain_text(
         '"institution_name"'
     )
+    await _focus(page, arguments)
+    await expect(call.locator(".agentplane-step-controls")).to_be_in_viewport(ratio=1)
+    await expect(call.locator(".agentplane-output-label")).to_be_in_viewport(ratio=1)
+    await page.mouse.move(0, 0)
     await view.capture(target=page.locator("#app"))
 
 
