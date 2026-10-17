@@ -11,6 +11,7 @@ import pathspec
 import pygit2
 import uvicorn
 from openai import AsyncOpenAI
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.indexing.app import create_app
@@ -20,7 +21,7 @@ from agentplane.indexing.settings import Settings
 from agentplane.indexing.source import GitSource
 from agentplane.indexing.store import Store
 
-# SQLAlchemy imports the configured driver dynamically.
+# SQLAlchemy imports asyncpg dynamically from the engine URL.
 # gazelle:include_dep @pypi//asyncpg
 
 
@@ -28,7 +29,10 @@ async def async_main(settings: Settings) -> None:
     if settings.git_ca_bundle is not None:
         pygit2.settings.set_ssl_cert_locations(str(settings.git_ca_bundle), None)
     async with AsyncExitStack() as stack:
-        engine = create_async_engine(settings.database_url.get_secret_value(), pool_pre_ping=True, hide_parameters=True)
+        database_url = make_url(settings.database_url.get_secret_value())
+        if database_url.drivername == "postgresql":
+            database_url = database_url.set(drivername="postgresql+asyncpg")
+        engine = create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True)
         stack.push_async_callback(engine.dispose)
         store = Store(engine, budget=settings.chunk_budget, model_key=settings.embedding_model)
         await store.initialize()

@@ -168,12 +168,12 @@ def _worker(
                             env=[
                                 DATABASE.app_secret.key("username").env_var("DB_USERNAME"),
                                 DATABASE.app_secret.key("password").env_var("DB_PASSWORD"),
+                                # CNPG's uri targets the bootstrap `ducktape` database, but this
+                                # worker may target another per-repository database. Keep that
+                                # path and use a driver-neutral URI; the service selects asyncpg.
                                 k8s.EnvVar(
                                     name=env_name(Settings, "database_url"),
-                                    value=(
-                                        "postgresql+asyncpg://$(DB_USERNAME):$(DB_PASSWORD)"
-                                        f"@{DATABASE.rw.host}/{database}"
-                                    ),
+                                    value=f"postgresql://$(DB_USERNAME):$(DB_PASSWORD)@{DATABASE.rw.host}/{database}",
                                 ),
                                 k8s.EnvVar(name=env_name(Settings, "repository_url"), value=url),
                                 k8s.EnvVar(name=env_name(Settings, "branch"), value=branch),
