@@ -8,18 +8,10 @@ import os
 
 import mcp.types as mcp_types
 
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10MB
 
 # Intersection of formats accepted by both OpenAI and Anthropic vision APIs.
 SUPPORTED_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-
-
-class ReadImageInput(OpenAIStrictModeBaseModel):
-    """Input model for read_image tool (OpenAI strict mode compatible)."""
-
-    path: str
 
 
 def validate_and_encode_image(data: bytes, path: str | os.PathLike[str]) -> mcp_types.ImageContent:

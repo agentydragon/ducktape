@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from mcp_infra.enhanced.flat_mixin import FlatModelMixin
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.naming import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
@@ -18,7 +18,7 @@ ECHO_TOOL_NAME: Final[str] = "echo"
 
 
 class EchoInput(OpenAIStrictModeBaseModel):
-    """Input for echo tool."""
+    """Input payload helper for mock responses and serialized test calls."""
 
     text: str
 
@@ -29,13 +29,13 @@ class EchoOutput(OpenAIStrictModeBaseModel):
     echo: str
 
 
-def make_echo_server(name: str = "echo") -> FlatModelMixin:
+def make_echo_server(name: str = "echo") -> EnhancedFastMCP:
     """Create a FastMCP server with an echo tool."""
-    server = FlatModelMixin(name)
+    server = EnhancedFastMCP(name)
 
-    @server.flat_model()
-    def echo(input: EchoInput) -> EchoOutput:
+    @server.tool(output_schema=None)
+    def echo(text: str) -> EchoOutput:
         """Echo the input text back."""
-        return EchoOutput(echo=input.text)
+        return EchoOutput(echo=text)
 
     return server

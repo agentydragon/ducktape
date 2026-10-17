@@ -12,10 +12,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from pydantic import ConfigDict
+from fastmcp.server import FastMCP
 
 from mcp_infra.compositor.compositor import Compositor
-from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.exec.direct import DirectExecServer
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
@@ -32,12 +31,6 @@ class ConversationStatusProvider(Protocol):
     """Protocol for getting conversation status from Matrix client."""
 
     async def get_conversation_status(self) -> ConversationStatus: ...
-
-
-class SleepUntilUserMessageInput(OpenAIStrictModeBaseModel):
-    """Input for sleep_until_user_message tool (no arguments)."""
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class SleepUntilUserMessageResult(OpenAIStrictModeBaseModel):
@@ -83,7 +76,7 @@ class EmberCompositor(Compositor):
     - exec: DirectExecServer (exec, read_image tools)
     """
 
-    ember: Mounted[FlatModelMixin]
+    ember: Mounted[FastMCP]
     exec: Mounted[DirectExecServer]
 
     def __init__(
@@ -115,14 +108,14 @@ def _create_ember_sleep_server(
     sleep_callback: Callable[[], None],
     status_provider: ConversationStatusProvider | None,
     sleep_policy: SleepUntilUserMessagePolicy,
-) -> FlatModelMixin:
+) -> FastMCP:
     """Create MCP server with ember's sleep tool."""
-    server = FlatModelMixin("ember-tools")
+    server = FastMCP("ember-tools")
 
     sleep_description = _build_sleep_description(sleep_policy)
 
-    @server.flat_model(name="sleep_until_user_message", description=sleep_description)
-    async def sleep_until_user_message(input: SleepUntilUserMessageInput) -> SleepUntilUserMessageResult:
+    @server.tool(name="sleep_until_user_message", description=sleep_description, output_schema=None)
+    async def sleep_until_user_message() -> SleepUntilUserMessageResult:
         if isinstance(sleep_policy, EnforcedSleepUntilUserMessagePolicy):
             if status_provider is None:
                 return SleepUntilUserMessageResult(

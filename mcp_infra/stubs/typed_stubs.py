@@ -7,9 +7,10 @@ from typing import Any, cast, get_origin, get_type_hints
 
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
+from fastmcp.tools.function_tool import FunctionTool
 from pydantic import BaseModel, TypeAdapter
 
-from mcp_infra.flat_tool import FlatTool
+from mcp_infra.tool_schemas import input_model_for_tool
 
 
 class ToolStub[T_Out]:
@@ -88,18 +89,17 @@ class TypedClient:
     def from_server(cls, server: FastMCP, session: Client) -> TypedClient:
         """Create a TypedClient introspecting FastMCP's tool registry.
 
-        Requires a server created via FastMCP. Introspects FlatTool instances
-        for input_model and return type annotations.
+        Requires a server created via FastMCP. Introspects native FunctionTool
+        signatures for exposed input arguments and return type annotations.
         """
         components = server._local_provider._components
 
         client = cls(session)
         for component in components.values():
-            # Only FlatTool has the typed metadata we need
-            if not isinstance(component, FlatTool):
+            if not isinstance(component, FunctionTool):
                 continue
 
-            input_type: type[BaseModel] = component.input_model
+            input_type = input_model_for_tool(component)
 
             # Get output type from function's return annotation
             try:
@@ -108,7 +108,7 @@ class TypedClient:
             except NameError, TypeError, AttributeError:
                 hinted_output = None
 
-            output_type = _resolve_output_type(hinted_output, hinted_output)
+            output_type = _resolve_output_type(hinted_output, None)
             client._models[component.name] = ToolModels(Input=input_type, Output=output_type, _arg_model=input_type)
 
         return client

@@ -7,18 +7,15 @@ from contextlib import AbstractAsyncContextManager
 from fastmcp.server import FastMCP
 from fastmcp.server.auth import AuthProvider
 
-from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.enhanced.openai_strict_mixin import OpenAIStrictModeMixin
 
 logger = logging.getLogger(__name__)
 
 
-class EnhancedFastMCP(OpenAIStrictModeMixin, FlatModelMixin, FastMCP):
-    """Batteries-included FastMCP composed from 2 mixins.
+class EnhancedFastMCP(OpenAIStrictModeMixin, FastMCP):
+    """FastMCP with OpenAI strict-mode schema validation.
 
-    Composition:
-    - OpenAIStrictModeMixin: Validates tool schemas at registration time
-    - FlatModelMixin: ValidationError formatting + .flat_model() convenience
+    Tool handlers use FastMCP's native function signature and dependency injection.
     """
 
     def __init__(

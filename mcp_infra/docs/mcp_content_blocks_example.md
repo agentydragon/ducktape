@@ -48,8 +48,8 @@ class ResourceReadResult(BaseModel):
     parts: list[WindowedPart]  # WindowedTextPart | WindowedBlobPart
     total_parts: int
 
-@mcp.flat_model()
-async def read(input: ResourcesReadArgs) -> ResourceReadResult:
+@mcp.tool(output_schema=None)
+async def read(server: str, uri: str, start_offset: int, max_bytes: int | None) -> ResourceReadResult:
     # ... windowing logic ...
     return ResourceReadResult(...)
 ```
@@ -69,7 +69,7 @@ async def read(input: ResourcesReadArgs) -> ResourceReadResult:
 ```python
 from mcp import types as mcp_types
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 async def read_semantic(server: str, uri: str) -> list[mcp_types.EmbeddedResource]:
     """Read a resource and return it as an embedded resource with URI attached.
 
@@ -108,7 +108,7 @@ If you don't need the URI in the result (e.g., tool args already specify it):
 ```python
 from mcp import types as mcp_types
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 async def read_simple(server: str, uri: str) -> list[mcp_types.TextContent | mcp_types.ImageContent]:
     """Read a resource and return its content blocks directly.
 
@@ -350,30 +350,24 @@ async def analyze_page(url: str) -> list[mcp_types.TextContent | mcp_types.Image
 Add a flag to enable content blocks for clients that support it:
 
 ```python
-class ResourcesReadArgs(BaseModel):
-    server: str
-    uri: str
-    use_content_blocks: bool = Field(
-        default=False,
-        description="Return EmbeddedResource blocks instead of custom JSON (no windowing)"
-    )
-    start_offset: int = Field(default=0, ge=0)
-    max_bytes: int = Field(default=0, ge=0)
-
-@mcp.flat_model()
+@mcp.tool()
 async def read(
-    input: ResourcesReadArgs
+    server: str,
+    uri: str,
+    use_content_blocks: bool = False,
+    start_offset: int = 0,
+    max_bytes: int = 0,
 ) -> ResourceReadResult | list[mcp_types.EmbeddedResource]:
-    prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
+    prefixed = add_resource_prefix(uri, server, compositor.resource_prefix_format)
     uri_value = ANY_URL.validate_python(prefixed)
     contents = await compositor.read_resource_contents(uri_value)
 
-    if input.use_content_blocks:
+    if use_content_blocks:
         # Simple path: return EmbeddedResource blocks
         return [mcp_types.EmbeddedResource(type="resource", resource=part) for part in contents]
     else:
         # Legacy path: windowed custom JSON
-        return _build_window_payload(contents, input.start_offset, ...)
+        return _build_window_payload(contents, start_offset, ...)
 ```
 
 **Migration steps:**
@@ -388,8 +382,8 @@ async def read(
 Keep both tools for different use cases:
 
 ```python
-@mcp.flat_model()
-async def read(input: ResourcesReadArgs) -> ResourceReadResult:
+@mcp.tool()
+async def read(server: str, uri: str, start_offset: int, max_bytes: int | None) -> ResourceReadResult:
     """Read with windowing support (for large resources)."""
     # Current implementation unchanged
     ...

@@ -39,7 +39,6 @@ py_library(
     deps = [
         ":container_session",
         ":types",
-        "//mcp_infra:flat_tool",
         "//mcp_infra:prefix",
         "//mcp_infra/enhanced:server",
         "//mcp_infra/exec:read_image",

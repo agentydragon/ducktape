@@ -120,7 +120,7 @@ rg --type py "class.*Response.*BaseModel" mcp_infra/ adgn/mcp/ -A10 | rg -v "Fie
 
 ```python
 # BAD: Repeating schema in docstring
-@server.flat_model()
+@server.tool()
 def get_status(input: GetStatusArgs) -> GetStatusResponse:
     """Get current status.
 
@@ -136,7 +136,7 @@ def get_status(input: GetStatusArgs) -> GetStatusResponse:
 
 ```python
 # GOOD: Schema documented in Pydantic models, docstring focuses on behavior
-@server.flat_model()
+@server.tool()
 def get_status(input: GetStatusArgs) -> GetStatusResponse:
     """Get current status.
 
@@ -162,7 +162,7 @@ class GetStatusResponse(BaseModel):
 
 ```bash
 # Find docstrings with "Returns:" sections listing fields
-rg --type py -A10 "@server\.(flat_model|tool)" | rg "Returns:"
+rg --type py -A10 "@server\.tool" | rg "Returns:"
 ```
 
 ## Pattern 3: Missing Context in Field Descriptions
@@ -200,7 +200,7 @@ class SyncResponse(BaseModel):
 
 ```python
 # BAD: No guidance on polling patterns
-@server.flat_model()
+@server.tool()
 def get_status(input: GetStatusArgs) -> GetStatusResponse:
     """Get current status."""
     ...
@@ -210,7 +210,7 @@ def get_status(input: GetStatusArgs) -> GetStatusResponse:
 
 ```python
 # GOOD: Includes polling recommendations
-@server.flat_model()
+@server.tool()
 def get_status(input: GetStatusArgs) -> GetStatusResponse:
     """Get current status.
 
@@ -241,7 +241,7 @@ def get_status(input: GetStatusArgs) -> GetStatusResponse:
 
 ```bash
 # Find ALL @mcp.tool and @server.tool decorators
-rg --type py '@(mcp|server)\.(tool|flat_model)' -B 2 -A 15 --line-number
+rg --type py '@(mcp|server)\.tool' -B 2 -A 15 --line-number
 
 # Find ALL FastMCP server instantiations
 rg --type py 'FastMCP\(|Server\(' -B 1 -A 5 --line-number
@@ -280,7 +280,7 @@ rg --type py '@(mcp|server)\.resource' -B 2 -A 10 --line-number
 rg --type py "class.*Response.*BaseModel" -A10 mcp_infra/ adgn/mcp/
 
 # Find tools with redundant schema documentation
-rg --type py -B2 -A15 "@server\.(flat_model|tool)" mcp_infra/ adgn/mcp/ | rg "Returns:"
+rg --type py -B2 -A15 "@server\.tool" mcp_infra/ adgn/mcp/ | rg "Returns:"
 
 # Find MCP server implementations
 fd -e py "server\.py$" mcp_infra/ adgn/mcp/

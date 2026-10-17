@@ -5,13 +5,13 @@ from collections.abc import Iterator, Sequence
 from typing import Annotated, Final, Literal
 
 from fastmcp.exceptions import ToolError
+from fastmcp.tools.function_tool import FunctionTool
 from mcp import types as mcp_types
 from mcp.shared.exceptions import MCPError
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field
 
 from mcp_infra.compositor.server import BaseCompositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.flat_tool import FlatTool
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import add_resource_prefix
 from mcp_infra.resources.types import ResourceEntry
@@ -265,10 +265,10 @@ class ResourcesServer(EnhancedFastMCP):
     """
 
     # Tool references
-    list_tool: FlatTool
-    list_templates_tool: FlatTool
-    read_tool: FlatTool
-    read_blocks_tool: FlatTool
+    list_tool: FunctionTool
+    list_templates_tool: FunctionTool
+    read_tool: FunctionTool
+    read_blocks_tool: FunctionTool
 
     def __init__(self, *, compositor: BaseCompositor):
         """Create a Resources MCP server.
@@ -301,7 +301,13 @@ class ResourcesServer(EnhancedFastMCP):
         )
 
         # Register tools
-        async def list_resources(input: ResourcesListArgs) -> ResourcesListResult:
+        async def list_resources(
+            *,
+            server: Annotated[MCPMountPrefix | None, Field(description="Filter by server name (None = all servers)")],
+            uri_prefix: Annotated[
+                str | None, Field(description="Restrict to URIs starting with this prefix (None = no filter)")
+            ],
+        ) -> ResourcesListResult:
             """List MCP resources that are exposed by servers (if any). Filter by server name or URI prefix if desired.
 
             Returns only resources that MCP servers explicitly expose via the resources capability.
@@ -313,7 +319,7 @@ class ResourcesServer(EnhancedFastMCP):
 
             for server_name, entry in entries.items():
                 # Filter by server name if specified
-                if input.server and server_name != input.server:
+                if server and server_name != server:
                     continue
 
                 if not isinstance(entry, RunningServerEntry):
@@ -329,13 +335,13 @@ class ResourcesServer(EnhancedFastMCP):
 
                 for r in resources:
                     # Apply uri_prefix filter if specified
-                    if input.uri_prefix and not str(r.uri).startswith(input.uri_prefix):
+                    if uri_prefix and not str(r.uri).startswith(uri_prefix):
                         continue
                     out.append(ResourceEntry(server=server_name, resource=r))
 
             return ResourcesListResult(resources=out)
 
-        self.list_tool = self.flat_model()(list_resources)
+        self.list_tool = self.tool(output_schema=None)(list_resources)
 
         async def list_resource_templates() -> ResourceTemplatesListResult:
             """List URI templates (RFC 6570) that servers expose for constructing resource URIs, tagged by origin server.
@@ -359,15 +365,24 @@ class ResourcesServer(EnhancedFastMCP):
                 out.extend(ResourceTemplateEntry(server=server_prefix, template=template) for template in templates)
             return ResourceTemplatesListResult(templates=out)
 
-        self.list_templates_tool = self.flat_model()(list_resource_templates)
+        self.list_templates_tool = self.tool(output_schema=None)(list_resource_templates)
 
-        async def read(input: ResourcesReadArgs) -> ResourceReadResult:
+        async def read(
+            *,
+            server: Annotated[MCPMountPrefix, Field(description="Origin MCP server name that owns the resource")],
+            uri: Annotated[str, Field(description="Resource URI as reported by the origin server's list")],
+            start_offset: Annotated[int, Field(ge=0, description="Start byte offset for windowed reads")],
+            max_bytes: Annotated[
+                int | None,
+                Field(description=f"Max bytes to return (None means use default limit of {DEFAULT_MAX_BYTES:,} bytes)"),
+            ],
+        ) -> ResourceReadResult:
             """Read contents of an MCP resource that a server exposes. Use start_offset and max_bytes for pagination.
 
             Only works for resources that servers explicitly expose via their resources capability.
             Use list_resources first to see what resources are available.
             """
-            prefixed = add_resource_prefix(input.uri, input.server)
+            prefixed = add_resource_prefix(uri, server)
             uri_value = AnyUrl(prefixed)
             # Call compositor method that converts FastMCP types to MCP protocol types
             # (resources server is tightly coupled to compositor for metadata)
@@ -375,15 +390,27 @@ class ResourcesServer(EnhancedFastMCP):
                 contents = await self._compositor.read_resource_contents(uri_value)
             except MCPError as e:
                 raise ToolError(
-                    f"The MCP server '{input.server}' does not provide the resource '{input.uri}'. "
+                    f"The MCP server '{server}' does not provide the resource '{uri}'. "
                     f"Use list_resources to see available resources. Original error: {e}"
                 ) from e
-            max_bytes = input.max_bytes if input.max_bytes is not None else DEFAULT_MAX_BYTES
-            return _build_window_payload(contents, input.start_offset, max_bytes)
+            byte_limit = max_bytes if max_bytes is not None else DEFAULT_MAX_BYTES
+            return _build_window_payload(contents, start_offset, byte_limit)
 
-        self.read_tool = self.flat_model()(read)
+        self.read_tool = self.tool(output_schema=None)(read)
 
-        async def read_blocks(input: ReadBlocksArgs) -> ReadBlocksResult:
+        async def read_blocks(
+            *,
+            server: Annotated[str, Field(description="Origin MCP server name")],
+            uri: Annotated[str, Field(description="Resource URI")],
+            start_block: Annotated[int, Field(ge=0, description="Block index to start from (0-based)")],
+            start_offset: Annotated[int, Field(ge=0, description="Byte offset within start_block to begin reading")],
+            max_bytes: Annotated[
+                int | None,
+                Field(
+                    description=f"Maximum bytes to return (None means use default limit of {DEFAULT_MAX_BYTES:,} bytes)"
+                ),
+            ],
+        ) -> ReadBlocksResult:
             """Read MCP resource with block-level windowing. Returns complete blocks plus truncation markers for partial blocks.
 
             Only works for resources that servers explicitly expose via their resources capability.
@@ -398,23 +425,23 @@ class ResourcesServer(EnhancedFastMCP):
             - Text: slice at UTF-8 byte boundaries (may split multi-byte characters, uses errors='replace')
             - Blob: slice base64 string directly (always valid since base64 is ASCII)
             """
-            prefixed = add_resource_prefix(input.uri, input.server)
+            prefixed = add_resource_prefix(uri, server)
             uri_value = AnyUrl(prefixed)
             try:
                 contents = await self._compositor.read_resource_contents(uri_value)
             except MCPError as e:
                 raise ToolError(
-                    f"The MCP server '{input.server}' does not provide the resource '{input.uri}'. "
+                    f"The MCP server '{server}' does not provide the resource '{uri}'. "
                     f"Use list_resources to see available resources. Original error: {e}"
                 ) from e
 
-            max_bytes = input.max_bytes if input.max_bytes is not None else DEFAULT_MAX_BYTES
+            byte_limit = max_bytes if max_bytes is not None else DEFAULT_MAX_BYTES
             result_blocks: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents | TruncatedBlock] = []
             bytes_accumulated = 0
 
             for block_idx, block in enumerate(contents):
                 # Skip blocks before start_block
-                if block_idx < input.start_block:
+                if block_idx < start_block:
                     continue
 
                 # Get block size
@@ -432,8 +459,8 @@ class ResourcesServer(EnhancedFastMCP):
                     raise TypeError(f"Unsupported content type: {type(block).__name__}")
 
                 # Determine slice range for this block
-                slice_start = input.start_offset if block_idx == input.start_block else 0
-                remaining_budget = max_bytes - bytes_accumulated
+                slice_start = start_offset if block_idx == start_block else 0
+                remaining_budget = byte_limit - bytes_accumulated
 
                 if slice_start >= block_size:
                     # start_offset is beyond this block, skip it
@@ -502,9 +529,9 @@ class ResourcesServer(EnhancedFastMCP):
                     bytes_accumulated += can_take
                     break  # Hit budget limit
 
-                if bytes_accumulated >= max_bytes:
+                if bytes_accumulated >= byte_limit:
                     break
 
             return ReadBlocksResult(blocks=result_blocks)
 
-        self.read_blocks_tool = self.flat_model()(read_blocks)
+        self.read_blocks_tool = self.tool(output_schema=None)(read_blocks)

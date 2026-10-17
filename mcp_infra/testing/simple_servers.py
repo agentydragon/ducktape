@@ -14,19 +14,13 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from mcp_infra.enhanced.flat_mixin import FlatModelMixin
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Test server constants (SSOT for test fixtures)
 ECHO_MOUNT_PREFIX = MCPMountPrefix("echo")
 ECHO_TOOL_NAME = "echo"
-
-
-class EchoInput(OpenAIStrictModeBaseModel):
-    """Input for echo tool."""
-
-    text: str
 
 
 class EchoOutput(BaseModel):
@@ -45,21 +39,21 @@ class SendMessageInput(OpenAIStrictModeBaseModel):
     content: str
 
 
-def build_simple_tools(server: FlatModelMixin) -> None:
+def build_simple_tools(server: EnhancedFastMCP) -> None:
     """Register the standard simple tools on ``server``.
 
     The helpers are intentionally deterministic and side-effect free so they can
     be reused across unit, integration, and approval-policy tests.
     """
 
-    @server.flat_model()
-    def echo(input: EchoInput) -> EchoOutput:
-        return EchoOutput(echo=input.text)
+    @server.tool(output_schema=None)
+    def echo(text: str) -> EchoOutput:
+        return EchoOutput(echo=text)
 
 
-def make_simple_mcp() -> FlatModelMixin:
-    """Create a FlatModelMixin server exposing the shared simple tools."""
+def make_simple_mcp() -> EnhancedFastMCP:
+    """Create a FastMCP server exposing the shared simple tools."""
 
-    server = FlatModelMixin("simple")
+    server = EnhancedFastMCP("simple")
     build_simple_tools(server)
     return server

@@ -1,24 +1,12 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "flat_mixin",
-    srcs = ["flat_mixin.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//mcp_infra:flat_tool",
-        "//openai_utils:json_schema",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "openai_strict_mixin",
     srcs = ["openai_strict_mixin.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//mcp_infra:tool_schemas",
+        "//openai_utils:json_schema",
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp_slim",
     ],
@@ -29,52 +17,35 @@ py_library(
     srcs = ["server.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":flat_mixin",
-        ":openai_strict_mixin",
-        "@pypi//fastmcp_slim",
-    ],
-)
-
-py_library(
-    name = "simple",
-    srcs = ["simple.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":flat_mixin",
         ":openai_strict_mixin",
         "@pypi//fastmcp_slim",
     ],
 )
 
 py_test(
-    name = "test_flat_decorator",
-    srcs = ["test_flat_decorator.py"],
+    name = "test_tool_registration",
+    srcs = ["test_tool_registration.py"],
     deps = [
         ":server",
         "//:conftest",
         "//mcp_infra:conftest",
         "//mcp_infra/stubs:typed_stubs",
-        "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//more_itertools",
         "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
 
 py_test(
-    name = "test_flat_helper",
-    srcs = ["test_flat_helper.py"],
+    name = "test_tool_schemas",
+    srcs = ["test_tool_schemas.py"],
     deps = [
         ":server",
         "//:conftest",
         "//mcp_infra:conftest",
-        "//openai_utils:pydantic_strict_mode",
+        "//mcp_infra:prefix",
+        "//mcp_infra:tool_schemas",
         "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

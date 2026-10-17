@@ -12,7 +12,6 @@ py_library(
     srcs = ["read_image.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//openai_utils:pydantic_strict_mode",
         "@pypi//mcp",
         "@pypi//mcp_types",
     ],
@@ -25,13 +24,13 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":read_image",
-        "//mcp_infra:flat_tool",
         "//mcp_infra/enhanced:server",
         "//util/exec:models",
         "//util/exec:subprocess",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//mcp_types",
+        "@pypi//pydantic",
     ],
 )
 

@@ -173,10 +173,9 @@ py_library(
         "//mcp_infra:mounted",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor",
-        "//mcp_infra/enhanced:flat_mixin",
         "//mcp_infra/exec:direct",
         "//openai_utils:pydantic_strict_mode",
-        "@pypi//pydantic",
+        "@pypi//fastmcp_slim",
     ],
 )
 

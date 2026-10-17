@@ -33,21 +33,17 @@ Import the type and pass `annotations=` at registration:
 from mcp.types import ToolAnnotations
 
 
-@mcp.tool(  # standard FastMCP decorator
+@mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
 )
 async def search_nodes(query: str) -> str: ...
 ```
 
-The flat-model path is already plumbed — `@flat_model` forwards `annotations`
-into the underlying `Tool(...)` (`mcp_infra/enhanced/flat_mixin.py`):
+Tools registered through `EnhancedFastMCP` use the same FastMCP decorator:
 
 ```python
-@enhanced.flat_model(
-    "search_nodes",
-    annotations=ToolAnnotations(readOnlyHint=True),
-)
-def search_nodes(payload: SearchRequest) -> SearchResult: ...
+@enhanced.tool(annotations=ToolAnnotations(readOnlyHint=True))
+def search_nodes(query: str) -> SearchResult: ...
 ```
 
 ## Why set them
@@ -59,8 +55,8 @@ can use `destructiveHint=False` / `idempotentHint=True` to qualify how they chan
 Currently annotated: haku-console's own read meta-tools (`list_mcp_servers`, `get_tool_call`,
 `list_tool_calls` — closed-world, so also `openWorldHint=False`) and the in-process `gmail` and
 `google_calendar` read tools (`readOnlyHint=True`; external mailbox/calendar, so `openWorldHint`
-left at its default `true`). `flat_mixin.py` and `google_discovery.py` (`GenTool.annotations`)
-both forward the type to their generated tools.
+left at its default `true`). `google_discovery.py` (`GenTool.annotations`)
+also forwards the type to its generated tools.
 
 ## Propagation through haku-console
 

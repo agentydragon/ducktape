@@ -173,8 +173,8 @@ class ResolvedExecInput:
     """Resolved execution parameters for docker container exec (internal).
 
     Constructed by the server handler after applying CwdPolicy and field gating.
-    Not the tool's input schema — the LLM-facing schema is dynamically generated
-    by ``_make_exec_input_model`` in ``mcp_infra.exec.docker.server``.
+    Not the tool's input schema — the LLM-facing schema is generated from the
+    native FastMCP exec function signature.
     """
 
     cmd: list[str]

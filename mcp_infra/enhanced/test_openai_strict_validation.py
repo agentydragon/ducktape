@@ -15,15 +15,6 @@ def mcp() -> EnhancedFastMCP:
     return EnhancedFastMCP("openai_strict_test")
 
 
-class StrictInput(BaseModel):
-    """Input model with strict mode (additionalProperties: false)."""
-
-    name: str
-    value: int
-
-    model_config = ConfigDict(extra="forbid")
-
-
 class NonStrictInput(BaseModel):
     """Input model without strict mode (additionalProperties not set)."""
 
@@ -69,14 +60,13 @@ class InputWithNestedSet(BaseModel):
 def test_strict_mode_validates_at_registration(mcp: EnhancedFastMCP):
     """OpenAI strict mode validation should happen at tool registration time.
 
-    Uses @flat_model which preserves additionalProperties: false from Pydantic models.
-    Regular @tool() goes through FastMCP introspection which strips it.
+    Native function parameters are converted to an OpenAI-compatible argument schema.
     """
 
-    @mcp.flat_model()
-    def strict_tool(input: StrictInput) -> str:
+    @mcp.tool(output_schema=None)
+    def strict_tool(name: str, value: int) -> str:
         """Tool with strict input model."""
-        return f"{input.name}: {input.value}"
+        return f"{name}: {value}"
 
     # Should succeed - tool is registered and validated
     # (No exception means validation passed)
@@ -88,7 +78,7 @@ def test_strict_mode_rejects_non_strict_schema(mcp: EnhancedFastMCP):
     # doesn't have extra="forbid" (which generates additionalProperties: false)
     with pytest.raises(ValueError, match="additionalProperties"):
 
-        @mcp.flat_model()
+        @mcp.tool(output_schema=None)
         def non_strict_tool(input: NonStrictInput) -> str:
             """Tool with non-strict input model."""
             return input.name
@@ -99,7 +89,7 @@ def test_strict_mode_rejects_set_field(mcp: EnhancedFastMCP):
     # set[str] produces uniqueItems: true in JSON schema, which OpenAI doesn't allow
     with pytest.raises(ValueError, match="uniqueItems"):
 
-        @mcp.flat_model()
+        @mcp.tool(output_schema=None)
         def set_tool(input: InputWithSet) -> str:
             """Tool with set field."""
             return str(input.ids)
@@ -108,7 +98,7 @@ def test_strict_mode_rejects_set_field(mcp: EnhancedFastMCP):
 def test_strict_mode_accepts_ref_with_description(mcp: EnhancedFastMCP):
     """$ref with description is auto-inlined by OpenAICompatibleSchema, so registration succeeds."""
 
-    @mcp.flat_model()
+    @mcp.tool(output_schema=None)
     def ref_desc_tool(input: InputWithNestedRefAndDescription) -> str:
         """Tool with $ref + description."""
         return input.nested.value
@@ -119,7 +109,7 @@ def test_strict_mode_rejects_nested_set_in_defs(mcp: EnhancedFastMCP):
     # The inner model has set[str] which produces uniqueItems in $defs
     with pytest.raises(ValueError, match="uniqueItems"):
 
-        @mcp.flat_model()
+        @mcp.tool(output_schema=None)
         def nested_set_tool(input: InputWithNestedSet) -> str:
             """Tool with nested model containing set."""
             return str(input.inner.ids)

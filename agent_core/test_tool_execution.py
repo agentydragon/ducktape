@@ -11,6 +11,7 @@ from typing import Annotated, Any, Final, Literal
 import pytest
 import pytest_bazel
 from fastmcp.exceptions import ToolError
+from fastmcp.tools.function_tool import FunctionTool
 from hamcrest import anything, assert_that, contains_string, greater_than_or_equal_to, has_entries, has_length
 from more_itertools import one
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,14 +24,11 @@ from agent_core.testing.matchers import assert_function_call_output_structured, 
 from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_core.testing.responses import DecoratorMock, ResponsesFactory
 from agent_core.tool_provider import ImageContent, TextContent, ToolResult
-from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.flat_tool import FlatTool
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import SendMessageInput
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, SystemMessage, UserMessage
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from openai_utils.testing.openai_mock import NoopOpenAIClient, make_mock
 
 
@@ -43,8 +41,8 @@ def text_content():
 # ---- Local fixtures (only used by this module) ----
 
 
-class _EmptyInput(OpenAIStrictModeBaseModel):
-    """Empty input for rendezvous tools."""
+class _EmptyInput(BaseModel):
+    """Payload helper for mocked no-argument rendezvous calls."""
 
 
 class _RendezvousOutput(BaseModel):
@@ -56,13 +54,13 @@ class _RendezvousOutput(BaseModel):
 
 
 @pytest.fixture
-def rendezvous_server() -> FlatModelMixin:
+def rendezvous_server() -> EnhancedFastMCP:
     """FastMCP server whose tool returns only once a second call of it is running too."""
-    mcp = FlatModelMixin("dummy")
+    mcp = EnhancedFastMCP("dummy")
     both_running = asyncio.Barrier(2)
 
-    @mcp.flat_model()
-    async def rendezvous(input: _EmptyInput) -> _RendezvousOutput:
+    @mcp.tool(output_schema=None)
+    async def rendezvous() -> _RendezvousOutput:
         """Waits for another call of this tool to be in flight."""
         # Serial execution never brings the second call; the timeout turns that deadlock into a failure.
         async with asyncio.timeout(5):
@@ -75,18 +73,18 @@ def rendezvous_server() -> FlatModelMixin:
 class ValidationServer(EnhancedFastMCP):
     """EnhancedFastMCP server with a tool that validates input strictly."""
 
-    send_message_tool: FlatTool[Any, Any]
+    send_message_tool: FunctionTool
 
     def __init__(self):
         super().__init__("validator")
 
-        def send_message(input: SendMessageInput) -> dict[str, Any]:
+        def send_message(mime: Literal["text/markdown", "text/plain"], content: str) -> dict[str, Any]:
             """Send a message with mime type validation."""
-            if input.mime == "text/plain":
+            if mime == "text/plain":
                 raise ToolError("Validation error: Only text/markdown is supported, not text/plain")
-            return {"ok": True, "message": input.content}
+            return {"ok": True, "message": content}
 
-        self.send_message_tool = self.flat_model()(send_message)
+        self.send_message_tool = self.tool(output_schema=None)(send_message)
 
 
 @pytest.fixture
@@ -399,7 +397,7 @@ def test_preserves_error_flag(text_content):
     assert sanitized.is_error is True
 
 
-# --- Flat tool schema tests ---
+# --- Native tool schema tests ---
 
 TOOL_A_NAME: Final[str] = "tool_a"
 
@@ -421,13 +419,16 @@ class ToolAResult(BaseModel):
 
 @pytest.fixture
 def mcp_a() -> EnhancedFastMCP:
-    """Create MCP server A with a simple flat tool."""
+    """Create MCP server A with a native function-signature tool."""
     mcp = EnhancedFastMCP()
 
-    @mcp.flat_model()
-    def tool_a(input: ToolAInput) -> ToolAResult:
+    @mcp.tool(output_schema=None)
+    def tool_a(
+        param_x: Annotated[float, Field(description="First parameter")],
+        param_y: Annotated[float, Field(description="Second parameter")],
+    ) -> ToolAResult:
         """Perform tool A on the inputs."""
-        return ToolAResult(value=input.param_x + input.param_y)
+        return ToolAResult(value=param_x + param_y)
 
     return mcp
 
@@ -488,16 +489,22 @@ def mcp_b() -> EnhancedFastMCP:
     """Create MCP server B with complex nested schema."""
     mcp = EnhancedFastMCP()
 
-    @mcp.flat_model()
-    def tool_b(input: ToolBInput) -> ToolBResult:
+    @mcp.tool(output_schema=None)
+    def tool_b(
+        identifier: Annotated[str, Field(description="Required regex field", pattern=r"^[a-z]{3}$")],
+        count: Annotated[int, Field(description="Int with range", ge=10, le=100)],
+        nested: NestedInfo,
+        category: CategoryInfo,
+        flag: bool = False,
+    ) -> ToolBResult:
         """Perform tool B with complex validation."""
         return ResponseB(error_code="TEST", message="test")
 
     return mcp
 
 
-async def test_agent_compositor_flat_tools_request_schema(compositor, mcp_tool_provider, mcp_a, mcp_b) -> None:
-    """Test agent with 2 flat MCP servers attached one by one, showing schema evolution.
+async def test_agent_compositor_native_tool_request_schema(compositor, mcp_tool_provider, mcp_a, mcp_b) -> None:
+    """Test agent with native FastMCP servers attached one by one, showing schema evolution.
 
     This test demonstrates:
     1. Mounting mcp_a alone -> schema has only tool_a

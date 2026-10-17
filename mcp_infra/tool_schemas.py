@@ -10,13 +10,13 @@ Uses FastMCP internal `_local_provider._components` because the public
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING
+import re
+from typing import TYPE_CHECKING, Any, get_type_hints
 
 from fastmcp.tools import Tool
 from fastmcp.tools.function_tool import FunctionTool
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, create_model
 
-from mcp_infra.flat_tool import FlatTool
 from mcp_infra.prefix import MCPMountPrefix
 
 if TYPE_CHECKING:
@@ -26,6 +26,41 @@ if TYPE_CHECKING:
 def _iter_tools(server: FastMCP) -> list[Tool]:
     """Get tools from FastMCP server via sync internal access."""
     return [c for c in server._local_provider._components.values() if isinstance(c, Tool)]
+
+
+def input_model_for_tool(tool: FunctionTool) -> type[BaseModel]:
+    """Build a Pydantic model for a FunctionTool's exposed arguments.
+
+    FastMCP's native tool API takes one typed function parameter per argument.
+    Reconstructing a model from that signature keeps typed clients and rich
+    display validation without a custom Tool subclass.
+    """
+    try:
+        signature = inspect.signature(tool.fn)
+    except ValueError, TypeError:
+        return create_model(f"{tool.name}Input", __config__=ConfigDict(extra="forbid"))
+
+    try:
+        hints = get_type_hints(tool.fn, include_extras=True)
+    except NameError, TypeError, AttributeError:
+        hints = {}
+
+    properties = tool.parameters.get("properties", {})
+    fields: dict[str, Any] = {}
+    for name in properties:
+        parameter = signature.parameters.get(name)
+        if parameter is None:
+            continue
+        annotation = hints.get(name, parameter.annotation)
+        if annotation is inspect.Parameter.empty:
+            annotation = Any
+        default = parameter.default
+        if default is inspect.Parameter.empty:
+            default = ...
+        fields[name] = (annotation, default)
+
+    model_name = re.sub(r"\W+", "_", f"{tool.name.title()}Input")
+    return create_model(model_name, __config__=ConfigDict(extra="forbid"), **fields)
 
 
 def extract_tool_schemas(servers: dict[MCPMountPrefix, FastMCP]) -> dict[tuple[MCPMountPrefix, str], type[BaseModel]]:
@@ -45,7 +80,11 @@ def extract_tool_schemas(servers: dict[MCPMountPrefix, FastMCP]) -> dict[tuple[M
             except ValueError, TypeError:
                 continue
 
-            return_type = sig.return_annotation
+            try:
+                hints = get_type_hints(tool.fn, include_extras=True)
+            except NameError, TypeError, AttributeError:
+                hints = {}
+            return_type = hints.get("return", sig.return_annotation)
             if inspect.isclass(return_type) and issubclass(return_type, BaseModel):
                 schemas[(server_prefix, tool.name)] = return_type
 
@@ -57,36 +96,14 @@ def extract_tool_input_schemas(
 ) -> dict[tuple[MCPMountPrefix, str], type[BaseModel]]:
     """Extract tool input types from FastMCP servers.
 
-    Only includes FlatTools or FunctionTools with a single Pydantic BaseModel parameter annotation.
+    Includes FunctionTools using FastMCP's native function-signature API.
     """
     schemas: dict[tuple[MCPMountPrefix, str], type[BaseModel]] = {}
 
     for server_prefix, server in servers.items():
         for tool in _iter_tools(server):
-            # Check for FlatTool first
-            if isinstance(tool, FlatTool):
-                schemas[(server_prefix, tool.name)] = tool.input_model
-                continue
-
-            # Regular FunctionTools: check for single Pydantic param
             if not isinstance(tool, FunctionTool):
                 continue
-
-            try:
-                sig = inspect.signature(tool.fn)
-            except ValueError, TypeError:
-                continue
-
-            params = list(sig.parameters.values())
-            pydantic_params = [
-                p
-                for p in params
-                if p.annotation != inspect.Parameter.empty
-                and inspect.isclass(p.annotation)
-                and issubclass(p.annotation, BaseModel)
-            ]
-
-            if len(pydantic_params) == 1:
-                schemas[(server_prefix, tool.name)] = pydantic_params[0].annotation
+            schemas[(server_prefix, tool.name)] = input_model_for_tool(tool)
 
     return schemas

@@ -1,58 +1,67 @@
-# FastMCP + Pydantic: Typed Tool I/O
+# FastMCP tools with Pydantic
 
-## Server Pattern
-
-Subclass `EnhancedFastMCP`, expose tools as typed `FunctionTool` attributes:
+Use FastMCP's native function signature as the tool input schema. Declare one
+typed parameter per argument, and use `Annotated` with `Field` for parameter
+descriptions and validation:
 
 ```python
-from fastmcp.tools import FunctionTool
-from pydantic import BaseModel
-from mcp_infra.enhanced import EnhancedFastMCP
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from typing import Annotated
 
-class MyInput(OpenAIStrictModeBaseModel):
-    """Input for my_tool."""
-    name: str
-    count: int | None = None
+from fastmcp.tools.function_tool import FunctionTool
+from pydantic import BaseModel, Field
 
-class MyOutput(BaseModel):
-    result: str
+from mcp_infra.enhanced.server import EnhancedFastMCP
+from util.exec.models import TimeoutMs
 
-class MyServer(EnhancedFastMCP):
-    my_tool: FunctionTool
 
-    def __init__(self):
-        super().__init__("My Server", instructions="...")
+class LookupResult(BaseModel):
+    value: str
 
-        def my_tool(input: MyInput) -> MyOutput:
-            """Tool description for the LLM."""
-            return MyOutput(result=f"Processed {input.name}")
 
-        self.my_tool = self.flat_model()(my_tool)
+class LookupServer(EnhancedFastMCP):
+    lookup_tool: FunctionTool
+
+    def __init__(self) -> None:
+        super().__init__("Lookup")
+
+        def lookup(
+            key: Annotated[str, Field(description="Identifier to look up")],
+            timeout_ms: TimeoutMs,
+        ) -> LookupResult:
+            """Look up a value by identifier."""
+            return LookupResult(value=key)
+
+        self.lookup_tool = self.tool(output_schema=None)(lookup)
 ```
 
-Tool names derive from function names. Access via `server.my_tool.name`.
+`EnhancedFastMCP` validates registered function schemas for OpenAI strict mode.
+It rebuilds the input schema using the same Pydantic schema generator as the
+rest of the repository, including nested models and discriminated unions. Every
+exposed parameter is required in the published schema; a Python default still
+applies when calling the handler directly. Use `T | None` when the client may
+send `null`.
 
-## Input Models
+## Inputs
 
-**Always use `OpenAIStrictModeBaseModel`** (auto-validates at class definition):
+- Prefer native function parameters over a single Pydantic model parameter;
+  the latter produces a nested `input` object in the MCP schema.
+- Use `Annotated[T, Field(...)]` for constraints and LLM-facing descriptions.
+- Use `OpenAIStrictModeBaseModel` for nested request models that need strict
+  schema checks.
+- Use `list[T]` rather than `set[T]`, and `str` rather than `Path` in tool
+  schemas.
+- FastMCP injects `Context` parameters and `Depends(...)` values without
+  exposing them as tool arguments.
 
-- `T | None = None` for optional fields (all fields must be in `required` array)
-- `list[T]` not `set[T]` (uniqueItems not allowed in strict mode)
-- `str` not `Path` (format="path" not allowed)
-- `Field(description=...)` for LLM-facing docs
-- No `dict[str, Any]`, `Any`, `*args`, `**kwargs`, untyped params, or dataclasses
+## Outputs
 
-## Output Models
+FastMCP infers structured output schemas from return annotations by default.
+Pass `output_schema=None` when the tool returns MCP content blocks or when the
+existing tool contract intentionally has no structured output schema. Use a
+Pydantic `BaseModel` return type for structured data.
 
-- Structured data: Pydantic `BaseModel` (no strict mode requirement)
-- Simple value: primitive (`str`, `int`)
-- Acknowledgment: actionable string (`f"Item {id} deleted"`)
+## Typed clients and display
 
-## TypeAdapter
-
-Only for parsing outside tools (tests, ad-hoc validation). Inside tools, FastMCP validates inputs automatically.
-
-## Schema Wiring
-
-MCP `list_tools` -> `inputSchema` (JSON Schema) -> mapped to OpenAI/Anthropic tool definitions as `{server}_{tool}`. Correct types = correct schema = no need to restate parameters in prompts.
+`TypedClient.from_server` and `extract_tool_input_schemas` derive Pydantic input
+models from each native `FunctionTool` signature. This keeps typed test clients
+and rich input rendering available without a custom FastMCP `Tool` subclass.
