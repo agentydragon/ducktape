@@ -103,13 +103,43 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
         await _focus(page, output)
         await output.get_by_role("button", name=re.compile("^Show all")).click()
         await expect(output).to_have_attribute("data-expanded", "true")
-        await output.evaluate(
-            dedent(
-                "element => {\n                  const history = element.closest('[aria-label=\"Thread history\"]');\n                  history.scrollTop += element.getBoundingClientRect().top - history.getBoundingClientRect().top + 300;\n                }"
-            )
+        history = page.get_by_role("region", name="Thread history")
+        run_steps = page.locator(".agentplane-run-steps").first
+        run_card = run_steps.locator("xpath=ancestor::*[@data-open][1]")
+        run_heading = run_card.locator(
+            ":scope > .agentplane-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
+        )
+        call_heading = call.locator(":scope > .agentplane-disclosure-item > .agentplane-disclosure-heading")
+        output_heading = call.locator(
+            ".agentplane-output-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
+        )
+        history_box = await history.bounding_box()
+        run_box = await run_heading.bounding_box()
+        call_box = await call_heading.bounding_box()
+        output_box = await output_heading.bounding_box()
+        assert history_box is not None
+        assert run_box is not None
+        assert call_box is not None
+        assert output_box is not None
+        output_stack_top = run_box["height"] + call_box["height"]
+        await history.evaluate(
+            "(element, delta) => { element.scrollTop += delta; }",
+            output_box["y"] - history_box["y"] - output_stack_top + 12,
         )
         await wait_for_stable(page)
-        await expect(call.locator(".agentplane-output-label")).to_be_in_viewport()
+        history_box = await history.bounding_box()
+        assert history_box is not None
+        for heading, expected_top in (
+            (run_heading, 0),
+            (call_heading, run_box["height"]),
+            (output_heading, output_stack_top),
+        ):
+            heading_box = await heading.bounding_box()
+            assert heading_box is not None
+            actual_top = heading_box["y"] - history_box["y"]
+            assert abs(actual_top - expected_top) <= 4, (
+                f"{await heading.inner_text()} at {actual_top}px; expected sticky slot at {expected_top}px"
+            )
     else:
         await _focus(page, call.locator(".agentplane-clamped-block[data-label='Command']"))
     await page.mouse.move(0, 0)
@@ -467,7 +497,9 @@ async def test_shell_call_run_previews(shell_calls: VisualPage) -> None:
     await view.capture()
 
 
-@pytest.mark.parametrize(("anchor", "viewport"), [("4", DESKTOP), ("34", MOBILE)], ids=["4-desktop", "34-mobile"])
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
+@pytest.mark.parametrize("anchor", ["4", "34"], ids=["user-message", "assistant-text"])
 async def test_thread_evidence_panel(view: VisualPage, app: AgentplaneFixture, anchor: str) -> None:
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
@@ -482,6 +514,11 @@ async def test_thread_evidence_panel(view: VisualPage, app: AgentplaneFixture, a
     await button.blur()
     await page.mouse.move(0, 0)
     await view.capture()
+    frames = owner.locator("[data-evidence-observation]").first
+    await frames.get_by_role("button", name=re.compile("Observation .* raw frames")).click()
+    await expect(frames.locator(".agentplane-code-block")).to_be_visible()
+    await page.mouse.move(0, 0)
+    await view.capture(name=f"{view.capture_name}_raw_frames")
 
 
 @pytest.mark.parametrize(
