@@ -18,6 +18,15 @@ Base: `d558dcc30da97d6ddb2ad2f08767161ab545dc0a`. GoProxy v1.9.2 resolves to ups
 - Host DNS resolved `remote.buildbuddy.io` to `216.226.68.241` and the build completed after the
   parent lane's earlier connectivity failure. No certificate/proxy/RBE bypass was used.
 
+- Shared comparison [a23fe625-cd60-4079-a76a-859f1bb8ea6c](https://app.buildbuddy.io/invocation/a23fe625-cd60-4079-a76a-859f1bb8ea6c)
+  ran six assertions: the three mitmproxy variants passed; the three Go variants were refused
+  before transport testing because client-go sent protobuf TokenReview to the JSON-only fixture.
+  The lab client now explicitly requests JSON. This was a fixture wire-format mismatch, not
+  evidence about GoProxy streaming support.
+- Go contract retry [9e6a8c82-2e30-4d2a-841d-bba25e1e416d](https://app.buildbuddy.io/invocation/9e6a8c82-2e30-4d2a-841d-bba25e1e416d)
+  could not start: outside-sandbox client DNS failed for `remote.buildbuddy.io` after the wrapper's
+  five retries. Further local retries stopped; draft PR CI owns the next exact-head validation.
+
 ## Source-grounded design, not runtime evidence
 
 Pinned upstream [proxy.go](https://github.com/elazarl/goproxy/blob/v1.9.2/proxy.go),
