@@ -24,7 +24,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":read_image",
-        "//mcp_infra/enhanced:server",
         "//util/exec:models",
         "//util/exec:subprocess",
         "@pypi//fastmcp_slim",

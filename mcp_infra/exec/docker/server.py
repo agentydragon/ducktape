@@ -15,11 +15,11 @@ from typing import Annotated, Any
 import aiodocker
 import mcp.types as mcp_types
 from fastmcp.dependencies import Depends
+from fastmcp.server import FastMCP
 from fastmcp.server.context import Context
 from fastmcp.tools.function_tool import FunctionTool
 from pydantic import Field, WithJsonSchema, create_model
 
-from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.container_session import (
     make_container_lifespan,
     render_container_result,
@@ -138,10 +138,10 @@ def _make_exec_input_model(
     return create_model("ExecInput", __base__=OpenAIStrictModeBaseModel, **fields)
 
 
-class ContainerExecServer(EnhancedFastMCP):
+class ContainerExecServer(FastMCP):
     """Docker container exec MCP server with typed tool access.
 
-    Subclasses EnhancedFastMCP and adds typed tool attributes for accessing
+    Subclasses FastMCP and adds typed tool attributes for accessing
     tool names. This is the single source of truth - no string literals elsewhere.
     """
 
@@ -293,7 +293,10 @@ class ContainerExecServer(EnhancedFastMCP):
 
                 cwd_default: Any = Depends(configured_cwd)
             else:
-                cwd_default = None
+                # Keep the nullable cwd field required in the tool schema. Strict
+                # OpenAI function tools require callers to send null explicitly to
+                # select the configured default.
+                cwd_default = inspect.Parameter.empty
 
             async def exec(
                 *,

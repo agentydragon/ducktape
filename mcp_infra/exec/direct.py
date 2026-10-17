@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import mcp.types as mcp_types
+from fastmcp.server import FastMCP
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from fastmcp.tools.function_tool import FunctionTool
 from pydantic import Field
 
-from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.read_image import validate_and_encode_image
 from util.exec.models import CMD_DESCRIPTION, BaseExecResult, TimeoutMs
 from util.exec.subprocess import DirectExecArgs, run_direct_exec
@@ -21,7 +21,7 @@ from util.exec.subprocess import DirectExecArgs, run_direct_exec
 logger = logging.getLogger(__name__)
 
 
-class DirectExecServer(EnhancedFastMCP):
+class DirectExecServer(FastMCP):
     """Direct (unsandboxed) exec MCP server with typed tool access."""
 
     # Tool references (assigned in __init__)
@@ -49,7 +49,8 @@ class DirectExecServer(EnhancedFastMCP):
                 int,
                 Field(ge=0, le=100_000, description="Max bytes to capture from stdout and stderr. 0 means both empty."),
             ],
-            cwd: str | None = None,
+            # Required but nullable so strict tool calls send null when no cwd override is requested.
+            cwd: str | None,
             timeout_ms: TimeoutMs,
         ) -> BaseExecResult:
             """Execute a command locally (no sandbox)."""

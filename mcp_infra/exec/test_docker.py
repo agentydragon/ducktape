@@ -31,10 +31,10 @@ def make_cwd_server(async_docker_client, debian_slim_image):
 
 
 async def test_cwd_default_value(make_cwd_server) -> None:
-    """DefaultValue: command runs in the default cwd when cwd is omitted."""
+    """DefaultValue: null cwd selects the configured default cwd."""
     server = make_cwd_server(DefaultValue(value=WORKING_DIR))
     async with Client(server) as c:
-        result = await c.call_tool("exec", {"cmd": ["pwd"], "timeout_ms": 10000})
+        result = await c.call_tool("exec", {"cmd": ["pwd"], "cwd": None, "timeout_ms": 10000})
         text = result.content[0].text if result.content else ""
         assert str(WORKING_DIR) in text
 

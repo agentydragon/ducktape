@@ -57,7 +57,7 @@ class ModelChooses(BaseModel, frozen=True):
 
 
 class DefaultValue(BaseModel, frozen=True):
-    """cwd is optional in schema; falls back to this value when omitted."""
+    """A null cwd selects this default value."""
 
     type: Literal["default"] = "default"
     value: Path

@@ -78,9 +78,7 @@ class DockerExecMock(MCPDecoratorMock):
         self, cmd: list[str], timeout_ms: int = 30000, cwd: str | None = None
     ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
         """Yield exec call, receive response, return typed result."""
-        args: dict[str, Any] = {"cmd": cmd, "timeout_ms": timeout_ms}
-        if cwd is not None:
-            args["cwd"] = cwd
+        args: dict[str, Any] = {"cmd": cmd, "timeout_ms": timeout_ms, "cwd": cwd}
         return self.call_roundtrip(self._runtime, self._runtime.server.exec_tool, args, BaseExecResult)
 
 
