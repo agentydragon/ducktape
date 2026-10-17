@@ -529,3 +529,51 @@ func TestARefusedPolicySetGrantsNothing(t *testing.T) {
 
 	assertDecision(t, index.Evaluate(caller, outbound(), nil), Denied{decision.NoBinding})
 }
+
+// The dial needs to know whether the rule that decided declared its hosts cluster-internal, so the
+// flag comes from the deciding rule alone, whichever path decided.
+func TestAllowedCarriesTheDecidingRulesClusterInternal(t *testing.T) {
+	internal := func(rule policyapi.Rule) policyapi.Rule {
+		rule.ClusterInternal = true
+		return rule
+	}
+	anyGitHub := egress([]string{"api.github.com"}, nil, nil, "")
+	withPlaceholder := outbound(header(authorization, "Bearer "+githubCredential.Placeholder()))
+
+	for name, c := range map[string]struct {
+		rules   []policyapi.Rule
+		request Request
+		want    Allowed
+	}{
+		"first match, rule declares it": {
+			[]policyapi.Rule{internal(anyGitHub)}, outbound(), Allowed{Binding: "b", Policy: "p", ClusterInternal: true},
+		},
+		"first match, rule does not": {[]policyapi.Rule{anyGitHub}, outbound(), Allowed{Binding: "b", Policy: "p"}},
+		"first match, a later matching rule declares it": {
+			[]policyapi.Rule{anyGitHub, internal(anyGitHub)}, outbound(), Allowed{Binding: "b", Policy: "p"},
+		},
+		"credential, rule declares it": {
+			[]policyapi.Rule{internal(githubRule)},
+			withPlaceholder,
+			Allowed{Binding: "b", Policy: "p", Rewrites: swapped(secretValue), ClusterInternal: true},
+		},
+		"credential, rule does not": {
+			[]policyapi.Rule{githubRule}, withPlaceholder, Allowed{Binding: "b", Policy: "p", Rewrites: swapped(secretValue)},
+		},
+		"credential, an earlier matching rule declares it": {
+			[]policyapi.Rule{internal(anyGitHub), githubRule},
+			withPlaceholder,
+			Allowed{Binding: "b", Policy: "p", Rule: 1, Rewrites: swapped(secretValue)},
+		},
+		"credential, the resolving rule declares it beside an earlier one that does not": {
+			[]policyapi.Rule{anyGitHub, internal(githubRule)},
+			withPlaceholder,
+			Allowed{Binding: "b", Policy: "p", Rule: 1, Rewrites: swapped(secretValue), ClusterInternal: true},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			index := standardIndex([]*policyapi.PolicySet{policySet("p", c.rules...)}, binding("b", "p"))
+			assertDecision(t, index.Evaluate(caller, c.request, nil), c.want)
+		})
+	}
+}

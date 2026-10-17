@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -217,6 +220,70 @@ func TestReadRulesNamesEachTargetByItsOwnFields(t *testing.T) {
 	}
 	if targets := got.Policies[0].Rules[0].Credential.Targets; !reflect.DeepEqual(targets, want) {
 		t.Errorf("targets = %v, want %v", targets, want)
+	}
+}
+
+// at follows a dotted path of object keys and list indexes into decoded JSON.
+func at(t *testing.T, document any, path string) any {
+	t.Helper()
+	if path == "" {
+		return document
+	}
+	for _, step := range strings.Split(path, ".") {
+		switch node := document.(type) {
+		case map[string]any:
+			value, present := node[step]
+			if !present {
+				t.Fatalf("no key %q on the way to %q", step, path)
+			}
+			document = value
+		case []any:
+			index, err := strconv.Atoi(step)
+			if err != nil || index < 0 || index >= len(node) {
+				t.Fatalf("no element %q on the way to %q", step, path)
+			}
+			document = node[index]
+		default:
+			t.Fatalf("%v is neither an object nor a list on the way to %q", node, path)
+		}
+	}
+	return document
+}
+
+// The key names are what agents read off the wire. Decoding into the package's own structs ignores
+// their case, so they are checked against the raw document.
+func TestReadRulesWireKeysAreThoseAgentsRead(t *testing.T) {
+	handler, _ := api(t, map[string]string{"token-sb": "sb"}, githubIndex())
+	var document any
+	if err := json.Unmarshal(get(handler, "/v1/rules", bearer("token-sb")...).Body.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+
+	ruleKeys := []string{"credential", "hosts", "methods", "paths"}
+	for path, want := range map[string][]string{
+		"":                              {"policies", "subject"},
+		"subject":                       {"name", "namespace"},
+		"policies.0":                    {"name", "rules"},
+		"policies.0.rules.0":            ruleKeys,
+		"policies.0.rules.0.credential": {"description", "name", "placeholder", "targets"},
+		"policies.0.rules.0.credential.targets.0": {"header", "method", "scheme"},
+		"policies.0.rules.0.credential.targets.1": {"header", "method"},
+		"policies.0.rules.1":                      ruleKeys,
+	} {
+		object, ok := at(t, document, path).(map[string]any)
+		if !ok {
+			t.Errorf("%q is not a JSON object", path)
+			continue
+		}
+		if got := slices.Sorted(maps.Keys(object)); !slices.Equal(got, want) {
+			t.Errorf("keys at %q = %v, want %v", path, got, want)
+		}
+	}
+	// A rule that sets none of these carries the keys as null instead of omitting them.
+	for _, path := range []string{"methods", "paths", "credential"} {
+		if got := at(t, document, "policies.0.rules.1."+path); got != nil {
+			t.Errorf("policies.0.rules.1.%s = %v, want null", path, got)
+		}
 	}
 }
 

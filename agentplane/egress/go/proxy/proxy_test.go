@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -41,6 +42,9 @@ const (
 	staleAfter        = time.Hour
 )
 
+// unreachable is the Pod a token is bound to when its review fails rather than answers.
+const unreachable = "unreachable"
+
 // reviewer answers TokenReviews for one audience from a table of valid token to the Pod it is bound
 // to. It neither pretends to be an API server nor claims to prove Kubernetes bound-token issuance
 // or revocation.
@@ -54,6 +58,9 @@ func (r *reviewer) Create(_ context.Context, review *authenticationv1.TokenRevie
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	pod, valid := r.pods[review.Spec.Token]
+	if pod == unreachable {
+		return nil, errors.New("API server unreachable")
+	}
 	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
 		Authenticated: valid, Audiences: []string{r.audience},
 		User: authenticationv1.UserInfo{
@@ -255,18 +262,13 @@ func (l *lab) tunnel(t *testing.T, port string, tlsEnabled bool) (net.Conn, *htt
 // header lines.
 func (l *lab) tunnelPresenting(t *testing.T, port string, tlsEnabled bool, extra string) (net.Conn, *http2.ClientConn) {
 	t.Helper()
-	connection, err := net.Dial("tcp", l.address)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { connection.Close() })
-	if _, err := fmt.Fprintf(connection, "CONNECT %s:%s HTTP/1.1\r\nHost: %s:%s\r\nProxy-Authorization: Bearer valid\r\n%s\r\n", fixtureHost, port, fixtureHost, port, extra); err != nil {
-		t.Fatal(err)
-	}
-	response, err := http.ReadResponse(bufio.NewReader(connection), &http.Request{Method: "CONNECT"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	return l.tunnelAs(t, "valid", port, tlsEnabled, extra)
+}
+
+// tunnelAs opens a tunnel whose CONNECT carries the hop bearer token and, verbatim, extra header lines.
+func (l *lab) tunnelAs(t *testing.T, token, port string, tlsEnabled bool, extra string) (net.Conn, *http2.ClientConn) {
+	t.Helper()
+	connection, response := l.connect(t, fixtureHost+":"+port, "Proxy-Authorization: Bearer "+token+"\r\n"+extra)
 	if response.StatusCode != 200 {
 		t.Fatalf("CONNECT: %s", response.Status)
 	}
@@ -285,6 +287,25 @@ func (l *lab) tunnelPresenting(t *testing.T, port string, tlsEnabled bool, extra
 	return connection, h2
 }
 
+// connect sends a raw CONNECT for authority with the header lines verbatim and returns the response;
+// on a 200 the connection is the open tunnel.
+func (l *lab) connect(t *testing.T, authority, headers string) (net.Conn, *http.Response) {
+	t.Helper()
+	connection, err := net.Dial("tcp", l.address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { connection.Close() })
+	if _, err := fmt.Fprintf(connection, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n%s\r\n", authority, authority, headers); err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.ReadResponse(bufio.NewReader(connection), &http.Request{Method: "CONNECT"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return connection, response
+}
+
 func request(ctx context.Context, port, path string, tlsEnabled bool, body io.Reader) *http.Request {
 	scheme := "http"
 	if tlsEnabled {
@@ -296,12 +317,46 @@ func request(ctx context.Context, port, path string, tlsEnabled bool, body io.Re
 	return req
 }
 
-// send sends a plain-HTTP proxy request to the fixture host, with the hop bearer in header if the
-// test supplies one.
+// tunnelStatus sends the allowed request through the tunnel, presenting hop as its Proxy-Authorization
+// unless hop is empty, and returns the response status.
+func tunnelStatus(t *testing.T, client *http2.ClientConn, port, hop string) int {
+	t.Helper()
+	req := request(bounded(t), port, "/allowed", true, nil)
+	if hop != "" {
+		req.Header.Set("Proxy-Authorization", hop)
+	}
+	response, err := client.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	return response.StatusCode
+}
+
+// valueOf is what pointer addresses, or the zero value of a record field that was never set.
+func valueOf[T any](pointer *T) (value T) {
+	if pointer != nil {
+		value = *pointer
+	}
+	return value
+}
+
+// send sends a plain-HTTP proxy request to the fixture host on a connection of its own, with the hop
+// bearer in header if the test supplies one.
 func (l *lab) send(t *testing.T, method, port, path string, header http.Header, body io.Reader) *http.Response {
 	t.Helper()
+	return l.sendOn(t, l.client(), method, port, path, header, body)
+}
+
+// client returns a client whose plain-HTTP proxy requests share one connection to the proxy.
+func (l *lab) client() *http.Client {
 	proxyURL, _ := url.Parse("http://" + l.address)
-	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	return &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+}
+
+func (l *lab) sendOn(t *testing.T, client *http.Client, method, port, path string, header http.Header, body io.Reader) *http.Response {
+	t.Helper()
 	req, err := http.NewRequestWithContext(bounded(t), method, "http://"+fixtureHost+":"+port+path, body)
 	if err != nil {
 		t.Fatal(err)
@@ -552,19 +607,7 @@ func TestExistingConnectionRevocationStalenessAndAuthCleanup(t *testing.T) {
 			l := newLab(t)
 			upstream, counted := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("allowed")) }))
 			_, client := l.tunnel(t, portOf(upstream), true)
-			send := func(header string) int {
-				req := request(bounded(t), portOf(upstream), "/allowed", true, nil)
-				if header != "" {
-					req.Header.Set("Proxy-Authorization", header)
-				}
-				response, err := client.RoundTrip(req)
-				if err != nil {
-					t.Fatal(err)
-				}
-				io.Copy(io.Discard, response.Body)
-				response.Body.Close()
-				return response.StatusCode
-			}
+			send := func(header string) int { return tunnelStatus(t, client, portOf(upstream), header) }
 			if got := send(""); got != 200 {
 				t.Fatalf("initial request=%d", got)
 			}
@@ -660,6 +703,55 @@ func TestIncrementalSSEAndWebSocket(t *testing.T) {
 	reply := make([]byte, 4)
 	if _, err := io.ReadFull(socket, reply); err != nil || string(reply[2:]) != "ok" {
 		t.Fatalf("websocket frame %q %v", reply, err)
+	}
+}
+
+func TestManySequentialHTTP1RequestsOnOneTunnelAreEachDecidedOnTheirOwn(t *testing.T) {
+	const requests = 12
+	l := newLab(t)
+	l.allow(rule("/items/*", ""))
+	upstream, _ := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(r.URL.Path))
+	}))
+	proxyURL, err := url.Parse("http://" + l.address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A TLS config of its own keeps the client on HTTP/1.1, which sends every request down the one tunnel.
+	client := &http.Client{Transport: &http.Transport{
+		Proxy: http.ProxyURL(proxyURL), ProxyConnectHeader: bearerHeader, TLSClientConfig: &tls.Config{RootCAs: l.roots},
+	}}
+	t.Cleanup(client.CloseIdleConnections)
+
+	for n := range requests {
+		path := fmt.Sprintf("/items/%d", n)
+		req, err := http.NewRequestWithContext(bounded(t), "GET", "https://"+fixtureHost+":"+portOf(upstream)+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(response.Body)
+		response.Body.Close()
+		if err != nil || response.ProtoMajor != 1 || response.StatusCode != 200 || string(body) != path {
+			t.Fatalf("request %d: HTTP/%d status %d body %q, %v", n, response.ProtoMajor, response.StatusCode, body, err)
+		}
+	}
+
+	records := l.records.all()
+	if len(records) != requests+1 {
+		t.Fatalf("%d decisions, want one CONNECT and %d requests", len(records), requests)
+	}
+	for i, record := range records {
+		phase := decision.HTTPRequest
+		if i == 0 {
+			phase = decision.Connect
+		}
+		if record.Phase != phase || record.Outcome != decision.Allow || record.ConnectionID != records[0].ConnectionID {
+			t.Errorf("decision %d: %+v", i, record)
+		}
 	}
 }
 

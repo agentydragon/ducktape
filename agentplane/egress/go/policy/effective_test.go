@@ -43,3 +43,11 @@ func TestListEffectivePolicies(t *testing.T) {
 		t.Errorf("a subject no binding names holds %v", got)
 	}
 }
+
+func TestABindingWhoseEverySetIsAbsentListsNoEffectivePolicies(t *testing.T) {
+	index := standardIndex([]*policyapi.PolicySet{policySet("unrelated", githubRule)}, binding("a", "missing", "also-missing"))
+
+	if got := index.ListEffectivePolicies(caller); len(got) != 0 {
+		t.Errorf("a binding naming only absent sets lists %v", got)
+	}
+}
