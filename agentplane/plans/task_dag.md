@@ -281,11 +281,11 @@ linked execution in the same Sandbox trust boundary versus independently provisi
 addressability, observability and which controls must remain unavailable. Native integration itself
 stays frozen; this decision must allow explicit exclusion rather than require its implementation.
 
-Include OAuth-bound static SAs as subjects by namespace/name and define their external receiving
-scope/address independently of Sandbox targets. Review Connections as candidate recipient objects
-and whether Kubernetes representation helps; no Connection migration is selected. The current
-Action Service owns Connection authority, and sharing SA assignment does not automatically add
-OAuth bearer admission to other backends. Keep this integration independent of the app.
+Include OAuth-bound static SAs as subjects by namespace/name for permitted sends and reads.
+Define trusted OAuth caller admission to the relevant APIs; sharing SA assignment does not
+automatically add that authentication path to other backends. Keep this integration independent of
+the app. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and Connection
+representation/storage changes are outside this work.
 
 ### `SESSION_ACCESS_RULES` — shared Session-access rule support
 
@@ -330,8 +330,7 @@ Peer sends do not require source subscriptions. Generalize the current service a
 deployment initially, with optional subscription/source integrations; leave Dispatcher separate.
 Use `subscription` for source-following and `notice` for the batched inbox prompt. The exact service
 name, send API, discovery metadata fields, recipient opt-in and read/ack administration remain open.
-For OAuth peers without a Sandbox, define external inbox addressing, read/ack ownership and
-authentication; the Sandbox-qualified Session path alone does not satisfy receiving.
+OAuth-bound SAs can be senders; v1 does not provide inboxes for externally running agents.
 Distinguish accepted, noticed, admitted, handled and task-success evidence. Define retention, limits,
 deduplication and offline/deleted-recipient behavior. Reading a transcript grants neither send nor ack.
 

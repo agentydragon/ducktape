@@ -22,6 +22,13 @@ once every Sandbox Pod started after that release.
 
 Revisit on a concrete latency, cost, delivery or new-source need; not a release checklist.
 
+### `EXTERNAL_AGENT_INBOXES` — inboxes for externally running agents
+
+Explicitly deferred by the operator, 2026-10-16; revisit only when the operator prioritizes a
+concrete external-client receiving workflow. V1 OAuth clients can make permitted calls as their
+bound SAs, but recipients are Sandbox-hosted Sessions. A future external inbox would need its own
+address and delivery/read mechanism; it does not imply moving Connection storage to Kubernetes.
+
 ### `NOTIFICATION_DISPATCHER_OWNERSHIP` — review notification and Dispatcher ownership
 
 Operator-requested future consideration, 2026-10-16; revisit when explicitly prioritized or a

@@ -18,10 +18,10 @@ Implementation gates remain in the [task DAG](task_dag.md#3-multiagent-decisions
   `read_history(X, Y)` and `read_history(Y, X)` imply none of one another. A reply or correlation
   reference confers no permission. A named role may explicitly bundle grants without making those
   implications intrinsic to messaging.
-- OAuth-connected clients must be able to send and receive as peers, including clients without
-  an Agentplane Sandbox. Their policy subject is their verified bound Kubernetes SA; preserve
-  namespace/name assignment for static Flux-managed SAs. Receiving also needs a recipient/inbox
-  address: SA identity alone does not define that address or its lifecycle.
+- OAuth-connected clients can be callers for permitted sends and reads through their verified bound
+  Kubernetes SA; preserve namespace/name assignment for static Flux-managed SAs. V1 recipients are
+  Sandbox-hosted Sessions. Externally running clients have no receiving mechanism; external inboxes
+  are [explicitly deferred](task_freezer.md#external_agent_inboxes--inboxes-for-externally-running-agents).
 - Communication should be an additive, optional capability. Running a harness, using Actions or
   reading history should not require deploying the entire communication system. The integration
   app remains a client of independently usable backends ([service boundaries](../docs/service_boundaries.md)).
@@ -84,8 +84,8 @@ Where separate apply managers share the list, use suitable
 [map/set merge semantics](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy)
 for entry-level ownership; field ownership does not authorize writes. Mixed Flux/webapp ownership
 is a concrete reason to reconsider separate membership objects as well as independent enrollment
-lifecycles; no replacement for the member-list choice has been selected. Supporting OAuth callers
-does not itself require SA identities to be collection members. External recipient scopes remain open.
+lifecycles; no replacement for the member-list choice has been selected. Collections select Sandbox
+targets; supporting OAuth caller SAs through PolicyBindings does not require SA collection members.
 
 **Storage preference agreed:** start with Kubernetes resources for grants and explicit collection
 membership, managed through GitOps or authorized runtime edits. This is a preference, not a hard
@@ -329,10 +329,9 @@ any broader change explicitly.
 ## Message storage, delivery and agent tools
 
 **V1 direction agreed:** reuse the Notification Service's durable inboxes for agent correspondence.
-Sandbox-hosted recipients are addressed by Session, with send permission checked against the Sandbox.
-There is no shared Sandbox inbox in v1. External receiving addresses are an open design question
-below. Inbox ownership remains SA-level; per-Session routing does not
-provide isolation between co-resident Sessions.
+V1 recipients are Sandbox-hosted Sessions, with send permission checked against the Sandbox.
+There is no shared Sandbox inbox in v1. Inbox ownership remains SA-level; per-Session routing does
+not provide isolation between co-resident Sessions.
 
 ### Vocabulary and service ownership
 
@@ -436,20 +435,15 @@ separate questions.
 
 ## Discovery, session creation and Sandbox launch
 
-### OAuth peers and external recipients
+### OAuth callers
 
 OAuth clients act as their verified bound SA, using the same PolicySet/Binding assignment model
-as workload callers. The current [Connection authority](../action_service/connections.py) lives in
-Action Service/PostgreSQL; the app presents its operator UI. The existing inbox API authenticates
-workload tokens and requires a qualified Sandbox/Session destination, so OAuth bearer admission
-and an external receiving address are additional design work, not already supplied by SA assignment.
-
-A Connection is a candidate external recipient scope, distinct from the caller SA and the concrete
-inbox address. Consider Kubernetes representation of its identity/binding metadata if useful for
-policy targeting and administration; no Connection storage migration is selected. Define whether
-receiving addresses a Connection or a particular external conversation/mailbox, and distinguish
-metadata ownership from OAuth grant, revocation and protocol state. Preserve independent backend
-use and trusted authentication; do not fabricate Pod identity for an external client.
+as workload callers for permitted sends and reads. The existing inbox API authenticates workload
+tokens, so admitting OAuth callers to the relevant APIs still requires trusted authentication;
+sharing SA assignment alone does not provide that path. Keep it independent of the app and do not
+fabricate Pod identity for external clients. Their agent loops run outside the cluster and have no
+receiving mechanism in v1. External inboxes are deferred; Connection representation or storage
+changes are outside this multiagent work.
 
 ### Sandbox Session discovery and provisioning
 
