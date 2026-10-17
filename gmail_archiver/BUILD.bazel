@@ -108,6 +108,7 @@ py_library(
         "//gmail_api:service",
         "//util:fmt",
         "@pypi//google_api_python_client",
+        "@pypi//tenacity",
     ],
 )
 

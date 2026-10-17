@@ -5,13 +5,14 @@ import json
 import logging
 import re
 import sys
-import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import batched
 from pathlib import Path
 from typing import TypeGuard
 
 from googleapiclient.errors import HttpError
+from tenacity import RetryCallState, Retrying, retry_if_result, stop_after_attempt, wait_exponential
 
 from gmail_api.labels import GmailLabel
 from gmail_api.service import build_gmail_service
@@ -83,6 +84,71 @@ def _get_retry_after(exception: HttpError) -> tuple[int | None, dict]:
             debug_info["parse_error"] = str(e)
 
     return None, debug_info
+
+
+@dataclass
+class _RawBatchAttempt:
+    results: list[tuple[str, bytes]]
+    errors: list[tuple[str, Exception | None, str]]
+    failed_ids: list[str]
+
+    @property
+    def rate_limit_errors(self) -> list[HttpError]:
+        return [exc for _, exc, _ in self.errors if _is_rate_limit_error(exc)]
+
+
+def _wait_for_raw_batch(retry_state: RetryCallState) -> float:
+    assert retry_state.outcome is not None
+    retry_after_values = [
+        seconds
+        for error in retry_state.outcome.result().rate_limit_errors
+        if (seconds := _get_retry_after(error)[0]) is not None
+    ]
+    if retry_after_values:
+        return max(retry_after_values)
+    return wait_exponential(multiplier=2, max=60)(retry_state)
+
+
+def _log_raw_batch_retry(retry_state: RetryCallState) -> None:
+    assert retry_state.outcome is not None
+    assert retry_state.next_action is not None
+    retry_results = [_get_retry_after(error) for error in retry_state.outcome.result().rate_limit_errors]
+
+    if retry_state.attempt_number == 1:
+        _, first_debug = retry_results[0]
+        if first_debug:
+            print("\n[i] Rate limit response details:", file=sys.stderr)
+            if "status" in first_debug:
+                print(f"    Status: {first_debug['status']}", file=sys.stderr)
+            if "retry_timestamp" in first_debug:
+                print(f"    Retry timestamp: {first_debug['retry_timestamp']}", file=sys.stderr)
+            if "body" in first_debug:
+                body_str = (
+                    json.dumps(first_debug["body"], indent=2)
+                    if isinstance(first_debug["body"], dict)
+                    else str(first_debug["body"])
+                )
+                print(f"    Response body: {body_str}", file=sys.stderr)
+            print(file=sys.stderr, flush=True)
+
+    wait_time = retry_state.next_action.sleep
+    if any(seconds is not None for seconds, _ in retry_results):
+        print(
+            f"⚠️  Rate limited (attempt {retry_state.attempt_number}), server says retry after {wait_time}s...",
+            file=sys.stderr,
+            flush=True,
+        )
+    else:
+        print(
+            f"⚠️  Rate limited (attempt {retry_state.attempt_number}), retrying batch in {wait_time:.1f}s...",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
+def _return_last_raw_batch(retry_state: RetryCallState) -> _RawBatchAttempt:
+    assert retry_state.outcome is not None
+    return retry_state.outcome.result()
 
 
 class GmailClient:
@@ -204,90 +270,37 @@ class GmailClient:
 
             return callback
 
+        def fetch_batch(batch: tuple[str, ...]) -> _RawBatchAttempt:
+            batch_results: list[tuple[str, bytes]] = []
+            batch_errors: list[tuple[str, Exception | None, str]] = []
+            batch_failed_ids: list[str] = []
+
+            # Use service.new_batch_http_request() to get correct batch endpoint
+            batch_request = self.service.new_batch_http_request()
+            for msg_id in batch:
+                batch_request.add(
+                    self.service.users().messages().get(userId="me", id=msg_id, format="raw"),
+                    callback=create_callback(msg_id, batch_results, batch_errors, batch_failed_ids),
+                )
+
+            batch_request.execute()
+            return _RawBatchAttempt(batch_results, batch_errors, batch_failed_ids)
+
         # Process in batches (API allows 100, but 50 recommended to avoid rate limits)
         for batch in batched(message_ids, batch_size, strict=False):
-            # Retry logic for the entire batch if rate limited
-            max_retries = 10
-            batch_succeeded = False
-            for attempt in range(1, max_retries + 1):
-                batch_results: list[tuple[str, bytes]] = []
-                batch_errors: list[tuple[str, Exception | None, str]] = []
-                batch_failed_ids: list[str] = []
+            batch_attempt = Retrying(
+                retry=retry_if_result(lambda attempt: bool(attempt.rate_limit_errors)),
+                stop=stop_after_attempt(10),
+                wait=_wait_for_raw_batch,
+                before_sleep=_log_raw_batch_retry,
+                retry_error_callback=_return_last_raw_batch,
+            )(fetch_batch, batch)
+            results.extend(batch_attempt.results)
+            all_errors.extend(batch_attempt.errors)
+            failed_message_ids.extend(batch_attempt.failed_ids)
 
-                # Use service.new_batch_http_request() to get correct batch endpoint
-                batch_request = self.service.new_batch_http_request()
-                for msg_id in batch:
-                    batch_request.add(
-                        self.service.users().messages().get(userId="me", id=msg_id, format="raw"),
-                        callback=create_callback(msg_id, batch_results, batch_errors, batch_failed_ids),
-                    )
-
-                # Execute batch
-                batch_request.execute()
-
-                # Check if any requests were rate limited
-                rate_limit_errors: list[HttpError] = [exc for _, exc, _ in batch_errors if _is_rate_limit_error(exc)]
-                rate_limited = len(rate_limit_errors) > 0
-
-                if not rate_limited:
-                    # Success! Add results and move to next batch
-                    results.extend(batch_results)
-                    all_errors.extend(batch_errors)
-                    failed_message_ids.extend(batch_failed_ids)
-                    batch_succeeded = True
-                    break
-
-                # Rate limited - wait and retry
-                if attempt < max_retries:
-                    # Check for Retry-After timing in any of the rate limit errors
-                    retry_results = [_get_retry_after(exc) for exc in rate_limit_errors]
-                    retry_after_values = [v for v, _ in retry_results if v is not None]
-
-                    # Print debug info from first rate limit error
-                    if retry_results and attempt == 1:  # Only print on first attempt to avoid spam
-                        _, first_debug = retry_results[0]
-                        if first_debug:
-                            print("\n[i] Rate limit response details:", file=sys.stderr)
-                            if "status" in first_debug:
-                                print(f"    Status: {first_debug['status']}", file=sys.stderr)
-                            if "retry_timestamp" in first_debug:
-                                print(f"    Retry timestamp: {first_debug['retry_timestamp']}", file=sys.stderr)
-                            if "body" in first_debug:
-                                body_str = (
-                                    json.dumps(first_debug["body"], indent=2)
-                                    if isinstance(first_debug["body"], dict)
-                                    else str(first_debug["body"])
-                                )
-                                print(f"    Response body: {body_str}", file=sys.stderr)
-                            print(file=sys.stderr, flush=True)
-
-                    if retry_after_values:
-                        # Use the maximum Retry-After value if multiple are present
-                        wait_time = max(retry_after_values)
-                        print(
-                            f"⚠️  Rate limited (attempt {attempt}), server says retry after {wait_time}s...",
-                            file=sys.stderr,
-                            flush=True,
-                        )
-                    else:
-                        # No Retry-After info, use exponential backoff
-                        wait_time = min(2**attempt, 60)
-                        print(
-                            f"⚠️  Rate limited (attempt {attempt}), retrying batch in {wait_time:.1f}s...",
-                            file=sys.stderr,
-                            flush=True,
-                        )
-                    time.sleep(wait_time)
-                else:
-                    # Max retries exceeded - abort entire operation
-                    print(f"✗ Batch failed after {max_retries} retries - aborting", file=sys.stderr, flush=True)
-                    results.extend(batch_results)
-                    all_errors.extend(batch_errors)
-                    failed_message_ids.extend(batch_failed_ids)
-                    break
-
-            # If batch failed after all retries, abort the entire operation
-            if not batch_succeeded:
+            if batch_attempt.rate_limit_errors:
+                print("✗ Batch failed after 10 retries - aborting", file=sys.stderr, flush=True)
                 print(
                     f"Aborting download - processed {len(results)} messages before failure", file=sys.stderr, flush=True
                 )
