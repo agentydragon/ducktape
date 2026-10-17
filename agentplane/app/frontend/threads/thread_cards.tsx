@@ -1,10 +1,10 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text, type MantineColor } from "@mantine/core";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
-import { type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { ClampedBlock, lineCount } from "../clamped_block";
 import { InlineCode } from "../code_block";
-import { DisclosureBody } from "../disclosure";
+import { DisclosureBody, DisclosureCard } from "../disclosure";
 import { COMMAND_MAX_HEIGHT_REM, CommandCallView, OutputBlock } from "../command_view";
 import { HighlightedText } from "../json_view";
 import { Markdown } from "../markdown";
@@ -221,7 +221,7 @@ export function UserInputBubble({
           p="sm"
           style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
         >
-          {entity && <EvidenceToggle entity={entity} />}
+          {entity && <EvidenceToggle entity={entity} placement={progress || action ? "overlay" : "bubble"} />}
           {entity ? (
             <Body
               reference={entity.inputRef}
@@ -396,7 +396,7 @@ function RecoveryNotes({ state, tool }: { state: ItemState; tool: boolean }): JS
 function DiscardedCard({ id, summary, children }: { id: string; summary: string; children: ReactNode }): JSX.Element {
   const [open] = useRetainedDisclosure(id);
   return (
-    <CollapsibleCard open={open}>
+    <DisclosureCard open={open}>
       <RetainedDisclosure
         id={id}
         summary={
@@ -410,7 +410,7 @@ function DiscardedCard({ id, summary, children }: { id: string; summary: string;
           {children}
         </Stack>
       </RetainedDisclosure>
-    </CollapsibleCard>
+    </DisclosureCard>
   );
 }
 
@@ -579,11 +579,11 @@ function ToolCard({
                       hasOutput={entity.outputRef !== null}
                       fullWidth={false}
                     >
-                      <EvidenceToggle entity={entity} />
+                      <EvidenceToggle entity={entity} placement="inline" />
                     </CommandCallControls>
                   ) : (
                     <Group gap="xs" wrap="nowrap">
-                      <EvidenceToggle entity={entity} />
+                      <EvidenceToggle entity={entity} placement="inline" />
                     </Group>
                   )}
                 </Group>
@@ -594,7 +594,7 @@ function ToolCard({
           );
         }
         return (
-          <CollapsibleCard open={opened} className="agentplane-evidence-owner">
+          <DisclosureCard open={opened} className="agentplane-evidence-owner">
             <StepLine
               title={call?.label ?? (state.tool_name || "tool")}
               mark={opened ? undefined : mark}
@@ -630,7 +630,7 @@ function ToolCard({
                   />
                 )
               }
-              summaryAside={<EvidenceToggle entity={entity} />}
+              summaryAside={<EvidenceToggle entity={entity} placement="inline" />}
               expandable={disclosable}
               open={open}
               onOpenChange={setOpen}
@@ -638,7 +638,7 @@ function ToolCard({
               {detail}
             </StepLine>
             <EvidencePanel threadId={threadId} entity={entity} />
-          </CollapsibleCard>
+          </DisclosureCard>
         );
       }}
     </OptionalPayload>
@@ -700,7 +700,11 @@ export function EntityCard({
       return (
         <Stack gap={0} className="agentplane-evidence-owner">
           <Text c="dimmed">{label}</Text>
-          <EvidenceToggle entity={entity} style={{ top: 0, right: 0 }} />
+          <EvidenceToggle
+            entity={entity}
+            placement="overlay"
+            style={{ "--agentplane-evidence-overlay-inset": "0px" } as CSSProperties}
+          />
           {diagnostic && (
             <Text c="dimmed" style={wrapped}>
               {diagnostic}
@@ -712,7 +716,11 @@ export function EntityCard({
     }
     return (
       <Alert color="red" role="alert" className="agentplane-evidence-owner">
-        <EvidenceToggle entity={entity} style={{ top: 8, right: 8 }} />
+        <EvidenceToggle
+          entity={entity}
+          placement="overlay"
+          style={{ "--agentplane-evidence-overlay-inset": "var(--mantine-spacing-xs)" } as CSSProperties}
+        />
         <Text size="sm" style={wrapped}>
           <Text span fw={700} c="var(--alert-color)">
             {label}
@@ -757,7 +765,7 @@ export function EntityCard({
   );
   const body = (
     <>
-      {!evidenceToggleInReasoningStep && <EvidenceToggle entity={entity} />}
+      {!evidenceToggleInReasoningStep && <EvidenceToggle entity={entity} placement="overlay" />}
       {discardedId !== null ? <DisclosureBody>{recoveryDetails}</DisclosureBody> : recoveryDetails}
       {reasoning ? (
         entity.textRef ? (
@@ -770,7 +778,9 @@ export function EntityCard({
               overflows={reasoningOverflows}
               setOpen={setReasoningOpen}
               onOverflowChange={setReasoningOverflows}
-              summaryAside={evidenceToggleInReasoningStep ? <EvidenceToggle entity={entity} /> : undefined}
+              summaryAside={
+                evidenceToggleInReasoningStep ? <EvidenceToggle entity={entity} placement="inline" /> : undefined
+              }
             />
           ) : (
             <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
@@ -806,9 +816,9 @@ export function EntityCard({
   // line.
   if (reasoning)
     return (
-      <CollapsibleCard open={reasoningOpen && reasoningOverflows} className="agentplane-evidence-owner">
+      <DisclosureCard open={reasoningOpen && reasoningOverflows} className="agentplane-evidence-owner">
         {body}
-      </CollapsibleCard>
+      </DisclosureCard>
     );
   return <Box className="agentplane-evidence-owner">{body}</Box>;
 }
@@ -887,22 +897,4 @@ function recoveryBadge(recovery: number): StatusBadge | null {
     default:
       return { label: "Retention unknown", color: "yellow" };
   }
-}
-
-/** The shell shared by runs, lifecycle groups, tools and standalone reasoning. It reserves the
- * same border in both states; disclosure rows and terminal bodies own their spacing. */
-export function CollapsibleCard({
-  open,
-  children,
-  className,
-}: {
-  open: boolean;
-  children: ReactNode;
-  className?: string;
-}): JSX.Element {
-  return (
-    <Paper className={`agentplane-collapsible-card${className ? ` ${className}` : ""}`} data-open={open}>
-      {children}
-    </Paper>
-  );
 }

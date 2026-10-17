@@ -1350,6 +1350,7 @@ async def test_expanded_command_stays_collapsible(
     call, _ = tool_call_in(run, "a")
     await call.locator(".agentplane-disclosure-summary").first.click()
     command = call.locator('.agentplane-clamped-block[data-label="Command"]')
+    output = call.locator('.agentplane-clamped-block[data-label="Output"]')
     show_all = command.get_by_role("button", name="Show all 24 lines", exact=True)
     collapse = command.get_by_role("button", name="Command", exact=True)
     await read_at(page, show_all, 0.3)
@@ -1371,8 +1372,33 @@ async def test_expanded_command_stays_collapsible(
         )
         assert await page.evaluate("() => window.getSelection()?.toString()") == line_text
 
+    async def first_character_left(block: Locator) -> float:
+        line = block.locator(".cm-line").first
+        await expect(line).to_be_visible()
+        return await line.evaluate(
+            """line => {
+                const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+                let text = walker.nextNode();
+                while (text && !text.textContent) text = walker.nextNode();
+                if (!text) throw new Error('code block has no text to measure');
+                const range = document.createRange();
+                range.setStart(text, 0);
+                range.setEnd(text, 1);
+                return range.getBoundingClientRect().left;
+            }"""
+        )
+
+    async def summary_label_left(heading: Locator) -> float:
+        label = heading.locator(".agentplane-disclosure-summary-content")
+        await expect(label).to_be_visible()
+        bounds = await label.bounding_box()
+        assert bounds is not None
+        return bounds["x"]
+
     for repeat in range(2):
         await select_command_line("echo command line 0")
+        command_text_before = await first_character_left(command)
+        output_text_before = await first_character_left(output)
         await show_all.click()
         # Deliver layout/ResizeObserver callbacks: the old observer measured a detached node and
         # removed the collapse control after the first render of the expanded block.
@@ -1383,6 +1409,22 @@ async def test_expanded_command_stays_collapsible(
         ).to_have_count(1)
         assert await editor.evaluate("node => node.isConnected"), "expanding remounted the CodeMirror editor"
         assert await page.evaluate("() => window.getSelection()?.toString()") == "echo command line 0"
+        command_text_after = await first_character_left(command)
+        output_text_after = await first_character_left(output)
+        assert abs(command_text_after - command_text_before) <= 1, (command_text_before, command_text_after)
+        assert abs(output_text_after - output_text_before) <= 1, (output_text_before, output_text_after)
+
+        command_heading = command.locator(".agentplane-disclosure-heading").first
+        output_heading = call.locator(".agentplane-output-disclosure .agentplane-disclosure-heading").first
+        call_heading = call.locator(":scope > .agentplane-disclosure-item > .agentplane-disclosure-heading")
+        command_label_left = await summary_label_left(command_heading)
+        output_label_left = await summary_label_left(output_heading)
+        call_label_left = await summary_label_left(call_heading)
+        assert abs(command_text_after - command_label_left) <= 1, (command_text_after, command_label_left)
+        assert abs(output_text_after - output_label_left) <= 1, (output_text_after, output_label_left)
+        command_inset = command_text_after - call_label_left
+        output_inset = output_text_after - call_label_left
+        assert abs(command_inset - output_inset) <= 1, (command_inset, output_inset)
         await read_at(page, command.locator(".cm-line").filter(has_text="echo command line 20"), 0.5)
         await expect(collapse).to_be_in_viewport()
         await select_command_line("echo command line 20")

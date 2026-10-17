@@ -207,7 +207,15 @@ function evidenceDisclosure(entity: ThreadEntity): string {
  * Labelled by a native `title`, not a Mantine `Tooltip`: rows move under a resting pointer while the
  * thread streams, and a Tooltip opening then positions itself with `flushSync` from a ResizeObserver
  * callback, committing the whole list's pending re-render mid-delivery (a "ResizeObserver loop"). */
-export function EvidenceToggle({ entity, style }: { entity: ThreadEntity; style?: CSSProperties }): JSX.Element {
+export function EvidenceToggle({
+  entity,
+  placement = "overlay",
+  style,
+}: {
+  entity: ThreadEntity;
+  placement?: "overlay" | "inline" | "bubble";
+  style?: CSSProperties;
+}): JSX.Element {
   const [open, setOpen] = useRetainedDisclosure(evidenceDisclosure(entity));
   return (
     <ActionIcon
@@ -215,6 +223,7 @@ export function EvidenceToggle({ entity, style }: { entity: ThreadEntity; style?
       variant={open ? "light" : "subtle"}
       color="gray"
       className="agentplane-evidence-toggle"
+      data-placement={placement}
       aria-label="Evidence"
       title="Evidence"
       aria-expanded={open}

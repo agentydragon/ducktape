@@ -71,13 +71,9 @@
   line-height: var(--mantine-line-height-sm);
 }
 
-/* Folded steps stay compact inside a run; expanded headers retain the shared row height. */
-.agentplane-run-steps
-  .agentplane-step-details
-  .agentplane-disclosure-heading[data-expanded="false"]
-  > .agentplane-disclosure-summary,
-.agentplane-run-steps .agentplane-disclosure-static {
-  min-height: 1.5rem;
+/* The run chooses a compact folded-row policy; the shared header owns its geometry. */
+.agentplane-run-steps {
+  --agentplane-disclosure-collapsed-height: var(--agentplane-disclosure-compact-height);
 }
 
 /* A run packs its one-line steps together, but an opened one is a card, and keeps the room between
@@ -121,12 +117,6 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-}
-
-/* Static reasoning rows align with disclosure labels at the same nesting level. */
-.agentplane-step-static {
-  display: flex;
-  align-items: center;
 }
 
 /* A streaming step breathes, as its status in the line; one that stopped short is blue and still. */
@@ -425,17 +415,6 @@
   background: var(--mantine-color-default-hover);
 }
 
-.agentplane-step-static .agentplane-step-summary[data-has-inspection="true"] {
-  padding-inline-end: 1.5rem;
-}
-
 .agentplane-step-inspect {
   display: inline-flex;
-}
-
-.agentplane-step-static .agentplane-step-inspect {
-  position: absolute;
-  right: 2rem;
-  top: 50%;
-  transform: translateY(-50%);
 }

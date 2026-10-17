@@ -97,6 +97,7 @@ export function ClampedBlock({
         <Disclosure
           className="agentplane-clamped-disclosure"
           summary={header ?? label}
+          headingVisible={expanded}
           open={true}
           onOpenChange={setExpanded}
         >

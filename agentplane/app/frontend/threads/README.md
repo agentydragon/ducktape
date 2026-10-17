@@ -16,3 +16,31 @@ package. Keep those declarations in sync when changing them. The feature
 extractions do not change the thread sync or scrolling contracts; see `../SPEC.md` for reader-facing scroll
 guarantees, `scrolling_verification.md` for engineering checks, and
 `../../../docs/thread_view_sync.md` for sync design.
+
+## Disclosure layout ownership
+
+The shared primitives live in `../disclosure.tsx` and `../disclosure.css`:
+
+- `DisclosureCard` owns the outer frame. Its context selects outer/nested variants;
+  consumers do not remove ancestor borders with descendant selectors.
+- `Disclosure` computes a section inset once from the shared gutter, depth, and
+  indent-step tokens. Its label and `DisclosureBody` consume that same inset.
+  A body wraps terminal content; nested disclosures stay outside it so frames
+  remain full-width. Independent bodies represent independent content sections.
+- Interactive and static headings share a CSS grid. The accordion button spans
+  the whole row; its label and chevron use subgrid tracks shared with the separate
+  action slot. Intrinsic action width determines the tracks without measurements,
+  absolute offsets, or compensating label padding.
+- CSS owns row-height policy. Runs select the shared compact collapsed-height
+  token. JavaScript measures actual heading height only to add ancestor heights
+  into sticky offsets, including wrapped headings. Hidden clamp headings are an
+  explicit `Disclosure` state, not an ancestor CSS override.
+- `CodeBlock` owns its framed/plain surface policy, shared by its placeholder
+  and editor. Plain code receives its gutter from `DisclosureBody`; callers do
+  not undo editor borders or padding. Label/muted code remain text presentations.
+- `EvidenceToggle` explicitly selects inline, overlay, or bubble placement.
+  Heading geometry belongs to the shared grid, while evidence owns visibility.
+
+Gutter and hierarchy design changes belong in the shared policy tokens. Keep
+browser checks for actual text/heading alignment, full-row hit areas, action and
+chevron separation, stable clamp expansion, and nested sticky collapse behavior.

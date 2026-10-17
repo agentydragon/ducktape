@@ -18,7 +18,7 @@ import {
  * every glance at the card. */
 function ExternalGrantFields({ grant }: { grant: NonNullable<ActionRequestView["external_grant"]> }): JSX.Element {
   return (
-    <Stack gap={2} mt={4} style={{ overflowWrap: "anywhere" }}>
+    <Stack gap={2} style={{ overflowWrap: "anywhere" }}>
       <Text size="xs">
         Acts as <Code>{serviceAccountKey(grant.caller)}</Code> · Client <Code>{grant.client_id}</Code>
       </Text>

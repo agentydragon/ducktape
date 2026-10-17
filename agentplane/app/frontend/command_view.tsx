@@ -46,9 +46,7 @@ export function CommandCallView({
         label="Command"
         expansion={expansion}
       >
-        <div className="agentplane-command-code">
-          <CodeBlock text={command} language="bash" />
-        </div>
+        <CodeBlock text={command} language="bash" surface="plain" />
       </ClampedBlock>
       {notes.length > 0 && (
         <DisclosureBody>
@@ -133,9 +131,7 @@ export function OutputBlock({
         stickyCollapse={false}
       >
         {/* Pretty output ends its last line with a final newline; Raw keeps that recorded newline. */}
-        <div className="agentplane-output-code">
-          <HighlightedText text={raw ? text : text.replace(/\n$/, "")} />
-        </div>
+        <HighlightedText text={raw ? text : text.replace(/\n$/, "")} surface="plain" />
       </ClampedBlock>
     </Disclosure>
   );

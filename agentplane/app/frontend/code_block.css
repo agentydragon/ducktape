@@ -20,14 +20,13 @@
   overflow-wrap: anywhere;
 }
 
-.agentplane-code-block-label,
-.agentplane-code-block-muted {
-  border: 0;
-  background: transparent;
-}
-
 .agentplane-code-block .cm-scroller {
   overflow-wrap: anywhere;
+}
+
+/* Normalize the editor's line gutter once; each surface owns padding at the content boundary. */
+.agentplane-code-block .cm-line {
+  padding: 0;
 }
 
 .agentplane-code-block .cm-content {
@@ -81,16 +80,25 @@
   color: var(--mantine-color-orange-3);
 }
 
-.agentplane-code-block-placeholder {
-  background-color: var(--mantine-color-body);
-  border: 1px solid var(--mantine-color-default-border);
-  border-radius: var(--mantine-radius-sm);
+/* Mutually exclusive surface policies serve both the lazy placeholder and mounted editor. */
+.agentplane-code-surface-framed {
+  --agentplane-code-surface-background: var(--mantine-color-body);
+  --agentplane-code-surface-border: 1px solid var(--mantine-color-default-border);
+  --agentplane-code-surface-radius: var(--mantine-radius-sm);
+  --agentplane-code-surface-padding: var(--mantine-spacing-xs);
 }
 
-.agentplane-code-block-placeholder-label,
-.agentplane-code-block-placeholder-muted {
-  border: 0;
-  background: transparent;
+.agentplane-code-surface-plain {
+  --agentplane-code-surface-background: transparent;
+  --agentplane-code-surface-border: 0;
+  --agentplane-code-surface-radius: 0;
+  --agentplane-code-surface-padding: 0;
+}
+
+.agentplane-code-block-placeholder {
+  background-color: var(--agentplane-code-surface-background, transparent);
+  border: var(--agentplane-code-surface-border, 0);
+  border-radius: var(--agentplane-code-surface-radius, 0);
 }
 
 /* Inline code is the same highlight without an editor view: tokens are classed rather than styled. */
@@ -133,18 +141,4 @@
 
 .agentplane-tok-title {
   color: var(--agentplane-code-title);
-}
-
-.agentplane-command-code .cm-editor,
-.agentplane-command-code .agentplane-code-block-placeholder,
-.agentplane-output-code .cm-editor,
-.agentplane-output-code .agentplane-code-block-placeholder {
-  border: 0;
-  border-radius: 0;
-}
-
-/* The enclosing body supplies vertical spacing for these borderless sections. */
-.agentplane-command-code .cm-editor .cm-content,
-.agentplane-output-code .cm-editor .cm-content {
-  padding-block: 0;
 }

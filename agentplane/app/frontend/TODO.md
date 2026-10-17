@@ -36,7 +36,7 @@ a field a harness adds sends every such call to the JSON view while the tests st
   (`threads/projected_session.css` ~line 40) fills the operator's bubble with `var(--mantine-color-blue-light)`; feedback
   was grey would do, since role already reads from position (right-aligned) without needing a hue. More broadly,
   consider dropping bubble/card chrome across `EntityCard` altogether -- the user bubble's background, and the
-  bordered card an opened tool call or reasoning step gets (`CollapsibleCard` in `threads/thread_cards.tsx`) -- and distinguishing rows
+  bordered card an opened tool call or reasoning step gets (`DisclosureCard` in `disclosure.tsx`) -- and distinguishing rows
   by their text and a light shade of grey instead, reserving actual color for when it's semantically meaningful
   (as the prominent-lifecycle `Alert color="red"` at ~line 376 and the failed-tool-call `Badge color="red"` at
   ~line 444 already do).

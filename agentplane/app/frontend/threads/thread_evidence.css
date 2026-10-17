@@ -1,38 +1,35 @@
-/* The evidence toggle takes no space: it is an overlay in the corner of the item it belongs to (its
-   owner), shown while the item is hovered or focused and while its evidence is open. A touch screen
-   has no hover to count on, so a tap marks the item instead (revealEvidenceOnTap). Owners do not
-   nest, so the descendant selectors below reveal exactly one toggle. */
+:root {
+  --agentplane-evidence-overlay-inset: 0.25rem;
+}
+
+/* Overlay and bubble placements do not take space; inline controls remain in their parent's layout.
+   Visibility is shared across placements. A touch screen has no hover to count on, so a tap marks
+   the owner instead (revealEvidenceOnTap). Owners do not nest, so these selectors reveal one toggle. */
 .agentplane-evidence-owner {
   position: relative;
 }
 
-.agentplane-evidence-owner .agentplane-evidence-toggle {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+.agentplane-evidence-toggle {
   opacity: 0;
   pointer-events: none;
+}
+
+.agentplane-evidence-toggle[data-placement="overlay"] {
+  position: absolute;
+  inset-block-start: var(--agentplane-evidence-overlay-inset);
+  inset-inline-end: var(--agentplane-evidence-overlay-inset);
+}
+
+.agentplane-evidence-toggle[data-placement="bubble"] {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 100%;
 }
 
 /* A hidden toggle stays focusable, so Tab reaches it and :focus-within shows it. */
 .agentplane-evidence-owner:hover .agentplane-evidence-toggle,
 .agentplane-evidence-owner:focus-within .agentplane-evidence-toggle,
 .agentplane-evidence-owner .agentplane-evidence-toggle[aria-expanded="true"] {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-/* The shared StepLine aside reserves its own slot beside the chevron. Keep the button in that
-   slot so it can never cover the title or move the chevron; only its visibility changes. */
-.agentplane-evidence-owner .agentplane-step-inspect > .agentplane-evidence-toggle {
-  position: static;
-  top: auto;
-  right: auto;
-}
-
-.agentplane-evidence-owner:hover .agentplane-step-inspect > .agentplane-evidence-toggle,
-.agentplane-evidence-owner:focus-within .agentplane-step-inspect > .agentplane-evidence-toggle,
-.agentplane-evidence-owner .agentplane-step-inspect > .agentplane-evidence-toggle:focus-visible {
   opacity: 1;
   pointer-events: auto;
 }
@@ -45,24 +42,10 @@
   }
 }
 
-/* The user's bubble hangs its toggle in the empty gutter beside it, flush against the bubble so the
-   pointer crosses no gap on the way. A bubble with a status, error or action beside it has that
-   gutter taken, and keeps the toggle in its corner. */
-.agentplane-user-bubble > .agentplane-evidence-toggle {
-  top: 0;
-  right: 100%;
-}
-
-.agentplane-user-bubble[data-has-aside="true"] > .agentplane-evidence-toggle {
-  top: 4px;
-  right: 4px;
-}
-
 /* Keep the separate debug action next to its label without nesting a button inside the accordion
    control button. */
 .agentplane-evidence-frames-debug {
   display: inline-flex;
   flex: none;
   align-items: center;
-  margin-inline-end: var(--mantine-spacing-xs);
 }

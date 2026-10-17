@@ -51,7 +51,7 @@ export function StepLine({
   children?: ReactNode;
 }): JSX.Element {
   const summary = (
-    <div className="agentplane-step-summary" data-has-inspection={summaryAside ? "true" : undefined}>
+    <div className="agentplane-step-summary">
       <Text
         component="span"
         size="sm"
@@ -86,9 +86,11 @@ export function StepLine({
           {children}
         </Disclosure>
       ) : (
-        <DisclosureRow className="agentplane-step-static">
+        <DisclosureRow
+          className="agentplane-step-static"
+          summaryAside={summaryAside && <span className="agentplane-step-inspect">{summaryAside}</span>}
+        >
           {summary}
-          {summaryAside && <span className="agentplane-step-inspect">{summaryAside}</span>}
         </DisclosureRow>
       )}
       {aside}

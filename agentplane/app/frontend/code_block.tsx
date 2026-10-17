@@ -19,6 +19,8 @@ import "./code_block.css";
 export type Language =
   "bash" | "go" | "javascript" | "json" | "nix" | "protobuf" | "python" | "rust" | "typescript" | "yaml";
 
+export type CodeBlockSurface = "framed" | "plain";
+
 // Reuse CodeMirror language support instead of translating another highlighter's HTML into
 // decorations. JSON/YAML/Nix use language packages; the remaining curated grammars are the
 // CodeMirror legacy stream modes, as in Haku's shared read-only code viewer.
@@ -204,17 +206,17 @@ function streamingCursorDecoration(offset: number): Extension {
   );
 }
 
-const CODE_THEME = EditorView.theme({
+const CODE_BLOCK_THEME = EditorView.theme({
   "&": {
-    backgroundColor: "var(--mantine-color-body)",
-    border: "1px solid var(--mantine-color-default-border)",
-    borderRadius: "var(--mantine-radius-sm)",
+    backgroundColor: "var(--agentplane-code-surface-background)",
+    border: "var(--agentplane-code-surface-border)",
+    borderRadius: "var(--agentplane-code-surface-radius)",
     color: "var(--mantine-color-text)",
     fontSize: "var(--mantine-font-size-sm)",
   },
   ".cm-content": {
     fontFamily: "var(--mantine-font-family-monospace)",
-    padding: "var(--mantine-spacing-xs)",
+    padding: "var(--agentplane-code-surface-padding)",
   },
   ".cm-scroller": { fontFamily: "inherit" },
   "&.cm-focused": { outline: "none" },
@@ -286,19 +288,27 @@ function MountedCodeBlock({
   language,
   streamingCursorOffset,
   presentation,
+  surface,
 }: {
   text: string;
   language?: Language;
   streamingCursorOffset?: number;
   presentation: "block" | "label" | "muted";
+  surface: CodeBlockSurface;
 }): JSX.Element {
   const extensions = useMemo(() => {
     const result: Extension[] = [
       EditorView.lineWrapping,
       highlightSpecialChars({ specialChars: VISIBLE_SPECIAL_CHARS, render: renderSpecialChar }),
       syntaxHighlighting(CODE_HIGHLIGHT),
-      presentation === "label" ? LABEL_CODE_THEME : presentation === "muted" ? MUTED_CODE_THEME : CODE_THEME,
     ];
+    if (presentation === "label") {
+      result.push(LABEL_CODE_THEME);
+    } else if (presentation === "muted") {
+      result.push(MUTED_CODE_THEME);
+    } else {
+      result.push(CODE_BLOCK_THEME);
+    }
     if (language) result.unshift(LANGUAGE_EXTENSIONS[language]());
     if (streamingCursorOffset !== undefined) result.push(streamingCursorDecoration(streamingCursorOffset));
     return result;
@@ -306,7 +316,7 @@ function MountedCodeBlock({
 
   return (
     <CodeMirror
-      className={`agentplane-code-block agentplane-code-block-${presentation}`}
+      className={`agentplane-code-block agentplane-code-block-${presentation}${presentation === "block" ? ` agentplane-code-surface-${surface}` : ""}`}
       value={text}
       theme="none"
       readOnly
@@ -325,19 +335,23 @@ export function CodeBlock({
   language,
   streamingCursorOffset,
   presentation = "block",
+  surface = "framed",
 }: {
   text: string;
   language?: Language;
   streamingCursorOffset?: number;
   presentation?: "block" | "label" | "muted";
+  /** Framed code owns its border and gutter; plain code uses spacing from its surrounding surface. */
+  surface?: CodeBlockSurface;
 }): JSX.Element {
   const { ref, near } = useNearViewport();
+  const surfaceClass = presentation === "block" ? ` agentplane-code-surface-${surface}` : "";
   if (!near) {
     const lineCount = Math.max(1, text.split("\n").length);
     return (
       <div
         ref={ref}
-        className={`agentplane-code-block-placeholder${presentation !== "block" ? ` agentplane-code-block-placeholder-${presentation}` : ""}`}
+        className={`agentplane-code-block-placeholder${presentation !== "block" ? ` agentplane-code-block-placeholder-${presentation}` : ""}${surfaceClass}`}
         style={{ height: `${lineCount * PLACEHOLDER_LINE_REM}rem` }}
       />
     );
@@ -348,6 +362,7 @@ export function CodeBlock({
       language={language}
       streamingCursorOffset={streamingCursorOffset}
       presentation={presentation}
+      surface={surface}
     />
   );
 }
