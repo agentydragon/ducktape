@@ -313,7 +313,7 @@ it("flags an invalid typed name and refuses to create", async () => {
 
 it("sends the idle suspension time typed in minutes as seconds", async () => {
   const { container } = await render();
-  await type(input(container, "Suspend when idle (minutes)"), "90");
+  await type(input(container, "Suspend when idle (min)"), "90");
   const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
   await type(input(container, "Name"), "napper");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");

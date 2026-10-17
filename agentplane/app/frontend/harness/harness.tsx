@@ -2373,7 +2373,7 @@ routes.push(
           },
   ],
   ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
-  ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: [...PUBLIC_CODER_POLICY_SETS, "pypi"] })],
+  ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: [...PUBLIC_CODER_POLICY_SETS, "pypi", "github-public"] })],
   ["GET", /^\/action-policy\/sets$/, () => ACTION_POLICY.bindings.flatMap((binding) => binding.policy_sets)],
   ["GET", /^\/actions$/, () => ACTIONS],
   [
