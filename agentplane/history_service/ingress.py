@@ -8,6 +8,7 @@ and serializes concurrent calls for one Session, so any replica serves any call.
 import asyncio
 import logging
 from collections.abc import AsyncIterable, AsyncIterator
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import override
 from uuid import UUID
@@ -31,6 +32,12 @@ from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, W
 # gazelle:include_dep @pypi//protobuf
 
 logger = logging.getLogger(__name__)
+
+# gRPC's default receive limit is 4 MiB per frame. Keep only a small number of decoded
+# frames while a commit or acknowledgement holds up the receiver.
+FRAME_QUEUE_LIMIT = 16
+COMMIT_ENTRY_LIMIT = 128
+COMMIT_BYTE_LIMIT = 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -68,15 +75,28 @@ class _Frames:
 
     def __init__(self, frames: AsyncIterable[runner_ingress_pb2.PushFrame]) -> None:
         self._source = frames
-        self._queue: asyncio.Queue[runner_ingress_pb2.PushFrame | _EndOfCall | BaseException] = asyncio.Queue()
+        self._queue: asyncio.Queue[runner_ingress_pb2.PushFrame | _EndOfCall | Exception] = asyncio.Queue(
+            maxsize=FRAME_QUEUE_LIMIT
+        )
+        self._reader: asyncio.Task[None] | None = None
 
-    async def pump(self) -> None:
+    async def __aenter__(self) -> _Frames:
+        self._reader = asyncio.create_task(self._pump())
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        assert self._reader is not None
+        self._reader.cancel()
+        with suppress(asyncio.CancelledError):
+            await self._reader
+
+    async def _pump(self) -> None:
         try:
             async for frame in self._source:
-                self._queue.put_nowait(frame)
-            self._queue.put_nowait(_EndOfCall())
+                await self._queue.put(frame)
+            await self._queue.put(_EndOfCall())
         except Exception as error:
-            self._queue.put_nowait(error)
+            await self._queue.put(error)
 
     def ready(self) -> bool:
         return not self._queue.empty()
@@ -121,9 +141,10 @@ class _Journal:
         # one past the committed cursor.
         self.sent: int | None = None
         self.batch: list[event_log_pb2.EventEntry] = []
+        self.batch_bytes = 0
         self.snapshot_recorded = False
 
-    def take(self, entry: event_log_pb2.EventEntry) -> None:
+    def take(self, entry: event_log_pb2.EventEntry, size: int) -> None:
         if self.sent is None:
             if not 1 <= entry.cursor <= self.committed + 1:
                 raise RefusedError(grpc.StatusCode.INVALID_ARGUMENT, "the first entry leaves a gap")
@@ -131,11 +152,13 @@ class _Journal:
             raise RefusedError(grpc.StatusCode.INVALID_ARGUMENT, "entries are not consecutive")
         self.sent = entry.cursor
         self.batch.append(entry)
+        self.batch_bytes += size
 
     async def commit(self) -> None:
         if self.batch:
             self.committed = await self.history.append(self.session_id, self.batch)
             self.batch.clear()
+            self.batch_bytes = 0
         # The announced snapshot is stored once history covers it.
         if not self.snapshot_recorded and self.committed >= self.announce.last_cursor:
             await self.history.record_feed_state(self.session_id, SessionFeedState(attached=self.announce))
@@ -157,32 +180,31 @@ class RunnerIngressService(runner_ingress_pb2_grpc.RunnerIngressServicer):
         self, request_iterator: AsyncIterator[runner_ingress_pb2.PushFrame], context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_ingress_pb2.Acknowledgement]:
         session_id: UUID | None = None
-        frames = _Frames(request_iterator)
-        pump = asyncio.create_task(frames.pump())
         try:
             writer = await self._authenticate(context)
-            try:
-                first = await frames.next(self.resources.timing.silence_limit_s)
-            except CallEndedError:
-                raise RefusedError(grpc.StatusCode.INVALID_ARGUMENT, "the call ended unannounced") from None
-            if first is None:
-                raise RefusedError(grpc.StatusCode.UNAVAILABLE, "no announcement")
-            if first.WhichOneof("frame") != "announce":
-                raise RefusedError(grpc.StatusCode.INVALID_ARGUMENT, "the first frame is not an announcement")
-            session_id = _session_id(first.announce)
-            checkpoint = await self.resources.history.bind_writer(session_id, writer)
-            if checkpoint.seal is not None and first.announce.HasField("incarnation_uid"):
-                # An incarnation other than the one that sealed continues the journal; the same one gets the seal back.
-                checkpoint = await self.resources.history.reopen_sealed(
-                    session_id, first.announce.incarnation_uid, first.announce.last_cursor
-                )
-            yield _acknowledgement(checkpoint)
-            if checkpoint.seal is not None:
-                return
-            journal = _Journal(self.resources.history, session_id, first.announce, checkpoint)
-            await journal.commit()
-            async for acknowledgement in self._receive(frames, journal):
-                yield acknowledgement
+            async with _Frames(request_iterator) as frames:
+                try:
+                    first = await frames.next(self.resources.timing.silence_limit_s)
+                except CallEndedError:
+                    raise RefusedError(grpc.StatusCode.INVALID_ARGUMENT, "the call ended unannounced") from None
+                if first is None:
+                    raise RefusedError(grpc.StatusCode.UNAVAILABLE, "no announcement")
+                if first.WhichOneof("frame") != "announce":
+                    raise RefusedError(grpc.StatusCode.INVALID_ARGUMENT, "the first frame is not an announcement")
+                session_id = _session_id(first.announce)
+                checkpoint = await self.resources.history.bind_writer(session_id, writer)
+                if checkpoint.seal is not None and first.announce.HasField("incarnation_uid"):
+                    # An incarnation other than the one that sealed continues the journal; the same one gets the seal back.
+                    checkpoint = await self.resources.history.reopen_sealed(
+                        session_id, first.announce.incarnation_uid, first.announce.last_cursor
+                    )
+                yield _acknowledgement(checkpoint)
+                if checkpoint.seal is not None:
+                    return
+                journal = _Journal(self.resources.history, session_id, first.announce, checkpoint)
+                await journal.commit()
+                async for acknowledgement in self._receive(frames, journal):
+                    yield acknowledgement
         except RefusedError as refused:
             await context.abort(refused.code, refused.detail)
         except WorkloadPrincipalRejectedError:
@@ -196,8 +218,6 @@ class RunnerIngressService(runner_ingress_pb2_grpc.RunnerIngressServicer):
         except ConnectionError, TimeoutError, SQLAlchemyError, k8s_client.ApiException:
             logger.warning("Session %s push failed", session_id, exc_info=True)
             await context.abort(grpc.StatusCode.UNAVAILABLE, "history or authentication unavailable")
-        finally:
-            pump.cancel()
 
     async def _receive(self, frames: _Frames, journal: _Journal) -> AsyncIterator[runner_ingress_pb2.Acknowledgement]:
         timing = self.resources.timing
@@ -210,6 +230,7 @@ class RunnerIngressService(runner_ingress_pb2_grpc.RunnerIngressServicer):
                 await journal.commit()
                 return
             if frame is None:
+                await journal.commit()
                 silent_s += timing.idle_ack_s
                 if silent_s >= timing.silence_limit_s:
                     raise RefusedError(grpc.StatusCode.UNAVAILABLE, "no frame within the silence limit")
@@ -218,11 +239,20 @@ class RunnerIngressService(runner_ingress_pb2_grpc.RunnerIngressServicer):
             silent_s = 0.0
             match frame.WhichOneof("frame"):
                 case "heartbeat":
-                    pass
+                    if journal.batch:
+                        await journal.commit()
+                        yield runner_ingress_pb2.Acknowledgement(cursor=journal.committed)
                 case "entry":
-                    journal.take(frame.entry)
-                    # Commit what has arrived, in one transaction, once nothing more is waiting.
-                    if not frames.ready():
+                    size = frame.entry.ByteSize()
+                    if journal.batch and journal.batch_bytes + size > COMMIT_BYTE_LIMIT:
+                        await journal.commit()
+                    journal.take(frame.entry, size)
+                    # Keep transactions bounded even if the sender never pauses.
+                    if (
+                        len(journal.batch) >= COMMIT_ENTRY_LIMIT
+                        or journal.batch_bytes >= COMMIT_BYTE_LIMIT
+                        or not frames.ready()
+                    ):
                         await journal.commit()
                         yield runner_ingress_pb2.Acknowledgement(cursor=journal.committed)
                 case "sealed":
