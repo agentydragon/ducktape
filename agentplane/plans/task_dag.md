@@ -869,6 +869,14 @@ mechanism; specify update/reload behavior, rollout scope and failure behavior. C
 consolidates policy, substitution and decision logging, but adds those dependencies to platform calls.
 Decide what request/decision visibility and access controls direct routes need and who owns them.
 
+Direct routes also widen the destinations the workload can reach directly: Pod network policy cannot
+distinguish the relay from its agent container, so allowing the relay to reach a backend also permits
+the agent to attempt that connection. Backend token validation still gates access. Weigh the marginal
+exposure against the central path: a stolen token could also be presented through central egress
+where the caller's host/method/path policy admits the request and no substitution replaces it.
+Direct access bypasses that egress gate and its decision logging; it does not itself grant the
+backend identity or authority. Assess this separately from whether the agent may hold its own token.
+
 Evaluate making central egress optional for deployments that need neither external credential
 substitution nor Agentplane egress filtering: external networking may be independently disabled, or
 the operator may accept unrestricted access and agent-held credentials. State which functions and
