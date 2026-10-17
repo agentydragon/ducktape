@@ -540,8 +540,9 @@ def _fit_ladder_curve(positions: list[float], markets: list[Market | None], *, i
 
 def _interpolate(x: float, xs: list[float], ys: list[float]) -> float:
     """Piecewise-linear interpolation of `ys` at `x`, holding the end values flat past `xs`'
-    range. `xs` is ascending; preserves monotonicity of `ys`. At duplicate coordinates, an exact
-    match uses the first value at that coordinate, as the previous left-to-right scan did."""
+    range. `xs` is ascending; preserves monotonicity of `ys`. For an interior exact match at a
+    duplicate coordinate, it uses the first value at that coordinate. Endpoint clamps return
+    `ys[0]` for `x <= xs[0]` and `ys[-1]` for `x >= xs[-1]`."""
     if x <= xs[0]:
         return ys[0]
     if x >= xs[-1]:
@@ -549,8 +550,6 @@ def _interpolate(x: float, xs: list[float], ys: list[float]) -> float:
     right = bisect_left(xs, x)
     left = right - 1
     span = xs[right] - xs[left]
-    if span == 0.0:
-        return ys[left]
     t = (x - xs[left]) / span
     return ys[left] + t * (ys[right] - ys[left])
 
