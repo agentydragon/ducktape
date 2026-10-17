@@ -22,10 +22,10 @@ from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.executor import SandboxExecutor
 from agentplane.action_service.sandbox.inventory import ForeignSandboxError, SandboxActionError
+from agentplane.action_service.sandbox.kubernetes import CommandResult, PodExecError
 from agentplane.action_service.sandbox.models import READY_CONDITION, SandboxCondition, SandboxInfo
 from agentplane.action_service.service import ExecutionLease, ExecutionOutcomeUnknownError
 from agentplane.subjects import ServiceAccountRef
-from mcp_infra.exec.kubernetes import CommandResult, PodExecError
 from util.exec.models import Exited
 
 NAMESPACE = "agentplane-test"

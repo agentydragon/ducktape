@@ -1,5 +1,5 @@
 # compact-json: A JSON formatter that produces compact but human-readable output
-# Not in nixpkgs; used by mcp_infra/display/compact_display.py
+# Not in nixpkgs; used by x/agent_cli/display/compact_display.py
 {
   lib,
   python314Packages,

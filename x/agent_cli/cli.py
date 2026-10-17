@@ -14,7 +14,6 @@ from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.transcript_handler import TranscriptHandler
-from mcp_infra.display.compact_display import CompactDisplayHandler
 from openai_utils.client_factory import build_client
 from openai_utils.model import SystemMessage, UserMessage
 from util.logging import make_logging_callback
@@ -22,6 +21,7 @@ from util.typer import async_run
 from x.agent_cli.compaction import CompactionHandler
 from x.agent_cli.compositor.compositor import Compositor
 from x.agent_cli.config_loader import build_mcp_config
+from x.agent_cli.display.compact_display import CompactDisplayHandler
 
 app = typer.Typer(help="Mini Codex CLI — run an agent REPL.", no_args_is_help=True)
 

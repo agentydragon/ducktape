@@ -33,7 +33,7 @@ IgnorePatterns = Annotated[tuple[str, ...], NoDecode, BeforeValidator(_lines)]
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_INDEX_", cli_parse_args=True, cli_kebab_case=True)
 
-    database_url: SecretStr = Field(description="Dedicated PostgreSQL database, postgresql+asyncpg:// URL.")
+    database_url: SecretStr = Field(description="Dedicated PostgreSQL database URI, using `postgresql://`.")
     repository_url: str = Field(description="Git remote to index: an HTTP(S) URL or a local path.")
     branch: str
     checkout_dir: Path = Field(description="Directory for the bare clone; created on first use.")
