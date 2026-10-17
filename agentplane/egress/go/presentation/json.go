@@ -145,7 +145,8 @@ func (o *JSONObject) hasString(field, value string) bool {
 // BodyRewrite is a JSON body to forward in place of the one sent. It holds a credential.
 type BodyRewrite struct{ Content []byte }
 
-func (BodyRewrite) String() string { return "BodyRewrite{redacted}" }
+func (BodyRewrite) String() string   { return "BodyRewrite{redacted}" }
+func (BodyRewrite) GoString() string { return "BodyRewrite{redacted}" }
 
 type bodyPresentation struct {
 	document *JSONObject

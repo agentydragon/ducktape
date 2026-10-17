@@ -115,7 +115,8 @@ func (r HeaderRewrite) Apply(h http.Header) {
 	h[r.Header] = r.Values
 }
 
-func (HeaderRewrite) String() string { return "HeaderRewrite{redacted}" }
+func (HeaderRewrite) String() string   { return "HeaderRewrite{redacted}" }
+func (HeaderRewrite) GoString() string { return "HeaderRewrite{redacted}" }
 
 type headerPresentation struct {
 	header     string
