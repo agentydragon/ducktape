@@ -587,7 +587,9 @@ flowchart LR
     K3S_SHARED_PACKAGE_LAYERS[Candidate: share Python package layers]
     K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
     K3S_IMPORT_CONCURRENCY[Candidate: native containerd import and unpack concurrency]
+    K3S_RUNNER_IMAGE_SPLIT[In progress: measure harness-specific test images]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: baked harnesses versus on-demand delivery]
+    K3S_RUNNER_IMAGE_SPLIT -. measurement informs .-> RUNNER_HARNESS_DELIVERY_DESIGN
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
@@ -679,6 +681,17 @@ the expected saving from rewriting the streamer. Exit: a matched comparison of i
 resource use and total lifecycle time with unchanged lifecycle assertions, and a recommendation
 to adopt or discard the concurrency change.
 
+### `K3S_RUNNER_IMAGE_SPLIT` — measure harness-specific test images
+
+**In progress; operator dispatch, 2026-10-16 PDT; current agent on
+`perf/k3s-harness-specific-images`.** Compare the current two-harness image with a harness-free
+lifecycle image and a Claude-only model-smoke image. The four lifecycle cases do not start either
+harness, while `test_env` starts Claude. Preserve real runner registration, bootstrap, quiesce,
+persistence and lifecycle assertions; keep real-harness coverage in suites that execute harnesses.
+Exit: a matched real-k3s comparison with unchanged assertions/timeouts, profile import/unpack and
+total test time, and adopt the narrower test images only if the evidence supports them. Adoption
+is authorized by the operator; it does not settle deployment-wide harness delivery.
+
 ### `RUNNER_HARNESS_DELIVERY_DESIGN` — choose how runners obtain harness binaries
 
 **Decision; operator, 2026-10-16 PDT: investigate for k3s test latency.** Compare the current
@@ -691,12 +704,7 @@ decouple harnesses from the runner image; narrower baked images are an interim o
 measurement supports them. Decide delivery and service/cache ownership. Any serving service must
 respect the backend dependency rule; the integration app cannot own this path.
 
-Start with a harness-free lifecycle image and a Claude-only model-smoke image as the simplest
-comparison: the four current lifecycle cases do not start either harness, while `test_env` starts
-Claude. This comparison is dispatched to the current agent on 2026-10-16 PDT, branch
-`perf/k3s-harness-specific-images`; adoption is authorized if the measurements support it. Preserve
-real runner registration, bootstrap, quiesce, persistence and lifecycle assertions;
-keep real-harness coverage in the suites that execute harnesses. The
+`K3S_RUNNER_IMAGE_SPLIT` supplies an initial measurement independently of this delivery decision. The
 [2026-10-16 profile](../x/k3s_env/README.md#current-go-fixture-2026-10-16) records a 577.6 MiB
 uncompressed harness layer among 1.41 GiB of distinct image layers, with 148.4 seconds in image
 import. These byte counts do not establish a proportional time saving.
