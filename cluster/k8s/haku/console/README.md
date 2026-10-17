@@ -36,6 +36,8 @@ no Console secrets, ServiceAccount token, or database access.
 `migration` is a fixed-name Job using the same Flux-selected `haku-console` image
 as the API, running `server_bin migrate`; the command consumes only the database URL. The API
 performs a zero-row ORM compatibility check at startup but never applies DDL.
+Both receive the ordinary PostgreSQL URI from the CNPG app Secret's `uri` key; the API selects
+asyncpg and the migration command selects psycopg at runtime.
 
 **Nothing sequences the migration ahead of the API.** The database, the migration and the
 console share one Flux Kustomization, and a Kustomization applies its objects without ordering
