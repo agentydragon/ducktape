@@ -7,17 +7,17 @@ null/None values and list all resources when filters are not provided.
 from __future__ import annotations
 
 import pytest_bazel
+from fastmcp.server import FastMCP
 from hamcrest import assert_that, contains_inanyorder, has_length
 
 from mcp_infra.compositor.resources_server import ResourcesListArgs
-from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 
 
-def _make_origin_with_resource() -> EnhancedFastMCP:
+def _make_origin_with_resource() -> FastMCP:
     # version="test" skips the slow importlib.metadata.version() lookup that hangs on
     # os.stat() in the Nix environment.
-    origin = EnhancedFastMCP("origin", version="test")
+    origin = FastMCP("origin", version="test")
 
     @origin.resource("resource://foo/bar", name="dummy", mime_type="text/plain", description="dummy")
     async def foo_bar() -> str:
@@ -53,7 +53,7 @@ async def test_list_resources_filters_by_server_when_provided(compositor, typed_
 
     # Create a second server without resources
 
-    other = EnhancedFastMCP("other")
+    other = FastMCP("other")
     await compositor.mount_inproc(MCPMountPrefix("other"), other)
 
     # Filter by specific server
@@ -73,7 +73,7 @@ async def test_list_resources_with_uri_prefix_filter(compositor, typed_resources
     """Test that uri_prefix filter works correctly."""
 
     # Create server with multiple resources
-    server = EnhancedFastMCP("test")
+    server = FastMCP("test")
 
     @server.resource("resource://test/foo", name="foo", mime_type="text/plain")
     async def foo() -> str:

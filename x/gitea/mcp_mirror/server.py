@@ -8,10 +8,9 @@ from typing import Any, cast
 from urllib.parse import urlparse
 
 import httpx
+from fastmcp.server import FastMCP
 from fastmcp.tools.function_tool import FunctionTool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-
-from mcp_infra.enhanced.server import EnhancedFastMCP
 
 
 @dataclass
@@ -220,7 +219,7 @@ def _resolve_owner(base_url: str, token: str) -> str:
     return data.login
 
 
-class GiteaMirrorServer(EnhancedFastMCP):
+class GiteaMirrorServer(FastMCP):
     """Gitea mirror MCP server with typed tool access.
 
     Provides async pull mirror syncing for Gitea repositories.

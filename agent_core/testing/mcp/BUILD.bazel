@@ -8,8 +8,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra:naming",
-        "//mcp_infra/enhanced:server",
         "//openai_utils:pydantic_strict_mode",
+        "@pypi//fastmcp_slim",
     ],
 )
 

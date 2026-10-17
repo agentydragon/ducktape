@@ -12,9 +12,9 @@ from __future__ import annotations
 
 from typing import Literal
 
+from fastmcp.server import FastMCP
 from pydantic import BaseModel
 
-from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
@@ -39,7 +39,7 @@ class SendMessageInput(OpenAIStrictModeBaseModel):
     content: str
 
 
-def build_simple_tools(server: EnhancedFastMCP) -> None:
+def build_simple_tools(server: FastMCP) -> None:
     """Register the standard simple tools on ``server``.
 
     The helpers are intentionally deterministic and side-effect free so they can
@@ -51,9 +51,9 @@ def build_simple_tools(server: EnhancedFastMCP) -> None:
         return EchoOutput(echo=text)
 
 
-def make_simple_mcp() -> EnhancedFastMCP:
+def make_simple_mcp() -> FastMCP:
     """Create a FastMCP server exposing the shared simple tools."""
 
-    server = EnhancedFastMCP("simple")
+    server = FastMCP("simple")
     build_simple_tools(server)
     return server

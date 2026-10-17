@@ -1,16 +1,16 @@
 """Tests for block-level resource reading with truncation markers."""
 
 import pytest_bazel
+from fastmcp.server import FastMCP
 
 from mcp_infra.compositor.resources_server import ReadBlocksArgs
-from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 
 
 async def test_read_blocks_single_text_block_full(compositor, typed_resources_client):
     """Test reading a single text block that fits within max_bytes."""
     # Setup: origin server with a small text resource
-    origin = EnhancedFastMCP("origin")
+    origin = FastMCP("origin")
 
     @origin.resource("resource://test.txt", name="test", mime_type="text/plain")
     async def test_txt() -> str:
@@ -33,7 +33,7 @@ async def test_read_blocks_truncate_at_end(compositor, typed_resources_client):
     """Test truncating a text block that exceeds max_bytes."""
     # Setup: text block with 100 bytes
     long_text = "a" * 100
-    origin = EnhancedFastMCP("origin")
+    origin = FastMCP("origin")
 
     @origin.resource("resource://long.txt", name="long", mime_type="text/plain")
     async def long_txt() -> str:

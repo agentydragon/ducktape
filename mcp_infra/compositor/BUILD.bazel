@@ -7,7 +7,7 @@ py_library(
     deps = [
         ":server",
         "//mcp_infra:prefix",
-        "//mcp_infra/enhanced:server",
+        "@pypi//fastmcp_slim",
     ],
 )
 

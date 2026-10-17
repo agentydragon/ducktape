@@ -20,7 +20,7 @@ py_test(
         "//mcp_infra:conftest",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor:resources_server",
-        "//mcp_infra/enhanced:server",
+        "@pypi//fastmcp_slim",
         "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",
     ],
@@ -34,7 +34,7 @@ py_test(
         "//mcp_infra:conftest",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor:resources_server",
-        "//mcp_infra/enhanced:server",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],
 )

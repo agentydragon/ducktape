@@ -4,7 +4,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from mcp_infra.enhanced.server import EnhancedFastMCP
+from fastmcp.server import FastMCP
+
 from x.inop.prompting.prompt_engineer import FeedbackProvider
 
 # ---- Dependencies and state -------------------------------------------------
@@ -28,15 +29,13 @@ logger = logging.getLogger(__name__)
 
 def make_prompt_feedback_server_with_state(
     deps: PromptEvaluationDeps, feedback_provider: FeedbackProvider
-) -> tuple[EnhancedFastMCP, PromptFeedbackState]:
+) -> tuple[FastMCP, PromptFeedbackState]:
     """FastMCP with closure state (tools-builder style). No lifespan/ContextVar.
 
     Returns (server, state). Attach via mcp.attach_inproc.
     """
     state = PromptFeedbackState()
-    mcp = EnhancedFastMCP(
-        "Prompt Evaluation MCP Server", instructions="Prompt evaluation (rollouts+grading+persistence)"
-    )
+    mcp = FastMCP("Prompt Evaluation MCP Server", instructions="Prompt evaluation (rollouts+grading+persistence)")
 
     @mcp.tool(output_schema=None)
     async def propose_prompt(prompt: str) -> dict[str, str]:

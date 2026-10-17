@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from typing import Final
 
-from mcp_infra.enhanced.server import EnhancedFastMCP
+from fastmcp.server import FastMCP
+
 from mcp_infra.naming import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
@@ -29,9 +30,9 @@ class EchoOutput(OpenAIStrictModeBaseModel):
     echo: str
 
 
-def make_echo_server(name: str = "echo") -> EnhancedFastMCP:
+def make_echo_server(name: str = "echo") -> FastMCP:
     """Create a FastMCP server with an echo tool."""
-    server = EnhancedFastMCP(name)
+    server = FastMCP(name)
 
     @server.tool(output_schema=None)
     def echo(text: str) -> EchoOutput:

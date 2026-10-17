@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import json
 
+from fastmcp.server import FastMCP
+
 from mcp_infra.compositor.server import BaseCompositor
-from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 
 _SERVER_STATE_URI_TEMPLATE = "compositor://{server}/state"
 
 
-class CompositorMetaServer(EnhancedFastMCP):
+class CompositorMetaServer(FastMCP):
     """Compositor metadata server with typed resource access.
 
     Exposes mount metadata as resources on a dedicated server.
