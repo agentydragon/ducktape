@@ -6,6 +6,8 @@ Register in downstream packages via conftest.py:
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+
 import pytest
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
@@ -34,7 +36,7 @@ async def mcp_client_echo(echo_server):
 
 
 @pytest.fixture
-async def mcp_tool_provider() -> ToolProvider:
+async def mcp_tool_provider() -> AsyncGenerator[ToolProvider]:
     """Provider connected to an empty server for tests that make no MCP calls."""
     async with Client(FastMCP("empty")) as client:
         yield MCPToolProvider(client)
