@@ -1,7 +1,6 @@
 """Agentplane history visual behavior tests."""
 
 import re
-from textwrap import dedent
 
 import pytest
 import pytest_asyncio
@@ -78,6 +77,7 @@ async def test_reported_rollout_run(reported_rollout: VisualPage, position: str)
     [(False, DESKTOP), (False, MOBILE), (True, DESKTOP), (True, MOBILE)],
     ids=["false-desktop", "false-mobile", "true-desktop", "true-mobile"],
 )
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
 async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_output: bool) -> None:
     page = completed_rollout.page
     await _rollout_start(completed_rollout)
@@ -93,12 +93,12 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
     heading = call.locator(
         ".agentplane-output-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
     )
-    divider_edges = await heading.evaluate(
-        dedent(
-            "element => {\n                const heading = element.getBoundingClientRect();\n                const divider = getComputedStyle(element, '::after');\n                const card = element.closest('.agentplane-collapsible-card').getBoundingClientRect();\n                return [heading.left + parseFloat(divider.left) - card.left,\n                        card.right - heading.right + parseFloat(divider.right)];\n            }"
-        )
-    )
-    assert all(abs(edge) <= 1 for edge in divider_edges), f"output divider escaped its card: {divider_edges}"
+    heading_box = await heading.bounding_box()
+    card_box = await call.locator("xpath=ancestor::*[@data-open][1]").bounding_box()
+    assert heading_box is not None
+    assert card_box is not None
+    assert heading_box["x"] >= card_box["x"] - 1
+    assert heading_box["x"] + heading_box["width"] <= card_box["x"] + card_box["width"] + 1
     if expanded_output:
         await _focus(page, output)
         await output.get_by_role("button", name=re.compile("^Show all")).click()
@@ -140,10 +140,42 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
             assert abs(actual_top - expected_top) <= 4, (
                 f"{await heading.inner_text()} at {actual_top}px; expected sticky slot at {expected_top}px"
             )
+        geometry = [
+            await heading.evaluate(
+                "element => { const label = element.querySelector('.mantine-Text-root'); "
+                "const chevron = element.querySelector('.mantine-Accordion-chevron'); "
+                "return {left: label.getBoundingClientRect().left, "
+                "right: chevron.getBoundingClientRect().right, size: getComputedStyle(label).fontSize}; }"
+            )
+            for heading in (run_heading, call_heading, output_heading)
+        ]
+        assert len({item["size"] for item in geometry}) == 1, geometry
+        assert max(item["right"] for item in geometry) - min(item["right"] for item in geometry) <= 1, geometry
+        indents = [geometry[index + 1]["left"] - geometry[index]["left"] for index in range(2)]
+        assert min(indents) > 0, indents
+        assert abs(indents[0] - indents[1]) <= 1, indents
     else:
         await _focus(page, call.locator(".agentplane-clamped-block[data-label='Command']"))
     await page.mouse.move(0, 0)
     await completed_rollout.capture()
+    if expanded_output:
+        # The user can shorten output, close the call, and close the run from the
+        # current reading position. Assert visibility before clicks can auto-scroll.
+        show_less = output_heading.get_by_role("button", name="Show less Output")
+        await expect(show_less).to_be_in_viewport(ratio=1)
+        await show_less.click()
+        await expect(output).to_have_attribute("data-expanded", "false")
+        await expect(output.get_by_role("button", name=re.compile("^Show all"))).to_be_visible()
+        await page.mouse.move(0, 0)
+        await completed_rollout.capture(name=f"{completed_rollout.capture_name}_show_less")
+        shell_control = call_heading.get_by_role("button").first
+        await expect(shell_control).to_be_in_viewport(ratio=1)
+        await shell_control.click()
+        await expect(shell_control).to_have_attribute("aria-expanded", "false")
+        run_control = run_heading.get_by_role("button").first
+        await expect(run_control).to_be_in_viewport(ratio=1)
+        await run_control.click()
+        await expect(run_control).to_have_attribute("aria-expanded", "false")
 
 
 async def _open_discarded_recovery(page: Page) -> None:
@@ -511,6 +543,20 @@ async def test_thread_evidence_panel(view: VisualPage, app: AgentplaneFixture, a
     await button.press("Enter")
     await expect(button).to_have_attribute("aria-expanded", "true")
     await expect(owner.locator("[data-evidence-observation]").first).to_be_visible()
+    if anchor == "4":
+        bubble = owner.locator(".agentplane-user-bubble")
+        heading = bubble.locator(".agentplane-disclosure-heading").first
+        bubble_background = await bubble.evaluate("element => getComputedStyle(element).backgroundColor")
+        heading_background = await heading.evaluate("element => getComputedStyle(element).backgroundColor")
+        assert heading_background == bubble_background, (
+            f"user evidence surface {heading_background} did not follow bubble {bubble_background}"
+        )
+        bubble_box = await bubble.bounding_box()
+        heading_box = await heading.bounding_box()
+        assert bubble_box is not None
+        assert heading_box is not None
+        assert heading_box["x"] >= bubble_box["x"] - 1
+        assert heading_box["x"] + heading_box["width"] <= bubble_box["x"] + bubble_box["width"] + 1
     await button.blur()
     await page.mouse.move(0, 0)
     await view.capture()
@@ -519,6 +565,73 @@ async def test_thread_evidence_panel(view: VisualPage, app: AgentplaneFixture, a
     await expect(frames.locator(".agentplane-code-block")).to_be_visible()
     await page.mouse.move(0, 0)
     await view.capture(name=f"{view.capture_name}_raw_frames")
+
+
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
+async def test_bash_evidence_panel(shell_calls: VisualPage) -> None:
+    view = shell_calls
+    page = view.page
+    await _open_run(page)
+    owner = (
+        page.locator(".agentplane-collapsible-card.agentplane-evidence-owner")
+        .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
+        .first
+    )
+    await expect(owner.locator(".agentplane-step-title")).to_have_text("Bash")
+    await owner.locator(".agentplane-step-details .agentplane-disclosure-summary").click()
+    await expect(owner.locator(".agentplane-step-details .agentplane-code-block .cm-content").first).to_be_attached()
+    button = owner.locator(".agentplane-step-inspect > .agentplane-evidence-toggle")
+    await expect(button).to_be_attached()
+
+    # Keyboard and pointer activation both reach the separate action beside the chevron.
+    await button.focus()
+    await button.press("Enter")
+    await expect(button).to_have_attribute("aria-expanded", "true")
+    await button.press("Enter")
+    await button.blur()
+    await page.mouse.move(0, 0)
+    await owner.hover()
+    await expect(button).to_have_css("opacity", "1")
+    heading = owner.locator(".agentplane-step-details .agentplane-disclosure-heading").first
+    button_box = await button.bounding_box()
+    heading_box = await heading.bounding_box()
+    assert button_box is not None
+    assert heading_box is not None
+    assert button_box["x"] >= heading_box["x"] - 1
+    assert button_box["x"] + button_box["width"] <= heading_box["x"] + heading_box["width"] + 1
+
+    await button.click()
+    await expect(button).to_have_attribute("aria-expanded", "true")
+    frames = owner.locator("[data-evidence-observation]").first
+    await expect(frames).to_be_visible()
+    await page.mouse.move(0, 0)
+    await view.capture()
+    await frames.get_by_role("button", name=re.compile("Observation .* raw frames")).click()
+    await expect(frames.locator(".agentplane-code-block")).to_be_visible()
+    await page.mouse.move(0, 0)
+    await view.capture(name=f"{view.capture_name}_raw_frames")
+
+
+@pytest.mark.parametrize("viewport", [MOBILE_TOUCH], ids=["mobile-touch"])
+async def test_bash_evidence_button_reveals_on_tap(shell_calls: VisualPage) -> None:
+    view = shell_calls
+    page = view.page
+    await _open_run(page)
+    owner = (
+        page.locator(".agentplane-collapsible-card.agentplane-evidence-owner")
+        .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
+        .first
+    )
+    await expect(owner.locator(".agentplane-step-title")).to_have_text("Bash")
+    await owner.locator(".agentplane-step-details .agentplane-disclosure-summary").tap()
+    await expect(owner).to_have_attribute("data-evidence-revealed", "")
+    button = owner.locator(".agentplane-step-inspect > .agentplane-evidence-toggle")
+    await expect(button).to_have_css("opacity", "1")
+    await button.tap()
+    await expect(button).to_have_attribute("aria-expanded", "true")
+    await expect(owner.locator("[data-evidence-observation]").first).to_be_visible()
+    await view.capture()
 
 
 @pytest.mark.parametrize(
@@ -598,6 +711,21 @@ async def test_shell_call_command_and_output(shell_calls: VisualPage, call_text:
     await _focus(page, call.locator(".agentplane-clamped-block[data-label='Command']"))
     await _in_viewport(call.locator(".agentplane-output-label"))
     await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_shell_call_raw_arguments_and_json_output(shell_calls: VisualPage) -> None:
+    view = shell_calls
+    page = view.page
+    await _open_tool_run(page)
+    call = page.locator(".agentplane-step-details").filter(has_text="Test Bank")
+    await call.get_by_role("switch", name="Show raw arguments and output").check()
+    await expect(call.locator(".agentplane-clamped-block[data-label='Arguments']")).to_be_visible()
+    await expect(call.locator(".agentplane-clamped-block[data-label='Command']")).to_have_count(0)
+    await expect(call.locator(".agentplane-output-disclosure .agentplane-code-block")).to_contain_text(
+        '"institution_name"'
+    )
+    await view.capture(target=page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE

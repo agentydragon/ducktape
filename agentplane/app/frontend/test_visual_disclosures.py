@@ -218,6 +218,7 @@ async def test_output_heading_releases_after_content(view: VisualPage, app: Agen
         "expanded-focus-mobile",
     ],
 )
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
 async def test_disclosure_control_reaches_card_edges(shell_calls: VisualPage, state: str) -> None:
     view = shell_calls
     page = view.page
@@ -251,6 +252,8 @@ async def test_disclosure_control_reaches_card_edges(shell_calls: VisualPage, st
     assert abs(control_box["y"] - card_box["y"]) <= 1
     assert abs(control_box["x"] + control_box["width"] - card_box["x"] - card_box["width"]) <= 1
     assert await control.evaluate("el => parseFloat(getComputedStyle(el).borderTopLeftRadius)") > 0
+    if state in {"collapsed-hover", "tool-hover"}:
+        assert await control.evaluate("el => parseFloat(getComputedStyle(el).borderBottomLeftRadius)") > 0
     assert await control.evaluate(
         "el => {\n                const r = el.getBoundingClientRect();\n                return [[r.x + 5, r.y + 2], [r.right - 5, r.y + 2]].every(([x, y]) =>\n                    el.contains(document.elementFromPoint(x, y)));\n            }"
     )
@@ -264,6 +267,28 @@ async def test_disclosure_control_reaches_card_edges(shell_calls: VisualPage, st
         await control.hover(position={"x": 5, "y": 2})
         assert await control.evaluate("el => el.matches(':hover')")
     await view.capture(target=view.page.locator("#app"))
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
+async def test_run_summary_keeps_horizontal_position(shell_calls: VisualPage) -> None:
+    page = shell_calls.page
+    control = page.locator(".agentplane-disclosure-summary").filter(has_text="tool calls").first
+    await page.get_by_role("region", name="Thread history").evaluate("el => { el.scrollTop = 0; }")
+    await wait_for_stable(page)
+    label = control.locator(".agentplane-disclosure-summary-content")
+    chevron = control.locator(".mantine-Accordion-chevron")
+    before = [await label.bounding_box(), await chevron.bounding_box()]
+    await control.click()
+    await expect(control).to_have_attribute("aria-expanded", "true")
+    await wait_for_stable(page)
+    for element, previous in zip((label, chevron), before, strict=True):
+        current = await element.bounding_box()
+        assert current is not None
+        assert previous is not None
+        assert abs(current["x"] - previous["x"]) <= 1
+    await page.mouse.move(0, 0)
+    await shell_calls.capture()
 
 
 if __name__ == "__main__":

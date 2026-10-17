@@ -219,7 +219,11 @@ const EVIDENCE_REVEALED = "data-evidence-revealed";
  * mark is set on every device, but only a touch screen's stylesheet reads it. */
 export function revealEvidenceOnTap(event: MouseEvent<HTMLElement>): void {
   const { target } = event;
-  if (!(target instanceof Element) || target.closest("a, button, summary, input, textarea, select")) return;
+  if (!(target instanceof Element)) return;
+  // A StepLine is itself a disclosure button on touch screens. Let that tap both open the
+  // tool/reasoning row and reveal its separate Evidence action; all other controls stay excluded.
+  const stepSummary = target.closest(".agentplane-step-details .agentplane-disclosure-summary");
+  if (target.closest("a, button, summary, input, textarea, select") && !stepSummary) return;
   if (window.getSelection()?.isCollapsed === false) return;
   event.currentTarget.querySelector(`[${EVIDENCE_REVEALED}]`)?.removeAttribute(EVIDENCE_REVEALED);
   // An input's status lives beside its bubble, not inside the evidence owner. Tapping

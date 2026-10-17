@@ -80,7 +80,8 @@ export function ClampedBlock({
             alignItems: "flex-end",
             justifyContent: "center",
             paddingBottom: 2,
-            background: "linear-gradient(to bottom, transparent, var(--mantine-color-body) 85%)",
+            background:
+              "linear-gradient(to bottom, transparent, var(--agentplane-surface, var(--mantine-color-body)) 85%)",
             color: "var(--mantine-color-dimmed)",
             fontSize: "var(--mantine-font-size-xs)",
           }}
@@ -109,6 +110,15 @@ export function ClampedBlock({
         <>
           {header}
           {body}
+          {expanded && (
+            <UnstyledButton
+              className="agentplane-clamped-collapse"
+              aria-label={`Show less ${label}`}
+              onClick={() => setExpanded(false)}
+            >
+              Show less
+            </UnstyledButton>
+          )}
         </>
       )}
     </div>

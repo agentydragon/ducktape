@@ -64,7 +64,7 @@ describe("parseCommandCall", () => {
     expect(call?.notes).toEqual(["Runs in the background", "Sandbox disabled for this call"]);
   });
 
-  it("draws Codex's command as the script it ran, and says where and by what", () => {
+  it("draws Codex's command as the script it ran and keeps its invocation and cwd structured", () => {
     const call = parseCommandCall(
       "commandExecution",
       JSON.stringify({
@@ -76,7 +76,9 @@ describe("parseCommandCall", () => {
       label: "Shell",
       summary: 'curl -sS "https://test.example/"',
       command: 'curl -sS "https://test.example/"',
-      notes: ["Run by /bin/bash -lc", "In /test-workspace"],
+      invocation: "/bin/bash -lc",
+      cwd: "/test-workspace",
+      notes: [],
     });
   });
 
@@ -86,7 +88,9 @@ describe("parseCommandCall", () => {
       JSON.stringify({ command: "git status", cwd: "/test-workspace" })
     );
     expect(call?.command).toBe("git status");
-    expect(call?.notes).toEqual(["In /test-workspace"]);
+    expect(call?.cwd).toBe("/test-workspace");
+    expect(call?.invocation).toBeUndefined();
+    expect(call?.notes).toEqual([]);
   });
 
   it("takes no call it could not show whole", () => {

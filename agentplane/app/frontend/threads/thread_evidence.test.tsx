@@ -34,6 +34,14 @@ function History(): JSX.Element {
           Message
         </div>
       </div>
+      <div className="agentplane-evidence-owner" data-testid="tool-owner">
+        <div className="agentplane-step-details">
+          <button className="agentplane-disclosure-summary" data-testid="tool-summary">
+            Bash
+          </button>
+        </div>
+        <button className="agentplane-evidence-toggle">Evidence</button>
+      </div>
       <p data-testid="between">Between items</p>
     </div>
   );
@@ -76,6 +84,14 @@ it("leaves the mark alone for a tap on a control, or one that ends a text select
   window.getSelection()?.selectAllChildren(find("second"));
   await tap(find("second"));
   expect(revealed(find)).toEqual(["first"]);
+});
+
+it("reveals the tool inspector when a touch tap opens its disclosure heading", async () => {
+  const find = await mountHistory();
+
+  await tap(find("tool-summary"));
+
+  expect(find("tool-owner").hasAttribute("data-evidence-revealed")).toBe(true);
 });
 
 it("selects a message bubble when the adjacent command gutter is tapped", async () => {

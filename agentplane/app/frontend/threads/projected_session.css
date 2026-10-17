@@ -62,6 +62,7 @@
 /* A step of a run (a reasoning step, a tool call) as one line, opening to its content below -- see
    step_line.tsx. */
 .agentplane-step-row {
+  font-size: var(--mantine-font-size-sm);
   position: relative;
   display: flex;
   min-width: 0;
@@ -117,6 +118,7 @@
 
 .agentplane-step-title {
   flex: none;
+  font-size: inherit;
 }
 
 .agentplane-step-preview {
@@ -126,10 +128,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.agentplane-step-details .agentplane-disclosure-summary[aria-expanded="true"] .agentplane-step-preview {
-  display: none;
 }
 
 /* Controls change the displayed details; keep them with that content so the sticky disclosure
@@ -145,11 +143,12 @@
   white-space: nowrap;
 }
 
-/* The row's evidence icon is pinned to its card's corner, so the line stops short of it rather than
-   running under it. The disclosed content below keeps the full width. */
-.agentplane-step-details .agentplane-disclosure-summary,
+/* Static reasoning rows align with disclosure labels at the same nesting level. */
 .agentplane-step-static {
-  padding-inline-end: 1.5rem;
+  display: flex;
+  align-items: center;
+  min-height: 1.5rem;
+  padding-inline: var(--mantine-spacing-xs);
 }
 
 /* A streaming step breathes, as its status in the line; one that stopped short is blue and still. */
@@ -446,4 +445,16 @@
   max-width: min(85%, 34rem);
   min-width: 0;
   background: var(--mantine-color-default-hover);
+}
+
+.agentplane-step-summary[data-has-inspection="true"] {
+  padding-inline-end: 1.5rem;
+}
+
+.agentplane-step-inspect {
+  position: absolute;
+  right: 2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
 }

@@ -6,6 +6,17 @@
   position: relative;
 }
 
+/* The user bubble and its sticky inspection headers share one opaque, theme-aware blue tint. */
+.agentplane-user-bubble.agentplane-evidence-owner {
+  --agentplane-surface: color-mix(in srgb, var(--mantine-color-body) 90%, var(--mantine-color-blue-6) 10%);
+  background-color: var(--agentplane-surface);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-user-bubble.agentplane-evidence-owner {
+  --agentplane-surface: color-mix(in srgb, var(--mantine-color-body) 85%, var(--mantine-color-blue-6) 15%);
+  background-color: var(--agentplane-surface);
+}
+
 .agentplane-evidence-owner .agentplane-evidence-toggle {
   position: absolute;
   top: 4px;
@@ -18,6 +29,21 @@
 .agentplane-evidence-owner:hover .agentplane-evidence-toggle,
 .agentplane-evidence-owner:focus-within .agentplane-evidence-toggle,
 .agentplane-evidence-owner .agentplane-evidence-toggle[aria-expanded="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The shared StepLine aside reserves its own slot beside the chevron. Keep the button in that
+   slot so it can never cover the title or move the chevron; only its visibility changes. */
+.agentplane-evidence-owner .agentplane-step-inspect > .agentplane-evidence-toggle {
+  position: static;
+  top: auto;
+  right: auto;
+}
+
+.agentplane-evidence-owner:hover .agentplane-step-inspect > .agentplane-evidence-toggle,
+.agentplane-evidence-owner:focus-within .agentplane-step-inspect > .agentplane-evidence-toggle,
+.agentplane-evidence-owner .agentplane-step-inspect > .agentplane-evidence-toggle:focus-visible {
   opacity: 1;
   pointer-events: auto;
 }

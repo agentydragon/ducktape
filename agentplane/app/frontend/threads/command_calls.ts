@@ -15,6 +15,10 @@ export interface CommandCall {
   description?: string;
   /** The command, as the shell is given it. */
   command: string;
+  /** The shell and flags that invoke the command, when the harness recorded a shell script. */
+  invocation?: string;
+  /** The working directory where the harness ran the command. */
+  cwd?: string;
   /** The settings that change how it runs. */
   notes: string[];
 }
@@ -74,7 +78,9 @@ export function parseCommandCall(toolName: string, argumentsJson: string): Comma
         label: "Shell",
         summary: oneLine(wrapped?.script ?? parsed.data.command),
         command: wrapped?.script ?? parsed.data.command,
-        notes: [...(wrapped ? [`Run by ${wrapped.invocation}`] : []), `In ${parsed.data.cwd}`],
+        invocation: wrapped?.invocation,
+        cwd: parsed.data.cwd,
+        notes: [],
       };
     }
     default:

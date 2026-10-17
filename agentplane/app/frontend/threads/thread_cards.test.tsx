@@ -347,6 +347,23 @@ describe("tool call rows", () => {
     expect(lineOf(container)).toBe('echo "test-script"');
   });
 
+  it("shows Codex's invocation and working directory in monospace above the command", async () => {
+    const container = await renderTool("commandExecution", {
+      command: String.raw`/bin/bash -lc "echo test"`,
+      cwd: "/test-workspace",
+    });
+    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
+
+    const controls = container.querySelector(".agentplane-step-controls")!;
+    expect(controls.textContent).toContain("Run with");
+    expect(controls.textContent).toContain("cwd");
+    expect([...controls.querySelectorAll(".agentplane-code-inline")].map((code) => code.textContent)).toEqual([
+      "/bin/bash -lc",
+      "/test-workspace",
+    ]);
+    expect(controls.querySelector('input[aria-label="Show raw arguments and output"]')).not.toBeNull();
+  });
+
   it("opens to the command as shell and the output, with the model's reason and how it ran", async () => {
     const container = await renderTool(
       "Bash",
@@ -364,22 +381,33 @@ describe("tool call rows", () => {
     expect(container.textContent).not.toContain('"command"');
   });
 
-  it("shows the JSON a command call holds in place of the command while Raw is on", async () => {
-    const container = await renderTool("Bash", { command: "ls", description: "List files" });
+  it("shows pretty shell arguments and output, then preserves both recorded payloads in Raw", async () => {
+    const recordedArguments = '{ "description": "List files", "command": "ls" }';
+    const recordedOutput = '{\n  "ok": true\n}\n';
+    const container = await renderCard(toolEntity("Bash"), {
+      "test-tool:arguments": recordedArguments,
+      "test-tool:output": recordedOutput,
+    });
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
     await toggle(container.querySelector(".agentplane-disclosure-summary")!);
     // In the disclosed content, outside the sticky summary and above the details.
-    const raw = container.querySelector<HTMLInputElement>(".agentplane-step-details .agentplane-step-controls input")!;
+    const raw = container.querySelector<HTMLInputElement>(
+      '.agentplane-step-details .agentplane-step-controls input[aria-label="Show raw arguments and output"]'
+    )!;
     expect(raw.type).toBe("checkbox");
-    const firstBlock = () => container.querySelector(".agentplane-code-block")?.textContent;
-    expect(firstBlock()).toBe("ls");
+    const codeBlocks = () => [...container.querySelectorAll(".agentplane-code-block")];
+    const codeText = (block: Element) =>
+      [...block.querySelectorAll(".cm-line")].map((line) => line.textContent ?? "").join("\n");
+    expect(codeText(codeBlocks()[0]!)).toBe("ls");
+    expect(codeText(codeBlocks()[1]!)).toBe('{\n  "ok": true\n}');
 
     await act(async () => raw.click());
-    expect(firstBlock()).toContain('"command":"ls"');
-    expect(firstBlock()).toContain('"description":"List files"');
+    expect(codeText(codeBlocks()[0]!)).toBe(recordedArguments);
+    expect(codeText(codeBlocks()[1]!)).toBe(recordedOutput);
 
     await act(async () => raw.click());
-    expect(firstBlock()).toBe("ls");
+    expect(codeText(codeBlocks()[0]!)).toBe("ls");
+    expect(codeText(codeBlocks()[1]!)).toBe('{\n  "ok": true\n}');
   });
 
   it("folds any other tool to its arguments' JSON, which is all it can open to", async () => {

@@ -108,6 +108,20 @@ describe("ClampedBlock", () => {
     expect(control(container, "Show all")).toBeDefined();
   });
 
+  it("returns nested output to its clipped preview with Show less", async () => {
+    contentHeight(1000);
+    const container = await mount(
+      <ClampedBlock maxHeightRem={10} stickyCollapse={false} label="Output">
+        test-output
+      </ClampedBlock>
+    );
+    await act(async () => control(container, "Show all")!.click());
+    expect(container.querySelector('[data-clamped="true"]')).toBeNull();
+    await act(async () => control(container, "Show less")!.click());
+    expect(container.querySelector('[data-clamped="true"]')).not.toBeNull();
+    expect(control(container, "Show all")).toBeDefined();
+  });
+
   it("takes its expansion from the caller when given one", async () => {
     contentHeight(1000);
     const expand = vi.fn();

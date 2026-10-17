@@ -1,14 +1,5 @@
 import { Accordion } from "@mantine/core";
-import {
-  createContext,
-  type CSSProperties,
-  type JSX,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useLayoutEffect,
-  useState,
-} from "react";
+import { createContext, type JSX, type ReactNode, useCallback, useContext, useLayoutEffect, useState } from "react";
 
 import "./disclosure.css";
 
@@ -16,8 +7,6 @@ interface StickyStackPosition {
   top: number;
   /** Higher rows paint over descendants as they leave their containing disclosure. */
   zIndex: number;
-  /** The divider bleeds through this disclosure's panel padding to the outer card edge. */
-  dividerBleed: string;
 }
 
 export const DISCLOSURE_STICKY_Z_INDEX = 100;
@@ -25,7 +14,6 @@ export const DISCLOSURE_STICKY_Z_INDEX = 100;
 const StickyStackContext = createContext<StickyStackPosition>({
   top: 0,
   zIndex: DISCLOSURE_STICKY_Z_INDEX,
-  dividerBleed: "var(--mantine-spacing-xs)",
 });
 
 function useStickyRowHeight() {
@@ -55,7 +43,6 @@ function childStackPosition(parent: StickyStackPosition, rowHeight: number): Sti
   return {
     top: parent.top + rowHeight,
     zIndex: parent.zIndex - 1,
-    dividerBleed: "calc(var(--agentplane-card-padding-inline, var(--mantine-spacing-xs)) + var(--mantine-spacing-xs))",
   };
 }
 
@@ -71,7 +58,6 @@ export function Disclosure({
   className,
   dataAttributes,
   keepMounted = false,
-  dividerBoundary = false,
 }: {
   summary: ReactNode;
   /** A separate header action, outside the accordion button. */
@@ -84,8 +70,6 @@ export function Disclosure({
   dataAttributes?: Record<string, string>;
   /** Keep hidden content mounted when the caller relies on native selection/copy behavior. */
   keepMounted?: boolean;
-  /** Align nested dividers to this disclosure's enclosing card edge. */
-  dividerBoundary?: boolean;
 }): JSX.Element {
   const stackPosition = useContext(StickyStackContext);
   const [headingRef, headingHeight] = useStickyRowHeight();
@@ -117,15 +101,7 @@ export function Disclosure({
           ref={headingRef}
           className="agentplane-disclosure-heading"
           data-expanded={expanded}
-          style={
-            {
-              top: stackPosition.top,
-              zIndex: stackPosition.zIndex,
-              "--agentplane-disclosure-divider-bleed": dividerBoundary
-                ? "var(--agentplane-disclosure-edge-divider, var(--mantine-spacing-xs))"
-                : `var(--agentplane-disclosure-edge-divider, ${stackPosition.dividerBleed})`,
-            } as CSSProperties
-          }
+          style={{ top: stackPosition.top, zIndex: stackPosition.zIndex }}
         >
           <Accordion.Control>{summary}</Accordion.Control>
           {summaryAside}

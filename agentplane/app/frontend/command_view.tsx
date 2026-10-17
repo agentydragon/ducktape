@@ -1,7 +1,7 @@
 // The shared drawing of a shell command and what it printed, for the SSH `exec` Action and for a
 // harness's own shell tool calls: the command as highlighted shell, and its output as text, each
 // capped in height with the rest one click away.
-import { Stack, Text } from "@mantine/core";
+import { Button, Stack, Text } from "@mantine/core";
 import { type JSX, useState } from "react";
 
 import { ClampedBlock, lineCount } from "./clamped_block";
@@ -57,17 +57,23 @@ export function OutputBlock({
   name,
   note,
   text,
+  raw = false,
   expansion,
   disclosure,
 }: {
   name: string;
   note?: string;
   text: string;
+  /** Keep the recorded payload byte-for-byte in a view that promises its raw contents. */
+  raw?: boolean;
   expansion?: Expansion;
   /** Retain the nested output disclosure while a tool row leaves the DOM. */
   disclosure?: Expansion;
 }): JSX.Element {
   const localDisclosure = useState(true);
+  const localExpansion = useState(false);
+  const previewExpansion = expansion ?? localExpansion;
+  const [expanded, setExpanded] = previewExpansion;
   const [open, setOpen] = disclosure ?? localDisclosure;
   const lines = lineCount(text);
 
@@ -75,9 +81,9 @@ export function OutputBlock({
     <Disclosure
       className="agentplane-output-disclosure"
       summary={
-        <Text className="agentplane-output-label" size="xs" c="dimmed">
+        <Text className="agentplane-output-label" size="sm" c="dimmed">
           {name}
-          <Text span size="xs" c="dimmed">
+          <Text span size="sm" c="dimmed">
             {` · ${lines} ${lines === 1 ? "line" : "lines"}`}
           </Text>
           {note && (
@@ -88,6 +94,20 @@ export function OutputBlock({
           )}
         </Text>
       }
+      summaryAside={
+        expanded && (
+          <Button
+            className="agentplane-output-less"
+            size="compact-xs"
+            variant="subtle"
+            color="gray"
+            aria-label={`Show less ${name}`}
+            onClick={() => setExpanded(false)}
+          >
+            Show less
+          </Button>
+        )
+      }
       open={open}
       onOpenChange={setOpen}
       keepMounted
@@ -96,11 +116,13 @@ export function OutputBlock({
         maxHeightRem={OUTPUT_MAX_HEIGHT_REM}
         lines={lines}
         label={name}
-        expansion={expansion}
+        expansion={previewExpansion}
         stickyCollapse={false}
       >
-        {/* A final newline ends the last line rather than starting an empty one. */}
-        <HighlightedText text={text.replace(/\n$/, "")} />
+        {/* Pretty output ends its last line with a final newline; Raw keeps that recorded newline. */}
+        <div className="agentplane-output-code">
+          <HighlightedText text={raw ? text : text.replace(/\n$/, "")} />
+        </div>
       </ClampedBlock>
     </Disclosure>
   );

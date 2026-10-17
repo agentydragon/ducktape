@@ -120,7 +120,7 @@ function RunView({
       id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:run`}
       summary={
         <Flex component="span" display="inline-flex" gap="xs" align="center" wrap="wrap">
-          <Text size="xs" c="dimmed">
+          <Text size="sm" c="dimmed">
             {summarizeRun(entities)}
           </Text>
           {itemStatus(entities, entities.some(live))}

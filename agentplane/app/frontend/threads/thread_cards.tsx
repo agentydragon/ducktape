@@ -8,7 +8,7 @@ import { COMMAND_MAX_HEIGHT_REM, CommandCallView, OutputBlock } from "../command
 import { HighlightedText } from "../json_view";
 import { Markdown } from "../markdown";
 import { RawSwitch } from "../raw_switch";
-import { oneLine, parseCommandCall } from "./command_calls";
+import { oneLine, parseCommandCall, type CommandCall } from "./command_calls";
 import { CommandProgress } from "./command_progress";
 import { lifecyclePresentation } from "./history_rows";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
@@ -257,6 +257,7 @@ function ReasoningPreview({
   overflows,
   setOpen,
   onOverflowChange,
+  summaryAside,
 }: {
   reference: PayloadRef;
   /** How the step stands, shown on its title while it is folded. */
@@ -267,6 +268,7 @@ function ReasoningPreview({
   overflows: boolean;
   setOpen: (open: boolean) => void;
   onOverflowChange: (overflows: boolean) => void;
+  summaryAside?: ReactNode;
 }): JSX.Element {
   const { body, error, retry } = useThreadSync().usePayload(reference);
   const preview = useRef<HTMLDivElement>(null);
@@ -331,6 +333,7 @@ function ReasoningPreview({
         )
       }
       previewRef={preview}
+      summaryAside={summaryAside}
       aside={
         error && (
           <button className="agentplane-step-retry" onClick={retry} type="button">
@@ -387,7 +390,6 @@ function DiscardedCard({ id, summary, children }: { id: string; summary: string;
     <CollapsibleCard open={open}>
       <RetainedDisclosure
         id={id}
-        dividerBoundary
         summary={
           <Text component="span" size="sm" c="dimmed">
             {summary}
@@ -403,9 +405,63 @@ function DiscardedCard({ id, summary, children }: { id: string; summary: string;
   );
 }
 
+function CommandExecutionMetadata({ call }: { call: CommandCall }): JSX.Element | null {
+  if (!call.invocation && !call.cwd) return null;
+  return (
+    <Text size="xs" c="dimmed" style={{ flex: "1 1 12rem", minWidth: 0, overflowWrap: "anywhere" }}>
+      {call.invocation && (
+        <>
+          Run with <InlineCode text={call.invocation} />
+        </>
+      )}
+      {call.cwd && (
+        <>
+          {call.invocation ? " · " : ""}cwd <InlineCode text={call.cwd} />
+        </>
+      )}
+    </Text>
+  );
+}
+
+function CommandCallControls({
+  call,
+  raw,
+  onRawChange,
+  hasOutput,
+  fullWidth = true,
+  children,
+}: {
+  call: CommandCall;
+  raw: boolean;
+  onRawChange: (raw: boolean) => void;
+  hasOutput: boolean;
+  fullWidth?: boolean;
+  children?: ReactNode;
+}): JSX.Element {
+  return (
+    <Group
+      gap="xs"
+      justify="space-between"
+      align="center"
+      wrap="wrap"
+      style={fullWidth ? { width: "100%" } : undefined}
+    >
+      <CommandExecutionMetadata call={call} />
+      <Group gap="xs" wrap="nowrap">
+        <RawSwitch
+          raw={raw}
+          onChange={onRawChange}
+          ariaLabel={hasOutput ? "Show raw arguments and output" : "Show raw arguments"}
+        />
+        {children}
+      </Group>
+    </Group>
+  );
+}
+
 /** A tool call as one line, like a reasoning step, opening to its arguments and output: a shell
  * command as highlighted shell, and anything else as the JSON it holds. Each is capped in height,
- * and a command's Raw switch shows its JSON in place of the shell. All of it is kept where it is
+ * and a command's Raw switch shows the recorded arguments and output. All of it is kept where it is
  * left, since rows leave the DOM as the history scrolls. */
 function ToolCard({
   threadId,
@@ -446,7 +502,6 @@ function ToolCard({
       {(args) => {
         const argumentsBody = args?.body ?? null;
         const call = argumentsBody === null ? null : parseCommandCall(state.tool_name, argumentsBody);
-        const rawSwitch = call && <RawSwitch raw={raw} onChange={setRaw} />;
         const detail = (
           <Stack gap="xs">
             <RecoveryNotes state={state} tool />
@@ -487,6 +542,7 @@ function ToolCard({
                   <OutputBlock
                     name={state.recovery === RecoveryDisposition.REVISED ? "Continuation output" : "Output"}
                     text={text}
+                    raw={raw}
                     expansion={output}
                     disclosure={outputDisclosure}
                   />
@@ -501,12 +557,23 @@ function ToolCard({
               <Text size="sm" c="dimmed">
                 Discarded context does not undo tool side effects or change its recorded execution outcome.
               </Text>
-              <Group justify="space-between" wrap="nowrap">
+              <Group justify="space-between" wrap="wrap">
                 <Group gap="xs">{itemStatus([entity], live)}</Group>
-                <Group gap="xs" wrap="nowrap">
-                  {rawSwitch}
-                  <EvidenceToggle entity={entity} />
-                </Group>
+                {call ? (
+                  <CommandCallControls
+                    call={call}
+                    raw={raw}
+                    onRawChange={setRaw}
+                    hasOutput={entity.outputRef !== null}
+                    fullWidth={false}
+                  >
+                    <EvidenceToggle entity={entity} />
+                  </CommandCallControls>
+                ) : (
+                  <Group gap="xs" wrap="nowrap">
+                    <EvidenceToggle entity={entity} />
+                  </Group>
+                )}
               </Group>
               {detail}
               <EvidencePanel threadId={threadId} entity={entity} />
@@ -514,7 +581,7 @@ function ToolCard({
           );
         }
         return (
-          <CollapsibleCard open={opened} stableInlineSize className="agentplane-evidence-owner">
+          <CollapsibleCard open={opened} className="agentplane-evidence-owner">
             <StepLine
               title={call?.label ?? (state.tool_name || "tool")}
               mark={opened ? undefined : mark}
@@ -527,7 +594,7 @@ function ToolCard({
                 ) : call && !call.description ? (
                   <InlineCode text={call.summary} language="bash" />
                 ) : (
-                  <Text component="span" ff={call ? undefined : "monospace"}>
+                  <Text component="span" size="sm" ff={call ? undefined : "monospace"}>
                     {call?.summary ?? oneLine(argumentsBody)}
                   </Text>
                 ))
@@ -540,14 +607,23 @@ function ToolCard({
                   </button>
                 )
               }
-              controls={rawSwitch}
+              controls={
+                call && (
+                  <CommandCallControls
+                    call={call}
+                    raw={raw}
+                    onRawChange={setRaw}
+                    hasOutput={entity.outputRef !== null}
+                  />
+                )
+              }
+              summaryAside={<EvidenceToggle entity={entity} />}
               expandable={disclosable}
               open={open}
               onOpenChange={setOpen}
             >
               <Box mt="xs">{detail}</Box>
             </StepLine>
-            <EvidenceToggle entity={entity} />
             <EvidencePanel threadId={threadId} entity={entity} />
           </CollapsibleCard>
         );
@@ -654,9 +730,10 @@ export function EntityCard({
     entity.state.recovery === null &&
     live;
   const status = itemStatus([entity], live);
+  const evidenceToggleInReasoningStep = reasoningTextRef !== null && discardedId === null;
   const body = (
     <>
-      <EvidenceToggle entity={entity} />
+      {!evidenceToggleInReasoningStep && <EvidenceToggle entity={entity} />}
       {status &&
         ((!reasoning && entity.state.completion === null && !streamingText) || entity.state.recovery !== null) && (
           <Group gap="xs" mb="xs">
@@ -675,6 +752,7 @@ export function EntityCard({
               overflows={reasoningOverflows}
               setOpen={setReasoningOpen}
               onOverflowChange={setReasoningOverflows}
+              summaryAside={evidenceToggleInReasoningStep ? <EvidenceToggle entity={entity} /> : undefined}
             />
           ) : (
             <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
@@ -701,11 +779,7 @@ export function EntityCard({
   // line.
   if (reasoning)
     return (
-      <CollapsibleCard
-        open={reasoningOpen && reasoningOverflows}
-        stableInlineSize
-        className="agentplane-evidence-owner"
-      >
+      <CollapsibleCard open={reasoningOpen && reasoningOverflows} className="agentplane-evidence-owner">
         {body}
       </CollapsibleCard>
     );
@@ -795,21 +869,14 @@ function recoveryBadge(recovery: number): StatusBadge | null {
 export function CollapsibleCard({
   open,
   children,
-  stableInlineSize = false,
   className,
 }: {
   open: boolean;
   children: ReactNode;
-  stableInlineSize?: boolean;
   className?: string;
 }): JSX.Element {
   return (
-    <Paper
-      className={`agentplane-collapsible-card${className ? ` ${className}` : ""}`}
-      data-open={open}
-      data-stable-inline-size={stableInlineSize || undefined}
-      withBorder={open && !stableInlineSize}
-    >
+    <Paper className={`agentplane-collapsible-card${className ? ` ${className}` : ""}`} data-open={open}>
       {children}
     </Paper>
   );

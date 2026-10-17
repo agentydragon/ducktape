@@ -4,64 +4,38 @@
 
 .agentplane-disclosure-item {
   min-width: 0;
-  /* Each disclosure is a singleton accordion; its card owns the group boundary. */
   border-bottom: 0;
 }
 
-/* The card and its first control share an edge. Keep the control itself clickable through the
-   card's padding, rather than painting a larger hover area around a smaller hit target. */
+/* Reserve the same geometry before and after expansion. */
 .agentplane-collapsible-card {
   position: relative;
-  --agentplane-card-padding-inline: 0px;
-  --agentplane-card-padding-block: 0px;
-  padding-inline: var(--agentplane-card-padding-inline);
-  padding-block: var(--agentplane-card-padding-block);
+  border: 1px solid transparent;
+  padding: 0;
 }
 
 .agentplane-collapsible-card[data-open="true"] {
-  --agentplane-card-padding-inline: var(--mantine-spacing-xs);
-}
-
-.agentplane-collapsible-card[data-stable-inline-size] {
-  /* Reserve the border inside the existing padding budget, keeping both the content width and
-     the border stable while the heading paints to its edge. An inset shadow is covered by it. */
-  --agentplane-card-padding-inline: calc(var(--mantine-spacing-xs) - 1px);
-  --agentplane-card-padding-block: 0px;
-  border: 1px solid transparent;
-}
-
-.agentplane-collapsible-card[data-stable-inline-size][data-open="true"] {
   border-color: var(--mantine-color-default-border);
 }
 
 .agentplane-collapsible-card > .agentplane-disclosure,
 .agentplane-collapsible-card > .agentplane-step-row > .agentplane-disclosure {
-  --agentplane-disclosure-edge-inline: var(--agentplane-card-padding-inline);
-  --agentplane-disclosure-edge-divider: 0px;
-}
-
-/* Evidence toggles are absolutely positioned; recovery notes and other preceding content are not.
-   Only a heading at the top of the card should reach its rounded top corners. */
-.agentplane-collapsible-card > .agentplane-disclosure:nth-child(1 of :not(.agentplane-evidence-toggle)),
-.agentplane-collapsible-card
-  > .agentplane-step-row:nth-child(1 of :not(.agentplane-evidence-toggle))
-  > .agentplane-disclosure {
-  --agentplane-disclosure-edge-top: var(--agentplane-card-padding-block);
   --agentplane-disclosure-edge-radius: var(--paper-radius, var(--mantine-radius-default));
 }
 
 .agentplane-disclosure-heading {
   position: sticky;
-  z-index: 2;
   box-sizing: border-box;
   display: flex;
   min-width: 0;
   align-items: center;
-  background: var(--mantine-color-body);
-  margin-inline: calc(0px - var(--agentplane-disclosure-edge-inline, 0px));
-  margin-block-start: calc(0px - var(--agentplane-disclosure-edge-top, 0px));
+  background: var(--agentplane-surface, var(--mantine-color-body));
   border-start-start-radius: var(--agentplane-disclosure-edge-radius, 0px);
   border-start-end-radius: var(--agentplane-disclosure-edge-radius, 0px);
+}
+
+.agentplane-disclosure-heading[data-expanded="false"] {
+  border-radius: var(--mantine-radius-sm);
 }
 
 .agentplane-disclosure-summary {
@@ -71,32 +45,9 @@
   flex: 1 1 0;
   min-height: 2.75rem;
   padding-block: 0;
-  padding-inline: var(--agentplane-disclosure-edge-inline, var(--mantine-spacing-xs));
-  border-start-start-radius: inherit;
-  border-start-end-radius: inherit;
-}
-
-.agentplane-clamped-block[data-expanded="false"]
-  > .agentplane-clamped-disclosure
-  > .agentplane-disclosure-item
-  > .agentplane-disclosure-heading {
-  display: none;
-}
-
-.agentplane-clamped-block[data-expanded="false"] > .agentplane-clamped-disclosure > .agentplane-disclosure-item {
-  border: 0;
-}
-
-.agentplane-clamped-block[data-expanded="false"]
-  > .agentplane-clamped-disclosure
-  > .agentplane-disclosure-item
-  > .agentplane-disclosure-panel,
-.agentplane-clamped-block[data-expanded="false"]
-  > .agentplane-clamped-disclosure
-  > .agentplane-disclosure-item
-  > .agentplane-disclosure-panel
-  > .agentplane-disclosure-content {
-  padding: 0;
+  padding-inline: var(--mantine-spacing-xs);
+  border-radius: inherit;
+  font-size: var(--mantine-font-size-sm);
 }
 
 .agentplane-disclosure-summary-content {
@@ -106,24 +57,12 @@
 }
 
 .agentplane-disclosure-heading[data-expanded="true"] {
-  z-index: 3;
-}
-
-.agentplane-disclosure-heading[data-expanded="true"]::after {
-  position: absolute;
-  inset-block-end: 0;
-  inset-inline: calc(0px - var(--agentplane-disclosure-divider-bleed));
-  border-block-end: 1px solid var(--mantine-color-default-border);
-  content: "";
-  pointer-events: none;
+  box-shadow: 0 1px var(--mantine-color-default-border);
 }
 
 @media (min-width: 48rem) {
-  /* Mantine's control has vertical padding of its own. Keep the desktop row compact even when its
-     summary includes a status badge; retain natural growth if a summary wraps. */
   .agentplane-disclosure-heading > .agentplane-disclosure-summary {
     min-height: 1.75rem;
-    padding-block: 0;
   }
 
   .agentplane-disclosure-summary-content {
@@ -138,39 +77,59 @@
 }
 
 .agentplane-disclosure-panel {
-  --agentplane-disclosure-edge-inline: 0px;
-  --agentplane-disclosure-edge-top: 0px;
   --agentplane-disclosure-edge-radius: 0px;
-  --agentplane-disclosure-edge-divider: initial;
 }
 
-/* Panels own vertical spacing; cards own their horizontal inset. Standalone disclosures retain
-   one panel inset, without adding another inset inside an already padded card. */
 .agentplane-disclosure-content {
   padding: var(--mantine-spacing-xs);
 }
 
-.agentplane-collapsible-card
-  > .agentplane-disclosure
+/* One left inset per level, with a common right edge for nested controls. */
+.agentplane-collapsible-card .agentplane-disclosure-content {
+  padding-inline-end: 0;
+}
+
+.agentplane-collapsible-card .agentplane-collapsible-card {
+  border: 0;
+  border-radius: 0;
+  --agentplane-disclosure-edge-radius: 0px;
+}
+
+.agentplane-collapsible-card .agentplane-collapsible-card > .agentplane-disclosure,
+.agentplane-collapsible-card .agentplane-collapsible-card > .agentplane-step-row > .agentplane-disclosure {
+  --agentplane-disclosure-edge-radius: 0px;
+}
+
+.agentplane-clamped-block[data-expanded="false"]
+  > .agentplane-clamped-disclosure
   > .agentplane-disclosure-item
-  > .agentplane-disclosure-panel
-  > .agentplane-disclosure-content,
-.agentplane-collapsible-card
-  > .agentplane-step-row
-  > .agentplane-disclosure
+  > .agentplane-disclosure-heading {
+  display: none;
+}
+
+.agentplane-clamped-block[data-expanded="false"]
+  > .agentplane-clamped-disclosure
   > .agentplane-disclosure-item
   > .agentplane-disclosure-panel
   > .agentplane-disclosure-content {
-  padding-inline: 0;
+  padding: 0;
 }
 
-/* A card panel has no additional inline padding. Its immediate nested heading therefore only
-   crosses the card inset; deeper panels reset this variable and retain their own inset. */
-.agentplane-collapsible-card > .agentplane-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-panel,
-.agentplane-collapsible-card
-  > .agentplane-step-row
-  > .agentplane-disclosure
-  > .agentplane-disclosure-item
-  > .agentplane-disclosure-panel {
-  --agentplane-disclosure-edge-divider: var(--agentplane-card-padding-inline);
+.agentplane-clamped-collapse {
+  display: block;
+  margin-inline-start: auto;
+  padding: var(--mantine-spacing-xs);
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-sm);
+}
+
+.agentplane-output-less {
+  position: absolute;
+  right: 2rem;
+}
+
+.agentplane-disclosure-heading:has(> .agentplane-output-less)
+  > .agentplane-disclosure-summary
+  .agentplane-disclosure-summary-content {
+  padding-inline-end: 4rem;
 }

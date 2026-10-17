@@ -15,7 +15,7 @@ const MARKS: Record<StepMark, { color: string; label: string }> = {
 
 /** One step of a run (a reasoning step, a tool call) as a single line: a title, a one-line preview
  * of what is behind it, and, when there is something to disclose, a disclosure that opens it below.
- * The preview gives way to the content once it is open, as the content then says it in full.
+ * The preview remains in the sticky heading to identify the expanded content while scrolling.
  *
  * Styled by `.agentplane-step-*` in projected_session.css. */
 export function StepLine({
@@ -25,6 +25,7 @@ export function StepLine({
   mark,
   trailing,
   aside,
+  summaryAside,
   controls,
   expandable,
   open,
@@ -39,6 +40,8 @@ export function StepLine({
   trailing?: ReactNode;
   /** Beside the line, outside its disclosure. */
   aside?: ReactNode;
+  /** Inspection action beside the preview, outside the disclosure button. */
+  summaryAside?: ReactNode;
   /** Controls that change the disclosed content, kept outside the sticky summary. */
   controls?: ReactNode;
   expandable: boolean;
@@ -48,9 +51,10 @@ export function StepLine({
   children?: ReactNode;
 }): JSX.Element {
   const summary = (
-    <div className="agentplane-step-summary">
+    <div className="agentplane-step-summary" data-has-inspection={summaryAside ? "true" : undefined}>
       <Text
         component="span"
+        size="sm"
         className={`agentplane-step-title${mark === "streaming" ? " agentplane-step-title--streaming" : ""}`}
         c={mark ? MARKS[mark].color : "dimmed"}
         title={mark && MARKS[mark].label}
@@ -69,16 +73,19 @@ export function StepLine({
       {expandable ? (
         <Disclosure
           className="agentplane-step-details"
-          dividerBoundary
           open={open}
           onOpenChange={onOpenChange}
           summary={summary}
+          summaryAside={summaryAside && <span className="agentplane-step-inspect">{summaryAside}</span>}
         >
           {openControls}
           {children}
         </Disclosure>
       ) : (
-        <div className="agentplane-step-static">{summary}</div>
+        <div className="agentplane-step-static">
+          {summary}
+          {summaryAside && <span className="agentplane-step-inspect">{summaryAside}</span>}
+        </div>
       )}
       {aside}
     </div>
