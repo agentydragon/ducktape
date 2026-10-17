@@ -345,9 +345,12 @@ Choose offline behavior, ordering, duplicate handling, batching, retention and a
 Sending and explicit lifecycle controls remain different operations; v1 notice-triggered wake
 follows the Sandbox policy above, without a separate peer-wake grant.
 
-Decide whether revoking send authority affects only future sends or also accepted-but-undelivered
-mail. Controls may need different execution-time checks from correspondence. Bytes already read
-cannot be revoked. A retry must not silently retarget a replacement Sandbox or new role holder.
+**V1 send revocation agreed:** check send authority at durable acceptance. Revocation blocks new
+sends but does not retract accepted correspondence, including messages not yet noticed or read.
+Accepted messages remain available under the recipient's inbox permissions and the applicable
+retention and Sandbox-deletion rules; delivery does not recheck the sender's send authority.
+Controls may need different execution-time checks from correspondence. Bytes already read cannot
+be revoked. A retry must not silently retarget a replacement Sandbox or new role holder.
 
 Illustrative tool operations are finding recipients, sending, checking delivery, reading/acking an
 inbox and opening a Session. Control operations stay explicit, with target and parameter constraints

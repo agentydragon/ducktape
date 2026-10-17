@@ -311,13 +311,17 @@ Dispatcher or adding selective event wake is future work, not a prerequisite.
 
 **Blocked on messaging decision and its selected prerequisites.** Implement bounded payloads,
 server-authenticated sender provenance, per-recipient send policy, idempotent message IDs and honest
-acceptance receipts in the chosen authority. Test denied pairs, spoofing and retry/conflict behavior.
+acceptance receipts in the chosen authority. Check send permission at durable acceptance; later
+revocation blocks new sends without retracting accepted messages. Test denied pairs, spoofing,
+retry/conflict behavior and this revocation boundary.
 
 ### `AGENT_MESSAGE_RECEPTION` — delivery, recovery and acknowledgement
 
 **Blocked on ingress contract/implementation.** Implement selected recipient read/delivery/ack
-operations, batching and recovery of unread work. Test revoked/deleted recipients, ordinary offline
-catch-up and duplicate delivery without leaking payloads. Notices use the current trusted
+operations, batching and recovery of unread work. Test recipient-access revocation, deleted recipients,
+ordinary offline catch-up and duplicate delivery without leaking payloads. Accepted correspondence
+survives sender send-permission revocation, subject to recipient inbox permissions and retention;
+cover unread messages across that boundary. Notices use the current trusted
 Notifications-to-Dispatcher path and per-Sandbox wake-on-message policy; do not require a separate
 peer/source wake grant. Deletion never retargets mail to a replacement Sandbox.
 Explain suspended-recipient and wake behavior to agents; support scoped destination-Sandbox CR
