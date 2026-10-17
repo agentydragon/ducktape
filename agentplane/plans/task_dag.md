@@ -1575,12 +1575,12 @@ Staging's backup/restore preflight and writer fence were required before its act
 
 **Both environments serve the Go Gateway; acceptance is not recorded.** Testing activation #10787 and
 staging activation #10796 merged 2026-10-16 UTC, and a live read at 2026-10-17 03:20 UTC found no Python
-Deployments and the Go Gateway Ready in both. Existing runners had not reconnected: staging's two Sandboxes
-reported `RunnerConnected=False` since 22:17 UTC, while the runner control route's network rules admitted
-port 8082 and the Go listener serves only 8080. A corrected rule set does not close the gate; it stays open
-until those Sandboxes report `RunnerConnected=True`. Testing preservation and manual writer-fence gates were
-waived by the operator; the waiver does not apply to staging, whose backup/restore preflight and writer fence
-are not recorded as complete here.
+Deployments and the Go Gateway Ready in both. Staging's two Sandboxes reported `RunnerConnected=False` from
+22:17 UTC because the runner control route's network rules admitted port 8082 and the Go listener serves only
+8080; after [#10818](https://github.com/agentydragon/ducktape/pull/10818) named the listener port, a live read at
+03:41 UTC found them and testing's three Sandboxes `RunnerConnected=True`. A VM runner's reconnect is not
+observed. Testing preservation and manual writer-fence gates were waived by the operator; the waiver does not
+apply to staging, whose backup/restore preflight and writer fence are not recorded as complete here.
 Recheck the
 operator's prerequisite that neither service depends on History: the 2026-10-15 entrypoints,
 settings, chart and runtime call paths have no History client/call/config, while runner ingress and
