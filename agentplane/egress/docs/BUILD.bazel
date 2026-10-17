@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+filegroup(
+    name = "agents",
+    srcs = glob(["agents/**"]),
+    visibility = ["//agentplane/egress:__pkg__"],
+)
+
+go_library(
+    name = "docs",
+    srcs = ["docs.go"],
+    embedsrcs = glob(["agents/**"]),
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/docs",
+    visibility = ["//agentplane/egress:__subpackages__"],
+)

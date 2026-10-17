@@ -461,7 +461,7 @@ py_test(
 py_library(
     name = "rules_api",
     srcs = ["rules_api.py"],
-    data = glob(["docs/agents/**"]),
+    data = ["//agentplane/egress/docs:agents"],
     deps = [
         ":agent_view",
         ":policy",
