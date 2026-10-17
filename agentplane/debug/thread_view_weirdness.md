@@ -71,6 +71,21 @@ Observed UI symptoms and user review decisions, without diagnosis.
 - The shell call's “Raw” switch does not name its scope: it changes the command
   arguments while leaving the output presentation unchanged (source inspection).
 
+## Review of candidate `6ae12ede7e`
+
+Observed in commit `6ae12ede7e14a2ffe93c8e0fac2b6d90f4874c96`, in
+[`thread-command-collapsed-phone.png`](https://s3.allegedly.works/pr-visuals/commits/6ae12ede7e14a2ffe93c8e0fac2b6d90f4874c96/tests/agentplane-app-test-thread-browser-6b162a4490/thread-command-collapsed-phone.png):
+
+- The Raw switch hugs the outer box's right edge, without a comfortable right
+  inset.
+- The nested horizontal separator lines stop short of the outer box's left
+  border. Their inset increases with nesting. Whether the separators should
+  follow the label indentation is unresolved.
+- The Bash script block's right border touches the outer box's right border,
+  making that edge look thicker.
+- The user is open to removing the border around the Bash script text; this is
+  an option, not a selected solution.
+
 ## User review decisions
 
 - Keeping command identity or a summary visible while an expanded shell call's
