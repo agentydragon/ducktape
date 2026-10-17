@@ -28,10 +28,10 @@ require (
 // Direct dependencies for agentplane/sandbox_controller
 require kubevirt.io/api v1.8.2
 
-// Direct dependencies for agentplane/runner_gateway/go
+// Direct dependencies for agentplane/runner_gateway
 require github.com/go-logr/logr v1.4.4
 
-// Direct dependencies for agentplane/llm_ingress/go
+// Direct dependencies for agentplane/llm_ingress
 require gopkg.in/yaml.v3 v3.0.1
 
 // Indirect dependencies (merged from genkit and worthy go.mods)

@@ -33,7 +33,7 @@ exception does not apply to staging or establish testing acceptance.
    a different baseline. Do not log payloads, tokens or credentials.
 
 The schema handoff's automated proof is
-`//agentplane/runner_gateway/go/migrations:test_migrations`, including retained queued work and
+`//agentplane/runner_gateway/migrations:test_migrations`, including retained queued work and
 idempotent application. It does not replace the environment's backup/restore check.
 
 ## Fenced activation, one environment at a time

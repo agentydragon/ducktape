@@ -86,7 +86,7 @@ _IMAGES = {
     "policy_controller": "//agentplane/policy_controller:image",
     "postgres": "@postgres_18_linux_amd64",
     "runner_gateway_go": "//agentplane/runner_gateway:go_image",
-    "runner_gateway_queue_migrate": "//agentplane/runner_gateway/go/migrations:image",
+    "runner_gateway_queue_migrate": "//agentplane/runner_gateway/migrations:image",
     "sandbox_controller": "//agentplane/sandbox_controller:image",
 }
 

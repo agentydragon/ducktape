@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/migrations"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations"
 	_ "github.com/lib/pq"
 )
 

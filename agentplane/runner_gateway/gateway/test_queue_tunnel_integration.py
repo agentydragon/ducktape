@@ -12,13 +12,11 @@ from util.testing.postgres import DatabaseNames, create_temporary_database
 # gazelle:include_dep @pypi//psycopg
 
 _GO_TEST = get_required_path(
-    own_repo_rlocation(
-        "agentplane/runner_gateway/go/gateway/queue_tunnel_integration_test_/queue_tunnel_integration_test"
-    )
+    own_repo_rlocation("agentplane/runner_gateway/gateway/queue_tunnel_integration_test_/queue_tunnel_integration_test")
 )
 _MIGRATOR = get_required_path(
     own_repo_rlocation(
-        "agentplane/runner_gateway/go/migrations/cmd/runner-gateway-queue-migrate_/runner-gateway-queue-migrate"
+        "agentplane/runner_gateway/migrations/cmd/runner-gateway-queue-migrate_/runner-gateway-queue-migrate"
     )
 )
 

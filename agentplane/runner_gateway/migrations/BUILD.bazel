@@ -5,7 +5,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 pkg_tar(
     name = "go_binary_layer",
-    srcs = ["//agentplane/runner_gateway/go/migrations/cmd:runner-gateway-queue-migrate"],
+    srcs = ["//agentplane/runner_gateway/migrations/cmd:runner-gateway-queue-migrate"],
     package_dir = "/usr/local/bin",
 )
 
@@ -23,8 +23,8 @@ go_library(
     name = "migrations",
     srcs = ["migrations.go"],
     embedsrcs = glob(["dispatcher/*.sql"]),
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/go/migrations",
-    visibility = ["//agentplane/runner_gateway/go:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations",
+    visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
@@ -42,7 +42,7 @@ py_test(
     name = "test_migrations",
     size = "medium",
     srcs = ["test_migrations.py"],
-    data = ["//agentplane/runner_gateway/go/migrations/cmd:runner-gateway-queue-migrate"],
+    data = ["//agentplane/runner_gateway/migrations/cmd:runner-gateway-queue-migrate"],
     requires_docker = True,
     deps = [
         ":conftest",

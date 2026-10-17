@@ -17,7 +17,7 @@ from util.testing.postgres import DatabaseNames, create_temporary_database
 
 _MIGRATOR = get_required_path(
     own_repo_rlocation(
-        "agentplane/runner_gateway/go/migrations/cmd/runner-gateway-queue-migrate_/runner-gateway-queue-migrate"
+        "agentplane/runner_gateway/migrations/cmd/runner-gateway-queue-migrate_/runner-gateway-queue-migrate"
     )
 )
 _VERSION = "runner_gateway_dispatcher_goose_version"

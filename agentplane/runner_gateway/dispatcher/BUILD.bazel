@@ -16,11 +16,8 @@ go_library(
         "wake.go",
         "watch.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/go/dispatcher",
-    visibility = [
-        "//agentplane/runner_gateway:__subpackages__",
-        "//agentplane/runner_gateway/go:__subpackages__",
-    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher",
+    visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:dispatcher_notification_go_proto",
@@ -101,7 +98,7 @@ py_test(
     srcs = ["test_store_integration.py"],
     data = [
         ":store_integration_test",
-        "//agentplane/runner_gateway/go/migrations/cmd:runner-gateway-queue-migrate",
+        "//agentplane/runner_gateway/migrations/cmd:runner-gateway-queue-migrate",
     ],
     requires_docker = True,
     deps = [

@@ -13,8 +13,8 @@ import (
 	"time"
 
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/proto/session_dispatcher"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/dispatcher"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/gateway"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/go-logr/logr"

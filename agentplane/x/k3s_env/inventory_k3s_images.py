@@ -47,8 +47,8 @@ IMAGES = {
     "runner": ("//agentplane/x/k3s_env:runner_image", "agentplane/x/k3s_env/runner_image"),
     "runner_gateway_go": ("//agentplane/runner_gateway:go_image", "agentplane/runner_gateway/go_image"),
     "runner_gateway_queue_migrate": (
-        "//agentplane/runner_gateway/go/migrations:image",
-        "agentplane/runner_gateway/go/migrations/image",
+        "//agentplane/runner_gateway/migrations:image",
+        "agentplane/runner_gateway/migrations/image",
     ),
     "sandbox_controller": ("//agentplane/sandbox_controller:image", "agentplane/sandbox_controller/image"),
 }

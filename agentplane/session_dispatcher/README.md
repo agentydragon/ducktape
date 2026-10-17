@@ -75,7 +75,7 @@ Sandboxes) or a retry deadline. Each replica also renews its owned Leases every 
 
 ## Running
 
-The serving binary and image live under `//agentplane/runner_gateway/go` and
+The serving binary and image live under `//agentplane/runner_gateway` and
 `//agentplane/runner_gateway:go_image`. Go uses explicit audience/caller flags, a projected
 Gateway token for calls to other holder replicas, and
 `AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. Apply the Goose queue migrator before

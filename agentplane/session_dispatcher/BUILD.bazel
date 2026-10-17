@@ -11,7 +11,7 @@ py_library(
     data = ["//agentplane/session_dispatcher/migrations:files"],
     visibility = [
         "//agentplane/notification_service:__pkg__",
-        "//agentplane/runner_gateway/go/migrations:__pkg__",
+        "//agentplane/runner_gateway/migrations:__pkg__",
         "//agentplane/session_dispatcher:__subpackages__",
     ],
     deps = [

@@ -112,7 +112,7 @@ flowchart LR
     click policy href "policy_controller/controller.go" "Policy Controller"
     click sandboxctl href "sandbox_controller/controller.go" "Sandbox Controller"
     click egress href "egress/addon.py" "Egress proxy"
-    click llm href "llm_ingress/go/server.go" "LLM ingress"
+    click llm href "llm_ingress/server.go" "LLM ingress"
     click electric href "../cluster/cdk8s/agentplane/electric.py" "Electric deployment"
     click index href "indexing/app.py" "Git index API"
 ```
@@ -288,7 +288,7 @@ The service nodes above link to their definitions in renderers that support Merm
 These direct links are also available in Markdown views that do not:
 
 - gRPC: [RunnerControl](proto/runner_control.proto), [tunneled Runner RPCs](proto/runner.proto), [RunnerIngress](proto/runner_ingress.proto), [Session Dispatcher](proto/session_dispatcher.proto), and [History Service](proto/history_service.proto). The Runner Gateway also serves standard gRPC health and proxies the Runner service over each outbound control stream.
-- HTTP and streaming APIs: [Integration app](app/api.py), [Electric proxy](app/electric.py), [Action Service](action_service/api.py), [Notification Service](notification_service/api.py), [LLM ingress](llm_ingress/go/server.go), and [Git index](indexing/app.py).
+- HTTP and streaming APIs: [Integration app](app/api.py), [Electric proxy](app/electric.py), [Action Service](action_service/api.py), [Notification Service](notification_service/api.py), [LLM ingress](llm_ingress/server.go), and [Git index](indexing/app.py).
 - Controllers and egress: [Sandbox Controller](sandbox_controller/controller.go), [Policy Controller](policy_controller/controller.go), [central egress proxy](egress/addon.py), [Go sidecar](egress/sidecar/main.go), and [sidecar route configuration](egress/platform_routes.py).
 
 The integration app writes Sandbox desired state and operator grants through the Kubernetes API;

@@ -1673,7 +1673,7 @@ node is removed. This does not remove the separate destination-authority decisio
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
 **Needs policy revision; preserve the explicitly approved direct app `Runner.ResumeSession` caller.**
-The runner proxy (`runner_gateway/go/gateway/proxy.go`) currently lets each configured caller account
+The runner proxy (`runner_gateway/gateway/proxy.go`) currently lets each configured caller account
 invoke the Runner methods allowed by policy, except `Quiesce` (controller only). The app and Notification
 accounts and the Gateway's own account can call `OpenSession`, `SubmitInput`, `ChangeModel`,
 `ChangeReasoningEffort`, `InterruptTurn` and `StopRunnerSession` directly; only `ResumeSession` from the app is

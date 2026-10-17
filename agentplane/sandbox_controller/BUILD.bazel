@@ -20,7 +20,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sandbox_controller",
     visibility = [
-        "//agentplane/runner_gateway/go/gateway:__pkg__",  # keep: controller-to-Gateway protocol test
+        "//agentplane/runner_gateway/gateway:__pkg__",  # keep: controller-to-Gateway protocol test
         "//agentplane/sandbox_controller:__subpackages__",
     ],
     deps = [

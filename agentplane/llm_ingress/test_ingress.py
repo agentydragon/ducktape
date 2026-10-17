@@ -151,7 +151,7 @@ def add_sandbox(fake: FakeApiServer, name: str, token: str, *, pod_uid: str) -> 
 async def ingress_clients(
     kubernetes: FakeApiServer, backend: FakeLiteLLM, *, models: tuple[ModelConfig, ...] = ()
 ) -> AsyncIterator[httpx.AsyncClient]:
-    binary = get_required_path(own_repo_rlocation("agentplane/llm_ingress/go/server_/server"))
+    binary = get_required_path(own_repo_rlocation("agentplane/llm_ingress/server_/server"))
     port = pick_free_port()
     log_path = undeclared_outputs_dir() / f"ingress-{uuid4().hex}.log"
     with TemporaryDirectory() as directory, log_path.open("wb") as logs:

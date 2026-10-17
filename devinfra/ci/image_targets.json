@@ -288,8 +288,8 @@
       "registry": "forgejo"
     },
     "agentplane-runner-gateway-queue-migrate": {
-      "target": "//agentplane/runner_gateway/go/migrations:image",
-      "test": "//agentplane/runner_gateway/go/migrations/...",
+      "target": "//agentplane/runner_gateway/migrations:image",
+      "test": "//agentplane/runner_gateway/migrations/...",
       "registry": "forgejo"
     },
     "agentplane-notification-service": {

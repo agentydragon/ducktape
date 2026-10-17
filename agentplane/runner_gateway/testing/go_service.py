@@ -31,10 +31,8 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 # gazelle:include_dep @pypi//types_protobuf
 
 
-_GATEWAY_BINARY = "agentplane/runner_gateway/go/runner-gateway_/runner-gateway"
-_MIGRATOR_BINARY = (
-    "agentplane/runner_gateway/go/migrations/cmd/runner-gateway-queue-migrate_/runner-gateway-queue-migrate"
-)
+_GATEWAY_BINARY = "agentplane/runner_gateway/runner-gateway_/runner-gateway"
+_MIGRATOR_BINARY = "agentplane/runner_gateway/migrations/cmd/runner-gateway-queue-migrate_/runner-gateway-queue-migrate"
 _RUNNER_TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.05, backoff_max_s=0.5)
 
 

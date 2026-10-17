@@ -15,7 +15,7 @@ import (
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/dispatcher"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	_ "github.com/lib/pq"

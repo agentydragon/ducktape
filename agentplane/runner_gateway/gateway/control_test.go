@@ -13,7 +13,7 @@ import (
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/dispatcher"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"

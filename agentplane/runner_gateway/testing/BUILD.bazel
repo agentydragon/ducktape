@@ -25,8 +25,8 @@ py_library(
     name = "go_service",
     srcs = ["go_service.py"],
     data = [
-        "//agentplane/runner_gateway/go:runner-gateway",
-        "//agentplane/runner_gateway/go/migrations/cmd:runner-gateway-queue-migrate",
+        "//agentplane/runner_gateway:runner-gateway",
+        "//agentplane/runner_gateway/migrations/cmd:runner-gateway-queue-migrate",
     ],
     deps = [
         "//agentplane:background_task",

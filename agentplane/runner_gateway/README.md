@@ -22,8 +22,8 @@ conversation and from Runner admission.
 - `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and
   the real Go fixture for cross-language acceptance.
 
-Build `//agentplane/runner_gateway/go:runner-gateway` or `//agentplane/runner_gateway:go_image`.
-The migrator image is `//agentplane/runner_gateway/go/migrations:image`; serving never applies
+Build `//agentplane/runner_gateway:runner-gateway` or `//agentplane/runner_gateway:go_image`.
+The migrator image is `//agentplane/runner_gateway/migrations:image`; serving never applies
 migrations. Integration tests exercise real PostgreSQL and queue-to-runner tunnels on RBE.
 The cross-language Notification acceptance runs a real Kubernetes API server and etcd through
 `envtest`, installs the Agentplane CRDs and issues Pod-bound ServiceAccount tokens. Narrow

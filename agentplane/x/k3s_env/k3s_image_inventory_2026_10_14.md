@@ -191,7 +191,7 @@ direnv exec . bbr build \
   //agentplane/policy_controller:image \
   //agentplane/x/k3s_env:runner_image \
   //agentplane/runner_gateway:go_image \
-  //agentplane/runner_gateway/go/migrations:image \
+  //agentplane/runner_gateway/migrations:image \
   //agentplane/sandbox_controller:image
 direnv exec . python agentplane/x/k3s_env/inventory_k3s_images.py --bazel-bin bb-out/bazel-out/k8-fastbuild/bin
 ```

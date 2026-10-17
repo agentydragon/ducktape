@@ -40,9 +40,9 @@ uses per-Sandbox Kubernetes Leases plus database generations to fence replica ow
 Sandbox readiness and incarnation changes, then calls the Runner service through the Sandbox's
 control Service and the Runner Gateway's proxy. It has no History Service client: routing and queue
 recovery use the requested Sandbox, Kubernetes state, and runner control RPCs. See
-[`delivery.go`](../runner_gateway/go/dispatcher/delivery.go),
-[`runner_client.go`](../runner_gateway/go/dispatcher/runner_client.go), and
-[`store.go`](../runner_gateway/go/dispatcher/store.go).
+[`delivery.go`](../runner_gateway/dispatcher/delivery.go),
+[`runner_client.go`](../runner_gateway/dispatcher/runner_client.go), and
+[`store.go`](../runner_gateway/dispatcher/store.go).
 
 The Gateway connection role owns the runner's long-lived control connection and routes calls to the replica holding
 that connection. The unified Go process also owns the Dispatcher queue through its separate delivery role. It does
@@ -117,9 +117,9 @@ Sandbox name to a UID; it can also require exact UID and owner headers when a ca
 The control Service routes by the holder of that UID. This is a sequence of checks across separate
 requests, so the reviewed contract should say where identity is bound and where it is revalidated,
 including replacement between the Dispatcher check and proxy resolution. See
-[`proxy.go`](../runner_gateway/go/gateway/proxy.go),
-[`sandboxes.go`](../runner_gateway/go/gateway/sandboxes.go), and
-[`runner_client.go`](../runner_gateway/go/dispatcher/runner_client.go).
+[`proxy.go`](../runner_gateway/gateway/proxy.go),
+[`sandboxes.go`](../runner_gateway/gateway/sandboxes.go), and
+[`runner_client.go`](../runner_gateway/dispatcher/runner_client.go).
 
 The current path has different authority at each step:
 
