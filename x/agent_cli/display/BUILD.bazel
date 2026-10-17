@@ -74,6 +74,7 @@ py_test(
     srcs = ["test_max_height.py"],
     deps = [
         ":compact_display",
+        ":conftest",
         "//:conftest",
         "@pypi//pytest_bazel",
         "@pypi//rich",

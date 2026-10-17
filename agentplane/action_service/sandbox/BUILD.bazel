@@ -18,6 +18,7 @@ py_test(
     deps = [
         ":kubernetes",
         "//:conftest",
+        "//agentplane/action_service:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

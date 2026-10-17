@@ -32,6 +32,7 @@ py_library(
         "@pypi//pyhamcrest",
     ],
 )
+
 py_test(
     name = "test_docker",
     srcs = ["test_docker.py"],
