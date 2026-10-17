@@ -363,6 +363,13 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # The home switch identity is read only by the home-switch tofu-controller runner.
+  - path_regex: secrets/nebula/home-switch\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
   # Tofu reads Talos node keys while assembling machine configuration; Talos
   # itself never decrypts these files. Keep them recoverable by every operator
   # identity that can run the Terraform root, rather than by a host-only key.

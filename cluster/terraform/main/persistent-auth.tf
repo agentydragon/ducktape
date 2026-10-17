@@ -84,7 +84,7 @@ resource "proxmox_virtual_environment_user_token" "persistent" {
 # NEBULA MESH PKI — persisted CA + per-node certificate material
 
 locals {
-  # Tofu-managed Talos nodes — derived from the mesh roster
+  # Tofu-managed Talos nodes — selected by their explicit roster ownership
   # (../../../nebula-mesh.json). The already-issued certificates and keys live
   # in secrets/nebula/, and Tofu embeds them in machine config patches
   # (nebula.tf). To add a new Talos node, persist its identity first, then edit
@@ -99,7 +99,7 @@ locals {
   talos_nebula_nodes = {
     for name, h in local.nebula_hosts :
     name => {}
-    if startswith(try(h.managed_by, ""), "tofu-")
+    if contains(["tofu-ovh", "tofu-proxmox", "tofu-home"], try(h.managed_by, ""))
   }
 }
 

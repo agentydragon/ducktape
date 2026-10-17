@@ -104,6 +104,9 @@ exports_files([
     "pnpm-workspace.yaml",
     "requirements_bazel.txt",
     "ruff.toml",
+    "secrets/nebula/ca.crt",
+    "secrets/nebula/home-switch.crt",
+    "secrets/nebula/home-switch.sops.key",
 ])
 
 # The SOPS creation_rules, pinned by //cluster/validation:test_rotations_config:

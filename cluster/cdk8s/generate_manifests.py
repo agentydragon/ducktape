@@ -621,8 +621,18 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
         flux_image_automation_ghcr_kustomization,
     )
-    monitoring_home_switch_artifact = artifact("monitoring-home-switch", monitoring_home_switch.OUTPUT_DIR)
-    home_switch_module = terraform.gitops_module(monitoring_home_switch.NAME)
+    monitoring_home_switch_artifact = artifact(
+        "monitoring-home-switch", monitoring_home_switch.OUTPUT_DIR, f"{monitoring_home_switch.OUTPUT_DIR}/image-pins"
+    )
+    home_switch_module = terraform.gitops_module(
+        monitoring_home_switch.NAME,
+        include_files=(
+            "nebula-mesh.json",
+            "secrets/nebula/ca.crt",
+            "secrets/nebula/home-switch.crt",
+            "secrets/nebula/home-switch.sops.key",
+        ),
+    )
     monitoring_home_switch_kustomization = monitoring_home_switch.home_switch(
         flux_chart,
         write_directory(
@@ -632,8 +642,10 @@ def generate_manifests(root: Path) -> None:
                 monitoring_home_switch.chart,
                 module=home_switch_module,
                 agentplane_ssh_public_key=ssh_config.switch_agent_public_key,
+                nebula_ip=mesh.hosts["home-switch"].nebula_ip,
             ),
             siblings=[monitoring_home_switch.TOFU_PASSWORD_FILE],
+            components=["image-pins"],
         ),
         cert_manager_kustomization,
         external_secrets_operator_kustomization,

@@ -160,6 +160,13 @@ def chart(app: App) -> Chart:
             f"{HAND_WRITTEN_ROOT}/",
             f"{GENERATED_ROOT}/",
             f"{PARKED_ROOT}/",
+            # The home-switch artifact generator copies these exact repository-root and secret
+            # files into its Terraform module. Keep them in the source checkout without exposing
+            # the rest of secrets/nebula to the artifact source.
+            "nebula-mesh.json",
+            "secrets/nebula/ca.crt",
+            "secrets/nebula/home-switch.crt",
+            "secrets/nebula/home-switch.sops.key",
             "agentplane/crds/manifests/",
             "cluster/charts/browsertrix/",
             "haku/x/dispatch/deploy/",

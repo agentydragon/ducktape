@@ -1604,6 +1604,14 @@ http_archive(
     urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.12.1/firecracker-v1.12.1-x86_64.tgz"],
 )
 
+# Official Nebula v1.11.2 ARMv7 binaries for the CRS310 RouterOS container.
+http_archive(
+    name = "nebula_linux_armv7",
+    build_file_content = 'exports_files(["nebula"], visibility = ["//visibility:public"])\n',
+    sha256 = "dc9c890d7ec014ab709e0444592b33f35db4f396f28245c95887844b1565ff41",
+    urls = ["https://github.com/slackhq/nebula/releases/download/v1.11.2/nebula-linux-arm-7.tar.gz"],
+)
+
 # Firecracker v1.12 CI's x86_64 ELF guest kernel, pinned for the local runner-layering VM probe.
 http_file(
     name = "firecracker_vmlinux_6_1_128",

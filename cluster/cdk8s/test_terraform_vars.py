@@ -13,9 +13,11 @@ import pytest_bazel
 from pydantic import BaseModel
 
 from cluster.cdk8s.dns_automation import DnsRecordsVars
+from cluster.cdk8s.flux import artifact_directory
 from cluster.cdk8s.forgejo_registry.chart import ForgejoImagesVars
 from cluster.cdk8s.litellm.keys import KeysVars
 from cluster.cdk8s.monitoring.home_switch import HomeSwitchVars
+from cluster.cdk8s.terraform import gitops_module
 from util.bazel.runfiles import get_required_path
 
 
@@ -33,6 +35,16 @@ def test_vars_model_matches_module(model: type[BaseModel], module: str) -> None:
     assert (
         {name for name, spec in declared.items() if "default" not in spec} <= set(model.model_fields) <= set(declared)
     )
+
+
+def test_gitops_module_directory_allows_exact_supporting_files() -> None:
+    module = gitops_module("home-switch", include_files=("nebula-mesh.json", "secrets/nebula/home-switch.sops.key"))
+
+    assert artifact_directory(module) == "tf/gitops/home-switch"
+    assert [(copy.from_, copy.to) for copy in module.copy[1:]] == [
+        ("@repo/nebula-mesh.json", "@artifact/"),
+        ("@repo/secrets/nebula/home-switch.sops.key", "@artifact/secrets/nebula/"),
+    ]
 
 
 if __name__ == "__main__":

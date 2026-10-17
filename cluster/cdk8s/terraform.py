@@ -17,7 +17,10 @@ from collections.abc import Mapping, Sequence
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from pydantic import BaseModel
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from source_watcher_crds.io.fluxcd.extensions.source import (
+    ArtifactGeneratorSpecArtifacts,
+    ArtifactGeneratorSpecArtifactsCopy,
+)
 from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecBackendConfig,
     TerraformV1Alpha2SpecDependsOn,
@@ -61,9 +64,26 @@ _RUNNER_RESOURCES = TerraformV1Alpha2SpecRunnerPodTemplateSpecResources(
 )
 
 
-def gitops_module(name: str) -> ArtifactGeneratorSpecArtifacts:
-    """The artifact packaging the `tf/gitops/<name>` module, which its `gitops_terraform` CR reads."""
-    return artifact(f"tf-gitops-{name}", f"{ducktape_flux.TF_GITOPS_ROOT}/{name}")
+def gitops_module(name: str, *, include_files: Sequence[str] = ()) -> ArtifactGeneratorSpecArtifacts:
+    """The artifact packaging a `tf/gitops/<name>` module and any exact repo-root files it reads."""
+    module_dir = f"{ducktape_flux.TF_GITOPS_ROOT}/{name}"
+    result = artifact(f"tf-gitops-{name}", module_dir)
+    if not include_files:
+        return result
+    return ArtifactGeneratorSpecArtifacts(
+        name=result.name,
+        origin_revision=result.origin_revision,
+        copy=[
+            *result.copy,
+            *[
+                ArtifactGeneratorSpecArtifactsCopy(
+                    from_=f"@repo/{path}",
+                    to=(f"@artifact/{posixpath.dirname(path)}/" if posixpath.dirname(path) else "@artifact/"),
+                )
+                for path in include_files
+            ],
+        ],
+    )
 
 
 def secret_env(name: str, key: SecretKey) -> TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv:

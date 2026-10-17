@@ -42,6 +42,7 @@ spec:
   commonName: CRS310
   ipAddresses:
     - 192.168.1.100
+    - 10.42.0.21
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -73,6 +74,11 @@ spec:
             secretKeyRef:
               key: password
               name: tofu-state-db-credentials
+        - name: SOPS_AGE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: age.agekey
+              name: sops-age-cluster-secrets
       nodeSelector:
         topology.kubernetes.io/zone: home-lan
       resources:
@@ -92,7 +98,6 @@ spec:
     kind: ExternalArtifact
     name: tf-gitops-home-switch
     namespace: ducktape-flux
-  storeReadablePlan: human
   vars:
     - name: switch_address
       value: 192.168.1.100
@@ -100,6 +105,10 @@ spec:
       value: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBysHhQLSyUa+4vL7Pj404OGL92nyjAp9ZsOjcsFAn6a
     - name: lan_cidr
       value: 192.168.1.0/24
+    - name: lan_gateway
+      value: 192.168.1.254
+    - name: nebula_image
+      value: ghcr.io/agentydragon/nebula-routeros:unset
     - name: syslog_address
       value: 192.168.1.10
     - name: syslog_port
