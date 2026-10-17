@@ -268,6 +268,9 @@ def write_manifests(root: Path) -> None:
         namespaces.haku_egress_proxy,
         chart,
         egress_fences.haku_cloud_api,
-        # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
+        # mitmproxy intercepts TLS and holds no allowlist, so the fence's toFQDNs groups are it. They
+        # cannot pin SNI: Cilium decides 443 per endpoint, so a pin would also decide the fence's
+        # `cluster` 443 rule, resetting every node-IP name nobody listed
+        # (cluster/docs/cilium_network_policy.md), and `*.ankiweb.net` is a pattern.
         unpinned_https_egress={"allow-haku-cloud-api-egress"},
     )
