@@ -265,13 +265,32 @@ Messages address a particular Session, with send permission checked against its 
 no shared Sandbox inbox in v1. Inbox ownership remains SA-level; per-Session routing does not
 provide isolation between co-resident Sessions.
 
+### Vocabulary and service ownership
+
+| Term         | Meaning                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------ |
+| Message      | Durable correspondence explicitly sent to a Session's inbox.                               |
+| Inbox        | The Session-addressed store of entries, with cursors and explicit handled acknowledgement. |
+| Subscription | A standing request to follow a source/filter and put matching events into an inbox.        |
+| Notice       | A platform-generated, batchable prompt telling a Session to inspect its inbox.             |
+
+Use `subscription` for source-following; do not use `notification` interchangeably with `notice`
+or peer correspondence. These are semantic distinctions, not a requirement for separate databases
+or queues.
+
+**V1 direction agreed:** generalize the existing Notification Service around common inbox and
+messaging responsibilities, with subscriptions/source integrations as optional producers. Keep
+one deployment initially and leave Dispatcher separate. Peer messaging must work with Actions and
+GitHub integrations disabled. A service rename should reflect its inbox/messaging responsibility;
+the exact component name and code/deployment rename are not selected here. References to
+Notification Service elsewhere in this plan describe the existing component being generalized.
+
+### Peer message path
+
 Add an authorized peer-send path that writes durable correspondence into the destination inbox;
-peer messages are not notification subscriptions. Existing source subscriptions can produce other
-inbox entries. The message, its inbox entry and the batched notice are separate concepts. Decide
-how to generalize the current service's inbox/message responsibilities without assuming a new
-Deployment or a move into Dispatcher. Peer messaging should be usable with Actions/GitHub source
-integrations disabled. Store the peer message with authenticated sender-SA
-provenance and the qualified destination. Notifications prepares a platform-generated
+peer sends do not require a source subscription. Subscriptions can produce other inbox entries.
+Store the peer message with authenticated sender-SA provenance and the qualified destination.
+The inbox/messaging service prepares a platform-generated
 inbox notice; Dispatcher delivers that notice through the existing input path. The peer's raw text
 stays in the inbox and is not promoted into a human user-role instruction. The recipient retrieves
 entries and explicitly acknowledges handled work. Reuse the existing batching, durable cursors,
@@ -298,7 +317,8 @@ a wake. Keep that decision in Notifications for v1. Event/source-specific wake s
 Notification Service responsibilities into Dispatcher are separate future design questions in the
 [freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership),
 not prerequisites or assumed changes to v1. Explicit suspend/resume authorization remains an open
-control-policy decision.
+control-policy decision. Separately grantable suspend, resume and wake-policy editing have been
+proposed, but their separation and scope have not yet been agreed.
 
 An envelope could retain an idempotent message ID, authenticated sender, resolved destination,
 correlation/reply reference and content. V1 authenticates the caller at Sandbox/SA level; any

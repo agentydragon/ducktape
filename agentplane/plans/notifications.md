@@ -5,6 +5,19 @@ remaining acceptance and future decisions. For implemented behavior and deployme
 [service README](../notification_service/README.md), [App notification diagnostics](../app/README.md#notification-diagnostics),
 and the [staging acceptance record](../notification_service/docs/staging_github_acceptance.md).
 
+## Agreed inbox and messaging direction
+
+The [cross-agent plan](multiagent_communication.md#vocabulary-and-service-ownership) owns the selected
+v1 direction: generalize the existing service around common inbox/messaging responsibilities in
+one deployment, with optional source integrations. Peer messages enter a Session inbox directly;
+subscriptions follow sources and produce other entries. A batched notice tells the Session to
+inspect its inbox. Peer messaging must work with Actions/GitHub sources disabled.
+
+Use `subscription` for source-following and `notice` for the inbox prompt. The exact service name
+and code/deployment rename remain open; this plan still uses Notification Service for the existing
+component. Dispatcher retains command admission, wake and delivery. Moving more responsibilities
+into it remains a separate future review.
+
 ## Current priority and service boundary
 
 Keep delivery workers in the notification service. Separate worker deployment is not planned

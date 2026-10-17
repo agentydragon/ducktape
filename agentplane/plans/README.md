@@ -30,8 +30,8 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access
   choices and broader authorization-system evaluation, separate from multiagent implementation
 - [Cross-agent communication and authorization](multiagent_communication.md) — agreed SA attribution,
-  configurable topology and live bundles; open multiagent permission representation, messaging,
-  discovery and provisioning choices
+  Sandbox scopes, explicit collections, live bundles and Session inboxes; shared inbox/messaging
+  service with subscriptions and batched notices; open permission/API and lifecycle-control choices
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
 - [Kubernetes grants through PolicySets](kubernetes_rbac_groups.md) — accounts without a

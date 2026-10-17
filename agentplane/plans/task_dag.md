@@ -294,9 +294,11 @@ deleted Sandboxes and revocation with deterministic service tests plus a bounded
 
 **Decision; v1 inbox delivery selected.** Address messages to individual Sessions, authorize sends
 at Sandbox granularity and reuse the existing durable inbox/read/ack and batched-notice machinery.
-A peer message is durable correspondence; its notice is a separate delivery effect. Do not require
-peer sends to masquerade as notification subscriptions. Decide the appropriate generalization of
-inbox/message ownership, the send API, recipient discovery/opt-in and read/ack administration.
+A peer message is durable correspondence; its notice is a separate delivery effect. Peer sends do
+not require source subscriptions. Generalize the current service around inbox/messaging in one
+deployment initially, with optional subscription/source integrations; leave Dispatcher separate.
+Use `subscription` for source-following and `notice` for the batched inbox prompt. The exact service
+name, send API, recipient discovery/opt-in and read/ack administration remain open.
 Distinguish accepted, noticed, admitted, handled and task-success evidence. Define retention, limits,
 deduplication and offline/deleted-recipient behavior. Reading a transcript grants neither send nor ack.
 
