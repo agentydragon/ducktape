@@ -33,41 +33,6 @@ spec:
         password: "{{ .password }}"
       type: Opaque
 ---
-apiVersion: generators.external-secrets.io/v1alpha1
-kind: Password
-metadata:
-  name: home-switch-agentplane
-  namespace: monitoring
-spec:
-  allowRepeat: true
-  digits: 12
-  length: 48
-  noUpper: false
-  symbols: 0
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  annotations:
-    description: Password of the home switch's full-access Agentplane SSH user; SSH uses its public key.
-  name: home-switch-agentplane
-  namespace: monitoring
-spec:
-  dataFrom:
-    - sourceRef:
-        generatorRef:
-          apiVersion: generators.external-secrets.io/v1alpha1
-          kind: Password
-          name: home-switch-agentplane
-  refreshPolicy: CreatedOnce
-  target:
-    creationPolicy: Owner
-    name: home-switch-agentplane
-    template:
-      data:
-        password: "{{ .password }}"
-      type: Opaque
----
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

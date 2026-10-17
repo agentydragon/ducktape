@@ -1,16 +1,16 @@
 """The home MikroTik switch (CRS310): the `tf/gitops/home-switch` Terraform, and what it installs
 on the switch.
 
-RouterOS accounts, with credentials held in cluster Secrets and on the switch:
+RouterOS accounts:
 
 - `tofu`: the full-access user the Terraform logs in as. `tf/gitops/home-switch/bootstrap.sh`
   creates it on the switch with a fresh password, which it writes to this directory's
   `tofu-password.sops.yaml`; re-running it rotates the password.
 - `monitoring`: the read-only user the Terraform manages, which a RouterOS exporter will log in as.
   ESO mints it.
-- `agentplane`: the full-access SSH user whose public key Tofu installs for Agentplane's SSH MCP
-  backend. ESO mints its password; SSH uses the separately SOPS-encrypted private key mounted into
-  the backend.
+- `agentplane`: the SSH user whose public key Tofu installs for Agentplane's SSH MCP backend. Its
+  RouterOS password is empty; its private key is separately SOPS-encrypted and mounted into the
+  backend.
 
 cert-manager issues the switch's api-ssl/www-ssl certificate, `home-switch-tls`, from the cluster CA,
 so clients verify it against the CA bundle: `bootstrap.sh` installs it for the Terraform's first
@@ -47,7 +47,6 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 TOFU_PASSWORD_FILE = "tofu-password.sops.yaml"
 # tf/gitops/home-switch/main.tf and bootstrap.sh read these Secrets and keys by name.
 MONITORING_PASSWORD = SecretRef(namespace=NAMESPACE, name="home-switch-monitoring").key("password")
-AGENTPLANE_PASSWORD = SecretRef(namespace=NAMESPACE, name="home-switch-agentplane").key("password")
 TLS_SECRET = "home-switch-tls"
 # The switch is reachable only from the home LAN; OptiPlex is the cluster node on it.
 _HOME_LAN = {"topology.kubernetes.io/zone": "home-lan"}
@@ -88,12 +87,6 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_publi
         "monitoring-password",
         MONITORING_PASSWORD,
         "Password of the home switch's read-only RouterOS user; tf/gitops/home-switch sets it on the switch.",
-    )
-    _mint(
-        chart,
-        "agentplane-password",
-        AGENTPLANE_PASSWORD,
-        "Password of the home switch's full-access Agentplane SSH user; SSH uses its public key.",
     )
     Certificate(
         chart,

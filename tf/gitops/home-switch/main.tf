@@ -18,13 +18,6 @@ data "kubernetes_secret_v1" "monitoring" {
   }
 }
 
-data "kubernetes_secret_v1" "agentplane" {
-  metadata {
-    name      = "home-switch-agentplane"
-    namespace = "monitoring"
-  }
-}
-
 data "kubernetes_secret_v1" "tls" {
   metadata {
     name      = "home-switch-tls"
@@ -105,12 +98,36 @@ resource "routeros_system_user" "monitoring" {
 }
 
 # The SSH MCP private key is held in its own SOPS-encrypted Secret. Tofu installs only
-# its public half here; the full-access account remains a distinct identity from admin/tofu.
+# its public half here. This group gives Agentplane broad configuration access over SSH while
+# denying every other login service and RouterOS user management, so its password stays empty.
+resource "routeros_system_user_group" "agentplane_ssh" {
+  name = "agentplane-ssh"
+  policy = [
+    "ssh",
+    "reboot",
+    "read",
+    "write",
+    "test",
+    "sniff",
+    "sensitive",
+    "!ftp",
+    "!local",
+    "!password",
+    "!policy",
+    "!rest-api",
+    "!romon",
+    "!telnet",
+    "!web",
+    "!winbox",
+    "!api",
+  ]
+}
+
 resource "routeros_system_user" "agentplane" {
   name     = "agentplane"
-  group    = "full"
+  group    = routeros_system_user_group.agentplane_ssh.name
   address  = var.lan_cidr
-  password = data.kubernetes_secret_v1.agentplane.data["password"]
+  password = ""
   comment  = "Agentplane SSH MCP; managed by tf/gitops/home-switch."
 }
 
