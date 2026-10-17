@@ -55,7 +55,7 @@ from cluster.cdk8s.service_ref import Port, ServiceRef
 NAMESPACE = testing.ENV.namespace
 RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
-RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset"
+RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
 QUEUE_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
 DISPATCHER_PORT = 8080
 

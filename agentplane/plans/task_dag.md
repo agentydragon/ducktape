@@ -1787,12 +1787,12 @@ itself. Direct admission and new sender grants remain separate decisions.
 
 ### `GATEWAY_RENAME` — the Gateway is just the Gateway
 
-**Candidate.** The operator no longer wants the "Go" qualifier on the Gateway or Dispatcher. Names, docs, comments and
-the cdk8s module are done; remaining is the image `agentplane-runner-gateway-go`, renamed to `agentplane-runner-gateway`
-in three merges: publish the new name from `devinfra/ci/image_targets.json` and `forgejo_registry/image_automation.py`;
-once a build exists under it, point `image-pins` (both environments), the workload's `_IMAGE` and the k3s fixture at it;
-then remove the old entries. Leave the dated measurement files under `agentplane/x/k3s_env` as recorded, and the other
-Go ports (egress sidecar, LLM ingress) under their own names.
+**Candidate.** The operator no longer wants the "Go" qualifier on the Gateway or Dispatcher. Names, docs, comments, the
+cdk8s module and the image's pins and `_IMAGE` are done. Remaining: delete the old `agentplane-runner-gateway-go` entries
+from `devinfra/ci/image_targets.json` and `forgejo_registry/image_automation.py` (and the generated ImageRepository,
+ImagePolicy and Receiver entry), once both environments run the Gateway from `agentplane-runner-gateway`. Leave the
+dated measurement files under `agentplane/x/k3s_env` as recorded, and the other Go ports (egress sidecar, LLM ingress)
+under their own names.
 
 ### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign destination validation and send permission
 

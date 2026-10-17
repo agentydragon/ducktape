@@ -60,7 +60,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
-_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset"
+_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
 _MIGRATION_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
 _RUNNER_TOKEN_FILE = "/var/run/secrets/agentplane-runner-gateway/token"
 _GRPC_PORT = 8080

@@ -60,7 +60,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     deployment = _resource(docs, "Deployment", runner_gateway.NAME)
     pod = deployment["spec"]["template"]["spec"]
     container = one(c for c in pod["containers"] if c["name"] == "runner-gateway")
-    assert container["image"].startswith("git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:")
+    assert container["image"].startswith("git.allegedly.works/ducktape-ci/agentplane-runner-gateway:")
     assert pod["serviceAccountName"] == runner_gateway.NAME
     assert {p["containerPort"] for p in container["ports"]} == {8080}
     assert "--listen-address=0.0.0.0:8080" in container["args"]
