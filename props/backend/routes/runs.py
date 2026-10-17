@@ -538,11 +538,11 @@ def list_runs(
         else:
             primary_order = sort_column.asc() if sort_dir is RunSortDirection.ASC else sort_column.desc()
 
-        ordering = [primary_order]
+        runs_query = runs_query.order_by(primary_order)
         if sort_by is not RunSortKey.AGENT_RUN_ID:
-            ordering.append(AgentRun.agent_run_id.asc())
+            runs_query = runs_query.order_by(AgentRun.agent_run_id.asc())
 
-        runs_with_extras = runs_query.order_by(*ordering).offset(offset).limit(limit).all()
+        runs_with_extras = runs_query.offset(offset).limit(limit).all()
 
         return RunsListResponse(
             runs=[
