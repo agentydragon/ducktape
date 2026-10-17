@@ -40,7 +40,7 @@ def _placeholder_settings(*, config_file: Path) -> Settings:
     return Settings(
         haku_ui_url="about:blank",
         auth_origin="https://auth.invalid",
-        database_url=SecretStr("postgresql+asyncpg://placeholder/db"),
+        database_url=SecretStr("postgresql://placeholder/db"),
         public_base_url="https://haku-console.invalid",
         operator_oidc=OperatorOidcConfig(
             issuer="https://auth.invalid/application/o/haku-console/",

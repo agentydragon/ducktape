@@ -21,6 +21,7 @@ from agentplane.action_service.models import ExecutionRequest, ExecutionResult, 
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.inventory import ForeignSandboxError, SandboxActionError, SandboxInventory
+from agentplane.action_service.sandbox.kubernetes import PodExecError
 from agentplane.action_service.sandbox.models import (
     CreateArgs,
     DisposeResult,
@@ -33,7 +34,6 @@ from agentplane.action_service.sandbox.models import (
 )
 from agentplane.action_service.service import ExecutionLease, Executor, hold_lease
 from agentplane.subjects import ServiceAccountRef
-from mcp_infra.exec.kubernetes import PodExecError
 
 logger = logging.getLogger(__name__)
 

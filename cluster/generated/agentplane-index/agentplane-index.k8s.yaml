@@ -145,7 +145,7 @@ spec:
                   key: password
                   name: agentplane-index-db-app
             - name: AGENTPLANE_INDEX_DATABASE_URL
-              value: postgresql+asyncpg://$(DB_USERNAME):$(DB_PASSWORD)@agentplane-index-db-rw.agentplane-index.svc/ducktape
+              value: postgresql://$(DB_USERNAME):$(DB_PASSWORD)@agentplane-index-db-rw.agentplane-index.svc/ducktape
             - name: AGENTPLANE_INDEX_REPOSITORY_URL
               value: https://github.com/agentydragon/ducktape.git
             - name: AGENTPLANE_INDEX_BRANCH
@@ -283,7 +283,7 @@ spec:
                   key: password
                   name: agentplane-index-db-app
             - name: AGENTPLANE_INDEX_DATABASE_URL
-              value: postgresql+asyncpg://$(DB_USERNAME):$(DB_PASSWORD)@agentplane-index-db-rw.agentplane-index.svc/haku_state
+              value: postgresql://$(DB_USERNAME):$(DB_PASSWORD)@agentplane-index-db-rw.agentplane-index.svc/haku_state
             - name: AGENTPLANE_INDEX_REPOSITORY_URL
               value: http://forgejo-http.forgejo.svc:3000/haku/haku-state.git
             - name: AGENTPLANE_INDEX_BRANCH

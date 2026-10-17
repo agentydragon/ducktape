@@ -44,9 +44,7 @@ AdminUsers = Annotated[frozenset[str], NoDecode, BeforeValidator(_parse_csv_user
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="STUDY_CASINO_")
 
-    database_url: str = Field(
-        description="SQLAlchemy URL for the casino state database (e.g. `postgresql+psycopg://user:pass@host/db`)."
-    )
+    database_url: str = Field(description="SQLAlchemy URI; PostgreSQL uses the standard `postgresql://` scheme.")
     host: str = "0.0.0.0"
     port: int = 8080
     frontend_dist_dir: Path | None = Field(

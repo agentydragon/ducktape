@@ -21,7 +21,7 @@ Flags use kebab case; environment variables have prefix `AGENTPLANE_INDEX_`.
 
 | Required variable   | Meaning                                                                          |
 | ------------------- | -------------------------------------------------------------------------------- |
-| `DATABASE_URL`      | Dedicated `postgresql+asyncpg://` database URL                                   |
+| `DATABASE_URL`      | Dedicated PostgreSQL URI using the standard `postgresql://` scheme               |
 | `REPOSITORY_URL`    | Git remote: an HTTP(S) URL or a local path                                       |
 | `BRANCH`            | Branch whose tip is indexed                                                      |
 | `CHECKOUT_DIR`      | Directory for the bare clone; created on first use, re-cloned if it is empty     |

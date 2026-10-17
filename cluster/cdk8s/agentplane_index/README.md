@@ -43,7 +43,10 @@ during an update reports mixed revisions in its response.
 `agentplane-index-db` follows the OVH-HA CNPG profile: two instances on separate OVH nodes on
 `local-path-ovh-ssd`. Both workers connect as the `indexer` owner with the CNPG-generated
 `agentplane-index-db-app` credential, but to separate databases, so they share no cached
-embeddings or tables. The shared owner is no access boundary between the indexes.
+embeddings or tables. The shared owner is no access boundary between the indexes. Each worker
+gets a standard `postgresql://` URI assembled from the shared credential and its database
+name: the generated CNPG URI targets the bootstrap `ducktape` database, while the Haku worker
+must connect to `haku_state`. The service selects `asyncpg` for SQLAlchemy itself.
 
 CNPG installs `vector`, which the Postgres image ships, before the workers start: pgvector
 needs a superuser, while the workers only own their databases and create their own schema.

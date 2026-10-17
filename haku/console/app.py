@@ -25,6 +25,7 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -117,8 +118,9 @@ def create_app(
     # the test fixture), not here.
     # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
     # process holds a single connection pool rather than one per store.
-    database_url = settings.database_url.get_secret_value()
-    # SQLAlchemy loads asyncpg from this configured postgresql+asyncpg URL at runtime.
+    # Configuration accepts a driver-neutral URI and existing explicit PostgreSQL driver schemes.
+    database_url = make_url(settings.database_url.get_secret_value()).set(drivername="postgresql+asyncpg")
+    # SQLAlchemy loads asyncpg at runtime from the URL selected here.
     # gazelle:include_dep @pypi//asyncpg
     db_engine = create_async_engine(database_url, pool_pre_ping=True)
     db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
