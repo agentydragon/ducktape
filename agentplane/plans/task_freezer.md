@@ -328,6 +328,13 @@ On confirmed eligible subscription-linked credit use. Review provider route, ide
 
 When reporting that credit is useful and its data source exists. Keep it distinct from Claude Code usage; do not invent quota evidence.
 
+### `API_AGGREGATION` — serve agent-facing records as a Kubernetes aggregated API
+
+Held by the operator, 2026-10-17. [The exploration](api_aggregation_exploration.md) has the candidates and costs.
+`ActionRequest`'s workload half is the only record worth it, once the Action Service is Go and a
+`kubectl`-style client surface for it is wanted. RBAC as sender authorization does not need it: a
+service asks `SubjectAccessReview`, which belongs to the sender-grant and agent-authority choices.
+
 ## Broader verification inventory
 
 **Trigger: an uncovered event/access path is being enabled or an actual incident shows a gap.**
