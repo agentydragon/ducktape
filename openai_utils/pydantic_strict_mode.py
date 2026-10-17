@@ -142,10 +142,8 @@ def validate_openai_strict_mode_schema(schema: dict[str, Any], model_name: str =
             errors.append(f"{path}: uniqueItems not allowed (use list instead of set)")
 
         # Check for $ref with additional keywords (besides $ref itself)
-        if "$ref" in obj:
-            extra_keys = set(obj) - {"$ref"}
-            if extra_keys:
-                errors.append(f"{path}: $ref cannot have additional keywords {extra_keys}")
+        if "$ref" in obj and (extra_keys := set(obj) - {"$ref"}):
+            errors.append(f"{path}: $ref cannot have additional keywords {extra_keys}")
 
         # Recurse into nested structures
         if "properties" in obj:
