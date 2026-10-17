@@ -1,8 +1,7 @@
 # Cross-agent communication and authorization: design space
 
-Status: **open design exploration with agreed constraints**. This records requirements, candidate
-arrangements and questions; it selects no authorization engine, messaging protocol,
-service or storage owner.
+Status: **v1 directions agreed; permission representation and API details remain open**. This records
+requirements, selected directions and remaining questions; it authorizes no runtime implementation.
 Implementation gates remain in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations).
 
 ## Requirements and preferences
@@ -34,7 +33,7 @@ Implementation gates remain in the [task DAG](task_dag.md#3-multiagent-decisions
 ## Topology-neutral authorization
 
 **Agreed with the operator, 2026-10-16.** Agentplane should authorize concrete operations, such as
-submitting a message through Dispatcher to a particular Session or reading a Session's retained
+sending peer correspondence into an inbox or reading a Session's retained
 history. Multiagent topology belongs in runtime and/or GitOps configuration. Agentplane must not
 require teams, projects, a management hierarchy, or coordinator/specialist categories. Configuration
 may use such concepts without making them mandatory backend entities or assigning them built-in
@@ -54,10 +53,25 @@ boundaries below are such constraints.
 
 **Caller attribution agreed with the operator, 2026-10-16:** Sandbox/ServiceAccount-level caller
 attribution is sufficient for v1, as for existing Kubernetes and Action permissions. Authenticated
-per-Session sender identity is not required. Policies may still target individual Sessions; that
-does not isolate sending Sessions sharing one Sandbox. Multiagent target scopes, trusted
-relationship inputs and rule representation remain open; replacing the broader authorization
-machinery is a separate decision.
+per-Session sender identity is not required. The minimum authorization target is a Sandbox, covering
+its Sessions; v1 has no individual-Session grants. Collection/grant representation and administration
+remain open; replacing the broader authorization machinery is a separate decision.
+
+### Target collections and launch enrollment
+
+Permissions apply to a Sandbox directly or through explicit target collections. Individual Session
+IDs remain addresses for delivery and reads; they do not select a narrower permission boundary.
+A collection such as `developers` has no built-in organizational meaning. A bundle can grant
+read/send to that collection and be assigned to any SA, including one otherwise given different
+capabilities. Independent per-SA grants can add rights on unrelated Sandboxes or Kubernetes
+resources, optionally temporarily. Removing collection membership ends collection-derived grants;
+independent overlapping grants remain.
+
+V1 uses explicit enrollment, not computed selection. An app preset can supply initial collection
+memberships when launching a Sandbox, subject to launch/enrollment authorization. Later removal
+sticks: reconciliation or opening another Session must not silently re-enroll it. Preset edits
+change defaults for future launches rather than recomputing existing memberships. Grant and
+collection administration, their storage and their concrete API remain to be designed.
 
 ## Live permission bundles
 
@@ -94,9 +108,8 @@ Source inventory checked on 2026-10-16 against `f11947bf7a`; this is not a live 
 | History           | [History reads](../history_service/grpc_api.py) serve retained conversations and evidence to configured service readers.                                                             | Scoped agent discovery/read/follow permissions are not implemented.                                                                          |
 | Provisioning      | [Sandbox inventory](../sandboxes/inventory.py) submits CRs; the [controller](../sandbox_controller/identity.go) creates a dedicated SA and binds the Sandbox's selected policy sets. | Constrained agent launch, delegation and session-create authority remain design work.                                                        |
 
-The [scoped-read proposal](scoped_session_reads.md) is one candidate: exactly one compartment,
-SA-scoped reads and no initial exact-Session exceptions. Those choices remain open against the
-alternatives here. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
+The [scoped-read plan](scoped_session_reads.md) applies the agreed Sandbox minimum and explicit
+collections to retained history; its permission representation and administration remain open. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
 already calls for comparing reusable authorization systems rather than inventing a universal broker.
 
 ### Current identity and policy wiring
@@ -128,7 +141,7 @@ These concepts answer different questions; optional policy concepts are not requ
 | ------------------------------------ | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Human / workload / logical agent     | Who acts; retain the actual actor through intermediaries.             | V1 uses SA-level caller attribution; no persistent logical-agent identity is required.   |
 | Optional group / role / relationship | Reusable grant assignment and resource grouping in configuration.     | Relationships, explicit membership, attributes, exact-resource grants, or a combination? |
-| Session                              | Conversation addressed, read or controlled.                           | Which operations may grants target by Session, Sandbox or configured relationships?      |
+| Session                              | Conversation addressed, read or controlled.                           | V1 grants cover a Sandbox and its Sessions; Session IDs address individual operations.   |
 | Sandbox                              | Execution isolation, shared files/credentials, lifecycle and budgets. | Which compatible work may share it?                                                      |
 | Optional standing recipient address  | Resolve a configured address to a current recipient.                  | Is addressing tied to an agent, role, mailbox or Session, and when is resolution pinned? |
 
@@ -185,7 +198,7 @@ grant model changes; neither direction grants the contributor access to the mana
 Receiving a message exposes its content, not its sender's other conversations or authority.
 
 Configuration could grant operations through project-wide membership, explicit management
-relationships, creation provenance, direct Session grants or another reviewed relation. These are
+relationships, creation provenance, direct Sandbox grants or another reviewed relation. These are
 alternative policy expressions to support, not a choice of one topology for Agentplane. A rule
 using “its contributors” must define that relation in configuration. Who may assign or change the
 underlying facts is itself an authority decision; self-editable labels cannot establish trusted
@@ -210,11 +223,11 @@ requiring a replacement of the authorization already used by Kubernetes, egress 
 Candidates include the following; no rule schema or implementation is selected, and the list is
 not exhaustive.
 
-| Candidate                                          | How it could fit the existing design                                                                                                                                                                                                     | Questions to evaluate                                                                                                                                                                                                                 |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native Kubernetes RBAC                             | Represent multiagent permissions as resource/verb/name scopes. Existing `PolicySet` Kubernetes rules can assign the referenced Roles through the Policy Controller. Backends could delegate access checks through `SubjectAccessReview`. | Which resources, subresources and verbs represent each operation? How are Session/Sandbox targets named? What authorization objects, if any, must outlive Sandbox deletion? How are lists filtered and argument constraints enforced? |
-| Additional service-enforced `PolicySet` rule types | Add rules for multiagent operations, assigned through the same SA `PolicyBinding`s. Resource-owning backends read and enforce their rule types, as egress and Actions do today.                                                          | Which target scopes and trusted relationship facts are needed? Can they stay understandable without an expanding collection of special-case evaluators? How do readers handle updates, discovery and revocation?                      |
-| A justified combination                            | Use Kubernetes grants for the scopes they express and explicit backend checks for additional constraints.                                                                                                                                | Which check is authoritative for each fact? Are checks cumulative restrictions or alternative grants? What does the extra layer solve, and how are bypasses and competing permission stores avoided?                                  |
+| Candidate                                          | How it could fit the existing design                                                                                                                                                                                                     | Questions to evaluate                                                                                                                                                                                                                                               |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native Kubernetes RBAC                             | Represent multiagent permissions as resource/verb/name scopes. Existing `PolicySet` Kubernetes rules can assign the referenced Roles through the Policy Controller. Backends could delegate access checks through `SubjectAccessReview`. | Which resources, subresources and verbs represent each operation? How are Sandbox authorization targets mapped from Session addresses? What authorization objects, if any, must outlive Sandbox deletion? How are lists filtered and argument constraints enforced? |
+| Additional service-enforced `PolicySet` rule types | Add rules for multiagent operations, assigned through the same SA `PolicyBinding`s. Resource-owning backends read and enforce their rule types, as egress and Actions do today.                                                          | Which target scopes and trusted relationship facts are needed? Can they stay understandable without an expanding collection of special-case evaluators? How do readers handle updates, discovery and revocation?                                                    |
+| A justified combination                            | Use Kubernetes grants for the scopes they express and explicit backend checks for additional constraints.                                                                                                                                | Which check is authoritative for each fact? Are checks cumulative restrictions or alternative grants? What does the extra layer solve, and how are bypasses and competing permission stores avoided?                                                                |
 
 For the native-RBAC option, [SubjectAccessReview](https://kubernetes.io/docs/reference/access-authn-authz/authorization/#checking-api-access)
 allows a service to ask the API server about another caller's access. The backend must derive that
@@ -228,7 +241,7 @@ permission does not by itself provide permission-filtered Session discovery.
 
 Compare every candidate using the same cases below: mixed static and runtime-created SAs, live
 bundle edits across services, overlapping grants, and independent send/read/control rights on
-concrete Session and Sandbox targets. Configuration must express different topologies without
+concrete Sandbox targets, with Session IDs used only as operation addresses. Configuration must express different topologies without
 requiring agent categories. Identify who may author definitions, enroll SAs or change trusted
 relationships; retain the current separation between grant administration and workload use.
 
@@ -247,23 +260,45 @@ any broader change explicitly.
 
 ## Message storage, delivery and agent tools
 
-| Candidate                            | Recipient experience                                                                       | Tradeoff                                                                                                                |
-| ------------------------------------ | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| Direct Session input                 | Authenticated correspondence is submitted through Dispatcher.                              | Fewest new pieces; messages may start turns. Batching, selective handling and handled acknowledgements need a contract. |
-| Durable inbox plus notice            | Content is stored; Dispatcher delivers a notice, and the recipient retrieves/acks entries. | Reuses Notifications' cursors and batching; requires retrieval and explicit mailbox ownership/lifetime.                 |
-| Existing messaging system / protocol | Map recipients, messages and receipts into its model.                                      | Reuse may help interoperability, but identity, authorization, delivery and storage mappings still need evaluation.      |
+**V1 direction agreed:** reuse the Notification Service's durable inboxes for agent correspondence.
+Messages address a particular Session, with send permission checked against its Sandbox. There is
+no shared Sandbox inbox in v1. Inbox ownership remains SA-level; per-Session routing does not
+provide isolation between co-resident Sessions.
 
-Each delivery option must enforce the same reviewed caller-SA and operation/target policy. A
-protocol's roles or room membership cannot silently grant transcript reads, controls or reverse
-send authority. Compare the additional identity mappings and permission state it requires; the
-transport must not make the delivery service's own broader authority available to the sender.
+Add an authorized peer-send path that writes durable correspondence into the destination inbox;
+peer messages are not notification subscriptions. Existing source subscriptions can produce other
+inbox entries. The message, its inbox entry and the batched notice are separate concepts. Decide
+how to generalize the current service's inbox/message responsibilities without assuming a new
+Deployment or a move into Dispatcher. Peer messaging should be usable with Actions/GitHub source
+integrations disabled. Store the peer message with authenticated sender-SA
+provenance and the qualified destination. Notifications prepares a platform-generated
+inbox notice; Dispatcher delivers that notice through the existing input path. The peer's raw text
+stays in the inbox and is not promoted into a human user-role instruction. The recipient retrieves
+entries and explicitly acknowledges handled work. Reuse the existing batching, durable cursors,
+retry/idempotency and read/ack mechanisms. Validate actual agent receive/read/ack behavior before
+claiming the workflow is effective; this is an initial approach to try, not measured agent evidence.
 
-Inbox delivery for ordinary correspondence with explicit RPCs for controls is an initial hypothesis,
-not a selection. Reusing Notifications does not settle whether its current SA/Sandbox/Session-scoped
-inbox can serve optional standing addresses, or who may retain/read a mailbox after Sandbox deletion;
-delivery into the deleted Sessions is impossible. Direct delivery must retain provenance without
-making peer text an operator instruction. A new queue duplicating Dispatcher retry/admission semantics
-needs a concrete justification.
+Protocol facades can be evaluated later without changing the reviewed SA and operation/target
+policy. Protocol roles or room membership cannot silently grant history reads, controls or reverse
+send authority. Do not introduce another command queue duplicating Dispatcher admission/retries.
+
+### Batching and wake behavior
+
+**V1 direction agreed:** retain the current ownership and per-Sandbox wake-on-message policy.
+Notifications decides when to prepare a notice and batches inbox content from potentially different
+sources. Dispatcher receives that notice as a message and owns any guarded wake and delivery.
+For messages admitted through the existing trusted caller path, a suspended Sandbox with
+`spec.wakeOnSend` enabled may wake on any message, including an inbox notice; with it disabled,
+queued notices wait for an explicit resume. Running recipients need no wake regardless of that
+flag. Retain Dispatcher caller admission, its wake allowlist and lifecycle safeguards.
+V1 adds no per-peer or per-source wake permission or filter.
+
+With this policy, notice timing and batching determine when accumulated inbox content can trigger
+a wake. Keep that decision in Notifications for v1. Event/source-specific wake switches and moving
+Notification Service responsibilities into Dispatcher are separate future design questions in the
+[freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership),
+not prerequisites or assumed changes to v1. Explicit suspend/resume authorization remains an open
+control-policy decision.
 
 An envelope could retain an idempotent message ID, authenticated sender, resolved destination,
 correlation/reply reference and content. V1 authenticates the caller at Sandbox/SA level; any
@@ -276,7 +311,8 @@ Distinguish durable acceptance, runner admission, harness confirmation, explicit
 acknowledgement and task success. The current Dispatcher has no writer for `HARNESS_CONFIRMED`.
 Reading an inbox is not acknowledgement, and an acknowledgement does not prove task success.
 Choose offline behavior, ordering, duplicate handling, batching, retention and abuse limits.
-Sending, waking a suspended Sandbox, and interrupting its active turn are distinct effects.
+Sending and explicit lifecycle controls remain different operations; v1 notice-triggered wake
+follows the Sandbox policy above, without a separate peer-wake grant.
 
 Decide whether revoking send authority affects only future sends or also accepted-but-undelivered
 mail. Controls may need different execution-time checks from correspondence. Bytes already read
@@ -365,6 +401,6 @@ access control or silently discard accepted messages. The deferred item is
 
 These cases should compare allowed/denied operations, authorized discovery, evidence and operational
 cost across candidate models. Open decisions include identity continuity, grant and relationship
-ownership, policy authoring/evaluation/storage, message/mailbox semantics, A2A/other protocol fit,
+ownership, policy authoring/evaluation/storage, remaining inbox/API semantics, optional protocol facades,
 provisioning/delegation, and migration across existing services. No runtime implementation or engine
 adoption is authorized by this document.

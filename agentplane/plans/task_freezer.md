@@ -22,6 +22,24 @@ once every Sandbox Pod started after that release.
 
 Revisit on a concrete latency, cost, delivery or new-source need; not a release checklist.
 
+### `NOTIFICATION_DISPATCHER_OWNERSHIP` — review notification and Dispatcher ownership
+
+Operator-requested future consideration, 2026-10-16; revisit when explicitly prioritized or a
+concrete coordination/maintenance need justifies changing the boundary. Compare moving Notification
+Service responsibilities into Session Dispatcher with retaining independent services. Distinguish
+source observation, durable inbox/message storage, read/ack, notice batching and command admission.
+Preserve provenance, retention, retry/receipt semantics and independent backend use; do not create a
+second command queue. V1 retains today's ownership and does not depend on this review.
+
+### `SANDBOX_EVENT_WAKE_POLICY` — event-specific automatic wake
+
+Revisit when wake cost or a concrete source/event distinction warrants it. V1 retains the
+Sandbox's wake-on-any-message versus explicit-resume policy. A notice can batch inbox entries from
+multiple sources, and Notifications decides when to send it; Dispatcher sees the notice and owns
+wake/delivery. A future design might add switches to Sandbox spec, but must define mixed-batch
+semantics, trusted event attribution, decision placement and how unannounced entries make progress.
+No per-event switches, per-peer wake grants or owner move are selected or required for v1.
+
 ### `NOTIFICATION_WORKER_ISOLATION` — separate notification API and delivery workers
 
 Only if worker deaths cause actual operational trouble. Keep workers in-process; first address the specific failure with current supervision/claims/retries.
