@@ -180,8 +180,7 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
         assert all(abs(item["controlHeight"] - item["headingHeight"]) <= 1 for item in geometry), geometry
         assert all(abs(item["labelCenterOffset"]) <= 1 for item in geometry), geometry
         indents = [geometry[index + 1]["left"] - geometry[index]["left"] for index in range(2)]
-        assert min(indents) > 0, indents
-        assert abs(indents[0] - indents[1]) <= 1, indents
+        assert all(abs(indent - 5) <= 1 for indent in indents), indents
     else:
         await _focus(page, call.locator(".agentplane-clamped-block[data-label='Command']"))
     await page.mouse.move(0, 0)
