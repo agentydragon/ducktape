@@ -8,7 +8,6 @@ renders the cluster's and tf/gitops' projections of it through this model.
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Literal
@@ -112,4 +111,4 @@ def load(path: Path | None = None) -> Mesh:
     """Load and validate the mesh roster. Defaults to <repo_root>/nebula-mesh.json."""
     if path is None:
         path = repo_root() / "nebula-mesh.json"
-    return Mesh.model_validate(json.loads(path.read_text()))
+    return Mesh.model_validate_json(path.read_bytes())

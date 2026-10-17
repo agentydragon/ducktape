@@ -27,4 +27,4 @@ class QuotaAPIClient:
                 f"{self.url.rstrip('/')}{QUOTAS_PATH}", headers={"Authorization": f"Bearer {token}"}
             )
         response.raise_for_status()
-        return AllQuotas.model_validate(response.json())
+        return AllQuotas.model_validate_json(response.content)

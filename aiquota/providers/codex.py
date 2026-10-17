@@ -159,7 +159,7 @@ class _ResetCreditsResponse(BaseModel):
 
 
 class _TokenRefreshResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
 
     id_token: str | None = None
     access_token: str | None = None
@@ -267,7 +267,7 @@ async def _refresh_token(auth: _AuthState, client: httpx.AsyncClient) -> _AuthSt
         headers={"Content-Type": "application/json"},
     )
     resp.raise_for_status()
-    data = _TokenRefreshResponse.model_validate(resp.json())
+    data = _TokenRefreshResponse.model_validate_json(resp.content)
     if not data.access_token:
         return None
 
@@ -315,7 +315,7 @@ def _usage_headers(auth: _AuthState) -> dict[str, str]:
 async def _fetch_usage(auth: _AuthState, client: httpx.AsyncClient) -> _UsageResponse:
     resp = await client.get(USAGE_URL, headers=_usage_headers(auth))
     resp.raise_for_status()
-    return _UsageResponse.model_validate(resp.json())
+    return _UsageResponse.model_validate_json(resp.content)
 
 
 _MANAGEMENT_HEADERS = {"Authorization": "Bearer $TOKEN$", "User-Agent": "codex_cli_rs/0.125.0 (Linux; x86_64)"}

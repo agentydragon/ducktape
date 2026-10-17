@@ -9,7 +9,6 @@ Provides declarative test response building:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from abc import abstractmethod
@@ -166,7 +165,7 @@ def extract_call_output[T](req: ResponsesRequest, call: FunctionCallItem, output
     if len(matches) > 1:
         raise ValueError(f"Multiple outputs found for call_id={call.call_id}: expected exactly 1, got {len(matches)}")
 
-    return TypeAdapter(output_type).validate_python(json.loads(matches[0].output))
+    return TypeAdapter(output_type).validate_json(matches[0].output)
 
 
 def tool_roundtrip[T](call: FunctionCallItem, output_type: type[T]) -> Generator[FunctionCallItem, ResponsesRequest, T]:

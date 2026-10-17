@@ -113,7 +113,7 @@ class ZaiProvider(Provider):
             async with self.client_factory(self.name, {QUOTA_URL}, API_TIMEOUT_SECS) as client:
                 resp = await client.get(QUOTA_URL, headers={"Authorization": f"Bearer {key}"})
             resp.raise_for_status()
-            quota = _QuotaResponse.model_validate(resp.json())
+            quota = _QuotaResponse.model_validate_json(resp.content)
         except Exception as e:
             return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "z.ai quota fetch"))
 

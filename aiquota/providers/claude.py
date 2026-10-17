@@ -62,7 +62,7 @@ class _Credentials(BaseModel):
 
 
 class _TokenRefreshResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
 
     access_token: str | None = None
     refresh_token: str | None = None
@@ -101,7 +101,7 @@ async def _refresh_token(path: Path, creds: _Credentials, client: httpx.AsyncCli
         },
     )
     resp.raise_for_status()
-    data = _TokenRefreshResponse.model_validate(resp.json())
+    data = _TokenRefreshResponse.model_validate_json(resp.content)
     if not data.access_token or data.expires_in is None:
         return None
     new_oauth = _OAuthTokens(
@@ -200,7 +200,7 @@ class ClaudeProvider(Provider):
                     USAGE_URL, headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"}
                 )
             resp.raise_for_status()
-            usage = UsageResponse.model_validate(resp.json())
+            usage = UsageResponse.model_validate_json(resp.content)
         except Exception as e:
             return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "claude quota fetch"))
 

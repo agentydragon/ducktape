@@ -11,7 +11,6 @@ a scenario parametrised over `Harness` gets Claude and Codex from one body.
 
 from __future__ import annotations
 
-import json
 import re
 import time
 from dataclasses import dataclass, field
@@ -92,7 +91,7 @@ class Turn:
         if found is None:
             raise AssertionError(f"the agent reported no JSON object:\n{self.transcript}")
         try:
-            return shape.model_validate(json.loads(found.group()))
+            return shape.model_validate_json(found.group())
         except (ValueError, TypeError) as error:
             raise AssertionError(f"the agent's report is not a {shape.__name__}: {error}\n{self.answer}") from error
 
