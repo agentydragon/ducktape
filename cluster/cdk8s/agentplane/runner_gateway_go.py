@@ -289,8 +289,9 @@ class GoRunnerGateway(Construct):
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
+                # The guarded wake PUTs the whole Sandbox (dispatcher/sandbox_kubernetes.go), so it needs `update`.
                 RolePolicyRule(
-                    resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch", "patch"]
+                    resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch", "update"]
                 ),
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")],

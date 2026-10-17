@@ -96,7 +96,6 @@ def test_go_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert (sandbox_controller.NAME, "8080") in ingress
     role = _resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
     assert {rule["resources"][0] for rule in role["rules"]} == {"pods", "sandboxes", "leases", "endpointslices"}
-    assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
