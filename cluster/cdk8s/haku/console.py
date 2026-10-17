@@ -98,29 +98,10 @@ _IMAGE_TAG_KEY = "image-tag"
 _STATIC_METADATA_DIR = "/etc/haku-console/static-metadata"
 _AUTHENTIK = "https://auth.allegedly.works"
 
-_DB_ENV = {
-    "HAKU_CONSOLE_DB_USER": "username",
-    "HAKU_CONSOLE_DB_PASSWORD": "password",
-    "HAKU_CONSOLE_DB_HOST": "host",
-    "HAKU_CONSOLE_DB_PORT": "port",
-    "HAKU_CONSOLE_DB_NAME": "dbname",
-}
-_DB_AUTHORITY = (
-    "$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)"
-    "/$(HAKU_CONSOLE_DB_NAME)"
-)
-
 
 def database_env(scope: Construct) -> dict[str, EnvValue]:
-    """The CNPG app credential's parts and the SQLAlchemy asyncpg URL assembled from them, as the
-    API and the migration Job both read them."""
-    return {
-        **{
-            name: database.POSTGRES.app_secret.key(key).env_value(scope, f"db-app-{key}")
-            for name, key in _DB_ENV.items()
-        },
-        env_name(Settings, "database_url"): EnvValue.from_value(f"postgresql+asyncpg://{_DB_AUTHORITY}"),
-    }
+    """The CNPG app credential's driver-neutral PostgreSQL URI for API and migration Job."""
+    return {env_name(Settings, "database_url"): database.POSTGRES.app_secret.key("uri").env_value(scope, "db-app-uri")}
 
 
 class Console(Construct):

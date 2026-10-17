@@ -275,33 +275,11 @@ spec:
         - args:
             - migrate
           env:
-            - name: HAKU_CONSOLE_DB_USER
-              valueFrom:
-                secretKeyRef:
-                  key: username
-                  name: haku-console-db-app
-            - name: HAKU_CONSOLE_DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  key: password
-                  name: haku-console-db-app
-            - name: HAKU_CONSOLE_DB_HOST
-              valueFrom:
-                secretKeyRef:
-                  key: host
-                  name: haku-console-db-app
-            - name: HAKU_CONSOLE_DB_PORT
-              valueFrom:
-                secretKeyRef:
-                  key: port
-                  name: haku-console-db-app
-            - name: HAKU_CONSOLE_DB_NAME
-              valueFrom:
-                secretKeyRef:
-                  key: dbname
-                  name: haku-console-db-app
             - name: HAKU_CONSOLE__DATABASE_URL
-              value: postgresql+asyncpg://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: haku-console-db-app
           image: git.allegedly.works/ducktape-ci/haku-console:unset
           imagePullPolicy: Always
           name: migrate
@@ -502,33 +480,11 @@ spec:
               value: /etc/haku-console/static-metadata/image-tag
             - name: HAKU_CONSOLE__MAX_WAIT_FOR_RESULT_MS
               value: "60000"
-            - name: HAKU_CONSOLE_DB_USER
-              valueFrom:
-                secretKeyRef:
-                  key: username
-                  name: haku-console-db-app
-            - name: HAKU_CONSOLE_DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  key: password
-                  name: haku-console-db-app
-            - name: HAKU_CONSOLE_DB_HOST
-              valueFrom:
-                secretKeyRef:
-                  key: host
-                  name: haku-console-db-app
-            - name: HAKU_CONSOLE_DB_PORT
-              valueFrom:
-                secretKeyRef:
-                  key: port
-                  name: haku-console-db-app
-            - name: HAKU_CONSOLE_DB_NAME
-              valueFrom:
-                secretKeyRef:
-                  key: dbname
-                  name: haku-console-db-app
             - name: HAKU_CONSOLE__DATABASE_URL
-              value: postgresql+asyncpg://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: haku-console-db-app
             - name: HAKU_CONSOLE__STATIC_AGENTS__HAKU__TOKEN
               valueFrom:
                 secretKeyRef:
