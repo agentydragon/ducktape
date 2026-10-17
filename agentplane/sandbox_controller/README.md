@@ -50,8 +50,9 @@ Locally:
 bb run //agentplane/sandbox_controller/cmd:sandbox-controller -- --namespace=<namespace>
 ```
 
-Where the cluster serves KubeVirt's API it watches VirtualMachines and VMIs; where not, VM Sandboxes
-stay unready (`KubeVirtMissing`) and Pod Sandboxes are unaffected. It uses the
+At startup the controller discovers whether the cluster serves KubeVirt's API and only then watches
+VirtualMachines and VMIs. Without that API, VM Sandboxes report `Running=False` with reason
+`KubeVirtMissing`, and Pod Sandboxes are unaffected. It uses the
 in-cluster config or `KUBECONFIG`, serves metrics on `:8080` and `/healthz`/`/readyz`
 on `:8081`, and replicas elect a leader by a Lease in the namespace.
 

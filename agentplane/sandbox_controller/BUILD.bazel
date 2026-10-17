@@ -112,6 +112,7 @@ go_test(
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/types",
         "@io_k8s_apimachinery//pkg/util/wait",
+        "@io_k8s_client_go//discovery",
         "@io_k8s_client_go//kubernetes/scheme",
         "@io_k8s_sigs_controller_runtime//:controller-runtime",
         "@io_k8s_sigs_controller_runtime//pkg/cache",
@@ -119,6 +120,7 @@ go_test(
         "@io_k8s_sigs_controller_runtime//pkg/envtest",
         "@io_k8s_sigs_controller_runtime//pkg/log/zap",
         "@io_k8s_sigs_controller_runtime//pkg/metrics/server",
+        "@io_kubevirt_api//core/v1:core",
     ],
 )
 

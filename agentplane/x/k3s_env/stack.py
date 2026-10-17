@@ -34,34 +34,6 @@ DEPLOY_TIMEOUT_SECONDS = 480
 POD_CIDR = "10.42.0.0/16"
 
 
-def _kubevirt_stub_crds() -> list[dict[str, Any]]:
-    """Bare-cluster test stubs for kinds the controller still watches with VM mode disabled."""
-    return [
-        {
-            "apiVersion": "apiextensions.k8s.io/v1",
-            "kind": "CustomResourceDefinition",
-            "metadata": {"name": f"{plural}.kubevirt.io"},
-            "spec": {
-                "group": "kubevirt.io",
-                "scope": "Namespaced",
-                "names": {"kind": kind, "plural": plural, "singular": kind.lower()},
-                "versions": [
-                    {
-                        "name": "v1",
-                        "served": True,
-                        "storage": True,
-                        "schema": {"openAPIV3Schema": {"type": "object", "x-kubernetes-preserve-unknown-fields": True}},
-                    }
-                ],
-            },
-        }
-        for kind, plural in (
-            ("VirtualMachine", "virtualmachines"),
-            ("VirtualMachineInstance", "virtualmachineinstances"),
-        )
-    ]
-
-
 def run(*command: str, check: bool = True, input_text: str | None = None) -> str:
     result = subprocess.run(command, capture_output=True, text=True, input=input_text, check=False)
     if check and result.returncode:
@@ -335,7 +307,6 @@ def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
         k3s.import_images(layouts, required_images=_deployment_images(everything))
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
-        k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(_kubevirt_stub_crds()))
         # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
         namespaces = [d for d in everything if d["kind"] == "Namespace"]
         rest = [d for d in everything if d["kind"] != "Namespace"]

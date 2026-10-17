@@ -17,7 +17,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,8 +38,8 @@ func eventually(t *testing.T, check func() bool) {
 	}
 }
 
-// Exercise real SSA field ownership and filtered manager watches, which the fake client cannot model.
-func TestChildApplyOwnershipAndDrift(t *testing.T) {
+// Exercise a real API server without KubeVirt and real SSA field ownership and manager watches.
+func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 	asset, err := runfiles.Rlocation("envtest_kubernetes_linux_amd64/kube-apiserver")
 	if err != nil {
@@ -60,8 +62,17 @@ func TestChildApplyOwnershipAndDrift(t *testing.T) {
 			t.Error(err)
 		}
 	})
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := discoveryClient.ServerResourcesForGroupVersion(kubevirtv1.GroupVersion.String()); !apierrors.IsNotFound(err) {
+		t.Fatalf("envtest unexpectedly serves KubeVirt: %v", err)
+	}
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{
+		clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, kubevirtv1.AddToScheme,
+	} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
 		}
@@ -85,7 +96,7 @@ func TestChildApplyOwnershipAndDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), Leases: mgr.GetClient(), Now: time.Now}
+	r := &Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: false, Leases: mgr.GetClient(), Now: time.Now}
 	if err := r.SetupWithManager(mgr); err != nil {
 		t.Fatal(err)
 	}
@@ -265,5 +276,27 @@ func TestChildApplyOwnershipAndDrift(t *testing.T) {
 			t.Fatal(err)
 		}
 		eventually(t, func() bool { return objects.Get(ctx, otherKey, &corev1.Pod{}) == nil })
+	})
+	vmTemplate := template.DeepCopy()
+	vmTemplate.ObjectMeta = metav1.ObjectMeta{Namespace: ns, Name: "vm-runner"}
+	vmTemplate.Spec.Pod = nil
+	vmTemplate.Spec.VM = &kubevirtv1.VirtualMachineSpec{Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{}}
+	if err := objects.Create(ctx, vmTemplate); err != nil {
+		t.Fatal(err)
+	}
+	vmSandbox := &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Name: "vm-without-api", Namespace: ns},
+		Spec:       sandboxapi.SandboxSpec{Template: vmTemplate.Name, Running: true},
+	}
+	if err := objects.Create(ctx, vmSandbox); err != nil {
+		t.Fatal(err)
+	}
+	vmKey := client.ObjectKeyFromObject(vmSandbox)
+	eventually(t, func() bool {
+		if objects.Get(ctx, vmKey, vmSandbox) != nil {
+			return false
+		}
+		condition := meta.FindStatusCondition(vmSandbox.Status.Conditions, sandboxapi.ConditionRunning)
+		return condition != nil && condition.Reason == "KubeVirtMissing"
 	})
 }

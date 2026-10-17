@@ -209,8 +209,9 @@ result for the new Go composition. Breaks found on the way, in order:
 - **No ClusterIP:** without kube-proxy, Pods reach neither the `kube-dns` Service nor `kubernetes.default`.
   CoreDNS runs with `hostNetwork` on the node IP, the kubelet's `cluster-dns` points at it, and every
   container gets `KUBERNETES_SERVICE_HOST`/`PORT` for the node IP.
-- **KubeVirt kinds:** the sandbox controller's cache needs `VirtualMachine`/`VirtualMachineInstance` to exist, so
-  schemaless stub CRDs are applied. It should instead start without KubeVirt when the kinds are absent.
+- **KubeVirt:** an earlier fixture applied schemaless VM/VMI CRDs to satisfy the controller cache.
+  The Sandbox Controller now discovers whether those APIs are served, so the current fixture starts
+  without them: Pod Sandboxes work and VM Sandboxes report `KubeVirtMissing`.
 - **PostgreSQL:** a single-replica Deployment uses the repository's pinned PostgreSQL 18 image, an emptyDir data
   volume, and a headless `postgres-primary` Service that works without kube-proxy. `bootstrap.sql` creates each
   service role and database with the matching owner; the separate `fixture_admin` account exists only to bootstrap

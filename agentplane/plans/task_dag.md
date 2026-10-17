@@ -1032,8 +1032,8 @@ resource controls remain in place while it is prepared.
 
 **Blocked on the VM split; operator, 2026-10-15 PDT.** The k3s spike cannot exercise a VM Sandbox at all:
 the direct K3s chart omits the `runner-vm` SandboxTemplate because the template needs
-KubeVirt, and the harness installs schemaless stub `VirtualMachine` kinds only so the controller's cache resolves. So
-the VM path has no integration coverage in the disposable environment, and pulling the real guest is
+KubeVirt, and the fixture runs without KubeVirt CRDs. So the VM path has no integration coverage in
+the disposable environment, and pulling the real guest is
 unattractive because `agentplane/runner/container-disk.nix` builds it from a NixOS qcow2 — the heavy
 artifact the spike exists to avoid, and one that cannot carry the code under test.
 
@@ -1396,8 +1396,8 @@ without requiring those absent services' behavior in this suite or implying that
 is database-free.
 
 Cover Pod and VM runner flows, adding test ingress where a selected flow needs it. Require a real
-supported VM fixture via `K3S_VM_IMAGE`; schemaless VirtualMachine CRD stubs in the existing k3s
-suite are not VM execution coverage. Keep this test target separate from runtime database removal;
+supported VM fixture via `K3S_VM_IMAGE`; the existing k3s suite runs without KubeVirt and is not VM
+execution coverage. Keep this test target separate from runtime database removal;
 scope its included flows, omitted services and remaining state owners explicitly. A direct-admission
 contract, if selected, remains online-only and does not wake suspended Sandboxes; the durable-queue
 mode remains the owner of wake-to-deliver.

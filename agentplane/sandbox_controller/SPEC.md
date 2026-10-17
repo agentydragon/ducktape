@@ -48,6 +48,8 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 
 ## VMs
 
+- When the cluster does not serve KubeVirt's API, a VM Sandbox reports `Running=False` with reason
+  `KubeVirtMissing` and creates no VM. Pod Sandboxes remain available.
 - A VM Sandbox has one VirtualMachine, named after it and controlled by it. While `spec.running`
   is set its run strategy is `Always`, so KubeVirt replaces a VMI that ends; clearing it sets
   `Halted`. Stopping keeps the VM and its disks.

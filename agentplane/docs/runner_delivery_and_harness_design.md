@@ -605,7 +605,7 @@ This is separate from the no-History delivery test above: a flow that still uses
 Dispatcher queue is not part of a tier that omits PostgreSQL.
 
 Cover both Pod and VM runner paths, with test ingress where a tested flow needs it. VM coverage must
-boot a real supported VM fixture: the existing k3s suite's schemaless VirtualMachine stubs only make
-controller caches resolve and are not VM execution coverage. Keep the test-tier design and
+boot a real supported VM fixture: the existing k3s suite does not install KubeVirt and therefore
+exercises only Pod Sandboxes, not VM execution. Keep the test-tier design and
 implementation as a separate DAG item, gated on the reviewed execution-persistence contract and
 the real VM fixture prerequisite.
