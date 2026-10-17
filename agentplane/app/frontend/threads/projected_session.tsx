@@ -1422,7 +1422,12 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
       ? `${suspended} Wake on message is on; submitted messages will queue while it wakes.`
       : `${suspended} Wake on message is off; submitted messages stay queued until you resume it manually.`;
   }
-  return `Last observed Sandbox and Pod: ${sandboxSummary(sandbox).label}. Showing retained Thread history; controls are disabled.`;
+  const summary = sandboxSummary(sandbox);
+  // A wake after a send, or a first start: the controls come back by themselves.
+  if (inventoryFresh && sandbox.operating_mode === "Running" && summary.kind === "pending") {
+    return "Sandbox is starting. Controls return when it is ready.";
+  }
+  return `Last observed Sandbox and Pod: ${summary.label}. Showing retained Thread history; controls are disabled.`;
 }
 
 function harnessLabel(harness: ThreadView["harness"]): string {

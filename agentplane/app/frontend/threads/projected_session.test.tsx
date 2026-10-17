@@ -684,6 +684,34 @@ it("shows why a refused resume of a suspended Sandbox failed", async () => {
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("the Sandbox is being deleted");
 });
 
+// A send to a suspended Sandbox wakes it: it is Running again with no Pod and no Ready condition until
+// the controller has started the incarnation.
+const waking: SandboxView = { ...inventorySandbox(), phase: "Creating", pod: null, status: null };
+
+it.each([
+  ["a current", true, "Sandbox is starting. Controls return when it is ready."],
+  [
+    "a stale",
+    false,
+    "Last observed Sandbox and Pod: Not started. Showing retained Thread history; controls are disabled.",
+  ],
+])("words a waking Sandbox on %s inventory without calling it a lasting state", async (_, fresh, notice) => {
+  sandboxes = [waking];
+  inventoryFresh = fresh;
+  const container = await render();
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(notice);
+  expect(composer(container).disabled).toBe(true);
+});
+
+it("does not call a failed Pod a Sandbox that is starting", async () => {
+  const running = inventorySandbox();
+  sandboxes = [{ ...running, status: null, pod: running.pod && { ...running.pod, status: { phase: "Failed" } } }];
+  const container = await render();
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
+    "Last observed Sandbox and Pod: Failed. Showing retained Thread history; controls are disabled."
+  );
+});
+
 it("does not show active-turn status when the runner is not active", async () => {
   sharedFeed = "ended";
   sharedThread = { active_turn_id: "turn-1" };
