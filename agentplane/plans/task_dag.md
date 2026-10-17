@@ -1836,16 +1836,14 @@ into one repo-wide migration. No service has been selected for the first cutover
 
 ### `AGENT_API_TOOLING_DESIGN` — preserve ergonomic, scriptable agent workflows
 
-**Candidate; the interface direction is approved.** Design convenient CLI commands and composable
-JSON interfaces for listing Action groups and Actions, inspecting Action schemas, reading the
-authenticated caller's own Action status/results and waiting for completion, plus subscribing to or
-cancelling GitHub PR notifications. Specify auth discovery/credential scope, stable errors and exit
-codes, pagination, JSON output, streaming/reconnect, wait deadlines and cancellation semantics. Reuse
-the selected facade/API code generation and client tooling rather than inventing a parallel stack.
-Update runner platform instructions and other prompts alongside the reviewed CLI contract.
+**Drafted for operator review; the interface direction is approved.** The command and JSON contract
+is [the agent CLI ADR](../docs/adr_agent_cli.md): commands, output, credentials, errors and exit
+codes, pagination, waits, interruption, the Action Service changes it needs and the rollout order.
+Question for review: its [six decisions](../docs/adr_agent_cli.md#decisions-for-review), each with a
+recommended default. Approval replaces this node with the ADR's rollout steps as nodes.
 
-**Deliverable:** an approved command and JSON contract with explicit authorization, error, stream,
-wait and cancellation behavior. This is design only; no CLI, prompt or API change is authorized.
+**Deliverable:** operator approval of the ADR. This is design only; no CLI, prompt or API change is
+authorized.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 
