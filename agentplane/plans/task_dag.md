@@ -1073,8 +1073,8 @@ kube-apiserver/etcd envtest for CRD/list/watch/revocation. Independent of the ru
 
 Exit: a focused draft PR, comparable real-socket contracts where feasible, and an honest
 GoProxy suitability recommendation with exact revisions/invocations, unsupported features and
-security/streaming gaps. Details and current observations belong in the
-[component investigation](../egress/debug/2026_10_16_goproxy_spike.md). Rai merges manually.
+security/streaming gaps. The transport decision is recorded in the
+[egress design](../egress/docs/design.md). Rai merges manually.
 
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current
 source/deployment state with the relevant owner when dispatching; old acceptance notes are not live
