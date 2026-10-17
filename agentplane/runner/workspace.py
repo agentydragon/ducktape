@@ -57,12 +57,10 @@ async def ensure_workspace(
     # creation reports its cause while both pipes are drained to avoid child-process blockage.
     async with asyncio.TaskGroup() as readers:
         try:
-            stdout = readers.create_task(_drain(process.output_chunks()))
-            stderr = readers.create_task(_drain(process.stderr_byte_chunks()))
+            readers.create_task(_drain(process.output_chunks()))
+            readers.create_task(_drain(process.stderr_byte_chunks()))
             await process.close_stdin()
             exit_code = await process.wait()
-            await stdout
-            await stderr
         finally:
             if process.running:
                 await process.stop()
