@@ -787,6 +787,29 @@ class Store:
             inbox.updated_at = datetime.now(UTC) if events else inbox.updated_at
             await notify(session, Channel.WORK)
 
+    async def append_entry(
+        self, session: AsyncSession, inbox: Inbox, identity: EventIdentity, payload: dict[str, JsonValue]
+    ) -> Entry:
+        """The inbox's entry for the event, appended at the next cursor unless it already holds one."""
+        event = identity.model_dump(mode="json")
+        entry = await session.scalar(select(Entry).where(Entry.inbox_id == inbox.id, Entry.event == event))
+        if entry is None:
+            if inbox.last_cursor >= self.quotas.entries_per_inbox:
+                raise QuotaError(
+                    f"inbox has reached its {self.quotas.entries_per_inbox}-entry lifetime limit; retire it explicitly"
+                )
+            inbox.last_cursor += 1
+            entry = Entry(
+                inbox_id=inbox.id, cursor=inbox.last_cursor, event=event, payload=payload, created_at=datetime.now(UTC)
+            )
+            session.add(entry)
+        return entry
+
+    @staticmethod
+    async def record_match(session: AsyncSession, subscription: Subscription, entry: Entry) -> None:
+        if await session.get(Match, (subscription.id, entry.cursor)) is None:
+            session.add(Match(subscription_id=subscription.id, cursor=entry.cursor))
+
     async def append_event(
         self,
         session: AsyncSession,
@@ -795,20 +818,7 @@ class Store:
         identity: EventIdentity,
         payload: dict[str, JsonValue],
     ) -> None:
-        event = identity.model_dump(mode="json")
-        existing = await session.scalar(select(Entry).where(Entry.inbox_id == inbox.id, Entry.event == event))
-        if existing is None:
-            if inbox.last_cursor >= self.quotas.entries_per_inbox:
-                raise QuotaError(
-                    f"inbox has reached its {self.quotas.entries_per_inbox}-entry lifetime limit; retire it explicitly"
-                )
-            inbox.last_cursor += 1
-            existing = Entry(
-                inbox_id=inbox.id, cursor=inbox.last_cursor, event=event, payload=payload, created_at=datetime.now(UTC)
-            )
-            session.add(existing)
-        if await session.get(Match, (subscription.id, existing.cursor)) is None:
-            session.add(Match(subscription_id=subscription.id, cursor=existing.cursor))
+        await self.record_match(session, subscription, await self.append_entry(session, inbox, identity, payload))
 
     @staticmethod
     def source_succeeded(row: Subscription) -> None:
