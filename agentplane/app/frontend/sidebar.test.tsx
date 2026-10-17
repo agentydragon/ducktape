@@ -428,7 +428,7 @@ it("links a Sandbox name to its details without changing Thread navigation", asy
   );
   const link = container.querySelector('a[href="/sandboxes/demo-a1b2"]');
   if (!(link instanceof HTMLAnchorElement)) throw new Error("missing Sandbox details link");
-  expect(link.textContent).toBe("demo-a1b2");
+  expect(link.querySelector(".agentplane-sidebar-group-name")?.textContent).toBe("demo-a1b2");
 
   await act(async () => link.click());
   expect(location()).toBe("/sandboxes/demo-a1b2");

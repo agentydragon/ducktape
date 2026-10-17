@@ -169,33 +169,36 @@ function ThreadGroupSection({
 }): JSX.Element {
   const deleted = group.sandbox === null;
   const suspended = group.sandbox !== null && sandboxSummary(group.sandbox).kind === "suspended";
+  const groupNameStyle = deleted
+    ? { textDecoration: "line-through", textDecorationColor: "var(--mantine-color-dimmed)" }
+    : undefined;
+  const groupLabel = (
+    <>
+      <GroupStateIcon sandbox={group.sandbox} />
+      <span className="agentplane-sidebar-group-name" style={groupNameStyle}>
+        {group.sandboxName}
+      </span>
+      <span className="agentplane-sidebar-group-count">
+        {group.threads.length} thread{group.threads.length === 1 ? "" : "s"}
+      </span>
+    </>
+  );
   return (
     <div>
-      <div className={`agentplane-sidebar-group-label${currentSandbox ? " current" : ""}`}>
-        <GroupStateIcon sandbox={group.sandbox} />
-        {deleted ? (
-          <span
-            className="agentplane-sidebar-group-name"
-            style={{ textDecoration: "line-through", textDecorationColor: "var(--mantine-color-dimmed)" }}
-          >
-            {group.sandboxName}
-          </span>
-        ) : (
-          <Link
-            className="agentplane-sidebar-group-name agentplane-sidebar-group-link"
-            aria-current={currentSandbox ? "page" : undefined}
-            // A suspended Sandbox's name is the gray of its icon rather than the link blue.
-            style={suspended ? { color: SANDBOX_STATUS_MARKS.suspended.color } : undefined}
-            to={`/sandboxes/${encodeURIComponent(group.sandboxName)}`}
-            onClick={onNavigate}
-          >
-            {group.sandboxName}
-          </Link>
-        )}
-        <span className="agentplane-sidebar-group-count">
-          {group.threads.length} thread{group.threads.length === 1 ? "" : "s"}
-        </span>
-      </div>
+      {deleted ? (
+        <div className={`agentplane-sidebar-group-label${currentSandbox ? " current" : ""}`}>{groupLabel}</div>
+      ) : (
+        <Link
+          className={`agentplane-sidebar-group-label agentplane-sidebar-group-link${currentSandbox ? " current" : ""}`}
+          aria-current={currentSandbox ? "page" : undefined}
+          // A suspended Sandbox's name is the gray of its icon rather than the link blue.
+          style={suspended ? { color: SANDBOX_STATUS_MARKS.suspended.color } : undefined}
+          to={`/sandboxes/${encodeURIComponent(group.sandboxName)}`}
+          onClick={onNavigate}
+        >
+          {groupLabel}
+        </Link>
+      )}
       {group.threads.map((thread) => (
         <ThreadRow
           key={thread.id}

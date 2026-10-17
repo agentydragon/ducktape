@@ -122,6 +122,7 @@
 }
 
 .agentplane-sidebar-group-label .agentplane-sidebar-group-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -130,15 +131,17 @@
 .agentplane-sidebar-group-link {
   color: var(--mantine-color-anchor);
   text-decoration: none;
+  width: 100%;
 }
 
-.agentplane-sidebar-group-link:hover {
-  text-decoration: underline;
+.agentplane-sidebar-group-link:hover:not(.current) {
+  background: var(--mantine-color-default-hover);
 }
 
 .agentplane-sidebar-group-count {
   margin-left: auto;
   flex: 0 0 auto;
+  color: var(--mantine-color-dimmed);
 }
 
 .agentplane-sidebar-state-icon {
