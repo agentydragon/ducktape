@@ -643,6 +643,27 @@ messages, by shimming the web interface's control protocol. Builds on the viewer
 readiness costs, then remove the measured bottleneck using existing Bazel/OCI rules where possible.
 The shared Python interpreter layers and matched lifecycle comparison are implemented; evidence
 belongs in [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
+
+Investigation candidates recorded at the operator's request, 2026-10-16 PDT:
+
+- Share third-party Python package layers through canonical package paths across service and
+  migration images; the interpreter layer is already shared. Preserve each binary's declared
+  dependency closure and import behavior.
+- Import PostgreSQL first and start it while the remaining images import, preserving migration
+  and service readiness dependencies. Compare total startup time, including resource contention.
+- Profile Python initialization in the remaining services; compare narrower imports and
+  precompiled bytecode against added image bytes. The app already ships bytecode.
+- Compare bounded containerd import/unpack concurrency with the current combined stream,
+  preserving distinct-blob deduplication. Count deferred unpacking through Pod readiness so
+  moving work later is not reported as a saving.
+
+Use equivalent source/scenarios and report transfer, import/unpack, process readiness and total
+test time separately. Rank proposed Go/Rust rewrites by unique image bytes removed and startup
+time on the dependency chain: Python services that remain still need the shared interpreter.
+The profiled tar-streaming time includes pipe backpressure; it is not a CPU-cost estimate or
+the expected saving from rewriting the streamer. Harness packaging alternatives belong to
+`RUNNER_HARNESS_DELIVERY_DESIGN` below.
+
 Preserve assertions and timeouts. The expensive lifecycle workflow stays **manual-only**;
 automatic triggers require a separate reviewed change. Language rewrites require Rai's decision.
 
