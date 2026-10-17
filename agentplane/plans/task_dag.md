@@ -264,11 +264,11 @@ provisioning. Read/send grants confer no membership administration; explicit adm
 remain possible without introducing agent categories. V1 requires no new collection-specific agent
 enrollment-delegation mechanism. Finalize the concrete RBAC and provisioning checks within this boundary.
 
-Include OAuth-bound static SAs as subjects by namespace/name for permitted sends and reads.
-Define trusted OAuth caller admission to the relevant APIs; sharing SA assignment does not
-automatically add that authentication path to other backends. Keep this integration independent of
-the app. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and Connection
-representation/storage changes are outside this work.
+Include OAuth-bound static SAs as subjects by namespace/name for permitted sends and reads. OAuth
+callers reach the backends from an Action-box Sandbox whose egress substitutes the SA's projected
+token ([agreed route](multiagent_communication.md#oauth-callers)); no OAuth admission path is added to
+other backends. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and
+Connection representation/storage changes are outside this work.
 
 The app's existing auth path may remain a special case for v1. Reducing that special handling is
 optional, separately reviewed follow-up work and does not gate multiagent implementation.
@@ -315,8 +315,9 @@ authorization/freshness and stop Event emission on observed grant loss or stale 
 
 ### `AGENT_MESSAGING_DESIGN` — inbox messaging and notice contract
 
-**Decision; v1 inbox delivery selected.** Address Sandbox-hosted recipients by Session, authorize sends
-at Sandbox granularity using the tentative shared Session-access rules, and reuse the existing
+**Decision; v1 inbox delivery selected.** Address Sandbox-hosted recipients by destination Sandbox plus
+Session ID ([agreed addressing](multiagent_communication.md#peer-message-path)), authorize sends at
+Sandbox granularity using the tentative shared Session-access rules, and reuse the existing
 durable inbox/read/ack and batched-notice machinery. The send operation appends to a Session inbox;
 its payload is separate from transcript reads and the platform-generated notice.
 The sender's append grant supplies the authorization for acceptance; v1 requires no separate
@@ -348,7 +349,9 @@ without truncation and reject configurations above the ceiling. Select the defau
 Implement server-authenticated sender provenance, shared Session-access rule enforcement, idempotent
 message IDs and honest acceptance receipts in the chosen authority. Implement the sender's receipt
 query from the inbox coverage and acknowledgement cursors, visible only to the authenticated sender.
-Check send permission at durable
+Create an inbox for a message only after confirming the named Session against the Sandbox History
+recorded for it, so invented Session IDs cannot use up the recipient's inbox quota; sends to an
+existing inbox skip the check. Check send permission at durable
 acceptance against a fresh local policy view; observed revocation blocks new sends without retracting
 accepted messages. Require no separate recipient opt-in or source subscription. Test authorized
 acceptance without either, denied pairs, spoofing, retry/conflict behavior, size bounds and this

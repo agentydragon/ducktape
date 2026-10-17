@@ -39,10 +39,11 @@ Properties the target keeps:
 - **History Service outage:** runners keep running and commands keep flowing. The runner journal
   is the buffer, so an outage is unacknowledged lag; teardown waits until the ingress has
   acknowledged through every seal cursor.
-- **Sessions can outlive a Sandbox later:** the History Service keys by Session and records each
-  Sandbox as an incarnation, and a teardown seal ends an incarnation, not the Session, so reviving a
-  Session in a new Sandbox ([task DAG section 7](task_dag.md#7-our-own-sandbox-resource-sessions-that-outlive-their-pod))
-  needs no change here.
+- **A Session belongs to one Sandbox:** the History Service keys by Session, records the Sandbox
+  that wrote it and keeps the history after that Sandbox is deleted. A Session never moves to another
+  Sandbox. Replacing a Pod or VM keeps the Sandbox and its Sessions
+  ([task DAG section 7](task_dag.md#7-our-own-sandbox-resource-sessions-that-outlive-their-pod)), and a
+  teardown seal ends that incarnation, not the Session.
 
 Invariants once the refactor is done (operator, 2026-10-11 PDT). Each one still broken is closed by
 a node in the [task DAG](task_dag.md):
