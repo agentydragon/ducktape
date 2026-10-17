@@ -17,6 +17,7 @@ from cluster.cdk8s.agentplane import (
     session_dispatcher,
     staging,
 )
+from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.secret_ref import SecretRef
 
 
@@ -96,6 +97,35 @@ def test_go_gateway_preserves_services_and_fences_listener_ingress() -> None:
     role = _resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
     assert {rule["resources"][0] for rule in role["rules"]} == {"pods", "sandboxes", "leases", "endpointslices"}
     assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_runner_platform_route_fences_name_the_gateway_listener_port(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    """Cilium matches after the Service's translation, so each fence must name the Pods' own port."""
+    documents = agentplane_manifests[namespace]
+    container = one(_resource(documents, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]["containers"])
+    listening = {port["containerPort"] for port in container["ports"]}
+
+    def ports(rules: list[dict[str, Any]], peers: str) -> set[int]:
+        return {
+            int(port["port"])
+            for rule in rules
+            if any(
+                peer["matchLabels"].get("app.kubernetes.io/name") == runner_gateway.NAME for peer in rule.get(peers, [])
+            )
+            for target in rule["toPorts"]
+            for port in target["ports"]
+        }
+
+    control = _resource(documents, "CiliumNetworkPolicy", "platform-route-control")["spec"]
+    clients = _resource(documents, "CiliumNetworkPolicy", "platform-route-clients")["spec"]
+    admitted = {
+        int(port["port"]) for rule in control["ingress"] for target in rule["toPorts"] for port in target["ports"]
+    }
+    assert admitted == listening
+    assert ports(clients["egress"], "toEndpoints") == listening
 
 
 def test_goose_job_name_follows_pinned_image_digest() -> None:

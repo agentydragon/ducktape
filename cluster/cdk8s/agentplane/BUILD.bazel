@@ -1001,6 +1001,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":app",
+        ":conftest",
         ":notifications",
         ":runner_gateway",
         ":runner_gateway_go",

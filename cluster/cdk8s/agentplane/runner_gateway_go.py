@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import re
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import cast
 
 from cdk8s import ApiObjectMetadata, App, Chart, Duration, Size
@@ -88,7 +89,7 @@ def dispatcher_service(namespace: str) -> ServiceRef:
 def runner_control_service(namespace: str, *, port: Port | None = None) -> ServiceRef:
     """The Go listener behind a caller-selected control Service port."""
     control = runner_gateway.runner_control(namespace)
-    return ServiceRef(name=control.name, port=port or control.port, pods=control.pods, target_port=_GRPC_PORT)
+    return control if port is None else replace(control, port=port)
 
 
 def _account(account: ServiceAccountRef) -> str:

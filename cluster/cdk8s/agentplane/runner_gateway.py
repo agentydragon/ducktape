@@ -29,9 +29,11 @@ def control_target(namespace: str) -> str:
 
 
 def runner_control(namespace: str) -> ServiceRef:
-    """The listener runners dial out to (agentplane/docs/runner_control.md), through the egress proxy."""
+    """The listener runners dial out to (agentplane/docs/runner_control.md), through the egress proxy.
+    Its Service port reaches the Gateway's one listener, so network rules name that Pod port."""
     return ServiceRef(
         name=NAME,
         port=Port(name="runner-control", number=8082),
         pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
+        target_port=service(namespace).pod_port,
     )

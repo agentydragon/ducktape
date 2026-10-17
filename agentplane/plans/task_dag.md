@@ -1553,7 +1553,7 @@ wrapper/registry retirement is complete.
 
 ### `GATEWAY_GO_ROLLOUT_CONFIG` — publish images and wire migration readiness into Flux
 
-**Configuration merged; environment cutover remains, 2026-10-16 UTC.** Preparation
+**Configuration and both environment activations merged, 2026-10-16 UTC.** Preparation
 [#10785](https://github.com/agentydragon/ducktape/pull/10785) protects Gateway resources before their
 Flux ownership handoff and adds Go image discovery. The merged
 [#10786](https://github.com/agentydragon/ducktape/pull/10786) pins the published Go server and Goose digests, keeps database/Secrets/stable Services
@@ -1570,10 +1570,14 @@ Staging's backup/restore preflight and writer fence were required before its act
 
 ### `DELIVERY_UNIFIED_CUTOVER` — switch owners without losing admitted work
 
-**Testing activation #10787 and staging activation #10796 are merged (2026-10-16 UTC); cutover
-acceptance is not recorded as verified for either.** Testing preservation and manual writer-fence
-gates were waived by the operator; the waiver does not apply to staging, whose backup/restore
-preflight, writer fence and Python Deployment stop/delete are not recorded as complete here.
+**Both environments serve the Go Gateway; acceptance is not recorded.** Testing activation #10787 and
+staging activation #10796 merged 2026-10-16 UTC, and a live read at 2026-10-17 03:20 UTC found no Python
+Deployments and the Go Gateway Ready in both. Existing runners had not reconnected: staging's two Sandboxes
+reported `RunnerConnected=False` since 22:17 UTC, while the runner control route's network rules admitted
+port 8082 and the Go listener serves only 8080. A corrected rule set does not close the gate; it stays open
+until those Sandboxes report `RunnerConnected=True`. Testing preservation and manual writer-fence gates were
+waived by the operator; the waiver does not apply to staging, whose backup/restore preflight and writer fence
+are not recorded as complete here.
 Recheck the
 operator's prerequisite that neither service depends on History: the 2026-10-15 entrypoints,
 settings, chart and runtime call paths have no History client/call/config, while runner ingress and

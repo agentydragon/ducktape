@@ -3477,7 +3477,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
               value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
             - name: AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES
-              value: '{"control": {"listen_port": 3130, "upstream": "runner-gateway.agentplane-staging.svc.cluster.local:8082", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "history-service.agentplane-staging.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
+              value: '{"control": {"listen_port": 3130, "upstream": "runner-gateway.agentplane-staging.svc.cluster.local:8080", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "history-service.agentplane-staging.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -3718,7 +3718,7 @@ spec:
                   - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
                     value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
                   - name: AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES
-                    value: '{"control": {"listen_port": 3130, "upstream": "runner-gateway.agentplane-staging.svc.cluster.local:8082", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "history-service.agentplane-staging.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
+                    value: '{"control": {"listen_port": 3130, "upstream": "runner-gateway.agentplane-staging.svc.cluster.local:8080", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "history-service.agentplane-staging.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
                   - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_HOST
                     value: 0.0.0.0
                 image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
@@ -3996,7 +3996,7 @@ spec:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "8082"
+            - port: "8080"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
@@ -4026,7 +4026,7 @@ spec:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "8082"
+            - port: "8080"
               protocol: TCP
 ---
 apiVersion: cilium.io/v2
@@ -5723,7 +5723,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
               value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
             - name: AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES
-              value: '{"control": {"listen_port": 3130, "upstream": "runner-gateway.agentplane-staging.svc.cluster.local:8082", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "history-service.agentplane-staging.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
+              value: '{"control": {"listen_port": 3130, "upstream": "runner-gateway.agentplane-staging.svc.cluster.local:8080", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "history-service.agentplane-staging.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
