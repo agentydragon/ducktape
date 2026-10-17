@@ -309,11 +309,13 @@ Dispatcher or adding selective event wake is future work, not a prerequisite.
 
 ### `AGENT_MESSAGE_INGRESS` — authorized send and acceptance
 
-**Blocked on messaging decision and its selected prerequisites.** Implement bounded payloads,
-server-authenticated sender provenance, per-recipient send policy, idempotent message IDs and honest
-acceptance receipts in the chosen authority. Check send permission at durable acceptance; later
+**Blocked on messaging decision and its selected prerequisites.** Implement a configurable inbox-service
+message-body byte limit backed by a database ceiling; reject oversized messages before acceptance
+without truncation and reject configurations above the ceiling. Select the default and ceiling.
+Implement server-authenticated sender provenance, per-recipient send policy, idempotent message IDs
+and honest acceptance receipts in the chosen authority. Check send permission at durable acceptance; later
 revocation blocks new sends without retracting accepted messages. Test denied pairs, spoofing,
-retry/conflict behavior and this revocation boundary.
+retry/conflict behavior, size bounds and this revocation boundary.
 
 ### `AGENT_MESSAGE_RECEPTION` — delivery, recovery and acknowledgement
 

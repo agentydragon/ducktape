@@ -352,6 +352,12 @@ retention and Sandbox-deletion rules; delivery does not recheck the sender's sen
 Controls may need different execution-time checks from correspondence. Bytes already read cannot
 be revoked. A retry must not silently retarget a replacement Sandbox or new role holder.
 
+**V1 message-size bounds agreed:** the inbox/messaging service owns an operator-configurable
+maximum message-body size, measured in UTF-8 bytes. Reject oversized messages before durable
+acceptance with an explicit error; do not truncate. Enforce an absolute ceiling in the database
+as well, and reject service configurations exceeding that ceiling. The default and absolute
+ceiling values remain to be selected.
+
 Illustrative tool operations are finding recipients, sending, checking delivery, reading/acking an
 inbox and opening a Session. Control operations stay explicit, with target and parameter constraints
 such as the expected turn ID. HTTP/gRPC/MCP/CLI facades can expose the selected contract later;
