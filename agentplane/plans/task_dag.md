@@ -1066,12 +1066,26 @@ egress proxy as a header substitution, as the staging `claude-ai` Sandboxes' `BU
 
 ## 6. Existing access and lifecycle follow-ups
 
+### `EGRESS_GO_ROLLOUT` — verify the Go egress proxy in testing, then staging
+
+**Blocked on the change that swaps the egress Deployment to the Go images merging, and on
+`agentplane-egress-proxy` and `agentplane-egress-history-migrate` being pinned in the testing and
+staging image pins.** That change is code; this node is the evidence that it works, so it stays until
+the evidence exists. Testing first, then staging. Exit: each serves a request with a substituted
+credential and a refusal through the pinned Go image, and both history databases carry
+`egress_goose_version`. While the roll is in flight the Python pods and the Go migrator share the
+`egress` history database; the handoff tests cover that and no live rollout has. The exit also removes
+the `agentplane-egress` and `agentplane-egress-migrate` names from
+`cluster/cdk8s/forgejo_registry/image_automation.py` and from both image pins, and deletes the
+`CLEANUP`-tagged Alembic modules the handoff fixtures read.
+
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current
 source/deployment state with the relevant owner when dispatching; old acceptance notes are not live
 observations. New database work follows the task-specific review and rollout requirements.
 
 ```mermaid
 flowchart LR
+    EGRESS_GO_ROLLOUT[Blocked: Go egress Deployment merged and images pinned]
     PC_EGRESS[Unscheduled: prune OpenClaw-only wiring from the Iron proxy]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
