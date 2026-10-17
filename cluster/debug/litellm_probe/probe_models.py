@@ -6,7 +6,7 @@ import json
 import os
 import sys
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
@@ -574,7 +574,7 @@ def _responses_body_from_stream_events(events: list[Any]) -> dict[str, Any]:
     body: dict[str, Any] = {"output": []}
     output_items_by_index: dict[int, dict[str, Any]] = {}
     output_text_parts: list[str] = []
-    function_call_arguments_by_index: dict[int, list[str]] = {}
+    function_call_arguments_by_index: defaultdict[int, list[str]] = defaultdict(list)
     function_call_names_by_index: dict[int, str] = {}
 
     for event in events:
@@ -599,7 +599,7 @@ def _responses_body_from_stream_events(events: list[Any]) -> dict[str, Any]:
             index = event.get("output_index")
             delta = event.get("delta")
             if isinstance(index, int) and isinstance(delta, str):
-                function_call_arguments_by_index.setdefault(index, []).append(delta)
+                function_call_arguments_by_index[index].append(delta)
             continue
         if event_type == "response.output_item.added":
             index = event.get("output_index")

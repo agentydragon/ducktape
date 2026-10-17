@@ -42,6 +42,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -715,11 +716,11 @@ def compare(base: Graph, head: Graph) -> list[str]:
 
     removed: dict[ObjKey, tuple[KsKey, Json]] = {}
     added: dict[ObjKey, tuple[KsKey, Json]] = {}
-    per_ks: dict[KsKey, list[tuple[str, ObjKey, list[str]]]] = {}
+    per_ks: defaultdict[KsKey, list[tuple[str, ObjKey, list[str]]]] = defaultdict(list)
     for ks in sorted(base.results.keys() | head.results.keys()):
         old = _strip_flux_kustomizations(base.results.get(ks, Rendered({})))
         new = _strip_flux_kustomizations(head.results.get(ks, Rendered({})))
-        entries = per_ks.setdefault(ks, [])
+        entries = per_ks[ks]
         if not (isinstance(old, Rendered) and isinstance(new, Rendered)):
             if old != new:
                 entries.append(("!", ("", "", ""), [f"base: {_describe(old)}", f"head: {_describe(new)}"]))

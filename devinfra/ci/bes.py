@@ -42,6 +42,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import defaultdict
 from collections.abc import Iterable
 
 DEFAULT_BASE_URL = "https://app.buildbuddy.io"
@@ -91,10 +92,10 @@ class Invocation:
         directory name is mangled by bzlmod and cannot be reconstructed, and many
         targets share a basename (most images here are literally named `image`).
         """
-        grouped: dict[str, list[Output]] = {}
+        grouped: defaultdict[str, list[Output]] = defaultdict(list)
         for output in self.outputs:
-            grouped.setdefault(output.label, []).append(output)
-        return grouped
+            grouped[output.label].append(output)
+        return dict(grouped)
 
 
 def _api_key(explicit: str | None = None) -> str:

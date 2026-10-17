@@ -22,6 +22,7 @@ from __future__ import annotations
 import enum
 import logging
 import os
+from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
@@ -158,11 +159,11 @@ def _last_activity(pg: pygit2.Repository, path: Path, status: Iterable[str]) -> 
 
 def processes_by_worktree(paths: Iterable[Path], *, proc_root: Path = Path("/proc")) -> dict[Path, list[int]]:
     """Map each worktree path to the PIDs whose cwd is inside it (best-effort)."""
-    live: dict[Path, list[int]] = {}
+    live: defaultdict[Path, list[int]] = defaultdict(list)
     resolved = {path: path.resolve() for path in paths}
     if not resolved:
         logger.info("No worktrees need a process working-directory scan")
-        return live
+        return {}
     logger.info("Scanning process working directories for %d worktrees", len(resolved))
     process_count = 0
     for entry in proc_root.iterdir():
@@ -177,9 +178,9 @@ def processes_by_worktree(paths: Iterable[Path], *, proc_root: Path = Path("/pro
             continue
         for path, target in resolved.items():
             if cwd == target or target in cwd.parents:
-                live.setdefault(path, []).append(int(entry.name))
+                live[path].append(int(entry.name))
     logger.info("Process working-directory scan complete: %d processes, %d worktrees active", process_count, len(live))
-    return live
+    return dict(live)
 
 
 def classify_worktree(

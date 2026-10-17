@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import sys
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
@@ -83,19 +84,19 @@ class Series(NamedTuple):
 
 def merge(entries: list[dict]) -> Series:
     """One series from every label set a query returned (a node's series split when labels changed)."""
-    values: dict[float, list[float]] = {}
+    values: defaultdict[float, list[float]] = defaultdict(list)
     for entry in entries:
         for t, v in entry["values"]:
-            values.setdefault(t, []).append(v)
+            values[t].append(v)
     times = np.array(sorted(values))
     return Series(times, np.array([np.mean(values[t]) for t in times]))
 
 
 def namespace_series(entries: list[dict]) -> dict[str, Series]:
-    grouped: dict[str, list[dict]] = {}
+    grouped: defaultdict[str, list[dict]] = defaultdict(list)
     for entry in entries:
         namespace = entry["labels"]["namespace"]
-        grouped.setdefault(namespace if namespace in WORKLOAD_COLORS else "other", []).append(entry)
+        grouped[namespace if namespace in WORKLOAD_COLORS else "other"].append(entry)
     result: dict[str, Series] = {}
     for group, members in grouped.items():
         times = sorted({t for e in members for t, _ in e["values"]})

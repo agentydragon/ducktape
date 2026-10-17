@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -721,7 +722,7 @@ async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_d
                 .all()
             )
 
-            definition_to_examples: dict[str, set[ExampleSpec]] = {}
+            definition_to_examples: defaultdict[str, set[ExampleSpec]] = defaultdict(set)
             for cr in critic_runs:
                 critic_config = cr.critic_config()
                 example_spec = critic_config.example
@@ -731,7 +732,7 @@ async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_d
                 # Check if this critic run has been graded (has grading edges)
                 has_grading = session.query(GradingEdge).filter(GradingEdge.critique_run_id == cr.agent_run_id).first()
                 if has_grading:
-                    definition_to_examples.setdefault(cr.image_digest, set()).add(example_spec)
+                    definition_to_examples[cr.image_digest].add(example_spec)
 
             eligible = [
                 (def_id, len(examples))
@@ -928,9 +929,9 @@ def get_run(run_id: UUID, caller_db: CallerDb) -> AgentRunDetail:
                 if grader_run_ids
                 else []
             )
-            edges_by_grader: dict[UUID, list[GradingEdge]] = {}
+            edges_by_grader: defaultdict[UUID, list[GradingEdge]] = defaultdict(list)
             for edge in all_edges:
-                edges_by_grader.setdefault(edge.grader_run_id, []).append(edge)
+                edges_by_grader[edge.grader_run_id].append(edge)
 
             # Build GraderRunInfo with pre-grouped edges (only include graders with edges for this run)
             for grader in grader_rows:

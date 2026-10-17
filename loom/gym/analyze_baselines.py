@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import json
 import math
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -80,7 +81,7 @@ def aggregate(
     results: dict[str, TaskResult], cluster_by_id: dict[str, date], metric: str
 ) -> tuple[float, tuple, int, int]:
     """Pooled mean of `metric` over submitted tasks + 95% cluster-bootstrap CI; (mean, ci, n_submitted, n_total)."""
-    by_cluster: dict[date, list[float]] = {}
+    by_cluster: defaultdict[date, list[float]] = defaultdict(list)
     n_total = 0
     for task_id, cluster in cluster_by_id.items():
         if task_id not in results:
@@ -89,7 +90,7 @@ def aggregate(
         value = getattr(results[task_id], metric)
         if math.isnan(value):
             continue
-        by_cluster.setdefault(cluster, []).append(value)
+        by_cluster[cluster].append(value)
     values = [v for vs in by_cluster.values() for v in vs]
     mean = sum(values) / len(values) if values else float("nan")
     ci = cluster_bootstrap_ci(list(by_cluster.values())) or (float("nan"), float("nan"))
@@ -105,14 +106,14 @@ def paired_delta(
     that both contestants share; differencing within each task cancels it, so the
     same clusters resolve a much smaller effect with a far tighter CI than two
     absolute means."""
-    by_cluster: dict[date, list[float]] = {}
+    by_cluster: defaultdict[date, list[float]] = defaultdict(list)
     for task_id, cluster in cluster_by_id.items():
         if task_id not in a or task_id not in b:
             continue
         av, bv = getattr(a[task_id], metric), getattr(b[task_id], metric)
         if math.isnan(av) or math.isnan(bv):
             continue
-        by_cluster.setdefault(cluster, []).append(bv - av)
+        by_cluster[cluster].append(bv - av)
     values = [v for vs in by_cluster.values() for v in vs]
     if not values:
         return float("nan"), (float("nan"), float("nan")), 0

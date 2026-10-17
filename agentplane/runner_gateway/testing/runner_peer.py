@@ -5,6 +5,7 @@ implement Gateway authentication, Sandbox lookup, or identity fencing.
 """
 
 import asyncio
+from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
@@ -53,10 +54,10 @@ class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
     def _record(self, method: str, context: grpc.aio.ServicerContext) -> None:
         if not self.record_metadata:
             return
-        values: dict[str, list[str]] = {}
+        values: defaultdict[str, list[str]] = defaultdict(list)
         for key, value in context.invocation_metadata() or ():
             text_value = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
-            values.setdefault(key, []).append(text_value)
+            values[key].append(text_value)
         self.metadata_calls.append((method, {key: tuple(items) for key, items in values.items()}))
 
     async def _forward[Request: Message, Response: Message](

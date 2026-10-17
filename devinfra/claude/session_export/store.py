@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+from collections import defaultdict
 from collections.abc import AsyncIterator, Collection, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -247,10 +248,10 @@ class SessionStore:
                 )
             ).all()
 
-        grouped: dict[int, list[str]] = {}
+        grouped: defaultdict[int, list[str]] = defaultdict(list)
         for _, _, changed_revision, session_id in rows:
             if changed_revision is not None and session_id is not None:
-                grouped.setdefault(changed_revision, []).append(session_id)
+                grouped[changed_revision].append(session_id)
         return SessionChangeBatch(
             current_revision=rows[0][0],
             oldest_retained=rows[0][1],

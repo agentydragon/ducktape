@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -649,12 +650,12 @@ def _aggregate_game(
     # Timeline never crosses below the data-collection cutoff — defensive
     # against a backfilled `server_resolved` row whose `occurred_at_ms`
     # somehow predates 2026-05-07.
-    by_day: dict[str, list[GameEventRead]] = {}
+    by_day: defaultdict[str, list[GameEventRead]] = defaultdict(list)
     for e in game_events:
         day = datetime.fromtimestamp(e.occurred_at_ms / 1000.0, tz=UTC).date().isoformat()
         if day < SERVER_RESOLVED_SINCE_DATE:
             continue
-        by_day.setdefault(day, []).append(e)
+        by_day[day].append(e)
     timeline = [_time_bucket_stats(day, by_day[day]) for day in sorted(by_day)]
 
     return GameStats(game=game, total=total, buckets=buckets, timeline=timeline)

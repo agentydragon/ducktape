@@ -9,6 +9,7 @@ narrow_matchability skill: `/narrow_matchability <snapshot_slug>`
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -252,8 +253,10 @@ class ScanResult:
 
     def group_by_snapshot(self) -> None:
         self.by_snapshot.clear()
+        grouped: defaultdict[str, list[PendingOccurrence]] = defaultdict(list)
         for occ in self.pending:
-            self.by_snapshot.setdefault(occ.slug, []).append(occ)
+            grouped[occ.slug].append(occ)
+        self.by_snapshot.update(grouped)
 
 
 def scan_specimens(specimens_root: Path) -> ScanResult:

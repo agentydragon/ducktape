@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 import tempfile
 from bisect import bisect_left
+from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -192,9 +193,9 @@ def _first_origin(path: MacroStatePath, *, latest_start: date) -> int:
 
 
 def describe(scores: Sequence[ArmScore]) -> str:
-    by_horizon: dict[int, list[ArmScore]] = {}
+    by_horizon: defaultdict[int, list[ArmScore]] = defaultdict(list)
     for score in scores:
-        by_horizon.setdefault(score.horizon, []).append(score)
+        by_horizon[score.horizon].append(score)
     lines = []
     for horizon, rows in sorted(by_horizon.items()):
         lines.append(f"horizon {horizon} month(s) — {rows[0].origins} origins")

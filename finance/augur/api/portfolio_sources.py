@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import os
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -107,9 +108,9 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
         await engine.dispose()
 
     cash = _cash_total(plaid, cash_balances)
-    holdings_by_account: dict[str, list[CurrentHolding]] = {}
+    holdings_by_account: defaultdict[str, list[CurrentHolding]] = defaultdict(list)
     for holding in current_holdings:
-        holdings_by_account.setdefault(holding.account_id, []).append(holding)
+        holdings_by_account[holding.account_id].append(holding)
 
     accounts: list[PortfolioAccountConfig] = []
     holdings: list[HoldingPositionConfig] = []

@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import sys
+from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -230,12 +231,12 @@ def generate(
         raise FileNotFoundError(f"No runs dir: {runs_dir}")
 
     # Build groups by template hash
-    by_hash: dict[str, list[Row]] = {}
+    by_hash: defaultdict[str, list[Row]] = defaultdict(list)
     for rd in iter_run_dirs(runs_dir):
         row = load_row(rd, known)
         if not row:
             continue
-        by_hash.setdefault(row.template_hash, []).append(row)
+        by_hash[row.template_hash].append(row)
 
     # Determine which packaged templates have no eval runs
     known_hash_to_name: dict[str, str] = {sha1_text(text): name for text, name in known.items()}

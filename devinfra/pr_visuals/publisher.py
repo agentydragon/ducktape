@@ -14,6 +14,7 @@ import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import defaultdict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -369,9 +370,9 @@ def download_visual_tests(
     run: Runner = subprocess.run,
 ) -> list[DownloadedVisualTest]:
     artifacts = list_ci_artifacts(invocations, bbapi=bbapi, run=run)
-    by_target: dict[str, list[ListedArtifact]] = {}
+    by_target: defaultdict[str, list[ListedArtifact]] = defaultdict(list)
     for listed in artifacts:
-        by_target.setdefault(listed.artifact.label, []).append(listed)
+        by_target[listed.artifact.label].append(listed)
 
     # One target can publish several manifests: a sharded test publishes one per shard, and a bb
     # remote script can expose one result through more than one linked invocation (a retry, or a
@@ -413,9 +414,9 @@ def download_visual_tests(
         test_dir = destination / plan.slug
         test_dir.mkdir(parents=True, exist_ok=True)
 
-        listings: dict[str, list[ListedArtifact]] = {}
+        listings: defaultdict[str, list[ListedArtifact]] = defaultdict(list)
         for artifact in by_target[plan.target_label]:
-            listings.setdefault(artifact.artifact.name, []).append(artifact)
+            listings[artifact.artifact.name].append(artifact)
         for asset in manifest.assets:
             candidates = listings.get(f"test.outputs/{asset.path}")
             if candidates is None:

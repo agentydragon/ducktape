@@ -20,6 +20,7 @@ import subprocess
 import tarfile
 import urllib.parse
 import urllib.request
+from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, cast
@@ -607,13 +608,13 @@ def write_aggregate(summaries: list[dict[str, Any]], out: Path) -> None:
             )
         )
 
-    action_stats: dict[tuple[str, str], list[float]] = {}
+    action_stats: defaultdict[tuple[str, str], list[float]] = defaultdict(list)
     for summary in summaries:
         test = invocation_by_role(summary, "test")
         profile = test.get("profile_summary", {})
         for action in profile.get("top_actions", [])[:5]:
             key = (action.get("mnemonic", ""), action.get("target", "") or action.get("name", ""))
-            action_stats.setdefault(key, []).append(float(action["duration_s"]))
+            action_stats[key].append(float(action["duration_s"]))
 
     lines.extend(["", "## Repeated Slow Actions"])
     lines.append(md_row(["mnemonic", "target/name", "runs", "median s", "max s"]))

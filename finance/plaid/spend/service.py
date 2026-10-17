@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import logging
+from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -272,9 +273,9 @@ class SpendService:
             for row in transaction_rows
             if not row["pending"] and row["pending_transaction_id"] is not None
         }
-        transactions_by_account: dict[str, list[asyncpg.Record]] = {}
+        transactions_by_account: defaultdict[str, list[asyncpg.Record]] = defaultdict(list)
         for row in transaction_rows:
-            transactions_by_account.setdefault(row["account_id"], []).append(row)
+            transactions_by_account[row["account_id"]].append(row)
 
         cards = []
         for account in account_rows:

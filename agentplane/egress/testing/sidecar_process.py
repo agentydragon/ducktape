@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import socket
+from collections import defaultdict
 from collections.abc import Mapping
 from contextlib import suppress
 from pathlib import Path
@@ -68,10 +69,10 @@ class SidecarProcess:
         for name, config in routes.items():
             if config.get("listen_port") == 0:
                 allocations.append((f"route:{name}", self._listen_host))
-        ports_by_host: dict[str, list[str]] = {}
+        ports_by_host: defaultdict[str, list[str]] = defaultdict(list)
         for key, host in allocations:
             assert host is not None
-            ports_by_host.setdefault(host, []).append(key)
+            ports_by_host[host].append(key)
         allocated = {
             key: port
             for host, keys in ports_by_host.items()
