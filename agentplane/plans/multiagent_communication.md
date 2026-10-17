@@ -1,14 +1,16 @@
 # Cross-agent communication and authorization: design space
 
-Status: **open design exploration**. This records requirements, candidate arrangements and questions;
-it selects no authorization engine, identity model, messaging protocol, service or storage owner.
+Status: **open design exploration with agreed constraints**. This records requirements, candidate
+arrangements and questions; it selects no authorization engine, messaging protocol,
+service or storage owner.
 Implementation gates remain in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations).
 
 ## Requirements and preferences
 
 - Agents with different access must be able to collaborate across separate Sandboxes. Useful
   workflows include a private coordinator assigning public-data work to specialists, peers within
-  a project, and standing roles such as project manager and individual contributor.
+  a project, and standing roles such as project manager and individual contributor. These are
+  configurable workflow examples, not Agentplane agent categories or required topology.
 - Static configuration should be able to express reusable rules such as “this project's manager
   may perform these operations on its contributors.” GitOps and Kubernetes are plausible places
   to author that configuration; this preference does not select its representation or evaluator.
@@ -21,60 +23,147 @@ Implementation gates remain in the [task DAG](task_dag.md#3-multiagent-decisions
   app remains a client of independently usable backends ([service boundaries](../docs/service_boundaries.md)).
 - Low-regret choices keep identity, roles, execution placement, authority and delivery separable.
   Replacing Agentplane's existing authorization machinery across services is in scope for evaluation;
-  retaining `PolicySet`/`PolicyBinding` is not a prerequisite.
+  retaining `PolicySet`/`PolicyBinding` is not a prerequisite. Any replacement must preserve the
+  [live permission bundle semantics](#live-permission-bundles).
 - A communication classifier or trusted-model judge is a possible **later** addition, outside v1
   and not a messaging prerequisite. File attachments are also unnecessary for v1.
 - HTTP, gRPC, MCP and CLI facades are lower-priority, replaceable choices. They do not need to be
   selected before the authority and message contracts. A2A's domain semantics deserve a separate
   evaluation from its transport bindings.
 
+## Topology-neutral authorization
+
+**Agreed with the operator, 2026-10-16.** Agentplane should authorize concrete operations, such as
+submitting a message through Dispatcher to a particular Session or reading a Session's retained
+history. Multiagent topology belongs in runtime and/or GitOps configuration. Agentplane must not
+require teams, projects, a management hierarchy, or coordinator/specialist categories. Configuration
+may use such concepts without making them mandatory backend entities or assigning them built-in
+privileges.
+
+The authorization model should accommodate direct resource grants, peers, overlapping groups and
+multiple management relationships without selecting one arrangement for every deployment. For any
+configured relationship such as “X belongs to Y,” policy must define its exact authorization effect:
+which subjects may perform which operations on which resources, and who may establish or change the
+relationship. Creation provenance, management and parentage are separate facts; any grants based on
+them must be explicit policy.
+
+Evaluate each proposed abstraction by asking what useful configurations it makes impossible and
+what exact operations it permits or denies. Impose structural constraints only where an actual
+security or execution requirement needs them. The existing Sandbox isolation and persistence
+boundaries below are such constraints.
+
+**Caller attribution agreed with the operator, 2026-10-16:** Sandbox/ServiceAccount-level caller
+attribution is sufficient for v1, as for existing Kubernetes and Action permissions. Authenticated
+per-Session sender identity is not required. Policies may still target individual Sessions; that
+does not isolate sending Sessions sharing one Sandbox. Grant scopes, trusted relationship inputs,
+policy schema and authorization engine remain open.
+
+## Live permission bundles
+
+**Agreed with the operator, 2026-10-16.** Assignment to a named permission bundle and the bundle's
+definition are separate. Existing `PolicyBinding`s enroll SAs into shared, mutable `PolicySet`s;
+editing a set changes the grants for every currently bound SA as the readers reconcile. This live
+indirection is a requirement for any replacement authorization model. Expanding a bundle once at
+launch or assignment into a fixed snapshot loses that capability.
+
+For example, ten SAs can each receive thirty RoleBindings/ClusterRoleBindings from one set. Editing
+the set to require twenty-five per SA causes the Policy Controller to remove the five obsolete
+bindings for each SA. The same shared definition can also carry egress and Action rules. An
+authorized runtime or GitOps edit adding an egress rule to `github` applies to every current
+recipient of that bundle without editing their assignments. Removing the rule removes its grant
+from all of them; independent overlapping grants still apply. The name `github` has only the
+meaning its configured rules give it.
+
+“Give every current recipient of `github` this extra egress rule for the next hour” is a temporary
+change to the shared definition, followed by centrally removing that addition. This is distinct
+from expiring an SA's whole binding. Automatic scheduling or rule-level expiry is not selected or
+claimed to exist by this requirement; the chosen design must explain how the temporary change ends.
+
 ## Existing pieces
 
-Source inventory checked on 2026-10-16 against `5d8e45e13a`; this is not a live deployment audit.
+Source inventory checked on 2026-10-16 against `f11947bf7a`; this is not a live deployment audit.
 
-| Concern           | Existing implementation                                                                                                                                                              | Gap for general cross-agent use                                                                                                           |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Workload identity | [Python principal](../workload_auth/principal.py) and [Go resolver](../runner_gateway/go/auth/auth.go) verify audience-scoped, Pod-bound SA tokens and retain SA/Pod UIDs.           | No authenticated per-Session sender or persistent logical-agent identity follows from that bearer.                                        |
-| Standing grants   | [Policy sets](../docs/adr_policy_sets.md) bind typed Kubernetes, egress and Action rules to SAs.                                                                                     | No general session sharing or project-role model; human authentication and Action operator authority remain separate.                     |
-| Command delivery  | [Dispatcher](../session_dispatcher/README.md) supports input, model/effort changes, interrupts, stop and Open, with durable queues for the queued operations.                        | Its service caller allowlist is not destination- and operation-scoped agent authorization.                                                |
-| Runner access     | [Proxy](../runner_gateway/go/gateway/proxy.go) checks callers and Sandbox UID/owner identity; Quiesce is controller-only.                                                            | Identity fencing does not grant permission, and general authorization must cover direct paths around command admission.                   |
-| Receiving         | [Notifications](../notification_service/docs/api.md) stores Actions/GitHub events in session inboxes, sends notices through Dispatcher, and exposes read/ack operations.             | Agent correspondence is not a source. An inbox is tied to an SA, Sandbox incarnation and Session, not a standing role across replacement. |
-| History           | [History reads](../history_service/grpc_api.py) serve retained conversations and evidence to configured service readers.                                                             | Scoped agent discovery/read/follow permissions are not implemented.                                                                       |
-| Provisioning      | [Sandbox inventory](../sandboxes/inventory.py) submits CRs; the [controller](../sandbox_controller/identity.go) creates a dedicated SA and binds the Sandbox's selected policy sets. | Constrained agent launch, delegation and session-create authority remain design work.                                                     |
+| Concern           | Existing implementation                                                                                                                                                              | Gap for general cross-agent use                                                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workload identity | [Python principal](../workload_auth/principal.py) and [Go resolver](../runner_gateway/go/auth/auth.go) verify audience-scoped, Pod-bound SA tokens and retain SA/Pod UIDs.           | Sufficient for v1 caller attribution; authenticated per-Session sender identity is not required.                                             |
+| Standing grants   | [Policy sets](../docs/adr_policy_sets.md) bind typed Kubernetes, egress and Action rules to SAs.                                                                                     | No general scoped session-sharing policy; human authentication and Action operator authority remain separate.                                |
+| Command delivery  | [Dispatcher](../session_dispatcher/README.md) supports input, model/effort changes, interrupts, stop and Open, with durable queues for the queued operations.                        | Its service caller allowlist is not destination- and operation-scoped agent authorization.                                                   |
+| Runner access     | [Proxy](../runner_gateway/go/gateway/proxy.go) checks callers and Sandbox UID/owner identity; Quiesce is controller-only.                                                            | Identity fencing does not grant permission, and general authorization must cover direct paths around command admission.                      |
+| Receiving         | [Notifications](../notification_service/docs/api.md) stores Actions/GitHub events in session inboxes, sends notices through Dispatcher, and exposes read/ack operations.             | Agent correspondence is not a source. Inboxes are SA/Sandbox/Session-scoped; optional standing addresses or other lifetimes need a contract. |
+| History           | [History reads](../history_service/grpc_api.py) serve retained conversations and evidence to configured service readers.                                                             | Scoped agent discovery/read/follow permissions are not implemented.                                                                          |
+| Provisioning      | [Sandbox inventory](../sandboxes/inventory.py) submits CRs; the [controller](../sandbox_controller/identity.go) creates a dedicated SA and binds the Sandbox's selected policy sets. | Constrained agent launch, delegation and session-create authority remain design work.                                                        |
 
 The [scoped-read proposal](scoped_session_reads.md) is one candidate: exactly one compartment,
 SA-scoped reads and no initial exact-Session exceptions. Those choices remain open against the
 alternatives here. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
 already calls for comparing reusable authorization systems rather than inventing a universal broker.
 
+### Current identity and policy wiring
+
+- External Action Service OAuth Connections act as an existing labeled SA selected by the operator
+  at enrollment ([Connection authority](../action_service/connections.py)). This is an explicit
+  Connection-to-SA mapping, not an automatic one-SA-per-OAuth-client rule. GitOps defines static
+  accounts such as `claude-ai` and their `PolicyBinding`s. Human/operator authentication remains
+  separate from the caller SA.
+- For managed Sandboxes, the app's preset fills concrete `PolicySet` selections. The app writes
+  those selections, plus platform defaults, into `Sandbox.spec.policySets`; the
+  [Sandbox Controller](../sandbox_controller/identity.go) creates the dedicated SA and its
+  Sandbox-owned base `PolicyBinding`. The app can also write additional runtime bindings for
+  operator grants. Presets are defaults, not identities or authority.
+- The same subject-free `PolicySet` and SA-subject `PolicyBinding` CRs apply to static and
+  runtime-created accounts. The Policy Controller expands Kubernetes rules into native
+  RoleBindings/ClusterRoleBindings and deletes expired bindings. Egress and Actions independently
+  watch the CRs and evaluate their own rule types; they do not enforce through those native RBAC
+  bindings. Action policies govern auto-approval; an unmatched request may still receive explicit
+  operator approval.
+- Editing a `PolicySet` changes the rules for all bound accounts as readers reconcile. Changing a
+  preset's selections does not itself rewrite existing Sandboxes' policy bindings.
+
 ## Identity, role, address and isolation
 
-These levels answer different questions and can coexist:
+These concepts answer different questions; optional policy concepts are not required resource types:
 
 | Concept                              | Purpose                                                               | Open choice                                                                              |
 | ------------------------------------ | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Human / workload / logical agent     | Who acts; retain the actual actor through intermediaries.             | SA identity alone, or a persistent agent with authorized workload bindings?              |
-| Project / group / role / compartment | Reusable grant assignment and resource grouping.                      | Relationships, explicit membership, attributes, exact-resource grants, or a combination? |
-| Session                              | Conversation addressed, read or controlled.                           | Which rights inherit from a project or Sandbox, and which require explicit grants?       |
+| Human / workload / logical agent     | Who acts; retain the actual actor through intermediaries.             | V1 uses SA-level caller attribution; no persistent logical-agent identity is required.   |
+| Optional group / role / relationship | Reusable grant assignment and resource grouping in configuration.     | Relationships, explicit membership, attributes, exact-resource grants, or a combination? |
+| Session                              | Conversation addressed, read or controlled.                           | Which operations may grants target by Session, Sandbox or configured relationships?      |
 | Sandbox                              | Execution isolation, shared files/credentials, lifecycle and budgets. | Which compatible work may share it?                                                      |
-| Standing recipient address           | Resolve “project P's coordinator” to a current recipient.             | Is addressing tied to an agent, role, mailbox or Session, and when is resolution pinned? |
+| Optional standing recipient address  | Resolve a configured address to a current recipient.                  | Is addressing tied to an agent, role, mailbox or Session, and when is resolution pinned? |
 
 “Project coordinator” can name a launch profile, a permission-bearing role or a recipient address.
 They may be configured together without becoming one opaque object. Editing instructions or changing
 a model should not silently change grants. Creator, manager and parent/provenance are separate
 relationships; none needs to imply authority automatically.
 
-Two plausible foundations are SA identities explicitly enrolled into roles, or persistent agents
-with authenticated bindings to current workloads. The former reuses today's foundation; the latter
-supports continuity across replacement but needs binding issuance, replacement and revocation rules.
-Standing roles do not themselves require a persistent agent object. Human and agent subjects could
-share an authorization vocabulary while retaining different authentication and explicit delegation.
+V1 reuses authenticated SA identities; it requires no additional persistent logical-agent identity.
+An optional future logical-agent object would need authenticated workload bindings, replacement and
+revocation rules, and would not preserve a deleted Sandbox's Sessions. Standing roles do not
+themselves require such an object. Human and agent subjects could share an authorization vocabulary
+while retaining different authentication and explicit delegation.
 
 The current [Sandbox boundary](../docs/thread_layering.md#sandbox-isolation-boundary) is a constraint:
 co-resident Sessions share filesystem, credentials and SA authority. Session ACLs can restrict outside
 callers but cannot establish confidentiality between co-resident agents. Incompatible trust or
 credentials need separate Sandboxes under the current architecture. A caller-supplied `from_session`
-is not verified authorship merely because its workload token is valid.
+is not verified authorship merely because its workload token is valid. V1 requires only
+Sandbox/SA-level caller attribution. Any supplied originating-Session identifier is attribution
+metadata, not a separately authenticated principal or a basis for stronger intra-Sandbox isolation.
+
+### Sandbox and Session persistence
+
+The existing [storage contract](../docs/sandbox_storage.md) distinguishes workload replacement from
+Sandbox deletion. Suspension or Pod/VM replacement retains the Sandbox's owned PVCs and permits
+Session continuation on retained state. Deleting the Sandbox deletes its owned PVCs and ends the
+ability to deliver into or continue its Sessions. A newly created Sandbox, including one with the
+same name, cannot continue those Sessions. The History Service retains their history for separately
+authorized reads; retained history is not executable native Session state.
+
+The [Dispatcher deletion contract](../docs/adr_sandbox_session_control.md)
+already ends the deleted Sandbox's outstanding commands; retries must not retarget a new Sandbox.
+Optional standing addresses or independently retained mailboxes would need an explicit contract for
+addressing a different Session. They cannot make a deleted Session deliverable or resumable, and
+continuation after Sandbox deletion is not an open multiagent requirement.
 
 ## Independent permissions and static rules
 
@@ -94,16 +183,18 @@ A manager can send work without reading a contributor's transcript. Reading a co
 grant model changes; neither direction grants the contributor access to the manager's history.
 Receiving a message exposes its content, not its sender's other conversations or authority.
 
-Static configuration could grant a project-manager role selected operations on contributors related
-to that manager. “Its contributors” still needs a definition: same-project membership, an explicit
-management relationship, creation by that manager, or another reviewed relation. Who may assign or
-change those relationships is itself an authority decision; self-editable labels cannot establish
-trusted membership.
+Configuration could grant operations through project-wide membership, explicit management
+relationships, creation provenance, direct Session grants or another reviewed relation. These are
+alternative policy expressions to support, not a choice of one topology for Agentplane. A rule
+using “its contributors” must define that relation in configuration. Who may assign or change the
+underlying facts is itself an authority decision; self-editable labels cannot establish trusted
+membership.
 
 Compare native RBAC plus a constrained grant/template controller, CRDs compiled into an authorization
 engine, and Git-authored engine policy with runtime membership elsewhere. Decide whether a rule
 applies live to future contributors or snapshots membership, how exceptions combine, and how GitOps
-interacts with runtime/expiring grants. A GitOps reconciliation must not recreate a revoked or
+interacts with runtime/expiring grants. Shared bundle definition edits must remain live for current
+members under either membership model. A GitOps reconciliation must not recreate a revoked or
 expired runtime grant accidentally. No CRD or rule syntax is selected here.
 
 Model and effort controls may need argument constraints as well as target permissions. Moving a
@@ -123,12 +214,14 @@ performance or adoption assessment.
 | [Cedar](https://docs.cedarpolicy.com/overview/terminology.html)  | Principal/action/resource/context policy, roles, attributes, argument constraints and explicit prohibitions. | Authoritative entity inputs, policy management and authorized list/search integration.                              |
 | [OPA](https://www.openpolicyagent.org/docs)                      | General policy evaluation across service authorization, launch/admission and egress.                         | Data ownership/distribution/freshness and a bounded policy surface; a general engine must remove custom complexity. |
 
-A relationship engine versus Cedar is a useful first comparison: project roles and discovery favor
-evaluating relationships, while launch/model conditions exercise contextual policy. Compare OPA as
-the broader alternative. Do not assume two engines are needed before trying the same cases in each.
+A relationship engine versus Cedar is a useful first comparison: configured relationships and
+discovery favor evaluating relationships, while launch/model conditions exercise contextual policy.
+Compare OPA as the broader alternative. Do not assume two engines are needed before trying the same
+cases in each.
 
 Check both individual decisions and authorized lists/search, including filtering before pagination,
-metadata and count exposure. Compare revocation while following history, SA replacement, policy
+metadata and count exposure. Require live bundle edits to propagate additions and removals across
+all current assignments and affected services. Compare revocation while following history, SA replacement, policy
 changes during queued delivery and unavailable dependencies. SpiceDB's
 [freshness tokens](https://authzed.com/docs/spicedb/concepts/consistency) and OpenFGA's
 [consistency modes](https://openfga.dev/docs/interacting/consistency) are relevant mechanisms, not
@@ -157,13 +250,15 @@ request something is not approval to execute it, and approval is not execution e
 
 Inbox delivery for ordinary correspondence with explicit RPCs for controls is an initial hypothesis,
 not a selection. Reusing Notifications does not settle whether its current SA/Sandbox/Session-scoped
-inbox can serve standing roles, or who owns a mailbox after Sandbox deletion. Direct delivery must
-retain provenance without making peer text an operator instruction. A new queue duplicating
-Dispatcher retry/admission semantics needs a concrete justification.
+inbox can serve optional standing addresses, or who may retain/read a mailbox after Sandbox deletion;
+delivery into the deleted Sessions is impossible. Direct delivery must retain provenance without
+making peer text an operator instruction. A new queue duplicating Dispatcher retry/admission semantics
+needs a concrete justification.
 
 An envelope could retain an idempotent message ID, authenticated sender, resolved destination,
-correlation/reply reference and content. Which Session attribution can be verified, and who may
-inspect provenance, are open. Do not trust sender identity in the body or launder a sender into a
+correlation/reply reference and content. V1 authenticates the caller at Sandbox/SA level; any
+originating-Session label is metadata. Who may inspect provenance remains open. Do not trust sender
+identity in the body or launder a sender into a
 Notification/Messaging service's broader authority. Forwarded actor/delegation proof needs its own
 audience, scope, lifetime and revocation contract.
 
@@ -244,15 +339,17 @@ access control or silently discard accepted messages. The deferred item is
 
 ## Cases to resolve before choosing an implementation
 
-| Case                                                              | Questions it distinguishes                                                                                                |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Private coordinator, public-data specialist in a separate Sandbox | Which role grants launch, send and reads independently? Which model/provider changes are permitted? V1 has no classifier. |
-| Manager and contributors from static configuration                | What makes a contributor “its” contributor? Who can assign that relation? Do future contributors acquire the rule live?   |
-| Project peers                                                     | Can peers discover/send without reading each other's history or controlling turns? Is reverse send separately granted?    |
-| Extra Session in an existing Sandbox                              | Who may Open with which settings/budget? What sharing of files and credentials is acceptable?                             |
-| Coordinator replacement                                           | Does identity, address, inbox or authority survive? Where do queued messages go, and who may read old history?            |
-| Revocation during a stream or queued operation                    | Which policy revision applies, what stops, and what remains durably accepted? How does an outage affect enforcement?      |
-| Human and agent using the same operation                          | Can one model express both without implicit impersonation or merging request, approval and execution?                     |
+| Case                                               | Questions it distinguishes                                                                                                                          |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Asymmetric collaboration across separate Sandboxes | Can configuration grant launch, send and reads independently? Which model/provider changes are permitted? V1 has no classifier.                     |
+| Different configured topologies                    | Can policies express project-wide rules, explicit relationships and direct resource grants without a mandatory hierarchy? Who may change the facts? |
+| Configured peers                                   | Can peers discover/send without reading each other's history or controlling turns? Is reverse send separately granted?                              |
+| Extra Session in an existing Sandbox               | Who may Open with which settings/budget? What sharing of files and credentials is acceptable?                                                       |
+| Sender attribution                                 | Does each request retain verified Sandbox/SA provenance without treating an optional Session label as authenticated authorship?                     |
+| Workload replacement within a retained Sandbox     | How do authentication and grants follow the new workload while delivery remains bound to the retained Sandbox and Session?                          |
+| Sandbox deletion                                   | Are further delivery and continuation refused, outstanding commands ended and retained history still separately authorized?                         |
+| Revocation during a stream or queued operation     | Which policy revision applies, what stops, and what remains durably accepted? How does an outage affect enforcement?                                |
+| Human and agent using the same operation           | Can one model express both without implicit impersonation or merging request, approval and execution?                                               |
 
 These cases should compare allowed/denied operations, authorized discovery, evidence and operational
 cost across candidate models. Open decisions include identity continuity, grant and relationship
