@@ -42,8 +42,8 @@ changes a Sandbox desired state, whereas `POST /threads/{thread_id}/resume` expl
 its native harness. The latter UI action stays when automatic resume-on-send is off; the suspended
 indicator stays in both modes. The typed `POST /threads/{thread_id}/{submit-input,change-model,change-reasoning-effort,stop-runner-session,interrupt-turn}`
 routes call the matching Dispatcher RPC, while
-`GET /threads/{thread_id}/commands/{command_id}/dispatch` (`client.ts::commandDispatch`) reads
-its status; `GET /sandboxes/{name}/sessions/{session_id}/opening`
+`GET /threads/{thread_id}/dispatches/stream` (`client.ts::dispatchesStreamUrl`) streams
+their status; `GET /sandboxes/{name}/sessions/{session_id}/opening`
 (`client.ts::getSessionOpening`) polls a separate opening. None is a duplicate command sender.
 The browser's old Sandbox session GET is already removed; retained Threads come from History.
 

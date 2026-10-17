@@ -28,7 +28,6 @@ class RunnerProxyBackedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherS
     def __init__(self, runners: RunnerDirectory, event_logs: EventLogStore) -> None:
         self.runners = runners
         self.event_logs = event_logs
-        self.dispatches: dict[str, session_dispatcher_pb2.Dispatch] = {}
         self.openings: dict[str, session_dispatcher_pb2.SessionOpening] = {}
 
     async def _deliver(
@@ -49,7 +48,7 @@ class RunnerProxyBackedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherS
             await context.abort(error.code, error.details or str(error))
         except RefusedError as error:
             await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(error))
-        dispatch = session_dispatcher_pb2.Dispatch(
+        return session_dispatcher_pb2.Dispatch(
             command_id=request.command_id,  # type: ignore[attr-defined]
             session_id=request.session_id,  # type: ignore[attr-defined]
             sandbox=sandbox,
@@ -58,8 +57,6 @@ class RunnerProxyBackedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherS
             state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
             admission=response.admission,
         )
-        self.dispatches[dispatch.command_id] = dispatch
-        return dispatch
 
     @override
     async def SubmitInput(self, request, context):
@@ -129,15 +126,6 @@ class RunnerProxyBackedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherS
         return session_dispatcher_pb2.InterruptTurnResponse(
             state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED, admission=response.admission
         )
-
-    @override
-    async def GetDispatch(self, request, context):
-        dispatch = self.dispatches.get(request.command_id)
-        if dispatch is None:
-            dispatch = session_dispatcher_pb2.Dispatch(
-                command_id=request.command_id, state=session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN
-            )
-        return session_dispatcher_pb2.GetDispatchResponse(dispatch=dispatch)
 
     @override
     async def OpenSession(self, request, context):

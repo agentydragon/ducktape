@@ -17,7 +17,6 @@ import {
   changeReasoningEffort,
   stopRunnerSession,
   interruptTurn,
-  commandDispatch,
   getThread,
   models,
   resumeSandbox,
@@ -54,7 +53,6 @@ vi.mock("../client", async (importOriginal) => ({
   changeReasoningEffort: vi.fn(),
   stopRunnerSession: vi.fn(),
   interruptTurn: vi.fn(),
-  commandDispatch: vi.fn(),
   getThread: vi.fn(),
   models: vi.fn(),
   resumeSandbox: vi.fn(),
@@ -114,6 +112,8 @@ let inventoryDrops = false;
 let sharedFeed: "active" | "ended" | "failed" = "active";
 let sharedThread: Partial<ThreadView> = {};
 let eventSourceUrls: string[] = [];
+// The dispatch streams the page opened, which a test answers itself.
+let dispatchStreams: Array<EventTarget & { url: string; closed: boolean }> = [];
 let threadRows: ThreadView[] | null = null;
 
 beforeEach(() => {
@@ -130,6 +130,7 @@ beforeEach(() => {
   sharedFeed = "active";
   sharedThread = {};
   eventSourceUrls = [];
+  dispatchStreams = [];
   threadRows = null;
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
@@ -145,9 +146,14 @@ beforeEach(() => {
     class extends EventTarget {
       // A drop is the network's, which the browser retries: the source stays CONNECTING.
       readyState = 0;
-      constructor(url: string) {
+      closed = false;
+      constructor(readonly url: string) {
         super();
         eventSourceUrls.push(url);
+        if (new URL(url, "http://test").pathname.endsWith("/dispatches/stream")) {
+          dispatchStreams.push(this);
+          return;
+        }
         queueMicrotask(() => {
           if (sandboxes === null) return;
           this.dispatchEvent(
@@ -175,7 +181,9 @@ beforeEach(() => {
           if (inventoryDrops) this.dispatchEvent(new Event("error"));
         });
       }
-      close(): void {}
+      close(): void {
+        this.closed = true;
+      }
     }
   );
 });
@@ -960,14 +968,6 @@ it.each([
       admission: null,
     },
   });
-  vi.mocked(commandDispatch).mockResolvedValue({
-    commandId: queued.commandId,
-    sessionId: THREAD.id,
-    state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-    reason,
-    updatedAt: "2026-10-14T12:00:00Z",
-    admission: null,
-  });
   const container = await render();
   const row = pendingRow(container, queued.commandId);
   expect(row.querySelector('[data-stage="queued"]')).not.toBeNull();
@@ -992,7 +992,6 @@ it("shows the cause when a send-triggered Sandbox wake misses its deadline", asy
     admission: null,
   } as const;
   vi.mocked(submitInput).mockResolvedValue({ kind: "dispatch", dispatch });
-  vi.mocked(commandDispatch).mockResolvedValue(dispatch);
 
   const container = await render();
   const row = pendingRow(container, failed.commandId);
@@ -1008,8 +1007,18 @@ function dispatchReceipt(commandId: string, state: string, reason: string, updat
   return { commandId, sessionId: THREAD.id, state, reason, updatedAt, admission: null } as const;
 }
 
-it("replaces a queued Dispatcher receipt with the failure its poll finds", async () => {
-  vi.useFakeTimers();
+// A Dispatch as the stream carries it: proto-JSON leaves out what is unset, such as a reason or admission.
+function dispatchRow(commandId: string, state: string, reason: string | undefined, updatedAt: string) {
+  return { commandId, sessionId: THREAD.id, state, reason, updatedAt };
+}
+
+async function sendDispatches(frame: { dispatches: object[]; absent: string[] }): Promise<void> {
+  await act(async () => {
+    dispatchStreams.at(-1)?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(frame) }));
+  });
+}
+
+it("replaces a queued Dispatcher receipt with the failure its stream reports", async () => {
   const waiting = message("queued-then-failed");
   new LocalCommands(THREAD.id).remember(waiting);
   const queued = dispatchReceipt(
@@ -1019,27 +1028,26 @@ it("replaces a queued Dispatcher receipt with the failure its poll finds", async
     "2026-10-17T12:26:30Z"
   );
   vi.mocked(submitInput).mockResolvedValue({ kind: "dispatch", dispatch: queued });
-  vi.mocked(commandDispatch)
-    .mockResolvedValueOnce(queued)
-    .mockResolvedValue(
-      dispatchReceipt(
+
+  const container = await render();
+  expect(progressLabel(container, waiting.commandId)).toBe("Sandbox is not ready; message is queued");
+  await sendDispatches({
+    dispatches: [
+      dispatchRow(
         waiting.commandId,
         "DELIVERY_STATE_FAILED",
         "runner NotFound: no rollout found for thread id",
         "2026-10-17T12:26:35Z"
-      )
-    );
-
-  const container = await render();
-  expect(progressLabel(container, waiting.commandId)).toBe("Sandbox is not ready; message is queued");
-  await act(async () => vi.advanceTimersByTimeAsync(1500));
+      ),
+    ],
+    absent: [],
+  });
 
   expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="dispatch_failed"]')).not.toBeNull();
 });
 
-it("abandons a dispatch read nothing answers and polls again", async () => {
-  vi.useFakeTimers();
-  const waiting = message("unanswered-read");
+it("follows the dispatches of queued commands only until they settle", async () => {
+  const waiting = message("followed-until-admitted");
   new LocalCommands(THREAD.id).remember(waiting);
   const queued = dispatchReceipt(
     waiting.commandId,
@@ -1048,21 +1056,35 @@ it("abandons a dispatch read nothing answers and polls again", async () => {
     "2026-10-17T12:26:30Z"
   );
   vi.mocked(submitInput).mockResolvedValue({ kind: "dispatch", dispatch: queued });
-  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  vi.mocked(commandDispatch)
-    .mockImplementationOnce(
-      (_threadId, _commandId, signal) =>
-        new Promise((_resolve, reject) => signal?.addEventListener("abort", () => reject(signal.reason)))
-    )
-    .mockResolvedValue(
-      dispatchReceipt(waiting.commandId, "DELIVERY_STATE_RUNNER_ADMITTED", "", "2026-10-17T12:26:45Z")
-    );
+
+  await render();
+  const [stream] = dispatchStreams;
+  expect(new URL(stream.url, "http://test").searchParams.getAll("command_id")).toEqual([waiting.commandId]);
+  await sendDispatches({
+    dispatches: [dispatchRow(waiting.commandId, "DELIVERY_STATE_RUNNER_ADMITTED", undefined, "2026-10-17T12:26:45Z")],
+    absent: [],
+  });
+
+  expect(stream.closed).toBe(true);
+});
+
+it("calls a command the Dispatcher holds no row for unknown, as after Sandbox deletion", async () => {
+  const waiting = message("row-deleted-with-sandbox");
+  new LocalCommands(THREAD.id).remember(waiting);
+  vi.mocked(submitInput).mockResolvedValue({
+    kind: "dispatch",
+    dispatch: dispatchReceipt(
+      waiting.commandId,
+      "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+      "sandbox_not_ready",
+      "2026-10-17T12:26:30Z"
+    ),
+  });
 
   const container = await render();
-  await act(async () => vi.advanceTimersByTimeAsync(20_000));
+  await sendDispatches({ dispatches: [], absent: [waiting.commandId] });
 
-  expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="admitted"]')).not.toBeNull();
-  expect(warn).toHaveBeenCalledTimes(1);
+  expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="unknown"]')).not.toBeNull();
 });
 
 it("opens compact command detail on touch and closes on blur or Escape", async () => {

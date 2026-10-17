@@ -296,7 +296,7 @@ export type CommandSubmission =
   | { kind: "dispatch"; dispatch: DispatchReceipt }
   | { kind: "interrupt_result"; result: InterruptResult };
 
-function dispatchReceipt(value: unknown): DispatchReceipt {
+export function dispatchReceipt(value: unknown): DispatchReceipt {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("Session Dispatcher returned an invalid Dispatch");
   }
@@ -423,26 +423,15 @@ export async function interruptTurn(threadId: string, commandId: string, turnId:
   );
 }
 
-/** Read a queued command's current durable state. A removed Sandbox has no retained dispatch row. */
-export async function commandDispatch(
-  threadId: string,
-  commandId: string,
-  signal?: AbortSignal
-): Promise<DispatchReceipt> {
-  const result = await api.GET("/threads/{thread_id}/commands/{command_id}/dispatch", {
-    params: { path: { thread_id: threadId, command_id: commandId } },
-    signal,
-  });
-  if (result.error !== undefined && result.response.status === 404) {
-    return {
-      commandId,
-      sessionId: threadId,
-      state: "DELIVERY_STATE_UNKNOWN",
-      reason: "sandbox_deleted",
-      admission: null,
-    };
-  }
-  return dispatchReceipt(ok(result));
+/** The route's own bound, as many commands as one listing page carries. */
+const MAX_DISPATCH_STREAM_COMMANDS = 200;
+
+/** The stream of the Dispatcher's current state of the named commands of a thread; past the route's
+ * bound the later ones go without. */
+export function dispatchesStreamUrl(threadId: string, commandIds: readonly string[]): string {
+  const query = new URLSearchParams();
+  for (const id of commandIds.slice(0, MAX_DISPATCH_STREAM_COMMANDS)) query.append("command_id", id);
+  return `/threads/${encodeURIComponent(threadId)}/dispatches/stream?${query}`;
 }
 
 /**

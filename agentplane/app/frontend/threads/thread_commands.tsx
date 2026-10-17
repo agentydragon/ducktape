@@ -4,23 +4,30 @@ import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExt
 import {
   changeModel,
   changeReasoningEffort,
-  commandDispatch,
   CommandSubmissionRefused,
+  dispatchesStreamUrl,
+  dispatchReceipt,
   displayableError,
   interruptTurn,
   stopRunnerSession,
   submitInput,
   type CommandSubmission,
 } from "../client";
+import { useSnapshotStream } from "../live_stream";
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type PendingCommand } from "./local_commands";
 import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
 
+/** A frame of the dispatch stream: the Dispatcher's rows for the commands asked about, and the ones it
+ * holds no row for. */
+interface DispatchesFrame {
+  dispatches: unknown[];
+  absent: string[];
+}
+
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
-const DISPATCH_POLL_INTERVAL_MS = 1500;
-const DISPATCH_READ_TIMEOUT_MS = 10_000;
 
 export interface CommandIssue {
   kind: "refused" | "unconfirmed";
@@ -142,49 +149,36 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
     window.addEventListener("online", redeliverFailed);
     return () => window.removeEventListener("online", redeliverFailed);
   }, [deliver, errors, store]);
-  const pollingIds = local.commands
+  const watchedIds = local.commands
     .filter(
       (value) =>
         value.dispatch?.state === "DELIVERY_STATE_QUEUED_IN_DISPATCHER" ||
         value.dispatch?.state === "DELIVERY_STATE_DELIVERING_TO_RUNNER"
     )
-    .map((value) => value.command.commandId)
-    .join(",");
+    .map((value) => value.command.commandId);
+  const { snapshot: dispatches } = useSnapshotStream<DispatchesFrame>(
+    watchedIds.length === 0 ? null : dispatchesStreamUrl(threadId, watchedIds)
+  );
   useEffect(() => {
-    if (!pollingIds) return;
-    const ids = pollingIds.split(",");
-    let stopped = false;
-    let timer: number | undefined;
-    const failing = new Set<string>();
-    const poll = async () => {
-      await Promise.all(
-        ids.map(async (id) => {
-          // A read nothing answers would otherwise hold back every later poll of every command.
-          const read = new AbortController();
-          const abandon = window.setTimeout(
-            () => read.abort(new Error(`no reply within ${DISPATCH_READ_TIMEOUT_MS} ms`)),
-            DISPATCH_READ_TIMEOUT_MS
-          );
-          try {
-            store.updateDispatch(id, await commandDispatch(threadId, id, read.signal));
-            failing.delete(id);
-          } catch (reason) {
-            // Keep the last durable state and retry without claiming failure, but say so once per streak.
-            if (!stopped && !failing.has(id)) console.warn(`command ${id}: reading its dispatch state failed`, reason);
-            failing.add(id);
-          } finally {
-            window.clearTimeout(abandon);
-          }
-        })
-      );
-      if (!stopped) timer = window.setTimeout(() => void poll(), DISPATCH_POLL_INTERVAL_MS);
-    };
-    void poll();
-    return () => {
-      stopped = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [pollingIds, store, threadId]);
+    if (dispatches === null) return;
+    try {
+      for (const row of dispatches.dispatches) {
+        const receipt = dispatchReceipt(row);
+        store.updateDispatch(receipt.commandId, receipt);
+      }
+      // The Dispatcher deletes a Sandbox's rows with it.
+      for (const commandId of dispatches.absent)
+        store.updateDispatch(commandId, {
+          commandId,
+          sessionId: threadId,
+          state: "DELIVERY_STATE_UNKNOWN",
+          reason: "sandbox_deleted",
+          admission: null,
+        });
+    } catch (reason) {
+      console.warn("a dispatch frame could not be applied", reason);
+    }
+  }, [dispatches, store, threadId]);
   function submit(value: PendingCommand): boolean {
     try {
       void deliver(store.remember(value));

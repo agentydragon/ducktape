@@ -304,6 +304,7 @@ sequenceDiagram
     SD->>SD: Persist Dispatch M
     SD-->>A: Dispatch M queued
     A-->>F: HTTP 200, Dispatch M
+    F->>A: GET /threads/T/dispatches/stream?command_id=M
     SD->>G: ChangeModel for T
     G->>R: ChangeModel over the control stream
     R->>R: Persist M
@@ -312,10 +313,10 @@ sequenceDiagram
     SD->>SD: Mark M runner-admitted
     R->>HS: Push E(41, command_admitted{command:M})
     HS->>HS: Commit E41, fold
-    F->>A: GET /threads/T/commands/M/dispatch
-    A->>SD: GetDispatch M
+    SD-->>A: WatchDispatches T reports M changed
+    A->>SD: ListDispatches T
     SD-->>A: Dispatch M runner-admitted
-    A-->>F: Dispatch M runner-admitted
+    A-->>F: SSE snapshot, Dispatch M runner-admitted
     A-->>F: SSE id:41, data:E41
     Note over F,H: Picker still shows applied old model. M is pending
     F->>A: POST /threads/T/submit-input<br/>commandId:I, text:Continue the task
@@ -415,11 +416,11 @@ sequenceDiagram
     SD->>SD: Mark C runner-admitted
     A--xF: Connection lost before saved confirmation reaches browser
     Note over F: Reload
-    F->>A: GET /threads/T/commands/C/dispatch
-    A->>SD: GetDispatch C
+    F->>A: GET /threads/T/dispatches/stream?command_id=C
+    A->>SD: ListDispatches T
     alt Dispatcher has the durable Dispatch
         SD-->>A: Current state of C
-        A-->>F: Dispatch state; continue watching History for outcomes
+        A-->>F: SSE snapshot, Dispatch state; continue watching History for outcomes
     else No durable Dispatch is found
         F->>A: POST same Command C with same ID and payload
         A->>SD: per-operation RPC for C

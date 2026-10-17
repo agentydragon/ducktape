@@ -35,7 +35,7 @@ from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.runner_directory import RunnerDirectory
-from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.store import MAX_PAGE, ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import ServiceError, dial
@@ -784,6 +784,17 @@ async def test_bridge_returns_the_dispatcher_queued_receipt_over_grpc(
     assert result.command_id == command.command_id
     assert result.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
     assert result.reason == "sandbox_resuming"
+
+
+async def test_dispatch_stream_follows_a_known_thread_and_a_bounded_list_of_commands(
+    client: httpx.AsyncClient, event_logs: SeededEventLogStore
+) -> None:
+    thread_id = await event_logs.seed("live", str(uuid4()))
+    path = f"/threads/{thread_id}/dispatches/stream"
+
+    assert (await client.get(f"/threads/{uuid4()}/dispatches/stream", params={"command_id": "sent"})).status_code == 404
+    assert (await client.get(path)).status_code == 422
+    assert (await client.get(path, params={"command_id": [str(n) for n in range(MAX_PAGE + 1)]})).status_code == 422
 
 
 async def test_command_submission_tags_dispatch_and_archived_retry_after_sandbox_deletion(

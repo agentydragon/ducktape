@@ -1900,8 +1900,8 @@ function rememberDispatch(threadId = RUNNING_THREAD): void {
   local.acknowledgeDispatch(command, dispatch);
 }
 
-// What the mock Dispatcher answers a status read of a queued command with, where a scene gives it
-// a reason of its own.
+// What the mock Dispatcher's stream reports for a queued command, where a scene gives it a reason of
+// its own.
 const queuedReasons = new Map<string, string>();
 
 // Real reason from a staging Dispatcher whose Role lacked a verb, on a message short enough that
@@ -2748,18 +2748,6 @@ routes.push(
         ? Response.json({ detail: "runner admission was not confirmed within 15 seconds" }, { status: 504 })
         : UNANSWERED,
   ],
-  [
-    "GET",
-    /^\/threads\/([0-9a-f-]+)\/commands\/([^/]+)\/dispatch$/,
-    (match) => ({
-      commandId: match[2],
-      sessionId: match[1],
-      sandbox: "pending-sandbox",
-      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-      reason: queuedReasons.get(match[2]) ?? "sandbox_resuming",
-      updatedAt: ago(1_000),
-    }),
-  ],
   ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
   [
     "GET",
@@ -2887,6 +2875,22 @@ class HarnessEventSource extends EventTarget {
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify({ observed_at: ago(0), inboxes }) }));
       // A dropped Thread listing takes the notice stream down with it, so the badges show stale too.
       if (flags.has("threadStreamDropped")) this.drop();
+      return;
+    }
+    const dispatches = url.pathname.match(/^\/threads\/([0-9a-f-]+)\/dispatches\/stream$/);
+    if (dispatches) {
+      const snapshot = {
+        dispatches: url.searchParams.getAll("command_id").map((commandId) => ({
+          commandId,
+          sessionId: dispatches[1],
+          sandbox: "pending-sandbox",
+          state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+          reason: queuedReasons.get(commandId) ?? "sandbox_resuming",
+          updatedAt: ago(1_000),
+        })),
+        absent: [],
+      };
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;

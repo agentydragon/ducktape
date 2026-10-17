@@ -42,7 +42,7 @@ from agentplane.app.testing.dispatcher import runner_proxy_backed_dispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
-from agentplane.app.threads.bridge import DispatchNotFoundError, RunnerBridge
+from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.history_watch import SessionOpenings
@@ -1253,11 +1253,6 @@ async def test_dispatcher_command_path_queues_without_a_ready_runner_or_gateway_
             calls.append(request)
             return session_dispatcher_pb2.SubmitInputResponse(dispatch=queued)
 
-        @override
-        async def GetDispatch(self, request, _context):
-            assert request.command_id == queued.command_id
-            return session_dispatcher_pb2.GetDispatchResponse(dispatch=queued)
-
     command = command_pb2.Command(
         command_id=queued.command_id, submit_input=command_pb2.SubmitInput(text="wait while starting")
     )
@@ -1272,30 +1267,6 @@ async def test_dispatcher_command_path_queues_without_a_ready_runner_or_gateway_
                 sandbox=SANDBOX, session_id=str(thread), command_id=command.command_id, text=command.submit_input.text
             )
         ]
-        assert await bridge.dispatch(thread, queued.command_id) == queued
-
-
-async def test_dispatch_status_cannot_be_read_through_another_thread(
-    runners: RunnerDirectory, event_logs: SeededEventLogStore, content: ContentStore, history: History, tmp_path: Path
-) -> None:
-    thread = await event_logs.seed(SANDBOX, SESSION)
-    await history.open(thread)
-    leaked = session_dispatcher_pb2.Dispatch(
-        command_id="owned-by-another-thread",
-        session_id="another-session",
-        sandbox=SANDBOX,
-        state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
-    )
-
-    class LeakedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
-        @override
-        async def GetDispatch(self, _request, _context):
-            return session_dispatcher_pb2.GetDispatchResponse(dispatch=leaked)
-
-    async with served_dispatcher(LeakedDispatcher(), tmp_path / "leaked-dispatcher-token") as dispatcher:
-        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
-        with pytest.raises(DispatchNotFoundError):
-            await bridge.dispatch(thread, leaked.command_id)
 
 
 @dataclass

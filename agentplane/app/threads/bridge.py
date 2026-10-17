@@ -32,10 +32,6 @@ class MalformedMessageError(Exception):
     """A request body is not the proto-JSON of the message the route takes."""
 
 
-class DispatchNotFoundError(Exception):
-    """The dispatch does not belong to the requested Thread."""
-
-
 class SessionOpeningNotFoundError(Exception):
     """The opening is not for the requested Sandbox."""
 
@@ -143,20 +139,6 @@ class RunnerBridge:
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise ThreadStateError(f"runner history is rejected: {snapshot.end.message}")
-
-    async def dispatch(self, thread_id: UUID, command_id: str) -> session_dispatcher_pb2.Dispatch:
-        """Read only this Thread's dispatch; a guessed ID for another Session stays hidden."""
-        if not await self._event_logs.exists(thread_id):
-            raise ThreadNotFoundError(thread_id)
-        dispatch = cast(
-            session_dispatcher_pb2.GetDispatchResponse,
-            await self.dispatcher.unary(
-                self.dispatcher.stub.GetDispatch, session_dispatcher_pb2.GetDispatchRequest(command_id=command_id)
-            ),
-        ).dispatch
-        if dispatch.session_id != str(thread_id):
-            raise DispatchNotFoundError(command_id)
-        return dispatch
 
 
 def _parse(message: runner_pb2.SessionSpec, body: dict[str, object]) -> runner_pb2.SessionSpec:

@@ -50,6 +50,7 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy, router as electric_router
 from agentplane.app.identity import CallerKind, TokenReviewer, require_caller
 from agentplane.app.live import (
+    HEALTH_INTERVAL_S,
     ActionPolicy,
     Caller,
     LiveIndex,
@@ -80,6 +81,7 @@ from agentplane.app.sandbox_models import (
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.app.system_status import ComponentStatus, SystemStatusChecker
 from agentplane.app.threads import bridge as runner_bridge
+from agentplane.app.threads.dispatch_stream import DispatchesSnapshot, dispatch_frames
 from agentplane.app.threads.events import stream
 from agentplane.app.threads.events.debug import (
     ArchivedObservationEntry,
@@ -437,6 +439,11 @@ async def list_policy_sets(action_policy: ActionPolicy) -> list[ActionPolicySetV
 
 
 threads = APIRouter(prefix="/threads", tags=["threads"])
+
+# SSE, so the body is a stream of frames; the model is declared for the frontend's generated types.
+_DISPATCHES_FRAMES: dict[int | str, dict[str, Any]] = {
+    200: {"model": DispatchesSnapshot, "content": {"text/event-stream": {}}}
+}
 
 
 actions_router = APIRouter(prefix="/actions", tags=["actions"])
@@ -1066,10 +1073,21 @@ async def interrupt_turn(
     return InterruptResultSubmission(result=MessageToDict(response))
 
 
-@threads.get("/{thread_id}/commands/{command_id}/dispatch")
-async def thread_command_dispatch(bridge: runner_bridge.Bridge, thread_id: UUID, command_id: str) -> dict[str, object]:
-    """Read the current Dispatcher state; it does not claim a runner or harness effect."""
-    return MessageToDict(await bridge.dispatch(thread_id, command_id))
+@threads.get("/{thread_id}/dispatches/stream", responses=_DISPATCHES_FRAMES)
+async def thread_dispatches_stream(
+    store: Store,
+    bridge: runner_bridge.Bridge,
+    shutdown: Shutdown,
+    thread_id: UUID,
+    command_id: Annotated[list[str], Query(min_length=1, max_length=MAX_PAGE, description="The commands to follow.")],
+) -> StreamingResponse:
+    """SSE of the Dispatcher's current state of the named commands, pushed whenever one changes. It
+    reports where the Dispatcher holds a command, not a runner or harness effect."""
+    if await store.get_thread(thread_id) is None:
+        raise ThreadNotFoundError(thread_id)
+    return sse_response(
+        shutdown.until(dispatch_frames(bridge.dispatcher, thread_id, command_id, interval_s=HEALTH_INTERVAL_S))
+    )
 
 
 # A fold cursor is 64-bit and a JavaScript number is not, so it travels as a decimal
@@ -1210,7 +1228,6 @@ _ERROR_STATUS: dict[type[Exception], int] = {
     UnknownPolicySetError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     SandboxNotReachableError: status.HTTP_409_CONFLICT,
     runner_bridge.DispatcherRequestTimeoutError: status.HTTP_504_GATEWAY_TIMEOUT,
-    runner_bridge.DispatchNotFoundError: status.HTTP_404_NOT_FOUND,
     runner_bridge.SessionOpeningNotFoundError: status.HTTP_404_NOT_FOUND,
     # The runner or the Sandbox's state refused a lifecycle request or a command: an unknown session.
     RefusedError: status.HTTP_409_CONFLICT,

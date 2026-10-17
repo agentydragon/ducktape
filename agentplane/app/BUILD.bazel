@@ -69,6 +69,7 @@ py_library(
         "//agentplane/action_service:models",
         "//agentplane/action_service:policy_view",
         "//agentplane/app/threads:bridge",
+        "//agentplane/app/threads:dispatch_stream",
         "//agentplane/app/threads:runner_directory",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads:thread_view",
