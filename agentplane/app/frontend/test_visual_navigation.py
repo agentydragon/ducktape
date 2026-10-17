@@ -62,8 +62,8 @@ async def test_current_sandbox_highlight(view: VisualPage, app: AgentplaneFixtur
     page = view.page
     await _open_phone_navigation(page)
     current = page.locator('.agentplane-sidebar-group-link[aria-current="page"]')
-    await expect(current).to_have_text("ready-sandbox")
-    await expect(current.locator("xpath=..")).to_have_class(re.compile(r"\bcurrent\b"))
+    await expect(current.locator(".agentplane-sidebar-group-name")).to_have_text("ready-sandbox")
+    await expect(current).to_have_class(re.compile(r"\bcurrent\b"))
     await view.capture(target=page.locator("#app"))
 
 
@@ -170,7 +170,7 @@ async def open_phone_drawer(view: VisualPage, app: AgentplaneFixture) -> Page:
 @MOBILE_ONLY
 async def test_mobile_navigation_drawer_threads_phone_drawer(view: VisualPage, app: AgentplaneFixture) -> None:
     page = await open_phone_drawer(view, app)
-    await expect(page.locator("a.agentplane-sidebar-group-name").first).to_be_visible()
+    await expect(page.locator("a.agentplane-sidebar-group-link .agentplane-sidebar-group-name").first).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 

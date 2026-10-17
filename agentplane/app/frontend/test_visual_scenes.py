@@ -94,7 +94,7 @@ async def test_session_thread_setup(view: VisualPage, app: AgentplaneFixture) ->
 
 async def test_threads(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
-    await view.page.wait_for_selector("a.agentplane-sidebar-group-name", state="attached")
+    await view.page.wait_for_selector("a.agentplane-sidebar-group-link .agentplane-sidebar-group-name", state="attached")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
