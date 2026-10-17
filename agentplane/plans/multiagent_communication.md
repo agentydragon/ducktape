@@ -20,7 +20,7 @@ The decisions still open are summarized under [cases to resolve before implement
   reference confers no permission. A named role may explicitly bundle grants without making those
   implications intrinsic to messaging.
 - OAuth-connected clients can be callers for permitted sends and reads through their verified bound
-  Kubernetes SA, from an Action-box Sandbox ([OAuth callers](#oauth-callers)); preserve
+  Kubernetes SA, from an Action box ([OAuth callers](#oauth-callers)); preserve
   namespace/name assignment for static Flux-managed SAs. V1 recipients are
   Sandbox-hosted Sessions. Externally running clients have no receiving mechanism; external inboxes
   are [explicitly deferred](task_freezer.md#external_agent_inboxes--inboxes-for-externally-running-agents).
@@ -543,13 +543,13 @@ separate questions.
 
 **V1 route agreed with the operator, 2026-10-17:** OAuth clients act as the SA their Action Service
 Connection is bound to, using the same PolicySet/Binding assignment model as workload callers. They
-open an Action-box Sandbox through the Sandbox Action group and send the messaging and history
-requests from it as an ordinary workload, with the egress proxy substituting that SA's projected
+open an Action box (a Pod, not a `Sandbox`) through the `sandbox__*` Actions and send the messaging
+and history requests from it as an ordinary workload, with the egress proxy substituting that SA's projected
 token for the destination. Notifications and History therefore gain no OAuth admission path and keep
 authenticating workload tokens only. Projecting the Notifications and History audiences into the box,
 and the matching egress rules on the SA's PolicySet, are deployment configuration for the build nodes
 where not yet present. Such a sender's verified identity is the SA shared by the Connection's boxes,
-not a Sandbox of its own, which SA-level attribution accepts. Their agent loops run outside the
+not a `Sandbox` of its own, which SA-level attribution accepts. Their agent loops run outside the
 cluster and have no receiving mechanism in v1. External inboxes are deferred; Connection
 representation or storage changes are outside this multiagent work.
 

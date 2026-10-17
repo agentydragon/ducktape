@@ -17,9 +17,9 @@ Peer sends follow the [tentative Session-access rule direction](multiagent_commu
 existing PolicySets/Bindings grant a Session-inbox append operation on Sandbox or collection scopes,
 enforced by this service using shared rule evaluation. Exact rule and API schemas remain open.
 
-Use `subscription` for source-following and `notice` for the inbox prompt. The exact service name
-and code/deployment rename remain open; this plan still uses Notification Service for the existing
-component. Dispatcher retains command admission, wake and delivery. Moving more responsibilities
+Use `subscription` for source-following and `notice` for the inbox prompt. The service keeps its
+name for now and a rename is a separate mechanical change; this plan uses Notification Service for
+the existing component. Dispatcher retains command admission, wake and delivery. Moving more responsibilities
 into it remains a separate future review.
 
 ## Subscription authorization and Action approval

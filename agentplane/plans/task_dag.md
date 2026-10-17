@@ -307,7 +307,7 @@ remain possible without introducing agent categories. V1 requires no new collect
 enrollment-delegation mechanism. Finalize the concrete RBAC and provisioning checks within this boundary.
 
 Include OAuth-bound static SAs as subjects by namespace/name for permitted sends and reads. OAuth
-callers reach the backends from an Action-box Sandbox whose egress substitutes the SA's projected
+callers reach the backends from an Action box whose egress substitutes the SA's projected
 token ([agreed route](multiagent_communication.md#oauth-callers)); no OAuth admission path is added to
 other backends. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and
 Connection representation/storage changes are outside this work.
