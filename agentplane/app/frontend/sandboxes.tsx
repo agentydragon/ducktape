@@ -41,9 +41,15 @@ const PRESET_PARAM = "preset";
 
 function StateBadge({ row }: { row: SandboxView }): JSX.Element {
   const summary = sandboxSummary(row);
+  const suspended = summary.kind === "suspended";
   return (
     <Tooltip label={sandboxStatusDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
-      <Badge color={SANDBOX_STATUS_MARKS[summary.kind].color}>{summary.label}</Badge>
+      <Badge
+        color={suspended ? "gray" : SANDBOX_STATUS_MARKS[summary.kind].color}
+        variant={suspended ? "light" : undefined}
+      >
+        {summary.label}
+      </Badge>
     </Tooltip>
   );
 }
