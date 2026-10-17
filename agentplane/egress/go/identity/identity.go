@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/go/decision"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
