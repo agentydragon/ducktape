@@ -26,10 +26,7 @@ go_library(
     embedsrcs = glob(["dispatcher/*.sql"]),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations",
     visibility = ["//agentplane/runner_gateway:__subpackages__"],
-    deps = [
-        "@com_github_pressly_goose_v3//:goose",
-        "@com_github_pressly_goose_v3//lock",
-    ],
+    deps = ["//agentplane/postgres/goosehandoff"],
 )
 
 py_library(
