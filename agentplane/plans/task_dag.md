@@ -807,10 +807,34 @@ flowchart LR
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
     ACTION_SURFACES_DESIGN -. related .-> NOTIFICATION_PRESENTATION
     BUILD_BOX_BAZEL[Unscheduled: build Sandboxes can run Bazel]
+    MODEL_CHANGE_CONTEXT_BUDGET[Bug: allow model changes before first input and across context budgets]
     PLATFORM_SERVICE_NAMES_DESIGN[Decision, unscheduled: reserved sidecar names for platform services]
     PLATFORM_SERVICE_ROUTING_DESIGN[Decision, unscheduled: direct platform access vs central egress]
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
 ```
+
+### `MODEL_CHANGE_CONTEXT_BUDGET` — model changes and truthful failure messages
+
+**Reported bug; operator, 2026-10-17 PDT; no worker assigned; no prerequisites.** Changing the model
+before sending the first message fails at least with Codex, with an error claiming a new thread is
+required. This should work; Codex supports changing models within a thread. The exact model pair and
+deployed revision were not supplied. Source inspection found a matching candidate cause:
+`agentplane/runner/session.py` rejects `change_model` when configured context budgets differ,
+including configured versus missing, without considering whether any input has been sent.
+`test_a_model_change_with_a_different_or_missing_context_window_fails` in
+`agentplane/runner/test_command_scheduling.py` explicitly pins that rejection and message.
+
+The Codex adapter already queues model selection for the next native `turn/start`. Address how
+context/compaction budgets take effect when changing models; removing validation alone may leave
+startup configuration stale. Preserve conversation data, distinguish admission from native model
+confirmation, and retain meaningful outcomes for superseded selections and provider rejection.
+Any remaining restriction must explain the actual Agentplane limitation, without a blanket claim
+that changing models requires a new thread.
+
+Exit: regression coverage shows changing a supported model before first input uses that model for
+the first native request, including differing/missing configured context budgets, and changing models
+after an existing turn works with correct budget handling. Exercise the reported UI flow and inspect
+any remaining failure messages. The source findings have not yet reproduced the live report.
 
 ### `PLATFORM_SERVICE_NAMES_DESIGN` — stable sidecar names for platform services
 
