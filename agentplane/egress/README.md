@@ -40,8 +40,8 @@ bbr test //agentplane/egress/...
   projected token for every HTTP request or CONNECT and forwards it as `Proxy-Authorization`.
   It also hosts direct generic gRPC routes to Agentplane services, replacing authorization with
   that service's projected token on every call. The runtime uses no Python interpreter. Its
-  settings come from the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, then
-  `AGENTPLANE_EGRESS_SIDECAR_*` env, then flags, each over the one before.
+  settings come only from the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, which it
+  refuses to start without; it reads no per-setting env and takes no flags.
 - `sidecar_config.py` and `platform_routes.py`: Python settings and route models cdk8s renders each
   Sandbox template's sidecar settings ConfigMap from. The process entry point and both forwarding
   paths live in Go; `platform_routes.py` does not serve traffic.

@@ -11,7 +11,7 @@ import (
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
-	c, err := loadConfig(os.Args[1:], os.Getenv)
+	c, err := loadConfig(os.Getenv)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

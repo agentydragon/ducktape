@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -33,8 +31,9 @@ type config struct {
 	ReadinessPort      int
 }
 
-// fileConfig is the settings file named by AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE; the keys are the
-// environment variable names without their prefix, lower-cased. A key the file omits keeps its default.
+// fileConfig is the settings file named by AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE; its keys are the
+// fields of Settings in agentplane/egress/sidecar_config.py, which cdk8s renders it from. A key the
+// file omits keeps its default.
 type fileConfig struct {
 	ProxyHost          *string           `json:"proxy_host"`
 	ProxyPort          *int              `json:"proxy_port"`
@@ -47,81 +46,23 @@ type fileConfig struct {
 	ReadinessPort      *int              `json:"readiness_port"`
 }
 
-// loadConfig applies defaults, then the settings file, then getenv, then args.
-func loadConfig(args []string, getenv func(string) string) (config, error) {
+// loadConfig applies the settings file named by the configFileEnv variable over the defaults.
+func loadConfig(getenv func(string) string) (config, error) {
+	path := getenv(configFileEnv)
+	if path == "" {
+		return config{}, fmt.Errorf("%s must name the YAML settings file", configFileEnv)
+	}
 	c := config{
-		ProxyPort:     8888,
-		ListenHost:    "127.0.0.1",
-		ListenPort:    3128,
-		ReadinessHost: "0.0.0.0",
-		ReadinessPort: 3129,
+		AudienceTokenFiles: map[string]string{},
+		PlatformRoutes:     map[string]platformRouteConfig{},
+		ProxyPort:          8888,
+		ListenHost:         "127.0.0.1",
+		ListenPort:         3128,
+		ReadinessHost:      "0.0.0.0",
+		ReadinessPort:      3129,
 	}
-	var err error
-	if path := getenv(configFileEnv); path != "" {
-		if err = readSettingsFile(path, &c); err != nil {
-			return config{}, err
-		}
-	}
-	if c.ProxyPort, err = envInt(getenv, "AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT", c.ProxyPort); err != nil {
+	if err := readSettingsFile(path, &c); err != nil {
 		return config{}, err
-	}
-	if c.ListenPort, err = envInt(getenv, "AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT", c.ListenPort); err != nil {
-		return config{}, err
-	}
-	if c.ReadinessPort, err = envInt(getenv, "AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT", c.ReadinessPort); err != nil {
-		return config{}, err
-	}
-	c.ProxyHost = envString(getenv, "AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST", c.ProxyHost)
-	c.TokenFile = envString(getenv, "AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE", c.TokenFile)
-	c.ListenHost = envString(getenv, "AGENTPLANE_EGRESS_SIDECAR_LISTEN_HOST", c.ListenHost)
-	c.ReadinessHost = envString(getenv, "AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST", c.ReadinessHost)
-	if value := getenv("AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES"); value != "" {
-		c.AudienceTokenFiles, err = decodeJSON[map[string]string](value)
-		if err != nil {
-			return config{}, fmt.Errorf("AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES: %w", err)
-		}
-	}
-	if value := getenv("AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES"); value != "" {
-		c.PlatformRoutes, err = decodePlatformRoutes(value)
-		if err != nil {
-			return config{}, fmt.Errorf("AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES: %w", err)
-		}
-	}
-	if c.AudienceTokenFiles == nil {
-		c.AudienceTokenFiles = map[string]string{}
-	}
-	if c.PlatformRoutes == nil {
-		c.PlatformRoutes = map[string]platformRouteConfig{}
-	}
-
-	flags := flag.NewFlagSet("agentplane-egress-sidecar", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	flags.StringVar(&c.ProxyHost, "proxy-host", c.ProxyHost, "Host of the central egress proxy")
-	flags.IntVar(&c.ProxyPort, "proxy-port", c.ProxyPort, "Port of the central egress proxy")
-	flags.StringVar(&c.TokenFile, "token-file", c.TokenFile, "Projected token file for the central egress proxy")
-	audienceFiles := flags.String("audience-token-files", "", "JSON object mapping audiences to projected token files")
-	routes := flags.String("platform-routes", "", "JSON object mapping route names to route configuration")
-	flags.StringVar(&c.ListenHost, "listen-host", c.ListenHost, "HTTP proxy listener address")
-	flags.IntVar(&c.ListenPort, "listen-port", c.ListenPort, "HTTP proxy listener port")
-	flags.StringVar(&c.ReadinessHost, "readiness-host", c.ReadinessHost, "Readiness listener address")
-	flags.IntVar(&c.ReadinessPort, "readiness-port", c.ReadinessPort, "Readiness listener port")
-	if err := flags.Parse(args); err != nil {
-		return config{}, err
-	}
-	if flags.NArg() != 0 {
-		return config{}, errors.New("unexpected positional arguments")
-	}
-	if *audienceFiles != "" {
-		c.AudienceTokenFiles, err = decodeJSON[map[string]string](*audienceFiles)
-		if err != nil {
-			return config{}, fmt.Errorf("--audience-token-files: %w", err)
-		}
-	}
-	if *routes != "" {
-		c.PlatformRoutes, err = decodePlatformRoutes(*routes)
-		if err != nil {
-			return config{}, fmt.Errorf("--platform-routes: %w", err)
-		}
 	}
 	if err := c.validate(); err != nil {
 		return config{}, err
@@ -130,8 +71,7 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 }
 
 // readSettingsFile overlays the YAML object in path onto c. The file is converted to JSON and read
-// with the strictness of the environment and flag forms: an unknown key, an unknown route key or a
-// route missing a key is an error.
+// strictly: an unknown key, an unknown route key or a route missing a key is an error.
 func readSettingsFile(path string, c *config) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -165,7 +105,7 @@ func readSettingsFile(path string, c *config) error {
 		c.AudienceTokenFiles = file.AudienceTokenFiles
 	}
 	if file.PlatformRoutes != nil {
-		if c.PlatformRoutes, err = decodePlatformRoutes(string(file.PlatformRoutes)); err != nil {
+		if c.PlatformRoutes, err = decodePlatformRoutes(file.PlatformRoutes); err != nil {
 			return fmt.Errorf("%s: platform_routes: %w", path, err)
 		}
 	}
@@ -178,45 +118,9 @@ func overlay[T any](to, from *T) {
 	}
 }
 
-func envString(getenv func(string) string, name, fallback string) string {
-	if value := getenv(name); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func envInt(getenv func(string) string, name string, fallback int) (int, error) {
-	value := getenv(name)
-	if value == "" {
-		return fallback, nil
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return 0, fmt.Errorf("%s must be an integer: %w", name, err)
-	}
-	return parsed, nil
-}
-
-func decodeJSON[T any](value string) (T, error) {
-	var decoded T
-	if value == "" {
-		return decoded, nil
-	}
-	if bytes.Equal(bytes.TrimSpace([]byte(value)), []byte("null")) {
-		return decoded, errors.New("expected a JSON object")
-	}
-	if err := json.Unmarshal([]byte(value), &decoded); err != nil {
-		return decoded, err
-	}
-	return decoded, nil
-}
-
-func decodePlatformRoutes(value string) (map[string]platformRouteConfig, error) {
-	if value == "" {
-		return map[string]platformRouteConfig{}, nil
-	}
+func decodePlatformRoutes(value json.RawMessage) (map[string]platformRouteConfig, error) {
 	var raw map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(value), &raw); err != nil {
+	if err := json.Unmarshal(value, &raw); err != nil {
 		return nil, err
 	}
 	if raw == nil {
@@ -247,10 +151,10 @@ func decodePlatformRoutes(value string) (map[string]platformRouteConfig, error) 
 
 func (c config) validate() error {
 	if c.ProxyHost == "" || c.TokenFile == "" {
-		return errors.New("proxy-host and token-file are required")
+		return errors.New("proxy_host and token_file are required")
 	}
 	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
-		return fmt.Errorf("proxy-port must be in 1..65535: %d", c.ProxyPort)
+		return fmt.Errorf("proxy_port must be in 1..65535: %d", c.ProxyPort)
 	}
 	if c.ListenHost == "" || c.ReadinessHost == "" || c.ListenPort < 0 || c.ListenPort > 65535 ||
 		c.ReadinessPort < 0 || c.ReadinessPort > 65535 {
@@ -258,7 +162,7 @@ func (c config) validate() error {
 	}
 	for name, route := range c.PlatformRoutes {
 		if route.ListenPort < 0 || route.ListenPort > 65535 || route.Upstream == "" || route.TokenFile == "" {
-			return fmt.Errorf("platform route %q requires upstream and token-file and a listen-port in 0..65535", name)
+			return fmt.Errorf("platform route %q requires upstream and token_file and a listen_port in 0..65535", name)
 		}
 	}
 	return nil
