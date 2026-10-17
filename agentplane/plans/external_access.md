@@ -157,19 +157,73 @@ operations fall where.
 
 ## Compatibility evaluation: GitHub, Kubernetes, HTTP
 
-**Deferred evaluation, not an architecture selection:** test existing designs and protocols against
-these three systems before building a shared authorization service. A possible hybrid is a shared
-decision interface with system-specific enforcement, credential handling, and native grants. The
-evaluation must show what can be reused unchanged, what needs an adapter or custom workflow, and
-what cannot preserve the required semantics; a common allow/deny endpoint alone is not compatibility.
+**Deferred evaluation, separate from multiagent implementation.** Revisit when a concrete missing
+capability or demonstrated maintenance cost motivates broader auth changes. Multiagent permission
+design compares [incremental options](multiagent_communication.md#multiagent-authorization-options)
+on the existing SA/policy foundation; it does not wait for this evaluation or an engine migration.
+Any wider adoption proposal is independently reviewable and must identify its benefit, scope and
+migration cost. No new service or identity-platform migration is selected here.
 
-Compare [OPA's decision engine](https://www.openpolicyagent.org/docs),
-[OpenFGA's relationship-based authorization](https://openfga.dev/docs/concepts), and authorization
-services bundled with identity platforms such as
-[Keycloak](https://www.keycloak.org/docs/latest/authorization_services/index.html).
-Authentication and authorization are distinct responsibilities even when one product implements
-both. Keep egress and Action policy contracts distinct; reuse must not collapse them into an
-undifferentiated policy type.
+### Compare against Agentplane's existing auth design
+
+Use the [policy-set decisions](../docs/adr_policy_sets.md) and
+[design principles](../docs/principles.md) as the baseline:
+
+- **Separate shared definitions from enrollment.** Preserve subject-free, mutable permission
+  bundles assigned independently to static and runtime-created SAs. Additions and removals reach
+  every current assignee, across Kubernetes, egress and Actions. Overlapping grants remain additive;
+  any proposed deny semantics are an explicit change, not an incidental effect of engine adoption.
+- **Retain verified identity and configurable topology.** Use the existing SA attribution and
+  explicit OAuth Connection-to-SA mapping. Session/Sandbox targets and optional relationships are
+  policy inputs; teams, management hierarchies and new agent identities are not prerequisites.
+  State who may author policy, enroll accounts and supply or change each trusted relationship.
+- **Preserve useful rule semantics.** Exercise existing Role/ClusterRole references and namespace
+  scopes, egress destination/credential rules, and argument-sensitive Action auto-approval. A shared
+  evaluator must preserve each service's contract, including human approval and execution evidence.
+- **Own lifecycle and consistency.** Identify the authoritative owner of each definition,
+  assignment and resource fact; explain any projections into engine data or native bindings.
+  Address runtime grants alongside GitOps, expiry without recreation, SA replacement, pruning,
+  stale replicas and policy-version evidence. State propagation and outage behavior explicitly.
+- **Account for composition and cost.** Keep backends usable with the integration app unavailable
+  and communication optional. Compare required services, state stores, adapters, custom evaluator
+  code, operator configuration and reconciliation work. Retaining today's CRDs is not mandatory;
+  a replacement must preserve their useful semantics and justify the total change.
+
+Run the same concrete cases for each candidate: enroll ten mixed static/runtime SAs in one bundle;
+change thirty native bindings per SA to twenty-five; temporarily add and remove a shared egress
+rule; preserve an overlapping grant; enroll a new Sandbox SA without rewriting existing members.
+Also express independent send/read/control rights on particular targets and bounded launch/model
+arguments. Show the configuration edits and which need data writes, engine-model/schema changes,
+application changes or workload restarts. A relationship demo or a list of supported features is
+not a fit assessment.
+
+### Candidate mappings to evaluate
+
+These are starting hypotheses from primary documentation, not completed compatibility or adoption
+results. Compare each with extending the current design before recommending a broader change.
+
+| Candidate                                                          | Starting mapping                                                                                                                          | Agentplane-specific fit to establish                                                                                                                                                                   |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Extend the current `PolicySet`/`PolicyBinding` design              | Keep shared typed rules, independent SA assignments and service-specific readers; add the required operation/target scopes.               | Can the new scopes, discovery and relationship inputs stay understandable? Compare the resulting custom code and maintenance cost with the alternatives.                                               |
+| [OpenFGA](https://openfga.dev/docs/modeling/roles-and-permissions) | Map SAs, bundle enrollment and resource permissions into its authorization model and relationship data.                                   | Show mutable bundle definitions without per-assignee rule copies, distinguish tuple edits from model deployments, and account for trusted writers, consistency and native Kubernetes projections.      |
+| [SpiceDB](https://authzed.com/docs/spicedb/concepts/schema)        | Map the same facts into schema-defined relations and permissions.                                                                         | Show shared definition edits, contextual constraints, discovery and native grant reconciliation; specify schema/data lifecycle and freshness requirements for backends, streams and queued operations. |
+| [Cedar](https://docs.cedarpolicy.com/overview/terminology.html)    | Map verified SAs, operations, targets and trusted context into policy requests, with shared policies and separate enrollment/entity data. | Demonstrate live assignment semantics, authoritative entity inputs, authorized list/search integration and native Kubernetes enforcement; do not silently introduce deny behavior.                     |
+| [OPA](https://www.openpolicyagent.org/docs/external-data)          | Evaluate requests against policy plus authoritative grant, assignment and resource data.                                                  | Choose data ownership/distribution and freshness, preserve the typed service contracts, and show that the remaining integration code and operational cost improve on the baseline.                     |
+
+Authorization services bundled with identity platforms such as
+[Keycloak](https://www.keycloak.org/docs/latest/authorization_services/index.html) are further
+candidates under the same criteria. Authentication and authorization remain distinct even when one
+product implements both. Compare authoring, storage, evaluation and enforcement separately;
+using a relationship engine or policy language does not itself select Kubernetes versus Git versus
+runtime authoring, or remote versus locally distributed evaluation.
+
+SpiceDB's [freshness tokens](https://authzed.com/docs/spicedb/concepts/consistency) and OpenFGA's
+[consistency modes](https://openfga.dev/docs/interacting/consistency) are mechanisms to assess, not
+automatic solutions for application-level stream or queue revocation. A common decision interface
+still requires enforcement in each resource-owning backend and native grants or a deliberate
+integration for Kubernetes API access.
+
+### Decision protocol and system probes
 
 Evaluate the decision protocol separately from the engine:
 [OpenID AuthZEN](https://openid.net/specs/authorization-api-1_0.html) standardizes subject, action,

@@ -214,7 +214,11 @@ be developed together, but publish a coherent shared identity/authority vocabula
 APIs. Do not equate creating a resource, reading history, sending a message or receiving/acking it.
 
 [The design-space inventory](multiagent_communication.md) records the open alternatives, including
-static/GitOps manager-to-contributor rules and replacing the authorization machinery across services.
+native Kubernetes RBAC and additional service-enforced `PolicySet` rules for multiagent operations.
+SA-level caller attribution, configurable topology and live shared bundles are agreed constraints.
+Replacing the authorization machinery across services is a separate deferred evaluation, not a
+multiagent prerequisite. Policy design compares incremental options against the existing auth
+semantics; a concrete limitation must justify any separately reviewed broader proposal.
 Send and transcript-read permissions are independent in both directions. A2A is open at this
 communication boundary; its harness/thread-protocol rejection has a different scope. Transport
 facades are not prerequisite decisions, and content classification is outside v1. No implementation
@@ -257,7 +261,9 @@ flowchart TD
 
 **Decision; no runtime work implied.** Present concrete API examples for independent agents,
 Sandboxes and Sessions, with creator, manager and parent/provenance represented separately. Ask
-the operator to choose addressing/ownership and delegation semantics. No permission inheritance
+the operator to choose remaining addressing/ownership and delegation semantics. Use the agreed
+SA-level caller attribution and compare the [multiagent authorization options](multiagent_communication.md#multiagent-authorization-options)
+without choosing a mandatory topology or requiring an auth-engine migration. No permission inheritance
 from an organizational edge or preset. Review how native harness children could later be ingested:
 linked execution in the same Sandbox trust boundary versus independently provisioned Sandboxes,
 addressability, observability and which controls must remain unavailable. Native integration itself

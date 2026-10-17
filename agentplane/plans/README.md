@@ -27,9 +27,11 @@ execution sequence. This is a priority decision, not a technical dependency.
   History versus live inventory, delivery durability and authority, and process/store/Session identity
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
-- [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
-- [Cross-agent communication and authorization](multiagent_communication.md) — open identity, static
-  role policy, authorization-system, messaging, discovery and provisioning choices
+- [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access
+  choices and broader authorization-system evaluation, separate from multiagent implementation
+- [Cross-agent communication and authorization](multiagent_communication.md) — agreed SA attribution,
+  configurable topology and live bundles; open multiagent permission representation, messaging,
+  discovery and provisioning choices
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
 - [Kubernetes grants through PolicySets](kubernetes_rbac_groups.md) — accounts without a

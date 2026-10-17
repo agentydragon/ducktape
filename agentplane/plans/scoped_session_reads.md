@@ -6,10 +6,12 @@ Review the choices below before implementing the policy. The durable raw Session
 history and its Thread fold live in the [History Service](../history_service/README.md),
 which today serves only its configured reader accounts.
 
-Exactly-one-compartment and SA-only grants below are candidate choices, not selected constraints.
-Compare them with the [cross-agent design space](multiagent_communication.md), including exact-Session
-grants, project/role relationships and a shared authorization system. Sending to a Session and
-reading either participant's transcript remain independent permissions.
+Exactly-one-compartment and direct-SA grant assignment below are candidate scope choices, not
+selected constraints. SA-level caller attribution is agreed. Compare the scopes with the
+[multiagent authorization options](multiagent_communication.md#multiagent-authorization-options),
+including native Kubernetes RBAC and additional service-enforced `PolicySet` rules, exact-Session
+grants and optional configured relationships. No broader auth-engine replacement is a prerequisite.
+Sending to a Session and reading either participant's transcript remain independent permissions.
 
 ## What is protected
 
