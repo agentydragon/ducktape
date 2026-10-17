@@ -67,6 +67,9 @@
       "test": "//x/mcp_oauth_facade/...",
       "registry": "forgejo"
     },
+    "nebula-routeros": {
+      "target": "//cluster/nebula_routeros:image"
+    },
     "osm-mcp": {
       "target": "//third_party/osmmcp:image",
       "registry": "forgejo"

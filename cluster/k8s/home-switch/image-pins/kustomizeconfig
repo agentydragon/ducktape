@@ -1,0 +1,4 @@
+# The ToFu image is a Terraform CR variable, so teach Kustomize's image transformer its field path.
+images:
+  - path: spec/vars[]/value
+    kind: Terraform

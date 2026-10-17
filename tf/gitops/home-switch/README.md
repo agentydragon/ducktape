@@ -1,7 +1,8 @@
 # home-switch
 
 Terraform for the home MikroTik CRS310-8G+2S+ switch (RouterOS 7, `192.168.1.100`): identity,
-LAN-only management services with plaintext `api`, `ftp`, `telnet` and `www` disabled, a
+LAN management services and a Nebula-only management proxy, with plaintext `api`, `ftp`, `telnet`
+and `www` disabled, a
 read-only `monitoring` user for the RouterOS exporter, and bounded log history on the switch
 (10k lines in RAM, 5 x 10k lines rotating on flash) for backfill after an outage, also
 forwarded as BSD syslog over UDP to `alloy-syslog` on optiplex (`192.168.1.10:514`).
@@ -31,10 +32,46 @@ The `agentplane` account is restricted to `lan_cidr`. Its custom group grants br
 privileges over SSH while denying other login services and RouterOS user management. Agentplane's
 staging SSH action still requires a person to approve each command.
 
+## Nebula overlay
+
+The mesh roster gives the switch the Nebula identity `10.42.0.21`. Use that address from a mesh
+peer. The ARMv7 Nebula container listens on its Nebula TUN address for TCP ports 22, 443, 8729 and
+8291, then opens a separate connection to the RouterOS veth address. RouterOS accepts those
+connections only from the container's veth IP. This is a TCP proxy, not an advertised subnet or
+forwarded path to `192.168.1.100`, so a peer's local Wi-Fi route for that address stays local.
+The Nebula firewall allows those four inbound ports and denies new outbound overlay connections.
+
+The switch's services and full-access `tofu` account allow the home LAN plus the proxy's veth
+source address. The read-only monitoring account and Agentplane SSH account remain limited to the
+home LAN.
+
+The Nebula host key is stored at `secrets/nebula/home-switch.sops.key`, encrypted to the admin
+and cluster SOPS recipients. Its certificate has no unsafe networks. The home-switch ToFu runner
+decrypts the key to write the identity files to the USB volume. The RouterOS provider does not mark
+`routeros_file.contents` sensitive, so this module disables readable plan ConfigMaps; the Terraform
+state still contains the private key.
+
+RouterOS must have its `container` package enabled and its physical Device Mode authorized for
+containers. Insert and mount the USB volume before approving the first plan; the module expects
+the default `usb1-part1` name and creates `nebula/`, `tmp/`, `layers/` and `root/` on it. The
+container's RouterOS `memory-high` threshold is 128 MiB; RouterOS applies reclaim pressure above
+that soft limit rather than killing the container at that exact threshold. RouterOS restarts a
+failed container after one minute. Its startup script sets `privileged=yes` before starting Nebula
+because it needs `/dev/net/tun` and `NET_ADMIN`. Privileged mode
+grants the container broad access to the RouterOS host, so keep this image and its Nebula key
+trusted. The switch source-NATs the container's Nebula UDP traffic, permits only UDP/4242 egress,
+and drops other forwarding from the veth. The TLS certificate includes both `192.168.1.100` for
+home-LAN access and `10.42.0.21` for Nebula access.
+
+The switch pulls the ARMv7 image anonymously from GHCR, independent of the cluster's private
+Forgejo registry. After CI's first publish, make the `ghcr.io/agentydragon/nebula-routeros`
+package public in GitHub's package settings; Flux then replaces the bootstrap `unset` tag with
+the CI tag.
+
 cert-manager issues the switch's TLS certificate, `monitoring/home-switch-tls`, from the cluster CA
-(`cluster-internal-ca`) for `IP:192.168.1.100`, so the Terraform verifies `api-ssl` against the CA
-bundle mounted into its runner. `bootstrap.sh` installs it for the first reconcile; this module
-serves it on `api-ssl` and `www-ssl`, and imports each renewal under a new name before deleting
+(`cluster-internal-ca`) for `IP:192.168.1.100` and `IP:10.42.0.21`, so the Terraform verifies
+`api-ssl` against the CA bundle mounted into its runner. `bootstrap.sh` installs it for the first
+reconcile; this module serves it on `api-ssl` and `www-ssl`, and imports each renewal under a new name before deleting
 the old one. cert-manager renews it 30 days before it expires, so approve the plan that installs a
 renewal within that window. The switch must hold only that one certificate for its address
 (`main.tf` says why); `bootstrap.sh` removes older ones.

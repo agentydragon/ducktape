@@ -12,7 +12,17 @@ variable "agentplane_ssh_public_key" {
 
 variable "lan_cidr" {
   type        = string
-  description = "The only network management services and the monitoring user accept connections from."
+  description = "Home LAN range allowed to reach switch management services."
+}
+
+variable "lan_gateway" {
+  type        = string
+  description = "Home gateway address used as the Nebula container DNS server."
+}
+
+variable "nebula_image" {
+  type        = string
+  description = "Public ARMv7 Nebula container image to run on the CRS310."
 }
 
 variable "syslog_address" {

@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  # CI publishes the first ARMv7 image after merge; Flux replaces this bootstrap tag.
+  - name: ghcr.io/agentydragon/nebula-routeros
+    newTag: unset # {"$imagepolicy": "flux-system:nebula-routeros:tag"}
+configurations:
+  - kustomizeconfig

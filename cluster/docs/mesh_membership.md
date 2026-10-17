@@ -14,7 +14,7 @@ The mesh host roster is a single JSON file at the repo root,
   its host name, Nebula IP and (OVH) Talos machine type from the roster entry of
   the same name
 - `cluster/terraform/main/persistent-auth.tf` — reads persisted per-host Nebula
-  certificate material for every tofu-managed entry
+  certificate material for tofu-managed Talos entries
 - `cluster/cdk8s/generate_manifests.py` — renders the etcd metrics scrape
   targets (`cluster/generated/platform-monitoring/platform-monitoring.k8s.yaml`, every
   control plane's Nebula IP), the Gateway's ExternalDNS target annotation, and
@@ -22,6 +22,8 @@ The mesh host roster is a single JSON file at the repo root,
   CI fails on drift
 - `ansible/roles/nebula` — renders Atlas's config and peer MTU routes
 - `cluster/scripts/render_mobile_nebula_config.py` — mobile client config
+- `cluster/cdk8s/monitoring/home_switch.py` and `tf/gitops/home-switch` — the
+  switch's Nebula identity and its overlay-only management proxy
 
 Pydantic schema and validation: `cluster/scripts/nebula_mesh.py`, exercised by
 `//cluster/validation:test_nebula_mesh`.
@@ -45,11 +47,17 @@ this roster and fails with the files to fix; the incident is in
   "role":         "control-plane" | "worker" | "laptop" | "non-k8s",
   "lighthouse":   true | false,         // default false
   "relay":        true | false,         // default false
-  "managed_by":   "tofu-ovh" | "tofu-proxmox" | "tofu-home" | "nixos" | "ansible" | "mobile",
+  "managed_by":   "tofu-ovh" | "tofu-proxmox" | "tofu-home" | "tofu-home-switch" | "nixos" | "ansible" | "mobile",
   "cert_groups":  [...],                // optional; embedded in the Nebula cert
   "destination_mtu": 1100               // optional; MTU all peers use when sending to this host
 }
 ```
+
+The home switch is addressed by its Nebula IP, `10.42.0.21`. Its RouterOS
+container listens on that overlay address for TCP management ports and proxies
+those connections to the switch over a private veth. It does not advertise or
+route `192.168.1.100`; clients on other Wi-Fi networks therefore keep their own
+local route to any device using that address.
 
 `destination_mtu` is a per-destination exception to the mesh-wide Nebula TUN
 MTU of 1420. Set it only when the named host's underlay cannot reliably carry

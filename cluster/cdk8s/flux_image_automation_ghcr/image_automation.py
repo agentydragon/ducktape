@@ -4,15 +4,17 @@ authenticated GitRepository it pushes through.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 
 from cluster.cdk8s import ducktape_flux
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.image_automation import ImageUpdatePush
+from cluster.cdk8s.image_automation import ImageUpdatePush, newest_ci_tag_policy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.flux.image_repository import ImageRepository
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/flux-image-automation-ghcr"
 AUTOMATION_NAME = "all-images"
+NEBULA_ROUTEROS_IMAGE = "ghcr.io/agentydragon/nebula-routeros"
 
 
 def automation_chart(app: App) -> Chart:
@@ -35,6 +37,16 @@ def automation_chart(app: App) -> Chart:
         # Same ~519 MB clone as every other ducktape source, and `sparse_checkout` above does not
         # shrink it. See ducktape_flux.CLONE_TIMEOUT.
         source_timeout=ducktape_flux.CLONE_TIMEOUT,
+    )
+    newest_ci_tag_policy(
+        chart,
+        ImageRepository(
+            chart,
+            "nebula-routeros-image-repository",
+            metadata=ApiObjectMetadata(name="nebula-routeros", namespace="flux-system"),
+            image=NEBULA_ROUTEROS_IMAGE,
+            interval="5m",
+        ),
     )
     return chart
 

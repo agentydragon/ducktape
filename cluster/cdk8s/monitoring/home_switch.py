@@ -27,7 +27,6 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumesConfigMap,
-    TerraformV1Alpha2SpecStoreReadablePlan,
 )
 
 from cluster.cdk8s import terraform
@@ -48,10 +47,12 @@ TOFU_PASSWORD_FILE = "tofu-password.sops.yaml"
 # tf/gitops/home-switch/main.tf and bootstrap.sh read these Secrets and keys by name.
 MONITORING_PASSWORD = SecretRef(namespace=NAMESPACE, name="home-switch-monitoring").key("password")
 TLS_SECRET = "home-switch-tls"
-# The switch is reachable only from the home LAN; OptiPlex is the cluster node on it.
+# The runner is pinned to the home LAN node; Nebula clients also reach the switch through its peer.
 _HOME_LAN = {"topology.kubernetes.io/zone": "home-lan"}
 # main.tf's provider `ca_certificate` reads the bundle here.
 _CA_BUNDLE_DIR = "/etc/cluster-ca"
+_NEBULA_CA_KEY = "sops-age-cluster-secrets"
+NEBULA_IMAGE = "ghcr.io/agentydragon/nebula-routeros:unset"
 
 
 class HomeSwitchVars(BaseModel):
@@ -61,9 +62,9 @@ class HomeSwitchVars(BaseModel):
 
     switch_address: str = Field(description="The switch's management address, which its certificate names.")
     agentplane_ssh_public_key: str = Field(description="Public SSH key Tofu installs for the Agentplane user.")
-    lan_cidr: str = Field(
-        description="The only network management services and the monitoring user accept connections from."
-    )
+    lan_cidr: str = Field(description="Home LAN range used by the switch's management and monitoring services.")
+    lan_gateway: str = Field(description="Home gateway address used as the container DNS server.")
+    nebula_image: str = Field(description="ARMv7 Nebula container image to run on the CRS310.")
     syslog_address: str = Field(description="Where the switch sends its log as BSD syslog over UDP.")
     syslog_port: int = Field(description="The UDP port at `syslog_address`.")
 
@@ -80,7 +81,7 @@ def _mint(chart: Chart, id: str, key: SecretKey, description: str) -> None:
     )
 
 
-def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_public_key: str) -> Chart:
+def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_public_key: str, nebula_ip: str) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _mint(
         chart,
@@ -96,8 +97,8 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_publi
         issuer_ref=cluster_ca.INTERNAL_ISSUER,
         # main.tf's routeros_system_certificate names the same common name.
         common_name="CRS310",
-        # The address tf/gitops/home-switch connects to.
-        ip_addresses=[str(HOME_LAN.switch)],
+        # Name both LAN access and the switch's Nebula-only overlay address.
+        ip_addresses=[str(HOME_LAN.switch), nebula_ip],
         private_key=CertificatePrivateKey.rsa_2048(),
     )
     terraform.gitops_terraform(
@@ -108,14 +109,23 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_publi
             switch_address=str(HOME_LAN.switch),
             agentplane_ssh_public_key=agentplane_ssh_public_key,
             lan_cidr=str(HOME_LAN.network),
+            lan_gateway=str(HOME_LAN.gateway),
+            nebula_image=NEBULA_IMAGE,
             # Where alloy-syslog listens.
             syslog_address=str(HOME_LAN.optiplex),
             syslog_port=alloy.SYSLOG_HOST_PORT,
         ),
         # Plans every interval and reports drift; a person approves each apply (README.md).
         auto_apply=False,
-        # Secret-bearing attributes come from Secrets, so the plan masks them.
-        store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN,
+        # routeros_file.contents stores the Nebula private key, but the pinned
+        # RouterOS provider does not mark that field sensitive. Never publish a
+        # human-readable plan ConfigMap for this module.
+        store_readable_plan=None,
+        env=[
+            terraform.secret_env(
+                "SOPS_AGE_KEY", SecretRef(namespace=terraform.NAMESPACE, name=_NEBULA_CA_KEY).key("age.agekey")
+            )
+        ],
         node_selector=_HOME_LAN,
         volumes=[
             TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes(

@@ -87,8 +87,23 @@ def artifact_directories(artifact: ArtifactGeneratorSpecArtifacts) -> list[str]:
 
 
 def artifact_directory(artifact: ArtifactGeneratorSpecArtifacts) -> str:
-    """The directory `artifact` copies first: its consumer's Kustomization directory."""
-    return artifact_directories(artifact)[0]
+    """The primary directory `artifact` copies: its consumer's Kustomization directory.
+
+    Later copies may add exact support files alongside the primary directory.
+    """
+    if not artifact.copy:
+        raise ValueError(f"{artifact.name=} copies nothing")
+    copy = artifact.copy[0]
+    directory = copy.to.removeprefix("@artifact/").removesuffix("/")
+    if (
+        not directory
+        or copy.to != f"@artifact/{directory}/"
+        or copy.from_ != f"@repo/{directory}/**"
+        or copy.exclude is not None
+        or copy.strategy is not None
+    ):
+        raise ValueError(f"{artifact.name=}: not a whole-directory copy: {copy.from_=} {copy.to=}")
+    return directory
 
 
 @jsii.implements(IValidation)
