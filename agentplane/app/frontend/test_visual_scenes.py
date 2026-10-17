@@ -184,9 +184,16 @@ async def test_actions(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.check(context="fixture ready")
     await view.capture(target=page.locator("#app"))
 
+
+@DESKTOP_AND_MOBILE
+async def test_action_request_audit_details(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions/70000000-0000-4000-8000-000000000006")
+    page = view.page
     audit_toggle = page.get_by_role("button", name="Request audit details", exact=True)
+    await expect(audit_toggle).to_have_count(1)
     await expect(audit_toggle).to_be_visible()
+    await view.check(context="fixture ready")
     await audit_toggle.click()
     audit_item = page.locator(".agentplane-disclosure-item").filter(has=audit_toggle).first
     audit_body = audit_item.locator(".agentplane-disclosure-body")
@@ -194,8 +201,7 @@ async def test_actions(view: VisualPage, app: AgentplaneFixture) -> None:
     await expect(audit_body.get_by_text("70000000-0000-4000-8000-000000000006", exact=True)).to_be_visible()
     await _focus(page, audit_body)
     await page.mouse.move(0, 0)
-    assert view.capture_name is not None
-    await view.capture(target=page.locator("#app"), name=f"{view.capture_name}_request_audit_expanded")
+    await view.capture(target=page.locator("#app"))
 
 
 async def test_actions_history_groups_unavailable(view: VisualPage, app: AgentplaneFixture) -> None:
