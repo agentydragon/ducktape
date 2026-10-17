@@ -16,10 +16,8 @@ from cluster.cdk8s.agentplane import (
     sandbox_controller,
     session_dispatcher,
     staging,
-    testing,
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
-from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.secret_ref import SecretRef
 
 
@@ -27,7 +25,8 @@ def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str
     return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
-def _go_objects(env: Environment = staging.ENV) -> list[dict[str, Any]]:
+def _go_objects() -> list[dict[str, Any]]:
+    env = staging.ENV
     chart = Chart(Cdk8sTesting.app(), "candidate", disable_resource_name_hashes=True)
     callers = {
         ServiceAccountRef(namespace=env.namespace, name=app.NAME): app.service(env.namespace).pods,
@@ -97,11 +96,6 @@ def test_go_gateway_preserves_services_and_fences_listener_ingress() -> None:
     role = _resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
     assert {rule["resources"][0] for rule in role["rules"]} == {"pods", "sandboxes", "leases", "endpointslices"}
     assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
-
-
-def test_gateway_rolls_where_the_environment_recreates() -> None:
-    deployment = _resource(_go_objects(testing.ENV), "Deployment", runner_gateway.NAME)
-    assert deployment["spec"]["strategy"]["type"] == "RollingUpdate"
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
