@@ -25,8 +25,9 @@ class _EmbeddedServer(uvicorn.Server):
 
     async def startup(self, sockets: list[socket.socket] | None = None) -> None:
         await super().startup(sockets)
-        if self.started:
-            self.ready.set()
+        if not self.started:
+            raise RuntimeError("Embedded server exited before accepting connections")
+        self.ready.set()
 
 
 @asynccontextmanager
@@ -34,15 +35,13 @@ async def serve(app: FastAPI, host: str, port: int) -> AsyncIterator[int]:
     """Serve `app` until the central process shuts down, yielding the bound port once it accepts
     connections (pass 0 for an ephemeral one)."""
     server = _EmbeddedServer(uvicorn.Config(app, host=host, port=port, access_log=False, timeout_graceful_shutdown=5))
-    serving = asyncio.create_task(server.serve(), name=f"egress-listener-{app.title}")
-    ready = asyncio.create_task(server.ready.wait())
-    try:
-        await asyncio.wait([serving, ready], return_when=asyncio.FIRST_COMPLETED)
-        if not ready.done():
-            await serving
-            raise RuntimeError(f"{app.title} exited before accepting connections")
-        yield one(one(server.servers).sockets).getsockname()[1]
-    finally:
-        ready.cancel()
-        server.should_exit = True
-        await serving
+    async with asyncio.TaskGroup() as tasks:
+        serving = tasks.create_task(server.serve(), name=f"egress-listener-{app.title}")
+        try:
+            await server.ready.wait()
+            yield one(one(server.servers).sockets).getsockname()[1]
+        finally:
+            server.should_exit = True
+            # Let Uvicorn drain connections and stop the app before TaskGroup's
+            # exceptional exit would cancel it. The group propagates server errors.
+            await asyncio.wait({serving})
