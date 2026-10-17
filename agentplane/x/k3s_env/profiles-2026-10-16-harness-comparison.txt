@@ -1,0 +1,208 @@
+baseline, run 1
+Source: 6be9f0afd0e4ca0a261563de6eb92700a1160198
+Invocation: 9f7b5851-71e2-4c62-b60e-a18334a90dee
+Raw profile: 1d57e36173d2b9ee5c09f427195b2367a334fbdd497fa273917bd3b46600061a/911645
+Test execution: 496.665637 s
+
+Fri Oct 16 18:51:29 2026    /tmp/k3s-harness-comparison/baseline-profiles/agentplane_x_k3s_env_test_lifecycle__run_1_of_2__lifecycle.prof
+
+         7036933 function calls (6794190 primitive calls) in 435.616 seconds
+
+   Ordered by: cumulative time
+   List reduced from 5486 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000  435.629  435.629 __init__.py:31(main)
+        1    0.000    0.000  435.629  435.629 main.py:224(main)
+        1    0.000    0.000  435.609  435.609 __init__.py:188(main)
+        1    0.000    0.000  435.609  435.609 __init__.py:204(_main)
+  3589/66    0.004    0.000  435.501    6.599 _manager.py:111(_hookexec)
+  3589/66    0.025    0.000  435.501    6.599 _callers.py:76(_multicall)
+   3417/2    0.012    0.000  435.493  217.747 _hooks.py:497(__call__)
+        1    0.000    0.000  434.142  434.142 main.py:376(pytest_cmdline_main)
+        1    0.000    0.000  434.142  434.142 main.py:317(wrap_session)
+        1    0.000    0.000  432.847  432.847 main.py:380(_main)
+      366    0.003    0.000  432.759    1.182 runner.py:340(from_call)
+        1    0.000    0.000  431.142  431.142 main.py:397(pytest_runtestloop)
+        4    0.000    0.000  431.135  107.784 runner.py:115(pytest_runtest_protocol)
+        4    0.000    0.000  431.132  107.783 runner.py:123(runtestprotocol)
+       12    0.000    0.000  431.132   35.928 runner.py:236(call_and_report)
+       12    0.000    0.000  431.119   35.927 runner.py:250(<lambda>)
+4090/2698    0.009    0.000  373.928    0.139 {built-in method builtins.next}
+        2    0.000    0.000  373.830  186.915 test_lifecycle.py:25(stack)
+        2    0.004    0.002  373.829  186.915 stack.py:304(running_stack)
+        4    0.000    0.000  371.943   92.986 runner.py:168(pytest_runtest_setup)
+        4    0.000    0.000  371.943   92.986 runner.py:520(setup)
+        4    0.000    0.000  371.942   92.986 plugin.py:548(setup)
+        4    0.000    0.000  371.942   92.986 python.py:1709(setup)
+        4    0.000    0.000  371.942   92.986 fixtures.py:802(_fillfixtures)
+    41/20    0.000    0.000  371.942   18.597 fixtures.py:604(getfixturevalue)
+    65/20    0.001    0.000  371.942   18.597 fixtures.py:647(_get_active_fixturedef)
+    20/12    0.000    0.000  371.941   30.995 fixtures.py:1171(execute)
+       11    0.000    0.000  371.930   33.812 fixtures.py:1305(pytest_fixture_setup)
+       11    0.000    0.000  371.929   33.812 fixtures.py:991(call_fixture_func)
+  961/776    0.001    0.000  371.717    0.479 contextlib.py:136(__enter__)
+        1    0.006    0.006  254.760  254.760 stack.py:171(import_images)
+      172    0.000    0.000  169.342    0.985 subprocess.py:1274(wait)
+      172    0.001    0.000  169.341    0.985 subprocess.py:2052(_wait)
+       97  169.339    1.746  169.339    1.746 {built-in method posix.waitpid}
+       60    0.000    0.000  169.339    2.822 subprocess.py:2039(_try_wait)
+
+
+
+
+baseline, run 2
+Source: 6be9f0afd0e4ca0a261563de6eb92700a1160198
+Invocation: 9f7b5851-71e2-4c62-b60e-a18334a90dee
+Raw profile: 4cbc4e64bd8f2ef3d47f8ac26f8223da26be5be00ba62cc74aeea4c246c9d309/911216
+Test execution: 290.346744 s
+
+Fri Oct 16 18:51:29 2026    /tmp/k3s-harness-comparison/baseline-profiles/agentplane_x_k3s_env_test_lifecycle__run_2_of_2__lifecycle.prof
+
+         7056190 function calls (6813343 primitive calls) in 248.781 seconds
+
+   Ordered by: cumulative time
+   List reduced from 5483 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000  248.787  248.787 __init__.py:31(main)
+        1    0.000    0.000  248.787  248.787 main.py:224(main)
+        1    0.000    0.000  248.781  248.781 __init__.py:188(main)
+        1    0.000    0.000  248.781  248.781 __init__.py:204(_main)
+  3588/66    0.003    0.000  248.721    3.768 _manager.py:111(_hookexec)
+  3588/66    0.016    0.000  248.721    3.768 _callers.py:76(_multicall)
+   3416/2    0.008    0.000  248.717  124.358 _hooks.py:497(__call__)
+        1    0.000    0.000  248.120  248.120 main.py:376(pytest_cmdline_main)
+        1    0.000    0.000  248.120  248.120 main.py:317(wrap_session)
+        1    0.000    0.000  246.856  246.856 main.py:380(_main)
+      366    0.002    0.000  246.802    0.674 runner.py:340(from_call)
+        1    0.000    0.000  245.859  245.859 main.py:397(pytest_runtestloop)
+        4    0.000    0.000  245.856   61.464 runner.py:115(pytest_runtest_protocol)
+        4    0.000    0.000  245.854   61.463 runner.py:123(runtestprotocol)
+       12    0.000    0.000  245.853   20.488 runner.py:236(call_and_report)
+       12    0.000    0.000  245.843   20.487 runner.py:250(<lambda>)
+4274/2866    0.013    0.000  174.916    0.061 {built-in method builtins.next}
+        2    0.000    0.000  174.836   87.418 test_lifecycle.py:25(stack)
+        2    0.003    0.001  174.834   87.417 stack.py:304(running_stack)
+        4    0.000    0.000  173.227   43.307 runner.py:168(pytest_runtest_setup)
+        4    0.000    0.000  173.227   43.307 runner.py:520(setup)
+        4    0.000    0.000  173.226   43.307 plugin.py:548(setup)
+        4    0.000    0.000  173.226   43.307 python.py:1709(setup)
+        4    0.000    0.000  173.226   43.307 fixtures.py:802(_fillfixtures)
+    41/20    0.000    0.000  173.226    8.661 fixtures.py:604(getfixturevalue)
+    65/20    0.001    0.000  173.226    8.661 fixtures.py:647(_get_active_fixturedef)
+    20/12    0.000    0.000  173.224   14.435 fixtures.py:1171(execute)
+       11    0.000    0.000  173.216   15.747 fixtures.py:1305(pytest_fixture_setup)
+       11    0.000    0.000  173.215   15.747 fixtures.py:991(call_fixture_func)
+ 1050/857    0.004    0.000  173.005    0.202 contextlib.py:136(__enter__)
+        1    0.002    0.002   94.821   94.821 stack.py:171(import_images)
+       12    0.001    0.000   70.972    5.914 runners.py:87(run)
+       20    0.000    0.000   70.971    3.549 base_events.py:683(run_until_complete)
+       20    0.002    0.000   70.970    3.549 base_events.py:672(run_forever)
+      454    0.021    0.000   70.967    0.156 base_events.py:1977(_run_once)
+
+
+
+
+candidate, run 1
+Source: 834596309be051694a1e78967c1f9ce0d41d57a7
+Invocation: 63f952b3-aec8-4b50-a3fa-4effb82a9fc1
+Raw profile: c8c8bcaedd5c1f69ef0643c54e0c9cc64a35e241b12099ae87c5cc6b1636e5fc/911251
+Test execution: 244.867697 s
+
+Fri Oct 16 18:54:11 2026    /tmp/k3s-harness-comparison/candidate-profiles/agentplane_x_k3s_env_test_lifecycle__run_1_of_2__lifecycle.prof
+
+         6681031 function calls (6438250 primitive calls) in 208.053 seconds
+
+   Ordered by: cumulative time
+   List reduced from 5483 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000  208.057  208.057 __init__.py:31(main)
+        1    0.000    0.000  208.057  208.057 main.py:224(main)
+        1    0.000    0.000  208.051  208.051 __init__.py:188(main)
+        1    0.000    0.000  208.051  208.051 __init__.py:204(_main)
+  3585/66    0.003    0.000  207.998    3.151 _manager.py:111(_hookexec)
+  3585/66    0.013    0.000  207.998    3.151 _callers.py:76(_multicall)
+   3413/2    0.008    0.000  207.995  103.997 _hooks.py:497(__call__)
+        1    0.000    0.000  207.399  207.399 main.py:376(pytest_cmdline_main)
+        1    0.000    0.000  207.399  207.399 main.py:317(wrap_session)
+        1    0.000    0.000  206.481  206.481 main.py:380(_main)
+      367    0.002    0.000  206.429    0.562 runner.py:340(from_call)
+        1    0.000    0.000  205.405  205.405 main.py:397(pytest_runtestloop)
+        4    0.000    0.000  205.403   51.351 runner.py:115(pytest_runtest_protocol)
+        4    0.000    0.000  205.400   51.350 runner.py:123(runtestprotocol)
+       12    0.000    0.000  205.400   17.117 runner.py:236(call_and_report)
+       12    0.000    0.000  205.392   17.116 runner.py:250(<lambda>)
+3976/2581    0.008    0.000  159.358    0.062 {built-in method builtins.next}
+        2    0.000    0.000  159.311   79.656 test_lifecycle.py:25(stack)
+        2    0.001    0.001  159.307   79.654 stack.py:304(running_stack)
+        4    0.000    0.000  157.516   39.379 runner.py:168(pytest_runtest_setup)
+        4    0.000    0.000  157.516   39.379 runner.py:520(setup)
+        4    0.000    0.000  157.516   39.379 plugin.py:548(setup)
+        4    0.000    0.000  157.516   39.379 python.py:1709(setup)
+        4    0.000    0.000  157.516   39.379 fixtures.py:802(_fillfixtures)
+    41/20    0.000    0.000  157.516    7.876 fixtures.py:604(getfixturevalue)
+    65/20    0.000    0.000  157.516    7.876 fixtures.py:647(_get_active_fixturedef)
+    20/12    0.000    0.000  157.515   13.126 fixtures.py:1171(execute)
+       11    0.000    0.000  157.512   14.319 fixtures.py:1305(pytest_fixture_setup)
+       11    0.000    0.000  157.511   14.319 fixtures.py:991(call_fixture_func)
+  897/719    0.001    0.000  157.362    0.219 contextlib.py:136(__enter__)
+        1    0.001    0.001   87.739   87.739 stack.py:171(import_images)
+      168    0.000    0.000   60.980    0.363 subprocess.py:1274(wait)
+      168    0.001    0.000   60.980    0.363 subprocess.py:2052(_wait)
+       78   60.979    0.782   60.979    0.782 {built-in method posix.waitpid}
+       57    0.000    0.000   60.979    1.070 subprocess.py:2039(_try_wait)
+
+
+
+
+candidate, run 2
+Source: 834596309be051694a1e78967c1f9ce0d41d57a7
+Invocation: 63f952b3-aec8-4b50-a3fa-4effb82a9fc1
+Raw profile: c4900c3e1d39829be73d981730f1c4c3685df32e1dad64d7156706d7c3b2dfe5/911263
+Test execution: 267.634729 s
+
+Fri Oct 16 18:54:11 2026    /tmp/k3s-harness-comparison/candidate-profiles/agentplane_x_k3s_env_test_lifecycle__run_2_of_2__lifecycle.prof
+
+         6678304 function calls (6435562 primitive calls) in 226.988 seconds
+
+   Ordered by: cumulative time
+   List reduced from 5483 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000  226.992  226.992 __init__.py:31(main)
+        1    0.000    0.000  226.992  226.992 main.py:224(main)
+        1    0.000    0.000  226.986  226.986 __init__.py:188(main)
+        1    0.000    0.000  226.986  226.986 __init__.py:204(_main)
+  3585/66    0.003    0.000  226.938    3.438 _manager.py:111(_hookexec)
+  3585/66    0.014    0.000  226.938    3.438 _callers.py:76(_multicall)
+   3413/2    0.008    0.000  226.934  113.467 _hooks.py:497(__call__)
+        1    0.000    0.000  226.347  226.347 main.py:376(pytest_cmdline_main)
+        1    0.000    0.000  226.347  226.347 main.py:317(wrap_session)
+        1    0.000    0.000  225.407  225.407 main.py:380(_main)
+      367    0.002    0.000  225.354    0.614 runner.py:340(from_call)
+        1    0.000    0.000  224.300  224.300 main.py:397(pytest_runtestloop)
+        4    0.000    0.000  224.298   56.074 runner.py:115(pytest_runtest_protocol)
+        4    0.000    0.000  224.296   56.074 runner.py:123(runtestprotocol)
+       12    0.000    0.000  224.296   18.691 runner.py:236(call_and_report)
+       12    0.000    0.000  224.287   18.691 runner.py:250(<lambda>)
+3931/2544    0.004    0.000  180.081    0.071 {built-in method builtins.next}
+        2    0.000    0.000  180.035   90.017 test_lifecycle.py:25(stack)
+        2    0.001    0.001  180.034   90.017 stack.py:304(running_stack)
+        4    0.000    0.000  178.163   44.541 runner.py:168(pytest_runtest_setup)
+        4    0.000    0.000  178.163   44.541 runner.py:520(setup)
+        4    0.000    0.000  178.163   44.541 plugin.py:548(setup)
+        4    0.000    0.000  178.163   44.541 python.py:1709(setup)
+        4    0.000    0.000  178.163   44.541 fixtures.py:802(_fillfixtures)
+    41/20    0.000    0.000  178.163    8.908 fixtures.py:604(getfixturevalue)
+    65/20    0.000    0.000  178.162    8.908 fixtures.py:647(_get_active_fixturedef)
+    20/12    0.000    0.000  178.162   14.847 fixtures.py:1171(execute)
+       11    0.000    0.000  178.157   16.196 fixtures.py:1305(pytest_fixture_setup)
+       11    0.000    0.000  178.156   16.196 fixtures.py:991(call_fixture_func)
+  875/701    0.001    0.000  178.000    0.254 contextlib.py:136(__enter__)
+        1    0.002    0.002  109.470  109.470 stack.py:171(import_images)
+      165    0.000    0.000   74.754    0.453 subprocess.py:1274(wait)
+      165    0.001    0.000   74.753    0.453 subprocess.py:2052(_wait)
+       77   74.752    0.971   74.752    0.971 {built-in method posix.waitpid}
+       56    0.000    0.000   74.752    1.335 subprocess.py:2039(_try_wait)

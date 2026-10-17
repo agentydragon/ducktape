@@ -68,13 +68,91 @@ or expensive rerun were needed. New quiesce behavior still needs its own focused
 
 ## Lifecycle measurements
 
-The 2026-10-14 and 2026-10-15 entries below describe the earlier Python Gateway/Dispatcher
-fixture. Since then, this fixture moved to the Go Gateway/Dispatcher, shared typed service
-constructs, one plain PostgreSQL instance, and a pinned K3s binary; Electric and the browser
-frontend remain outside this test. The 2026-10-16 profile measures the current Go fixture. These
-are separate runs, not a matched comparison or an estimate of steady-state CI speedup.
+The harness comparison measures the Go Gateway/Dispatcher fixture with shared typed service
+constructs, one plain PostgreSQL instance, and a pinned K3s binary. Electric and the browser
+frontend remain outside this test. Earlier snapshots below use different source revisions;
+only each explicitly paired experiment supports its own comparison.
 
-### Current Go fixture, 2026-10-16
+### Harness-specific runner comparison, 2026-10-16
+
+Base source: `3fba7794f4278bc66d41d9ceb11dd2ee08656ac3`, including the Service-networking revert.
+Two fresh lifecycle actions per variant passed all four existing cases, with unchanged assertions,
+timeouts and startup behavior. The Claude-only image also passed the
+[real Qwen smoke](https://app.buildbuddy.io/invocation/626648ee-f346-4b93-902a-1f5b81eda432)
+at implementation revision `ac82cfd883b3db120f23c4816efb41d2e7e0de30` (one model test, 266.68 s
+in pytest). The smoke validates the narrower image; it is not a matched model-latency comparison.
+
+The manual workflow ran the same `--nocache_test_results --runs_per_test=2` command in
+[baseline](https://app.buildbuddy.io/invocation/9f7b5851-71e2-4c62-b60e-a18334a90dee) and
+[harness-free](https://app.buildbuddy.io/invocation/63f952b3-aec8-4b50-a3fa-4effb82a9fc1)
+invocations. Each test action uses `recycle-runner=false` and starts a fresh k3s/containerd.
+This forces test execution, not cold Bazel image builds, uploads or worker CAS caches.
+
+| Measurement (seconds)              | Baseline run 1 | Baseline run 2 | Harness-free run 1 | Harness-free run 2 |
+| ---------------------------------- | -------------: | -------------: | -----------------: | -----------------: |
+| TestRunner execution               |        496.666 |        290.347 |            244.868 |            267.635 |
+| cProfile total                     |        435.616 |        248.781 |            208.053 |            226.988 |
+| `K3s.import_images` cumulative     |        254.760 |         94.821 |             87.739 |            109.470 |
+| `K3s.start` cumulative             |         53.448 |         16.721 |             18.736 |             19.091 |
+| `running_stack` setup and teardown |        373.829 |        174.834 |            159.307 |            180.034 |
+| Action input-fetch wall time       |          4.050 |          5.089 |              1.029 |              1.837 |
+
+Mean TestRunner execution fell from **393.506 s to 256.251 s (34.9%)** in this sample. Both
+harness-free runs were faster than both baseline runs. Adopt the image split: it removes unused
+payload and preserves the real lifecycle and Claude coverage.
+
+This is two samples per variant on four different workers, not a steady-state saving estimate.
+The slower baseline also spent much longer in k3s startup, which precedes runner-image import;
+its full slowdown cannot be attributed to harness bytes. Import times overlap across variants,
+so this does not establish a consistent import speedup in isolation. Input-fetch measurements
+are separate from execution and reflect worker cache state; executor-reported downloaded bytes
+also varied between identical baseline inputs. The outer Bazel invocations took 590.386 s and
+360.073 s respectively; these include analysis and other actions and are not test execution time.
+The expensive workflow remains manual-only.
+
+The identical temporary `cProfile` wrapper is in benchmark baseline
+`6be9f0afd0e4ca0a261563de6eb92700a1160198` and candidate
+`834596309be051694a1e78967c1f9ce0d41d57a7`; the candidate additionally changes image selection.
+The profiler-only patch SHA-256 is
+`cc5fcec68449bcab4047704ec6fbb686a981335fa665543641528a5403a9909d`.
+The implementation omits profiling and workflow changes. [Profile summaries](profiles-2026-10-16-harness-comparison.txt)
+and [performance records](perf-2026-10-16-harness-comparison.json) retain every run, raw-profile
+digest/URI, passing pytest XML counts, worker identity, action digest and executor timing/IO data.
+The raw `lifecycle.prof` files remain in each invocation's test outputs:
+
+```bash
+bbapi artifact download 9f7b5851-71e2-4c62-b60e-a18334a90dee lifecycle.prof --all -o baseline-profiles/
+bbapi artifact download 63f952b3-aec8-4b50-a3fa-4effb82a9fc1 lifecycle.prof --all -o harness-free-profiles/
+```
+
+`import_images` includes tar streaming, pipe backpressure and containerd import/unpack work;
+it is not Python CPU time. `running_stack` measures its executing setup/teardown generator,
+excluding time paused at its yield. Profile totals start inside the Python entry point;
+TestRunner execution additionally includes launcher/venv setup and imports before profiling.
+
+#### Image sizes for the comparison
+
+These are stored OCI layer bytes from the actual action input trees, retaining each layer's
+declared compression. The removed harness layer is an uncompressed tar. Metadata was downloaded
+and checked by CAS SHA-256 and size; every layer descriptor size matched its input-file size.
+Layer payloads were not downloaded again. These are not unpacked filesystem or snapshot sizes.
+All 17 non-runner image manifests match across baseline, lifecycle and model-smoke inventories.
+
+| Runner variant | Runner layer bytes | Runner MiB | Distinct layer bytes across stack | Distinct bytes removed |
+| -------------- | -----------------: | ---------: | --------------------------------: | ---------------------: |
+| Both harnesses |        866,872,179 |      826.7 |                     1,512,840,164 |                      0 |
+| No harnesses   |        261,237,619 |      249.1 |                       907,205,604 |            605,634,560 |
+| Claude only    |        475,632,499 |      453.6 |                     1,121,600,484 |            391,239,680 |
+
+The lifecycle action removes **577.6 MiB** of distinct layers; the model smoke removes
+**373.1 MiB**. Raw inventories retain every image, manifest and layer digest, media type and size:
+[baseline](image-sizes-2026-10-16-harness-baseline.json),
+[harness-free](image-sizes-2026-10-16-harness-free.json), and
+[Claude-only smoke](image-sizes-2026-10-16-claude-only.json).
+This measures removing unused harnesses. It does not measure fetching a needed harness at runtime
+or choose between a separately mounted artifact and a digest-verified download.
+
+### Earlier Go fixture profile, 2026-10-16
 
 The model-free lifecycle suite passed all four tests on RBE at source revision
 `585b95435357252be2e5af4a5327e58c1805b8a5`. A temporary `cProfile` wrapper around
