@@ -797,7 +797,6 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
-    K3S_SHARED_PACKAGE_LAYERS[Candidate: share Python package layers]
     K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
     K3S_IMPORT_CONCURRENCY[Candidate: native containerd import and unpack concurrency]
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
@@ -959,15 +958,6 @@ PostgreSQL-first sequencing or a custom parallel import/unpack scheduler to the 
 
 **TODO; operator request, 2026-10-16.** Rename the egress sidecar to "relay" across code,
 configuration, image names and docs. Update all consumers atomically.
-
-### `K3S_SHARED_PACKAGE_LAYERS` — share third-party Python package layers
-
-**Candidate; no worker assigned; no prerequisites.** Use canonical package paths to share
-third-party Python layers across service and migration images with existing Bazel/OCI rules
-where possible. The interpreter layer is already shared. Preserve each binary's declared
-dependency closure and import behavior. Exit: a matched comparison of distinct layer bytes,
-import/unpack and total lifecycle time, passing affected import checks and lifecycle assertions,
-and a recommendation to adopt or discard the package-layer change.
 
 ### `K3S_PYTHON_INITIALIZATION` — reduce Python process initialization cost
 
@@ -1457,8 +1447,7 @@ test must not omit the limits being accepted.
 Worth stating in the design, because it argues past the spike: a Bazel-built guest is worth more than the
 test. Once a guest root filesystem is an `oci_image` target, `RUNNER_LAYERING_VM` needs no Nix to build a
 candidate runtime, CI can build a guest without Attic, and a runtime experiment becomes an additive target
-rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` and
-`K3S_SHARED_PACKAGE_LAYERS` before adding image weight to that environment.
+rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` before adding image weight to that environment.
 
 ### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
 

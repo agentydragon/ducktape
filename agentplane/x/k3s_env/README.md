@@ -194,8 +194,8 @@ The inventory records the six Go executable layers and PostgreSQL's 12 additiona
 Import streams the OCI blobs into containerd's content store, then unpacking applies filesystem
 layers into snapshots. Container creation assembles the image snapshots with a writable layer;
 it does not copy the full image again. Stored blob sizes are not unpacked storage or filesystem
-write totals, and this inventory does not assign per-blob timing. The package-layer experiment
-remains deferred; the native profile still identifies filesystem apply/writes as substantial work.
+write totals, and this inventory does not assign per-blob timing. Sharing Python package layers is not
+pursued: more services are moving to Go. The native profile still identifies filesystem apply/writes as substantial work.
 
 ### Startup profile, 2026-10-17
 
@@ -268,8 +268,7 @@ constructs the unpacker without `WithLimiter`; the [unpacker](https://github.com
 treats a nil limiter as unrestricted. A current-version concurrency setting cannot be assumed to
 exist on this pin, and changing download limits does not bound this archive-import unpack work.
 
-**Next experiment:** shared Python package layers (`K3S_SHARED_PACKAGE_LAYERS`) directly target
-repeated file extraction. For `K3S_IMPORT_CONCURRENCY`, a bounded-tuning comparison first needs a
+**Next experiment:** for `K3S_IMPORT_CONCURRENCY`, a bounded-tuning comparison first needs a
 runtime exposing that control. The [native `--local` comparison](#native-transfer-versus-local-import-2026-10-17)
 found no useful speedup; retain the transfer pipeline. Keep inputs, lifecycle assertions and timeouts fixed
 for any importer comparison, and count deferred unpack through Pod readiness. No runtime upgrade,
