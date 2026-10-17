@@ -31,6 +31,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from props.db.config import DatabaseConfig
+from util.db_url import async_engine_url
 
 _SALT_ENV_VAR = "PROPS_AGENT_PASSWORD_SALT"
 
@@ -110,8 +111,7 @@ async def ensure_agent_role(db_config: DatabaseConfig, agent_run_id: UUID) -> Ag
 
     logger.info("Ensuring agent role exists: %s", username)
 
-    admin_url = db_config.url.replace("postgresql://", "postgresql+asyncpg://")
-    engine = create_async_engine(admin_url, echo=False)
+    engine = create_async_engine(async_engine_url(db_config.url), echo=False)
 
     try:
         async with engine.begin() as conn:

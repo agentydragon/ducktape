@@ -7,12 +7,12 @@ Tests construct their own DatabaseConfig with per-test database names.
 from __future__ import annotations
 
 import base64
-from urllib.parse import quote
 
 import asyncpg
 import psycopg2
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 
 class DatabaseConfig(BaseSettings):
@@ -40,7 +40,14 @@ class DatabaseConfig(BaseSettings):
     @property
     def url(self) -> str:
         """PostgreSQL connection URL with properly escaped components."""
-        return f"postgresql://{quote(self.user, safe='')}:{quote(self.password, safe='')}@{self.host}:{self.port}/{self.database}"
+        return URL.create(
+            "postgresql",
+            username=self.user,
+            password=self.password,
+            host=self.host,
+            port=self.port,
+            database=self.database,
+        ).render_as_string(hide_password=False)
 
     def to_env_dict(self) -> dict[str, str]:
         """Convert connection config to PostgreSQL environment variables."""

@@ -81,6 +81,7 @@ py_library(
         ":models",
         ":updates",
         "//agentplane:subjects",
+        "//util:db_url",
         "//util:sqlalchemy_types",
         "@pypi//asyncpg",
         "@pypi//pydantic",

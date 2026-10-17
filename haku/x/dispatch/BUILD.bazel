@@ -50,6 +50,7 @@ py_library(
         # can't catch it).
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
+        "//util:db_url",
     ],
 )
 

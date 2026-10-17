@@ -61,6 +61,7 @@ py_library(
         "//finance/plaid:__subpackages__",
     ],
     deps = [
+        "//util:db_url",
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],

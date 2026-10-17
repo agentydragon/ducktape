@@ -10,16 +10,15 @@ from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from util.db_url import async_engine_url
+
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def normalise_async_db_url(db_url: str) -> str:
-    # gazelle:include_dep @pypi//asyncpg
-    # (SQLAlchemy loads the asyncpg dialect at runtime via the URL scheme below;
-    # nothing imports it, so gazelle cannot see the dependency.)
-    return db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+# SQLAlchemy loads the asyncpg dialect at runtime from the URL scheme.
+# gazelle:include_dep @pypi//asyncpg
 
 
 def async_session_factory(db_url: str) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
@@ -29,7 +28,7 @@ def async_session_factory(db_url: str) -> tuple[AsyncEngine, async_sessionmaker[
     repeated queries against the same database (every API request, in the budget path)
     should construct one at process startup and reuse it -- the SSL handshake + pool
     init costs ~500ms per engine over the cluster port-forward. Callers own disposal."""
-    engine = create_async_engine(normalise_async_db_url(db_url), pool_pre_ping=True, pool_recycle=1800)
+    engine = create_async_engine(async_engine_url(db_url), pool_pre_ping=True, pool_recycle=1800)
     return engine, async_sessionmaker(engine, expire_on_commit=False)
 
 

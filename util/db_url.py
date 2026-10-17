@@ -8,3 +8,9 @@ from sqlalchemy.engine import URL, make_url
 def render_postgresql_url(url: str | URL, drivername: str) -> str:
     """Render a PostgreSQL URL for a client driver."""
     return make_url(url).set(drivername=drivername).render_as_string(hide_password=False)
+
+
+def async_engine_url(url: str | URL) -> URL:
+    """Use asyncpg for plain PostgreSQL URLs, preserving explicitly selected drivers."""
+    parsed = make_url(url)
+    return parsed.set(drivername="postgresql+asyncpg") if parsed.drivername == "postgresql" else parsed

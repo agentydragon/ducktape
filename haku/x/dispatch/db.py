@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from haku.x.dispatch.models import JobRecord, JobStatus
+from util.db_url import async_engine_url
 
 SessionMaker = async_sessionmaker[AsyncSession]
 
@@ -75,12 +76,7 @@ def to_record(row: JobRow) -> JobRecord:
 
 
 def make_engine(database_url: str) -> AsyncEngine:
-    # CNPG secrets carry postgresql://; SQLAlchemy async needs the asyncpg driver.
-    # gazelle:include_dep @pypi//asyncpg
-    # (SQLAlchemy loads the asyncpg dialect at runtime via the URL scheme below;
-    # nothing imports it, so gazelle cannot see the dependency.)
-    url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    return create_async_engine(url)
+    return create_async_engine(async_engine_url(database_url))
 
 
 def make_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

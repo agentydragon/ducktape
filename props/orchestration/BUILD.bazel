@@ -30,6 +30,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/db:config",
+        "//util:db_url",
         "@pypi//sqlalchemy",
     ],
 )

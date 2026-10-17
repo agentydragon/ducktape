@@ -34,6 +34,7 @@ from agentplane.action_service.models import (
 )
 from agentplane.action_service.updates import CHANNEL, CONNECTIONS_CHANNEL, DISPATCH_CHANNEL, MCP_LINKAGE_CHANNEL
 from agentplane.subjects import ServiceAccountRef
+from util.db_url import async_engine_url
 from util.sqlalchemy_types import PydanticColumn, TextBackedStrEnumColumn
 
 # SQLAlchemy loads asyncpg from the URL scheme; Gazelle cannot infer that runtime dependency.
@@ -364,9 +365,8 @@ class McpLinkageFlowRow(Base):
 
 
 def make_engine(database_url: str) -> AsyncEngine:
-    url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     # Staging OOM: 14 Action Service sessions were idle.
-    return create_async_engine(url, pool_pre_ping=True, pool_size=4, max_overflow=2)
+    return create_async_engine(async_engine_url(database_url), pool_pre_ping=True, pool_size=4, max_overflow=2)
 
 
 def make_sessionmaker(engine: AsyncEngine) -> SessionMaker:
