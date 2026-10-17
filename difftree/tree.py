@@ -9,7 +9,7 @@ View-level rendering logic (path collapsing, tree decoration styling) lives in d
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from difftree.config import SortMode
@@ -136,13 +136,4 @@ def sort_tree(node: TreeNode, sort_by: SortMode = SortMode.SIZE, *, reverse: boo
 
     sorted_children = dict(sorted_items)
 
-    # Return new node with sorted children
-    return TreeNode(
-        name=node.name,
-        is_file=node.is_file,
-        additions=node.additions,
-        deletions=node.deletions,
-        is_binary=node.is_binary,
-        children=sorted_children,
-        path=node.path,
-    )
+    return replace(node, children=sorted_children)

@@ -54,11 +54,11 @@ class DatabaseConfig(BaseSettings):
 
     def with_database(self, database: str) -> DatabaseConfig:
         """Return a copy with different database name."""
-        return DatabaseConfig(host=self.host, port=self.port, user=self.user, password=self.password, database=database)
+        return self.model_copy(update={"database": database})
 
     def with_user(self, username: str, password: str) -> DatabaseConfig:
         """Return a copy with different user credentials."""
-        return DatabaseConfig(host=self.host, port=self.port, user=username, password=password, database=self.database)
+        return self.model_copy(update={"user": username, "password": password})
 
     def psycopg2_connect(self) -> psycopg2.extensions.connection:
         """Connect to database using psycopg2."""
