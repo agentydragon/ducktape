@@ -14,6 +14,7 @@ deleting useful UI projections. Squash Alembic only once the app schema settles.
 States: **in flight** means reported work is underway; **in review** means an unmerged PR;
 **paused** means no worker is assigned; **decision** needs a reviewed outcome;
 **blocked** names prerequisites; **candidate** is dispatchable when selected, not a priority claim.
+**Unscheduled**, **deferred** and **parked** nodes have no owner and no priority; a deferred or parked one waits on a trigger its text names.
 A **capstone** closes an integrated contract, not another implementation. Solid arrows below are
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
@@ -109,7 +110,7 @@ owns subscriptions and sources.
 Typed metadata and restricted trusted producer provenance on input commands, so a notice the
 Notification Service sends is not rendered as a user message. The field must ride the durable
 Session Dispatcher path to the matching Runner input RPC; its trusted producer provenance and narrow
-authorization are open design points (#10129). The harness never sees it. Keep that authorization
+authorization are open design points. The harness never sees it. Keep that authorization
 outside the generic command-admission path; attachments are invalid on controls. No
 untyped extension dictionary.
 
@@ -183,9 +184,9 @@ outage/refresh exercises; test the specific recovery contract with controlled mi
 flowchart LR
     GITHUB_NOTICE_RELIABILITY_DESIGN[Decision: eventual-state recovery vs agent fallback]
     GITHUB_NOTIFICATION_RECOVERY[Blocked: selected reconciliation or reminder mechanism]
-    GITHUB_SHEPHERD_GUIDANCE[Blocked: after CRON_NOTIFICATIONS; fallback-check wording]
+    GITHUB_SHEPHERD_GUIDANCE[Blocked: after the reliability decision; fallback-check wording]
     GITHUB_NOTICE_RELIABILITY_DESIGN --> GITHUB_NOTIFICATION_RECOVERY
-    GITHUB_NOTICE_RELIABILITY_DESIGN -. chosen guarantee wording .-> GITHUB_SHEPHERD_GUIDANCE
+    GITHUB_NOTICE_RELIABILITY_DESIGN --> GITHUB_SHEPHERD_GUIDANCE
 ```
 
 ### `GITHUB_NOTICE_RELIABILITY_DESIGN` — delivery guarantee and fallback
@@ -217,7 +218,7 @@ outage or exhaustive historical event matrix is required.
 
 ### `GITHUB_SHEPHERD_GUIDANCE` — explain monitoring limits and completion checks
 
-**Sequenced after `CRON_NOTIFICATIONS`; final wording also follows the decision.** Agents are
+**Blocked on `GITHUB_NOTICE_RELIABILITY_DESIGN`; if agent reminders are chosen it also needs the frozen [`CRON_NOTIFICATIONS`](task_freezer.md#cron_notifications--scheduled-notifications-for-agents), which would first have to be promoted.** Agents are
 asked not just to subscribe to GitHub while waiting (e.g. for CI) but to back the subscription with
 a fallback check after N minutes, in case the webhook never delivers. Treat notifications as prompts
 to inspect authoritative current PR state, not evidence that the latest head passed or that silence
@@ -269,15 +270,14 @@ flowchart TD
     SESSION_ACCESS_RULES --> AGENT_MESSAGE_INGRESS
     AGENT_MESSAGING_DESIGN --> AGENT_MESSAGE_INGRESS
     AGENT_MESSAGE_INGRESS --> AGENT_MESSAGE_RECEPTION
-    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service, section 2] -. related .-> AGENT_MESSAGING_DESIGN
+    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service's responsibilities, section 2] -. related .-> AGENT_MESSAGING_DESIGN
     NOTIFICATION_SERVICE_SPLIT -. related .-> AGENT_MESSAGE_INGRESS
     NOTIFICATION_SERVICE_SPLIT -. related .-> AGENT_MESSAGE_RECEPTION
     AGENT_MESSAGE_RECEPTION --> AGENT_MESSAGING
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
-    NATIVE_SUBAGENT_ENABLE[In review: native delegation with root-only output]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
-    HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
+    HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
 ```
 
@@ -466,7 +466,9 @@ diagnostic objects with hosted Sessions and status, while the Session API owns p
 Use the merged Codex multi-thread test and Claude's separate-store single-root characterization
 alongside `HARNESS_IDENTITY_DESIGN` and the [pinned child evidence](../native/docs/child_sessions.md); do
 not assume one Agentplane Session is one process, one persisted store, or one native conversation, or
-that every discovered child is independently controllable.
+that every discovered child is independently controllable. Native delegation with root-only output is
+merged; child Session projection remains
+[deferred](task_freezer.md#native_subagent_threads--as-linked-agentplane-threads).
 
 Compare diagnostic process objects with retaining Session-only projections. Process placement
 and allocation remain internal, without a public create-Session-on-process API or refusal. Specify
@@ -488,18 +490,6 @@ kill a process still serving other Sessions.
 Deliver a recommendation and proposed API shape for review; implementation and migration/retirement
 nodes follow only if selected. This does not unfreeze the broader runner durability redesign or
 authorize native-subagent implementation.
-
-### `NATIVE_SUBAGENT_ENABLE` — land native delegation with root-only output
-
-**In review, 2026-10-16 UTC: [#10782](https://github.com/agentydragon/ducktape/pull/10782).**
-The operator selected native delegation without child Session discovery or controls. Implementation
-and real-harness/mock-LLM isolation tests are in the PR; adapter, turn, restart/recovery and native
-wire tests pass. Remaining gate: PR checks and review/merge. Remove this node when merged; do not
-redispatch its implementation or add a child-discovery acceptance gate.
-
-The completed characterization and its limits live in the [native evidence](../native/docs/child_sessions.md).
-Child Session projection remains [deferred](task_freezer.md#native_subagent_threads--as-linked-agentplane-threads),
-not a prerequisite for this change or for the separate identity/authority decisions.
 
 ## 4. VM environment phases
 
@@ -524,8 +514,8 @@ flowchart LR
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
     VM_HARNESS_RESOURCE_LIMITS[Blocked: accept VM per-harness resource limits]
     VM_INTRA_SANDBOX_HARDENING[Deferred: optional intra-Sandbox process/state hardening]
-    RUNNER_LAYERING_VM[Blocked: slim VM runtime, section 10]
-    K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 10]
+    RUNNER_LAYERING_VM[Blocked: slim VM runtime, section 7]
+    K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     VM_HARNESS_RESOURCE_LIMITS --> VM_LIFECYCLE
@@ -535,7 +525,7 @@ flowchart LR
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
     VM_GUEST_MEMORY[Parked: 8 GiB PR held for workload-image prototype]
     VM_GUEST_BUDGET_DERIVE[Blocked: guest budgets derive from the VM spec]
-    VM_GUEST_MEMORY -. the two numbers neither node should author alone .-> VM_GUEST_BUDGET_DERIVE
+    VM_GUEST_MEMORY --> VM_GUEST_BUDGET_DERIVE
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
     VM_GUEST_MEMORY --> LOCAL_BAZEL
     SANDBOX_VM_ISOLATION --> KUBEVIRT_EXPERIMENT_RETIRE[Blocked: delete the KubeVirt experiment]
@@ -679,7 +669,6 @@ flowchart LR
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
     ACTION_SURFACES_DESIGN -. related .-> NOTIFICATION_PRESENTATION
     BUILD_BOX_BAZEL[Unscheduled: build Sandboxes can run Bazel]
-    BUILD_BOX_BAZEL -. related .-> ISOLATED_ACCEPTANCE_CI
 ```
 
 ### `ACTION_SURFACES_DESIGN` — where and in what states Actions render
@@ -687,25 +676,22 @@ flowchart LR
 **Decision; operator, 2026-10-13 PDT: rethink it, since it is a patchwork and possibly redundant.**
 Decide every place an Action is shown and in which states, then reduce the code to that. Surfaces
 found in `app/frontend/actions/` and the service worker: the sidebar rows (collapsed and expanded,
-with Approve/Deny only where `canApproveInline` allows), the top "Actions waiting" strip (a count),
+with card decision buttons only where the Action type's `offersCardDecisionButtons` says so), the top "Actions waiting" strip (a count),
 the Actions page queue and the detail view (`PendingActionCard`, the full `ActionCall`, with a raw
 and a pretty toggle), history, the policy view, and the Web Push notification (formatters in a
 registry separate from the React one). Several of them choose independently what to render, whether
 to offer a decision, and how tall to let the card grow. Settle which surfaces exist, what each is
 for (a glance, a quick decision, full review, a record), and which states each has, so that one
 rule decides inline approval and height and each Action type is described once.
-Direction (operator, 2026-10-13 PDT): whether a card offers its decision buttons is not a per-kind
-allowlist (`QUICK_APPROVALS`); the Action type's own TypeScript implementation decides for each
-invocation from its content (for example a read-only call against a listed resource). Also give
-each representation and visual element one fixed name and use it everywhere (code, UI copy, docs),
-since "quick approve" could mean the buttons on a card or Approve/Deny on a desktop notification.
-Proposed vocabulary, to settle with the design: **compact card** (the glance form in the sidebar
-and the strip), **full card** (the detail view with the whole `ActionCall`), **card decision
-buttons** (Approve/Deny on a compact card), **notification buttons** (Approve/Deny on a Web Push
-notification), **attention strip** (the top "Actions waiting" count). `NOTIFICATION_PRESENTATION` (section 2) renders notices on the same surfaces and uses the same card
-names. The compact-card
-fixes under way (decision buttons on collapsed cards, a height cap, more Actions allowed inline)
-land first and need not wait for this.
+Landed: whether a card offers its decision buttons is decided by the Action type's own
+`offersCardDecisionButtons(args)` for each invocation, from its content (for example a read-only call
+against a listed resource), not by a per-kind allowlist. The names **compact card** (the glance form in
+the sidebar and the strip), **card decision buttons** (Approve/Deny on a compact card) and **attention
+strip** (the top "Actions waiting" count) are already used in code and tests. Still to settle with the
+design: **full card** (the detail view with the whole `ActionCall`) and **notification buttons**
+(Approve/Deny on a Web Push notification), then use every name everywhere (UI copy, docs), since "quick
+approve" could mean the buttons on a card or on a desktop notification. `NOTIFICATION_PRESENTATION` (section 2) renders notices on the same surfaces and uses the same card
+names.
 
 ### `DOCKABLE_PANES` — dockable panes in the web app
 
@@ -778,7 +764,7 @@ respect the backend dependency rule; the integration app cannot own this path.
 
 The [image-split comparison](https://github.com/agentydragon/ducktape/blob/41c322895f/agentplane/x/k3s_env/README.md#harness-specific-runner-comparison-2026-10-16)
 measures removal of unused harness payload; it does not measure runtime delivery of a needed harness.
-Its profiles and inventories are in [#10813](https://github.com/agentydragon/ducktape/pull/10813).
+Its profiles and inventories are merged in [#10813](https://github.com/agentydragon/ducktape/pull/10813) (`x/k3s_env/`); the image split itself landed in #10812.
 
 Exit: a measured recommendation and explicit operator choice. Compare equivalent scenarios and
 pins, separating image build/upload, action-input transfer, containerd import/unpack, harness
@@ -828,8 +814,9 @@ flowchart LR
 **Unscheduled.** A build Sandbox cannot run Bazel: the repo's configuration uses `remote.buildbuddy.io`,
 whose gRPC dial ignores the box's HTTP proxy and times out, and it needs credentials. `agentplane/` has no
 `go.mod`, so a plain `go build` is not available either. Options: a local-only Bazel configuration for boxes,
-or a BuildBuddy route through the box's egress (the Go egress for boxes exists). The BuildBuddy route puts
-credentials in boxes, which is the operator's call.
+or a BuildBuddy route through the box's egress (the Go egress for boxes exists). The key can stay in the
+egress proxy as a header substitution, as the staging `claude-ai` Sandboxes' `BUILDBUDDY_POLICY` already does for
+`bazel --config=rbe`; whether boxes get that binding is the operator's call.
 
 ## 6. Existing access and lifecycle follow-ups
 
@@ -839,7 +826,7 @@ observations. New database work follows the task-specific review and rollout req
 
 ```mermaid
 flowchart LR
-    PC_EGRESS_CREDENTIALS[Deferred: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
+    PC_EGRESS[Unscheduled: prune OpenClaw-only wiring from the Iron proxy]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
@@ -850,18 +837,12 @@ flowchart LR
     PC_KUBERNETES_POLICY_SET[Unscheduled: public-coder's Kubernetes access as one PolicySet]
 ```
 
-### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
+### `PC_EGRESS` — prune OpenClaw-only wiring from the Iron proxy
 
-**Deferred by the operator; not dispatchable until selected.** Admit the intended OpenClaw account to the dedicated
-Action Service using its configured namespace and policy bindings. A label alone is not an execution
-grant. Coordinate with the owner of the currently disabled/controlled workload before rollout.
-
-### `PC_EGRESS` — public-coder-agent egress migration
-
-**Blocked on caller admission and a controlled deployment.** Compare effective allowed/denied routes,
-credential substitution and Action policy against the existing proxy, then do a reversible cutover.
-Remove only unused OpenClaw-specific wiring; retain shared Iron/Haku consumers. Do not turn this
-into an outage matrix. Source: [public-coder wiring](../../cluster/cdk8s/public_coder/proxy.py).
+**Unscheduled; the cutover landed and the public-coder Pod is paused (`replicas=0`).** Remove only the
+Iron proxy substitutions and credentials the KubeVirt devbox does not use (`_substitutions` and its
+ExternalSecrets); retain shared Iron/Haku consumers. Confirm the first resumed run uses the Agentplane
+route. Source: [public-coder wiring](../../cluster/cdk8s/public_coder/proxy.py).
 
 ### `PC_KUBERNETES_POLICY_SET` — public-coder's Kubernetes access as one PolicySet
 
@@ -893,7 +874,8 @@ view is one Action type described once there.
 
 **Blocked on the caller review.** The claude.ai caller gets a
 Flux-owned `PolicyBinding` of the sets `CLAUDE_AI_SA` approves, of any rule type, replacing its
-static per-namespace grants in `agent_access_profiles.py`. Static Group subjects (Haku OIDC;
+remaining static per-namespace grants in `agent_access_profiles.py` (`STATIC_GRANTS["claude-ai"]`; the
+acceptance-testing RBAC already moved to a `PolicyBinding` in #10522). Static Group subjects (Haku OIDC;
 public-coder until `PC_KUBERNETES_POLICY_SET`) stay Flux bindings. Test an allowed and a denied request. Static caller accounts' bindings, this one among them, are Flux-owned, never Sandbox-owned.
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
@@ -948,7 +930,7 @@ flowchart TD
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
-    PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
+    PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
@@ -1065,7 +1047,7 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 flowchart TD
     SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
     RUNNER_IMAGE_LAYERING_DESIGN[Decision: what carries the runner, harnesses and per-template tools]
-    RUNNER_LAYERING_SPIKE[In review: workload-image execution prototype]
+    RUNNER_LAYERING_SPIKE[Paused: workload-image prototype merged; evidence incomplete]
     RUNNER_LAYERING_SPIKE_EXIT[Blocked: finish update-boundary evidence, measurements and recommendation]
     RUNNER_LAYERING_SPIKE_RETIRE[Blocked: port retained pieces or delete spike after design]
     SANDBOX_GENERIC_SPLIT -. related .-> RUNNER_IMAGE_LAYERING_DESIGN
@@ -1146,13 +1128,13 @@ runtime we have, and Firecracker is a new runtime added beside it.
 
 ### `RUNNER_LAYERING_SPIKE` — minimal guest, harness and tools-layer evidence
 
-**In review; operator-requested workload-image prototype, 2026-10-16. The remaining compatibility
+**Prototype merged (#10741, #10744, #10789); operator-requested 2026-10-16. The remaining compatibility
 evidence is paused.** The merged experiment proves a Codex text turn, shell call through a separate Bash
 tools OCI layer, native resume after killing the harness, runner survival and private-state separation
 in the RBE test; a local Firecracker guest boots the digest-pinned ELF kernel and mounts separate
-read-only tools and harness SquashFS drives. This follow-on adds `workload-tool` in its own OCI tar
-layer and changes the mocked Codex shell call to run it before the harness exit, confirms its
-workspace write survives resume, then asks the resumed harness to execute the same workload tool.
+read-only tools and harness SquashFS drives. #10789 added `workload-tool` in its own OCI tar
+layer and changed the mocked Codex shell call to run it before the harness exit, confirmed its
+workspace write survives resume, then asked the resumed harness to execute the same workload tool.
 The focused `bbr test //agentplane/runner:test_restart --test_arg=-k
 --test_arg=sparse_child_root` passed in RBE; the marker remained readable from the persistent workspace
 after the harness was killed and resumed, and the resumed Codex process emitted the tool's output
@@ -1405,8 +1387,8 @@ flowchart TD
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
-**Blocked on the cutover's retirements and the split**, which remove the
-transitional pieces the other nodes name. Sweep devel for unused modules, functions, settings, proto
+**Blocked on `DELIVERY_OLD_RUNTIME_RETIRE`**, which removes the
+remaining transitional pieces. Sweep devel for unused modules, functions, settings, proto
 fields, tables and columns; one name per concept across code, settings, manifests, protos and docs
 (Runner Gateway, History Service, ingress, control; Session for the raw stream,
 Thread for its projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.md` files and
@@ -1421,12 +1403,9 @@ PRs of their own; this node leaves with the last of them.
 
 ## 10. Runner ingress and control split
 
-Target and decisions: [History Service plan](history_service.md#target). The runner keeps dialing
-out, but to two endpoints its Sandbox names: an **ingress** it pushes its journal's Events to, and
-a **control endpoint** (the Runner Gateway) whose stream it holds for commands, receipts and lifecycle
-requests. The History Service is the ingress when history is kept. The contract is
-[runner control stream § Event ingress](../docs/runner_control.md#event-ingress); it replaces following the
-runner through the Sandbox Service.
+The runner dials out to two endpoints its Sandbox names: an ingress it pushes its journal's Events to (the History
+Service when history is kept) and the Runner Gateway control endpoint. Contract:
+[runner control stream § Event ingress](../docs/runner_control.md#event-ingress).
 
 ```mermaid
 flowchart TD
@@ -1444,26 +1423,28 @@ resumed harness or a lost push reads back) once acknowledged entries are gone, i
 
 ## 12. The Runner Gateway serves the runner's own service
 
-Target and decisions: [History Service plan](history_service.md#decided-operator-2026-10-10-pdt)
-(Runner Gateway shape, Session specs). The Gateway serves `Connect` and proxies the runner's
+The Gateway serves `Connect` and proxies the runner's
 `Runner` service with per-method authorization; commands use Dispatcher and typed Runner RPCs. The
 Python Session wrappers, registry runtime, and database artifacts have been retired.
 
 ```mermaid
 flowchart TD
-    PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
+    PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization]
 ```
 
 The [completed control-surface audit](../docs/control_surface_retirement.md) records protobuf,
 HTTP/client, settings, deployment and guest-wheel consumers. Live `Runner.ListSessions` remains
 needed by app archive/native resume and Notification membership, so its conditional retirement
-node is removed. This does not remove the separate destination-authority decision in section 16.
+node is removed. This does not remove the separate destination-authority decision `DELIVERY_DESTINATION_AUTHORITY_DESIGN` (section 13).
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
 **Needs policy revision; preserve the explicitly approved direct app `Runner.ResumeSession` caller.**
 The runner proxy (`runner_gateway/go/gateway/proxy.go`) currently lets each configured caller account
-invoke the Runner methods allowed by policy, except `Quiesce` and `Seal`. Review the per-method policy
+invoke the Runner methods allowed by policy, except `Quiesce` (controller only). The app and Notification
+accounts and the Gateway's own account can call `OpenSession`, `SubmitInput`, `ChangeModel`,
+`ChangeReasoningEffort`, `InterruptTurn` and `StopRunnerSession` directly; only `ResumeSession` from the app is
+approved. Review the per-method policy
 for `OpenSession` and other start-or-continue-work methods against the Dispatcher-only command
 boundary and the approved app resume path. Do not revoke app resume as part of retiring the Gateway
 Session wrapper.
@@ -1482,7 +1463,8 @@ Session wrapper.
 
 ## 13. Delivery boundaries, APIs and harness identity
 
-This section separates approved implementation under review from pending rollout and design tasks.
+This section holds the unfinished delivery-acceptance cleanup, destination and harness-identity design and
+implementation, and API and test-tier work.
 Decision nodes do not authorize runtime changes. Detailed code paths and alternatives are in the
 [delivery and harness design note](../docs/runner_delivery_and_harness_design.md).
 
@@ -1495,8 +1477,7 @@ items below; this direction does not authorize runtime changes.
 ```mermaid
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: durable queue or direct admission]
-    GATEWAY_GO_ROLLOUT_CONFIG[Blocked: image pins and migration-gated Flux wiring]
-    DELIVERY_UNIFIED_CUTOVER[Atomic cutover and recovery verification]
+    DELIVERY_UNIFIED_CUTOVER[Candidate: record Go cutover acceptance]
     DELIVERY_OLD_RUNTIME_RETIRE[Retire obsolete runtime objects]
     RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
@@ -1506,9 +1487,8 @@ flowchart LR
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
-    CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a narrow CNPG-free K3s integration tier]
-    K3S_VM_IMAGE[Blocked: build a real VM fixture, section 10]
-    GATEWAY_GO_ROLLOUT_CONFIG --> DELIVERY_UNIFIED_CUTOVER
+    CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a PostgreSQL-free K3s tier]
+    K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     DELIVERY_UNIFIED_CUTOVER --> DELIVERY_OLD_RUNTIME_RETIRE
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
@@ -1562,66 +1542,31 @@ scope its included flows, omitted services and remaining state owners explicitly
 contract, if selected, remains online-only and does not wake suspended Sandboxes; the durable-queue
 mode remains the owner of wake-to-deliver.
 
-**Approved direction (operator, 2026-10-15):** unify the Dispatcher and Gateway roles in one Go
-service, retaining the PostgreSQL queue, distinct authenticated sender/proxy/runner-control
-surfaces, and separate delivery and connection ownership across replicas. Exact listener count and
-deployment wiring belong to `GATEWAY_GO_ROLLOUT_CONFIG`; no deployment change is approved by this
-design record. The [delivery design note](../docs/runner_delivery_and_harness_design.md#delivery-service-and-persistence-alternatives)
-records the tradeoffs. Direct admission and new sender grants remain separate decisions;
-wrapper/registry retirement is complete.
+The existing `agentplane/x/k3s_env` suite already runs without the CNPG operator, KubeVirt, Cilium or cert-manager,
+against one plain PostgreSQL Deployment and the Go Gateway; this node is about removing the PostgreSQL dependency
+itself. Direct admission and new sender grants remain separate decisions.
 
-### `GATEWAY_GO_ROLLOUT_CONFIG` — publish images and wire migration readiness into Flux
+### `DELIVERY_UNIFIED_CUTOVER` — record acceptance of the Go Gateway cutover
 
-**Configuration and both environment activations merged, 2026-10-16 UTC.** Preparation
-[#10785](https://github.com/agentydragon/ducktape/pull/10785) protects Gateway resources before their
-Flux ownership handoff and adds Go image discovery. The merged
-[#10786](https://github.com/agentydragon/ducktape/pull/10786) pins the published Go server and Goose digests, keeps database/Secrets/stable Services
-and the migration Job under the root, and gates a separate Go serving Kustomization on that exact
-completed migration. Testing activation ([#10787](https://github.com/agentydragon/ducktape/pull/10787))
-and staging activation ([#10796](https://github.com/agentydragon/ducktape/pull/10796)) are merged.
-The Python serving implementations were already removed; the configuration removes their
-remaining deployment/configuration sources and image automation, retaining historical Alembic
-handoff fixtures. See the [rollout procedure](../docs/go_delivery_rollout.md).
-
-Live preflight on 2026-10-16 found both environments running Python and both Dispatcher databases
-at `0007_drop_opening_attached`. That read-only preflight is not backup/restore or cutover acceptance.
-Staging's backup/restore preflight and writer fence were required before its activation.
-
-### `DELIVERY_UNIFIED_CUTOVER` — switch owners without losing admitted work
-
-**Both environments serve the Go Gateway; acceptance is not recorded.** Testing activation #10787 and
-staging activation #10796 merged 2026-10-16 UTC, and a live read at 2026-10-17 03:20 UTC found no Python
-Deployments and the Go Gateway Ready in both. Staging's two Sandboxes reported `RunnerConnected=False` from
-22:17 UTC because the runner control route's network rules admitted port 8082 and the Go listener serves only
-8080; after [#10818](https://github.com/agentydragon/ducktape/pull/10818) named the listener port, a live read at
-03:41 UTC found them and testing's three Sandboxes `RunnerConnected=True`. A VM runner's reconnect is not
-observed. Testing preservation and manual writer-fence gates were waived by the operator; the waiver does not
-apply to staging, whose backup/restore preflight and writer fence are not recorded as complete here.
-Recheck the
-operator's prerequisite that neither service depends on History: the 2026-10-15 entrypoints,
-settings, chart and runtime call paths have no History client/call/config, while runner ingress and
-app/Notification History reads are separate. If this changes, remove that direct service dependency
-through a reviewed node before rollout. With a brief outage allowed, stop old Dispatcher acceptance
-and workers and old Gateway `Connect`, fence/expire their delivery and connection Leases, then move
-both stable Services to ready unified replicas; never let old and new writers share the queue or
-connection records. Remove the old Deployments in this fenced switch, not after new writers start.
-Preserve all queued rows and command IDs. Verify previously accepted work
-recovers, lost-response same-ID retry, runner reconnect from an existing Pod and VM, App/Notification
-live reads, controller Quiesce, UID replacement, owner/holder on different replicas and failover.
-Rollback to old images against unchanged schema/rows if the new path fails; do not clear databases
-or claim History can reconstruct runner storage. Record exact cutover and recovery evidence.
+**Both environments serve the Go Gateway (testing #10787, staging #10796, listener port fix #10818); acceptance
+is not recorded.** A live read at 2026-10-17 03:41 UTC found the Sandboxes of staging and testing
+`RunnerConnected=True`; a VM runner's reconnect is not observed. Testing preservation and manual writer-fence gates
+were waived by the operator; the waiver does not apply to staging, whose backup/restore preflight and writer fence are
+not recorded as complete here. Remaining evidence: previously accepted work recovers; lost-response same-ID retry;
+runner reconnect for an existing VM; App and Notification live reads; controller Quiesce; UID replacement;
+owner and holder on different replicas; failover. Rollback is old images against the unchanged schema and rows
+([rollout procedure](../docs/go_delivery_rollout.md)); do not clear databases or claim History can reconstruct runner
+storage. Record exact evidence.
 
 ### `DELIVERY_OLD_RUNTIME_RETIRE` — remove only superseded runtime objects
 
-**Depends on verified cutover.** Remove obsolete Deployment definitions, single-purpose ConfigMaps,
-service accounts/RBAC, network policies, projected inter-service Gateway token and image automation
-entries once no running or saved client needs them. Remove the legacy Python deployment settings contracts after no pinned image needs them; retain
-Dispatcher migration history needed by the reviewed Goose handoff. Restore RollingUpdate after
-fenced-cutover acceptance.
-Keep both stable Service front doors, per-Sandbox Services/EndpointSlices and the Dispatcher database;
-the Go worker may still need a Gateway-audience token for a different connection-holder replica, so
-remove only unused token projections. Do not recreate the already-retired Gateway wrappers or DB. Search code, BUILD, chart, image automation, docs,
-CI and pinned VM artifacts for references before deleting definitions.
+**Depends on `DELIVERY_UNIFIED_CUTOVER`.** The Python Deployments, single-purpose ConfigMaps, image automation
+entries and legacy deployment settings were removed by #10786, keeping the Dispatcher migration history the Goose
+handoff needs. Remaining: restore `RollingUpdate` (`runner_gateway_go.py` still uses `Recreate`) after acceptance, and
+remove any Gateway token projection no caller reads (the Go worker may need a Gateway-audience token for a different
+connection-holder replica; check each caller). Keep both stable Service front doors, per-Sandbox
+Services/EndpointSlices and the Dispatcher database. Search code, BUILD, chart, image automation, docs, CI and pinned VM
+artifacts for references before deleting definitions.
 
 ### `RUNNER_INVENTORY_AUTHORITY_DESIGN` — distinguish live runner state from retained inventory
 
