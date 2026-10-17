@@ -59,19 +59,6 @@ class SandboxOwnedBindingError(InventoryError):
         self.name = name
 
 
-class UnknownPolicyError(InventoryError):
-    """A grant naming a PolicySet with no egress rules in the namespace, which would grant nothing.
-
-    The CRD admits any string in `spec.policySets`, and a name that resolves to nothing grants
-    nothing, so a dangling name is a state the system already handles. This refuses one at the
-    moment it would be written; one the operator deletes afterwards still lands there.
-    """
-
-    def __init__(self, names: list[str]) -> None:
-        super().__init__(f"no PolicySet with egress rules in the namespace is named {', '.join(names)}")
-        self.names = names
-
-
 # The rule and credential kinds are `agentplane.egress.resources`, shared with the proxy that enforces them.
 # The app modelled them separately until node H moved a rule's credential to `credentialRef` and the
 # same edit had to be made twice; a second copy of a CRD's shape is a second thing to forget.

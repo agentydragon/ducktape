@@ -268,13 +268,6 @@ py_test(
     ],
 )
 
-py_library(
-    name = "terraform_hcl",
-    testonly = True,
-    srcs = ["terraform_hcl.py"],
-    deps = ["@pypi//pygohcl"],
-)
-
 py_test(
     name = "test_nebula_mesh",
     srcs = ["test_nebula_mesh.py"],

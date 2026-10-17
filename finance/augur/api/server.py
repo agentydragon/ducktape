@@ -401,12 +401,6 @@ def _add_server_args(parser: argparse.ArgumentParser, *, api_only_help: str) -> 
     parser.add_argument("--api-only", action="store_true", help=api_only_help)
 
 
-def build_server_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Serve the Augur backend API.")
-    _add_server_args(parser, api_only_help="Accepted for deployment wrappers; this target is already API-only.")
-    return parser
-
-
 def build_configured_server_arg_parser(
     *,
     description: str = "Serve the Augur backend API.",
@@ -430,10 +424,6 @@ def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int) -> int:
     print(f"models: {sorted(augur_config.models)} (default: {augur_config.default_model_id})")
     uvicorn.run(app, host=host, port=port)
     return 0
-
-
-def run_server(*, augur_config: Config, argv: list[str] | None = None) -> int:
-    return _run_server_with_args(augur_config=augur_config, args=build_server_arg_parser().parse_args(argv))
 
 
 def run_configured_server(*, argv: list[str] | None = None) -> int:

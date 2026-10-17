@@ -80,30 +80,6 @@ def is_in_deleted_nodes(node: BaseNode, store: TanaGraph) -> bool:
     return False
 
 
-def get_ancestors(node: BaseNode, store: TanaGraph) -> list[BaseNode]:
-    """Get all ancestors of a node, from immediate parent to root."""
-    ancestors = []
-    current = node
-    visited = set()
-
-    while current.props.owner_id and current.props.owner_id not in visited:
-        visited.add(current.id)
-        if parent := store.get(current.props.owner_id):
-            ancestors.append(parent)
-            current = parent
-        else:
-            break
-
-    return ancestors
-
-
-def find_nodes_by_tag(store: TanaGraph, tag_name: str) -> Iterator[BaseNode]:
-    """Find all nodes with a specific supertag."""
-    for node in store.values():
-        if store.has_supertag(node.id, tag_name):
-            yield node
-
-
 def get_image_url(node: BaseNode, store: TanaGraph) -> str | None:
     """Extract image URL from a visual node's metadata."""
     if not node.props.meta_node_id:

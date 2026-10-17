@@ -573,15 +573,9 @@ fn write_locked_pidfile(pidfile: &Path) -> std::fs::File {
 // Client: double-fork + UDS request
 // ---------------------------------------------------------------------------
 
-/// Returned by `fork_daemon`: the daemon's pid plus the read end of the
-/// readiness pipe. The caller awaits a `"READY"` write or EOF on the read
-/// end via `wait_for_sock`.
+/// Returned by `fork_daemon`: the read end of the readiness pipe. The
+/// caller awaits a `"READY"` write or EOF on the read end via `wait_for_sock`.
 pub(crate) struct DaemonFork {
-    /// PID of the double-forked daemon process. Retained for diagnostics
-    /// (e.g. surfacing in error messages) even though the readiness pipe
-    /// supersedes `kill(pid, 0)` polling for liveness checks.
-    #[allow(dead_code)]
-    pub pid: i32,
     pub ready_read: OwnedFd,
 }
 
@@ -603,51 +597,32 @@ pub(crate) fn fork_daemon(daemon_dir: &Path, sock_path: &Path) -> DaemonFork {
 
     let self_exe = std::env::current_exe().expect("cannot determine own exe path");
 
-    // Pipe 1: first child reports the double-forked grandchild's pid back.
-    let (pid_read, pid_write) = pipe().expect("pid pipe");
-    // Pipe 2: daemon (post-exec) signals readiness. Write end is inherited
+    // The daemon (post-exec) signals readiness. Write end is inherited
     // across exec (no CLOEXEC); read end stays here. If the daemon dies
     // before writing READY, the kernel closes its FD on process exit and the
     // launcher reads EOF — race-free pre-bind crash detection.
     let (ready_read, ready_write) = pipe().expect("ready pipe");
 
     // SAFETY: After fork in the child, only async-signal-safe libc calls are
-    // valid until exec. We do setsid + fork + a tiny pipe write + exit (in
-    // the first child) or exec (in the grandchild) — all async-signal-safe.
+    // valid until exec. The first child does setsid + fork + close + exit;
+    // the grandchild execs the daemon — all async-signal-safe.
     match unsafe { fork() }.expect("fork failed") {
         ForkResult::Parent { child } => {
-            drop(pid_write);
             drop(ready_write);
             waitpid(child, None).ok();
-
-            let mut buf = String::new();
-            let daemon_pid = match std::fs::File::from(pid_read).read_to_string(&mut buf) {
-                Ok(n) if n > 0 => buf.trim().parse().unwrap_or(-1),
-                _ => {
-                    eprintln!("claude-hook: daemon startup pipe returned no data");
-                    -1
-                }
-            };
-            DaemonFork {
-                pid: daemon_pid,
-                ready_read,
-            }
+            DaemonFork { ready_read }
         }
         ForkResult::Child => {
-            drop(pid_read);
             drop(ready_read);
             setsid().expect("setsid");
 
             // SAFETY: same constraint as the outer fork.
             match unsafe { fork() }.expect("second fork failed") {
-                ForkResult::Parent { child: grandchild } => {
-                    let msg = grandchild.as_raw().to_string();
-                    let _ = std::fs::File::from(pid_write).write_all(msg.as_bytes());
+                ForkResult::Parent { child: _ } => {
                     drop(ready_write);
                     std::process::exit(0);
                 }
                 ForkResult::Child => {
-                    drop(pid_write);
                     // Release ownership so Drop doesn't close it — the FD must
                     // survive `exec` for the post-exec daemon to read its
                     // `--ready-fd` arg and signal readiness.

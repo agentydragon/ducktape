@@ -1,16 +1,15 @@
 """Typed records + loaders for mirrored Manifold data (`markets/manifold/<id>/`).
 
 The mirror stores Manifold's responses as served (camelCase JSON; `market.json` plus
-`bets.jsonl`/`comments.jsonl` for deep entries — see `finance.evidence.markets`).
-These models parse that raw form into typed records and polars frames; `prob_at`
-implements the verified price-reconstruction rule (probAfter of the last bet
-at-or-before the cutoff — loom/plans/market_harvest.md).
+`bets.jsonl` for deep entries — see `finance.evidence.markets`). These models parse
+that raw form into typed records and polars frames; `prob_at` implements the verified
+price-reconstruction rule (probAfter of the last bet at-or-before the cutoff —
+loom/plans/market_harvest.md).
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 
 import polars as pl
 from pydantic import BaseModel, ConfigDict
@@ -59,16 +58,6 @@ class ManifoldBet(_ManifoldRecord):
     user_id: str | None = None
 
 
-class ManifoldComment(_ManifoldRecord):
-    """One row of `comments.jsonl`. `content` is Manifold's raw TipTap JSON tree."""
-
-    id: str
-    created_time: int
-    user_id: str | None = None
-    user_name: str | None = None
-    content: dict[str, Any] | None = None
-
-
 def load_market(data: bytes) -> ManifoldMarket:
     return ManifoldMarket.model_validate_json(data)
 
@@ -91,23 +80,10 @@ _BETS_SCHEMA = {
     "user_id": pl.String,
 }
 
-_COMMENTS_SCHEMA = {"id": pl.String, "created_time": pl.Int64, "user_id": pl.String, "user_name": pl.String}
-
-
 def bets_frame(data: bytes) -> pl.DataFrame:
     """Parse `bets.jsonl` bytes into a frame (file order preserved; `created_time` is UTC)."""
     bets = [ManifoldBet.model_validate_json(line) for line in data.splitlines() if line.strip()]
     frame = pl.DataFrame({field: [getattr(bet, field) for bet in bets] for field in _BETS_SCHEMA}, schema=_BETS_SCHEMA)
-    return frame.with_columns(_ms_to_datetime("created_time"))
-
-
-def comments_frame(data: bytes) -> pl.DataFrame:
-    """Parse `comments.jsonl` bytes into a frame (TipTap bodies stay in the raw file)."""
-    comments = [ManifoldComment.model_validate_json(line) for line in data.splitlines() if line.strip()]
-    frame = pl.DataFrame(
-        {field: [getattr(comment, field) for comment in comments] for field in _COMMENTS_SCHEMA},
-        schema=_COMMENTS_SCHEMA,
-    )
     return frame.with_columns(_ms_to_datetime("created_time"))
 
 
