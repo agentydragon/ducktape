@@ -6,7 +6,9 @@
  * among them -- closes it for good instead, and nothing retries. So a closed source asks the API
  * whether the login still holds, which sends the browser to log in if not (`client.ts`), and
  * otherwise opens a new source after a backoff; sooner once the browser is back online or the page
- * is back in view.
+ * is back in view. A stream that promises a heartbeat (`silentAfterMs`) is closed the same way when
+ * it goes quiet, since the browser reports neither a connection that died silently nor a retry that
+ * nothing answers.
  */
 import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 
@@ -35,14 +37,20 @@ export interface StreamHandlers {
   events: Record<string, (message: MessageEvent<string>) => void>;
   /** Called with the opening `connecting` at once, then on every change. */
   onConnection: (connection: StreamConnection) => void;
+  /** Where the server sends a frame at least this often, a source that has gone this long without
+   * one is dead, whatever its `readyState` says: a connection that dies without a close leaves it
+   * `OPEN`, and a retry that never answers leaves it `CONNECTING`, each for good. The source is then
+   * closed and opened anew. */
+  silentAfterMs?: number;
 }
 
 /** Follows `url` until the returned function is called. */
-export function followStream(url: string, { events, onConnection }: StreamHandlers): () => void {
+export function followStream(url: string, { events, onConnection, silentAfterMs }: StreamHandlers): () => void {
   let connection: StreamConnection = { phase: "connecting", since: Date.now() };
   let source: EventSource;
   let retries = 0;
   let retry: number | undefined;
+  let silence: number | undefined;
   const stopped = new AbortController();
 
   function report(next: StreamConnection): void {
@@ -50,39 +58,54 @@ export function followStream(url: string, { events, onConnection }: StreamHandle
     onConnection(next);
   }
 
+  function fail(current: EventSource, lastError: string | null): void {
+    report({
+      phase: "reconnecting",
+      since: connection.phase === "live" ? Date.now() : connection.since,
+      attempt: connection.phase === "reconnecting" ? connection.attempt + 1 : 1,
+      lastError,
+    });
+    if (current.readyState !== EventSource.CLOSED) return;
+    window.clearTimeout(silence);
+    // The API client never settles a 401 but sends the browser to log in, so a source refused for
+    // want of a login is not opened again. Any other answer, or none, leaves the backoff to decide.
+    const probed = api.GET("/models", { signal: stopped.signal }).then(
+      () => undefined,
+      () => undefined
+    );
+    retry = window.setTimeout(
+      () =>
+        void probed.then(() => {
+          if (source === current && !stopped.signal.aborted) open();
+        }),
+      backoff(retries++)
+    );
+  }
+
+  function awaitFrame(current: EventSource): void {
+    window.clearTimeout(silence);
+    if (silentAfterMs === undefined) return;
+    silence = window.setTimeout(() => {
+      if (source !== current) return;
+      current.close();
+      fail(current, `no frame for ${silentAfterMs / 1000} s`);
+    }, silentAfterMs);
+  }
+
   function open(): void {
     window.clearTimeout(retry);
     const current = (source = new EventSource(url));
+    awaitFrame(current);
     for (const [name, handle] of Object.entries(events))
       current.addEventListener(name, (message) => {
+        awaitFrame(current);
         if (connection.phase !== "live") {
           retries = 0;
           report({ phase: "live", since: Date.now() });
         }
         handle(message as MessageEvent<string>);
       });
-    current.addEventListener("error", () => {
-      report({
-        phase: "reconnecting",
-        since: connection.phase === "live" ? Date.now() : connection.since,
-        attempt: connection.phase === "reconnecting" ? connection.attempt + 1 : 1,
-        lastError: null,
-      });
-      if (current.readyState !== EventSource.CLOSED) return;
-      // The API client never settles a 401 but sends the browser to log in, so a source refused for
-      // want of a login is not opened again. Any other answer, or none, leaves the backoff to decide.
-      const probed = api.GET("/models", { signal: stopped.signal }).then(
-        () => undefined,
-        () => undefined
-      );
-      retry = window.setTimeout(
-        () =>
-          void probed.then(() => {
-            if (source === current && !stopped.signal.aborted) open();
-          }),
-        backoff(retries++)
-      );
-    });
+    current.addEventListener("error", () => fail(current, null));
   }
 
   function resume(): void {
@@ -100,6 +123,7 @@ export function followStream(url: string, { events, onConnection }: StreamHandle
   return () => {
     stopped.abort();
     window.clearTimeout(retry);
+    window.clearTimeout(silence);
     window.removeEventListener("online", resume);
     document.removeEventListener("visibilitychange", resumeInView);
     source.close();

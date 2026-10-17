@@ -68,6 +68,7 @@ PODS_PLURAL = "pods"
 
 # Seconds of silence after which a health frame goes out anyway, so a tab learns its stream has
 # gone stale without waiting for a change that is never coming, and proxies keep the stream open.
+# The page treats three missed intervals as a dead stream (`SILENT_AFTER_MS` in `live.tsx`).
 HEALTH_INTERVAL_S = 15
 
 

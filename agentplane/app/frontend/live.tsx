@@ -64,6 +64,10 @@ export function liveEgressDecisionsUrl(name: string): string {
   return `/live/sandboxes/${encodeURIComponent(name)}/egress/decisions`;
 }
 
+/** Three of the server's health intervals (`HEALTH_INTERVAL_S` in `app/live.py`): a `/live/*` stream
+ * that has gone this long without a frame is dead, and a change to that interval changes this. */
+const SILENT_AFTER_MS = 45_000;
+
 /** The stream at `url`, which the connection indicator calls `name`. */
 export function useLive<T extends { watch: WatchHealth }>(
   url: string,
@@ -91,6 +95,7 @@ export function useLive<T extends { watch: WatchHealth }>(
           },
         },
         onConnection: setConnection,
+        silentAfterMs: SILENT_AFTER_MS,
       }),
     [url]
   );
