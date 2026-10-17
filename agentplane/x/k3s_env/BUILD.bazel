@@ -8,10 +8,8 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
 # Manual only: it runs k3s as root.
 
-# The runner image the `runner` SandboxTemplate names, built by Bazel from the runner and its two
-# pinned native harnesses at the paths the template passes (`/bin/claude`, `/bin/codex`). It has
-# the runner's own tools only: the Nix-built image (agentplane/runner/image.nix) is the one with a
-# full toolbox, and this one exists so the disposable environment needs no registry credential.
+# Test runners use the same runtime. Lifecycle tests need no native harness; the model smoke
+# adds only Claude. The full Nix-built toolbox image lives in agentplane/runner/image.nix.
 aspect_py_binary(
     name = "runner_image_bin",
     main = "runner_entrypoint.py",
@@ -25,39 +23,48 @@ runner_layers_oci_tars = shared_py_image_layers(
     owner = "1000",
 )
 
-pkg_tar(
-    name = "runner_harnesses",
-    srcs = [
-        "@agentplane_codex_cli_linux_x64//:files",
-        "@claude_code_cli_linux_x64//:claude",
-    ],
-    mode = "0755",
-    package_dir = "/opt/harnesses",
-    strip_prefix = ".",
-)
-
-# The links need a `package_dir` of their own, and the base image's `/bin` is a symlink to `usr/bin`.
-pkg_tar(
-    name = "runner_harness_links",
-    package_dir = "/usr/bin",
-    symlinks = {
-        "claude": "/opt/harnesses/external/+http_archive+claude_code_cli_linux_x64/claude",
-        "codex": "/opt/harnesses/external/+http_archive+agentplane_codex_cli_linux_x64/bin/codex",
-    },
-)
-
 oci_image(
     name = "runner_image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("runner_image_bin"),
     env = py_image_env(binary_name = "runner_image_bin"),
-    tars = runner_layers_oci_tars + [
-        ":runner_harnesses",
-        ":runner_harness_links",
-        "//third_party/debian_slim:cacerts",
-    ],
+    tars = runner_layers_oci_tars + ["//third_party/debian_slim:cacerts"],
     user = "1000:1000",
 )
+
+pkg_tar(
+    name = "runner_claude_harness",
+    srcs = ["@claude_code_cli_linux_x64//:claude"],
+    mode = "0755",
+    package_dir = "/opt/harnesses",
+    strip_prefix = ".",
+)
+
+# The base image's /bin is a symlink to usr/bin.
+pkg_tar(
+    name = "runner_claude_link",
+    package_dir = "/usr/bin",
+    symlinks = {"claude": "/opt/harnesses/external/+http_archive+claude_code_cli_linux_x64/claude"},
+)
+
+oci_image(
+    name = "runner_claude_image",
+    base = ":runner_image",
+    tars = [":runner_claude_harness", ":runner_claude_link"],
+)
+
+# Each test carries exactly one runner layout with the same basename/tag.
+[
+    oci_layout_rloc(
+        name = variant + "/runner_layout",
+        testonly = True,
+        image = image,
+    )
+    for variant, image in {
+        "lifecycle": ":runner_image",
+        "claude": ":runner_claude_image",
+    }.items()
+]
 
 # Bazel-built service images, loaded into k3s's containerd.
 _IMAGES = {
@@ -75,7 +82,6 @@ _IMAGES = {
     "notification_service_migrate": "//agentplane/notification_service:migration_image",
     "policy_controller": "//agentplane/policy_controller:image",
     "postgres": "@postgres_18_linux_amd64",
-    "runner": ":runner_image",
     "runner_gateway_go": "//agentplane/runner_gateway:go_image",
     "runner_gateway_queue_migrate": "//agentplane/runner_gateway/go/migrations:image",
     "sandbox_controller": "//agentplane/sandbox_controller:image",
@@ -150,12 +156,14 @@ py_test(
     size = "enormous",
     srcs = ["test_env.py"],
     data = [
+        ":claude/runner_layout",
         "@nodejs_linux_amd64//:bin/node",
         _K3S_BINARY,
     ],
     env = {
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "K3S_BINARY_RLOCATION": _K3S_BINARY_RLOCATION,
+        "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath :claude/runner_layout)",
     },
     env_inherit = ["LITELLM_QWEN_KEY"],
     exec_properties = _K3S_EXEC_PROPERTIES,
@@ -182,12 +190,14 @@ py_test(
     size = "enormous",
     srcs = ["test_lifecycle.py"],
     data = [
+        ":lifecycle/runner_layout",
         "@nodejs_linux_amd64//:bin/node",
         _K3S_BINARY,
     ],
     env = {
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "K3S_BINARY_RLOCATION": _K3S_BINARY_RLOCATION,
+        "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath :lifecycle/runner_layout)",
     },
     exec_properties = _K3S_EXEC_PROPERTIES,
     tags = _K3S_TAGS,

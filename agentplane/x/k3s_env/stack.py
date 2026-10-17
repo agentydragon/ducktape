@@ -307,6 +307,7 @@ def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
     None leaves it at the cluster-internal Service, which does not exist here, so no turn can run."""
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     layouts = sorted(get_required_path("_main/agentplane/x/k3s_env").glob("*_layout.rloc"))
+    layouts.append(get_required_path(os.environ["K3S_RUNNER_LAYOUT_RLOCATION"]))
 
     work = Path(tempfile.mkdtemp())
     k3s = K3s(work, get_required_path(os.environ["K3S_BINARY_RLOCATION"]))
