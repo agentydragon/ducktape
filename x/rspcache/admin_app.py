@@ -18,7 +18,7 @@ from pydantic.config import ConfigDict
 from openai_utils.model import ResponsesRequest
 from x.rspcache.dependencies import Db, get_db
 from x.rspcache.models import FinalResponseSnapshot, ResponseStatus
-from x.rspcache.responses_db import APIKeyRecord, ClientAPIKey, Response
+from x.rspcache.responses_db import Response
 
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 200
@@ -161,19 +161,8 @@ def _to_response_model(record: Response) -> ResponseRecordModel:
         updated_at=record.updated_at,
         latency_ms=record.latency_ms,
         request_body=request_model,
-        api_key=_to_api_key_model(record.api_key) if record.api_key else None,
+        api_key=APIKeyModel.model_validate(record.api_key) if record.api_key else None,
         snapshot=record.snapshot.to_model() if record.snapshot else None,
-    )
-
-
-def _to_api_key_model(record: ClientAPIKey | APIKeyRecord) -> APIKeyModel:
-    return APIKeyModel(
-        id=record.id,
-        name=record.name,
-        token_prefix=record.token_prefix,
-        upstream_alias=record.upstream_alias,
-        created_at=record.created_at,
-        revoked_at=record.revoked_at,
     )
 
 
@@ -222,7 +211,7 @@ async def live_updates(db: Db) -> StreamingResponse:
 @admin_app.get("/api/keys", response_model=APIKeyListModel)
 async def list_keys(db: Db) -> APIKeyListModel:
     items = await db.list_api_keys()
-    return APIKeyListModel(items=[_to_api_key_model(item) for item in items], count=len(items))
+    return APIKeyListModel(items=[APIKeyModel.model_validate(item) for item in items], count=len(items))
 
 
 @admin_app.post("/api/keys", response_model=CreateKeyResponse)
@@ -231,7 +220,7 @@ async def create_key(payload: CreateKeyRequest, db: Db) -> CreateKeyResponse:
         token, record = await db.create_api_key(payload.name, alias=payload.alias)
     except UniqueViolationError as exc:
         raise HTTPException(status_code=409, detail="API key name already exists") from exc
-    return CreateKeyResponse(token=token, record=_to_api_key_model(record))
+    return CreateKeyResponse(token=token, record=APIKeyModel.model_validate(record))
 
 
 @admin_app.post("/api/keys/{key_id}/revoke", response_model=RevokeKeyResponse)
