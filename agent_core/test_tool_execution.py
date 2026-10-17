@@ -10,6 +10,7 @@ from typing import Annotated, Any, Final, Literal
 
 import pytest
 import pytest_bazel
+from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools.function_tool import FunctionTool
 from hamcrest import anything, assert_that, contains_string, greater_than_or_equal_to, has_entries, has_length
@@ -24,7 +25,6 @@ from agent_core.testing.matchers import assert_function_call_output_structured, 
 from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_core.testing.responses import DecoratorMock, ResponsesFactory
 from agent_core.tool_provider import ImageContent, TextContent, ToolResult
-from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import SendMessageInput
@@ -54,9 +54,9 @@ class _RendezvousOutput(BaseModel):
 
 
 @pytest.fixture
-def rendezvous_server() -> EnhancedFastMCP:
+def rendezvous_server() -> FastMCP:
     """FastMCP server whose tool returns only once a second call of it is running too."""
-    mcp = EnhancedFastMCP("dummy")
+    mcp = FastMCP("dummy")
     both_running = asyncio.Barrier(2)
 
     @mcp.tool(output_schema=None)
@@ -70,8 +70,8 @@ def rendezvous_server() -> EnhancedFastMCP:
     return mcp
 
 
-class ValidationServer(EnhancedFastMCP):
-    """EnhancedFastMCP server with a tool that validates input strictly."""
+class ValidationServer(FastMCP):
+    """FastMCP server with a tool that validates input strictly."""
 
     send_message_tool: FunctionTool
 
@@ -418,9 +418,9 @@ class ToolAResult(BaseModel):
 
 
 @pytest.fixture
-def mcp_a() -> EnhancedFastMCP:
+def mcp_a() -> FastMCP:
     """Create MCP server A with a native function-signature tool."""
-    mcp = EnhancedFastMCP()
+    mcp = FastMCP()
 
     @mcp.tool(output_schema=None)
     def tool_a(
@@ -439,7 +439,7 @@ class NestedInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     regex: Annotated[str, Field(description="Regex validation", pattern=r"^\d{5}$")]
-    text_defaultd: str = Field(default="DEFAULT", description="Text with default")
+    text: str = Field(description="Required text")
 
 
 class CategoryInfo(BaseModel):
@@ -447,47 +447,13 @@ class CategoryInfo(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["type_a", "type_b", "type_c"] = Field(default="type_b")
-
-
-class ToolBInput(BaseModel):
-    """Complete tool B request.
-
-    Exercises nested models, annotated fields with regex validation, field-level
-    descriptions, model-level documentation.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    identifier: Annotated[str, Field(description="Required regex field", pattern=r"^[a-z]{3}$")]
-    count: int = Field(description="Int with range", ge=10, le=100)
-    nested: NestedInfo
-    category: CategoryInfo = Field(default_factory=lambda: CategoryInfo(type="type_b"))
-    flag: bool = Field(default=False, description="Boolean with default")
-
-
-class ResponseA(BaseModel):
-    """Success response variant A."""
-
-    status: Literal["success"] = "success"
-    message: str = Field(description="Status message")
-
-
-class ResponseB(BaseModel):
-    """Error response variant B."""
-
-    status: Literal["error"] = "error"
-    error_code: str = Field(description="Machine-readable error code")
-    message: str = Field(description="Human-readable error description")
-
-
-ToolBResult = Annotated[ResponseA | ResponseB, Field(discriminator="status")]
+    type: Literal["type_a", "type_b", "type_c"]
 
 
 @pytest.fixture
-def mcp_b() -> EnhancedFastMCP:
-    """Create MCP server B with complex nested schema."""
-    mcp = EnhancedFastMCP()
+def mcp_b() -> FastMCP:
+    """Create MCP server B with a nested, fully required input schema."""
+    mcp = FastMCP()
 
     @mcp.tool(output_schema=None)
     def tool_b(
@@ -495,10 +461,10 @@ def mcp_b() -> EnhancedFastMCP:
         count: Annotated[int, Field(description="Int with range", ge=10, le=100)],
         nested: NestedInfo,
         category: CategoryInfo,
-        flag: bool = False,
-    ) -> ToolBResult:
+        flag: bool,
+    ) -> str:
         """Perform tool B with complex validation."""
-        return ResponseB(error_code="TEST", message="test")
+        return "test"
 
     return mcp
 
@@ -509,7 +475,7 @@ async def test_agent_compositor_native_tool_request_schema(compositor, mcp_tool_
     This test demonstrates:
     1. Mounting mcp_a alone -> schema has only tool_a
     2. Mounting both servers -> schema has both tool_a and tool_b
-    3. Complex Pydantic schema with:
+    3. Complex Pydantic input schema with:
        - Annotated fields with regex patterns
        - Field descriptions
        - Model-level descriptions
@@ -562,13 +528,20 @@ async def test_agent_compositor_native_tool_request_schema(compositor, mcp_tool_
         assert props["flag"]["type"] == "boolean"
         assert set(params_b["required"]) == {"identifier", "count", "nested", "category", "flag"}
 
-        # Nested models (v3 inlines rather than using $ref/$defs)
-        nested_def = props["nested"]
-        assert nested_def["properties"]["regex"]["pattern"] == r"^\d{5}$"
-        assert nested_def["properties"]["text_defaultd"]["default"] == "DEFAULT"
+        def resolve_definition(schema: dict[str, Any]) -> dict[str, Any]:
+            reference = schema.get("$ref")
+            if reference is None:
+                return schema
+            definition_name = reference.rsplit("/", 1)[-1]
+            return params_b["$defs"][definition_name]
 
-        category_def = props["category"]
+        nested_def = resolve_definition(props["nested"])
+        assert nested_def["properties"]["regex"]["pattern"] == r"^\d{5}$"
+        assert set(nested_def["required"]) == {"regex", "text"}
+
+        category_def = resolve_definition(props["category"])
         assert set(category_def["properties"]["type"]["enum"]) == {"type_a", "type_b", "type_c"}
+        assert category_def["required"] == ["type"]
 
         print("\nMCP_A_TOOL_A SCHEMA:")
         print(json.dumps(tool_a.model_dump(exclude_none=True), indent=2))

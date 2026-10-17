@@ -1,5 +1,20 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+py_test(
+    name = "test_fastmcp_native_tools",
+    srcs = ["test_fastmcp_native_tools.py"],
+    deps = [
+        ":conftest",
+        ":prefix",
+        ":tool_schemas",
+        "//:conftest",
+        "//mcp_infra/stubs:typed_stubs",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "persistence",
     srcs = ["persistence.py"],

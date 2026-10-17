@@ -7,10 +7,10 @@ descriptions and validation:
 ```python
 from typing import Annotated
 
+from fastmcp import FastMCP
 from fastmcp.tools.function_tool import FunctionTool
 from pydantic import BaseModel, Field
 
-from mcp_infra.enhanced.server import EnhancedFastMCP
 from util.exec.models import TimeoutMs
 
 
@@ -18,7 +18,7 @@ class LookupResult(BaseModel):
     value: str
 
 
-class LookupServer(EnhancedFastMCP):
+class LookupServer(FastMCP):
     lookup_tool: FunctionTool
 
     def __init__(self) -> None:
@@ -34,20 +34,21 @@ class LookupServer(EnhancedFastMCP):
         self.lookup_tool = self.tool(output_schema=None)(lookup)
 ```
 
-`EnhancedFastMCP` validates registered function schemas for OpenAI strict mode.
-It rebuilds the input schema using the same Pydantic schema generator as the
-rest of the repository, including nested models and discriminated unions. Every
-exposed parameter is required in the published schema; a Python default still
-applies when calling the handler directly. Use `T | None` when the client may
-send `null`.
+FastMCP publishes the schema generated from the function signature directly.
+Tools passed to the Agent's OpenAI Responses API must meet its strict-schema
+requirements: every argument must be required, and every object must forbid
+additional properties. For nullable arguments, use `T | None` without a Python
+default so the argument remains required while accepting `null`. Avoid defaulted
+arguments on Agent tools; their FastMCP schema marks them optional and the Agent
+rejects that schema when building the request.
 
 ## Inputs
 
 - Prefer native function parameters over a single Pydantic model parameter;
   the latter produces a nested `input` object in the MCP schema.
 - Use `Annotated[T, Field(...)]` for constraints and LLM-facing descriptions.
-- Use `OpenAIStrictModeBaseModel` for nested request models that need strict
-  schema checks.
+- Use nested `BaseModel` arguments with `ConfigDict(extra="forbid")`, and make
+  each field required when the tool is sent through the Agent.
 - Use `list[T]` rather than `set[T]`, and `str` rather than `Path` in tool
   schemas.
 - FastMCP injects `Context` parameters and `Depends(...)` values without

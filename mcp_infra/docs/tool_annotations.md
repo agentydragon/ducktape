@@ -39,13 +39,6 @@ from mcp.types import ToolAnnotations
 async def search_nodes(query: str) -> str: ...
 ```
 
-Tools registered through `EnhancedFastMCP` use the same FastMCP decorator:
-
-```python
-@enhanced.tool(annotations=ToolAnnotations(readOnlyHint=True))
-def search_nodes(query: str) -> SearchResult: ...
-```
-
 ## Why set them
 
 Read-only servers (e.g. grocy read-only paths, OSM lookup, anything that only fetches) should

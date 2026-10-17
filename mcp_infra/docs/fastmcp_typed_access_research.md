@@ -1,6 +1,6 @@
 # FastMCP Typed Access Research
 
-> **Status:** Research complete. Recommendations adopted -- see `EnhancedFastMCP` subclass pattern in `mcp_infra/enhanced/`.
+> **Status:** Research complete. Use ordinary `FastMCP` subclasses with typed tool attributes; there is no custom FastMCP base class.
 
 ## Problem
 

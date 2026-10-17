@@ -153,7 +153,6 @@ py_test(
         "//agent_core/testing/mcp:responses",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
-        "//mcp_infra/enhanced:server",
         "//mcp_infra/testing:simple_servers",
         "//openai_utils:model",
         "//openai_utils/testing:openai_mock",
