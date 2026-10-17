@@ -16,7 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/go/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/go/upstream"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/google/uuid"
 )
 

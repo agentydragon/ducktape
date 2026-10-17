@@ -28,7 +28,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/go/resources"
 	"github.com/agentydragon/ducktape/agentplane/egress/go/upstream"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"golang.org/x/net/http2"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

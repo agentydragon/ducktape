@@ -1544,7 +1544,7 @@ async def test_shared_transport_interactive_grpc_before_eof(
     finished = asyncio.Event()
     async with (
         recording_grpc_upstream(keypair, finished=finished) as (port, requests),
-        SidecarRelay(proxy_host="127.0.0.1", proxy_port=contract_port, token_file=token_file, listen_port=0) as sidecar,
+        SidecarProcess(proxy_host="127.0.0.1", proxy_port=contract_port, token_file=token_file) as sidecar,
     ):
         monkeypatch.setenv("https_proxy" if tls else "grpc_proxy", f"http://127.0.0.1:{sidecar.listen_port}")
         monkeypatch.setenv("no_proxy", "")
