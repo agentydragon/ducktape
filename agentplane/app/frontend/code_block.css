@@ -142,3 +142,9 @@
   border: 0;
   border-radius: 0;
 }
+
+/* The enclosing body supplies vertical spacing for these borderless sections. */
+.agentplane-command-code .cm-editor .cm-content,
+.agentplane-output-code .cm-editor .cm-content {
+  padding-block: 0;
+}

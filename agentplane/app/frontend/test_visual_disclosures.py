@@ -115,8 +115,13 @@ async def test_nested_headings_stack(view: VisualPage, app: AgentplaneFixture, w
     await _expect_at(page, _OUTER, 0)
     await _expect_at(page, _INNER, outer_height)
     if wrapped_headings:
-        assert outer_height >= 56, "outer mobile heading did not wrap"
-        assert inner_height >= 56, "inner mobile heading did not wrap"
+        for heading in (_OUTER, _INNER):
+            # Check actual title wrapping rather than padding around its text.
+            title = page.locator(heading).locator(".mantine-Text-root").first
+            title_lines = await title.evaluate(
+                "element => element.getBoundingClientRect().height / parseFloat(getComputedStyle(element).lineHeight)"
+            )
+            assert title_lines >= 1.5, f"{heading} title did not wrap: {title_lines} lines"
     await view.capture()
 
 
@@ -155,6 +160,14 @@ async def test_output_heading_stacks_below_tool(view: VisualPage, app: Agentplan
     await _expect_at(page, _OUTER, 0)
     await _expect_at(page, _INNER, outer_height)
     await _expect_at(page, _OUTPUT, outer_height + inner_height)
+    # Different-sized secondary actions must not move the chevrons inward.
+    chevrons = [
+        await page.locator(heading).locator(".mantine-Accordion-chevron").bounding_box()
+        for heading in (_OUTER, _INNER, _OUTPUT)
+    ]
+    assert all(box is not None for box in chevrons)
+    right_edges = [box["x"] + box["width"] for box in chevrons if box is not None]
+    assert max(right_edges) - min(right_edges) <= 1, chevrons
     await view.capture()
 
 

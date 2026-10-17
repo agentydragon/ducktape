@@ -1427,7 +1427,7 @@ async def test_expanded_command_stays_collapsible(
         assert max(right_edges) - min(right_edges) <= 1, boxes
         assert abs(boxes[1]["y"] - (boxes[0]["y"] + boxes[0]["height"])) <= 1, boxes
 
-        expected_header_height = 44 if viewport.width < 768 else 32
+        expected_header_height = 44 if viewport.width < 768 else 28
         assert max(box["height"] for box in boxes) - min(box["height"] for box in boxes) <= 1, boxes
         for heading, heading_box in zip(headings, boxes, strict=True):
             assert abs(heading_box["height"] - expected_header_height) <= 1, (heading_box, viewport)

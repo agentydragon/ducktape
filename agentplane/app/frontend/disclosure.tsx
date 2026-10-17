@@ -27,17 +27,19 @@ const StickyStackContext = createContext<StickyStackPosition>({
   zIndex: DISCLOSURE_STICKY_Z_INDEX,
 });
 
-function useStickyRowHeight() {
+function useMeasuredBox() {
   const [element, setElement] = useState<HTMLDivElement | null>(null);
-  const [height, setHeight] = useState(0);
+  const [size, setSize] = useState({ width: 0, height: 0 });
   const ref = useCallback((node: HTMLDivElement | null) => setElement(node), []);
 
   useLayoutEffect(() => {
     if (!element) return;
 
     const measure = () => {
-      const nextHeight = element.getBoundingClientRect().height;
-      setHeight((current) => (Math.abs(current - nextHeight) < 0.5 ? current : nextHeight));
+      const { width, height } = element.getBoundingClientRect();
+      setSize((current) =>
+        Math.abs(current.width - width) < 0.5 && Math.abs(current.height - height) < 0.5 ? current : { width, height }
+      );
     };
 
     // Seed before paint so a nested heading does not briefly share its parent's sticky slot.
@@ -47,7 +49,7 @@ function useStickyRowHeight() {
     return () => observer.disconnect();
   }, [element]);
 
-  return [ref, height] as const;
+  return [ref, size] as const;
 }
 
 function childStackPosition(parent: StickyStackPosition, rowHeight: number): StickyStackPosition {
@@ -109,7 +111,8 @@ export function Disclosure({
   keepMounted?: boolean;
 }): JSX.Element {
   const stackPosition = useContext(StickyStackContext);
-  const [headingRef, headingHeight] = useStickyRowHeight();
+  const [headingRef, { height: headingHeight }] = useMeasuredBox();
+  const [asideRef, { width: asideWidth }] = useMeasuredBox();
   const [localOpen, setLocalOpen] = useState(defaultOpen);
   const expanded = open ?? localOpen;
   const setExpanded = (next: boolean) => {
@@ -139,10 +142,21 @@ export function Disclosure({
           ref={headingRef}
           className="agentplane-disclosure-heading"
           data-expanded={expanded}
-          style={{ top: stackPosition.top, zIndex: stackPosition.zIndex }}
+          data-has-aside={summaryAside ? "true" : undefined}
+          style={
+            {
+              top: stackPosition.top,
+              zIndex: stackPosition.zIndex,
+              "--agentplane-disclosure-aside-width": `${asideWidth}px`,
+            } as CSSProperties
+          }
         >
           <Accordion.Control>{summary}</Accordion.Control>
-          {summaryAside}
+          {summaryAside && (
+            <div className="agentplane-disclosure-aside" ref={asideRef}>
+              {summaryAside}
+            </div>
+          )}
         </div>
         <Accordion.Panel>
           <StickyStackContext.Provider value={childStackPosition(stackPosition, headingHeight)}>

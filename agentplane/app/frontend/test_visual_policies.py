@@ -597,9 +597,7 @@ async def test_action_history_paging_control(view: VisualPage, app: AgentplaneFi
     await wait_for_stable(page)
     # The scroll extent can grow after the first move. Bring the control into view after
     # that layout settles, then verify the final captured state.
-    await load_more.scroll_into_view_if_needed()
-    await wait_for_stable(page)
-    await _in_viewport(load_more)
+    await _focus(page, load_more)
     await view.capture(target=view.page.locator("#app"))
 
 

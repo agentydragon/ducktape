@@ -111,7 +111,6 @@ export function OutputBlock({
       summaryAside={
         expanded && (
           <Button
-            className="agentplane-output-less"
             size="compact-xs"
             variant="subtle"
             color="gray"

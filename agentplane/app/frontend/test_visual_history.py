@@ -172,7 +172,7 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
         assert max(item["headingRight"] for item in geometry) - min(item["headingRight"] for item in geometry) <= 1, (
             geometry
         )
-        expected_header_height = 44 if viewport.width < 768 else 32
+        expected_header_height = 44 if viewport.width < 768 else 28
         assert max(item["headingHeight"] for item in geometry) - min(item["headingHeight"] for item in geometry) <= 1, (
             geometry
         )

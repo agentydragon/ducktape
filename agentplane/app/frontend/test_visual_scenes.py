@@ -4,7 +4,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
-from agentplane.app.frontend.testing.visual_assertions import _open_phone_navigation
+from agentplane.app.frontend.testing.visual_assertions import _focus, _open_phone_navigation
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
 from agentplane.app.frontend.visual_app import (
     DELETED_SANDBOX_THREAD,
@@ -179,9 +179,22 @@ async def test_actions_sidebar_under_threads(view: VisualPage, app: AgentplaneFi
 async def test_actions(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
+    page = view.page
+    await page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
     await view.check(context="fixture ready")
-    await view.capture(target=view.page.locator("#app"))
+    await view.capture(target=page.locator("#app"))
+
+    audit_toggle = page.get_by_role("button", name="Request audit details", exact=True)
+    await expect(audit_toggle).to_be_visible()
+    await audit_toggle.click()
+    audit_item = page.locator(".agentplane-disclosure-item").filter(has=audit_toggle).first
+    audit_body = audit_item.locator(".agentplane-disclosure-body")
+    await expect(audit_body.get_by_text("Request", exact=False)).to_be_visible()
+    await expect(audit_body.get_by_text("70000000-0000-4000-8000-000000000006", exact=True)).to_be_visible()
+    await _focus(page, audit_body)
+    await page.mouse.move(0, 0)
+    assert view.capture_name is not None
+    await view.capture(target=page.locator("#app"), name=f"{view.capture_name}_request_audit_expanded")
 
 
 async def test_actions_history_groups_unavailable(view: VisualPage, app: AgentplaneFixture) -> None:
@@ -215,8 +228,26 @@ async def test_consent(view: VisualPage, app: AgentplaneFixture) -> None:
 @DESKTOP_AND_MOBILE
 async def test_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox")
+    page = view.page
+    await page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
     await view.check(context="fixture ready")
-    await view.capture(target=view.page.locator("#app"))
+    await view.capture(target=page.locator("#app"))
+
+    assert view.capture_name is not None
+    for label, checkpoint in (
+        ("Standing instructions", "standing_instructions"),
+        ("Thread setup script", "thread_setup_script"),
+    ):
+        toggle = page.get_by_role("button", name=label, exact=True)
+        await expect(toggle).to_be_visible()
+        await toggle.click()
+        textarea = page.get_by_role("textbox", name=label)
+        await expect(textarea).to_be_visible()
+        # Keep the editable body in the viewport so the checkpoint shows the actual terminal
+        # content rather than only the sticky disclosure heading.
+        await _focus(page, textarea)
+        await page.mouse.move(0, 0)
+        await view.capture(target=page.locator("#app"), name=f"{view.capture_name}_{checkpoint}_expanded")
 
 
 @DESKTOP_AND_MOBILE
