@@ -85,14 +85,13 @@ def ensure_evaluator_role(db_config: DatabaseConfig) -> None:
     password = os.environ.get("PROPS_EVALUATOR_PASSWORD")
     if not password:
         return
-
-    with ExitStack() as cleanup:
-        engine = create_engine(db_config.url, isolation_level="AUTOCOMMIT")
-        cleanup.callback(engine.dispose)
-
+    engine = create_engine(db_config.url, isolation_level="AUTOCOMMIT")
+    try:
         with engine.connect() as conn:
             conn.execute(text("ALTER ROLE evaluator PASSWORD :pw"), {"pw": password})
         logger.info("Evaluator role password synced")
+    finally:
+        engine.dispose()
 
 
 def _drop_all(engine: Engine) -> None:
