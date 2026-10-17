@@ -156,6 +156,7 @@ py_library(
         "//agentplane/sandboxes:inventory",
         "//util:kubernetes",
         "//util/bazel:runfiles",
+        "@pypi//anyio",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",

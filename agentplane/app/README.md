@@ -349,6 +349,11 @@ Uvicorn waits at most `--shutdown-timeout` (5 s) for what is still open, then ca
 that do Session openings stop and the store close its connections, which is what
 the rest of the Deployments' 60-second grace period is for. No preStop delay consumes that budget.
 
+An unexpected Session openings worker failure starts the same drain, then exits the process with
+the worker's error so Kubernetes restarts the replica. Connection, timeout, and database failures
+handled by the worker's retry loop keep retrying. The restarted worker replays Session openings;
+opening an existing Thread is idempotent.
+
 ## Shape
 
 ```text

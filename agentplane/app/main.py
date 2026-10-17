@@ -11,6 +11,7 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, cast
 
+import anyio
 import httpx
 import uvicorn
 from fastapi import Response
@@ -257,8 +258,23 @@ async def serve_then_close(
     async with AsyncExitStack() as stack:
         stack.push_async_callback(engine.dispose)
         await stack.enter_async_context(database_updates.listener.listen())
-        await stack.enter_async_context(background(session_openings.run(), name="session-openings"))
-        await server.serve()
+
+        async def run_session_openings() -> None:
+            try:
+                await session_openings.run()
+                raise RuntimeError("Session openings worker stopped unexpectedly")
+            finally:
+                server.should_exit = True
+
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(run_session_openings, name="session-openings")
+            try:
+                # A worker failure requests Uvicorn shutdown above. Let its drain
+                # finish before propagating the task-group error out of the process.
+                with anyio.CancelScope(shield=True):
+                    await server.serve()
+            finally:
+                tasks.cancel_scope.cancel()
 
 
 if __name__ == "__main__":
