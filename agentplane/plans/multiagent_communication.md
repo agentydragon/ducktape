@@ -71,13 +71,21 @@ than a multiagent prerequisite; no replacement app-auth path is selected.
 
 ### Target collections and launch enrollment
 
-Permissions apply to a Sandbox directly or through explicit target collections. Individual Session
+Permissions apply to a Sandbox directly, through explicit target collections, or through an
+`allSandboxes` target. Individual Session
 IDs remain addresses for delivery and reads; they do not select a narrower permission boundary.
 A collection such as `developers` has no built-in organizational meaning. A bundle can grant
 read/send to that collection and be assigned to any SA, including one otherwise given different
 capabilities. Independent per-SA grants can add rights on unrelated Sandboxes or Kubernetes
 resources, optionally temporarily. Removing collection membership ends collection-derived grants;
 independent overlapping grants remain.
+
+**`allSandboxes` target agreed with the operator, 2026-10-17:** a rule may target every Sandbox in the
+namespace of the PolicySet holding it, never the whole cluster; the Sandbox Controller likewise
+reconciles a single namespace. A Sandbox in another namespace needs a direct target. The target
+covers later Sandboxes without membership data, and the backends match it on the recorded Sandbox
+namespace, so it keeps working after a Sandbox is deleted. It grants only the operations its rule
+lists: read-any does not imply send-any.
 
 **V1 membership storage choice:** use separate membership CRs, each representing one Sandbox's
 enrollment in one collection. Flux and the app can own different enrollment objects independently,

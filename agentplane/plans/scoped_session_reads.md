@@ -8,7 +8,8 @@ which today serves only its configured reader accounts.
 
 SA-level caller attribution and Sandbox-level authorization are agreed. Reads may request an
 individual Session, but the permission covers its Sandbox's histories. V1 supports explicit target
-collections with separate membership CRs, the agreed [Sandbox reference modes and launch defaults](multiagent_communication.md#target-collections-and-launch-enrollment),
+collections with separate membership CRs, an [`allSandboxes` target](multiagent_communication.md#target-collections-and-launch-enrollment)
+bounded to the rule's namespace, the agreed Sandbox reference modes and launch defaults at the same link,
 and no individual-Session grants or computed collection selection.
 The [tentative implementation direction](multiagent_communication.md#tentative-implementation-direction)
 is service-enforced Session-access `PolicySet` rules assigned through existing `PolicyBinding`s,
@@ -40,7 +41,8 @@ resource lifetime after Sandbox deletion remain the open design question
   use that Sandbox's authorization scope. A Session ID is a lookup address, not a permission
   exception. Do not infer a missing historical association from a reused Sandbox name. Histories
   whose association is unknown remain operator-only until explicitly resolved.
-- Grant SAs `read` on specific Sandboxes or explicit collections. Presets can supply initial
+- Grant SAs `read` on specific Sandboxes, explicit collections or every Sandbox in the rule's
+  namespace. Presets can supply initial
   enrollment at authorized launch; later membership removal persists independently. Collection
   membership and permission bundles are separate configurable facts, not a compulsory compartment,
   role hierarchy or agent type. Membership writes follow the

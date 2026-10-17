@@ -317,8 +317,9 @@ implementation.
 
 ### `SESSION_ACCESS_RULES_DESIGN` — Session-access rule and membership schema
 
-**Decision; gates `SESSION_ACCESS_RULES`, `THREAD_READ_POLICY_DESIGN` and `AGENT_MESSAGING_DESIGN`.**
-Finalize the common rule/member-reference schema, concrete administrative RBAC and freshness
+**Decision; the wildcard question is settled and the concrete schema remains for review. Gates
+`SESSION_ACCESS_RULES`, `THREAD_READ_POLICY_DESIGN` and `AGENT_MESSAGING_DESIGN`.** Draft the concrete
+rule/member-reference schema for review, including administrative RBAC and freshness
 settings under the agreed [policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness),
 without requiring an auth-engine migration. Prefer Kubernetes resources for grants and explicit
 collection membership, with separate CRs for individual Sandbox-to-collection enrollments so Flux
@@ -339,18 +340,15 @@ token ([agreed route](multiagent_communication.md#oauth-callers)); no OAuth admi
 other backends. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and
 Connection representation/storage changes are outside this work.
 
-**Open question: a wildcard target** (operator, 2026-10-17 UTC: permissions like "send messages to
-any Sandbox" and "read from any Session"). A Session's scope is its Sandbox, so both are one target form.
-Alternatives:
-
-- **Direct Sandboxes and explicit collections only.** A grant over everything needs a collection every
-  Sandbox joins, and its membership has to follow every launch.
-- **Add an `allSandboxes` target.** It applies to Sandboxes created later and needs no membership data,
-  so a reader of every history is unaffected by `HISTORY_ACCESS_AFTER_DELETION`. Operations stay
-  independent (read-any does not imply send-any) and only whoever writes PolicySets can grant it.
-
-**Recommendation:** add it, since it is one more equality in the shared evaluator and covers an analyst
-agent that reads every history. **Question for review:** include `allSandboxes` in the v1 rule schema?
+**Wildcard target agreed (operator, 2026-10-17 UTC):** v1 includes an `allSandboxes` target beside direct
+Sandboxes and explicit collections, for permissions like "send messages to any Sandbox" and "read from any
+Session"; a Session's scope is its Sandbox, so both are one target form. It matches every Sandbox in the
+namespace of the PolicySet holding the rule, never the whole cluster: a Sandbox Controller reconciles one
+namespace (`--namespace`), and a Sandbox in another namespace needs a direct target. It covers Sandboxes
+created later and needs no membership data, and History matches it on the recorded namespace, so a reader
+of every history is unaffected by `HISTORY_ACCESS_AFTER_DELETION`. Operations stay independent (read-any
+does not imply send-any) and only whoever writes PolicySets can grant it. The namespace match is the
+design's reading of "the controller's scope"; the schema draft confirms or replaces it.
 
 ### `SESSION_ACCESS_RULES` — shared Session-access rule support
 
@@ -358,8 +356,7 @@ agent that reads every history. **Question for review:** include `allSandboxes` 
 tentative Session-access rule family and implement shared rule-reading/evaluation code for API owners.
 Reuse existing SA authentication and PolicyBindings. Match independently grantable listing,
 transcript-read and Session-inbox append operations against direct Sandbox targets, current
-explicit collection memberships represented by separate enrollment CRs and, if selected, an
-all-Sandboxes target.
+explicit collection memberships represented by separate enrollment CRs and an all-Sandboxes target.
 Honor both name-based and UID-pinned Sandbox member references without changing recorded Session
 associations when a Sandbox name is reused.
 Implement independent watched policy views, initial-sync and configurable freshness checks, and
@@ -372,7 +369,7 @@ respective nodes.
 
 ### `THREAD_READ_POLICY_DESIGN` — scoped history read policy
 
-**Decision; tentative Session-access rules, Sandbox minimum and explicit collections selected.**
+**Decision; tentative Session-access rules, Sandbox minimum, explicit collections and all-Sandboxes target selected.**
 Finalize read-specific grant administration within the agreed membership RBAC boundary and caller
 replacement semantics. Access to retained histories after Sandbox deletion is
 `HISTORY_ACCESS_AFTER_DELETION`. V1 has no
@@ -388,8 +385,7 @@ revocation and unknown historical associations. Do not block this on a messaging
 
 **Decision; the operator is weighing it and asked not to rush (2026-10-17 UTC).** Retained history stays
 readable after its Sandbox is deleted, and History already records the Sandbox that wrote each Session. A
-direct Sandbox grant needs only that record, as would an `allSandboxes` grant if selected, so both keep
-working. Only a collection grant needs membership at read time, and membership lives in Kubernetes CRs that
+direct Sandbox grant needs only that record, as does an `allSandboxes` grant, so both keep working. Only a collection grant needs membership at read time, and membership lives in Kubernetes CRs that
 go away or dangle with the Sandbox. The operator wants agents to read old history, dislikes Kubernetes
 references to Sandboxes that no longer exist, does not want to keep heavy Sandbox resources only for
 history, does not want membership split awkwardly between History and Kubernetes, does not want Kubernetes
@@ -414,7 +410,9 @@ Alternatives:
 **Recommendation:** decide it when `THREAD_READ_POLICY` is next in line, because nothing else waits on it:
 sending and live reads need no retained membership, and direct grants work after deletion under every
 alternative. **Questions for review:** which alternative? Should an `allSandboxes` read also reach histories
-with no recorded Sandbox UID, which are operator-only today (`HISTORY_SESSION_KEY_DESIGN`)?
+with no recorded Sandbox UID, which are operator-only today (`HISTORY_SESSION_KEY_DESIGN`)? Those rows keep
+the recorded namespace, which is all that target matches on; a history with no recorded Sandbox stays
+operator-only either way.
 
 ### `THREAD_READ_POLICY` — authorized retained-history access
 
