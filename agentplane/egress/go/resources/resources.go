@@ -1,16 +1,15 @@
-// Package resources parses the objects the egress proxy reads off the API server, once, at the
-// boundary: an EgressCredential, the egress rules of a PolicySet, and a Secret. Only the fields the
-// proxy reads are modelled; everything else on the wire is ignored.
+// Package resources reads the objects the egress proxy gets from the API server into the types its
+// decision runs on, once, at the boundary: an EgressCredential, the egress rules of a PolicySet,
+// and a Secret.
 package resources
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 
+	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -103,85 +102,37 @@ func (c Credential) HasJSONFieldTarget() bool {
 	return false
 }
 
-type wireTarget struct {
-	Header string `json:"header"`
-	Method string `json:"method"`
-	Scheme string `json:"scheme"`
-	Field  string `json:"field"`
-}
-
-type wireSource struct {
-	SecretRef                  *wireSecretRef             `json:"secretRef"`
-	AuthenticatedWorkloadToken *struct{}                  `json:"authenticatedWorkloadToken"`
-	ProjectedWorkloadToken     *wireProjectedWorkloadSpec `json:"projectedWorkloadToken"`
-}
-
-type wireSecretRef struct {
-	Name string `json:"name"`
-	Key  string `json:"key"`
-}
-
-type wireProjectedWorkloadSpec struct {
-	Audience string `json:"audience"`
-}
-
-type wireCredential struct {
-	Metadata struct {
-		Name string `json:"name"`
-	} `json:"metadata"`
-	Spec struct {
-		Source      json.RawMessage   `json:"source"`
-		Description string            `json:"description"`
-		Targets     []json.RawMessage `json:"targets"`
-	} `json:"spec"`
-}
-
-// ParseCredential parses one EgressCredential object. Sources and targets reject unknown
-// fields, so a field this proxy does not understand never reads as permission.
-func ParseCredential(raw []byte) (Credential, error) {
-	var wire wireCredential
-	if err := json.Unmarshal(raw, &wire); err != nil {
-		return Credential{}, fmt.Errorf("EgressCredential: %w", err)
-	}
-	if wire.Metadata.Name == "" {
+// CredentialFromAPI reads one EgressCredential into the closed variants the proxy dispatches on.
+// The CRD schema rejects what is malformed before it is stored; this is the proxy's own check,
+// because a credential read wrongly is a placeholder forwarded raw or a secret sent where it
+// should not go.
+func CredentialFromAPI(credential *egressapi.EgressCredential) (Credential, error) {
+	name := credential.Name
+	if name == "" {
 		return Credential{}, errors.New("EgressCredential: metadata.name is required")
 	}
-	if wire.Spec.Description == "" {
-		return Credential{}, fmt.Errorf("EgressCredential %s: spec.description is required", wire.Metadata.Name)
+	if credential.Spec.Description == "" {
+		return Credential{}, fmt.Errorf("EgressCredential %s: spec.description is required", name)
 	}
-	if len(wire.Spec.Targets) == 0 {
-		return Credential{}, fmt.Errorf("EgressCredential %s: spec.targets needs at least one target", wire.Metadata.Name)
+	if len(credential.Spec.Targets) == 0 {
+		return Credential{}, fmt.Errorf("EgressCredential %s: spec.targets needs at least one target", name)
 	}
-	var source wireSource
-	if err := decodeStrict(wire.Spec.Source, &source); err != nil {
-		return Credential{}, fmt.Errorf("EgressCredential %s: spec.source: %w", wire.Metadata.Name, err)
+	source, err := sourceFromAPI(credential.Spec.Source)
+	if err != nil {
+		return Credential{}, fmt.Errorf("EgressCredential %s: spec.source: %w", name, err)
 	}
-	credential := Credential{Name: wire.Metadata.Name, Description: wire.Spec.Description}
-	var err error
-	if credential.Source, err = parseSource(source); err != nil {
-		return Credential{}, fmt.Errorf("EgressCredential %s: spec.source: %w", wire.Metadata.Name, err)
-	}
-	for i, rawTarget := range wire.Spec.Targets {
-		var target wireTarget
-		if err := decodeStrict(rawTarget, &target); err != nil {
-			return Credential{}, fmt.Errorf("EgressCredential %s: spec.targets[%d]: %w", wire.Metadata.Name, i, err)
-		}
-		parsed, err := parseTarget(target)
+	parsed := Credential{Name: name, Description: credential.Spec.Description, Source: source}
+	for i, target := range credential.Spec.Targets {
+		targeted, err := targetFromAPI(target)
 		if err != nil {
-			return Credential{}, fmt.Errorf("EgressCredential %s: spec.targets[%d]: %w", wire.Metadata.Name, i, err)
+			return Credential{}, fmt.Errorf("EgressCredential %s: spec.targets[%d]: %w", name, i, err)
 		}
-		credential.Targets = append(credential.Targets, parsed)
+		parsed.Targets = append(parsed.Targets, targeted)
 	}
-	return credential, nil
+	return parsed, nil
 }
 
-func decodeStrict(raw json.RawMessage, into any) error {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	return decoder.Decode(into)
-}
-
-func parseSource(source wireSource) (Source, error) {
+func sourceFromAPI(source egressapi.CredentialSource) (Source, error) {
 	var parsed []Source
 	if source.SecretRef != nil {
 		parsed = append(parsed, SecretKey{Name: source.SecretRef.Name, Key: source.SecretRef.Key})
@@ -201,8 +152,8 @@ func parseSource(source wireSource) (Source, error) {
 	return parsed[0], nil
 }
 
-func parseTarget(target wireTarget) (Target, error) {
-	if target.Method == "jsonField" {
+func targetFromAPI(target egressapi.Target) (Target, error) {
+	if target.Method == egressapi.JSONField {
 		if target.Header != "" || target.Scheme != "" {
 			return nil, errors.New("jsonField takes only a field")
 		}
@@ -217,22 +168,22 @@ func parseTarget(target wireTarget) (Target, error) {
 	if target.Field != "" {
 		return nil, fmt.Errorf("%s takes no field", target.Method)
 	}
-	if target.Method != "schemeToken" && target.Scheme != "" {
+	if target.Method != egressapi.SchemeToken && target.Scheme != "" {
 		return nil, fmt.Errorf("%s takes no scheme", target.Method)
 	}
 	switch target.Method {
-	case "wholeValue":
+	case egressapi.WholeValue:
 		return WholeValue{Header: target.Header}, nil
-	case "schemeToken":
+	case egressapi.SchemeToken:
 		if target.Scheme == "" {
 			return nil, errors.New("schemeToken needs a scheme")
 		}
 		return SchemeToken{Header: target.Header, Scheme: target.Scheme}, nil
-	case "basicUsername":
+	case egressapi.BasicUsername:
 		return BasicUsername{Header: target.Header}, nil
-	case "basicPassword":
+	case egressapi.BasicPassword:
 		return BasicPassword{Header: target.Header}, nil
-	case "basicWhole":
+	case egressapi.BasicWhole:
 		return BasicWhole{Header: target.Header}, nil
 	}
 	return nil, fmt.Errorf("unknown target method %q", target.Method)

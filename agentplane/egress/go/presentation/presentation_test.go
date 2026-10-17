@@ -176,12 +176,10 @@ func TestJSONReplacementIsExactFieldOnlyAndEscaped(t *testing.T) {
 	if !ok {
 		t.Fatal("not presented")
 	}
-	value := "quotes\" and slash\\ and newline\n and Unicode café 😀"
-	rewritten := presentation.BodyRewrite(value)
-	for _, b := range rewritten.Content {
-		if b >= 0x80 {
-			t.Fatalf("not ASCII: %q", rewritten.Content)
-		}
+	value := "quotes\" and slash\\ and newline\n and <html> & Unicode café 😀"
+	rewritten, err := presentation.BodyRewrite(value)
+	if err != nil {
+		t.Fatal(err)
 	}
 	var got map[string]any
 	if err := json.Unmarshal(rewritten.Content, &got); err != nil {
@@ -201,15 +199,31 @@ func TestJSONReplacementIsExactFieldOnlyAndEscaped(t *testing.T) {
 	}
 }
 
-func TestJSONRewriteKeepsKeyOrderAndNumberLiterals(t *testing.T) {
+// Every byte outside the presented members reaches the upstream as it was sent.
+func TestJSONRewriteLeavesEveryOtherByteAlone(t *testing.T) {
 	parsed, err := ParseJSONBody(jsonHeaders,
-		[]byte(fmt.Sprintf(`{"b":1.50, "password":%q,"a":[true,null,1e3,{"x":-0}]}`, jsonCredential.Placeholder())))
+		[]byte(fmt.Sprintf(`{"b":1.50, "password" : %q ,"a":[true,null,1e3,{"x":-0}], "z":"é"}`, jsonCredential.Placeholder())))
 	if err != nil {
 		t.Fatal(err)
 	}
 	presentation, _ := Present(jsonCredential, jsonHeaders, parsed)
-	if got := string(presentation.BodyRewrite("v").Content); got != `{"b":1.50,"password":"v","a":[true,null,1e3,{"x":-0}]}` {
+	rewritten, err := presentation.BodyRewrite("v")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(rewritten.Content); got != `{"b":1.50, "password" : "v" ,"a":[true,null,1e3,{"x":-0}], "z":"é"}` {
 		t.Fatalf("got %s", got)
+	}
+}
+
+func TestJSONRewriteRefusesACredentialThatIsNotAString(t *testing.T) {
+	parsed, err := ParseJSONBody(jsonHeaders, []byte(fmt.Sprintf(`{"password":%q}`, jsonCredential.Placeholder())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	presentation, _ := Present(jsonCredential, jsonHeaders, parsed)
+	if _, err := presentation.BodyRewrite("not\xffutf8"); err == nil {
+		t.Fatal("rewrote with bytes JSON cannot carry")
 	}
 }
 
@@ -240,14 +254,12 @@ func TestInvalidJSONIsRefusedWithoutParserInputInTheError(t *testing.T) {
 		"nested duplicate":     []byte(`{"nested":{"x":1,"x":2}}`),
 		"duplicate in array":   []byte(`{"a":[{"x":1,"x":2}]}`),
 		"NaN":                  []byte(`{"x":NaN}`),
-		"overflow":             []byte(`{"x":1e999}`),
 		"array":                []byte(`[]`),
 		"null":                 []byte(`null`),
 		"invalid":              []byte(`{invalid`),
 		"invalid UTF-8":        []byte("{\"x\":\"\xff\"}"),
 		"trailing data":        []byte(`{} {}`),
 		"too large":            []byte(`{"x":"` + strings.Repeat("a", MaxJSONBodyBytes) + `"}`),
-		"too deep":             []byte(strings.Repeat(`{"a":`, 1500) + `1` + strings.Repeat(`}`, 1500)),
 		"unread body":          nil,
 		"non-string key token": []byte(`{1:2}`),
 	} {

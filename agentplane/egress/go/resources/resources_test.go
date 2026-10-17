@@ -5,57 +5,96 @@ import (
 	"strings"
 	"testing"
 
+	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func credentialJSON(source, targets string) []byte {
-	return []byte(`{"metadata":{"name":"github-pat"},"spec":{"description":"d","source":` + source + `,"targets":` + targets + `}}`)
+func credential(source egressapi.CredentialSource, targets ...egressapi.Target) *egressapi.EgressCredential {
+	return &egressapi.EgressCredential{
+		ObjectMeta: metav1.ObjectMeta{Name: "github-pat"},
+		Spec:       egressapi.EgressCredentialSpec{Description: "d", Source: source, Targets: targets},
+	}
 }
 
-const bearer = `[{"header":"Authorization","method":"schemeToken","scheme":"Bearer"}]`
+var (
+	bearer       = egressapi.Target{Method: egressapi.SchemeToken, Header: "Authorization", Scheme: "Bearer"}
+	secretSource = egressapi.CredentialSource{SecretRef: &egressapi.SecretKeyRef{Name: "pat", Key: "token"}}
+	workload     = egressapi.CredentialSource{AuthenticatedWorkloadToken: &egressapi.AuthenticatedWorkloadTokenSource{}}
+)
 
-func TestParseCredentialSources(t *testing.T) {
+func TestCredentialFromAPISources(t *testing.T) {
 	for name, tc := range map[string]struct {
-		source string
+		source egressapi.CredentialSource
 		want   Source
 	}{
-		"secret":    {`{"secretRef":{"name":"pat","key":"token"}}`, SecretKey{Name: "pat", Key: "token"}},
-		"workload":  {`{"authenticatedWorkloadToken":{}}`, AuthenticatedWorkloadToken{}},
-		"projected": {`{"projectedWorkloadToken":{"audience":"https://k8s.test"}}`, ProjectedWorkloadToken{Audience: "https://k8s.test"}},
+		"secret":   {secretSource, SecretKey{Name: "pat", Key: "token"}},
+		"workload": {workload, AuthenticatedWorkloadToken{}},
+		"projected": {
+			egressapi.CredentialSource{ProjectedWorkloadToken: &egressapi.ProjectedWorkloadTokenSource{Audience: "https://k8s.test"}},
+			ProjectedWorkloadToken{Audience: "https://k8s.test"},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			credential, err := ParseCredential(credentialJSON(tc.source, bearer))
+			got, err := CredentialFromAPI(credential(tc.source, bearer))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if credential.Source != tc.want || credential.Placeholder() != "agentplane-credential-github-pat" {
-				t.Fatalf("got %#v", credential)
+			if got.Source != tc.want || got.Placeholder() != "agentplane-credential-github-pat" {
+				t.Fatalf("got %#v", got)
 			}
 		})
 	}
 }
 
-func TestParseCredentialRefusesWhatItDoesNotUnderstand(t *testing.T) {
-	for name, raw := range map[string][]byte{
-		"no source":                  credentialJSON(`{}`, bearer),
-		"two sources":                credentialJSON(`{"secretRef":{"name":"a","key":"b"},"authenticatedWorkloadToken":{}}`, bearer),
-		"unknown source":             credentialJSON(`{"forgedSource":{}}`, bearer),
-		"projected without audience": credentialJSON(`{"projectedWorkloadToken":{}}`, bearer),
-		"no targets":                 credentialJSON(`{"authenticatedWorkloadToken":{}}`, `[]`),
-		"scheme token without scheme": credentialJSON(`{"authenticatedWorkloadToken":{}}`,
-			`[{"header":"Authorization","method":"schemeToken"}]`),
-		"scheme on a basic target": credentialJSON(`{"authenticatedWorkloadToken":{}}`,
-			`[{"header":"Authorization","method":"basicWhole","scheme":"Bearer"}]`),
-		"header on a json target": credentialJSON(`{"authenticatedWorkloadToken":{}}`,
-			`[{"header":"X","method":"jsonField","field":"password"}]`),
-		"unknown method": credentialJSON(`{"authenticatedWorkloadToken":{}}`, `[{"header":"X","method":"bearer"}]`),
-		"unknown target field": credentialJSON(`{"authenticatedWorkloadToken":{}}`,
-			`[{"header":"X","method":"wholeValue","extra":1}]`),
-		"no header": credentialJSON(`{"authenticatedWorkloadToken":{}}`, `[{"method":"wholeValue"}]`),
+func TestCredentialFromAPITargets(t *testing.T) {
+	for name, tc := range map[string]struct {
+		target egressapi.Target
+		want   Target
+	}{
+		"whole value":    {egressapi.Target{Method: egressapi.WholeValue, Header: "X-Api-Key"}, WholeValue{Header: "X-Api-Key"}},
+		"scheme token":   {bearer, SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
+		"basic username": {egressapi.Target{Method: egressapi.BasicUsername, Header: "Authorization"}, BasicUsername{Header: "Authorization"}},
+		"basic password": {egressapi.Target{Method: egressapi.BasicPassword, Header: "Authorization"}, BasicPassword{Header: "Authorization"}},
+		"basic whole":    {egressapi.Target{Method: egressapi.BasicWhole, Header: "Authorization"}, BasicWhole{Header: "Authorization"}},
+		"json field":     {egressapi.Target{Method: egressapi.JSONField, Field: "password"}, JSONField{Field: "password"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := ParseCredential(raw); err == nil {
-				t.Fatal("parsed")
+			got, err := CredentialFromAPI(credential(workload, tc.target))
+			if err != nil || got.Targets[0] != tc.want {
+				t.Fatalf("got %#v, %v", got.Targets, err)
+			}
+		})
+	}
+}
+
+func TestCredentialFromAPIRefusesWhatItDoesNotUnderstand(t *testing.T) {
+	noDescription := credential(workload, bearer)
+	noDescription.Spec.Description = ""
+	noName := credential(workload, bearer)
+	noName.Name = ""
+	for name, credential := range map[string]*egressapi.EgressCredential{
+		"no name":                    noName,
+		"no description":             noDescription,
+		"no source":                  credential(egressapi.CredentialSource{}, bearer),
+		"two sources":                credential(egressapi.CredentialSource{SecretRef: secretSource.SecretRef, AuthenticatedWorkloadToken: workload.AuthenticatedWorkloadToken}, bearer),
+		"projected without audience": credential(egressapi.CredentialSource{ProjectedWorkloadToken: &egressapi.ProjectedWorkloadTokenSource{}}, bearer),
+		"no targets":                 credential(workload),
+		"scheme token without scheme": credential(workload,
+			egressapi.Target{Method: egressapi.SchemeToken, Header: "Authorization"}),
+		"scheme on a basic target": credential(workload,
+			egressapi.Target{Method: egressapi.BasicWhole, Header: "Authorization", Scheme: "Bearer"}),
+		"header on a json target": credential(workload,
+			egressapi.Target{Method: egressapi.JSONField, Header: "X", Field: "password"}),
+		"field on a header target": credential(workload,
+			egressapi.Target{Method: egressapi.WholeValue, Header: "X", Field: "password"}),
+		"json target without a field": credential(workload, egressapi.Target{Method: egressapi.JSONField}),
+		"unknown method":              credential(workload, egressapi.Target{Method: "bearer", Header: "X"}),
+		"no header":                   credential(workload, egressapi.Target{Method: egressapi.WholeValue}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := CredentialFromAPI(credential); err == nil {
+				t.Fatal("converted")
 			}
 		})
 	}

@@ -31,6 +31,9 @@ require kubevirt.io/api v1.8.2
 // Direct dependencies for agentplane/runner_gateway/go
 require github.com/go-logr/logr v1.4.4
 
+// Direct dependencies for agentplane/egress/go
+require github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3
+
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect

@@ -128,12 +128,16 @@ func (i *Index) Evaluate(caller policyapi.ServiceAccountRef, request Request, wo
 	if !ok {
 		return Denied{decision.CredentialUnavailable}
 	}
+	bodyRewrite, err := presented[name].BodyRewrite(value)
+	if err != nil {
+		return Denied{decision.CredentialUnavailable}
+	}
 	return Allowed{
 		Binding:         decided.binding,
 		Policy:          decided.policy,
 		Rule:            decided.number,
 		Rewrites:        presented[name].Rewrites(value),
-		BodyRewrite:     presented[name].BodyRewrite(value),
+		BodyRewrite:     bodyRewrite,
 		ClusterInternal: decided.rule.ClusterInternal,
 	}
 }

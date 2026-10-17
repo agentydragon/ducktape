@@ -4,18 +4,17 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
-	"strconv"
+	"slices"
 	"strings"
-	"unicode/utf16"
-	"unicode/utf8"
+
+	"github.com/go-json-experiment/json/jsontext"
 )
 
 // MaxJSONBodyBytes bounds the body a JSON credential can be presented in.
 const MaxJSONBodyBytes = 64 * 1024
-
-const maxJSONDepth = 1000
 
 // ErrInvalidJSONBody means a body-target request is not an unambiguous, bounded JSON object. It
 // never carries parser input: a body can hold a secret.
@@ -34,103 +33,61 @@ func IsJSONEnvelope(headers http.Header) bool {
 		(len(encodings) == 0 || len(encodings) == 1 && encodings[0] == "identity")
 }
 
-// JSONObject is a parsed JSON object that remembers its key order.
+// JSONObject is a validated JSON object body and where its top-level string members sit in it, so
+// a rewrite replaces those members and leaves every other byte as it came.
 type JSONObject struct {
-	keys   []string
-	fields map[string]any
+	body    []byte
+	strings map[string]stringMember
+}
+
+type stringMember struct {
+	value string
+	// start and end delimit the member's string literal in the body.
+	start, end int
 }
 
 // ParseJSONBody parses only an uncompressed UTF-8 `application/json` object of at most
-// MaxJSONBodyBytes. It rejects duplicate keys at any depth, non-finite or overflowing numbers and
-// trailing data, and never includes parser input in the error. A nil body is a body that was not
-// read, which no credential can be presented in.
+// MaxJSONBodyBytes. It rejects duplicate member names at any depth, malformed syntax, invalid UTF-8
+// and trailing data, and never includes parser input in the error. A nil body is a body that was
+// not read, which no credential can be presented in.
 func ParseJSONBody(headers http.Header, body []byte) (*JSONObject, error) {
-	if body == nil || len(body) > MaxJSONBodyBytes || !IsJSONEnvelope(headers) || !utf8.Valid(body) {
+	if body == nil || len(body) > MaxJSONBodyBytes || !IsJSONEnvelope(headers) {
 		return nil, ErrInvalidJSONBody
 	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.UseNumber()
-	token, err := decoder.Token()
-	if err != nil || token != json.Delim('{') {
+	// The decoder rejects duplicate names and invalid UTF-8 unless told not to.
+	decoder := jsontext.NewDecoder(bytes.NewReader(body))
+	if token, err := decoder.ReadToken(); err != nil || token.Kind() != '{' {
 		return nil, ErrInvalidJSONBody
 	}
-	object, err := readObject(decoder, 1)
-	if err != nil {
+	object := &JSONObject{body: body, strings: map[string]stringMember{}}
+	for decoder.PeekKind() != '}' {
+		nameToken, err := decoder.ReadToken()
+		if err != nil {
+			return nil, ErrInvalidJSONBody
+		}
+		// A token is voided by the next read from the decoder.
+		name := nameToken.String()
+		value, err := decoder.ReadValue()
+		if err != nil {
+			return nil, ErrInvalidJSONBody
+		}
+		if value.Kind() != '"' {
+			continue
+		}
+		member := stringMember{end: int(decoder.InputOffset())}
+		member.start = member.end - len(value)
+		if err := json.Unmarshal(value, &member.value); err != nil {
+			return nil, ErrInvalidJSONBody
+		}
+		object.strings[name] = member
+	}
+	if _, err := decoder.ReadToken(); err != nil {
 		return nil, ErrInvalidJSONBody
 	}
-	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+	if _, err := decoder.ReadToken(); !errors.Is(err, io.EOF) {
 		return nil, ErrInvalidJSONBody
 	}
 	return object, nil
-}
-
-// readObject reads the members of an object whose opening delimiter has been consumed.
-func readObject(decoder *json.Decoder, depth int) (*JSONObject, error) {
-	if depth > maxJSONDepth {
-		return nil, ErrInvalidJSONBody
-	}
-	object := &JSONObject{fields: make(map[string]any)}
-	for decoder.More() {
-		token, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		key, ok := token.(string)
-		if !ok {
-			return nil, ErrInvalidJSONBody
-		}
-		if _, duplicate := object.fields[key]; duplicate {
-			return nil, ErrInvalidJSONBody
-		}
-		value, err := readValue(decoder, depth)
-		if err != nil {
-			return nil, err
-		}
-		object.keys = append(object.keys, key)
-		object.fields[key] = value
-	}
-	if _, err := decoder.Token(); err != nil {
-		return nil, err
-	}
-	return object, nil
-}
-
-func readValue(decoder *json.Decoder, depth int) (any, error) {
-	token, err := decoder.Token()
-	if err != nil {
-		return nil, err
-	}
-	switch token := token.(type) {
-	case json.Delim:
-		if token == '{' {
-			return readObject(decoder, depth+1)
-		}
-		if depth+1 > maxJSONDepth {
-			return nil, ErrInvalidJSONBody
-		}
-		var items []any
-		for decoder.More() {
-			item, err := readValue(decoder, depth+1)
-			if err != nil {
-				return nil, err
-			}
-			items = append(items, item)
-		}
-		if _, err := decoder.Token(); err != nil {
-			return nil, err
-		}
-		return items, nil
-	case json.Number:
-		// An integer is exact at any size; a float must be finite.
-		if strings.ContainsAny(string(token), ".eE") {
-			if _, err := strconv.ParseFloat(string(token), 64); err != nil {
-				return nil, ErrInvalidJSONBody
-			}
-		}
-		return token, nil
-	default:
-		return token, nil
-	}
 }
 
 // hasString reports whether the top-level field is a string equal to value.
@@ -138,8 +95,8 @@ func (o *JSONObject) hasString(field, value string) bool {
 	if o == nil {
 		return false
 	}
-	got, ok := o.fields[field].(string)
-	return ok && got == value
+	member, ok := o.strings[field]
+	return ok && member.value == value
 }
 
 // BodyRewrite is a JSON body to forward in place of the one sent. It holds a credential.
@@ -153,103 +110,24 @@ type bodyPresentation struct {
 	fields   []string
 }
 
-func (b *bodyPresentation) rewrite(credential string) *BodyRewrite {
-	replaced := make(map[string]struct{}, len(b.fields))
-	for _, field := range b.fields {
-		replaced[field] = struct{}{}
+// rewrite splices the credential, as a JSON string, over each presented field's literal.
+func (b *bodyPresentation) rewrite(credential string) (*BodyRewrite, error) {
+	literal, err := jsontext.AppendQuote(nil, credential)
+	if err != nil {
+		return nil, fmt.Errorf("credential is not a JSON string: %w", err)
 	}
+	members := make([]stringMember, len(b.fields))
+	for i, field := range b.fields {
+		members[i] = b.document.strings[field]
+	}
+	slices.SortFunc(members, func(a, b stringMember) int { return a.start - b.start })
 	var out bytes.Buffer
-	out.WriteByte('{')
-	for i, key := range b.document.keys {
-		if i > 0 {
-			out.WriteByte(',')
-		}
-		writeJSONString(&out, key)
-		out.WriteByte(':')
-		if _, ok := replaced[key]; ok {
-			writeJSONString(&out, credential)
-		} else {
-			writeJSONValue(&out, b.document.fields[key])
-		}
+	copied := 0
+	for _, member := range slices.Compact(members) {
+		out.Write(b.document.body[copied:member.start])
+		out.Write(literal)
+		copied = member.end
 	}
-	out.WriteByte('}')
-	return &BodyRewrite{Content: out.Bytes()}
-}
-
-// writeJSONValue writes compact, ASCII-only JSON.
-func writeJSONValue(out *bytes.Buffer, value any) {
-	switch value := value.(type) {
-	case nil:
-		out.WriteString("null")
-	case bool:
-		out.WriteString(strconv.FormatBool(value))
-	case json.Number:
-		out.WriteString(string(value))
-	case string:
-		writeJSONString(out, value)
-	case []any:
-		out.WriteByte('[')
-		for i, item := range value {
-			if i > 0 {
-				out.WriteByte(',')
-			}
-			writeJSONValue(out, item)
-		}
-		out.WriteByte(']')
-	case *JSONObject:
-		out.WriteByte('{')
-		for i, key := range value.keys {
-			if i > 0 {
-				out.WriteByte(',')
-			}
-			writeJSONString(out, key)
-			out.WriteByte(':')
-			writeJSONValue(out, value.fields[key])
-		}
-		out.WriteByte('}')
-	}
-}
-
-func writeJSONString(out *bytes.Buffer, s string) {
-	out.WriteByte('"')
-	for _, r := range s {
-		switch {
-		case r == '"':
-			out.WriteString(`\"`)
-		case r == '\\':
-			out.WriteString(`\\`)
-		case r == '\n':
-			out.WriteString(`\n`)
-		case r == '\r':
-			out.WriteString(`\r`)
-		case r == '\t':
-			out.WriteString(`\t`)
-		case r == '\b':
-			out.WriteString(`\b`)
-		case r == '\f':
-			out.WriteString(`\f`)
-		case r < 0x20:
-			out.WriteString(`\u00`)
-			out.WriteByte("0123456789abcdef"[r>>4])
-			out.WriteByte("0123456789abcdef"[r&0xf])
-		case r < 0x80:
-			out.WriteRune(r)
-		case r >= 0x10000:
-			high, low := utf16.EncodeRune(r)
-			writeEscape(out, high)
-			writeEscape(out, low)
-		default:
-			writeEscape(out, r)
-		}
-	}
-	out.WriteByte('"')
-}
-
-func writeEscape(out *bytes.Buffer, r rune) {
-	const digits = "0123456789abcdef"
-	out.WriteString(`\u`)
-	out.WriteByte(digits[r>>12&0xf])
-	out.WriteByte(digits[r>>8&0xf])
-	out.WriteByte(digits[r>>4&0xf])
-	out.WriteByte(digits[r&0xf])
+	out.Write(b.document.body[copied:])
+	return &BodyRewrite{Content: out.Bytes()}, nil
 }

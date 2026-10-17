@@ -145,10 +145,11 @@ func (p Presentation) Rewrites(credential string) []HeaderRewrite {
 }
 
 // BodyRewrite returns the JSON body to forward with credential in place of the placeholder in
-// every field that presented it, or nil when the request did not present it in its body.
-func (p Presentation) BodyRewrite(credential string) *BodyRewrite {
+// every field that presented it, or nil when the request did not present it in its body. It fails
+// when the credential cannot be written as a JSON string.
+func (p Presentation) BodyRewrite(credential string) (*BodyRewrite, error) {
 	if p.body == nil {
-		return nil
+		return nil, nil
 	}
 	return p.body.rewrite(credential)
 }
