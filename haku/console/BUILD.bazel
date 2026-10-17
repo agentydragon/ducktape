@@ -166,6 +166,7 @@ py_library(
         "//haku/console/identity:operator_login_flow",
         "//haku/console/mcp:approval",
         "//haku/console/mcp:tool_call_service",
+        "@pypi//anyio",
         "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//itsdangerous",

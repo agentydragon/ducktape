@@ -16,10 +16,11 @@ import logging
 import os
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+import anyio
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -175,19 +176,25 @@ def create_app(
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-        static_definitions = (
-            static_agent_definitions
-            if static_agent_definitions is not None
-            else await _resolve_static_agent_definitions()
-        )
-        await agent_authority.reconcile_static_agents(static_definitions)
-        async with agent_authority.expiry_maintenance():
-            try:
-                yield
-            finally:
-                # Cancel in-flight approved-call executions (each marks its row cancelled) before the
-                # event hub they publish through is torn down.
-                await tool_calls.aclose()
+        stack = AsyncExitStack()
+        # Register before startup work so partial startup still disposes the pool.
+        stack.push_async_callback(db_engine.dispose)
+        try:
+            await stack.__aenter__()
+            static_definitions = (
+                static_agent_definitions
+                if static_agent_definitions is not None
+                else await _resolve_static_agent_definitions()
+            )
+            await agent_authority.reconcile_static_agents(static_definitions)
+            await stack.enter_async_context(agent_authority.expiry_maintenance())
+            # Cancel in-flight approved-call executions before expiry maintenance is torn down.
+            stack.push_async_callback(tool_calls.aclose)
+            yield
+        finally:
+            # Lifespan shutdown can run inside an AnyIO cancellation scope.
+            with anyio.CancelScope(shield=True):
+                await stack.__aexit__(*sys.exc_info())
 
     app = FastAPI(title="Haku console", lifespan=_lifespan)
     # The capability router reads settings off app.state (see haku.console.capabilities).
