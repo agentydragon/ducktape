@@ -16,7 +16,7 @@ asynchronously outside the artifact.
 
 The shared `all-images` automation writes new tags to `image-pins/` entries carrying a Flux Setters
 marker. During the runner-owned lifecycle rollout, this directory omits markers from the app and
-runner-gateway image pairs, the notification-service pair, `runner`, `runner-ducktape`, and the
+runner-gateway image pairs, the notification-service and history-service pairs, `runner`, `runner-ducktape`, and the
 runner VM image. Their current staging tags stay fixed while `agentplane-testing-image-pins` keeps
 tracking CI tags.
 
