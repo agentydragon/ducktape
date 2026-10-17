@@ -417,6 +417,31 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     await second.drain_until_end()
 
 
+async def test_a_session_that_never_took_a_turn_carries_on_after_its_runner_restarts(
+    start_runner: Callable[[], Awaitable[RunnerProcess]],
+    model: ScriptedModel,
+    spec: runner_pb2.SessionSpec,
+    driver: RunnerDriver,
+) -> None:
+    """Neither harness has a thread to resume before its first turn."""
+    first_runner = await start_runner()
+    first = await driver.attach("restart-before-first-turn", spec=spec)
+    await first.until(events.is_kind("harness_started"))
+    harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
+    await first_runner.crash(harness_pids)
+
+    await start_runner()
+    second = await driver.attach("restart-before-first-turn", spec=spec, after_cursor=first.cursor)
+    await second.submit_input("input-1", "Reply with exactly: FIRST_OK")
+    request = await model.request()
+    assert request.user_texts == ["Reply with exactly: FIRST_OK"]
+    await model.reply(request, Text("FIRST_OK"))
+    done = await second.until(events.turn_completed)
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    await second.stop_runner_session("stop-after-first-turn")
+    await second.drain_until_end()
+
+
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
 async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     harness: runner_pb2.Harness,

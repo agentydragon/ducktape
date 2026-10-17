@@ -276,6 +276,10 @@ class Session:
                 return
             if self._sealing:
                 raise JournalSealedError("the session is sealed")
+            # Neither harness persists a thread until its first turn, so a Session that has not
+            # started one has nothing to resume: its thread is started anew.
+            if self.record.native_session_id is not None and not await self.journal.has_started_turn():
+                self.record.native_session_id = None
             adapter = self.make_adapter(self)
             # The session's working directory is the spec's; a fresh one is created for the harness.
             isolation = self.config.process_isolation

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import JSON, ForeignKey, Index, LargeBinary, delete, func, select, text
+from sqlalchemy import JSON, ForeignKey, Index, LargeBinary, delete, exists, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -560,6 +560,10 @@ class Journal:
             if command.terminal_cursor is None:
                 command.dispatch_planned = True
                 command.native_correlation = {**command.native_correlation, **(native_correlation or {})}
+
+    async def has_started_turn(self) -> bool:
+        async with self._reading() as session:
+            return bool(await session.scalar(select(exists().where(TurnBoundary.turn_id.is_not(None)))))
 
     async def recovery_turns(self) -> list[str]:
         async with self._reading() as session:

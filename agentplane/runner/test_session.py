@@ -85,6 +85,21 @@ class DeafAdapter(DerivingAdapter):
         await self.session.send(Write(write=text))
 
 
+class NativeThreadAdapter(UnexpectedAdapter):
+    """Keeps the native thread id its Session held when it was made, and hands out `fresh-thread` when
+    that was none."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.held = session.record.native_session_id
+
+    def command(self) -> list[str]:
+        return [sys.executable, "-c", "import signal; signal.pause()"]
+
+    async def handshake(self) -> str:
+        return self.held or "fresh-thread"
+
+
 @dataclass
 class Commits:
     count: int = 0
@@ -289,6 +304,43 @@ async def test_a_sessions_launch_outcome_survives_a_restart(
             assert restarted.launch_outcome == outcome
     finally:
         owner.close()
+
+
+@pytest.mark.parametrize(
+    ("started_turn", "expected"),
+    [(False, (None, "fresh-thread", False)), (True, ("recorded-thread", "recorded-thread", True))],
+    ids=["no-turn", "after-a-turn"],
+)
+async def test_a_restart_resumes_the_recorded_thread_only_once_a_turn_started(
+    tmp_path: Path, started_turn: bool, expected: tuple[str | None, str | None, bool]
+) -> None:
+    record = codex_record(tmp_path / "workspace")
+    record.native_session_id = "recorded-thread"
+    adapters: list[NativeThreadAdapter] = []
+
+    def make_adapter(session: Session) -> HarnessAdapter:
+        adapters.append(NativeThreadAdapter(session))
+        return adapters[-1]
+
+    async with open_session(
+        "test-session",
+        record,
+        config=RunnerConfig(state_dir=tmp_path / "state", launch=launches.SANDBOX_LAUNCH),
+        make_adapter=make_adapter,
+    ) as session:
+        if started_turn:
+            await session.emit(event_pb2.TurnStarted(turn_id="turn-1"), sources=[])
+        await session.ensure_running()
+        try:
+            (adapter,) = adapters
+            started = [
+                entry.event.harness_started
+                for entry in await session.journal.since(0, limit=100)
+                if entry.event.WhichOneof("observation") == "harness_started"
+            ]
+            assert (adapter.held, session.record.native_session_id, started[-1].resumed) == expected
+        finally:
+            await session.stop()
 
 
 if __name__ == "__main__":
