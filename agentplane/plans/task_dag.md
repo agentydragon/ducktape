@@ -344,10 +344,12 @@ authorization/freshness and stop Event emission on observed grant loss or stale 
 at Sandbox granularity using the tentative shared Session-access rules, and reuse the existing
 durable inbox/read/ack and batched-notice machinery. The send operation appends to a Session inbox;
 its payload is separate from transcript reads and the platform-generated notice.
+The sender's append grant supplies the authorization for acceptance; v1 requires no separate
+recipient opt-in, allowlist or approval.
 Peer sends do not require source subscriptions. Generalize the current service around inbox/messaging in one
 deployment initially, with optional subscription/source integrations; leave Dispatcher separate.
 Use `subscription` for source-following and `notice` for the batched inbox prompt. The exact service
-name, send API, discovery metadata fields, recipient opt-in and read/ack administration remain open.
+name, send API, discovery metadata fields and read/ack administration remain open.
 OAuth-bound SAs can be senders; v1 does not provide inboxes for externally running agents.
 Distinguish accepted, noticed, admitted, handled and task-success evidence. Define retention, limits,
 deduplication and offline/deleted-recipient behavior. Reading a transcript grants neither send nor ack.
@@ -367,8 +369,9 @@ without truncation and reject configurations above the ceiling. Select the defau
 Implement server-authenticated sender provenance, shared Session-access rule enforcement, idempotent
 message IDs and honest acceptance receipts in the chosen authority. Check send permission at durable
 acceptance against a fresh local policy view; observed revocation blocks new sends without retracting
-accepted messages. Test denied pairs, spoofing,
-retry/conflict behavior, size bounds and this revocation boundary.
+accepted messages. Require no separate recipient opt-in or source subscription. Test authorized
+acceptance without either, denied pairs, spoofing, retry/conflict behavior, size bounds and this
+revocation boundary.
 
 ### `AGENT_MESSAGE_RECEPTION` — delivery, recovery and acknowledgement
 

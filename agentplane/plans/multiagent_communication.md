@@ -391,6 +391,11 @@ Notification Service elsewhere in this plan describe the existing component bein
 
 Add an authorized peer-send path that writes durable correspondence into the destination inbox;
 peer sends do not require a source subscription. Subscriptions can produce other inbox entries.
+**V1 acceptance authorization agreed:** the sender's grant to append to the target Session's inbox
+is sufficient; no separate recipient-side opt-in, allowlist or approval is required. Evaluate the
+grant at the agreed Sandbox granularity against the current fresh policy view. Acceptance does
+not imply the receiving agent has read or handled the message.
+
 Store the peer message with authenticated sender-SA provenance and the qualified destination.
 The inbox/messaging service prepares a platform-generated
 inbox notice; Dispatcher delivers that notice through the existing input path. The peer's raw text
