@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "runtime",
+    srcs = [
+        "codec.go",
+        "config.go",
+        "main.go",
+        "platform_routes.go",
+        "relay.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/sidecar",
+    visibility = ["//agentplane/egress:__pkg__"],
+    deps = [
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_binary(
+    name = "egress-sidecar",
+    embed = [":runtime"],
+    pure = "on",
+    visibility = ["//agentplane/egress:__pkg__"],
+)
+
+go_test(
+    name = "config_test",
+    srcs = ["config_test.go"],
+    embed = [":runtime"],
+)

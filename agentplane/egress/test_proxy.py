@@ -63,8 +63,8 @@ from agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from agentplane.egress.resources import Rule, TargetMethod, placeholder_of
 from agentplane.egress.rules_api import RulesProjection, create_rules_app
 from agentplane.egress.settings import Settings
-from agentplane.egress.sidecar import SidecarRelay
 from agentplane.egress.testing.replica import kubeconfig, replica
+from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.egress.testing.tls import (
     CertificateAuthority,
     client_tls_context,
@@ -243,11 +243,11 @@ class ProxyUnderTest:
             )
         )
 
-    def sidecar(self, token: str) -> SidecarRelay:
+    def sidecar(self, token: str) -> SidecarProcess:
         """A loopback sidecar relaying to this proxy with `token` as its hop bearer."""
         token_file = self.tmp_path / f"sidecar-token-{token}"
         token_file.write_text(token)
-        return SidecarRelay(proxy_host="127.0.0.1", proxy_port=self.proxy_port, token_file=token_file, listen_port=0)
+        return SidecarProcess(proxy_host="127.0.0.1", proxy_port=self.proxy_port, token_file=token_file)
 
     async def get(self, path: str, *, token: str | None = TOKEN_A, headers: dict[str, str] | None = None) -> Response:
         async with (

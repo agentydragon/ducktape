@@ -36,10 +36,13 @@ bbr test //agentplane/egress/...
   `listener.py` hosts both FastAPI apps under uvicorn in the proxy's event loop.
 - `proxy.py`: mitmproxy hosted in-process with the fail-closed options pinned; `main.py` the
   entry point and its `Settings` (`--flags` and `AGENTPLANE_EGRESS_*`).
-- `sidecar.py`: the per-sandbox relay, image `agentplane-egress-sidecar`: reads the Pod's
-  projected token per request, adds it as `Proxy-Authorization`, and forwards to the proxy.
-  `platform_routes.py`: the sidecar's direct routes to Agentplane services. Each route is a loopback
-  gRPC listener that forwards calls straight to its service with that service's token.
+- `sidecar/`: the Go runtime behind image `agentplane-egress-sidecar`. It reads the Pod's
+  projected token for every HTTP request or CONNECT and forwards it as `Proxy-Authorization`.
+  It also hosts direct generic gRPC routes to Agentplane services, replacing authorization with
+  that service's projected token on every call. The runtime uses no Python interpreter.
+- `sidecar_config.py` and `platform_routes.py`: Python settings and route models used by cdk8s to
+  emit the existing environment schema. The process entry point and both forwarding paths live in
+  Go; `platform_routes.py` does not serve traffic.
 - `testing/`: the fake API server and the throwaway CAs the tests run against.
 
 ## Running

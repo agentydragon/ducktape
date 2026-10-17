@@ -83,7 +83,7 @@ py_library(
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policybinding",
         "//agentplane/crds:policyset",
-        "//agentplane/egress:sidecar",
+        "//agentplane/egress:sidecar_config",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s/agentplane:actions",

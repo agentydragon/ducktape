@@ -1,5 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -262,6 +263,7 @@ py_test(
     name = "test_proxy",
     size = "medium",
     srcs = ["test_proxy.py"],
+    data = ["//agentplane/egress/sidecar:egress-sidecar"],
     requires_docker = True,
     deps = [
         ":addon",
@@ -276,12 +278,12 @@ py_test(
         ":resources",
         ":rules_api",
         ":settings",
-        ":sidecar",
         ":upstream",
         "//:conftest",
         "//agentplane:kubernetes_watch",
         "//agentplane:policy_sets",
         "//agentplane/egress/testing:replica",
+        "//agentplane/egress/testing:sidecar_process",
         "//agentplane/egress/testing:tls",
         "//agentplane/testing:fake_apiserver",
         "//agentplane/workload_auth:http",
@@ -329,41 +331,25 @@ oci_image(
     user = "1000:1000",
 )
 
-py_binary(
-    name = "sidecar_bin",
-    main_module = "agentplane.egress.sidecar",
-    deps = [":sidecar"],
-)
-
-# The sidecar image on debian slim as user 1000: the relay alone, no CA bundle, since it terminates
-# no TLS. Published as agentplane-egress-sidecar (devinfra/ci/image_targets.json) and run next to
-# the runner by the runner SandboxTemplate (cluster/k8s/agentplane-staging).
-aspect_py_binary(
-    name = "sidecar_image_bin",
-    main = "sidecar.py",
-    deps = [":sidecar"],
-)
-
-sidecar_layers_oci_tars = shared_py_image_layers(
-    name = "sidecar_layers",
-    binary = ":sidecar_image_bin",
-    group = "1000",
-    owner = "1000",
+pkg_tar(
+    name = "sidecar_go_binary_layer",
+    srcs = ["//agentplane/egress/sidecar:egress-sidecar"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
 )
 
 oci_image(
     name = "sidecar_image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("sidecar_image_bin"),
-    env = py_image_env(binary_name = "sidecar_image_bin"),
+    entrypoint = ["/usr/local/bin/egress-sidecar"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = sidecar_layers_oci_tars,
+    tars = [":sidecar_go_binary_layer"],
     user = "1000:1000",
 )
 
 py_library(
-    name = "sidecar",
-    srcs = ["sidecar.py"],
+    name = "sidecar_config",
+    srcs = ["sidecar_config.py"],
     visibility = [
         "//agentplane:__subpackages__",
         "//cluster/cdk8s:__pkg__",
@@ -372,9 +358,6 @@ py_library(
     ],
     deps = [
         ":platform_routes",
-        ":token_file",
-        "@pypi//aiohttp",
-        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],
@@ -384,10 +367,12 @@ py_test(
     name = "test_sidecar",
     size = "medium",
     srcs = ["test_sidecar.py"],
+    data = ["//agentplane/egress/sidecar:egress-sidecar"],
     deps = [
         ":conftest",
-        ":sidecar",
+        ":sidecar_config",
         "//:conftest",
+        "//agentplane/egress/testing:sidecar_process",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -638,31 +623,23 @@ py_library(
 )
 
 py_library(
-    name = "token_file",
-    srcs = ["token_file.py"],
-)
-
-py_library(
     name = "platform_routes",
     srcs = ["platform_routes.py"],
     visibility = [
         "//agentplane:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
-    deps = [
-        ":token_file",
-        "@pypi//grpcio",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_test(
     name = "test_platform_routes",
     srcs = ["test_platform_routes.py"],
+    data = ["//agentplane/egress/sidecar:egress-sidecar"],
     deps = [
         ":conftest",
-        ":platform_routes",
         "//:conftest",
+        "//agentplane/egress/testing:sidecar_process",
         "@pypi//grpcio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

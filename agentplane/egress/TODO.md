@@ -4,8 +4,8 @@
 
 `projectedWorkloadToken` has the sidecar carry an audience-scoped token to the central proxy in
 `X-Agentplane-Workload-Token`, and the proxy substitute it after reviewing it (<SPEC.md>). That is
-inconsistent with the sidecar's stated job — it "holds no credential and no TLS material"
-(<sidecar.py>) — and this source makes it hold two.
+inconsistent with the sidecar's stated job — it holds no substituted credential or TLS material
+(<SPEC.md> § Identity) — and this source makes it hold two workload identity tokens.
 
 The alternative is to substitute in the sidecar: it already has the token, so the token would never
 leave the Pod and the proxy would need no second TokenReview per tunnel. What that costs is the

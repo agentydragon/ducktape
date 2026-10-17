@@ -17,7 +17,7 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
-from agentplane.egress import sidecar
+from agentplane.egress import sidecar_config
 from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
@@ -67,7 +67,7 @@ def sidecar_env(namespace: str, *, control_service: ServiceRef | None = None) ->
         ).model_dump(mode="json")
         for route in routes(namespace, control_service=control_service)
     }
-    return k8s.EnvVar(name=env_name(sidecar.Settings, "platform_routes"), value=json.dumps(value))
+    return k8s.EnvVar(name=env_name(sidecar_config.Settings, "platform_routes"), value=json.dumps(value))
 
 
 def runner_args(namespace: str) -> list[str]:

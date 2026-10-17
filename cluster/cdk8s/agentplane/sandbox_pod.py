@@ -20,7 +20,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, Role, RolePolicyRule, k8s
 from constructs import Construct
 
-from agentplane.egress import sidecar
+from agentplane.egress import sidecar_config
 from agentplane.egress.resources import placeholder_of
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
@@ -205,17 +205,19 @@ def _egress_sidecar(
     env: Environment, extra_env: Sequence[k8s.EnvVar], resources: k8s.ResourceRequirements
 ) -> k8s.Container:
     return k8s.Container(
-        name=sidecar.CONTAINER_NAME,
+        name=sidecar_config.CONTAINER_NAME,
         image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
         env=[
-            k8s.EnvVar(name=env_name(sidecar.Settings, "proxy_host"), value=egress.proxy(env.namespace).fqdn),
-            k8s.EnvVar(name=env_name(sidecar.Settings, "proxy_port"), value=str(egress.PROXY_PORT)),
-            k8s.EnvVar(name=env_name(sidecar.Settings, "listen_port"), value=str(SIDECAR_LISTEN_PORT)),
-            k8s.EnvVar(name=env_name(sidecar.Settings, "readiness_host"), value=sidecar.READINESS_HOST),
-            k8s.EnvVar(name=env_name(sidecar.Settings, "readiness_port"), value=str(sidecar.READINESS_PORT)),
-            k8s.EnvVar(name=env_name(sidecar.Settings, "token_file"), value=f"{_EGRESS_TOKEN_DIR}/token"),
+            k8s.EnvVar(name=env_name(sidecar_config.Settings, "proxy_host"), value=egress.proxy(env.namespace).fqdn),
+            k8s.EnvVar(name=env_name(sidecar_config.Settings, "proxy_port"), value=str(egress.PROXY_PORT)),
+            k8s.EnvVar(name=env_name(sidecar_config.Settings, "listen_port"), value=str(SIDECAR_LISTEN_PORT)),
+            k8s.EnvVar(name=env_name(sidecar_config.Settings, "readiness_host"), value=sidecar_config.READINESS_HOST),
             k8s.EnvVar(
-                name=env_name(sidecar.Settings, "audience_token_files"),
+                name=env_name(sidecar_config.Settings, "readiness_port"), value=str(sidecar_config.READINESS_PORT)
+            ),
+            k8s.EnvVar(name=env_name(sidecar_config.Settings, "token_file"), value=f"{_EGRESS_TOKEN_DIR}/token"),
+            k8s.EnvVar(
+                name=env_name(sidecar_config.Settings, "audience_token_files"),
                 value=json.dumps(
                     {audience: audience_token_file(audience) for audience in _SUBSTITUTABLE_AUDIENCE_FILES}
                 ),
@@ -225,7 +227,7 @@ def _egress_sidecar(
         security_context=workload_security_context(),
         readiness_probe=k8s.Probe(
             http_get=k8s.HttpGetAction(
-                path=sidecar.READINESS_PATH, port=k8s.IntOrString.from_number(sidecar.READINESS_PORT)
+                path=sidecar_config.READINESS_PATH, port=k8s.IntOrString.from_number(sidecar_config.READINESS_PORT)
             ),
             failure_threshold=1,
             period_seconds=2,

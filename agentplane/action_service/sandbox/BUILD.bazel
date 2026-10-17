@@ -23,7 +23,7 @@ py_library(
         ":binding",
         ":models",
         "//agentplane:subjects",
-        "//agentplane/egress:sidecar",
+        "//agentplane/egress:sidecar_config",
         "//mcp_infra/exec:kubernetes",
         "@pypi//kubernetes_asyncio",
     ],

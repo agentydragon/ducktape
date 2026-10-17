@@ -22,3 +22,12 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_library(
+    name = "sidecar_process",
+    srcs = ["sidecar_process.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//aiohttp",
+    ],
+)

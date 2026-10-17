@@ -42,7 +42,7 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
 from more_itertools import one
 
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.egress import sidecar
+from agentplane.egress import sidecar_config
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
 from util.settings_contract import env_name
 
@@ -114,10 +114,10 @@ class LauncherRelayPolicy(ClusterPolicy):
 
     def __init__(self, scope: Construct, id: str, *, namespace: str, runner_pod: dict[str, Any]) -> None:
         pod_spec = runner_pod["spec"]
-        relay = dict(one(c for c in pod_spec["containers"] if c["name"] == sidecar.CONTAINER_NAME))
+        relay = dict(one(c for c in pod_spec["containers"] if c["name"] == sidecar_config.CONTAINER_NAME))
         token_volume = one(relay["volumeMounts"])["name"]
         # The guest is outside the Pod's loopback; the runner fence keeps every other peer off these ports.
-        relay["env"] = [*relay["env"], {"name": env_name(sidecar.Settings, "listen_host"), "value": "0.0.0.0"}]
+        relay["env"] = [*relay["env"], {"name": env_name(sidecar_config.Settings, "listen_host"), "value": "0.0.0.0"}]
         # A runner Pod sets these Pod-wide; the launcher's own Pod security context is KubeVirt's.
         relay["securityContext"] = {
             **relay["securityContext"],

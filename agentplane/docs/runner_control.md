@@ -450,7 +450,7 @@ Alternatives for the transport itself:
 ## Authentication and incarnation binding
 
 The runner dials the Runner Gateway's control listener at a loopback port of the Pod's egress
-sidecar, a platform route (`agentplane/egress/platform_routes.py`) that forwards to the listener in
+sidecar, a platform route (`agentplane/egress/sidecar/platform_routes.go`) that forwards to the listener in
 plaintext in-cluster, past the egress proxy. The route replaces the `authorization` metadata on
 every RPC with that Pod's own projected token for the dedicated audience
 `agentplane-runner-control`. The token is projected only into the sidecar, so neither the runner nor

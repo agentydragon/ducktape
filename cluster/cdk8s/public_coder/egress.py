@@ -17,7 +17,7 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
 
-from agentplane.egress import sidecar
+from agentplane.egress import sidecar_config
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, egress
@@ -54,9 +54,9 @@ def relay_container() -> k8s.Container:
         name="egress-sidecar",
         image=f"{SIDECAR_IMAGE}:unset",
         env=[
-            k8s.EnvVar(name=env_name(sidecar.Settings, "proxy_host"), value=GATEWAY.fqdn),
-            k8s.EnvVar(name=env_name(sidecar.Settings, "proxy_port"), value=str(GATEWAY.pod_port)),
-            k8s.EnvVar(name=env_name(sidecar.Settings, "token_file"), value=f"{_TOKEN_DIR}/token"),
+            k8s.EnvVar(name=env_name(sidecar_config.Settings, "proxy_host"), value=GATEWAY.fqdn),
+            k8s.EnvVar(name=env_name(sidecar_config.Settings, "proxy_port"), value=str(GATEWAY.pod_port)),
+            k8s.EnvVar(name=env_name(sidecar_config.Settings, "token_file"), value=f"{_TOKEN_DIR}/token"),
         ],
         security_context=k8s.SecurityContext(
             run_as_non_root=True,
@@ -70,7 +70,7 @@ def relay_container() -> k8s.Container:
         ),
         readiness_probe=k8s.Probe(
             http_get=k8s.HttpGetAction(
-                path=sidecar.READINESS_PATH, port=k8s.IntOrString.from_number(sidecar.READINESS_PORT)
+                path=sidecar_config.READINESS_PATH, port=k8s.IntOrString.from_number(sidecar_config.READINESS_PORT)
             ),
             period_seconds=2,
             timeout_seconds=1,

@@ -26,7 +26,7 @@ from kubernetes_asyncio.client import (
 
 from agentplane.action_service.sandbox.binding import PREFIX, PodExecutorBinding
 from agentplane.action_service.sandbox.models import READY_CONDITION, SandboxCondition, SandboxInfo
-from agentplane.egress import sidecar
+from agentplane.egress import sidecar_config
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult, ExecRunner
 
@@ -108,8 +108,8 @@ def _check_template(name: str, template: V1PodTemplateSpec) -> None:
     spec = template.spec
     if spec.automount_service_account_token is not False:
         raise ValueError(f"box template {name!r} must set automountServiceAccountToken: false")
-    if sidecar.CONTAINER_NAME not in {container.name for container in spec.containers}:
-        raise ValueError(f"box template {name!r} must carry the {sidecar.CONTAINER_NAME!r} container")
+    if sidecar_config.CONTAINER_NAME not in {container.name for container in spec.containers}:
+        raise ValueError(f"box template {name!r} must carry the {sidecar_config.CONTAINER_NAME!r} container")
     token_volumes = {
         volume.name
         for volume in spec.volumes or []
@@ -117,7 +117,7 @@ def _check_template(name: str, template: V1PodTemplateSpec) -> None:
         and any(source.service_account_token is not None for source in volume.projected.sources or [])
     }
     for container in spec.containers:
-        if container.name != sidecar.CONTAINER_NAME and (
+        if container.name != sidecar_config.CONTAINER_NAME and (
             mounted := token_volumes & {mount.name for mount in container.volume_mounts or []}
         ):
             raise ValueError(
