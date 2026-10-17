@@ -25,6 +25,19 @@ const deliveryWorkerCount = 4
 
 type wakeLimitedError struct{ retryAfter time.Duration }
 
+type retryKind uint8
+
+const (
+	retryFailure retryKind = iota
+	retryWakeBudget
+)
+
+type retryState struct {
+	workID string
+	until  time.Time
+	kind   retryKind
+}
+
 func (e wakeLimitedError) Error() string {
 	return fmt.Sprintf("wake budget exhausted for %s", e.retryAfter)
 }
@@ -73,10 +86,10 @@ type DeliveryWorker struct {
 	refused map[string]string
 	queue   workqueue.TypedRateLimitingInterface[string]
 	limiter workqueue.TypedRateLimiter[string]
-	// A delayed item can be added early by a database notification. Keep only
-	// its due time here; the queue owns the timer and retry count.
-	retryAfter map[string]time.Time
-	retryWork  map[string]string
+	// A delayed item can be added early by a database notification. The queue
+	// owns the timer and retry count; the cause decides whether a newly ready
+	// Sandbox may bypass a wake-budget delay.
+	retries map[string]retryState
 }
 
 func (w *DeliveryWorker) init() {
@@ -87,8 +100,7 @@ func (w *DeliveryWorker) init() {
 	w.refused = map[string]string{}
 	w.limiter = workqueue.NewTypedItemExponentialFailureRateLimiter[string](500*time.Millisecond, 30*time.Second)
 	w.queue = workqueue.NewTypedRateLimitingQueue(w.limiter)
-	w.retryAfter = map[string]time.Time{}
-	w.retryWork = map[string]string{}
+	w.retries = map[string]retryState{}
 }
 
 func (w *DeliveryWorker) Run(ctx context.Context) error {
@@ -266,10 +278,8 @@ func (w *DeliveryWorker) forgetOwner(uid string, owner Owner) {
 }
 
 func (w *DeliveryWorker) enqueue(sessionID string) {
-	w.mu.Lock()
-	until := w.retryAfter[sessionID]
-	w.mu.Unlock()
-	if delay := time.Until(until); delay > 0 {
+	retry := w.retryFor(sessionID)
+	if delay := time.Until(retry.until); delay > 0 && retry.kind != retryWakeBudget {
 		w.queue.AddAfter(sessionID, delay)
 	} else {
 		w.queue.Add(sessionID)
@@ -295,16 +305,14 @@ func (w *DeliveryWorker) runQueue(ctx context.Context) {
 	}
 }
 
-func (w *DeliveryWorker) retryRemaining(sessionID string) time.Duration {
+func (w *DeliveryWorker) retryFor(sessionID string) retryState {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return time.Until(w.retryAfter[sessionID])
+	return w.retries[sessionID]
 }
 
 func (w *DeliveryWorker) workFor(sessionID string) string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.retryWork[sessionID]
+	return w.retryFor(sessionID).workID
 }
 
 func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) error {
@@ -323,9 +331,8 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) e
 		name, uid, workID = head.SandboxName, head.SandboxUID, head.CommandID
 	}
 	w.mu.Lock()
-	if previous := w.retryWork[sessionID]; previous != "" && previous != workID {
-		delete(w.retryAfter, sessionID)
-		delete(w.retryWork, sessionID)
+	if previous := w.retries[sessionID].workID; previous != "" && previous != workID {
+		delete(w.retries, sessionID)
 		w.queue.Forget(sessionID)
 	}
 	w.mu.Unlock()
@@ -368,20 +375,18 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) e
 func (w *DeliveryWorker) clearRetry(sessionID string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	delete(w.retryAfter, sessionID)
-	delete(w.retryWork, sessionID)
+	delete(w.retries, sessionID)
 	w.queue.Forget(sessionID)
 }
 
 func (w *DeliveryWorker) backoff(sessionID, workID string) {
 	delay := w.limiter.When(sessionID)
-	w.setRetry(sessionID, workID, delay)
+	w.setRetry(sessionID, workID, delay, retryFailure)
 }
 
-func (w *DeliveryWorker) setRetry(sessionID, workID string, after time.Duration) {
+func (w *DeliveryWorker) setRetry(sessionID, workID string, after time.Duration, kind retryKind) {
 	w.mu.Lock()
-	w.retryAfter[sessionID] = time.Now().Add(after)
-	w.retryWork[sessionID] = workID
+	w.retries[sessionID] = retryState{workID: workID, until: time.Now().Add(after), kind: kind}
 	w.mu.Unlock()
 	w.queue.AddAfter(sessionID, after)
 }

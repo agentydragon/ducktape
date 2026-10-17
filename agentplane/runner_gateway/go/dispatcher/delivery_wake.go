@@ -83,7 +83,9 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 			w.queue.AddAfter(work.key, remaining)
 		}
 	}
-	if delay := w.retryRemaining(work.key); delay > 0 && !wakeDisabled {
+	retry := w.retryFor(work.key)
+	if delay := time.Until(retry.until); delay > 0 && !wakeDisabled &&
+		(retry.kind != retryWakeBudget || awaiting || sandbox.Blocker != "") {
 		w.queue.AddAfter(work.key, delay)
 		return false, nil
 	}
@@ -174,7 +176,7 @@ func (w *DeliveryWorker) wakeFor(ctx context.Context, work queuedWork, sandbox S
 			w.clearDelay(work.key)
 			return w.noteWaiting(ctx, work, owner, "sandbox_deleted")
 		case errors.As(err, &limited):
-			w.setRetry(work.key, work.workID(), limited.retryAfter)
+			w.setRetry(work.key, work.workID(), limited.retryAfter, retryWakeBudget)
 			return w.noteWaiting(ctx, work, owner, "wake_rate_limited")
 		default:
 			w.backoff(work.key, work.workID())
@@ -202,7 +204,10 @@ func (w *DeliveryWorker) wakeFor(ctx context.Context, work queuedWork, sandbox S
 
 func (w *DeliveryWorker) clearDelay(key string) {
 	w.mu.Lock()
-	delete(w.retryAfter, key)
+	if retry, okay := w.retries[key]; okay {
+		retry.until = time.Time{}
+		w.retries[key] = retry
+	}
 	w.mu.Unlock()
 }
 

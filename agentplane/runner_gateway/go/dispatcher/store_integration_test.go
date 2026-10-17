@@ -423,6 +423,13 @@ func (testWake) WakeForSend(context.Context, string, string, func(int64) error) 
 	return false, errors.New("unexpected Sandbox wake")
 }
 
+type exhaustedWakeBudget struct{ calls int }
+
+func (w *exhaustedWakeBudget) WakeForSend(_ context.Context, _, _ string, beforeResume func(int64) error) (bool, error) {
+	w.calls++
+	return false, beforeResume(WakeLimit + 1)
+}
+
 type testLease struct{ store *Store }
 
 func (l testLease) Acquire(ctx context.Context, _, uid string) (*Owner, error) {
@@ -509,10 +516,15 @@ type retryRunner struct {
 type recordingDelayQueue struct {
 	workqueue.TypedRateLimitingInterface[string]
 	delays []time.Duration
+	added  []string
 }
 
 func (q *recordingDelayQueue) AddAfter(_ string, delay time.Duration) {
 	q.delays = append(q.delays, delay)
+}
+
+func (q *recordingDelayQueue) Add(item string) {
+	q.added = append(q.added, item)
 }
 
 func TestWorkerRetainsBackoffAcrossUncertainReplies(t *testing.T) {
@@ -537,6 +549,162 @@ func TestWorkerRetainsBackoffAcrossUncertainReplies(t *testing.T) {
 	worker.clearRetry("session")
 	if got := worker.limiter.NumRequeues("session"); got != 0 {
 		t.Fatalf("terminal settlement retained %d attempts", got)
+	}
+}
+
+type acceptingRunner struct{ calls chan string }
+
+func (r *acceptingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
+	r.calls <- command.GetCommandId()
+	return &eventlogpb.EventEntry{Cursor: 1}, nil
+}
+
+func (r *acceptingRunner) OpenSession(_ context.Context, _ SandboxSnapshot, sessionID string, _ *runnerpb.SessionSpec, _ *string) error {
+	r.calls <- "opening:" + sessionID
+	return nil
+}
+
+func TestWorkerDeliversWakeLimitedWorkAfterSandboxBecomesReady(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := testStore(t, 3)
+	const uid = "00000000-0000-4000-8000-000000000072"
+	const sandboxName = "sandbox-manually-resumed"
+	caller := Account{Namespace: "agentplane", Name: "wake-budget-ready-test"}
+	for generation := int64(1); generation <= WakeLimit; generation++ {
+		if delay, err := store.ReserveWakeAttempt(ctx, caller, uid, generation); err != nil || delay != 0 {
+			t.Fatalf("reserve wake generation %d: delay %s, error %v", generation, delay, err)
+		}
+	}
+	if _, err := store.Enqueue(ctx, "wake-ready-command-session", sandboxName, uid,
+		input("wake-ready-command", "hello"), &caller); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.OpenSession(ctx, "wake-ready-opening-session", sandboxName, uid,
+		&runnerpb.SessionSpec{}, nil, &caller); err != nil {
+		t.Fatal(err)
+	}
+	catalog := &growingCatalog{sandboxes: []SandboxSnapshot{{
+		Name: sandboxName, Namespace: "agentplane", UID: uid, Incarnation: "old-pod",
+		Blocker: "sandbox_suspended", WakeOnSend: true,
+	}}}
+	runner := &acceptingRunner{calls: make(chan string, 2)}
+	leases := testLease{store: store}
+	wake := &exhaustedWakeBudget{}
+	worker := &DeliveryWorker{Store: store, Catalog: catalog, Wake: wake, Leases: leases, Runner: runner}
+	worker.init()
+	defer worker.queue.ShutDown()
+	owner, err := leases.Acquire(ctx, sandboxName, uid)
+	if err != nil || owner == nil {
+		t.Fatalf("acquire owner: %+v %v", owner, err)
+	}
+	worker.owners[uid] = *owner
+	for _, sessionID := range []string{"wake-ready-command-session", "wake-ready-opening-session"} {
+		if err := worker.processSession(ctx, sessionID); err != nil {
+			t.Fatal(err)
+		}
+		if retry := worker.retryFor(sessionID); retry.kind != retryWakeBudget || time.Until(retry.until) < 20*time.Second {
+			t.Fatalf("%s did not retain a long wake-budget delay: %+v", sessionID, retry)
+		}
+	}
+	if row, err := store.GetDispatch(ctx, "wake-ready-command"); err != nil || row.Reason != "wake_rate_limited" {
+		t.Fatalf("command was not wake limited: %+v %v", row, err)
+	}
+	if row, err := store.GetOpening(ctx, "wake-ready-opening-session"); err != nil || row.Reason != "wake_rate_limited" {
+		t.Fatalf("opening was not wake limited: %+v %v", row, err)
+	}
+	if err := worker.reconcile(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := worker.queue.Len(); got != 2 {
+		t.Fatalf("notification queued %d wake-limited sessions, want 2", got)
+	}
+	for range 2 {
+		sessionID, shutdown := worker.queue.Get()
+		if shutdown {
+			t.Fatal("queue shut down during notification reconciliation")
+		}
+		if err := worker.processSession(ctx, sessionID); err != nil {
+			t.Fatal(err)
+		}
+		worker.queue.Done(sessionID)
+	}
+	if wake.calls != 2 {
+		t.Fatalf("suspended notification retried wake %d times, want 2 initial attempts", wake.calls)
+	}
+	catalog.sandboxes[0].Incarnation = "new-pod"
+	catalog.sandboxes[0].Blocker = ""
+	if err := worker.reconcile(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	go worker.runQueue(ctx)
+	want := map[string]bool{"wake-ready-command": false, "opening:wake-ready-opening-session": false}
+	for range want {
+		select {
+		case got := <-runner.calls:
+			if _, okay := want[got]; !okay || want[got] {
+				t.Fatalf("unexpected Runner call %q", got)
+			}
+			want[got] = true
+		case <-time.After(5 * time.Second):
+			t.Fatal("ready Sandbox did not receive wake-limited work promptly")
+		}
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		command, commandErr := store.GetDispatch(ctx, "wake-ready-command")
+		opening, openingErr := store.GetOpening(ctx, "wake-ready-opening-session")
+		if commandErr == nil && openingErr == nil && command.State == AdmittedState && opening.State == AdmittedState {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("ready work reached Runner but was not durably admitted")
+}
+
+func TestWorkerNotificationPreservesFailureBackoff(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+	const uid = "00000000-0000-4000-8000-000000000073"
+	const sessionID = "rpc-backoff-session"
+	const commandID = "rpc-backoff-command"
+	if _, err := store.Enqueue(ctx, sessionID, "sandbox-rpc-backoff", uid, input(commandID, "hello"), nil); err != nil {
+		t.Fatal(err)
+	}
+	runner := &acceptingRunner{calls: make(chan string, 1)}
+	leases := testLease{store: store}
+	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
+		Name: "sandbox-rpc-backoff", Namespace: "agentplane", UID: uid, Incarnation: "pod-1",
+	}}, Wake: testWake{}, Leases: leases, Runner: runner}
+	worker.init()
+	defer worker.queue.ShutDown()
+	recorded := &recordingDelayQueue{TypedRateLimitingInterface: worker.queue}
+	worker.queue = recorded
+	owner, err := leases.Acquire(ctx, "sandbox-rpc-backoff", uid)
+	if err != nil || owner == nil {
+		t.Fatalf("acquire owner: %+v %v", owner, err)
+	}
+	worker.owners[uid] = *owner
+	worker.setRetry(sessionID, commandID, time.Minute, retryFailure)
+	before := len(recorded.delays)
+	if err := worker.reconcile(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(recorded.added) != 0 || len(recorded.delays) <= before {
+		t.Fatalf("notification failed to preserve delayed RPC retry: immediate %v, delayed %v", recorded.added, recorded.delays)
+	}
+	for _, delay := range recorded.delays[before:] {
+		if delay <= 0 || delay > time.Until(worker.retryFor(sessionID).until)+time.Second {
+			t.Fatalf("notification scheduled RPC retry outside due time: %s", delay)
+		}
+	}
+	if err := worker.processSession(ctx, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-runner.calls:
+		t.Fatalf("RPC retry called Runner early: %s", got)
+	default:
 	}
 }
 
@@ -648,7 +816,7 @@ func TestWorkerRetriesUncertainRunnerReplyUnderCurrentOwner(t *testing.T) {
 	if queued.Reason != "delivery_unavailable" {
 		t.Fatalf("uncertain reply should retry: %+v", queued)
 	}
-	if worker.retryRemaining("worker-session") <= 0 {
+	if time.Until(worker.retryFor("worker-session").until) <= 0 {
 		t.Fatal("missing retry backoff")
 	}
 	admitted := waitState(AdmittedState)
