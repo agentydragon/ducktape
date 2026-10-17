@@ -55,7 +55,7 @@ APP_ENVIRONMENT = {
     "AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET": "{sandbox}-control.{namespace}.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TOKEN_FILE": "/tokens/runner-gateway",
     "AGENTPLANE_HISTORY_SERVICE_TARGET": "history-service.test:8080",
-    "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
+    "AGENTPLANE_DATABASE_URL": "postgresql://test@test.invalid/test",
     "AGENTPLANE_MODELS": json.dumps(
         {
             "models": [

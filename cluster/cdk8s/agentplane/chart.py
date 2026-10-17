@@ -7,7 +7,6 @@ generate_manifests (writes them to disk) and the tests (synthesize them in memor
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from cdk8s_plus_34 import EnvValue
 from constructs import Construct
 
 from agentplane.subjects import ServiceAccountRef
@@ -62,17 +61,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
     Namespace(chart, "namespace", env)
     database.Db(chart, "db", env)
     app_credentials = database.postgres(env).app_secret
-    app_database_env = {
-        "AGENTPLANE_DB_USER": app_credentials.key("username").env_value(chart, "postgres-app-user-ref"),
-        "AGENTPLANE_DB_PASSWORD": app_credentials.key("password").env_value(chart, "postgres-app-password-ref"),
-        "AGENTPLANE_DB_HOST": app_credentials.key("host").env_value(chart, "postgres-app-host-ref"),
-        "AGENTPLANE_DB_PORT": app_credentials.key("port").env_value(chart, "postgres-app-port-ref"),
-        "AGENTPLANE_DB_NAME": app_credentials.key("dbname").env_value(chart, "postgres-app-dbname-ref"),
-    }
-    app_database_url = EnvValue.from_value(
-        "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
-        "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
-    )
+    app_database_url = app_credentials.key("uri").env_value(chart, "postgres-app-database-url")
     actions_database_url = (
         SecretRef(namespace=env.namespace, name="postgres-actions").key("uri").env_value(chart, "actions-database-url")
     )
@@ -147,7 +136,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         registry_secret_name=REGISTRY_SECRET_NAME,
         service_cluster_ip=None,
         runner_control_target=runner_gateway.control_target(env.namespace),
-        container_env=app_database_env,
     ).add_platform_resources()
     runner_sandbox.RunnerSandbox(
         chart,

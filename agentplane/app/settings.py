@@ -95,7 +95,7 @@ class Settings(AppSettingsConfig):
     host: str = Field(default="127.0.0.1", description="Bind address.")
     port: int = Field(default=8080, description="Bind port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
-    database_url: str = Field(description="SQLAlchemy asyncpg URL of the thread store.")
+    database_url: str = Field(description="PostgreSQL connection URI of the thread store.")
     electric_url: HttpEndpointUrl | None = Field(
         default=None,
         description="Electric replicating the History Service fold; omit to serve the REST/SSE API without the frontend.",
