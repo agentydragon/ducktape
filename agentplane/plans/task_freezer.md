@@ -103,6 +103,14 @@ See [information transfer and scope](multiagent_communication.md#information-tra
 Only after an explicit leakage-review requirement. Never substitute classifiers for messaging RBAC
 or silently discard accepted messages.
 
+### `INBOX_VACUUM` — remove old live inboxes
+
+Operator, 2026-10-17: not v1; revisit when inbox growth or retention cost is material. Retention
+already purges expired payloads and retired inboxes. A vacuum of other inboxes keeps the sender
+[receipt](multiagent_communication.md#sender-facing-receipts) honest: a removed record answers not
+found, meaning no record and never "not delivered". The design states what a sender's idempotent
+retry does once its message record is gone.
+
 ### `LIVE_CLEAN` — executor heartbeat retention cleanup
 
 When executor heartbeat accumulation becomes material. Stable identity or bounded cleanup must preserve executor claim and unknown-outcome semantics.

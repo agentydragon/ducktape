@@ -326,9 +326,9 @@ deployment initially, with optional subscription/source integrations; leave Disp
 Use `subscription` for source-following and `notice` for the batched inbox prompt. The exact service
 name, send API and discovery metadata fields remain open. Inbox read/ack retains the receiving
 Sandbox's owner-SA boundary; v1 adds no delegable inbox-read or acknowledgement permissions.
-The [sender-facing receipt contract](multiagent_communication.md#sender-facing-receipts-open)
-remains open: acceptance-only plus explicit replies versus additional system read/handled receipts.
-Acceptance-only is a recommendation, not a selected v1 scope.
+The [sender-facing receipt contract](multiagent_communication.md#sender-facing-receipts) is
+selected: the sender queries a message it sent for notice coverage and acknowledgement, and not found
+means no record. Read receipts and notice delivery stage are not v1.
 OAuth-bound SAs can be senders; v1 does not provide inboxes for externally running agents.
 Distinguish accepted, noticed, admitted, handled and task-success evidence. Define retention, limits,
 deduplication and offline/deleted-recipient behavior. Reading a transcript grants neither send nor ack.
@@ -346,11 +346,14 @@ Dispatcher or adding selective event wake is future work, not a prerequisite.
 message-body byte limit backed by a database ceiling; reject oversized messages before acceptance
 without truncation and reject configurations above the ceiling. Select the default and ceiling.
 Implement server-authenticated sender provenance, shared Session-access rule enforcement, idempotent
-message IDs and honest acceptance receipts in the chosen authority. Check send permission at durable
+message IDs and honest acceptance receipts in the chosen authority. Implement the sender's receipt
+query from the inbox coverage and acknowledgement cursors, visible only to the authenticated sender.
+Check send permission at durable
 acceptance against a fresh local policy view; observed revocation blocks new sends without retracting
 accepted messages. Require no separate recipient opt-in or source subscription. Test authorized
 acceptance without either, denied pairs, spoofing, retry/conflict behavior, size bounds and this
-revocation boundary.
+revocation boundary. Cover coverage and acknowledgement reaching a message independently, a retired
+recipient inbox, and not found for another account's message, an unknown ID and a purged inbox.
 
 ### `AGENT_MESSAGE_RECEPTION` — delivery, recovery and acknowledgement
 

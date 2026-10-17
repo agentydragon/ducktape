@@ -4,7 +4,7 @@ Status: **service-enforced Session-access PolicySet rules tentatively selected f
 collection and API schemas remain open. This records design directions, not implemented behavior;
 the operator may revisit the choice if implementation does not work well.
 Implementation gates remain in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations).
-Resume the interview with the [open sender-facing receipt decision](#sender-facing-receipts-open).
+The decisions still open are summarized under [cases to resolve before implementation](#cases-to-resolve-before-implementation).
 
 ## Requirements and preferences
 
@@ -420,15 +420,29 @@ Delegated inbox reading and acknowledgement are
 [potential follow-up work](task_freezer.md#delegated_inbox_access--delegated-inbox-reading-and-acknowledgement),
 not v1 prerequisites.
 
-### Sender-facing receipts (open)
+### Sender-facing receipts
 
-**Not yet decided:** should v1 sender-facing confirmation cover only durable inbox acceptance,
-with workflow confirmation through explicit replies, or also expose system-provided read/handled
-receipts? Acceptance-only plus explicit replies was recommended but has not been selected.
-Replies require their independently granted reverse send permission. Any sender-visible status
-must distinguish inbox acknowledgement from task success and does not confer inbox read/ack
-authority. This question remains in the active messaging design; delegated inbox read/ack access
-is separately deferred.
+**V1 direction agreed with the operator, 2026-10-17:** a send returns durable acceptance with the
+message ID, and the sender can later query the status of a message it sent. The status reports
+independent facts, not a progress ladder: whether a notice covers the message, and whether the
+recipient's acknowledgement has reached it. Both derive from the inbox's existing coverage and
+acknowledgement cursors. It also reports when the recipient's inbox was retired because its Sandbox
+is gone, so a message that will never arrive is distinguishable from one still pending.
+
+- Acknowledgement is a prefix cursor: "acknowledged" means the recipient's cursor passed the
+  message, not that the agent individually handled it, and never that the task succeeded.
+- There is no read receipt, because reads are not recorded. Notice delivery stage (admitted,
+  confirmed) is not part of v1 receipts: Notifications keeps only the latest notice per inbox, so
+  older messages have no stage history.
+- Authorization is being the authenticated sender of the message, not a current send grant. The
+  response exposes no cursors, other entries or inbox read/ack authority. Replies still require the
+  independently granted reverse send permission.
+- An unknown message ID, a message sent by another account and a message that retention has removed
+  all respond with not found. Not found means no record; it is never evidence that a message was not
+  delivered.
+- Retention already removes expired payloads and purges retired inboxes, so not found occurs in v1
+  once a deleted Sandbox's inbox is purged. Removing other old inboxes is deferred
+  ([`INBOX_VACUUM`](task_freezer.md#inbox_vacuum--remove-old-live-inboxes)).
 
 ### Batching and wake behavior
 
