@@ -5,8 +5,8 @@ from mcp_infra.exec.direct import DirectExecServer
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.testing.stubs.typed_stubs import ToolStub
 from mcp_infra.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME
+from mcp_infra.testing.stubs.typed_stubs import ToolStub
 from util.exec.models import BaseExecResult, Exited
 from util.exec.subprocess import DirectExecArgs
 
