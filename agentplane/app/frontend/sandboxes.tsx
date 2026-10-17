@@ -1,6 +1,5 @@
 import {
   ActionIcon,
-  Badge,
   Button,
   Checkbox,
   Group,
@@ -24,6 +23,7 @@ import { api, displayableError, type NewSandbox, type SandboxPresetView, type Sa
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
+import { MarkGlyph } from "./mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
@@ -39,17 +39,13 @@ const EMPTY_FORM: NewSandbox = {
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
 
-function StateBadge({ row }: { row: SandboxView }): JSX.Element {
+function StatusIcon({ row }: { row: SandboxView }): JSX.Element {
   const summary = sandboxSummary(row);
-  const suspended = summary.kind === "suspended";
   return (
     <Tooltip label={sandboxStatusDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
-      <Badge
-        color={suspended ? "gray" : SANDBOX_STATUS_MARKS[summary.kind].color}
-        variant={suspended ? "light" : undefined}
-      >
-        {summary.label}
-      </Badge>
+      <span aria-label={summary.label} data-status={summary.kind}>
+        <MarkGlyph mark={SANDBOX_STATUS_MARKS[summary.kind]} size="small" />
+      </span>
     </Tooltip>
   );
 }
@@ -240,18 +236,19 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           placeholder={templates.length > 0 ? "Choose a template" : "Loading templates…"}
           style={{ flex: "1 1 14rem" }}
         />
-        <MultiSelect
-          label="Policy sets"
-          description="What this sandbox may reach and do"
-          hidePickedOptions
-          data={policySets}
-          value={form.policy_sets ?? []}
-          onChange={(picked) => setForm({ ...form, policy_sets: picked })}
-          style={{ flex: "1 1 18rem" }}
-        />
+      </Group>
+      <MultiSelect
+        label="Policy sets"
+        description="What this sandbox may reach and do"
+        hidePickedOptions
+        data={policySets}
+        value={form.policy_sets ?? []}
+        onChange={(picked) => setForm({ ...form, policy_sets: picked })}
+        w="100%"
+      />
+      <Group align="flex-end" gap="sm">
         <Checkbox
           label="Wake on message"
-          description="Allow an incoming message to resume this Sandbox if it is suspended."
           checked={form.wake_on_send ?? false}
           onChange={(event) => setForm({ ...form, wake_on_send: event.currentTarget.checked })}
         />
@@ -274,8 +271,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       <Table>
         <Table.Thead>
           <Table.Tr>
+            <Table.Th>Status</Table.Th>
             <Table.Th>Name</Table.Th>
-            <Table.Th visibleFrom="sm">Status</Table.Th>
             <Table.Th visibleFrom="sm">Node</Table.Th>
             <Table.Th visibleFrom="sm">Wake on message</Table.Th>
             <Table.Th visibleFrom="sm">Suspend when idle (min)</Table.Th>
@@ -286,17 +283,18 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           {rows.map((row) => {
             const ip = podIp(row);
             const node = `${row.pod?.node_name ?? "—"} ${ip ? `(${ip})` : ""}`;
-            const state = <StateBadge row={row} />;
             const deleting = row.phase === "Quiescing" || row.phase === "Tearing down";
             return (
               <Table.Tr key={row.name}>
+                <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
+                  <StatusIcon row={row} />
+                </Table.Td>
                 <Table.Td>
                   <Button variant="subtle" px="xs" onClick={() => onOpen(row.name)}>
                     {row.name}
                   </Button>
                   {/* On a phone the other columns fold under the name, leaving room for the actions. */}
                   <Stack gap="xs" hiddenFrom="sm">
-                    {state}
                     <Text size="xs" c="dimmed">
                       {node}
                     </Text>
@@ -315,7 +313,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                     </Group>
                   </Stack>
                 </Table.Td>
-                <Table.Td visibleFrom="sm">{state}</Table.Td>
                 <Table.Td visibleFrom="sm">{node}</Table.Td>
                 <Table.Td visibleFrom="sm">
                   <Checkbox

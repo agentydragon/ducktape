@@ -805,11 +805,21 @@ flowchart LR
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
     ACTION_SURFACES_DESIGN -. related .-> NOTIFICATION_PRESENTATION
+    SANDBOX_FORM_TERMINOLOGY[Unscheduled: distinguish launch preset and runtime template labels]
     BUILD_BOX_BAZEL[Unscheduled: build Sandboxes can run Bazel]
     PLATFORM_SERVICE_NAMES_DESIGN[Decision, unscheduled: reserved sidecar names for platform services]
     PLATFORM_SERVICE_ROUTING_DESIGN[Decision, unscheduled: direct platform access vs central egress]
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
 ```
+
+### `SANDBOX_FORM_TERMINOLOGY` — distinguish launch presets from runtime templates
+
+**Unscheduled; operator, 2026-10-17 PDT: the new Sandbox form's “Preset” and “Sandbox template”
+labels are confusing.** Distinguish the multi-field choice as a “Launch preset” and the Pod/VM
+shape as a “Runtime template” (or use equally clear wording). Update the helper text to match; keep
+API model and field names unchanged.
+
+Exit: the form's labels and descriptions clearly distinguish those concepts on desktop and phone.
 
 ### `PLATFORM_SERVICE_NAMES_DESIGN` — stable sidecar names for platform services
 

@@ -523,6 +523,7 @@ ts_library(
         ":idle_suspend",
         ":lifecycle",
         ":live",
+        ":mark_glyph",
         ":sandbox_name",
         ":sandbox_status",
         ":status_mark",

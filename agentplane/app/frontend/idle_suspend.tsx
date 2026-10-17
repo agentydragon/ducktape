@@ -25,11 +25,11 @@ export function IdleSuspendField({
 }): JSX.Element {
   return (
     <NumberInput
-      label="Suspend when idle (minutes)"
-      description="Suspends the Sandbox once its runner has been idle this long. Empty never suspends it for idleness."
+      label="Suspend when idle (min)"
       placeholder="Never"
       min={1}
       allowNegative={false}
+      w="12rem"
       value={idleMinutes(seconds)}
       onChange={(minutes) => onChange(idleSeconds(minutes))}
     />

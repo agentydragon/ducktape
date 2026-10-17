@@ -196,6 +196,23 @@ function addProvisioningSandbox(): void {
   });
 }
 
+const PUBLIC_CODER_POLICY_SETS = [
+  "basic",
+  "packages",
+  "github-agentydragon-agent",
+  "github-clone",
+  "github-actions-logs",
+  "buildbuddy",
+  "public-coder-pr-visuals",
+  "common-github-read",
+  "github-identity-reads",
+  "ssh-reads",
+  "shared-diagnostics",
+  "agentplane-testing",
+  "public-inventory",
+  "ducktape-pr-failed-jobs",
+];
+
 const POLICIES: PolicyView[] = [
   {
     name: "github-public",
@@ -2081,7 +2098,7 @@ routes.push(
         name: "public-coder",
         title: "Public coder",
         template: "runner",
-        policy_sets: ["github-public", "public-coder"],
+        policy_sets: [...PUBLIC_CODER_POLICY_SETS],
         session_defaults: {
           harness: "HARNESS_CODEX",
           model: "harness-codex-model",
@@ -2356,7 +2373,7 @@ routes.push(
           },
   ],
   ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
-  ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: ["github-public", "public-coder", "pypi"] })],
+  ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: [...PUBLIC_CODER_POLICY_SETS, "pypi"] })],
   ["GET", /^\/action-policy\/sets$/, () => ACTION_POLICY.bindings.flatMap((binding) => binding.policy_sets)],
   ["GET", /^\/actions$/, () => ACTIONS],
   [
