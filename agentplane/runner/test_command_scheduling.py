@@ -271,12 +271,13 @@ async def test_quiesce_fences_a_command_waiting_on_model_lookup_before_dispatch(
     async with session_with_blocked_adapter(tmp_path) as (session, adapter):
         lookup_started, release_lookup = asyncio.Event(), asyncio.Event()
 
-        async def held_lookup(*, harness: object, model: str) -> None:
+        async def held_lookup(config: RunnerConfig, *, harness: object, model: str) -> None:
+            assert config is session.config
             del harness, model
             lookup_started.set()
             await release_lookup.wait()
 
-        monkeypatch.setattr(session.config, "resolve_model_config", held_lookup)
+        monkeypatch.setattr(RunnerConfig, "resolve_model_config", held_lookup)
         await session.command(
             command_pb2.Command(command_id="model-while-quiescing", change_model=command_pb2.ChangeModel(model="next"))
         )

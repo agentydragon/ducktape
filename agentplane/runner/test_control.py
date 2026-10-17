@@ -808,6 +808,7 @@ async def test_empty_runner_can_reserve_before_bootstrap_finishes_and_quiesce_it
         RunnerConfig(
             state_dir=tmp_path / "empty-runner",
             launch=replace(launches.SANDBOX_LAUNCH, bootstrap=script),
+            model_config_resolver=launches.unconfigured_models(),
             claude=ClaudeLaunch(
                 binary=tmp_path / "test-unlaunched-harness",
                 base_url="http://agentplane-test-endpoint.invalid",

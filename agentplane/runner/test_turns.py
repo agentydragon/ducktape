@@ -23,9 +23,11 @@ async def test_one_turn_streams_reasoning_and_text(
     driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     session = await driver.attach("turn-1", spec=spec)
-    assert session.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+    assert session.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
     assert session.attached.active_turn_id == ""
     await session.submit_input("input-1", "Reply with exactly: BASELINE_OK")
+    started = await session.until(events.is_kind("harness_started"))
+    assert not started.event.harness_started.resumed
 
     request = await model.request()
     assert request.streaming
@@ -35,8 +37,6 @@ async def test_one_turn_streams_reasoning_and_text(
     done = await session.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
     seen = session.seen
-    (started,) = events.of_kind(seen, "harness_started")
-    assert not started.event.harness_started.resumed
     (turn,) = events.of_kind(seen, "turn_started")
     assert turn.event.turn_started.turn_id == done.event.turn_completed.turn_id
     (admitted,) = events.of_kind(seen, "command_admitted")

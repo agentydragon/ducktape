@@ -4,7 +4,6 @@ summaries describe the published log."""
 import textwrap
 from pathlib import Path
 
-import grpc
 import pytest
 import pytest_bazel
 
@@ -12,7 +11,7 @@ from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
 from agentplane.runner.runner import Runner
 from agentplane.runner.store import SessionRecord, StateOwner, StateOwnershipError
-from agentplane.runner.testing import launches
+from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.driver import RunnerDriver
 
 # gazelle:include_dep @pypi//protobuf
@@ -77,11 +76,19 @@ async def test_failed_session_shutdown_still_closes_its_database(
 async def test_a_harness_that_dies_in_its_handshake_names_its_exit_and_stderr(
     driver: RunnerDriver, config: RunnerConfig, harness: runner_pb2.Harness, spec: runner_pb2.SessionSpec
 ) -> None:
-    with pytest.raises(grpc.aio.AioRpcError) as raised:
-        await driver.attach("launch-failure-1", spec=spec)
-    assert raised.value.code() == grpc.StatusCode.UNKNOWN
-    assert "exit_code=3" in (details := raised.value.details() or "")
-    assert REFUSAL in details
+    session = await driver.attach("launch-failure-1", spec=spec)
+    assert session.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+    await session.submit_input("launch-failure-1-input", "Start the failing harness.")
+    failed = await session.until(events.is_kind("harness_launch_failed"))
+    assert "exit_code=3" in failed.event.harness_launch_failed.reason
+    assert REFUSAL in failed.event.harness_launch_failed.reason
+    assert any(
+        entry.event.HasField("command_failed") and entry.event.command_failed.command_id == "launch-failure-1-input"
+        for entry in session.seen
+    )
+    summaries = await driver.list_sessions()
+    summary = next(item for item in summaries if item.session_id == "launch-failure-1")
+    assert summary.launch_outcome == runner_pb2.LAUNCH_OUTCOME_FAILED
     native_home = "claude" if harness == runner_pb2.HARNESS_CLAUDE else "codex"
     assert (config.state_dir / "sessions" / "launch-failure-1" / native_home).is_dir()
 
@@ -90,11 +97,19 @@ async def test_a_harness_that_dies_in_its_handshake_names_its_exit_and_stderr(
 async def test_a_harness_the_supervisor_cannot_start_names_the_spawn_failure(
     driver: RunnerDriver, spec: runner_pb2.SessionSpec
 ) -> None:
-    with pytest.raises(grpc.aio.AioRpcError) as raised:
-        await driver.attach("launch-failure-2", spec=spec)
-    assert raised.value.code() == grpc.StatusCode.UNKNOWN
-    assert "exit_code=125" in (details := raised.value.details() or "")
-    assert "harness supervisor: start native harness" in details
+    session = await driver.attach("launch-failure-2", spec=spec)
+    assert session.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+    await session.submit_input("launch-failure-2-input", "Start the missing harness.")
+    failed = await session.until(events.is_kind("harness_launch_failed"))
+    assert "exit_code=125" in failed.event.harness_launch_failed.reason
+    assert "harness supervisor: start native harness" in failed.event.harness_launch_failed.reason
+    assert any(
+        entry.event.HasField("command_failed") and entry.event.command_failed.command_id == "launch-failure-2-input"
+        for entry in session.seen
+    )
+    summaries = await driver.list_sessions()
+    summary = next(item for item in summaries if item.session_id == "launch-failure-2")
+    assert summary.launch_outcome == runner_pb2.LAUNCH_OUTCOME_FAILED
 
 
 async def test_summaries_report_the_published_log_not_a_batch_in_progress(tmp_path: Path) -> None:

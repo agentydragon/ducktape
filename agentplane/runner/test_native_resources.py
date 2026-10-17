@@ -105,9 +105,11 @@ async def test_native_history_and_resume_resources(
         driver = RunnerDriver(gateway)
         async with running(config, gateway):
             session = await driver.attach(session_id, spec=spec)
+            await session.submit_input("input-0", inputs[0])
             started = await session.until(events.is_kind("harness_started"))
             for index in range(history_size):
-                await session.submit_input(f"input-{index}", inputs[index])
+                if index:
+                    await session.submit_input(f"input-{index}", inputs[index])
                 request = await model.request()
                 assert request.user_texts == inputs[: index + 1]
                 assert request.assistant_texts == outputs[:index]
@@ -121,9 +123,9 @@ async def test_native_history_and_resume_resources(
         # the runner archive into the test client or substitute synthetic native resume files.
         async with running(config, gateway):
             session = await driver.attach(session_id, spec=spec, after_cursor=cursor)
+            await session.submit_input("resumed-input", inputs[-1])
             started = await session.until(events.is_kind("harness_started"))
             assert started.event.harness_started.resumed
-            await session.submit_input("resumed-input", inputs[-1])
             request = await model.request()
             assert request.user_texts == inputs
             assert request.assistant_texts == outputs[:-1]
