@@ -277,8 +277,9 @@ grant/membership writers, caller replacement semantics and access to retained hi
 Sandbox deletion. V1 has no individual-Session grants or computed collection selection. Presets
 may seed authorized launch enrollment; subsequent removals persist. Reading a Session resolves its
 recorded Sandbox identity, and all Sessions in that Sandbox use the same scope. Defaults expose
-no existing histories to workloads. Select raw read/list/follow behavior; read does not imply
-send/create, and no folded-read API is required for v1. Cover discovery, linked evidence, live-feed
+no existing histories to workloads. Session listing is a distinct, weaker read-type permission,
+independent from send; select its metadata fields and raw history read/follow behavior. Read does not
+imply send/create, and no folded-read API is required for v1. Cover discovery, linked evidence, live-feed
 revocation and unknown historical associations. Do not block this on a messaging transport.
 
 ### `THREAD_READ_POLICY` — authorized retained-history access
@@ -287,6 +288,7 @@ revocation and unknown historical associations. Do not block this on a messaging
 Sandbox-scoped grants at the owning backend across list, raw/native evidence, direct reads and feeds, including reconnect
 and revocation. Keep app-only UI folds separate. Test allowed/denied histories, two principals,
 deleted Sandboxes and revocation with deterministic service tests plus a bounded deployed auth check.
+Cover a listing-only caller separately from transcript/evidence reads and follows.
 
 ### `AGENT_MESSAGING_DESIGN` — inbox messaging and notice contract
 
@@ -296,7 +298,7 @@ A peer message is durable correspondence; its notice is a separate delivery effe
 not require source subscriptions. Generalize the current service around inbox/messaging in one
 deployment initially, with optional subscription/source integrations; leave Dispatcher separate.
 Use `subscription` for source-following and `notice` for the batched inbox prompt. The exact service
-name, send API, recipient discovery/opt-in and read/ack administration remain open.
+name, send API, discovery metadata fields, recipient opt-in and read/ack administration remain open.
 Distinguish accepted, noticed, admitted, handled and task-success evidence. Define retention, limits,
 deduplication and offline/deleted-recipient behavior. Reading a transcript grants neither send nor ack.
 

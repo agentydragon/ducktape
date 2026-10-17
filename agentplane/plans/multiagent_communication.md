@@ -185,7 +185,7 @@ Candidate operation families, not an API or policy schema:
 
 | Family               | Independently grantable operations                                         |
 | -------------------- | -------------------------------------------------------------------------- |
-| Discovery            | Find recipients; inspect bounded status/metadata.                          |
+| Discovery            | List a Sandbox's Sessions; inspect bounded status/metadata.                |
 | History              | Read/follow retained transcript and evidence; decide representation scope. |
 | Correspondence       | Send to a recipient; authorize the reverse direction separately.           |
 | Inbox                | Read received messages; acknowledge handled work; administer the mailbox.  |
@@ -367,10 +367,13 @@ separate questions.
 
 ## Discovery, session creation and Sandbox launch
 
-Discovery should expose authorized recipients and bounded metadata; decide its relationship to
-history reads and to explicit addresses a sender knows without enumeration. Keep live runner state,
-retained Session identity/history and a standing recipient directory distinct. A recipient can be
-addressable without granting transcript access or exposing arbitrary Kubernetes inventory.
+**V1 discovery direction agreed:** listing a Sandbox's Sessions is a distinct read-type permission,
+weaker than reading their transcripts and independently grantable from sending. Enumeration exposes
+bounded metadata, not transcript content or evidence; its exact fields remain to be selected.
+It uses the same Sandbox authorization granularity as other multiagent permissions. A sender with
+a known Session address need not have enumeration permission. Keep live runner state, retained
+Session identity/history and a standing recipient directory distinct; listing Sessions does not
+grant arbitrary Kubernetes inventory access.
 
 Opening Sessions in an agent's own Sandbox is a desired early use case. Define what “own” means,
 allowed models/settings, quota, setup authority, creator visibility and revocation. It adds no

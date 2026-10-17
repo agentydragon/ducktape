@@ -61,8 +61,11 @@ Sandbox never makes its old histories belong to a newly created same-name Sandbo
 
 ## Read and revocation behavior
 
-List/discovery, direct Event/history fetch, evidence/frame lookup, retained follow,
-and (if later implemented) folded reads all check the **same** scope. Filter before
+Session listing is a distinct, weaker read-type permission, independently grantable from sending;
+it exposes bounded metadata without transcript content or evidence. Its exact fields remain open.
+Enumeration and transcript access use the **same Sandbox scope**, with their respective permissions.
+Direct Event/history fetch, evidence/frame lookup, retained follow and (if later implemented) folded
+reads require history-read permission. Filter before
 pagination and totals; an unauthorized ID responds as not found, without existence,
 cursor, native payload, or count leaks. Record scope and grant changes in their authoritative owner with audit evidence. Broadening
 access to retained history requires an authorized policy or membership edit, not an incidental
@@ -82,7 +85,9 @@ writers, historical membership behavior and replacement semantics. Enforce the r
 and immutable Sandbox association on every history path. Test two Sessions in one authorized
 Sandbox, an unrelated denied Sandbox, explicit collection enrollment/removal and an ungranted SA
 that discovers nothing. Cover deleted Sandboxes, same-name replacement, unknown associations,
-raw/native paths, filtering before pagination, two replicas and revocation during a follow.
+raw/native paths, filtering before pagination, two replicas and revocation during a follow. Include
+a listing-only SA that can enumerate the granted Sandbox's Sessions but cannot read their histories
+or evidence, follow Events or send without the respective additional grants.
 
 Sandbox-wide scope removes the proposed per-Session compartment distinction. No separate
 compartment-placement implementation is required for this read policy; association correctness and
