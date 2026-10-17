@@ -280,7 +280,6 @@ flowchart TD
     HISTORY_SESSION_KEY_DESIGN -. read API shape .-> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN -. only if re-keyed .-> APP_THREAD_SANDBOX_UID
     HISTORY_SANDBOX_UID --> THREAD_READ_POLICY
-    HISTORY_SANDBOX_UID -. tightens the pair check .-> AGENT_MESSAGE_INGRESS
     HISTORY_SANDBOX_UID --> APP_THREAD_SANDBOX_UID
     APP_THREAD_SANDBOX_UID --> HISTORY_SESSION_REKEY
     SESSION_ACCESS_RULES --> AGENT_MESSAGE_INGRESS
@@ -532,7 +531,11 @@ message IDs and honest acceptance receipts in the chosen authority. Implement th
 query from the inbox coverage and acknowledgement cursors, visible only to the authenticated sender.
 Create an inbox for a message only after confirming the named Session against the Sandbox History
 recorded for it, so invented Session IDs cannot use up the recipient's inbox quota; sends to an
-existing inbox skip the check. Check send permission at durable
+existing inbox skip the check. The History Service reports that Sandbox's namespace and name today
+(`SessionSummary.sandbox`), which the Notification service's existing History client reads, so the check needs no
+Sandbox UID and no History key change. It also accepts the Session IDs of a deleted same-name
+predecessor, a finite set that cannot exhaust the quota; comparing the Sandbox UID after
+`HISTORY_SANDBOX_UID` closes that. Check send permission at durable
 acceptance against a fresh local policy view; observed revocation blocks new sends without retracting
 accepted messages. Require no separate recipient opt-in or source subscription. Test authorized
 acceptance without either, denied pairs, spoofing, retry/conflict behavior, size bounds and this
