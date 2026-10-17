@@ -5097,6 +5097,14 @@ spec:
             - api.githubcopilot.com
             - github.com
     - toFQDNs:
+        - matchName: chatgpt.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - chatgpt.com
+    - toFQDNs:
         - matchName: api.github.com
       toPorts:
         - ports:
