@@ -8,7 +8,7 @@ import pytest_bazel
 from rich.console import Console
 from rich.text import Text
 
-from mcp_infra.display.compact_display import MaxHeight
+from x.agent_cli.display.compact_display import MaxHeight
 
 
 def test_max_height_with_wrapping():

@@ -27,6 +27,7 @@ from agentplane.action_service.policy_informer import PolicyIndex, PolicyInforme
 from agentplane.action_service.push import ActionPushNotifier, PushIdentity, PushSubscriptionStore
 from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.sandbox.inventory import SandboxClients
+from agentplane.action_service.sandbox.kubernetes import KubernetesWebSocketExecRunner
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.settings import Settings
 from agentplane.action_service.store import ActionStore
@@ -35,7 +36,6 @@ from agentplane.background_task import background
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.service_process import configure_logging, kubernetes_configuration
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
-from mcp_infra.exec.kubernetes import KubernetesWebSocketExecRunner
 from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)

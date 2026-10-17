@@ -6,7 +6,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 
-from mcp_infra.tool_filter import ToolFilter, ToolFilterMiddleware
+from x.mcp_oauth_facade.tool_filter import ToolFilter, ToolFilterMiddleware
 
 _READ_ONLY = ToolFilter(allow={"search_nodes", "read_node"})
 

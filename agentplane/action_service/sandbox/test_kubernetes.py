@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from mcp_infra.exec.kubernetes import PodExecError, _command, _exit_code, _handshake_error
+from agentplane.action_service.sandbox.kubernetes import PodExecError, _command, _exit_code, _handshake_error
 
 
 @pytest.mark.parametrize(

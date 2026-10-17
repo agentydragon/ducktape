@@ -21,9 +21,9 @@ from starlette.types import ASGIApp
 from mcp_infra.authentik_auth.provider import build_authentik_auth
 from mcp_infra.persistence import OAuthClientStorage, build_client_storage
 from mcp_infra.static_bearer import StaticBearerGuard
-from mcp_infra.tool_filter import ToolFilterMiddleware
 from x.mcp_oauth_facade.config import FacadeSettings
 from x.mcp_oauth_facade.proxy import build_proxy_server
+from x.mcp_oauth_facade.tool_filter import ToolFilterMiddleware
 from x.mcp_oauth_facade.upstream_probe import ProbeState, run_probe_loop
 
 logger = logging.getLogger(__name__)

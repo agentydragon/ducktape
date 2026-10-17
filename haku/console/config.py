@@ -123,7 +123,9 @@ class ConsoleProcessConfig(BaseModel):
     # Shared haku-console Postgres database. Required: it holds the MCP approval audit/result
     # ledger and the operator OAuth token stores — the console does not run without them. Both
     # stores are always constructed; migrations are applied once at startup (see app.main).
-    database_url: SecretStr
+    database_url: SecretStr = Field(
+        description="PostgreSQL connection URI, normally postgresql://; the API and migrations select their own drivers."
+    )
 
     # Maximum synchronous wait an Agent may request for an approval-gated MCP call. Required
     # deployment wiring: it must leave margin below the deployment's own request timeout.

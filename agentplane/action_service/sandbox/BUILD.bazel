@@ -3,6 +3,28 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
+    name = "kubernetes",
+    srcs = ["kubernetes.py"],
+    deps = [
+        "//util/exec:models",
+        "@pypi//aiohttp",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_kubernetes",
+    srcs = ["test_kubernetes.py"],
+    deps = [
+        ":kubernetes",
+        "//:conftest",
+        "//agentplane/action_service:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "binding",
     srcs = ["binding.py"],
     # The generator writes the binding staging offers.
@@ -21,10 +43,10 @@ py_library(
     srcs = ["inventory.py"],
     deps = [
         ":binding",
+        ":kubernetes",
         ":models",
         "//agentplane:subjects",
         "//agentplane/egress:sidecar_config",
-        "//mcp_infra/exec:kubernetes",
         "@pypi//kubernetes_asyncio",
     ],
 )
@@ -44,11 +66,11 @@ py_test(
     deps = [
         ":binding",
         ":inventory",
+        ":kubernetes",
         ":models",
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/action_service:conftest",
-        "//mcp_infra/exec:kubernetes",
         "//util/exec:models",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
@@ -63,11 +85,11 @@ py_library(
         ":actions",
         ":binding",
         ":inventory",
+        ":kubernetes",
         ":models",
         "//agentplane:subjects",
         "//agentplane/action_service:models",
         "//agentplane/action_service:service",
-        "//mcp_infra/exec:kubernetes",
         "@pypi//pydantic",
     ],
 )
@@ -80,6 +102,7 @@ py_test(
         ":binding",
         ":executor",
         ":inventory",
+        ":kubernetes",
         ":models",
         "//:conftest",
         "//agentplane:subjects",
@@ -87,7 +110,6 @@ py_test(
         "//agentplane/action_service:conftest",
         "//agentplane/action_service:models",
         "//agentplane/action_service:service",
-        "//mcp_infra/exec:kubernetes",
         "//util/exec:models",
         "@pypi//pydantic",
         "@pypi//pytest",

@@ -1,6 +1,14 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//x/agent_cli:__subpackages__"],
+    deps = ["//agent_core/testing:fixtures"],
+)
+
+py_library(
     name = "json_utils",
     srcs = ["json_utils.py"],
     visibility = ["//:__subpackages__"],
@@ -42,10 +50,10 @@ py_test(
     uses_syrupy = True,
     deps = [
         ":compact_display",
+        ":conftest",
         "//:conftest",
         "//agent_core:events",
         "//agent_core:tool_provider",
-        "//mcp_infra:conftest",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "//mcp_infra/exec/docker:server",
@@ -66,8 +74,8 @@ py_test(
     srcs = ["test_max_height.py"],
     deps = [
         ":compact_display",
+        ":conftest",
         "//:conftest",
-        "//mcp_infra:conftest",
         "@pypi//pytest_bazel",
         "@pypi//rich",
     ],

@@ -21,12 +21,12 @@
       "sha256": "1KvHfNukys99Lq+jKi0B2v4XnMieefGWKwCAtkM6HJI="
     },
     "ducktape-util": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-baa156583d79/ducktape_util-0.1.0-py3-none-any.whl",
-      "sha256": "uqFWWD15ZpJVojs/QyZo6HY+F+4fGZZnsVdPcoHqAnI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-2071cd431c51/ducktape_util-0.1.0-py3-none-any.whl",
+      "sha256": "IHHNQxxR+srUmcNduilIbylDQ/UbS/p7Je/2y6yKiXg="
     },
     "ducktape": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-eee04880120d/ducktape-0.1.0-py3-none-any.whl",
-      "sha256": "7uBIgBIN3LndApfdD9SsWWpPNnwDgdHoJvwG3rsy8Gs="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-081c4750d0ae/ducktape-0.1.0-py3-none-any.whl",
+      "sha256": "CBxHUNCuVBbWNqhybVQB+p4bPAhLOeiq2ePyofGzPPI="
     },
     "gterm-theme": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-aef3119efae0/gterm_theme-0.1.0-py3-none-any.whl",
@@ -37,12 +37,12 @@
       "sha256": "4eBO7BRYjX1X/+02uRxQ0ihH9aoK9X0cTxw2qIA9PWY="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-995fb48db4ca/aiquota.zip",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-1400dc6b0975/aiquota.zip",
       "sha256": "fLw843xZV4mEa/C3Y3j/JmrHoUkuPURJWxRnclwXrvs="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-995fb48db4ca/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "lj1e2F6EjCYEco4L9O1sTUo+AEp/x/uLZ4cCTrEcl3Y="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-1400dc6b0975/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "0uldKskmZVn7k5wpAdhJAfX8GaDBErrIwqaOQZD5PjQ="
     },
     "debundle": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-e0c30a2d753c/debundle",
