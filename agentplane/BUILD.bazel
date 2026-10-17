@@ -146,3 +146,15 @@ py_library(
         "@pypi//fastapi",
     ],
 )
+
+py_library(
+    name = "policy_watch",
+    srcs = ["policy_watch.py"],
+    deps = [
+        ":crd_group",
+        ":kubernetes_watch",
+        ":policy_sets",
+        "//util:kubernetes",
+        "//util:kubernetes_watch",
+    ],
+)

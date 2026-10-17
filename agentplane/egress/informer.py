@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
-from functools import partial
 from typing import Any
 
 from kubernetes_asyncio.client import CoreV1Api
@@ -13,49 +12,16 @@ from kubernetes_asyncio.client import CoreV1Api
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.policy import Index
 from agentplane.egress.resources import CREDENTIALS_PLURAL, EGRESS_RULE_TYPE, EgressCredential, Rule, Secret
-from agentplane.policy_sets import (
-    POLICY_BINDINGS_PLURAL,
-    POLICY_SET_UNAVAILABLE,
-    POLICY_SETS_PLURAL,
-    Condition,
-    ConditionReporter,
-    PolicyBinding,
-    parse_policy_set,
-    resolve_binding,
-    set_condition,
-    unavailable_message,
-)
+from agentplane.policy_watch import PolicyWatch, ReadyCondition
 from util.kubernetes import CustomObjectsClient
-from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
+from util.kubernetes_watch import WatchedKind, apply_to
 
 EGRESS_READY = "EgressReady"
 FIELD_MANAGER = "agentplane-egress"
 
 
-def _name(obj: EgressCredential | PolicyBinding) -> str:
-    return obj.metadata.name
-
-
 def _egress_rule(raw: dict[str, Any]) -> Rule | None:
     return Rule.model_validate(raw) if raw["type"] == EGRESS_RULE_TYPE else None
-
-
-def egress_ready(index: Index, binding: PolicyBinding, now: datetime) -> Condition:
-    """Whether every set the binding names exists and parses; the sets that do grant either way."""
-    resolution = resolve_binding(index.policy_sets, binding)
-    if resolution.missing or resolution.refused:
-        return set_condition(
-            binding,
-            EGRESS_READY,
-            ready=False,
-            reason=POLICY_SET_UNAVAILABLE,
-            message=unavailable_message(resolution),
-            now=now,
-        )
-    rules = sum(len(policy_set.rules) for policy_set in resolution.sets)
-    return set_condition(
-        binding, EGRESS_READY, ready=True, reason="Enforced", message=f"egress rules: {rules}", now=now
-    )
 
 
 class Informer:
@@ -71,34 +37,23 @@ class Informer:
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._index = index
-        self._clock = clock
-        self._reporter = ConditionReporter(custom_objects, field_manager=FIELD_MANAGER)
-        self._watch = ListWatch(
-            kinds=(
-                WatchedKind(
-                    name=POLICY_SETS_PLURAL,
-                    list=custom_objects.list_namespaced_custom_object,
-                    args=(GROUP, VERSION, namespace, POLICY_SETS_PLURAL),
-                    parse=partial(parse_policy_set, parse_rule=_egress_rule),
-                    key=lambda policy_set: policy_set.name,
-                    names=lambda: set(index.policy_sets),
-                    apply=lambda name, obj: apply_to(index.policy_sets, name, obj),
-                ),
-                WatchedKind(
-                    name=POLICY_BINDINGS_PLURAL,
-                    list=custom_objects.list_namespaced_custom_object,
-                    args=(GROUP, VERSION, namespace, POLICY_BINDINGS_PLURAL),
-                    parse=PolicyBinding.model_validate,
-                    key=_name,
-                    names=lambda: set(index.policy_bindings),
-                    apply=lambda name, obj: apply_to(index.policy_bindings, name, obj),
-                ),
+        self._watch = PolicyWatch(
+            custom_objects=custom_objects,
+            namespace=namespace,
+            parse_rule=_egress_rule,
+            policy_sets=index.policy_sets,
+            policy_bindings=index.policy_bindings,
+            condition=ReadyCondition(
+                type=EGRESS_READY, field_manager=FIELD_MANAGER, applied_reason="Enforced", rules_label="egress rules"
+            ),
+            freshness=index.freshness,
+            other_kinds=[
                 WatchedKind(
                     name=CREDENTIALS_PLURAL,
                     list=custom_objects.list_namespaced_custom_object,
                     args=(GROUP, VERSION, namespace, CREDENTIALS_PLURAL),
                     parse=EgressCredential.model_validate,
-                    key=_name,
+                    key=lambda credential: credential.metadata.name,
                     names=lambda: set(index.credentials),
                     apply=lambda name, obj: apply_to(index.credentials, name, obj),
                 ),
@@ -111,28 +66,16 @@ class Informer:
                     names=lambda: set(index.secrets),
                     apply=lambda name, obj: apply_to(index.secrets, name, obj),
                 ),
-            ),
+            ],
             resync_seconds=resync_seconds,
-            on_change=self._changed,
-            on_cycle=self._completed,
             clock=clock,
+            mark_synced=self._mark_synced,
+            notify=index.notify,
         )
 
     async def run(self) -> None:
         """Watch until cancelled."""
         await self._watch.run()
 
-    async def _changed(self, kind: WatchedKind) -> None:
-        self._index.synced = self._watch.synced
-        # Until every kind has listed, a set not yet seen would read as missing.
-        if self._index.synced:
-            now = self._clock()
-            await self._reporter.report(
-                (binding, egress_ready(self._index, binding, now))
-                for binding in list(self._index.policy_bindings.values())
-            )
-        await self._index.notify()
-
-    async def _completed(self, kind: WatchedKind, at: datetime) -> None:
-        self._index.freshness.record(kind.name, at)
-        await self._index.notify()
+    def _mark_synced(self, synced: bool) -> None:
+        self._index.synced = synced

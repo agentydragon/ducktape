@@ -1069,9 +1069,9 @@ py_library(
     srcs = ["policy_informer.py"],
     deps = [
         ":models",
-        "//agentplane:crd_group",
         "//agentplane:kubernetes_watch",
         "//agentplane:policy_sets",
+        "//agentplane:policy_watch",
         "//agentplane:subjects",
         "//agentplane/action_service/policies:registry",
         "//agentplane/action_service/policies:resources",

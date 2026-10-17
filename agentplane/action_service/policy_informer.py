@@ -16,7 +16,6 @@ from functools import partial
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 
-from agentplane import policy_sets
 from agentplane.action_service.models import CallerPrincipal, NamespacedName, service_account_key
 from agentplane.action_service.policies.registry import Policy
 from agentplane.action_service.policies.resources import (
@@ -27,22 +26,12 @@ from agentplane.action_service.policies.resources import (
     SERVICE_ACCOUNTS_PLURAL,
     parse_action_rule,
 )
-from agentplane.crd_group import GROUP, VERSION
 from agentplane.kubernetes_watch import Freshness
-from agentplane.policy_sets import (
-    POLICY_BINDINGS_PLURAL,
-    POLICY_SET_UNAVAILABLE,
-    ConditionReporter,
-    PolicyBinding,
-    PolicySet,
-    RefusedPolicySet,
-    resolve_binding,
-    set_condition,
-    unavailable_message,
-)
+from agentplane.policy_sets import PolicyBinding, PolicySet, RefusedPolicySet
+from agentplane.policy_watch import PolicyWatch, ReadyCondition
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
-from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
+from util.kubernetes_watch import WatchedKind, apply_to
 
 logger = logging.getLogger(__name__)
 
@@ -110,25 +99,6 @@ def _keys_in(store: Mapping[NamespacedName, object], namespace: str) -> set[Name
     return {key for key in store if key.namespace == namespace}
 
 
-def actions_ready(index: PolicyIndex, binding: PolicyBinding, now: datetime) -> policy_sets.Condition:
-    """The ActionsReady condition this replica wants on a `PolicyBinding`: whether every set it
-    names exists and parses; the sets that do grant either way."""
-    resolution = resolve_binding(index.rule_sets, binding)
-    if resolution.missing or resolution.refused:
-        return set_condition(
-            binding,
-            ACTIONS_READY_CONDITION,
-            ready=False,
-            reason=POLICY_SET_UNAVAILABLE,
-            message=unavailable_message(resolution),
-            now=now,
-        )
-    rules = sum(len(policy_set.rules) for policy_set in resolution.sets)
-    return set_condition(
-        binding, ACTIONS_READY_CONDITION, ready=True, reason="Applied", message=f"Action rules: {rules}", now=now
-    )
-
-
 class PolicyInformer:
     def __init__(
         self,
@@ -141,71 +111,43 @@ class PolicyInformer:
         resync_seconds: int,
     ) -> None:
         self._index = index
-        self._custom_objects = custom_objects
-        # The index's, not one of its own: it stamps the cycle times the index reads back as
-        # freshness, and a second clock would be one more thing that has to agree.
-        self._clock = index.clock
-        self._reporter = ConditionReporter(custom_objects, field_manager=ACTIONS_FIELD_MANAGER)
-        kinds: list[WatchedKind] = [
-            WatchedKind(
-                name=f"{policy_namespace}/{policy_sets.POLICY_SETS_PLURAL}",
-                list=custom_objects.list_namespaced_custom_object,
-                args=(GROUP, VERSION, policy_namespace, policy_sets.POLICY_SETS_PLURAL),
-                parse=partial(policy_sets.parse_policy_set, parse_rule=parse_action_rule),
-                key=lambda policy_set: policy_set.name,
-                names=lambda: set(index.rule_sets),
-                apply=lambda name, obj: apply_to(index.rule_sets, name, obj),
+        self._watch = PolicyWatch(
+            custom_objects=custom_objects,
+            namespace=policy_namespace,
+            parse_rule=parse_action_rule,
+            policy_sets=index.rule_sets,
+            policy_bindings=index.policy_bindings,
+            condition=ReadyCondition(
+                type=ACTIONS_READY_CONDITION,
+                field_manager=ACTIONS_FIELD_MANAGER,
+                applied_reason="Applied",
+                rules_label="Action rules",
             ),
-            WatchedKind(
-                name=f"{policy_namespace}/{POLICY_BINDINGS_PLURAL}",
-                list=custom_objects.list_namespaced_custom_object,
-                args=(GROUP, VERSION, policy_namespace, POLICY_BINDINGS_PLURAL),
-                parse=PolicyBinding.model_validate,
-                key=lambda binding: binding.metadata.name,
-                names=lambda: set(index.policy_bindings),
-                apply=lambda name, obj: apply_to(index.policy_bindings, name, obj),
-            ),
-        ]
-        kinds.extend(
-            WatchedKind(
-                name=f"{namespace}/{SERVICE_ACCOUNTS_PLURAL}",
-                list=core_v1.list_namespaced_service_account,
-                args=(namespace,),
-                kwargs={"label_selector": CALLER_LABEL_SELECTOR},
-                parse=_service_account,
-                key=service_account_key,
-                names=partial(_keys_in, index.service_accounts, namespace),
-                apply=lambda key, obj: apply_to(index.service_accounts, key, obj),
-            )
-            for namespace in sorted(caller_service_account_namespaces)
-        )
-        self._watch = ListWatch(
-            kinds=kinds,
+            freshness=index.freshness,
+            other_kinds=[
+                WatchedKind(
+                    name=f"{namespace}/{SERVICE_ACCOUNTS_PLURAL}",
+                    list=core_v1.list_namespaced_service_account,
+                    args=(namespace,),
+                    kwargs={"label_selector": CALLER_LABEL_SELECTOR},
+                    parse=_service_account,
+                    key=service_account_key,
+                    names=partial(_keys_in, index.service_accounts, namespace),
+                    apply=lambda key, obj: apply_to(index.service_accounts, key, obj),
+                )
+                for namespace in sorted(caller_service_account_namespaces)
+            ],
             resync_seconds=resync_seconds,
-            on_change=self._changed,
-            on_cycle=self._completed,
+            # The index's, not one of its own: it stamps the cycle times the index reads back as
+            # freshness, and a second clock would be one more thing that has to agree.
             clock=index.clock,
+            mark_synced=self._mark_listed,
+            notify=index.notify,
         )
 
     async def run(self) -> None:
         """Watch until cancelled."""
         await self._watch.run()
 
-    async def _changed(self, kind: WatchedKind) -> None:
-        self._index.listed = self._watch.synced
-        await self._reconcile_status()
-        await self._index.notify()
-
-    async def _completed(self, kind: WatchedKind, at: datetime) -> None:
-        self._index.freshness.record(kind.name, at)
-        await self._index.notify()
-
-    async def _reconcile_status(self) -> None:
-        if not self._index.listed:
-            # A set a binding names may merely not have been listed yet; reporting it missing would be false.
-            return
-        now = self._clock()
-        await self._reporter.report(
-            (binding, actions_ready(self._index, binding, now))
-            for binding in list(self._index.policy_bindings.values())
-        )
+    def _mark_listed(self, listed: bool) -> None:
+        self._index.listed = listed

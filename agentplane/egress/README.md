@@ -26,7 +26,7 @@ bbr test //agentplane/egress/...
   globally reachable, and pinned so the dial goes to the address checked — through
   `PinnedDialEventLoop`, the event loop the proxy must run on, which answers the dial's own lookup.
 - `informer.py`: list-and-watch of those kinds into each replica’s `Index`, and the `EgressReady`
-  condition on each `PolicyBinding`, through the shared `agentplane/policy_sets.py`.
+  condition on each `PolicyBinding`, through the shared `agentplane/policy_watch.py`.
 - `rules_api.py`: the agent-facing
   `egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
   independently authenticated FastAPI listener and shared `RulesProjection`; `addon.py` is the

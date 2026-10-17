@@ -438,11 +438,12 @@ is accepted.
 the resolver every rule type's reader shares: `policies/resources.parse_action_rule` keeps a set's
 `action_auto_approve` rules, parsed strictly (an unknown key or policy kind or an invalid JSON Schema
 refuses the set), and skips the others. `policy_informer` list-and-watches both kinds only in
-`policy_namespace`, and labeled caller ServiceAccounts only in `caller_service_account_namespaces`,
-into one `PolicyIndex`. `ConditionReporter` writes this service's `ActionsReady` on each binding by
-server-side apply under its own field manager, so the Policy Controller's `KubernetesReady` on the same
-binding stays; it is the informer's only write, and the rendered Roles grant these permissions
-independently in the namespaces that need them. `policy_evaluation.resolve_bindings` flattens the
+`policy_namespace` through the shared `agentplane/policy_watch.py`, and labeled caller
+ServiceAccounts only in `caller_service_account_namespaces`, into one `PolicyIndex`.
+`ConditionReporter` writes this service's `ActionsReady` on each binding by server-side apply under
+its own field manager, so the Policy Controller's `KubernetesReady` on the same binding stays; it is
+the informer's only write, and the rendered Roles grant these permissions independently in the
+namespaces that need them. `policy_evaluation.resolve_bindings` flattens the
 pairs into one `ResolvedBinding` shape, which admission, the evidence and the policy views all read.
 
 Each policy kind is one module under `policies/` holding its wire model and its evaluator
