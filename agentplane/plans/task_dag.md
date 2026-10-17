@@ -799,7 +799,7 @@ flowchart LR
     K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
     K3S_IMPORT_CONCURRENCY[Candidate: native containerd import and unpack concurrency]
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
-    EGRESS_SIDECAR_GO[In review: convert complete egress sidecar to Go]
+    EGRESS_SIDECAR_GO[In review: Go sidecar; model smoke pending]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
@@ -948,11 +948,15 @@ Python sidecar runtime with Go, including the HTTP/CONNECT relay and generic gRP
 Preserve projected-token rotation, audience/header replacement, fail-closed refusals, transparent
 duplex streams, deadlines/cancellation/status/trailers, configuration and readiness/shutdown.
 Update all image/configuration consumers atomically; the central mitmproxy service stays separate.
-Remaining exit: exact-head CI, contract coverage, passing real k3s lifecycle and Claude smoke, and a matched
-comparison of Sandbox readiness, lifecycle time and distinct image bytes. Keep assertions, timeouts
-and the manual-only workflow. The shared Python runtime remains needed by other images; do not
-count the sidecar's full image size as removable bytes. Publish for Rai's manual merge; live rollout
-is separate.
+The actual Go binary's contract tests, exact-head CI, and two fresh Go-sidecar k3s lifecycle runs
+pass. Against two fresh runs on current `devel`, mean TestRunner execution fell 32.2%; the create
+and Sandbox Ready case fell 38.7%. The measured 17-image fixture stack dropped 7.93 MiB of distinct
+layer bytes; the Python runtime remains shared by other images. See the [lifecycle and layer
+measurements](../x/k3s_env/README.md#go-egress-sidecar-comparison-2026-10-16). The real Qwen/Claude
+model smoke remains pending because the local BuildBuddy client failed to resolve
+`remote.buildbuddy.io` before dispatch; no credential was sent by another route. Run that smoke
+through the authorized BuildBuddy path when connectivity permits. Keep lifecycle workflow
+manual-only. Publish for Rai's manual merge; live rollout is separate.
 
 ### `K3S_SHARED_PACKAGE_LAYERS` — share third-party Python package layers
 

@@ -125,6 +125,76 @@ bbapi artifact download 9f7b5851-71e2-4c62-b60e-a18334a90dee lifecycle.prof --al
 bbapi artifact download 63f952b3-aec8-4b50-a3fa-4effb82a9fc1 lifecycle.prof --all -o harness-free-profiles/
 ```
 
+### Go egress sidecar comparison, 2026-10-16
+
+The Python control uses current `devel` source `d558dcc30da97d6ddb2ad2f08767161ab545dc0a`.
+The Go candidate uses this PR's implementation; the second lifecycle run used exact PR head
+`45536854045afc6c6331f32360e9afd7ca4b5465`. The earlier candidate run used
+`56a73f58b3e478a0479d48cc6ce50cda30c72eaf`; the Go runtime and image inputs are identical at
+both revisions. Each action ran the unchanged four model-free lifecycle cases with fresh test
+execution and the same assertions and timeouts. The first test creates a Sandbox and waits for its
+`Ready=True` condition. The suspend/resume case also waits for Ready after resume, but its time
+includes both transitions and is not an isolated resume measurement.
+
+| Measurement (seconds)             | Python 1 | Python 2 |    Go 1 |    Go 2 |
+| --------------------------------- | -------: | -------: | ------: | ------: |
+| TestRunner execution              |  356.763 |  329.950 | 231.510 | 234.422 |
+| Pytest suite                      |  309.061 |  278.370 | 188.388 | 193.645 |
+| Create and wait for Sandbox Ready |  269.361 |  232.487 | 149.621 | 158.002 |
+| Bootstrap check                   |   10.547 |   10.772 |   8.627 |   8.417 |
+| Suspend and resume                |   14.837 |   19.861 |  15.030 |  12.765 |
+| Delete                            |   14.055 |   14.954 |  14.833 |  14.179 |
+
+Mean TestRunner execution fell from **343.356 s to 232.966 s (32.2%)**. The create-and-Ready case
+fell from **250.924 s to 153.812 s (38.7%)**; suspend/resume fell from 17.349 s to 13.898 s
+(19.9%). All four runs used the same BuildBuddy TestRunner worker ID
+`e371cdec-b7b4-40bb-b594-8ac328c689b3`. These are observed lifecycle totals, not a sidecar-only
+startup benchmark; controller scheduling, workload readiness, image import and bootstrap are also
+included.
+
+One temporary cProfile run per source measured import and K3s startup separately. The same profiler
+patch (SHA-256 `cc5fcec68449bcab4047704ec6fbb686a981335fa665543641528a5403a9909d`) changed only the
+test entry point and is not part of this PR. Its measurements are single-run samples:
+
+| Profile measurement (seconds)      | Python control | Go sidecar |
+| ---------------------------------- | -------------: | ---------: |
+| TestRunner execution               |        340.359 |    241.836 |
+| Pytest suite                       |        280.224 |    204.030 |
+| cProfile total                     |        282.101 |    206.050 |
+| `K3s.import_images` cumulative     |        152.042 |     84.142 |
+| `K3s.start` cumulative             |         29.303 |     21.706 |
+| `running_stack` setup and teardown |        232.419 |    159.082 |
+
+Both profiled runs passed all four cases on the same worker ID as the lifecycle measurements.
+`import_images` includes streaming, pipe backpressure and containerd import/unpack work. Its
+single-run reduction does not isolate the sidecar's contribution. The fresh lifecycle actions and
+their test XML are available in the [Python control 1](https://app.buildbuddy.io/invocation/c151b124-fd5f-480a-950d-5876b7de8a78),
+[Python control 2](https://app.buildbuddy.io/invocation/a552cc26-ad92-44e6-b332-e18517d58673),
+[Go run 1](https://app.buildbuddy.io/invocation/2ba37e23-5fd7-484a-b860-7b676fc6702b), and
+[exact-head Go run 2](https://app.buildbuddy.io/invocation/0a2d7b92-8cb0-4e2c-92cd-cf03c5be7ff3).
+The profiled artifacts are in the [Python control](https://app.buildbuddy.io/invocation/2f056e16-9f21-4452-b2e6-56fa9a6330b3)
+and [Go sidecar](https://app.buildbuddy.io/invocation/04e2e695-cbb4-4908-81ed-7e6387c884a4)
+invocations. Exact-head [Bazel CI](https://github.com/agentydragon/ducktape/actions/runs/38995319654),
+[pre-commit](https://github.com/agentydragon/ducktape/actions/runs/38995319700), and
+[build artifacts and imports](https://github.com/agentydragon/ducktape/actions/runs/38995319712)
+passed on `45536854045afc6c6331f32360e9afd7ca4b5465`.
+
+The actual lifecycle TestRunner input trees contain 17 OCI images. CAS metadata was checked against
+SHA-256 and descriptor sizes; image-layer payloads were not fetched again. The sidecar image shrank
+from 255,582,262 bytes (243.74 MiB) to 42,070,418 bytes (40.12 MiB), but most of that difference is
+the Python runtime layer still used by other images. Across the complete fixture stack, distinct
+layer bytes fell from 888,218,462 to 879,900,181 bytes: **8,318,281 bytes (7.93 MiB) removed**.
+The shared 212,320,824-byte (202.48 MiB) Python runtime remains in other service images. The
+sidecar's exclusive layer bytes fell only from 13,468,780 to 12,277,760 bytes (1.14 MiB); the
+rest of the net stack reduction is in other image layers. Do not report the sidecar's full image
+size as removed bytes. Raw inventories record every image and layer digest for the [Python control](image-sizes-2026-10-16-egress-sidecar-python.json)
+and [exact-head Go action](image-sizes-2026-10-16-egress-sidecar-go.json).
+
+The Go model-free lifecycle passes; the separate real Qwen/Claude model smoke has not yet run for
+this PR. The local BuildBuddy client could not resolve `remote.buildbuddy.io` before dispatch, so no
+credential was sent through another path. Keep that smoke pending until it can run through the
+authorized BuildBuddy route.
+
 `import_images` includes tar streaming, pipe backpressure and containerd import/unpack work;
 it is not Python CPU time. `running_stack` measures its executing setup/teardown generator,
 excluding time paused at its yield. Profile totals start inside the Python entry point;
