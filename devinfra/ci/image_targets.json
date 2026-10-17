@@ -242,7 +242,7 @@
       "test": "//agentplane/egress/...",
       "registry": "forgejo"
     },
-    "agentplane-egress-go": {
+    "agentplane-egress-proxy": {
       "target": "//agentplane/egress/go/cmd:image",
       "test": "//agentplane/egress/...",
       "registry": "forgejo"
