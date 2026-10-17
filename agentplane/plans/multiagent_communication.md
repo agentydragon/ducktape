@@ -74,15 +74,23 @@ independent overlapping grants remain.
 
 **V1 membership storage choice:** use separate membership CRs, each representing one Sandbox's
 enrollment in one collection. Flux and the app can own different enrollment objects independently,
-rather than sharing a member list embedded in the collection CR. Exact kinds, schemas and Sandbox
-reference semantics remain open.
+rather than sharing a member list embedded in the collection CR. Exact kinds and field schemas
+remain open.
+
+**Sandbox reference modes agreed:** support namespace/name references, which follow that name
+across Sandbox deletion and recreation, and namespace/name plus UID references, which identify
+exactly one Sandbox instance. App-launched memberships default to UID-pinned references;
+GitOps-managed named Sandboxes may use name-based references. A name-based membership can authorize
+the replacement Sandbox's new Sessions; it does not change any old Session's recorded Sandbox
+association or make deleted Sessions deliverable. Retained-history membership semantics remain
+an explicit design question.
 
 An app preset can supply initial collection memberships when launching a Sandbox, subject to
 launch/enrollment authorization. Later removal sticks: preset reconciliation or opening another
 Session must not silently re-enroll it. Preset edits change defaults for future launches rather
 than recomputing existing memberships. No computed selection is needed for v1.
 
-Define member references, authorized writers and GitOps/runtime removal ownership before implementation.
+Finalize reference fields, authorized writers and GitOps/runtime removal ownership before implementation.
 Separate object ownership does not authorize writes or establish a runtime override of GitOps
 desired state. Collections select Sandbox targets; supporting OAuth caller SAs through PolicyBindings
 does not require SA collection members.

@@ -8,8 +8,9 @@ which today serves only its configured reader accounts.
 
 SA-level caller attribution and Sandbox-level authorization are agreed. Reads may request an
 individual Session, but the permission covers its Sandbox's histories. V1 supports explicit target
-collections with explicit member lists and launch-time membership defaults; it has no individual-Session grants or computed
-collection selection. The [tentative implementation direction](multiagent_communication.md#tentative-implementation-direction)
+collections with separate membership CRs, the agreed [Sandbox reference modes and launch defaults](multiagent_communication.md#target-collections-and-launch-enrollment),
+and no individual-Session grants or computed collection selection.
+The [tentative implementation direction](multiagent_communication.md#tentative-implementation-direction)
 is service-enforced Session-access `PolicySet` rules assigned through existing `PolicyBinding`s,
 with shared evaluation code and enforcement by History on its own API. Exact schemas remain open;
 the representation may be revisited if implementation does not work well. No broader auth-engine
