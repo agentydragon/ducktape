@@ -50,7 +50,10 @@ pkg_tar(
 oci_image(
     name = "runner_claude_image",
     base = ":runner_image",
-    tars = [":runner_claude_harness", ":runner_claude_link"],
+    tars = [
+        ":runner_claude_harness",
+        ":runner_claude_link",
+    ],
 )
 
 # Each test carries exactly one runner layout with the same basename/tag.

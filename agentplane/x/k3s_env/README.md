@@ -44,6 +44,13 @@ The importer consumes the `oci_image` targets through `oci_layout_rloc`, combine
 descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
 Docker-format `oci_load` tarballs.
 
+The lifecycle target supplies `:runner_image`, with the real runner and no native harnesses. The
+model smoke supplies `:runner_claude_image`, which adds only pinned Claude Code to the same base.
+Each target carries its own `runner_layout.rloc` through `K3S_RUNNER_LAYOUT_RLOCATION`; the shared
+stack library carries only service layouts. Both variants import as the existing `runner:unset`
+tag, so templates, registration and lifecycle behavior stay the same. This fixture split does
+not select a deployment-wide harness-delivery mechanism.
+
 ## Lifecycle coverage
 
 The model-free [lifecycle tests](test_lifecycle.py) wait for the Sandbox's own `Ready=True`
@@ -235,12 +242,11 @@ result for the new Go composition. Breaks found on the way, in order:
   are External Secrets functions). The old YAML rewrite could not evaluate that template, and the image's
   gomplate rejected it. The direct fixture also leaves Dex out.
 
-- **Runner image:** the `runner` SandboxTemplate's image is Nix-built and private. `:runner_image` builds an
-  equivalent from the runner plus the pinned Claude Code and Codex binaries at `/bin/claude` and `/bin/codex`
-  (debian-slim base, no toolbox), so the environment needs no registry credential. The harness links go in
-  `/usr/bin` (the base's `/bin` is a symlink to it) and name the canonical `+http_archive+` repo directories. The test
-  creates a `Sandbox` on that template through the app, opens a Claude session on the catalog's Qwen model and
-  asserts the turn completes; the reply is kept as the `answer.txt` test output.
+- **Runner image:** the fixture builds the runner from source on a debian-slim base without the
+  deployed Nix toolbox or private registry credentials. The model smoke adds the pinned Claude
+  binary at `/bin/claude`; its link lives in `/usr/bin` because the base's `/bin` is a symlink there.
+  The test opens a Claude Session on the catalog's Qwen model and requires a completed turn; the
+  reply is retained as `answer.txt`. Lifecycle tests use the harness-free variant.
 - **Storage classes:** the manifest's `local-path-ovh-hdd` does not exist on k3s, so every `storageClassName`
   becomes `local-path`; without it the Sandbox's state PVC never binds and the Pod stays Pending.
 - **LiteLLM:** `LITELLM_QWEN_KEY` (the Qwen-only key Terraform provisions as
