@@ -401,7 +401,7 @@ in
   # Existing data disks use autoFormat on first boot and autoResize to full size;
   # the cache volume is formatted explicitly before its first activation.
   # virtio0=/dev/vda, virtio1=/dev/vdb, virtio2=/dev/vdc, virtio3=/dev/vdd,
-  # virtio4=/dev/vde, virtio5=/dev/vdf, virtio7=/dev/vdh, virtio8=/dev/vdi,
+  # virtio4=/dev/vde, virtio7=/dev/vdh, virtio8=/dev/vdi,
   # virtio9=/dev/vdj, virtio10=/dev/vdk, virtio11=/dev/vdl
   fileSystems."/var/local-path-provisioner" = {
     device = "/dev/vda";

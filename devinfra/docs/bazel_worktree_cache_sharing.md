@@ -32,12 +32,11 @@ Remote execution/cache already shares action work across machines. It does not
 share local analysis state between worktrees.
 
 Bazel 9.2 defaults `--repo_contents_cache` to `<repository_cache>/contents`,
-with a 14-day maximum age and a 5-minute idle delay. Wyrm2 now pins that default
-path explicitly in its Home Manager config; it lands on the existing 100G HDD
-mount alongside downloaded archives. This cache has age-based GC only, with no
-size ceiling, so monitor the mount's free space. Bazel 9.2 already uses this
-default path unless overridden; Wyrm2's explicit setting pins the location and
-GC policy.
+with a 14-day maximum age and a 5-minute idle delay. Wyrm2 pins that default path
+explicitly; it shares the 300G SSD filesystem with downloaded archives and
+output bases. This cache has age-based GC only, with no size ceiling, so monitor
+the SSD's free space. Bazel 9.2 already uses this default path unless overridden;
+Wyrm2's explicit setting pins the location and GC policy.
 
 The repo contents cache makes only eligible repository trees shareable; it
 does not make output bases themselves shareable. Earlier local investigation
