@@ -105,7 +105,8 @@ class Service:
         self.notice_debounce = notice_debounce
         self.stale_confirmation_s = stale_confirmation_s
 
-    async def runner(self, owner: ServiceAccountRef, destination: DestinationRef) -> SandboxRunner:
+    async def resolve_destination(self, destination: DestinationRef) -> SandboxDestination:
+        """The named Sandbox incarnation, carrying the account it runs as."""
         if destination.namespace != self.sandboxes.namespace:
             raise DestinationRejectedError
         try:
@@ -114,11 +115,13 @@ class Service:
             raise StaleDestinationError("not_found") from error
         if sandbox.uid != destination.uid:
             raise StaleDestinationError("uid_changed")
-        if sandbox.service_account != ServiceAccount(namespace=owner.namespace, name=owner.name):
+        return SandboxDestination(sandbox=destination.name, sandbox_uid=destination.uid, owner=sandbox.service_account)
+
+    async def runner(self, owner: ServiceAccountRef, destination: DestinationRef) -> SandboxRunner:
+        resolved = await self.resolve_destination(destination)
+        if resolved.owner != ServiceAccount(namespace=owner.namespace, name=owner.name):
             raise OwnerMismatchError
-        return self.control.runner(
-            SandboxDestination(sandbox=destination.name, sandbox_uid=destination.uid, owner=sandbox.service_account)
-        )
+        return self.control.runner(resolved)
 
     async def subscribe(self, principal: WorkloadPrincipal, body: Subscribe) -> SubscriptionView:
         runner = await self.runner(principal.account, body.destination_ref)
