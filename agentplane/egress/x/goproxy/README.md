@@ -1,6 +1,6 @@
 # Central GoProxy lab
 
-A bounded GoProxy v1.9.2 feasibility spike, with no image, deployment, or production caller.
+A bounded GoProxy v1.9.2 feasibility spike (with a pinned initial-H2-header flush patch), with no image, deployment, or production caller.
 The existing Python central proxy remains authoritative. The runner-side Go conversion is a
 separate lane.
 
