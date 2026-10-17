@@ -1939,20 +1939,69 @@ instead started by whoever sends the right command. Rai asks whether these shoul
 at all. The question is who owns the harness process's lifecycle; it also bears on the runner managing
 more of its own lifecycle and on capturing harness-native agents.
 
-**Proposal to review.** The runner starts a Session's harness itself when input arrives, since it alone
-knows the store, the native id and the setup state. A command is admitted once the harness is up, and a
-failed start becomes that command's failure reason. Resume stops being a command. Stop and interrupt
-stay commands, because they carry user intent that must be ordered with input.
+**Operator direction (2026-10-17 21:33 UTC, from memory of earlier designs, "iirc").** The runner is in
+charge of every harness process's lifecycle. Codex hosts many agents in one app-server and Claude needs
+one process per main Session, so no caller dictates which process starts or dies; callers act at the
+Session level. The runner may report what it is running, and may reap idle Claude processes, which hold
+more RAM idle, and restart them on demand.
+
+**Proposal to review.** Callers address Sessions, never processes.
+
+- _Start._ The runner starts a Session's harness when work needs one, from the spec, store and native ID
+  only it knows. A command is admitted once the harness is up, and a failed start becomes that command's
+  failure reason. The Dispatcher stops calling `ResumeSession` ahead of each command, and the runner stops
+  refusing a command because no harness runs.
+- _Reap._ The runner may stop an idle process and start it again on the next command (`RUNNER_IDLE_HARNESS_REAP`).
+  Claude goes first. A shared Codex process is reaped only when none of its Sessions is busy.
+- _Session verbs._ Open, interrupt and stop stay commands, because they carry user intent that must be
+  ordered with input. Whether an explicit Session-level resume also stays, as the retry after a failed
+  start, is open.
+- _Status._ Session reads stay as they are. A read-only report lists processes with their hosted Sessions,
+  for diagnosis, with no handle a caller can act on; this is `RUNNER_HARNESS_OBJECTS_DESIGN`'s diagnostic
+  object. A Session's harness is running, reaped (restarts on input), stopped by a user or failed to start;
+  today `HarnessState` has only running and stopped.
+
+**Checked against the code and plans (2026-10-17).**
+
+- Today each Session gets its own process for both harnesses (`Session.ensure_running`). A shared Codex
+  app-server is demonstrated only by `native/codex/test_multiplexing.py`, so Codex sharing is a capability,
+  not current runtime. `HARNESS_IDENTITY_DESIGN` already takes one Claude process per root Session and a
+  shared Codex app-server as the adapter baselines.
+- The start path exists. `ensure_running` restarts a harness on its retained spec and reconciles unfinished
+  turns, and it is the same path an idle Sandbox wake takes. `runner/control.py` refuses a command to a
+  stopped harness with `HarnessStoppedError`, and the Dispatcher calls `ResumeSession` before `SubmitInput`,
+  `ChangeModel` and `ChangeReasoningEffort` (`runner_gateway/dispatcher/runner_client.go`).
+- `StopRunnerSession` is already Session-addressed but has process meaning: it shuts the Session's harness
+  down. With the runner owning processes it needs a Session-level meaning.
+- Reaping needs a busy source the runner lacks. A reaped Claude process loses its running subagents, which
+  a restart does not rediscover ([child evidence](../native/docs/child_sessions.md)), and background tasks
+  die with it. Claude reports `background_tasks` in its `Stop` hook input and Codex lists only shell sessions
+  ([background work](../docs/background_work.md)). The runner counts neither as busy, and the unscheduled
+  `RUNNER_BUSY_TRACKING` names terminals and background processes, not native children. Reaping waits on a
+  busy source for all three or is limited to Sessions with no such work known; this is input to
+  `RUNNER_IDLE_HARNESS_REAP`.
+- The RAM cost of an idle Claude process is Rai's observation and is not measured here. Choose the
+  threshold from a measured idle footprint, and say where it is configured (runner setting or Sandbox spec,
+  as `idleSuspendAfter` is).
+- Idle suspend ends every process anyway, so reaping matters to Sandboxes that stay up with many Sessions.
 
 **If adopted:** it supersedes `APP_NATIVE_RESUME_CONTRACT` and the app `ResumeSession` carve-out in
-`PROXY_START_METHODS_DISPATCHER_ONLY`; the Thread page's **Resume harness** button shrinks to a retry
-after a failed start; Session open, resume and stop fold into `HARNESS_IDENTITY_DESIGN` and
-`RUNNER_STORE_SESSION_IDENTITY`; and `RUNNER_HARNESS_OBJECTS_DESIGN` takes its process lifecycle from
-the outcome. `DISPATCHER_PERSISTENCE_MODEL_DESIGN` is unaffected.
+`PROXY_START_METHODS_DISPATCHER_ONLY`; `ResumeSession` itself goes only after the Dispatcher and the app are
+off it on pinned images. Session open and stop fold into `HARNESS_IDENTITY_DESIGN` and
+`RUNNER_STORE_SESSION_IDENTITY`. `RUNNER_HARNESS_OBJECTS_DESIGN` takes the process status report and
+`RUNNER_IDLE_HARNESS_REAP` the reap policy. Start-on-demand needs nothing else; reaping also needs that busy
+source. `DISPATCHER_PERSISTENCE_MODEL_DESIGN` is unaffected.
+
+**For the idle-suspend Thread page.** `IDLE_SUSPEND_UI_DRIVE` waits on this decision. The Thread page's
+status and notice fixes do not. If adopted, the composer stops gating on the harness running and gates on
+the Sandbox being Ready, so the **Resume harness** step after a wake and the "Harness not running" status
+go away. A wake-on-send then runs wake, runner start, admission, with no separate resume, and a failed
+start shows as that message's failure. The drive walks exactly that step.
 
 **Open:** concurrent inputs racing to start a stopped Session; how a start failure reaches commands
-already admitted; and the link to harness-native agents. Until decided, the identity, resume and proxy
-nodes above proceed as written.
+already admitted; what stop means once input restarts a stopped Session; whether `ChangeModel` and
+`ChangeReasoningEffort` start a process or only update the retained spec; and the link to harness-native
+agents. Until decided, the identity, resume and proxy nodes above proceed as written.
 
 ### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping
 
