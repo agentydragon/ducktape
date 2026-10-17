@@ -273,7 +273,6 @@ async def test_two_workloads_share_one_backend_key_and_keep_distinct_verified_me
         "agentplane.pod_name": "sandbox-a",
         "agentplane.pod_uid": "pod-a-uid",
         "agentplane.service_account": "sandbox-a",
-        "agentplane.service_account_subject": SUBJECT,
     }
     assert verified_metadata(backend.requests[1])["agentplane.pod_name"] == "sandbox-b"
     assert (

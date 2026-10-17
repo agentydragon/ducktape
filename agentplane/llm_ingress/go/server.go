@@ -297,11 +297,10 @@ func forwardedRequestHeaders(headers http.Header, principal auth.Principal, key 
 	}
 	forwarded.Set("Authorization", "Bearer "+key)
 	metadata, _ := json.Marshal(map[string]string{
-		"agentplane.namespace":               principal.Account.Namespace,
-		"agentplane.service_account":         principal.Account.Name,
-		"agentplane.service_account_subject": "system:serviceaccount:" + principal.Account.Namespace + ":" + principal.Account.Name,
-		"agentplane.pod_name":                principal.PodName,
-		"agentplane.pod_uid":                 principal.PodUID,
+		"agentplane.namespace":       principal.Account.Namespace,
+		"agentplane.service_account": principal.Account.Name,
+		"agentplane.pod_name":        principal.PodName,
+		"agentplane.pod_uid":         principal.PodUID,
 	})
 	forwarded.Set("x-litellm-spend-logs-metadata", string(metadata))
 	return forwarded

@@ -19,7 +19,6 @@ object is:
 {
   "agentplane.namespace": "...",
   "agentplane.service_account": "...",
-  "agentplane.service_account_subject": "...",
   "agentplane.pod_name": "...",
   "agentplane.pod_uid": "..."
 }
