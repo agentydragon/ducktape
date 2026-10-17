@@ -65,7 +65,7 @@ _GRPC_PORT = 8080
 # Keep serving and schema changes in one reviewed release; discovery does not activate upgrades.
 GATEWAY_IMAGE = (
     "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go"
-    "@sha256:bd165864d490fd6582abc66e77cf61acd59f9d68b64e317c389651923e4dc280"
+    "@sha256:6a297c455839afdeba41704bc6e1c805409e1a557a720efc4a11fbb0324831f3"
 )
 MIGRATION_IMAGE = (
     "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate"
