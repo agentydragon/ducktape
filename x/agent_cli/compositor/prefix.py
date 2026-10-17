@@ -1,11 +1,9 @@
-"""Lightweight MCP mount prefix type - no heavyweight dependencies.
+"""Validated mount-prefix type for the agent CLI compositor.
 
-This module exists to avoid importing fastmcp/mcp in contexts where only
-the MCPMountPrefix validation type is needed (e.g., policy evaluation).
-Importing fastmcp chains to the mcp package which takes ~2.5s to load.
+The module depends on Pydantic but avoids importing FastMCP and the MCP package.
+That keeps prefix validation lightweight for compositor and display code.
 
-For code that needs full MCP types (FastMCP, MCPServerTypes, etc.),
-import from mcp_infra.types instead.
+Import FastMCP types from their owning packages where needed.
 """
 
 from __future__ import annotations

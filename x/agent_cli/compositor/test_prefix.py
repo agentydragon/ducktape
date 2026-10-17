@@ -1,4 +1,4 @@
-"""Tests for MCP domain types validation.
+"""Tests for compositor mount prefix validation.
 
 MCPMountPrefix declares its pattern twice (`_adapter` and
 `__get_pydantic_core_schema__`); validating through the TypeAdapter chains
@@ -12,7 +12,7 @@ import pytest
 import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
-from mcp_infra.prefix import MCPMountPrefix
+from x.agent_cli.compositor.prefix import MCPMountPrefix
 
 adapter = TypeAdapter(MCPMountPrefix)
 

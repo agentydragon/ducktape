@@ -20,7 +20,6 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 
 from haku.console.identity.naming import normalize_agent_name
 from haku.console.tool_call_actor import RuntimeActor
-from mcp_infra.prefix import MCPMountPrefix
 
 
 class McpServerNotFoundError(LookupError):
@@ -202,7 +201,7 @@ class ConsoleConfigFile(BaseModel):
     @model_validator(mode="after")
     def _require_unique_identity(self) -> ConsoleConfigFile:
         server_ids: set[str] = set()
-        server_prefixes: set[MCPMountPrefix] = set()
+        server_prefixes: set[str] = set()
         for slot, server in self.mcp.servers.items():
             if not re.fullmatch(r"[a-z][a-z0-9_]*", slot):
                 raise ValueError(f"invalid MCP server slot {slot!r}")
@@ -292,10 +291,12 @@ class ConsoleConfigFile(BaseModel):
         return self
 
 
-def server_tool_prefix(server_id: str) -> MCPMountPrefix:
+def server_tool_prefix(server_id: str) -> str:
     """Return the configured server's canonical tool namespace."""
     sanitized = re.sub(r"[^a-z0-9]+", "_", server_id.lower()).strip("_")
-    return MCPMountPrefix(sanitized)
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,49}", sanitized):
+        raise ValueError(f"invalid MCP server tool prefix derived from id {server_id!r}: {sanitized!r}")
+    return sanitized
 
 
 def _load_servers(config: ConsoleConfigFile) -> list[McpServerEntry]:

@@ -11,7 +11,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "//mcp_infra:naming",
-        "//mcp_infra:prefix",
         "//openai_utils:model",
         "//openai_utils:types",
         "//x/inop/engine:models",

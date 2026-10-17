@@ -17,8 +17,6 @@ from fastmcp.tools import Tool
 from fastmcp.tools.function_tool import FunctionTool
 from pydantic import BaseModel, ConfigDict, create_model
 
-from mcp_infra.prefix import MCPMountPrefix
-
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
 
@@ -63,12 +61,12 @@ def input_model_for_tool(tool: FunctionTool) -> type[BaseModel]:
     return create_model(model_name, __config__=ConfigDict(extra="forbid"), **fields)
 
 
-def extract_tool_schemas(servers: dict[MCPMountPrefix, FastMCP]) -> dict[tuple[MCPMountPrefix, str], type[BaseModel]]:
+def extract_tool_schemas[PrefixT: str](servers: dict[PrefixT, FastMCP]) -> dict[tuple[PrefixT, str], type[BaseModel]]:
     """Extract tool result types from FastMCP servers.
 
     Only includes FunctionTools with Pydantic BaseModel return annotations.
     """
-    schemas: dict[tuple[MCPMountPrefix, str], type[BaseModel]] = {}
+    schemas: dict[tuple[PrefixT, str], type[BaseModel]] = {}
 
     for server_prefix, server in servers.items():
         for tool in _iter_tools(server):
@@ -91,14 +89,14 @@ def extract_tool_schemas(servers: dict[MCPMountPrefix, FastMCP]) -> dict[tuple[M
     return schemas
 
 
-def extract_tool_input_schemas(
-    servers: dict[MCPMountPrefix, FastMCP],
-) -> dict[tuple[MCPMountPrefix, str], type[BaseModel]]:
+def extract_tool_input_schemas[PrefixT: str](
+    servers: dict[PrefixT, FastMCP],
+) -> dict[tuple[PrefixT, str], type[BaseModel]]:
     """Extract tool input types from FastMCP servers.
 
     Includes FunctionTools using FastMCP's native function-signature API.
     """
-    schemas: dict[tuple[MCPMountPrefix, str], type[BaseModel]] = {}
+    schemas: dict[tuple[PrefixT, str], type[BaseModel]] = {}
 
     for server_prefix, server in servers.items():
         for tool in _iter_tools(server):

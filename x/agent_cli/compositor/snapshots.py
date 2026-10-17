@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from mcp import types as mcp_types
 from pydantic import BaseModel, Field
 
-from mcp_infra.prefix import MCPMountPrefix
+from x.agent_cli.compositor.prefix import MCPMountPrefix
 
 
 class McpServerState(StrEnum):

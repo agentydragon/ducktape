@@ -6,7 +6,7 @@ from mako.template import Template
 
 from mako_utils.preprocessor import markdown_heading_preprocessor
 from mcp_infra.naming import build_mcp_function
-from mcp_infra.prefix import MCPMountPrefix
+from x.agent_cli.compositor.prefix import MCPMountPrefix
 from x.agent_cli.compositor.snapshots import ServerEntry
 
 

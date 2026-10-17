@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest_bazel
 from mcp import types
 
-from mcp_infra.prefix import MCPMountPrefix
+from x.agent_cli.compositor.prefix import MCPMountPrefix
 from x.agent_cli.compositor.rendering import render_compositor_instructions
 from x.agent_cli.compositor.snapshots import RunningServerEntry
 

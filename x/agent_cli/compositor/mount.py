@@ -15,7 +15,7 @@ from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
 from fastmcp.server.providers.proxy import FastMCPProxy
 
-from mcp_infra.prefix import MCPMountPrefix
+from x.agent_cli.compositor.prefix import MCPMountPrefix
 
 logger = logging.getLogger(__name__)
 

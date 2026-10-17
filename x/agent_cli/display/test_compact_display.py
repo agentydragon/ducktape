@@ -19,14 +19,15 @@ from agent_core.tool_provider import ToolResult
 from mcp_infra.exec.docker.server import ContainerExecServer, _make_exec_input_model
 from mcp_infra.exec.docker.types import DefaultValue
 from mcp_infra.naming import build_mcp_function
-from mcp_infra.prefix import MCPMountPrefix
 from util.exec.models import BaseExecResult, Exited
+from x.agent_cli.compositor.prefix import MCPMountPrefix
 from x.agent_cli.display.compact_display import CompactDisplayHandler
 
 # Dynamic model matching a server with all fields enabled
 _TestExecInput: type[BaseModel] = _make_exec_input_model(
     allow_user=True, allow_env=True, cwd_policy=DefaultValue(value=Path("/test/workspace"))
 )
+RUNTIME_PREFIX = MCPMountPrefix(ContainerExecServer.RUNTIME_MOUNT_PREFIX)
 
 
 def render_handler_to_string(call: ToolCall, output: ToolCallOutput, prefix: str = "Agent") -> str:
@@ -40,14 +41,10 @@ def render_handler_to_string(call: ToolCall, output: ToolCallOutput, prefix: str
     # Register tool schemas so the handler can recognize _TestExecInput/BaseExecResult
     # Use tuple keys (MCPMountPrefix, tool_name) as expected by CompactDisplayHandler
     tool_input_schemas: dict[tuple[MCPMountPrefix, str], type[BaseModel]] = {
-        (ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME): cast(
-            type[BaseModel], _TestExecInput
-        )
+        (RUNTIME_PREFIX, ContainerExecServer.EXEC_TOOL_NAME): cast(type[BaseModel], _TestExecInput)
     }
     tool_schemas: dict[tuple[MCPMountPrefix, str], type[BaseModel]] = {
-        (ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME): cast(
-            type[BaseModel], BaseExecResult
-        )
+        (RUNTIME_PREFIX, ContainerExecServer.EXEC_TOOL_NAME): cast(type[BaseModel], BaseExecResult)
     }
 
     # Create handler with the console and schemas

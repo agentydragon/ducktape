@@ -39,7 +39,6 @@ from mcp_infra.exec.docker.types import (
     ResolvedExecInput,
 )
 from mcp_infra.exec.read_image import validate_and_encode_image
-from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from util.exec.models import CMD_DESCRIPTION, BaseExecResult, TimeoutMs, async_timer
 
@@ -150,8 +149,8 @@ class ContainerExecServer(FastMCP):
 
     # Default mount prefixes for container exec servers in tests
     # Different test contexts use different names for the same server type
-    DOCKER_MOUNT_PREFIX: MCPMountPrefix = MCPMountPrefix("docker")
-    RUNTIME_MOUNT_PREFIX: MCPMountPrefix = MCPMountPrefix("runtime")
+    DOCKER_MOUNT_PREFIX = "docker"
+    RUNTIME_MOUNT_PREFIX = "runtime"
 
     # Resource URI constants
     CONTAINER_INFO_URI = "resource://container.info"

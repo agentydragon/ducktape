@@ -10,14 +10,12 @@ from collections.abc import Callable, Generator
 from typing import Any
 
 import pytest
-from fastmcp import FastMCP
 from pydantic import BaseModel
 
 from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME, EchoInput, EchoOutput
 from agent_core.testing.responses import DecoratorMock, PlayGen, ResponsesFactory, tool_roundtrip
 from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.mounted import Mounted
-from mcp_infra.naming import MCPMountPrefix, build_mcp_function
+from mcp_infra.naming import build_mcp_function
 from openai_utils.model import FunctionCallItem, ResponsesRequest
 from util.exec.models import BaseExecResult
 
@@ -26,7 +24,7 @@ class MCPResponsesFactory(ResponsesFactory):
     """ResponsesFactory with MCP-aware convenience methods."""
 
     def mcp_tool_call(
-        self, server: MCPMountPrefix, tool: str, arguments: dict[str, Any] | BaseModel, call_id: str | None = None
+        self, server: str, tool: str, arguments: dict[str, Any] | BaseModel, call_id: str | None = None
     ) -> FunctionCallItem:
         """Create tool call for MCP server/tool with automatic naming."""
         args = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
@@ -40,20 +38,16 @@ class MCPDecoratorMock(DecoratorMock):
     call_roundtrip or mcp_tool_call.
     """
 
-    def call_roundtrip[S: FastMCP, U: BaseModel](
-        self,
-        mounted: Mounted[S],
-        tool: str | Callable[..., Any],
-        arguments: dict[str, Any] | BaseModel,
-        output_type: type[U],
+    def call_roundtrip[U: BaseModel](
+        self, prefix: str, tool: str | Callable[..., Any], arguments: dict[str, Any] | BaseModel, output_type: type[U]
     ) -> Generator[FunctionCallItem, ResponsesRequest, U]:
         """Create tool call and yield roundtrip generator."""
-        args = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
-        call = self.tool_call(mounted.tool_name(tool), args)
+        tool_name = tool if isinstance(tool, str) else tool.__name__
+        call = self.mcp_tool_call(prefix, tool_name, arguments)
         return tool_roundtrip(call, output_type)
 
     def mcp_tool_call(
-        self, server: MCPMountPrefix, tool: str, arguments: dict[str, Any] | BaseModel, call_id: str | None = None
+        self, server: str, tool: str, arguments: dict[str, Any] | BaseModel, call_id: str | None = None
     ) -> FunctionCallItem:
         """Create tool call for MCP server/tool with automatic naming."""
         args = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
@@ -64,7 +58,7 @@ class DockerExecMock(MCPDecoratorMock):
     """Mock with docker exec helpers.
 
     Example:
-        @DockerExecMock.mock(runtime)
+        @DockerExecMock.mock(ContainerExecServer.RUNTIME_MOUNT_PREFIX)
         def mock(m: DockerExecMock):
             req = yield
             result = yield from m.exec(["ls", "-la"])
@@ -72,8 +66,8 @@ class DockerExecMock(MCPDecoratorMock):
             yield from m.exec(["submit"])
     """
 
-    def __init__(self, play_fn: Callable[[DockerExecMock], PlayGen], runtime: Mounted[ContainerExecServer]) -> None:
-        self._runtime = runtime
+    def __init__(self, play_fn: Callable[[DockerExecMock], PlayGen], runtime_prefix: str) -> None:
+        self._runtime_prefix = runtime_prefix
         # Safe: play() only calls play_fn with self which is DockerExecMock
         super().__init__(play_fn)  # type: ignore[arg-type]
 
@@ -82,7 +76,7 @@ class DockerExecMock(MCPDecoratorMock):
     ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
         """Yield exec call, receive response, return typed result."""
         args: dict[str, Any] = {"cmd": cmd, "timeout_ms": timeout_ms, "cwd": cwd}
-        return self.call_roundtrip(self._runtime, ContainerExecServer.EXEC_TOOL_NAME, args, BaseExecResult)
+        return self.call_roundtrip(self._runtime_prefix, ContainerExecServer.EXEC_TOOL_NAME, args, BaseExecResult)
 
 
 class EchoMock(MCPDecoratorMock):

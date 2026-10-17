@@ -5,7 +5,6 @@ py_test(
     srcs = ["test_fastmcp_native_tools.py"],
     deps = [
         ":conftest",
-        ":prefix",
         ":tool_schemas",
         "//:conftest",
         "//mcp_infra/testing/stubs:typed_stubs",
@@ -24,19 +23,6 @@ py_library(
         "@pypi//py_key_value_aio",
         "@pypi//pydantic",
         "@pypi//valkey_glide",
-    ],
-)
-
-py_test(
-    name = "test_types",
-    srcs = ["test_types.py"],
-    deps = [
-        ":conftest",
-        ":prefix",
-        "//:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -64,23 +50,9 @@ py_library(
 )
 
 py_library(
-    name = "mounted",
-    srcs = ["mounted.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":naming",
-        ":prefix",
-        ":resource_utils",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "naming",
     srcs = ["naming.py"],
     visibility = ["//:__subpackages__"],
-    deps = [":prefix"],
 )
 
 py_library(
@@ -116,16 +88,6 @@ py_library(
 )
 
 py_library(
-    name = "prefix",
-    srcs = ["prefix.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pydantic_core",
-    ],
-)
-
-py_library(
     name = "resource_utils",
     srcs = ["resource_utils.py"],
     visibility = ["//:__subpackages__"],
@@ -137,7 +99,6 @@ py_library(
     srcs = ["tool_schemas.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":prefix",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],

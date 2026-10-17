@@ -26,7 +26,6 @@ py_library(
     deps = [
         ":tool_call_actor",
         "//haku/console/identity:naming",
-        "//mcp_infra:prefix",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],

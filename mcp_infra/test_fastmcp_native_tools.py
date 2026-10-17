@@ -8,7 +8,6 @@ from fastmcp.client import Client
 from fastmcp.server.context import Context
 from pydantic import BaseModel, Field
 
-from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.stubs.typed_stubs import TypedClient
 from mcp_infra.tool_schemas import extract_tool_input_schemas, extract_tool_schemas
 
@@ -71,7 +70,7 @@ def test_native_function_signature_models_for_display() -> None:
     def add(left: int, right: int = 0) -> SumOutput:
         return SumOutput(value=left + right)
 
-    prefix = MCPMountPrefix("math")
+    prefix = "math"
     input_schemas = extract_tool_input_schemas({prefix: server})
     output_schemas = extract_tool_schemas({prefix: server})
 

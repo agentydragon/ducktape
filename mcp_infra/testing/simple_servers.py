@@ -15,11 +15,10 @@ from typing import Literal
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
 
-from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Test server constants (SSOT for test fixtures)
-ECHO_MOUNT_PREFIX = MCPMountPrefix("echo")
+ECHO_MOUNT_PREFIX = "echo"
 ECHO_TOOL_NAME = "echo"
 
 

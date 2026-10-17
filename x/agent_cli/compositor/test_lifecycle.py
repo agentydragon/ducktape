@@ -9,9 +9,9 @@ import pytest
 import pytest_bazel
 from fastmcp.server import FastMCP
 
-from mcp_infra.prefix import MCPMountPrefix
 from x.agent_cli.compositor.compositor import Compositor
 from x.agent_cli.compositor.mount import Mount, MountState
+from x.agent_cli.compositor.prefix import MCPMountPrefix
 from x.agent_cli.compositor.server import CompositorState
 
 

@@ -15,8 +15,8 @@ from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.mcp.responses import MCPDecoratorMock
-from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import SystemMessage
+from x.agent_cli.compositor.prefix import MCPMountPrefix
 
 # --- Native tool schema tests ---
 
@@ -103,8 +103,9 @@ async def test_agent_compositor_native_tool_request_schema(compositor, composito
        - Nested models (NestedInfo, CategoryInfo)
     4. Full request structure with all tools/schemas visible to the LLM
     """
-    # Mount only mcp_a for phase 1 and capture Mounted object
-    mounted_a = await compositor.mount_inproc(MCPMountPrefix("mcp_a"), mcp_a)
+    # Mount only mcp_a for phase 1.
+    mcp_a_prefix = MCPMountPrefix("mcp_a")
+    await compositor.mount_inproc(mcp_a_prefix, mcp_a)
     mcp_tool_provider = MCPToolProvider(compositor_client)
 
     @MCPDecoratorMock.mock()
@@ -116,7 +117,7 @@ async def test_agent_compositor_native_tool_request_schema(compositor, composito
         print("\nPHASE 1 REQUEST (mcp_a only):")
         print(json.dumps(req.model_dump(exclude_none=True), indent=2))
 
-        yield m.mcp_tool_call(mounted_a.prefix, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20))
+        yield m.mcp_tool_call(mcp_a_prefix, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20))
         # Phase 1 ends with assistant text; capture Phase 2's initial request
         req = yield m.assistant_text("The result is 30.")
 
@@ -171,7 +172,7 @@ async def test_agent_compositor_native_tool_request_schema(compositor, composito
         print("\nMCP_B_TOOL_B SCHEMA:")
         print(json.dumps(tool_b.model_dump(exclude_none=True), indent=2))
 
-        yield m.mcp_tool_call(mounted_a.prefix, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20))
+        yield m.mcp_tool_call(mcp_a_prefix, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20))
         yield m.assistant_text("The result is 30.")
 
     system_prompt = "You are a helpful assistant. Calculate 10 + 20."

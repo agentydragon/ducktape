@@ -15,10 +15,10 @@ from rich.text import Text
 from agent_core.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
 from mcp_infra.naming import parse_tool_name
-from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.tool_schemas import extract_tool_input_schemas, extract_tool_schemas
 from openai_utils.model import ReasoningItem
 from util.exec.models import BaseExecResult, ExecStream, TruncatedStream
+from x.agent_cli.compositor.prefix import MCPMountPrefix
 from x.agent_cli.display.json_utils import parse_json_or_none
 from x.agent_cli.display.result_utils import extract_display_data
 
@@ -230,7 +230,13 @@ class CompactDisplayHandler(BaseHandler):
         """Try to parse data with registered schema, return original on failure."""
         if parsed_data is None:
             return None
-        tool_key = parse_tool_name(tool_name)
+        prefix, tool = parse_tool_name(tool_name)
+        try:
+            tool_key = (MCPMountPrefix(prefix), tool)
+        except ValidationError as e:
+            errors = e.errors()
+            detail = errors[0]["msg"] if errors else str(e)
+            raise ValueError(f"Invalid tool name format: {tool_name!r}. Invalid prefix: {detail}") from e
         if tool_key not in schemas:
             return parsed_data
         try:

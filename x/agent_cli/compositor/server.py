@@ -26,11 +26,11 @@ from fastmcp.server import FastMCP
 from mcp import types as mcp_types
 from pydantic import AnyUrl, ValidationError
 
-from mcp_infra.mounted import Mounted
-from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.tool_schemas import extract_tool_input_schemas, extract_tool_schemas
 from x.agent_cli.compositor.mount import Mount
 from x.agent_cli.compositor.mount_types import MountEvent
+from x.agent_cli.compositor.mounted import Mounted
+from x.agent_cli.compositor.prefix import MCPMountPrefix
 from x.agent_cli.compositor.rendering import render_compositor_instructions
 from x.agent_cli.compositor.snapshots import (
     FailedServerEntry,
@@ -88,7 +88,7 @@ class BaseCompositor(FastMCP):
 
     MUST be used as async context manager:
         async with BaseCompositor() as comp:
-            await comp.mount_inproc(ContainerExecServer.RUNTIME_MOUNT_PREFIX, runtime_server)
+            await comp.mount_inproc(MCPMountPrefix(ContainerExecServer.RUNTIME_MOUNT_PREFIX), runtime_server)
             ...
 
     Features:
@@ -280,7 +280,7 @@ class BaseCompositor(FastMCP):
 
         Example:
             async with Compositor() as comp:
-                await comp.mount_inproc(ContainerExecServer.RUNTIME_MOUNT_PREFIX, runtime_server)
+                await comp.mount_inproc(MCPMountPrefix(ContainerExecServer.RUNTIME_MOUNT_PREFIX), runtime_server)
                 async with Client(comp) as mcp_client:
                     agent = await Agent.create(
                         mcp_client=mcp_client,
@@ -359,7 +359,9 @@ class BaseCompositor(FastMCP):
             ValueError: If prefix is already mounted
 
         Example:
-            self.runtime = await self.mount_inproc(ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer(...), pinned=True)
+            self.runtime = await self.mount_inproc(
+                MCPMountPrefix(ContainerExecServer.RUNTIME_MOUNT_PREFIX), ContainerExecServer(...), pinned=True
+            )
         """
         async with self._state_lock:
             if self._state == CompositorState.CLOSED:

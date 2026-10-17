@@ -5,7 +5,6 @@ import pytest
 import pytest_bazel
 
 from mcp_infra.naming import build_mcp_function
-from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import FunctionToolParam, OpenAIModelProto, ResponsesRequest
 from openai_utils.types import ReasoningEffort
 from x.inop.config import (
@@ -71,8 +70,7 @@ class FakeModelLayer(OpenAIModelProto):
         if tool_choice == "required":
             # Always propose a prompt when tool is required (outer PE agent)
             return self._responses_factory.make_tool_call(
-                name=build_mcp_function(MCPMountPrefix("prompt_feedback"), "propose_prompt"),
-                arguments={"prompt": "test_prompt"},
+                name=build_mcp_function("prompt_feedback", "propose_prompt"), arguments={"prompt": "test_prompt"}
             )
         # Default assistant text
         return self._responses_factory.make_assistant_message("default")

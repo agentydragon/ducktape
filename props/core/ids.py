@@ -43,9 +43,8 @@ SnapshotSlug = NewType("SnapshotSlug", _SnapshotSlugBase)
 """Snapshot slug ID. Compile-time distinct from str, runtime is validated string."""
 
 # TODO: SnapshotSlug uses NewType which doesn't validate on construction (SnapshotSlug("foo")
-# just returns "foo" without validation). This is inconsistent with newer patterns like
-# MCPMountPrefix which is a str subclass with validating __new__. Consider migrating to
-# the validating constructor pattern for consistency.
+# just returns "foo" without validation). This is inconsistent with string identifier types
+# that validate in __new__. Consider migrating to the validating constructor pattern for consistency.
 
 
 # NewType creates nominal types for mypy (compile-time type safety)
