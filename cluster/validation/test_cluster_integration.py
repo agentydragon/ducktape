@@ -264,7 +264,7 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         assert role["rules"][0] == {
             "apiGroups": ["rbac.authorization.k8s.io"],
             "resources": ["rolebindings"],
-            "verbs": ["create", "get", "list", "delete"],
+            "verbs": ["create", "delete", "get", "list", "patch"],
         }
         assert {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]} in role["rules"]
         expected_bound_roles = {
