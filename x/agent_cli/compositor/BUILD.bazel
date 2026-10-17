@@ -80,6 +80,7 @@ py_library(
         ":compositor",
         ":resources_server",
         ":resources_stub",
+        "//agent_core/testing:fixtures",
         "//agent_core/testing:responses",
         "//mcp_infra:prefix",
         "//mcp_infra/testing:docker_fixtures",

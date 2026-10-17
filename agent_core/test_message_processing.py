@@ -11,10 +11,9 @@ from agent_core.events import AssistantText, SystemText, UserText
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.testing.matchers import assert_items_include_instances
-from agent_core.testing.mcp.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
+from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME, EchoInput
 from agent_core.testing.mcp.responses import EchoMock
 from agent_core.testing.responses import DecoratorMock
-from mcp_infra.naming import build_mcp_function
 from openai_utils.model import (
     AssistantMessage,
     FunctionCallItem,
@@ -108,14 +107,14 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_tool_pr
     def mock(m: DecoratorMock):
         # Create function calls with explicit id and status to verify preservation
         fc1 = FunctionCallItem(
-            name=build_mcp_function(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME),
+            name=ECHO_TOOL_NAME,
             arguments=EchoInput(text="hi").model_dump_json(),
             call_id="call_1",
             id="fc_id_1",
             status="completed",
         )
         fc2 = FunctionCallItem(
-            name=build_mcp_function(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME),
+            name=ECHO_TOOL_NAME,
             arguments=EchoInput(text="bye").model_dump_json(),
             call_id="call_2",
             id="fc_id_2",

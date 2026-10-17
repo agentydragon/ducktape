@@ -8,11 +8,11 @@ import pytest
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
 
+# Import fixtures from testing modules (replaces deprecated pytest_plugins)
+from agent_core.testing.fixtures import *  # noqa: F403
 from agent_core.testing.responses import reasoning_model
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.docker_fixtures import docker_exec_server
-
-# Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from mcp_infra.testing.fixtures import *  # noqa: F403
 from third_party.containers.fixtures import debian_slim_image
 from x.agent_cli.compositor.compositor import Compositor

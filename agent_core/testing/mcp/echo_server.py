@@ -6,16 +6,12 @@ Used for testing agent tool execution without external dependencies.
 
 from __future__ import annotations
 
-from typing import Final
-
 from fastmcp.server import FastMCP
 
-from mcp_infra.naming import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Test server constants (SSOT for test fixtures)
-ECHO_MOUNT_PREFIX: Final[MCPMountPrefix] = MCPMountPrefix("echo")
-ECHO_TOOL_NAME: Final[str] = "echo"
+ECHO_TOOL_NAME = "echo"
 
 
 class EchoInput(OpenAIStrictModeBaseModel):

@@ -22,6 +22,7 @@ from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import Abort, InjectItems, RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.matchers import assert_function_call_output_structured, tool_call_with_error_text
+from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME
 from agent_core.testing.responses import DecoratorMock, ResponsesFactory
 from agent_core.tool_provider import ImageContent, TextContent, ToolResult
 from mcp_infra.testing.simple_servers import SendMessageInput
@@ -225,7 +226,7 @@ async def test_malformed_json_in_tool_arguments(mcp_tool_provider_echo, recordin
     def make_turn(factory: ResponsesFactory) -> ResponsesResult:
         malformed_call = FunctionCallItem(
             type="function_call",
-            name="echo_echo",
+            name=ECHO_TOOL_NAME,
             arguments='{"text": "unterminated string',  # Malformed JSON
             call_id="test:1",
         )
@@ -250,7 +251,7 @@ async def test_non_dict_json_in_tool_arguments(mcp_tool_provider_echo, recording
     def make_turn(factory: ResponsesFactory) -> ResponsesResult:
         non_dict_call = FunctionCallItem(
             type="function_call",
-            name="echo_echo",
+            name=ECHO_TOOL_NAME,
             arguments='["not", "an", "object"]',  # Valid JSON but not a dict
             call_id="test:1",
         )
@@ -274,11 +275,11 @@ async def test_malformed_json_parallel_tool_calls(mcp_tool_provider_echo, record
 
     def make_turn(factory: ResponsesFactory) -> ResponsesResult:
         good_call = FunctionCallItem(
-            type="function_call", name="echo_echo", arguments='{"text": "good call"}', call_id="test:1"
+            type="function_call", name=ECHO_TOOL_NAME, arguments='{"text": "good call"}', call_id="test:1"
         )
         bad_call = FunctionCallItem(
             type="function_call",
-            name="echo_echo",
+            name=ECHO_TOOL_NAME,
             arguments='{"text": "bad',  # Malformed
             call_id="test:2",
         )

@@ -13,7 +13,7 @@ import pytest
 from fastmcp import FastMCP
 from pydantic import BaseModel
 
-from agent_core.testing.mcp.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput, EchoOutput
+from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME, EchoInput, EchoOutput
 from agent_core.testing.responses import DecoratorMock, PlayGen, ResponsesFactory, tool_roundtrip
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.mounted import Mounted
@@ -98,7 +98,7 @@ class EchoMock(MCPDecoratorMock):
 
     def echo_call(self, text: str) -> FunctionCallItem:
         """Create echo tool call item."""
-        return self.tool_call(build_mcp_function(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME), EchoInput(text=text))
+        return self.tool_call(ECHO_TOOL_NAME, EchoInput(text=text))
 
     def echo_roundtrip(self, text: str) -> Generator[FunctionCallItem, ResponsesRequest, EchoOutput]:
         """Yield echo call, receive response, return typed result."""
