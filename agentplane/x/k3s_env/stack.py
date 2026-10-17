@@ -1,6 +1,6 @@
 """A bare-k3s copy of the `agentplane-testing` stack on one RBE action, for tests to drive.
 
-Starts k3s (no kube-proxy, no Cilium), loads the Bazel-built service images, applies the composed
+Starts k3s with kube-proxy and no Cilium, loads the Bazel-built service images, applies the composed
 manifest and yields the app's address and a token once every Deployment is Available. It fails at the
 first Deployment that does not, with the Pod states and logs of whatever did not start.
 """
@@ -108,13 +108,10 @@ class K3s:
                 "env",
                 "--disable",
                 "traefik,metrics-server,servicelb",
-                "--disable-kube-proxy",
                 "--flannel-backend=host-gw",
                 "--disable-network-policy",
                 "--node-ip",
                 self.node_ip,
-                "--kubelet-arg",
-                f"cluster-dns={self.node_ip}",
             ],
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -130,7 +127,6 @@ class K3s:
             bootstrap.wait_for(
                 "get", "node/env", "-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}", expected="True"
             )
-            self._serve_dns_and_api_on_node(bootstrap)
             # host-gw routes Pod traffic but does not translate it: without this, Pods cannot reach the internet.
             iptables = self.data_dir / "data/current/bin/aux/iptables"  # the copy k3s ships; the host has none
             run(
@@ -145,28 +141,6 @@ class K3s:
                 process.wait()
             raise
         return process
-
-    def _serve_dns_and_api_on_node(self, bootstrap: Bootstrap) -> None:
-        """Without kube-proxy the `kube-dns` ClusterIP is dead: CoreDNS listens on the node IP instead."""
-        for name in ("coredns", "local-path-provisioner"):
-            bootstrap.wait_for(
-                "-n", "kube-system", "get", f"deploy/{name}", "-o", "name", expected=f"deployment.apps/{name}"
-            )
-            self.kubectl(
-                "-n", "kube-system", "set", "env", f"deploy/{name}",
-                f"KUBERNETES_SERVICE_HOST={self.node_ip}", "KUBERNETES_SERVICE_PORT=6443",
-            )  # fmt: skip
-        corefile = self.kubectl(
-            "-n", "kube-system", "get", "configmap/coredns", "-o", "jsonpath={.data.Corefile}"
-        ).replace(".:53 {", f".:53 {{\n    bind {self.node_ip}", 1)
-        self.kubectl(
-            "-n", "kube-system", "patch", "configmap/coredns", "--type", "merge", "-p",
-            json.dumps({"data": {"Corefile": corefile}}),
-        )  # fmt: skip
-        self.kubectl(
-            "-n", "kube-system", "patch", "deploy/coredns", "-p",
-            json.dumps({"spec": {"template": {"spec": {"hostNetwork": True, "dnsPolicy": "Default"}}}}),
-        )  # fmt: skip
 
     def import_images(self, references: list[Path], *, required_images: set[str]) -> None:
         """Stream Bazel OCI layouts to containerd, preserving blob digests and sharing duplicate blobs."""
@@ -315,7 +289,6 @@ def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
         ca_cert, ca_key = _openssl_ca(work)
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
         everything = fixture_chart.objects(
-            node_ip=k3s.node_ip,
             ca_cert=ca_cert,
             ca_key=ca_key,
             system_roots=Path("/etc/ssl/certs/ca-certificates.crt").read_text(),
