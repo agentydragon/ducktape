@@ -46,19 +46,20 @@ type Subject struct {
 	Name      string `json:"name"`
 }
 
-// Record is one admission as the proxy logs and persists it. It is admission metadata captured
+// Record is one admission as the proxy logs and persists it, and as the admin API serves it: the
+// JSON names are the wire contract the integration app reads. It is admission metadata captured
 // before forwarding, never evidence that the upstream completed. Paths are deliberately absent:
 // arbitrary path segments can contain secrets.
 type Record struct {
-	EventID uuid.UUID `json:"eventId"`
+	EventID uuid.UUID `json:"event_id"`
 	At      time.Time `json:"at"`
 	// ProducerID tells replicas apart; no Agentplane reader uses it.
-	ProducerID uuid.UUID `json:"producerId"`
+	ProducerID uuid.UUID `json:"producer_id"`
 	// Subject is nil on a refusal that never authenticated.
 	Subject *Subject `json:"subject"`
 	// SourcePodUID and ConnectionID tell Pods and connections apart for operators querying the table.
-	SourcePodUID *string `json:"sourcePodUid"`
-	ConnectionID string  `json:"connectionId"`
+	SourcePodUID *string `json:"source_pod_uid"`
+	ConnectionID string  `json:"connection_id"`
 	Phase        Phase   `json:"phase"`
 	Method       string  `json:"method"`
 	Host         string  `json:"host"`
