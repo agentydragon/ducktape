@@ -386,13 +386,24 @@
   display: block;
 }
 
-/* Input bubbles can sit at the top of a scrolled thread. Open detail below
-   the indicator, centered in the gutter so it fits both desktop and phones. */
+/* Input rows are right-aligned, so a short message leaves its indicator near the page's right
+   edge, and detail centred on the indicator runs off the page. The row is the containing block
+   instead: detail opens below the indicator, flush with the row's right edge, never wider than the
+   row. */
+.agentplane-user-message-row {
+  position: relative;
+}
+
+.agentplane-user-message-aside .agentplane-command-progress {
+  position: static;
+}
+
 .agentplane-user-message-aside .agentplane-command-progress-label {
-  top: calc(100% + 0.3rem);
+  top: 1.8rem;
   bottom: auto;
-  left: 50%;
-  transform: translateX(-50%);
+  left: auto;
+  right: 0;
+  max-width: min(22rem, 100%);
 }
 
 /* Control indicators sit after the requested setting; open their detail inward, not off-screen. */

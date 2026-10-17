@@ -317,6 +317,30 @@ async def test_dispatcher_reports_why_a_sandbox_wake_failed(view: VisualPage, ap
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
+async def test_detail_of_a_short_message_stays_on_the_page(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
+) -> None:
+    await app.build(Scene.PENDING_COMMANDS)
+    await app.remember_short_refused_wake()
+    await app.mount_thread(RUNNING_THREAD)
+    await view.check(context="fixture ready")
+    row = view.page.locator('[data-command-id="short-wake-refused"]')
+    indicator = row.locator(".agentplane-command-progress-hit")
+    if viewport.has_touch:
+        await indicator.tap()
+    else:
+        await indicator.hover()
+    tooltip = row.get_by_role("tooltip")
+    await expect(tooltip).to_be_visible()
+    await expect(tooltip).to_contain_text("cannot update resource")
+    await expect(tooltip).to_be_in_viewport(ratio=1)
+    assert await view.page.evaluate(
+        "() => document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    ), "the open detail made the page scroll sideways"
+    await view.capture()
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
 async def test_cancel_unsent_input(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.page.evaluate(
         "() => Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })"

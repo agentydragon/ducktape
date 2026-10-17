@@ -20,6 +20,7 @@ import {
   commandDispatch,
   getThread,
   models,
+  resumeSandbox,
   resumeThread,
   type SandboxView,
   type ThreadView,
@@ -56,6 +57,7 @@ vi.mock("../client", async (importOriginal) => ({
   commandDispatch: vi.fn(),
   getThread: vi.fn(),
   models: vi.fn(),
+  resumeSandbox: vi.fn(),
   resumeThread: vi.fn(),
 }));
 
@@ -642,6 +644,44 @@ it("shows a suspended Sandbox as paused in the status indicator, favicon and thr
   expect(indicator?.querySelector("svg")).not.toBeNull();
   expect(faviconSvg()).toContain(`fill="${THREAD_STATUS_MARKS.suspended.color}"`);
   expect(document.title).toBe(`${THREAD_STATUS_MARKS.suspended.glyph} Test thread · Suspended — Agentplane`);
+});
+
+it.each<[NonNullable<SandboxView["suspended_by"]>, string]>([
+  ["Idle", "idle"],
+  ["Requested", "on request"],
+])("says a Sandbox suspended by %s was suspended %s, in the indicator and the notice", async (suspendedBy, reason) => {
+  sandboxes = [{ ...inventorySandbox("Suspended"), suspended_by: suspendedBy }];
+  const container = await render();
+  expect(container.querySelector(".agentplane-thread-status-indicator")?.getAttribute("aria-label")).toBe(
+    `Sandbox suspended (${reason})`
+  );
+  expect(container.querySelector('[role="status"]')?.textContent).toContain(`Sandbox is suspended (${reason}).`);
+});
+
+it("offers to resume a suspended Sandbox, and only from a current inventory", async () => {
+  vi.mocked(resumeSandbox).mockResolvedValue(undefined);
+  sandboxes = [inventorySandbox("Suspended")];
+  const container = await render();
+  const button = buttonIn(container, "Resume Sandbox");
+  await act(async () => button?.click());
+  expect(resumeSandbox).toHaveBeenCalledExactlyOnceWith(THREAD.sandbox);
+});
+
+it.each([
+  ["a running Sandbox", [inventorySandbox()], true],
+  ["a suspended Sandbox on a stale inventory", [inventorySandbox("Suspended")], false],
+])("does not offer to resume %s", async (_, inventory, fresh) => {
+  sandboxes = inventory;
+  inventoryFresh = fresh;
+  expect(buttonIn(await render(), "Resume Sandbox")).toBeUndefined();
+});
+
+it("shows why a refused resume of a suspended Sandbox failed", async () => {
+  vi.mocked(resumeSandbox).mockRejectedValue(new Error("the Sandbox is being deleted"));
+  sandboxes = [inventorySandbox("Suspended")];
+  const container = await render();
+  await act(async () => buttonIn(container, "Resume Sandbox")?.click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("the Sandbox is being deleted");
 });
 
 it("does not show active-turn status when the runner is not active", async () => {

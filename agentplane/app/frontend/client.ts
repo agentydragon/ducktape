@@ -264,6 +264,11 @@ export async function resumeThread(threadId: string): Promise<Attached> {
   return fromJson(AttachedSchema, data as JsonValue);
 }
 
+/** Asks for the Sandbox to run; the watch behind the live streams brings back the change. */
+export async function resumeSandbox(name: string): Promise<void> {
+  ok(await api.POST("/sandboxes/{name}/resume", { params: { path: { name } } }));
+}
+
 export async function models(): Promise<ModelCatalog> {
   return ok(await api.GET("/models"));
 }

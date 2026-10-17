@@ -163,5 +163,8 @@ class AgentplaneFixture:
     async def remember_dispatch(self, thread_id: str = RUNNING_THREAD) -> None:
         await self.page.evaluate("threadId => window.agentplaneVisual.rememberDispatch(threadId)", thread_id)
 
+    async def remember_short_refused_wake(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.rememberShortRefusedWake()")
+
     async def remember_failed_dispatch(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.rememberFailedDispatch()")

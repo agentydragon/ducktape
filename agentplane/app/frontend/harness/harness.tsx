@@ -1900,6 +1900,32 @@ function rememberDispatch(threadId = RUNNING_THREAD): void {
   local.acknowledgeDispatch(command, dispatch);
 }
 
+// What the mock Dispatcher answers a status read of a queued command with, where a scene gives it
+// a reason of its own.
+const queuedReasons = new Map<string, string>();
+
+// Real reason from a staging Dispatcher whose Role lacked a verb, on a message short enough that
+// its indicator sits near the right edge of the page.
+function rememberShortRefusedWake(): void {
+  const command = create(CommandSchema, {
+    commandId: "short-wake-refused",
+    operation: { case: "submitInput", value: { text: "Short" } },
+  });
+  const reason =
+    'sandbox_wake_failed: sandboxes.agentplane.allegedly.works "box" is forbidden: User "system:serviceaccount:agentplane-staging:runner-gateway" cannot update resource "sandboxes" in API group "agentplane.allegedly.works" in the namespace "agentplane-staging"';
+  queuedReasons.set(command.commandId, reason);
+  const local = new LocalCommands(RUNNING_THREAD);
+  local.remember(command);
+  local.acknowledgeDispatch(command, {
+    commandId: command.commandId,
+    sessionId: RUNNING_THREAD,
+    state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+    reason,
+    updatedAt: ago(1_000),
+    admission: null,
+  });
+}
+
 function rememberFailedDispatch(): void {
   const command = create(CommandSchema, {
     commandId: "wake-deadline-dispatch",
@@ -2730,7 +2756,7 @@ routes.push(
       sessionId: match[1],
       sandbox: "pending-sandbox",
       state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-      reason: "sandbox_resuming",
+      reason: queuedReasons.get(match[2]) ?? "sandbox_resuming",
       updatedAt: ago(1_000),
     }),
   ],
@@ -3155,6 +3181,7 @@ const visualHarness = {
   rememberSettledCommands,
   enableSuspendedSandboxWakeOnMessage,
   rememberDispatch,
+  rememberShortRefusedWake,
   rememberFailedDispatch,
   completedRollout(): void {
     mapThread = (thread) =>

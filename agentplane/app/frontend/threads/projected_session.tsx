@@ -25,6 +25,7 @@ import {
   getThread,
   models,
   modelsForHarness,
+  resumeSandbox,
   resumeThread,
   type ModelOption,
   type SandboxView,
@@ -58,7 +59,7 @@ import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
 import { DISCLOSURE_STICKY_Z_INDEX } from "../disclosure";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
-import { sandboxReady, sandboxSummary } from "../sandbox_status";
+import { sandboxReady, sandboxSummary, suspensionReason } from "../sandbox_status";
 import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
@@ -1415,9 +1416,11 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
   }
   if (sandboxReady(sandbox)) return null;
   if (sandbox.phase === "Suspended" && sandbox.operating_mode === "Suspended" && inventoryFresh) {
+    const reason = suspensionReason(sandbox);
+    const suspended = reason === null ? "Sandbox is suspended." : `Sandbox is suspended (${reason}).`;
     return sandbox.wake_on_send
-      ? "Sandbox is suspended. Wake on message is on; submitted messages will queue while it wakes."
-      : "Sandbox is suspended. Wake on message is off; submitted messages stay queued until you resume it manually.";
+      ? `${suspended} Wake on message is on; submitted messages will queue while it wakes.`
+      : `${suspended} Wake on message is off; submitted messages stay queued until you resume it manually.`;
   }
   return `Last observed Sandbox and Pod: ${sandboxSummary(sandbox).label}. Showing retained Thread history; controls are disabled.`;
 }
@@ -1509,9 +1512,22 @@ export function ProjectedSession({
           </Text>
         )}
         {notice && (
-          <Text role="status" c="dimmed">
-            {notice}
-          </Text>
+          <Group gap="xs" align="center">
+            <Text role="status" c="dimmed">
+              {notice}
+            </Text>
+            {canSendWhileSuspended && thread && (
+              <Button
+                size="compact-xs"
+                variant="light"
+                onClick={() =>
+                  void resumeSandbox(thread.sandbox).catch((reason: unknown) => setError(displayableError(reason)))
+                }
+              >
+                Resume Sandbox
+              </Button>
+            )}
+          </Group>
         )}
         {thread && (
           <sync.Thread key={threadId} threadId={threadId}>
