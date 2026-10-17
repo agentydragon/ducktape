@@ -42,7 +42,9 @@ resource lifetime after Sandbox deletion remain explicit design questions.
 - Grant SAs `read` on specific Sandboxes or explicit collections. Presets can supply initial
   enrollment at authorized launch; later membership removal persists independently. Collection
   membership and permission bundles are separate configurable facts, not a compulsory compartment,
-  role hierarchy or agent type. Grants remain additive and are checked on every list/read/follow.
+  role hierarchy or agent type. Membership writes follow the
+  [agreed administration boundary](multiagent_communication.md#target-collections-and-launch-enrollment).
+  Grants remain additive and are checked on every list/read/follow.
 - Authenticate workload bearers through TokenReview, retaining verified SA/Pod incarnation evidence.
   Define grant carryover on same-name SA replacement in the chosen policy representation; do not
   assume a caller-supplied name proves an incarnation or trust a forwarded principal header.
@@ -84,7 +86,7 @@ authorized reader but must not make a fold claim to cover Events beyond its curs
 
 ## Implementation readiness and acceptance
 
-Before exposing scoped reads, finalize the tentative rule/membership schemas, trusted writers,
+Before exposing scoped reads, finalize the tentative rule/membership schemas, concrete administrative RBAC,
 policy freshness/revocation, historical membership behavior and replacement semantics. Enforce the
 reviewed policy and immutable Sandbox association on every history path. Test two Sessions in one authorized
 Sandbox, an unrelated denied Sandbox, explicit collection enrollment/removal and an ungranted SA

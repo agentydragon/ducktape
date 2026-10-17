@@ -59,8 +59,8 @@ boundaries below are such constraints.
 **Caller attribution agreed with the operator, 2026-10-16:** Sandbox/ServiceAccount-level caller
 attribution is sufficient for v1, as for existing Kubernetes and Action permissions. Authenticated
 per-Session sender identity is not required. For Sandbox-hosted Sessions, the minimum authorization
-target is their Sandbox; v1 has no individual-Session grants. Rule and collection schemas and administration
-remain open; replacing the broader authorization machinery is a separate decision.
+target is their Sandbox; v1 has no individual-Session grants. Exact schemas and administrative RBAC
+scopes remain open; replacing the broader authorization machinery is a separate decision.
 
 ### Target collections and launch enrollment
 
@@ -90,16 +90,23 @@ launch/enrollment authorization. Later removal sticks: preset reconciliation or 
 Session must not silently re-enroll it. Preset edits change defaults for future launches rather
 than recomputing existing memberships. No computed selection is needed for v1.
 
-Finalize reference fields, authorized writers and GitOps/runtime removal ownership before implementation.
-Separate object ownership does not authorize writes or establish a runtime override of GitOps
-desired state. Collections select Sandbox targets; supporting OAuth caller SAs through PolicyBindings
-does not require SA collection members.
+**V1 membership administration agreed:** ordinary Kubernetes RBAC controls membership CR writes.
+Initially grant administration to operator/GitOps and the trusted provisioning path; agent read/send
+grants confer no membership administration. This is grant configuration, not an enforced category
+of agent: explicit administrative grants remain possible. V1 requires no new mechanism for agents
+to administer membership in selected collections. Launch enrollment remains subject to provisioning
+authorization.
+
+Finalize reference fields, concrete administrative RBAC and GitOps/runtime removal ownership before
+implementation. Separate object ownership does not authorize writes or establish a runtime override
+of GitOps desired state. Collections select Sandbox targets; supporting OAuth caller SAs through
+PolicyBindings does not require SA collection members.
 
 **Storage preference agreed:** start with Kubernetes resources for grants and explicit collection
 membership, managed through GitOps or authorized runtime edits. This is a preference, not a hard
 requirement: another store is acceptable if concrete implementation friction justifies it while
 preserving the agreed authorization semantics and administration boundary. Resource kinds, schemas
-and authorized writers remain open. Storage and operation evaluation are separate choices; the
+and concrete RBAC grants remain open. Storage and operation evaluation are separate choices; the
 tentative service-enforced rule direction below builds on this storage preference.
 
 ## Live permission bundles
@@ -279,8 +286,8 @@ scopes select permitted targets, while collections are not inbox recipients. Ses
 canonical state stay outside Kubernetes; this direction requires no Session CRs or projection of
 these rules into native Roles.
 
-Before implementation, finalize rule/membership schemas, authorized writers, policy freshness and
-revocation, filtered enumeration and retained-history behavior. Existing send-revocation semantics
+Before implementation, finalize rule/membership schemas, concrete administrative RBAC, policy
+freshness and revocation, filtered enumeration and retained-history behavior. Existing send-revocation semantics
 below still apply: accepted inbox correspondence survives later loss of send permission. Revisit
 the representation if implementation exposes a poor fit or disproportionate maintenance cost.
 

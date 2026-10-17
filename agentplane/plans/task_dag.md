@@ -270,8 +270,8 @@ flowchart TD
 Sandboxes and Sessions, with creator, manager and parent/provenance represented separately. Ask
 the operator to choose remaining addressing/ownership and delegation semantics. Use the agreed
 SA-level caller attribution and the [tentative Session-access rule direction](multiagent_communication.md#tentative-implementation-direction).
-Finalize the common rule/member-reference schema, trusted administration and policy freshness/revocation
-contract without choosing a mandatory topology or requiring an auth-engine migration. No permission
+Finalize the common rule/member-reference schema, concrete administrative RBAC and policy
+freshness/revocation contract without choosing a mandatory topology or requiring an auth-engine migration. No permission
 inheritance
 from an organizational edge or preset. Prefer Kubernetes resources for grants and explicit collection
 membership, with separate CRs for individual Sandbox-to-collection enrollments so Flux and the app
@@ -283,6 +283,11 @@ service-enforced evaluator direction. Review how native harness children could l
 linked execution in the same Sandbox trust boundary versus independently provisioned Sandboxes,
 addressability, observability and which controls must remain unavailable. Native integration itself
 stays frozen; this decision must allow explicit exclusion rather than require its implementation.
+
+Membership CR writes use ordinary Kubernetes RBAC, initially granted to operator/GitOps and trusted
+provisioning. Read/send grants confer no membership administration; explicit administrative grants
+remain possible without introducing agent categories. V1 requires no new collection-specific agent
+enrollment-delegation mechanism. Finalize the concrete RBAC and provisioning checks within this boundary.
 
 Include OAuth-bound static SAs as subjects by namespace/name for permitted sends and reads.
 Define trusted OAuth caller admission to the relevant APIs; sharing SA assignment does not
@@ -308,8 +313,9 @@ semantics remain in their respective nodes.
 ### `THREAD_READ_POLICY_DESIGN` — scoped history read policy
 
 **Decision; tentative Session-access rules, Sandbox minimum and explicit collections selected.**
-Finalize read-specific grant/membership administration, caller replacement semantics and access to
-retained histories after Sandbox deletion. V1 has no individual-Session grants or computed collection selection. Presets
+Finalize read-specific grant administration within the agreed membership RBAC boundary, caller
+replacement semantics and access to retained histories after Sandbox deletion. V1 has no
+individual-Session grants or computed collection selection. Presets
 may seed authorized launch enrollment; subsequent removals persist. Reading a Session resolves its
 recorded Sandbox identity, and all Sessions in that Sandbox use the same scope. Defaults expose
 no existing histories to workloads. Session listing is a distinct, weaker read-type permission,
