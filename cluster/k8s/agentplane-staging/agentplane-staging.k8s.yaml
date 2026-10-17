@@ -5017,14 +5017,6 @@ spec:
           rules:
             dns:
               - matchPattern: "*"
-    - toFQDNs:
-        - matchName: claude.ai
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP
-          serverNames:
-            - claude.ai
     - toEntities:
         - kube-apiserver
     - toEndpoints:
@@ -5097,12 +5089,14 @@ spec:
             - api.githubcopilot.com
             - github.com
     - toFQDNs:
+        - matchName: claude.ai
         - matchName: chatgpt.com
       toPorts:
         - ports:
             - port: "443"
               protocol: TCP
           serverNames:
+            - claude.ai
             - chatgpt.com
     - toFQDNs:
         - matchName: api.github.com

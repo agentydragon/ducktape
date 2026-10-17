@@ -363,8 +363,6 @@ class Actions(Construct):
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
-                # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
-                EgressRule.to_fqdns("claude.ai"),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
                 *self.env.actions.extra_egress,

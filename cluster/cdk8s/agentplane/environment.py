@@ -117,8 +117,8 @@ class ActionsProps:
     # None omits the corresponding env var, volume, and mount.
     github_mcp_client_secret_name: str | None = None
     bearer_mcp_mounts: Sequence[BearerMcpMount] = ()
-    # CiliumNetworkPolicy egress rules appended after the shared DNS/claude.ai/
-    # kube-apiserver/postgres rules: this environment's OIDC provider, MCP servers, ...
+    # CiliumNetworkPolicy egress rules appended after the shared DNS/kube-apiserver/
+    # postgres rules: this environment's OIDC provider, MCP servers, ...
     extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
 
 

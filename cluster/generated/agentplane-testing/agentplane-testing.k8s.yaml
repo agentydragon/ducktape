@@ -4386,14 +4386,6 @@ spec:
           rules:
             dns:
               - matchPattern: "*"
-    - toFQDNs:
-        - matchName: claude.ai
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP
-          serverNames:
-            - claude.ai
     - toEntities:
         - kube-apiserver
     - toEndpoints:
