@@ -21,7 +21,8 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 ### Handoff snapshot — 2026-10-16 UTC
 
 **The handoff pause remains except operator-selected lanes.** On 2026-10-16 Rai selected Go delivery
-rollout preparation, the workload-tools VM prototype and current K3s profiling. Live Go activation
+rollout preparation, the workload-tools VM prototype, current K3s profiling and the independent
+central GoProxy transport spike (`GOPROXY_SPIKE`). Live Go activation
 still needs its reviewed fenced cutover. Other projects remain paused. The following change is implemented on a review branch, **not merged**;
 its published-head checks passed when checked for this handoff. Recheck GitHub before resuming.
 Rai merges every PR by hand; do not merge or enable auto-merge.
@@ -737,6 +738,20 @@ flowchart LR
 ```
 
 ## 6. Existing access and lifecycle follow-ups
+
+### `GOPROXY_SPIKE` — central egress GoProxy feasibility
+
+**In flight; operator-selected exception, worker `/root/goproxy_spike`, reported 2026-10-17
+02:26 UTC (2026-10-16 PDT).** Branch `spike/central-goproxy`, isolated worktree
+`/tmp/ducktape-worktrees/2026-10-16-goproxy-spike`, base `d558dcc30d`. Explore a small central
+transport candidate using shared Go policy types and authentication interfaces; evaluate real
+kube-apiserver/etcd envtest for CRD/list/watch/revocation. Independent of the runner-side
+`EGRESS_SIDECAR_GO` conversion; no deployment activation or merge is authorized.
+
+Exit: a focused draft PR, comparable real-socket contracts where feasible, and an honest
+GoProxy suitability recommendation with exact revisions/invocations, unsupported features and
+security/streaming gaps. Details and current observations belong in the
+[component investigation](../egress/debug/2026_10_16_goproxy_spike.md). Rai merges manually.
 
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current
 source/deployment state with the relevant owner when dispatching; old acceptance notes are not live

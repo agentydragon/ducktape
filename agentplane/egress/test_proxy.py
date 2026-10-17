@@ -13,7 +13,7 @@ import logging
 from collections.abc import AsyncIterator, Collection, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 
@@ -97,6 +97,7 @@ from agentplane.testing.fake_apiserver import (
 )
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import pick_free_port
 
 
@@ -1326,6 +1327,144 @@ async def test_matrix_json_login_through_real_proxy(
     assert secret_value not in evidence
     assert "@bot:test" not in evidence
     assert any(decision["substituted"] for decision in json.loads(evidence))
+
+
+_CONTRACT_CREDENTIAL = "transport-contract"
+_CONTRACT_PATH = "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream"
+
+
+@pytest.fixture(params=["mitmproxy", "goproxy"])
+async def contract_port(request: pytest.FixtureRequest, proxy: ProxyUnderTest) -> AsyncIterator[int]:
+    """Run identical socket assertions through the current service and Go lab candidate.
+
+    The existing proxy fixture owns throwaway roots, a real informer and controlled TokenReview
+    API. The Go lab reads a fixture snapshot; this comparison does not claim informer parity.
+    """
+    proxy.fake.put(SECRETS_PLURAL, secret(_CONTRACT_CREDENTIAL, {"key": "contract-secret"}))
+    proxy.fake.put(
+        CREDENTIALS_PLURAL,
+        credential(
+            _CONTRACT_CREDENTIAL,
+            secret_name=_CONTRACT_CREDENTIAL,
+            key="key",
+            targets=[{"header": "x-buildbuddy-api-key", "method": TargetMethod.WHOLE_VALUE}],
+        ),
+    )
+    proxy.fake.put(
+        POLICY_SETS_PLURAL,
+        egress_policy_set(
+            _CONTRACT_CREDENTIAL,
+            [
+                {
+                    "hosts": [UPSTREAM_HOST],
+                    "paths": ["/contract", _CONTRACT_PATH],
+                    "credentialRef": {"name": _CONTRACT_CREDENTIAL},
+                }
+            ],
+        ),
+    )
+    await bind_to_a(proxy, _CONTRACT_CREDENTIAL, _CONTRACT_CREDENTIAL)
+    if request.param == "mitmproxy":
+        yield proxy.proxy_port
+        return
+    snapshot = proxy.tmp_path / "transport-snapshot.json"
+    snapshot.touch(mode=0o600)
+    # Only the supported subset enters this lab snapshot. The current service still
+    # obtains its policy/credentials through its ordinary informer and Secret watch.
+    snapshot.write_text(
+        json.dumps(
+            {
+                "Sets": [proxy.fake.objects[POLICY_SETS_PLURAL][_CONTRACT_CREDENTIAL]],
+                "Bindings": [
+                    policy_binding("contract", subject=SUBJECT_A.model_dump(), policy_sets=[_CONTRACT_CREDENTIAL])
+                    | {"metadata": {"name": "contract", "namespace": proxy.fake.namespace_of[POLICY_BINDINGS_PLURAL]}}
+                ],
+                "Credentials": {_CONTRACT_CREDENTIAL: {"Header": "x-buildbuddy-api-key", "Value": "contract-secret"}},
+                "FreshUntil": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
+            }
+        )
+    )
+    ca, key = write_ca(proxy.interception_ca, proxy.tmp_path, "contract-interception")
+    roots, _ = write_ca(proxy.upstream_ca, proxy.tmp_path, "contract-upstream")
+    binary = get_required_path(own_repo_rlocation("agentplane/egress/x/goproxy/cmd/goproxy_lab_/goproxy_lab"))
+    process = await asyncio.create_subprocess_exec(
+        str(binary),
+        f"--snapshot={snapshot}",
+        f"--ca={ca}",
+        f"--key={key}",
+        f"--roots={roots}",
+        f"--kubeconfig={kubeconfig(proxy.tmp_path / 'contract-kubeconfig', proxy.fake.port)}",
+        f"--audience={AUDIENCE}",
+        f"--namespace={SANDBOX_NAMESPACE}",
+        f"--fixture-host={UPSTREAM_HOST}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        assert process.stdout is not None
+        async with asyncio.timeout(15):
+            ready = await process.stdout.readline()
+        assert ready, "Go lab exited without publishing its listener"
+        yield int(json.loads(ready)["port"])
+    finally:
+        if process.returncode is None:
+            process.terminate()
+        async with asyncio.timeout(10):
+            _, stderr = await process.communicate()
+        assert process.returncode in (0, -15), stderr.decode()
+
+
+async def test_shared_transport_header_substitution(proxy: ProxyUnderTest, contract_port: int) -> None:
+    async with (
+        aiohttp.ClientSession() as client,
+        client.get(
+            proxy.url("/contract"),
+            proxy=f"http://127.0.0.1:{contract_port}",
+            proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+            ssl=client_tls_context(proxy.interception_ca),
+            headers={"x-buildbuddy-api-key": placeholder_of(_CONTRACT_CREDENTIAL)},
+        ) as response,
+    ):
+        assert response.status == 200
+        await response.read()
+    assert one(proxy.upstream.requests)[2]["x-buildbuddy-api-key"] == "contract-secret"
+    assert "proxy-authorization" not in one(proxy.upstream.requests)[2]
+
+
+@pytest.mark.parametrize("tls", [True, False], ids=["tls-h2", "h2c"])
+async def test_shared_transport_interactive_grpc_before_eof(
+    proxy: ProxyUnderTest, contract_port: int, monkeypatch: pytest.MonkeyPatch, tls: bool
+) -> None:
+    keypair = read_keypair(*issue_leaf(proxy.upstream_ca, UPSTREAM_HOST, proxy.tmp_path)) if tls else None
+    token_file = proxy.tmp_path / "contract-hop-token"
+    token_file.write_text(TOKEN_A)
+    async with (
+        recording_grpc_upstream(keypair) as (port, requests),
+        SidecarRelay(proxy_host="127.0.0.1", proxy_port=contract_port, token_file=token_file, listen_port=0) as sidecar,
+    ):
+        monkeypatch.setenv("https_proxy" if tls else "grpc_proxy", f"http://127.0.0.1:{sidecar.listen_port}")
+        monkeypatch.setenv("no_proxy", "")
+        channel = (
+            grpc.aio.secure_channel(
+                f"{UPSTREAM_HOST}:{port}",
+                grpc.ssl_channel_credentials(root_certificates=proxy.interception_ca.cert_pem),
+            )
+            if tls
+            else grpc.aio.insecure_channel(f"{UPSTREAM_HOST}:{port}")
+        )
+        async with channel:
+            call = channel.stream_stream(
+                _CONTRACT_PATH, request_serializer=lambda value: value, response_deserializer=lambda value: value
+            )(metadata=(("x-buildbuddy-api-key", placeholder_of(_CONTRACT_CREDENTIAL)),), timeout=10)
+            for message in (b"first", b"second"):
+                await call.write(message)
+                assert await call.read() == b"upstream:" + message
+            await call.done_writing()
+            assert await call.read() is grpc.aio.EOF
+            assert dict(await call.trailing_metadata() or ())["buildbuddy-test-trailer"] == "ok"
+    headers = dict(await requests.get())
+    assert headers["x-buildbuddy-api-key"] == "contract-secret"
+    assert "proxy-authorization" not in headers
 
 
 if __name__ == "__main__":

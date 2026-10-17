@@ -13,12 +13,21 @@ type RoleRef struct {
 	Name string `json:"name"`
 }
 
-// Rule is one typed rule; this controller reads only the Kubernetes types and skips the rest.
+// Rule is shared by policy consumers; each consumer handles its own Type.
 type Rule struct {
-	Type        string   `json:"type"`
-	Role        *RoleRef `json:"role,omitempty"`
-	Namespaces  []string `json:"namespaces,omitempty"`
-	ClusterRole string   `json:"clusterRole,omitempty"`
+	Type            string         `json:"type"`
+	Role            *RoleRef       `json:"role,omitempty"`
+	Namespaces      []string       `json:"namespaces,omitempty"`
+	ClusterRole     string         `json:"clusterRole,omitempty"`
+	Hosts           []string       `json:"hosts,omitempty"`
+	Methods         []string       `json:"methods,omitempty"`
+	Paths           []string       `json:"paths,omitempty"`
+	CredentialRef   *CredentialRef `json:"credentialRef,omitempty"`
+	ClusterInternal bool           `json:"clusterInternal,omitempty"`
+}
+
+type CredentialRef struct {
+	Name string `json:"name"`
 }
 
 type PolicySetSpec struct {

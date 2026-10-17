@@ -262,6 +262,7 @@ py_test(
     name = "test_proxy",
     size = "medium",
     srcs = ["test_proxy.py"],
+    data = ["//agentplane/egress/x/goproxy/cmd:goproxy_lab"],
     requires_docker = True,
     deps = [
         ":addon",
@@ -287,6 +288,7 @@ py_test(
         "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",
         "//util:net",
+        "//util/bazel:runfiles",
         "@pypi//aiohttp",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
