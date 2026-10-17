@@ -68,6 +68,25 @@ Forgejo registry. After CI's first publish, make the `ghcr.io/agentydragon/nebul
 package public in GitHub's package settings; Flux then replaces the bootstrap `unset` tag with
 the CI tag.
 
+## Deploying Nebula
+
+For this already-ToFu-managed switch, merge the change and let CI publish the ARMv7 image. Make
+the GHCR package public after its first publish so RouterOS can pull it without registry
+credentials. Flux then updates the image tag and reconciles the home-switch Terraform module.
+The existing `tofu` account and cluster-CA `api-ssl` setup let the runner connect; the bootstrap
+script below is only for a new switch or a factory reset.
+
+Before approving the first Nebula plan, confirm RouterOS container mode is authorized and the USB
+volume is mounted as `usb1-part1`. The Terraform plan must be reviewed and explicitly approved; it
+creates the veth and firewall rules, writes the Nebula identity/configuration to USB, then starts
+the container. Nebula should join as `10.42.0.21`; verify it from another mesh peer before relying
+on it for switch management.
+
+The module sets `storeReadablePlan` to `none` because the RouterOS provider exposes the private
+key in `routeros_file.contents`. Do not approve the first plan until the key-access TODO is
+resolved and a safe way to inspect the plan has been established; the ordinary readable-plan
+ConfigMap is intentionally not created.
+
 cert-manager issues the switch's TLS certificate, `monitoring/home-switch-tls`, from the cluster CA
 (`cluster-internal-ca`) for `IP:192.168.1.100` and `IP:10.42.0.21`, so the Terraform verifies
 `api-ssl` against the CA bundle mounted into its runner. `bootstrap.sh` installs it for the first
@@ -99,7 +118,6 @@ A plan with changes (drift, or a change merged here) leaves the `Terraform`, and
 
 ```bash
 kubectl get terraform --namespace flux-system home-switch   # READY False/Unknown: a plan is pending
-kubectl get configmap --namespace flux-system tfplan-default-home-switch --output jsonpath='{.data.tfplan}'
 plan=$(kubectl get terraform --namespace flux-system home-switch --output jsonpath='{.status.plan.pending}')
 kubectl patch terraform --namespace flux-system home-switch --field-manager=home-switch-approval \
   --type merge --patch "{\"spec\":{\"approvePlan\":\"$plan\"}}"
