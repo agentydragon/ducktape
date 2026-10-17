@@ -424,9 +424,14 @@ export async function interruptTurn(threadId: string, commandId: string, turnId:
 }
 
 /** Read a queued command's current durable state. A removed Sandbox has no retained dispatch row. */
-export async function commandDispatch(threadId: string, commandId: string): Promise<DispatchReceipt> {
+export async function commandDispatch(
+  threadId: string,
+  commandId: string,
+  signal?: AbortSignal
+): Promise<DispatchReceipt> {
   const result = await api.GET("/threads/{thread_id}/commands/{command_id}/dispatch", {
     params: { path: { thread_id: threadId, command_id: commandId } },
+    signal,
   });
   if (result.error !== undefined && result.response.status === 404) {
     return {

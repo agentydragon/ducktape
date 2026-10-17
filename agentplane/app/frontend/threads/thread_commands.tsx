@@ -19,6 +19,8 @@ import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type Pendi
 import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
+const DISPATCH_POLL_INTERVAL_MS = 1500;
+const DISPATCH_READ_TIMEOUT_MS = 10_000;
 
 export interface CommandIssue {
   kind: "refused" | "unconfirmed";
@@ -153,17 +155,29 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
     const ids = pollingIds.split(",");
     let stopped = false;
     let timer: number | undefined;
+    const failing = new Set<string>();
     const poll = async () => {
       await Promise.all(
         ids.map(async (id) => {
+          // A read nothing answers would otherwise hold back every later poll of every command.
+          const read = new AbortController();
+          const abandon = window.setTimeout(
+            () => read.abort(new Error(`no reply within ${DISPATCH_READ_TIMEOUT_MS} ms`)),
+            DISPATCH_READ_TIMEOUT_MS
+          );
           try {
-            store.updateDispatch(id, await commandDispatch(threadId, id));
-          } catch {
-            // Keep the last durable state; a later poll retries this read without claiming failure.
+            store.updateDispatch(id, await commandDispatch(threadId, id, read.signal));
+            failing.delete(id);
+          } catch (reason) {
+            // Keep the last durable state and retry without claiming failure, but say so once per streak.
+            if (!stopped && !failing.has(id)) console.warn(`command ${id}: reading its dispatch state failed`, reason);
+            failing.add(id);
+          } finally {
+            window.clearTimeout(abandon);
           }
         })
       );
-      if (!stopped) timer = window.setTimeout(() => void poll(), 1500);
+      if (!stopped) timer = window.setTimeout(() => void poll(), DISPATCH_POLL_INTERVAL_MS);
     };
     void poll();
     return () => {

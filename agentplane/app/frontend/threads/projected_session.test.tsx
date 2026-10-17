@@ -976,6 +976,67 @@ it("shows the cause when a send-triggered Sandbox wake misses its deadline", asy
   expect(buttonIn(row, "Cancel")).toBeUndefined();
 });
 
+function dispatchReceipt(commandId: string, state: string, reason: string, updatedAt: string) {
+  return { commandId, sessionId: THREAD.id, state, reason, updatedAt, admission: null } as const;
+}
+
+it("replaces a queued Dispatcher receipt with the failure its poll finds", async () => {
+  vi.useFakeTimers();
+  const waiting = message("queued-then-failed");
+  new LocalCommands(THREAD.id).remember(waiting);
+  const queued = dispatchReceipt(
+    waiting.commandId,
+    "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+    "sandbox_not_ready",
+    "2026-10-17T12:26:30Z"
+  );
+  vi.mocked(submitInput).mockResolvedValue({ kind: "dispatch", dispatch: queued });
+  vi.mocked(commandDispatch)
+    .mockResolvedValueOnce(queued)
+    .mockResolvedValue(
+      dispatchReceipt(
+        waiting.commandId,
+        "DELIVERY_STATE_FAILED",
+        "runner NotFound: no rollout found for thread id",
+        "2026-10-17T12:26:35Z"
+      )
+    );
+
+  const container = await render();
+  expect(progressLabel(container, waiting.commandId)).toBe("Sandbox is not ready; message is queued");
+  await act(async () => vi.advanceTimersByTimeAsync(1500));
+
+  expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="dispatch_failed"]')).not.toBeNull();
+});
+
+it("abandons a dispatch read nothing answers and polls again", async () => {
+  vi.useFakeTimers();
+  const waiting = message("unanswered-read");
+  new LocalCommands(THREAD.id).remember(waiting);
+  const queued = dispatchReceipt(
+    waiting.commandId,
+    "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+    "sandbox_not_ready",
+    "2026-10-17T12:26:30Z"
+  );
+  vi.mocked(submitInput).mockResolvedValue({ kind: "dispatch", dispatch: queued });
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  vi.mocked(commandDispatch)
+    .mockImplementationOnce(
+      (_threadId, _commandId, signal) =>
+        new Promise((_resolve, reject) => signal?.addEventListener("abort", () => reject(signal.reason)))
+    )
+    .mockResolvedValue(
+      dispatchReceipt(waiting.commandId, "DELIVERY_STATE_RUNNER_ADMITTED", "", "2026-10-17T12:26:45Z")
+    );
+
+  const container = await render();
+  await act(async () => vi.advanceTimersByTimeAsync(20_000));
+
+  expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="admitted"]')).not.toBeNull();
+  expect(warn).toHaveBeenCalledTimes(1);
+});
+
 it("opens compact command detail on touch and closes on blur or Escape", async () => {
   new LocalCommands(THREAD.id).remember(message("touch"));
   const container = await render();
