@@ -39,7 +39,7 @@ SNAP_C = SnapshotSlug("snap-c")
 
 @dataclass
 class FakeHandle:
-    """Stand-in for AgentRunHandle: deleting it removes the pod from the registry."""
+    """Stand-in for AgentRunHandle: deletion removes the pod; detach preserves it."""
 
     name: str
     registry: FakeRegistry = field(repr=False)
@@ -47,6 +47,20 @@ class FakeHandle:
     async def kill_and_delete(self) -> None:
         self.registry.killed.append(self.name)
         self.registry.pods.pop(self.name, None)
+
+    async def detach(self) -> None:
+        self.registry.detached.append(self.name)
+
+
+class FakeListenerConnection:
+    async def add_listener(self, channel: str, callback: object) -> None:
+        pass
+
+    async def remove_listener(self, channel: str, callback: object) -> None:
+        pass
+
+    async def close(self) -> None:
+        pass
 
 
 @dataclass
@@ -60,6 +74,7 @@ class FakeRegistry:
     adopted: list[str] = field(default_factory=list)
     reaped: list[str] = field(default_factory=list)
     killed: list[str] = field(default_factory=list)
+    detached: list[str] = field(default_factory=list)
     _counter: int = 0
 
     async def resolve_image(self, agent_type: Any, tag: str) -> ResolvedImage:
@@ -114,9 +129,15 @@ def _make_supervisor(
     db = MagicMock()
     db.session = fake_session
 
+    db_config = MagicMock()
+
+    async def fake_asyncpg_connect() -> FakeListenerConnection:
+        return FakeListenerConnection()
+
+    db_config.asyncpg_connect = fake_asyncpg_connect
     gs = GraderSupervisor(
         registry=registry,  # type: ignore[arg-type]
-        db_config=MagicMock(),
+        db_config=db_config,
         model="gpt-5-mini",
         db=db,
         reconcile_debounce_s=reconcile_debounce_s,
@@ -275,17 +296,19 @@ async def test_reconcile_spawns_new_snapshot_only():
 async def test_shutdown_leaves_graders_running():
     """Shutdown must NOT kill graders — the next instance adopts them."""
     gs, registry = _make_supervisor([SNAP_A, SNAP_B])
-    await gs.reconcile(trigger="test")
-    pods_before = dict(registry.pods)
-    await gs.shutdown()
+    async with gs.lifespan():
+        await gs.reconcile(trigger="test")
+        pods_before = dict(registry.pods)
     assert registry.pods == pods_before  # nothing reaped/killed
     assert registry.killed == []
+    assert set(registry.detached) == set(pods_before)
     assert gs._handles == {}
 
 
 async def test_reconcile_noop_after_shutdown():
     gs, registry = _make_supervisor([SNAP_A])
-    await gs.shutdown()
+    async with gs.lifespan():
+        pass
     await gs.reconcile(trigger="test")
     assert registry.spawned == []
 
@@ -296,27 +319,30 @@ async def test_reconcile_noop_after_shutdown():
 async def test_schedule_reconcile_debounces_burst():
     """A burst of triggers coalesces into a single trailing-edge reconcile."""
     gs, registry = _make_supervisor([SNAP_A, SNAP_B], reconcile_debounce_s=0.05)
-    for _ in range(5):
-        gs._schedule_reconcile(trigger="grader_definition_changed:latest")
-    assert registry.resolve_count == 0  # debounced, not immediate
-    await asyncio.sleep(0.2)
-    assert registry.resolve_count == 1  # one reconcile for the whole burst
-    assert set(gs._handles) == {SNAP_A, SNAP_B}
+    async with gs.lifespan():
+        for _ in range(5):
+            gs._schedule_reconcile(trigger="grader_definition_changed:latest")
+        assert registry.resolve_count == 0  # debounced, not immediate
+        await asyncio.sleep(0.2)
+        assert registry.resolve_count == 1  # one reconcile for the whole burst
+        assert set(gs._handles) == {SNAP_A, SNAP_B}
 
 
 async def test_schedule_reconcile_delays_but_does_not_drop():
     """The reconcile is delayed by the window, then runs — delay, not cancel."""
     gs, registry = _make_supervisor([SNAP_A], reconcile_debounce_s=0.1)
-    gs._schedule_reconcile(trigger="snapshot_created:snap-a")
-    assert registry.resolve_count == 0
-    await asyncio.sleep(0.25)
-    assert registry.resolve_count == 1
-    assert SNAP_A in gs._handles
+    async with gs.lifespan():
+        gs._schedule_reconcile(trigger="snapshot_created:snap-a")
+        assert registry.resolve_count == 0
+        await asyncio.sleep(0.25)
+        assert registry.resolve_count == 1
+        assert SNAP_A in gs._handles
 
 
 async def test_schedule_reconcile_noop_after_shutdown():
     gs, registry = _make_supervisor([SNAP_A], reconcile_debounce_s=0.05)
-    await gs.shutdown()
+    async with gs.lifespan():
+        pass
     gs._schedule_reconcile(trigger="late")
     await asyncio.sleep(0.15)
     assert registry.resolve_count == 0

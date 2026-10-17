@@ -99,6 +99,7 @@ py_library(
         "//props/db:database",
         "//props/db:models",
         "//props/db:notifications",
+        "@pypi//anyio",
         "@pypi//asyncpg",
     ],
 )

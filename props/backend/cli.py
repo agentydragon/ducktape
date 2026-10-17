@@ -43,8 +43,8 @@ class _GraderSpawningServer(uvicorn.Server):
         await super().startup(sockets=sockets)
         supervisor = getattr(self._app.state, "grader_supervisor", None)
         if supervisor is not None:
-            logger.info("HTTP server ready, spawning graders for existing snapshots")
-            self._spawn_task = asyncio.create_task(supervisor.spawn_existing(), name="grader-initial-spawn")
+            logger.info("HTTP server ready, scheduling graders for existing snapshots")
+            supervisor.schedule_startup_reconcile()
         else:
             logger.info("No grader supervisor configured, skipping grader spawn")
 

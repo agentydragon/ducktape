@@ -160,10 +160,10 @@ async def test_collect_run_finalizes_exited(db: Database) -> None:
         result=ContainerResult(stdout="boom\nTraceback ...", stderr="warn line", exit=Exited(exit_code=1)),
     )
 
-    status = await _registry(db)._collect_run(agent_run_id, cast(ContainerHandle, handle), None)
+    status = await _registry(db)._collect_run(agent_run_id, cast(ContainerHandle, handle), None, asyncio.Event())
 
     assert status == AgentRunStatus.EXITED
-    assert handle.killed  # pod deleted before we finalized
+    assert handle.killed  # terminal status was persisted before pod cleanup
     with db.session() as session:
         run = session.get(AgentRun, agent_run_id)
         assert run is not None
@@ -175,7 +175,7 @@ async def test_collect_run_finalizes_exit_zero(db: Database) -> None:
     agent_run_id = _in_progress_critic_run(db)
     handle = _FakeHandle(name="critic-y", result=ContainerResult(stdout="", stderr="", exit=Exited(exit_code=0)))
 
-    status = await _registry(db)._collect_run(agent_run_id, cast(ContainerHandle, handle), None)
+    status = await _registry(db)._collect_run(agent_run_id, cast(ContainerHandle, handle), None, asyncio.Event())
 
     assert status == AgentRunStatus.EXITED
     with db.session() as session:
@@ -188,7 +188,7 @@ async def test_collect_run_timeout_finalizes_timed_out(db: Database) -> None:
     agent_run_id = _in_progress_critic_run(db)
     handle = _FakeHandle(name="critic-z", result=ContainerResult(stdout="partial output", stderr="", exit=TimedOut()))
 
-    status = await _registry(db)._collect_run(agent_run_id, cast(ContainerHandle, handle), 1)
+    status = await _registry(db)._collect_run(agent_run_id, cast(ContainerHandle, handle), 1, asyncio.Event())
 
     assert status == AgentRunStatus.TIMED_OUT
     with db.session() as session:
@@ -223,7 +223,9 @@ async def test_collect_run_cancellation_finalizes_as_cancelled(db: Database) -> 
     agent_run_id = _in_progress_critic_run(db)
     handle = _BlockingHandle(name="grader-x", started=asyncio.Event())
 
-    task = asyncio.create_task(_registry(db)._collect_run(agent_run_id, cast(ContainerHandle, handle), None))
+    task = asyncio.create_task(
+        _registry(db)._collect_run(agent_run_id, cast(ContainerHandle, handle), None, asyncio.Event())
+    )
     await asyncio.wait_for(handle.started.wait(), timeout=5)  # ensure it is blocked in wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):

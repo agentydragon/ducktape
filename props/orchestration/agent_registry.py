@@ -125,12 +125,17 @@ class AgentRunHandle:
         # kill_and_delete() called automatically on exit
 
     Call kill_and_delete() directly to stop the agent early without a context manager.
+    Call detach() when this backend is shutting down: it stops the local collector
+    without changing the run row or deleting the external runtime object.
     """
 
-    def __init__(self, task: asyncio.Task[AgentRunStatus], name: str, agent_run_id: UUID) -> None:
+    def __init__(
+        self, task: asyncio.Task[AgentRunStatus], name: str, agent_run_id: UUID, detached: asyncio.Event
+    ) -> None:
         self._task = task
         self.name = name
         self.agent_run_id = agent_run_id
+        self._detached = detached
 
     def __await__(self):
         return self._task.__await__()
@@ -142,6 +147,18 @@ class AgentRunHandle:
         await self.kill_and_delete()
 
     async def kill_and_delete(self) -> None:
+        """Cancel collection, mark the run CANCELLED, and remove its runtime object."""
+        self._task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await self._task
+
+    async def detach(self) -> None:
+        """Stop this process's collector while leaving the runtime object and run row intact.
+
+        This is for process shutdown: a later registry adopts the still-running
+        grader and resumes collecting its existing IN_PROGRESS run.
+        """
+        self._detached.set()
         self._task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await self._task
@@ -363,42 +380,41 @@ class AgentRegistry:
         )
 
     async def _collect_run(
-        self, agent_run_id: UUID, handle: ContainerHandle, timeout_seconds: int | None
+        self, agent_run_id: UUID, handle: ContainerHandle, timeout_seconds: int | None, detached: asyncio.Event
     ) -> AgentRunStatus:
         """Wait for container exit, capture logs, update DB status, return final status."""
         try:
             result: ContainerResult = await handle.wait(timeout_seconds=timeout_seconds)
         except asyncio.CancelledError:
-            # The run's host task was cancelled (e.g. GraderSupervisor replacing
-            # this grader during reconcile, or shutdown). The `finally` below still
-            # deletes the pod; record a terminal CANCELLED status so the run does
-            # not leak as IN_PROGRESS — the pod is gone and nothing else will
-            # finalize it. The DB write is synchronous, so it completes even while
-            # the task is being cancelled.
-            self._persist_run_result(agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None)
+            if not detached.is_set():
+                self._persist_run_result(agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None)
             raise
-        finally:
-            try:
-                await handle.kill_and_delete()
-                logger.info("Deleted container")
-            except Exception as e:
-                logger.warning("Failed to delete container: %s", e)
-
-        exit = result.exit
-        log = logger.info if isinstance(exit, Exited) and exit.exit_code == 0 else logger.error
-        log("Container %s stdout:\n%s", handle.name, result.stdout)
-        if result.stderr:
-            log("Container %s stderr:\n%s", handle.name, result.stderr)
-
-        if isinstance(exit, TimedOut):
-            status = AgentRunStatus.TIMED_OUT
-            container_exit_code = None
         else:
-            status = AgentRunStatus.EXITED
-            container_exit_code = exit.exit_code
+            exit = result.exit
+            log = logger.info if isinstance(exit, Exited) and exit.exit_code == 0 else logger.error
+            log("Container %s stdout:\n%s", handle.name, result.stdout)
+            if result.stderr:
+                log("Container %s stderr:\n%s", handle.name, result.stderr)
 
-        self._persist_run_result(agent_run_id, status=status, container_exit_code=container_exit_code)
-        return status
+            if isinstance(exit, TimedOut):
+                status = AgentRunStatus.TIMED_OUT
+                container_exit_code = None
+            else:
+                status = AgentRunStatus.EXITED
+                container_exit_code = exit.exit_code
+
+            # Persist the terminal state before deleting the runtime object.
+            # Detach can cancel the collector while cleanup is awaiting the
+            # runtime API; by then the run row must already describe the exit.
+            self._persist_run_result(agent_run_id, status=status, container_exit_code=container_exit_code)
+            return status
+        finally:
+            if not detached.is_set():
+                try:
+                    await handle.kill_and_delete()
+                    logger.info("Deleted container")
+                except Exception as e:
+                    logger.warning("Failed to delete container: %s", e)
 
     def _persist_run_result(
         self, agent_run_id: UUID, *, status: AgentRunStatus, container_exit_code: int | None
@@ -440,8 +456,9 @@ class AgentRegistry:
         handle = await self._create_container(
             agent_run_id, image=image, name=name, extra_labels=extra_labels, annotations=annotations
         )
-        task = asyncio.create_task(self._collect_run(agent_run_id, handle, timeout_seconds))
-        return AgentRunHandle(task, handle.name, agent_run_id)
+        detached = asyncio.Event()
+        task = asyncio.create_task(self._collect_run(agent_run_id, handle, timeout_seconds, detached))
+        return AgentRunHandle(task, handle.name, agent_run_id, detached)
 
     # --- Execution Methods ---
 
@@ -852,9 +869,10 @@ class AgentRegistry:
         a previous backend instance): attach a collector task that captures logs
         and finalizes the run when the pod exits or is killed."""
         handle = self._executor.handle_for(pod.name)
-        task = asyncio.create_task(self._collect_run(pod.agent_run_id, handle, None))
+        detached = asyncio.Event()
+        task = asyncio.create_task(self._collect_run(pod.agent_run_id, handle, None, detached))
         logger.info("Adopted grader pod %s for %s", pod.name, pod.snapshot_slug)
-        return AgentRunHandle(task, pod.name, pod.agent_run_id)
+        return AgentRunHandle(task, pod.name, pod.agent_run_id, detached)
 
     async def reap_grader_pod(self, pod: GraderPodInfo, *, reason: str) -> None:
         """Delete an unwanted grader pod (duplicate, orphan, removed snapshot, or

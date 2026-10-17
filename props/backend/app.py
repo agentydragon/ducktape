@@ -19,7 +19,7 @@ import logging
 import os
 import traceback
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -111,13 +111,11 @@ def _make_lifespan(deps: BackendDeps):
         app.state.grader_supervisor = None
         app.state.registry = None
         app.state.admin_db = None
-
         db_config = DatabaseConfig()
-        db = Database(db_config)
-        app.state.admin_db = db
         app.state.config = deps.config
+        shutdown_requested = asyncio.Event()
 
-        async def _slow_startup() -> None:
+        async def _initialize(resources: AsyncExitStack, db: Database) -> None:
             if deps.config.auto_migrate:
                 await asyncio.to_thread(upgrade_database, db.engine)
             await asyncio.to_thread(ensure_evaluator_role, db_config)
@@ -133,17 +131,17 @@ def _make_lifespan(deps: BackendDeps):
             if deps.config.auto_sync_specimens:
                 await asyncio.to_thread(_sync_all_specimens, db)
 
-            executor = await create_executor(deps.config.executor, db_config)
-            logger.info("Using %s executor", deps.config.executor.type)
-            model_parallelism_limits = {
-                m.name: m.max_parallel_agents for m in deps.config.models if m.max_parallel_agents is not None
-            }
             # Agents reach the LLM only through props/llm_proxy (the backend dropped
             # its own /v1 mount in #1894), so this must be configured.
             llm_proxy_url = deps.config.llm_proxy_url
             if llm_proxy_url is None:
                 raise RuntimeError("config.llm_proxy_url must be set for agent runs")
-            app.state.registry = AgentRegistry(
+            executor = await create_executor(deps.config.executor, db_config)
+            logger.info("Using %s executor", deps.config.executor.type)
+            model_parallelism_limits = {
+                m.name: m.max_parallel_agents for m in deps.config.models if m.max_parallel_agents is not None
+            }
+            registry = AgentRegistry(
                 executor=executor,
                 db=db,
                 db_config=db_config,
@@ -154,12 +152,13 @@ def _make_lifespan(deps: BackendDeps):
                 llm_base_url=llm_proxy_url,
                 agent_registry_url=deps.registry_proxy_config.proxy_url,
             )
+            await resources.enter_async_context(registry)
+            app.state.registry = registry
 
             if deps.grader_model:
-                app.state.grader_supervisor = GraderSupervisor(
-                    registry=app.state.registry, db_config=db_config, model=deps.grader_model, db=db
-                )
-                await app.state.grader_supervisor.start()
+                supervisor = GraderSupervisor(registry=registry, db_config=db_config, model=deps.grader_model, db=db)
+                await resources.enter_async_context(supervisor.lifespan())
+                app.state.grader_supervisor = supervisor
                 logger.info(f"Grader supervisor started (model: {deps.grader_model})")
             else:
                 logger.info("Grader supervisor disabled (grader_model not set in config)")
@@ -174,6 +173,22 @@ def _make_lifespan(deps: BackendDeps):
                 logger.info(f"Admin URL: {protocol}://{deps.host}:{deps.port}/?token={admin_token}")
             logger.info("Props backend ready")
             app.state.startup_complete = True
+
+        async def _slow_startup() -> None:
+            try:
+                async with AsyncExitStack() as resources:
+                    db = Database(db_config)
+                    resources.callback(db.dispose)
+                    app.state.admin_db = db
+                    await _initialize(resources, db)
+                    # Keep the startup task, and all resources it owns, alive
+                    # until the server asks the lifespan to shut down.
+                    await shutdown_requested.wait()
+            finally:
+                app.state.startup_complete = False
+                app.state.grader_supervisor = None
+                app.state.registry = None
+                app.state.admin_db = None
 
         startup_task = asyncio.create_task(_slow_startup())
 
@@ -193,19 +208,16 @@ def _make_lifespan(deps: BackendDeps):
 
         startup_task.add_done_callback(_on_startup_done)
 
-        yield
-
-        logger.info("Shutting down props backend...")
-        if not startup_task.done():
-            startup_task.cancel()
+        try:
+            yield
+        finally:
+            logger.info("Shutting down props backend...")
+            shutdown_requested.set()
+            if not startup_task.done() and not app.state.startup_complete:
+                startup_task.cancel()
             with suppress(asyncio.CancelledError, Exception):
                 await startup_task
-        if app.state.grader_supervisor is not None:
-            await app.state.grader_supervisor.shutdown()
-        if app.state.registry is not None:
-            await app.state.registry.close()
-        db.dispose()
-        logger.info("Props backend stopped")
+            logger.info("Props backend stopped")
 
     return lifespan
 

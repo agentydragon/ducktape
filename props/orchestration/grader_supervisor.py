@@ -4,7 +4,7 @@ Maintains the invariant: every snapshot has exactly one running grader
 container, provided a grader image is available in the registry.
 
 Reconciliation is triggered by:
-- startup (spawn_existing)
+- startup (schedule_startup_reconcile)
 - pg_notify snapshot_created
 - pg_notify grader_definition_changed (image push)
 - a periodic backstop (catches drift between events)
@@ -28,15 +28,18 @@ trailing-edge reconcile. Startup reconciles immediately.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from collections import defaultdict
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from types import TracebackType
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
+import anyio
 import asyncpg
+from anyio.abc import TaskGroup
 from asyncpg.pool import PoolConnectionProxy
 
 from props.core.agent_types import AgentType
@@ -91,12 +94,12 @@ class GraderSupervisor:
     """Manages per-snapshot grader containers via reconciliation against the
     Kubernetes/Docker API.
 
-    Use as async context manager:
+    Use its lifespan context manager:
 
-        async with GraderSupervisor(...) as gs:
-            await gs.spawn_existing()
-            ...
-        # gs.shutdown() called automatically (leaves graders running)
+        async with GraderSupervisor(...).lifespan() as gs:
+            gs.schedule_startup_reconcile()
+            ...  # the owning backend task keeps this scope open through shutdown
+        # Local work is joined and collectors detached; graders keep running.
     """
 
     def __init__(
@@ -122,28 +125,57 @@ class GraderSupervisor:
         self._handles: dict[SnapshotSlug, AgentRunHandle] = {}
         self._listener_conn: asyncpg.Connection[Any] | None = None
         self._shutdown = False
-        self._background_tasks: set[asyncio.Task[None]] = set()
+        self._task_group: TaskGroup | None = None
+        self._stop_event: anyio.Event | None = None
         # Trailing-edge debounce of event-driven reconciles.
         self._reconcile_debounce_s = reconcile_debounce_s
-        self._debounce_task: asyncio.Task[None] | None = None
+        self._debounce_scope: anyio.CancelScope | None = None
         self._pending_triggers: list[str] = []
         # Periodic backstop.
         self._periodic_reconcile_s = periodic_reconcile_s
-        self._periodic_task: asyncio.Task[None] | None = None
         # Crash-loop backoff state, keyed by snapshot.
         self._backoff_base_s = backoff_base_s
         self._backoff_max_s = backoff_max_s
         self._max_consecutive_failures = max_consecutive_failures
         self._failures: dict[SnapshotSlug, _FailureState] = {}
 
-    async def __aenter__(self) -> GraderSupervisor:
-        await self.start()
-        return self
+    @asynccontextmanager
+    async def lifespan(self) -> AsyncIterator[GraderSupervisor]:
+        """Own listeners, debounce timers, and reconciliations for one backend lifetime."""
+        if self._shutdown or self._task_group is not None:
+            raise RuntimeError("GraderSupervisor lifespan can only be entered once")
 
-    async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
-    ) -> None:
-        await self.shutdown()
+        self._stop_event = anyio.Event()
+        try:
+            async with anyio.create_task_group() as task_group:
+                self._task_group = task_group
+                try:
+                    await self._start_listener()
+                    if self._periodic_reconcile_s > 0:
+                        task_group.start_soon(self._periodic_loop, name="grader-periodic-reconcile")
+                    yield self
+                finally:
+                    self._shutdown = True
+                    self._stop_event.set()
+                    self._cancel_pending_reconcile()
+        finally:
+            # The task group has exited before this shield is entered. That
+            # keeps AnyIO cancel scopes properly nested while protecting cleanup
+            # from cancellation during partial startup or backend shutdown.
+            self._task_group = None
+            self._shutdown = True
+            with anyio.CancelScope(shield=True):
+                try:
+                    await self._stop_listener()
+                finally:
+                    for handle in self._handles.values():
+                        try:
+                            await handle.detach()
+                        except Exception:
+                            logger.exception("Failed to detach grader collector for %s", handle.name)
+                    self._handles = {}
+            self._stop_event = None
+            logger.info("Grader supervisor stopped (graders remain running)")
 
     # --- Event handlers (debounced — coalesce bursts into one reconcile) ---
 
@@ -178,23 +210,23 @@ class GraderSupervisor:
 
     # --- Lifecycle ---
 
-    async def start(self) -> None:
-        """Start pg_notify listeners + periodic backstop. Call spawn_existing() after HTTP is ready."""
-        await self._start_listener()
-        if self._periodic_reconcile_s > 0:
-            self._periodic_task = asyncio.create_task(self._periodic_loop(), name="grader-periodic-reconcile")
-
-    async def spawn_existing(self) -> None:
-        """Initial reconciliation after HTTP server is ready."""
-        await self.reconcile(trigger="startup")
+    def schedule_startup_reconcile(self) -> None:
+        """Schedule the initial reconciliation after HTTP server is ready."""
+        if self._shutdown or self._task_group is None:
+            raise RuntimeError("GraderSupervisor must be entered before scheduling the startup reconcile")
+        self._task_group.start_soon(partial(self.reconcile, trigger="startup"), name="grader-startup-reconcile")
 
     async def _periodic_loop(self) -> None:
+        stop_event = self._stop_event
+        if stop_event is None:
+            raise RuntimeError("GraderSupervisor must be started before running periodic reconciliation")
         while not self._shutdown:
-            try:
-                await asyncio.sleep(self._periodic_reconcile_s)
-            except asyncio.CancelledError:
+            with anyio.move_on_after(self._periodic_reconcile_s) as interval:
+                await stop_event.wait()
+            if self._shutdown:
                 return
-            self._schedule_reconcile(trigger="periodic")
+            if interval.cancel_called:
+                self._schedule_reconcile(trigger="periodic")
 
     # --- Debounced reconcile scheduling ---
 
@@ -203,33 +235,37 @@ class GraderSupervisor:
         trailing-edge run after ``reconcile_debounce_s`` of quiet."""
         if self._shutdown:
             return
+        if self._task_group is None:
+            raise RuntimeError("GraderSupervisor must be started before scheduling a reconcile")
         self._pending_triggers.append(trigger)
         # Reset the quiet window so we fire once, after the LAST trigger. Only a
         # still-debouncing timer is cancelled — never an in-flight reconcile.
-        if self._debounce_task is not None and not self._debounce_task.done():
-            self._debounce_task.cancel()
-        task = asyncio.create_task(self._run_debounced_reconcile(), name="grader-debounced-reconcile")
-        self._debounce_task = task
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
+        if self._debounce_scope is not None:
+            self._debounce_scope.cancel()
+        scope = anyio.CancelScope()
+        self._debounce_scope = scope
+        self._task_group.start_soon(self._run_debounced_reconcile, scope, name="grader-debounced-reconcile")
 
-    async def _run_debounced_reconcile(self) -> None:
-        try:
-            await asyncio.sleep(self._reconcile_debounce_s)
-        except asyncio.CancelledError:
-            # Superseded by a newer trigger (window reset) or shutdown — the
-            # replacement timer, if any, will fire. Don't reconcile here.
+    async def _run_debounced_reconcile(self, scope: anyio.CancelScope) -> None:
+        with scope:
+            await anyio.sleep(self._reconcile_debounce_s)
+        if scope.cancel_called or self._shutdown:
             return
         # Window elapsed. Clear the timer handle first so a trigger arriving
         # during the (awaited) reconcile opens a fresh window instead of
         # cancelling this run.
-        self._debounce_task = None
-        if self._shutdown:
-            return
+        self._debounce_scope = None
         triggers = self._pending_triggers
         self._pending_triggers = []
         label = triggers[0] if len(triggers) == 1 else f"debounced({len(triggers)}): {', '.join(triggers)}"
         await self.reconcile(trigger=label)
+
+    def _cancel_pending_reconcile(self) -> None:
+        scope = self._debounce_scope
+        self._debounce_scope = None
+        self._pending_triggers = []
+        if scope is not None:
+            scope.cancel()
 
     # --- Core reconciliation ---
 
@@ -393,16 +429,21 @@ class GraderSupervisor:
         logger.info(f"Listening on channels '{SNAPSHOT_CREATED_CHANNEL}', '{GRADER_DEFINITION_CHANGED_CHANNEL}'")
 
     async def _stop_listener(self) -> None:
-        if self._listener_conn:
+        conn = self._listener_conn
+        self._listener_conn = None
+        if conn is not None:
+            for channel, callback in (
+                (SNAPSHOT_CREATED_CHANNEL, self._snapshot_created_callback),
+                (GRADER_DEFINITION_CHANGED_CHANNEL, self._grader_definition_changed_callback),
+            ):
+                try:
+                    await conn.remove_listener(channel, callback)
+                except Exception as e:
+                    logger.warning("Error removing listener for %s: %s", channel, e)
             try:
-                await self._listener_conn.remove_listener(SNAPSHOT_CREATED_CHANNEL, self._snapshot_created_callback)
-                await self._listener_conn.remove_listener(
-                    GRADER_DEFINITION_CHANGED_CHANNEL, self._grader_definition_changed_callback
-                )
-                await self._listener_conn.close()
+                await conn.close()
             except Exception as e:
                 logger.warning(f"Error closing listener connection: {e}")
-            self._listener_conn = None
 
     async def _spawn_grader(
         self, snapshot_slug: SnapshotSlug, *, image: ResolvedImage, trigger: str
@@ -418,18 +459,3 @@ class GraderSupervisor:
         except Exception:
             logger.exception("Failed to start grader for %s (trigger: %s)", snapshot_slug, trigger)
             return None
-
-    async def shutdown(self) -> None:
-        """Stop listeners + timers. Leaves grader pods running so the next backend
-        instance adopts them (no restart churn)."""
-        self._shutdown = True
-        logger.info("Shutting down grader supervisor (leaving graders running)...")
-        if self._debounce_task is not None and not self._debounce_task.done():
-            self._debounce_task.cancel()
-        if self._periodic_task is not None and not self._periodic_task.done():
-            self._periodic_task.cancel()
-        await self._stop_listener()
-        # Intentionally do NOT kill grader pods or cancel their collector tasks:
-        # the pods outlive this process and are adopted on the next startup.
-        self._handles = {}
-        logger.info("Grader supervisor stopped")
