@@ -248,26 +248,12 @@ func (s *server) forward(w http.ResponseWriter, req *http.Request, state *tunnel
 		// Upstream errors can contain private URLs: report only the status.
 		ErrorLog:     log.New(io.Discard, "", 0),
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) { w.WriteHeader(http.StatusBadGateway) },
-		ModifyResponse: func(res *http.Response) error {
-			// The transport is single-use: release its idle h2c connection once the stream ends.
-			if transport.Protocols != nil && res.StatusCode != http.StatusSwitchingProtocols {
-				res.Body = &closingBody{ReadCloser: res.Body, closeIdle: transport.CloseIdleConnections}
-			}
-			return nil
-		},
 	}).ServeHTTP(w, req)
 }
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
-
-type closingBody struct {
-	io.ReadCloser
-	closeIdle func()
-}
-
-func (b *closingBody) Close() error { err := b.ReadCloser.Close(); b.closeIdle(); return err }
 
 // readBufferedConn serves bytes the CONNECT parser already read ahead before the live connection.
 type readBufferedConn struct {
