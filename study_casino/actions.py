@@ -35,10 +35,10 @@ class ActionRequest(BaseModel):
 # ── Per-endpoint result shapes (the `result` field of `ActionResponse`) ──────
 #
 # Every action endpoint puts a different payload into `ActionResponse.result`.
-# Each variant has a distinct required-field set, so the union below
-# discriminates structurally — Pydantic + `extra="forbid"` rejects a wrong
-# variant during validation. Order in `ActionResult` matters: Pydantic tries
-# variants left-to-right and accepts the first that fully validates.
+# The optional `kind` fields prepare readers for tagged results without changing
+# current writes: absent tags default to None and are omitted on serialization.
+# The union remains structural until every writer emits tags and stored results
+# have been backfilled. Rollout: docs/action_result_discriminators.md.
 
 
 class SessionCompleteResult(BaseModel):
@@ -47,6 +47,7 @@ class SessionCompleteResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["session.complete"] | None = Field(default=None, exclude_if=lambda value: value is None)
     session_id: str
     seconds: int
     credits_earned_millis: int
@@ -58,6 +59,7 @@ class SessionCompleteResult(BaseModel):
 class SessionAddPastResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["session.add_past"] | None = Field(default=None, exclude_if=lambda value: value is None)
     session_id: str
     credits_earned_millis: int
 
@@ -67,6 +69,7 @@ class SessionCreditsDeltaResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["session.credits_delta"] | None = Field(default=None, exclude_if=lambda value: value is None)
     session_id: str
     credits_delta_millis: int
 
@@ -74,12 +77,14 @@ class SessionCreditsDeltaResult(BaseModel):
 class ConvertResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["convert"] | None = Field(default=None, exclude_if=lambda value: value is None)
     amount: int
 
 
 class PrizeCreateResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["prize.create"] | None = Field(default=None, exclude_if=lambda value: value is None)
     prize_id: str
     name: str
     cost: int
@@ -89,6 +94,7 @@ class PrizeCreateResult(BaseModel):
 class PrizeDeleteResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["prize.delete"] | None = Field(default=None, exclude_if=lambda value: value is None)
     prize_id: str
     user: str
 
@@ -96,6 +102,7 @@ class PrizeDeleteResult(BaseModel):
 class PrizeUpdateResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["prize.update"] | None = Field(default=None, exclude_if=lambda value: value is None)
     prize_id: str
     name: str
     cost: int
@@ -106,6 +113,7 @@ class PrizeUpdateResult(BaseModel):
 class PrizeRedeemResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["prize.redeem"] | None = Field(default=None, exclude_if=lambda value: value is None)
     redemption_id: str
     prize_id: str
     cost: int
@@ -114,26 +122,31 @@ class PrizeRedeemResult(BaseModel):
 class ChangelogAckResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["changelog.ack"] | None = Field(default=None, exclude_if=lambda value: value is None)
     acked_through: int
 
 
 class ImportResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["data.import"] | None = Field(default=None, exclude_if=lambda value: value is None)
     imported: Literal[True]
 
 
 class ResetResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["data.reset"] | None = Field(default=None, exclude_if=lambda value: value is None)
     reset: Literal[True]
 
 
 class SlotsActionResult(SlotsOutcome):
+    kind: Literal["casino.slots.spin"] | None = Field(default=None, exclude_if=lambda value: value is None)
     payout_tokens: int
 
 
 class RouletteActionResult(RouletteOutcome):
+    kind: Literal["casino.roulette.spin"] | None = Field(default=None, exclude_if=lambda value: value is None)
     payout_tokens: int
 
 
@@ -158,6 +171,7 @@ class BlackjackHandStateResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["blackjack.hand_state"] | None = Field(default=None, exclude_if=lambda value: value is None)
     hand_id: str
     phase: HandStatus
     current_wager: int

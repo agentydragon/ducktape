@@ -9,6 +9,8 @@ Add to Home Screen).
 
 Lives at <https://casino.allegedly.works>.
 
+Staged API change: [action result discriminator rollout](docs/action_result_discriminators.md).
+
 ## Layout
 
 | Path                                   | What it is                                                                                         |

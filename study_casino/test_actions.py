@@ -1,12 +1,6 @@
-"""Round-trip invariant for the untagged `ActionResult` union.
-
-The union discriminates structurally (`extra="forbid"` + a distinct
-required-field set per variant) and Pydantic tries variants left-to-right,
-so a variant whose serialized form also validates as an earlier variant
-would be silently mis-parsed — both on the wire and on the idempotent-replay
-path, which re-reads `ledger_events.result_json` through this union
-(`store._ACTION_RESULT_ADAPTER`). Each variant must round-trip to exactly
-its own type.
+"""Every ActionResult variant must round-trip to its own type on the wire and
+through stored idempotent replays. During reader preparation the union still
+accepts untagged results; tagging and discrimination land in later rollout phases.
 """
 
 from __future__ import annotations
