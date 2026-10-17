@@ -30,6 +30,7 @@ from agentplane.notification_service.db import (
 from agentplane.notification_service.models import (
     ActionsEvent,
     ActionsSource,
+    DestinationRef,
     EntryView,
     EventIdentity,
     GitHubAccessStatus,
@@ -205,68 +206,70 @@ class Store:
             raise NotFoundError
         return row
 
+    async def ensure_inbox(
+        self, session: AsyncSession, owner: ServiceAccountRef, destination_ref: DestinationRef, session_id: str
+    ) -> Inbox:
+        """The owner's inbox for a destination Session, created if absent and returned locked for update."""
+        now = datetime.now(UTC)
+        key = hashlib.sha256(
+            json.dumps([destination_ref.model_dump(), session_id], sort_keys=True).encode()
+        ).hexdigest()
+        # Serialize only creation for an owner, to enforce the total destination quota.
+        await session.execute(
+            select(func.pg_advisory_xact_lock(func.hashtextextended(f"{owner.namespace}/{owner.name}", 0)))
+        )
+        existing_id = await session.scalar(
+            select(Inbox.id).where(
+                Inbox.owner_namespace == owner.namespace, Inbox.owner_name == owner.name, Inbox.destination_key == key
+            )
+        )
+        if existing_id is None:
+            count = await session.scalar(
+                select(func.count())
+                .select_from(Inbox)
+                .where(Inbox.owner_namespace == owner.namespace, Inbox.owner_name == owner.name)
+            )
+            if count is not None and count >= self.quotas.inboxes_per_account:
+                raise QuotaError(f"{self.quotas.inboxes_per_account} inboxes per owning ServiceAccount")
+        await session.execute(
+            insert(Inbox)
+            .values(
+                id=uuid4(),
+                owner_namespace=owner.namespace,
+                owner_name=owner.name,
+                destination_key=key,
+                destination_ref=destination_ref.model_dump(),
+                session_id=session_id,
+                last_cursor=0,
+                acknowledged=0,
+                covered=0,
+                expired_through=0,
+                retired=False,
+                updated_at=now,
+                next_attempt=now,
+                claim_until=now,
+            )
+            .on_conflict_do_nothing()
+        )
+        inbox = await session.scalar(
+            select(Inbox)
+            .where(
+                Inbox.owner_namespace == owner.namespace, Inbox.owner_name == owner.name, Inbox.destination_key == key
+            )
+            .with_for_update()
+        )
+        assert inbox is not None
+        if inbox.retired:
+            raise ConflictError("inbox is retired")
+        return inbox
+
     async def subscribe(
         self, principal: WorkloadPrincipal, body: Subscribe, binding: GitHubBinding | None = None
     ) -> SubscriptionView:
-        owner = principal.account
-        now = datetime.now(UTC)
-        key = hashlib.sha256(
-            json.dumps([body.destination_ref.model_dump(), body.session_id], sort_keys=True).encode()
-        ).hexdigest()
         async with self.sessions.begin() as session:
             if isinstance(body.source, GitHubSource):
                 await github_lock(session)
-            # Serialize only creation for an owner, to enforce the total destination quota.
-            await session.execute(
-                select(func.pg_advisory_xact_lock(func.hashtextextended(f"{owner.namespace}/{owner.name}", 0)))
-            )
-            existing_id = await session.scalar(
-                select(Inbox.id).where(
-                    Inbox.owner_namespace == owner.namespace,
-                    Inbox.owner_name == owner.name,
-                    Inbox.destination_key == key,
-                )
-            )
-            if existing_id is None:
-                count = await session.scalar(
-                    select(func.count())
-                    .select_from(Inbox)
-                    .where(Inbox.owner_namespace == owner.namespace, Inbox.owner_name == owner.name)
-                )
-                if count is not None and count >= self.quotas.inboxes_per_account:
-                    raise QuotaError(f"{self.quotas.inboxes_per_account} inboxes per owning ServiceAccount")
-            await session.execute(
-                insert(Inbox)
-                .values(
-                    id=uuid4(),
-                    owner_namespace=owner.namespace,
-                    owner_name=owner.name,
-                    destination_key=key,
-                    destination_ref=body.destination_ref.model_dump(),
-                    session_id=body.session_id,
-                    last_cursor=0,
-                    acknowledged=0,
-                    covered=0,
-                    expired_through=0,
-                    retired=False,
-                    updated_at=now,
-                    next_attempt=now,
-                    claim_until=now,
-                )
-                .on_conflict_do_nothing()
-            )
-            inbox = await session.scalar(
-                select(Inbox)
-                .where(
-                    Inbox.owner_namespace == owner.namespace,
-                    Inbox.owner_name == owner.name,
-                    Inbox.destination_key == key,
-                )
-                .with_for_update()
-            )
-            assert inbox is not None
-            if inbox.retired:
-                raise ConflictError("inbox is retired")
+            inbox = await self.ensure_inbox(session, principal.account, body.destination_ref, body.session_id)
             row = await session.scalar(
                 select(Subscription).where(
                     Subscription.inbox_id == inbox.id, Subscription.idempotency_key == body.idempotency_key
