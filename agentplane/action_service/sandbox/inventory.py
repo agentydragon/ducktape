@@ -28,7 +28,7 @@ from agentplane.action_service.sandbox.binding import PREFIX, PodExecutorBinding
 from agentplane.action_service.sandbox.models import READY_CONDITION, SandboxCondition, SandboxInfo
 from agentplane.egress import sidecar_config
 from agentplane.subjects import ServiceAccountRef
-from mcp_infra.exec.kubernetes import CommandResult, ExecRunner
+from agentplane.action_service.sandbox.kubernetes import CommandResult, ExecRunner
 
 logger = logging.getLogger(__name__)
 

@@ -29,7 +29,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import FilePersistence, PersistenceConfig
-from mcp_infra.tool_filter import ToolFilter
+from x.mcp_oauth_facade.tool_filter import ToolFilter
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle
 # cannot see the dependency.

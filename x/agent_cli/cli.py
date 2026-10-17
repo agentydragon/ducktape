@@ -14,7 +14,7 @@ from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.transcript_handler import TranscriptHandler
-from mcp_infra.display.compact_display import CompactDisplayHandler
+from x.agent_cli.display.compact_display import CompactDisplayHandler
 from openai_utils.client_factory import build_client
 from openai_utils.model import SystemMessage, UserMessage
 from util.logging import make_logging_callback

@@ -39,7 +39,7 @@ from agentplane.action_service.sandbox.inventory import (
 )
 from agentplane.action_service.sandbox.models import READY_CONDITION
 from agentplane.subjects import ServiceAccountRef
-from mcp_infra.exec.kubernetes import CommandResult
+from agentplane.action_service.sandbox.kubernetes import CommandResult
 from util.exec.models import Exited
 
 NAMESPACE = "agentplane-test"
