@@ -585,9 +585,8 @@ flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     K3S_SHARED_PACKAGE_LAYERS[Candidate: share Python package layers]
-    K3S_DATABASE_STARTUP_OVERLAP[Candidate: start PostgreSQL during image import]
     K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
-    K3S_IMPORT_CONCURRENCY[Candidate: bounded image import and unpack concurrency]
+    K3S_IMPORT_CONCURRENCY[Candidate: native containerd import and unpack concurrency]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: baked harnesses versus on-demand delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
@@ -649,6 +648,10 @@ automatic triggers require a separate reviewed change. Language rewrites require
 rank them by unique image bytes removed and startup time on the dependency chain. Remaining
 Python services still need the shared interpreter.
 
+Keep the fixture declarative: supply images and manifests, let Kubernetes reconcile, wait
+for readiness, then test. Startup dependency ordering belongs to Kubernetes; do not add
+PostgreSQL-first sequencing or a custom parallel import/unpack scheduler to the test harness.
+
 ### `K3S_SHARED_PACKAGE_LAYERS` — share third-party Python package layers
 
 **Candidate; no worker assigned; no prerequisites.** Use canonical package paths to share
@@ -658,13 +661,6 @@ dependency closure and import behavior. Exit: a matched comparison of distinct l
 import/unpack and total lifecycle time, passing affected import checks and lifecycle assertions,
 and a recommendation to adopt or discard the package-layer change.
 
-### `K3S_DATABASE_STARTUP_OVERLAP` — start PostgreSQL during remaining image imports
-
-**Candidate; no worker assigned; no prerequisites.** Import PostgreSQL first and start it while
-the remaining images import, preserving migration and service readiness dependencies. Exit:
-a matched comparison showing whether overlap shortens total startup despite resource contention,
-with unchanged lifecycle assertions and reliable image availability before dependent Pods start.
-
 ### `K3S_PYTHON_INITIALIZATION` — reduce Python process initialization cost
 
 **Candidate; no worker assigned; no prerequisites.** Profile initialization in the remaining
@@ -673,10 +669,10 @@ The app already ships bytecode. Exit: a profile identifying the initialization w
 passing affected service and lifecycle coverage, and a matched comparison of process readiness
 and total lifecycle time including any extra image transfer/unpack cost.
 
-### `K3S_IMPORT_CONCURRENCY` — measure bounded image import and unpack concurrency
+### `K3S_IMPORT_CONCURRENCY` — measure native containerd import and unpack concurrency
 
-**Candidate; no worker assigned; no prerequisites.** Compare bounded containerd import/unpack
-concurrency with the current combined stream, preserving distinct-blob deduplication. Count
+**Candidate; no worker assigned; no prerequisites.** Evaluate containerd's own concurrency
+configuration against the current combined stream, preserving distinct-blob deduplication. Count
 deferred unpacking through Pod readiness so moving work later is not reported as a saving.
 The profiled tar-streaming time includes pipe backpressure; it is not a CPU-cost estimate or
 the expected saving from rewriting the streamer. Exit: a matched comparison of import/unpack,
