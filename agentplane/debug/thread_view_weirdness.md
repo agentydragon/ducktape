@@ -86,6 +86,17 @@ Observed in commit `6ae12ede7e14a2ffe93c8e0fac2b6d90f4874c96`, in
 - The user is open to removing the border around the Bash script text; this is
   an option, not a selected solution.
 
+Also observed in the same commit, in
+[`thread-command-collapsed-desktop.png`](https://s3.allegedly.works/pr-visuals/commits/6ae12ede7e14a2ffe93c8e0fac2b6d90f4874c96/tests/agentplane-app-test-thread-browser-6b162a4490/thread-command-collapsed-desktop.png):
+
+- The vertical space above “Run tool a” differs from the space below it; the
+  text does not look vertically centered in its summary block.
+- The outer “3 tool calls” summary block is shorter than the nested “Bash Run
+  tool a” summary block.
+- Equal-height outer and nested summaries are acceptable. If their heights
+  differ, the outer summary should be taller, not shorter. Neither treatment
+  has been selected.
+
 ## User review decisions
 
 - Keeping command identity or a summary visible while an expanded shell call's
