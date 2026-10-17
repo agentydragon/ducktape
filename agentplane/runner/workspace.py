@@ -55,21 +55,19 @@ async def ensure_workspace(
     await process.start()
     # HarnessProcess retains the last 4 KiB from stderr for describe_exit(), so a failed
     # creation reports its cause while both pipes are drained to avoid child-process blockage.
-    stdout = asyncio.create_task(_drain(process.output_chunks()))
-    stderr = asyncio.create_task(_drain(process.stderr_byte_chunks()))
-    try:
-        await process.close_stdin()
-        exit_code = await process.wait()
-        await asyncio.gather(stdout, stderr)
-        if exit_code != 0:
-            raise RuntimeError(f"harness workspace creation failed: {process.describe_exit()}")
-    finally:
-        if process.running:
-            await process.stop()
-        for task in (stdout, stderr):
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(stdout, stderr, return_exceptions=True)
+    async with asyncio.TaskGroup() as readers:
+        try:
+            stdout = readers.create_task(_drain(process.output_chunks()))
+            stderr = readers.create_task(_drain(process.stderr_byte_chunks()))
+            await process.close_stdin()
+            exit_code = await process.wait()
+            await stdout
+            await stderr
+        finally:
+            if process.running:
+                await process.stop()
+    if exit_code != 0:
+        raise RuntimeError(f"harness workspace creation failed: {process.describe_exit()}")
     return resolve_workspace(resolved, workspace_root)
 
 
