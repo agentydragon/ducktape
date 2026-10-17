@@ -108,7 +108,7 @@ def compute_iaqi(pollutant: str, c: float) -> float | None:
     if c > bp[-1][0]:
         return float(bp[-1][1])
 
-    # Otherwise, find i such that bp[i][0] <= c <= bp[i+1][0]
+    # Otherwise, find adjacent breakpoints that bracket c.
     for (c_lo, i_lo), (c_hi, i_hi) in pairwise(bp):
         if c_lo <= c <= c_hi:
             # linear interpolation

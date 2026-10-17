@@ -284,7 +284,7 @@ class GenomicAnalyzer:
         print(f"  Found {len(results)} cached, querying {len(uncached_rsids)} new variants")
 
         # Batch query uncached variants
-        for batch_idx, batch_items in enumerate(batched(uncached_rsids, batch_size, strict=False)):
+        for batch_number, batch_items in enumerate(batched(uncached_rsids, batch_size, strict=False), start=1):
             batch = list(batch_items)
 
             try:
@@ -328,7 +328,7 @@ class GenomicAnalyzer:
                         results[hit.query] = result
                         self.set_cached(hit.query, "myvariant", result.model_dump())
 
-                    print(f"  Batch {batch_idx + 1}: Retrieved {len(hits)} variants")
+                    print(f"  Batch {batch_number}: Retrieved {len(hits)} variants")
                 else:
                     error = f"MyVariant batch query failed: {response.status_code}"
                     print(f"  ❌ {error}")
@@ -342,7 +342,7 @@ class GenomicAnalyzer:
                 raise  # Don't swallow - let it fail
 
             # Adaptive rate limiting
-            if (batch_idx + 1) * batch_size < len(uncached_rsids):
+            if batch_number * batch_size < len(uncached_rsids):
                 time.sleep(0.2)
 
         return results
