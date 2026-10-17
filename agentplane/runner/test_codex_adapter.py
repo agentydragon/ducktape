@@ -42,6 +42,7 @@ class RecordedSession:
             event_source_id=uuid4(),
             native_session_id="test-thread",
         )
+        self.resuming = True
         self.active_turn_id = ""
         self.native: list[BaseModel] = []
         self.requested = asyncio.Event()

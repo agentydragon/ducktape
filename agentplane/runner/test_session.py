@@ -86,18 +86,17 @@ class DeafAdapter(DerivingAdapter):
 
 
 class NativeThreadAdapter(UnexpectedAdapter):
-    """Keeps the native thread id its Session held when it was made, and hands out `fresh-thread` when
-    that was none."""
+    """Resumes the recorded thread when its Session says to, and starts `fresh-thread` otherwise."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
-        self.held = session.record.native_session_id
+        self.resuming = session.resuming
 
     def command(self) -> list[str]:
         return [sys.executable, "-c", "import signal; signal.pause()"]
 
     async def handshake(self) -> str:
-        return self.held or "fresh-thread"
+        return (self.session.record.native_session_id or "") if self.resuming else "fresh-thread"
 
 
 @dataclass
@@ -308,11 +307,11 @@ async def test_a_sessions_launch_outcome_survives_a_restart(
 
 @pytest.mark.parametrize(
     ("started_turn", "expected"),
-    [(False, (None, "fresh-thread", False)), (True, ("recorded-thread", "recorded-thread", True))],
+    [(False, (False, "fresh-thread", False)), (True, (True, "recorded-thread", True))],
     ids=["no-turn", "after-a-turn"],
 )
 async def test_a_restart_resumes_the_recorded_thread_only_once_a_turn_started(
-    tmp_path: Path, started_turn: bool, expected: tuple[str | None, str | None, bool]
+    tmp_path: Path, started_turn: bool, expected: tuple[bool, str | None, bool]
 ) -> None:
     record = codex_record(tmp_path / "workspace")
     record.native_session_id = "recorded-thread"
@@ -322,23 +321,20 @@ async def test_a_restart_resumes_the_recorded_thread_only_once_a_turn_started(
         adapters.append(NativeThreadAdapter(session))
         return adapters[-1]
 
-    async with open_session(
-        "test-session",
-        record,
-        config=RunnerConfig(state_dir=tmp_path / "state", launch=launches.SANDBOX_LAUNCH),
-        make_adapter=make_adapter,
-    ) as session:
+    config = RunnerConfig(state_dir=tmp_path / "state", launch=launches.SANDBOX_LAUNCH)
+    async with open_session("test-session", record, config=config, make_adapter=make_adapter) as session:
         if started_turn:
             await session.emit(event_pb2.TurnStarted(turn_id="turn-1"), sources=[])
         await session.ensure_running()
         try:
             (adapter,) = adapters
-            started = [
+            (started,) = (
                 entry.event.harness_started
                 for entry in await session.journal.since(0, limit=100)
                 if entry.event.WhichOneof("observation") == "harness_started"
-            ]
-            assert (adapter.held, session.record.native_session_id, started[-1].resumed) == expected
+            )
+            stored = SessionStore(config.state_dir / "sessions").read("test-session")
+            assert (adapter.resuming, stored.native_session_id, started.resumed) == expected
         finally:
             await session.stop()
 

@@ -59,7 +59,7 @@ class CodexAdapter(HarnessAdapter):
     def __init__(self, session: Session, launch: CodexLaunch) -> None:
         self.session = session
         self.launch = launch
-        self._thread_id = session.record.native_session_id or ""
+        self._thread_id = (session.record.native_session_id or "") if session.resuming else ""
         self.harness = facade.CodexHarness(session, request_prefix="agentplane", client_name=CLIENT_NAME)
         self._adapter_id = str(uuid4())
         # Codex chooses the model in turn/start. A received ChangeModel remains here until a

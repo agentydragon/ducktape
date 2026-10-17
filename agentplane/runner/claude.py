@@ -75,7 +75,7 @@ class ClaudeAdapter(HarnessAdapter):
         self._adapter_id = str(uuid4())
 
     def command(self) -> list[str]:
-        resume_id = self.session.record.native_session_id
+        resume_id = self._native_session_id if self.session.resuming else None
         return [
             *scenarios.command(
                 str(self.launch.binary),

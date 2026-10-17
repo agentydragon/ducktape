@@ -65,6 +65,8 @@ class Session:
         # Called whenever `busy` may have changed.
         self.activity_changed = activity_changed
         self.record = record
+        # Whether the harness this Session launches resumes `record.native_session_id`; set at each launch.
+        self.resuming = False
         self.store = store
         self.config = config
         self.state_owner_descriptor = state_owner_descriptor
@@ -276,10 +278,10 @@ class Session:
                 return
             if self._sealing:
                 raise JournalSealedError("the session is sealed")
-            # Neither harness persists a thread until its first turn, so a Session that has not
-            # started one has nothing to resume: its thread is started anew.
-            if self.record.native_session_id is not None and not await self.journal.has_started_turn():
-                self.record.native_session_id = None
+            # Neither harness persists a conversation until its first turn, so a recorded id before
+            # then names nothing to resume. The adapter starts its conversation anew and its
+            # handshake id replaces the recorded one.
+            self.resuming = self.record.native_session_id is not None and await self.journal.has_started_turn()
             adapter = self.make_adapter(self)
             # The session's working directory is the spec's; a fresh one is created for the harness.
             isolation = self.config.process_isolation
@@ -302,7 +304,6 @@ class Session:
                 asyncio.create_task(self._read_stdout(process, adapter), name=f"{self.session_id}-stdout"),
                 asyncio.create_task(self._read_stderr(process), name=f"{self.session_id}-stderr"),
             ]
-            resumed = self.record.native_session_id is not None
             try:
                 native_session_id = await adapter.handshake()
             except BaseException as error:  # cleanup, then the failure reaches Open
@@ -317,8 +318,8 @@ class Session:
             if self.record.native_session_id != native_session_id:
                 self.record.native_session_id = native_session_id
                 self.store.write(self.session_id, self.record)
-            await self.emit(event_pb2.HarnessStarted(resumed=resumed, pid=process.native_pid), sources=[])
-            if resumed:
+            await self.emit(event_pb2.HarnessStarted(resumed=self.resuming, pid=process.native_pid), sources=[])
+            if self.resuming:
                 for turn_id in await self.journal.recovery_turns():
                     await self.emit(await adapter.reconcile(turn_id, resumed=True), sources=[])
             await self._reconcile_commands(recovering=True)
