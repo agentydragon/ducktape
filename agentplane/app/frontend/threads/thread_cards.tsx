@@ -744,9 +744,8 @@ export function EntityCard({
     live;
   const status = itemStatus([entity], live);
   const evidenceToggleInReasoningStep = reasoningTextRef !== null && discardedId === null;
-  const body = (
+  const recoveryDetails = (
     <>
-      {!evidenceToggleInReasoningStep && <EvidenceToggle entity={entity} />}
       {status &&
         ((!reasoning && entity.state.completion === null && !streamingText) || entity.state.recovery !== null) && (
           <Group gap="xs" mb="xs">
@@ -754,6 +753,12 @@ export function EntityCard({
           </Group>
         )}
       <RecoveryNotes state={entity.state} tool={false} />
+    </>
+  );
+  const body = (
+    <>
+      {!evidenceToggleInReasoningStep && <EvidenceToggle entity={entity} />}
+      {discardedId !== null ? <DisclosureBody>{recoveryDetails}</DisclosureBody> : recoveryDetails}
       {reasoning ? (
         entity.textRef ? (
           discardedId === null ? (
