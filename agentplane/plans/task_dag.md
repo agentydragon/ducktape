@@ -684,13 +684,18 @@ to adopt or discard the concurrency change.
 **Decision; operator, 2026-10-16 PDT: investigate for k3s test latency.** Compare the current
 two-harness image, thinner images containing only the requested harness, and runners downloading
 pinned harness artifacts on demand from an independent Agentplane service or directly from
-OpenAI/Anthropic distribution endpoints. Decide whether the benefit justifies runtime delivery
-and its service/cache ownership, or whether image variants suffice. Any serving service must
+OpenAI/Anthropic distribution endpoints. Also compare separately pinned harness OCI images made
+available through mounts or an init container copying into a shared volume, without baking the
+harness into the runner image. Operator preference, 2026-10-16 PDT: eventual delivery should
+decouple harnesses from the runner image; narrower baked images are an interim optimization if
+measurement supports them. Decide delivery and service/cache ownership. Any serving service must
 respect the backend dependency rule; the integration app cannot own this path.
 
 Start with a harness-free lifecycle image and a Claude-only model-smoke image as the simplest
 comparison: the four current lifecycle cases do not start either harness, while `test_env` starts
-Claude. Preserve real runner registration, bootstrap, quiesce, persistence and lifecycle assertions;
+Claude. This comparison is dispatched to the current agent on 2026-10-16 PDT, branch
+`perf/k3s-harness-specific-images`; adoption is authorized if the measurements support it. Preserve
+real runner registration, bootstrap, quiesce, persistence and lifecycle assertions;
 keep real-harness coverage in the suites that execute harnesses. The
 [2026-10-16 profile](../x/k3s_env/README.md#current-go-fixture-2026-10-16) records a 577.6 MiB
 uncompressed harness layer among 1.41 GiB of distinct image layers, with 148.4 seconds in image
