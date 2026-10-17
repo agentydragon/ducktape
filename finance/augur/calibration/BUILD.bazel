@@ -75,6 +75,7 @@ py_library(
         "//finance/evidence:markets",
         "@pypi//numpy",
         "@pypi//pydantic",
+        "@pypi//scipy",
         "@pypi//statsmodels",
     ],
 )

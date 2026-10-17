@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from bisect import bisect_left
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -29,6 +30,7 @@ from datetime import date
 import numpy as np
 import numpy.typing as npt
 from pydantic import BaseModel, Field
+from scipy.optimize import isotonic_regression
 from statsmodels.stats.proportion import proportion_confint
 
 from finance.augur.calibration.catalog import (
@@ -271,18 +273,6 @@ class _DerivedBucket:
     label: str
     market_id: str
     p_market: float
-
-
-@dataclass(frozen=True)
-class _PavaBlock:
-    start: int
-    end: int
-    weight: float
-    value_sum: float
-
-    @property
-    def average(self) -> float:
-        return self.value_sum / self.weight
 
 
 def _resolve_pe(traj: RolloutTrajectory, mapping: PeEventMapping) -> Resolution:
@@ -550,50 +540,30 @@ def _fit_ladder_curve(positions: list[float], markets: list[Market | None], *, i
 
 def _interpolate(x: float, xs: list[float], ys: list[float]) -> float:
     """Piecewise-linear interpolation of `ys` at `x`, holding the end values flat past `xs`'
-    range. `xs` is ascending; preserves monotonicity of `ys`."""
+    range. `xs` is ascending; preserves monotonicity of `ys`. At duplicate coordinates, an exact
+    match uses the first value at that coordinate, as the previous left-to-right scan did."""
     if x <= xs[0]:
         return ys[0]
     if x >= xs[-1]:
         return ys[-1]
-    for left in range(len(xs) - 1):
-        if xs[left] <= x <= xs[left + 1]:
-            span = xs[left + 1] - xs[left]
-            if span == 0.0:
-                return ys[left]
-            t = (x - xs[left]) / span
-            return ys[left] + t * (ys[left + 1] - ys[left])
-    return ys[-1]
+    right = bisect_left(xs, x)
+    left = right - 1
+    span = xs[right] - xs[left]
+    if span == 0.0:
+        return ys[left]
+    t = (x - xs[left]) / span
+    return ys[left] + t * (ys[right] - ys[left])
 
 
 def _monotone_probabilities(values: list[float], weights: list[float], *, increasing: bool) -> list[float]:
-    """Weighted least-squares monotone fit for probabilities via the pool-adjacent-violators
-    algorithm. `weights` are per-point confidences: a high-weight point pins the curve while a
-    low-weight one is freely pooled toward its neighbors."""
+    """Weighted least-squares monotone fit for probabilities via SciPy's pool-adjacent-violators
+    implementation. `weights` are per-point confidences: a high-weight point pins the curve while
+    a low-weight one is freely pooled toward its neighbors."""
     y = [max(0.0, min(1.0, float(value))) for value in values]
-    if not increasing:
-        y = [-value for value in y]
-    blocks: list[_PavaBlock] = []
-    for i, (value, weight) in enumerate(zip(y, weights, strict=True)):
-        blocks.append(_PavaBlock(start=i, end=i, weight=weight, value_sum=value * weight))
-        while len(blocks) >= 2 and blocks[-2].average > blocks[-1].average:
-            right = blocks.pop()
-            left = blocks.pop()
-            blocks.append(
-                _PavaBlock(
-                    start=left.start,
-                    end=right.end,
-                    weight=left.weight + right.weight,
-                    value_sum=left.value_sum + right.value_sum,
-                )
-            )
-    fitted = [0.0] * len(values)
-    for block in blocks:
-        avg = block.average
-        if not increasing:
-            avg = -avg
-        for i in range(block.start, block.end + 1):
-            fitted[i] = max(0.0, min(1.0, avg))
-    return fitted
+    if not y and not weights:
+        return []
+    fitted = isotonic_regression(y, weights=weights, increasing=increasing).x
+    return [max(0.0, min(1.0, float(value))) for value in fitted]
 
 
 def _threshold_ladder_buckets(
