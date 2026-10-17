@@ -259,3 +259,5 @@ Bearer <token>`. The token is the Pod's projected token for that service's audie
 - The central proxy never sees these calls and no egress rule admits them. What may reach the
   service is network policy, and each service authorizes the token itself. Without a token the
   sidecar refuses `UNAVAILABLE` and calls nothing.
+- An unexpected exit of a platform route, HTTP proxy, or readiness listener makes the sidecar
+  unready and stops the process. Its other listeners close before the process exits.

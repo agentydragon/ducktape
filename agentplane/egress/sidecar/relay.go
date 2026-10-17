@@ -40,38 +40,62 @@ type sidecar struct {
 }
 
 func (s *sidecar) run(ctx context.Context) error {
-	if err := s.startReadiness(); err != nil {
+	if err := s.bindReadiness(); err != nil {
 		return fmt.Errorf("start readiness listener: %w", err)
 	}
-	defer s.stopReadiness()
+	var serving sync.WaitGroup
+	defer func() {
+		s.stopProxy()
+		stopPlatformRoutes(s.routes)
+		s.stopReadiness()
+		serving.Wait()
+	}()
 
-	routes, err := startPlatformRoutes(s.config.PlatformRoutes, s.config.ListenHost)
+	routes, err := bindPlatformRoutes(s.config.PlatformRoutes, s.config.ListenHost)
 	if err != nil {
 		return err
 	}
 	s.routes = routes
-	defer stopPlatformRoutes(s.routes)
 
 	listener, err := net.Listen("tcp", net.JoinHostPort(s.config.ListenHost, strconv.Itoa(s.config.ListenPort)))
 	if err != nil {
 		return fmt.Errorf("start HTTP proxy listener: %w", err)
 	}
 	s.proxyListener = listener
-	defer s.stopProxy()
+	if ctx.Err() != nil {
+		return nil
+	}
+	serveErrors := make(chan error, len(routes)+2)
+	serve := func(name string, run func() error) {
+		serving.Go(func() {
+			if err := run(); err != nil {
+				serveErrors <- fmt.Errorf("%s stopped: %w", name, err)
+			} else {
+				serveErrors <- fmt.Errorf("%s stopped unexpectedly", name)
+			}
+		})
+	}
+	serve("readiness listener", func() error { return s.readinessServer.Serve(s.readinessListener) })
+	for _, route := range routes {
+		serve("platform route "+route.name, func() error { return route.server.Serve(route.listen) })
+		slog.Info("platform route listening", "route", route.name, "address", route.listen.Addr(), "upstream", route.config.Upstream)
+	}
+	serve("HTTP proxy listener", s.acceptLoop)
 	s.ready.Store(true)
 	slog.Info("relaying HTTP proxy traffic", "listen", listener.Addr(), "upstream", net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort)))
 
-	acceptError := make(chan error, 1)
-	go func() { acceptError <- s.acceptLoop() }()
 	select {
 	case <-ctx.Done():
 		return nil
-	case err := <-acceptError:
+	case err := <-serveErrors:
+		if ctx.Err() != nil {
+			return nil
+		}
 		return err
 	}
 }
 
-func (s *sidecar) startReadiness() error {
+func (s *sidecar) bindReadiness() error {
 	listener, err := net.Listen("tcp", net.JoinHostPort(s.config.ReadinessHost, strconv.Itoa(s.config.ReadinessPort)))
 	if err != nil {
 		return err
@@ -98,11 +122,6 @@ func (s *sidecar) startReadiness() error {
 			}
 		}),
 	}
-	go func() {
-		if err := s.readinessServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("readiness listener stopped", "error", err)
-		}
-	}()
 	return nil
 }
 
@@ -117,6 +136,7 @@ func (s *sidecar) stopReadiness() {
 		slog.Warn("readiness shutdown did not drain", "error", err)
 		_ = s.readinessServer.Close()
 	}
+	_ = s.readinessListener.Close()
 }
 
 func (s *sidecar) stopProxy() {

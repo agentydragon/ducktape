@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"os"
 	"sort"
@@ -31,7 +29,7 @@ type routeForwarder struct {
 	tokenFile string
 }
 
-func startPlatformRoutes(routes map[string]platformRouteConfig, listenHost string) ([]*platformRoute, error) {
+func bindPlatformRoutes(routes map[string]platformRouteConfig, listenHost string) ([]*platformRoute, error) {
 	names := make([]string, 0, len(routes))
 	for name := range routes {
 		names = append(names, name)
@@ -58,12 +56,6 @@ func startPlatformRoutes(routes map[string]platformRouteConfig, listenHost strin
 		)
 		route := &platformRoute{name: name, config: config, conn: conn, server: server, listen: listener}
 		started = append(started, route)
-		go func() {
-			if err := server.Serve(listener); err != nil && !errors.Is(err, net.ErrClosed) {
-				slog.Error("platform route stopped", "route", name, "error", err)
-			}
-		}()
-		slog.Info("platform route listening", "route", name, "address", listener.Addr(), "upstream", config.Upstream)
 	}
 	return started, nil
 }
