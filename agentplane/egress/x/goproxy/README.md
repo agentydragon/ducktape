@@ -1,6 +1,9 @@
-# Central GoProxy lab
+# Central egress transport lab
 
-A bounded GoProxy v1.9.2 feasibility spike (with a pinned initial-H2-header flush patch), with no image, deployment, or production caller.
+A bounded feasibility spike of a central egress transport on the Go standard library (`net/http`
+CONNECT and MITM serving, `httputil.ReverseProxy` forwarding), with no image, deployment, or
+production caller. GoProxy v1.9.2, the first candidate, passes the same contracts only with a
+patch: see the investigation.
 The existing Python central proxy remains authoritative. The runner-side Go conversion is a
 separate lane.
 
