@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import ExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,18 +32,16 @@ tracer = trace.get_tracer(__name__)
 def ensure_database_exists(base_config: DatabaseConfig, database_name: str) -> None:
     """Ensure a PostgreSQL database exists, creating it if absent."""
     postgres_config = base_config.with_database("postgres")
-    engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
+    with ExitStack() as cleanup:
+        engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
+        cleanup.callback(engine.dispose)
 
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": database_name})
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": database_name})
 
-        if not result.fetchone():
-            raw_conn = conn.connection
-            cursor = raw_conn.cursor()
-            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
-            cursor.close()
-
-    engine.dispose()
+            if not result.fetchone():
+                with conn.connection.cursor() as cursor:
+                    cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
 
 
 @tracer.start_as_current_span("upgrade_database")
@@ -86,13 +85,14 @@ def ensure_evaluator_role(db_config: DatabaseConfig) -> None:
     password = os.environ.get("PROPS_EVALUATOR_PASSWORD")
     if not password:
         return
-    engine = create_engine(db_config.url, isolation_level="AUTOCOMMIT")
-    try:
+
+    with ExitStack() as cleanup:
+        engine = create_engine(db_config.url, isolation_level="AUTOCOMMIT")
+        cleanup.callback(engine.dispose)
+
         with engine.connect() as conn:
             conn.execute(text("ALTER ROLE evaluator PASSWORD :pw"), {"pw": password})
         logger.info("Evaluator role password synced")
-    finally:
-        engine.dispose()
 
 
 def _drop_all(engine: Engine) -> None:

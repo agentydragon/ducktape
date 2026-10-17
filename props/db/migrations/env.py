@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 from logging.config import fileConfig
 
 from alembic import context
@@ -71,12 +72,13 @@ def run_migrations_online() -> None:
     else:
         # CLI usage — create engine from environment
         db_config = DatabaseConfig()
-        engine = create_engine(db_config.url)
-        with engine.connect() as conn:
-            context.configure(connection=conn, target_metadata=target_metadata)
-            with context.begin_transaction():
-                context.run_migrations()
-        engine.dispose()
+        with ExitStack() as cleanup:
+            engine = create_engine(db_config.url)
+            cleanup.callback(engine.dispose)
+            with engine.connect() as conn:
+                context.configure(connection=conn, target_metadata=target_metadata)
+                with context.begin_transaction():
+                    context.run_migrations()
 
 
 if context.is_offline_mode():

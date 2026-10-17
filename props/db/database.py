@@ -116,16 +116,14 @@ class Database:
     def session(self) -> Iterator[Session]:
         """Get a database session (context manager).
 
-        Commits on successful exit, rolls back on exception.
+        Commits on successful exit; the session context rolls back on exception.
         """
-        session = self._scoped_factory()
         try:
-            yield session
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
+            with self._scoped_factory() as session:
+                yield session
+                session.commit()
         finally:
+            # Closing the Session does not clear scoped_session's thread-local registry.
             self._scoped_factory.remove()
 
     def recreate(self) -> None:
