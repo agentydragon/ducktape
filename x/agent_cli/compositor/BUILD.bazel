@@ -27,10 +27,10 @@ py_library(
     data = ["templates/compositor_instructions.md.mako"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":snapshots",
         "//mako_utils:preprocessor",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
-        ":snapshots",
         "@pypi//mako",
     ],
 )
@@ -41,9 +41,9 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":server",
+        ":snapshots",
         "//mcp_infra:prefix",
         "//mcp_infra:resource_utils",
-        ":snapshots",
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
@@ -58,11 +58,11 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":mount",
-        ":rendering",
         ":mount_types",
+        ":rendering",
+        ":snapshots",
         "//mcp_infra:mounted",
         "//mcp_infra:prefix",
-        ":snapshots",
         "//mcp_infra:tool_schemas",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
@@ -129,8 +129,8 @@ py_test(
     deps = [
         ":conftest",
         ":meta_server",
-        "//:conftest",
         ":snapshots",
+        "//:conftest",
         "@pypi//mcp",
         "@pypi//mcp_types",
         "@pypi//pydantic",
@@ -168,10 +168,10 @@ py_library(
     srcs = ["compositor.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":constants",
         ":meta_server",
         ":resources_server",
         ":server",
-        ":constants",
         "//mcp_infra:mounted",
     ],
 )
@@ -181,7 +181,10 @@ py_library(
     testonly = True,
     srcs = ["resources_stub.py"],
     visibility = ["//x/agent_cli:__subpackages__"],
-    deps = ["//mcp_infra/testing/stubs:server_stubs", ":resources_server"],
+    deps = [
+        ":resources_server",
+        "//mcp_infra/testing/stubs:server_stubs",
+    ],
 )
 
 py_test(
@@ -191,9 +194,9 @@ py_test(
     deps = [
         ":conftest",
         ":rendering",
+        ":snapshots",
         "//:conftest",
         "//mcp_infra:prefix",
-        ":snapshots",
         "@pypi//mcp",
         "@pypi//mcp_types",
         "@pypi//pytest_bazel",
@@ -256,14 +259,15 @@ py_test(
     name = "test_agent_tool_schema",
     srcs = ["test_agent_tool_schema.py"],
     deps = [
-        ":compositor",
         ":conftest",
+        "//:conftest",
         "//agent_core:agent",
         "//agent_core:handler",
         "//agent_core:loop_control",
         "//agent_core:mcp_provider",
         "//agent_core/testing/mcp:responses",
         "//mcp_infra:prefix",
+        "//openai_utils:model",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -275,8 +279,8 @@ py_test(
     name = "test_stdio_mount",
     srcs = ["test_stdio_mount.py"],
     deps = [
-        ":compositor",
         ":conftest",
+        "//:conftest",
         "//mcp_infra:naming",
         "//mcp_infra/testing:simple_servers",
         "@pypi//pytest_bazel",
