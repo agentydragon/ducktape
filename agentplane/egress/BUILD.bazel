@@ -340,11 +340,12 @@ pkg_tar(
 
 oci_image(
     name = "sidecar_image",
-    base = "@debian_trixie_slim_linux_amd64",
+    base = "@distroless_static_debian13_linux_amd64",
     entrypoint = ["/usr/local/bin/egress-sidecar"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":sidecar_go_binary_layer"],
     user = "1000:1000",
+    workdir = "/",
 )
 
 py_library(

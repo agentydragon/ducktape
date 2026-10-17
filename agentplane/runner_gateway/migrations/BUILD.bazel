@@ -11,12 +11,13 @@ pkg_tar(
 
 oci_image(
     name = "image",
-    base = "@debian_trixie_slim_linux_amd64",
+    base = "@distroless_static_debian13_linux_amd64",
     entrypoint = ["/usr/local/bin/runner-gateway-queue-migrate"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":go_binary_layer"],
     user = "1000:1000",
     visibility = ["//visibility:public"],
+    workdir = "/",
 )
 
 go_library(
