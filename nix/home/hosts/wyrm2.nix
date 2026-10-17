@@ -39,9 +39,9 @@
   };
 
   # Shared Bazel caches across local worktrees (see ../modules/bazel-cache.nix).
-  # The 150G SSD holds cache/disk and the per-worktree output bases, so cap the
-  # disk cache below its 200G default. The nested 100G HDD holds repository
-  # archives and repo contents; the latter has age-only GC with no size cap.
+  # The 300G SSD holds cache/disk, per-worktree output bases, and repository
+  # archives and contents. Keep the action-cache cap below its 200G default to
+  # leave room for those other caches; repo contents use age-only GC.
   ducktape.bazelCache = {
     enable = true;
     diskCacheGcMaxSize = "80G";

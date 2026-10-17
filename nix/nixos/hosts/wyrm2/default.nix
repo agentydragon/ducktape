@@ -427,13 +427,7 @@ in
     autoResize = true;
   };
   fileSystems."/home/agentydragon/.cache/bazel" = {
-    device = "/dev/vde"; # 150G SSD (local-zfs) — Bazel output bases
-    fsType = "ext4";
-    autoFormat = true;
-    autoResize = true;
-  };
-  fileSystems."/home/agentydragon/.cache/bazel/_bazel_agentydragon/cache/repos" = {
-    device = "/dev/vdf"; # 100G HDD (tank-hdd) — Bazel repository cache
+    device = "/dev/vde"; # 300G SSD (local-zfs) — all Bazel caches
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
@@ -614,9 +608,7 @@ in
     }
   ];
 
-  # Intermediate directories for the nested repo cache mount.
-  # The SSD disk is mounted at ~/.cache/bazel, then the HDD disk is mounted
-  # over the repo cache subdirectory inside it.
+  # Directories for Bazel caches under the single SSD cache mount.
   systemd.tmpfiles.rules = [
     "d /home/agentydragon/.cache/bazel 0755 agentydragon users -"
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon 0755 agentydragon users -"

@@ -193,22 +193,17 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     size         = 200
     file_format  = "raw"
   } # containerd (/var/lib/containerd)
+  # VM disk changes are ignored by the lifecycle below; apply this resize on Atlas.
   disk {
     datastore_id = var.storage
     interface    = "virtio4"
     iothread     = true
     discard      = "on"
-    size         = 150
+    size         = 300
+    backup       = false
+    replicate    = false
     file_format  = "raw"
-  } # Bazel output base — SSD (~/.cache/bazel)
-  disk {
-    datastore_id = "tank-hdd"
-    interface    = "virtio5"
-    iothread     = true
-    discard      = "on"
-    size         = 100
-    file_format  = "raw"
-  } # Bazel repository cache — HDD (~/.cache/bazel/.../cache/repos)
+  } # Bazel caches — SSD (~/.cache/bazel)
   disk {
     datastore_id = "tank-hdd"
     interface    = "virtio6"

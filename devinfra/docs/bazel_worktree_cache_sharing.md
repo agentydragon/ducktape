@@ -105,11 +105,10 @@ Use one cache root per user:
 ```
 
 On `rugged`, the whole `~/.cache/bazel` tree is on the same btrfs filesystem.
-On `wyrm2`, `~/.cache/bazel` is a 150G SSD mount for output bases, and
-`~/.cache/bazel/_bazel_agentydragon/cache/repos` is a nested 100G HDD mount for
-repository cache. Keep `--experimental_repository_cache_hardlinks` disabled on
-`wyrm2`: hardlinks only work when repository cache and output bases are on the
-same filesystem.
+On `wyrm2`, `~/.cache/bazel` is one 300G SSD filesystem for output bases and all
+repository and action caches. The repository cache and output bases now share a
+filesystem, satisfying the same-filesystem prerequisite for
+`--experimental_repository_cache_hardlinks`; the flag remains off by default.
 
 ## Implementation
 
@@ -121,9 +120,9 @@ the repo contents cache to a `contents` subdirectory of the repository cache.
 The module pins that path and its GC settings only when a host sets
 `repoContentsCache`; Wyrm2 does so, while other hosts retain Bazel's own
 defaults. The module owns the exact rc flags and directory-creation wiring.
-The other per-host knob is `diskCacheGcMaxSize` — Wyrm2 lowers it from the
-`200G` default because its `cache/disk` shares a 150G SSD with per-worktree
-output bases.
+The other per-host knob is `diskCacheGcMaxSize` — Wyrm2 keeps it below the
+`200G` default because its `cache/disk` shares a 300G SSD with per-worktree
+output bases and repository caches.
 
 For long local debugging loops, consider adding this temporarily rather than
 globally:
