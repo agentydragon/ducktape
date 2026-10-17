@@ -242,6 +242,16 @@
       "test": "//agentplane/egress/...",
       "registry": "forgejo"
     },
+    "agentplane-egress-go": {
+      "target": "//agentplane/egress/go/cmd:image",
+      "test": "//agentplane/egress/...",
+      "registry": "forgejo"
+    },
+    "agentplane-egress-history-migrate": {
+      "target": "//agentplane/egress/go/migrations:image",
+      "test": "//agentplane/egress/...",
+      "registry": "forgejo"
+    },
     "agentplane-egress-migrate": {
       "target": "//agentplane/egress:migration_image",
       "test": "//agentplane/egress/...",
