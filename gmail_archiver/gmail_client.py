@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import batched
 from pathlib import Path
-from typing import TypeGuard
+from typing import TypeGuard, cast
 
 from googleapiclient.errors import HttpError
 from tenacity import RetryCallState, Retrying, retry_if_result, stop_after_attempt, wait_exponential
@@ -148,7 +148,7 @@ def _log_raw_batch_retry(retry_state: RetryCallState) -> None:
 
 def _return_last_raw_batch(retry_state: RetryCallState) -> _RawBatchAttempt:
     assert retry_state.outcome is not None
-    return retry_state.outcome.result()
+    return cast(_RawBatchAttempt, retry_state.outcome.result())
 
 
 class GmailClient:
