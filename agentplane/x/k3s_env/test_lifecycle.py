@@ -135,4 +135,14 @@ async def test_delete_removes_the_sandbox(stack: Stack, client: Client) -> None:
 
 
 if __name__ == "__main__":
-    pytest_bazel.main()
+    import cProfile
+    import os
+    from pathlib import Path
+
+    profiler = cProfile.Profile()
+    profiler.enable()
+    try:
+        pytest_bazel.main()
+    finally:
+        profiler.disable()
+        profiler.dump_stats(str(Path(os.environ["TEST_UNDECLARED_OUTPUTS_DIR"]) / "lifecycle.prof"))

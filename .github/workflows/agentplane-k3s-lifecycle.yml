@@ -26,7 +26,7 @@ jobs:
         with:
           script: |
             bazelisk test --config=rbe --config=ci \
-              --test_tag_filters=manual \
+              --test_tag_filters=manual --nocache_test_results --runs_per_test=2 \
               --remote_default_exec_properties="container-image=docker://$RBE_CONTAINER_IMAGE" \
               //agentplane/x/k3s_env:test_lifecycle
           linkage_roles: test
