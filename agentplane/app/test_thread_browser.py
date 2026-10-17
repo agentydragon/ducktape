@@ -1375,8 +1375,9 @@ async def test_expanded_command_stays_collapsible(
     async def first_character_left(block: Locator) -> float:
         line = block.locator(".cm-line").first
         await expect(line).to_be_visible()
-        return await line.evaluate(
-            """line => {
+        return float(
+            await line.evaluate(
+                """line => {
                 const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
                 let text = walker.nextNode();
                 while (text && !text.textContent) text = walker.nextNode();
@@ -1386,6 +1387,7 @@ async def test_expanded_command_stays_collapsible(
                 range.setEnd(text, 1);
                 return range.getBoundingClientRect().left;
             }"""
+            )
         )
 
     async def summary_label_left(heading: Locator) -> float:
