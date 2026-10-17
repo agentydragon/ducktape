@@ -16,3 +16,7 @@
       plumbing applications marked at their Terraform definitions; keep user-facing
       launcher entries visible and verify that hiding changes only launcher
       presentation.
+- [ ] Review Nebula private-key access for `home-switch`: compare the existing
+      node-key SOPS recipients and decryption paths with the cluster ToFu runner's
+      decrypt-and-write path, including whether the key enters Terraform state in
+      etcd; decide whether a narrower recipient or delivery path would reduce access.
