@@ -29,15 +29,26 @@ The cross-language Notification acceptance runs a real Kubernetes API server and
 `envtest`, installs the Agentplane CRDs and issues Pod-bound ServiceAccount tokens. Narrow
 consumer tests continue using lightweight gRPC peers.
 
-## Deployment gate
+## Deployment
 
 The environment root owns the stable Services, Dispatcher database/Secret and the Goose Job.
-Its dependent delivery Kustomization owns the Go serving workload and starts only while the root
-is Ready, which includes the Job. Serving never migrates on startup. Flux image automation
-advances the Gateway and migrator images independently; schema changes land migration first, then
-the code that uses it, per [Later releases](../docs/go_delivery_rollout.md#later-releases).
+Its dependent delivery Kustomization owns the serving workload and admits it only from an
+unsuspended root that is Ready, which includes the Job, and that health-checks it. Serving
+never migrates on startup. Flux image automation advances the Gateway and migrator images
+independently, so neither can assume the other already runs the matching release.
 
-The activation configuration releases both roots. Merge staging activation only after testing
-acceptance and staging's old writers are fenced. Use the [fenced rollout procedure](../docs/go_delivery_rollout.md) to stop
-old writers, preserve queued work, activate testing and then staging, and verify reconnect and
-replica recovery. Both environments retain `Recreate` through acceptance.
+### Schema changes
+
+Each step merges only after the previous one is running in both environments:
+
+1. **Migration first.** Add the Goose migration alone, written so Gateway builds from before and
+   after it both work against the old and the new schema. Flux picks up the migrator and
+   force-recreates the root-owned Job; wait for it to complete and let it soak.
+2. **Code that uses it afterwards.** Merge the Gateway change that depends on the new schema only
+   once step 1 has soaked.
+3. **Removals go the other way.** Stop the Gateway using a column or table first; the migration
+   that drops it lands last.
+
+The Dispatcher database and its historical migration fixtures stay. The automated proof of the
+schema handoff is `//agentplane/runner_gateway/migrations:test_migrations`, including retained
+queued work and idempotent application; it does not replace an environment's backup/restore check.

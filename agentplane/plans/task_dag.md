@@ -1629,7 +1629,7 @@ flowchart TD
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
-**Blocked on `DELIVERY_OLD_RUNTIME_RETIRE` and `GATEWAY_RENAME`**, which remove the
+**Blocked on `GATEWAY_RENAME`**, which removes the
 remaining transitional pieces. Sweep devel for unused modules, functions, settings, proto
 fields, tables and columns; one name per concept across code, settings, manifests, protos and docs
 (Runner Gateway, History Service, ingress, control; Session for the raw stream,
@@ -1719,8 +1719,7 @@ items below; this direction does not authorize runtime changes.
 ```mermaid
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: durable queue or direct admission]
-    DELIVERY_OLD_RUNTIME_RETIRE[Candidate: retire obsolete runtime objects]
-    GATEWAY_RENAME[Blocked: drop Go from the Gateway's names]
+    GATEWAY_RENAME[Candidate: drop Go from the Gateway's names]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
@@ -1730,7 +1729,6 @@ flowchart LR
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a PostgreSQL-free K3s tier]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
-    DELIVERY_OLD_RUNTIME_RETIRE --> GATEWAY_RENAME
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
     HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
@@ -1787,22 +1785,9 @@ The existing `agentplane/x/k3s_env` suite already runs without the CNPG operator
 against one plain PostgreSQL Deployment and the Go Gateway; this node is about removing the PostgreSQL dependency
 itself. Direct admission and new sender grants remain separate decisions.
 
-### `DELIVERY_OLD_RUNTIME_RETIRE` — remove only superseded runtime objects
-
-Both environments serve the Gateway and the deployed probes pass on testing, so the Python runtime is no longer a
-rollback target. The Python Deployments, single-purpose ConfigMaps, image automation entries and legacy deployment
-settings were removed by #10786, keeping the Dispatcher migration history the Goose handoff needs. Remaining: restore
-`RollingUpdate` (`runner_gateway_go.py` still uses `Recreate`); delete `docs/go_delivery_rollout.md`, which is the
-cutover procedure and its rollback to Python, after moving the rule that a migration lands and soaks before the code
-that uses it (removals in reverse) into the Runner Gateway README and repointing the docs that link to it; and remove any
-Gateway token projection no caller reads (the worker may need a Gateway-audience token for a different
-connection-holder replica; check each caller). Keep both stable Service front doors, per-Sandbox
-Services/EndpointSlices and the Dispatcher database. Search code, BUILD, chart, image automation, docs, CI and pinned VM
-artifacts for references before deleting definitions.
-
 ### `GATEWAY_RENAME` — the Gateway is just the Gateway
 
-**Blocked on `DELIVERY_OLD_RUNTIME_RETIRE`, which frees the plain names.** The operator no longer wants the "Go"
+**Candidate.** The operator no longer wants the "Go"
 qualifier on the Gateway or Dispatcher. Rename the image `agentplane-runner-gateway-go` to `agentplane-runner-gateway`
 in three merges: publish the new name from `devinfra/ci/image_targets.json`; once a build exists under it, point the
 `ImageRepository`, `ImagePolicy`, `image-pins` and delivery manifests at it; then remove the old entry. Fold

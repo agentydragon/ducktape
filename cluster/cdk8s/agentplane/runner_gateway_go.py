@@ -14,7 +14,6 @@ from cdk8s_plus_34 import (
     ContainerSecurityContextProps,
     Cpu,
     CpuResources,
-    DeploymentStrategy,
     EnvFieldPaths,
     EnvValue,
     IApiResource,
@@ -45,7 +44,7 @@ from cluster.cdk8s.agentplane import (
     sandbox_controller,
     session_dispatcher,
 )
-from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
@@ -187,14 +186,6 @@ class GoRunnerGateway(Construct):
             *(f"--gateway-caller={_account(account)}" for account in sorted(proxy_callers, key=_account)),
             *(f"--wake-caller={_account(account)}" for account in sorted(wake_callers, key=_account)),
         ]
-        # The first Go cutover is a fenced Recreate; restoring RollingUpdate is a
-        # separate cleanup after queue and connection recovery have been observed.
-        initial_replicas = ReplicaProfile(
-            count=env.replicas.count,
-            strategy=DeploymentStrategy.recreate(),
-            min_ready=env.replicas.min_ready,
-            pdb_min_available=env.replicas.pdb_min_available,
-        )
         workload = add_service_workload(
             self,
             env,
@@ -214,7 +205,6 @@ class GoRunnerGateway(Construct):
                 memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
             ),
             termination_grace=Duration.seconds(60),
-            replica_profile=initial_replicas,
             create_service=False,
             migrate=migration,
             registry_secret_name=registry_secret_name,
@@ -305,7 +295,7 @@ class QueueMigration(Construct):
     its completion. A separate Go serving Kustomization depends on that root.
     Flux force-recreates the Job when image automation changes the migrator tag
     (a Job's pod template is immutable). The migrator and serving images advance
-    independently: <agentplane/docs/go_delivery_rollout.md> § Later releases.
+    independently: <agentplane/runner_gateway/README.md> § Schema changes.
     """
 
     def __init__(self, scope: Construct, id: str, env: Environment, *, database_url: EnvValue) -> None:
