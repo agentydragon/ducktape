@@ -112,9 +112,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
     runner_gateway_go.add_stable_services(chart, env)
-    runner_gateway_go.QueueMigration(
-        chart, "queue-migration", env, image=runner_gateway_go.MIGRATION_IMAGE, database_url=dispatcher_database_url
-    )
+    runner_gateway_go.QueueMigration(chart, "queue-migration", env, database_url=dispatcher_database_url)
     history_service.HistoryService(
         chart,
         "history-service",

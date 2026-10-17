@@ -3,8 +3,9 @@
 The environment root owns CNPG, the Dispatcher database/Secret, both stable Services, and the
 Goose Job. A separate `agentplane-{testing,staging}-delivery` Flux Kustomization owns the Go
 workload, its account, RBAC and policies. The serving dependency checks the root's current
-generation, Ready condition, suspension state and exact migration Job identity. An earlier
-healthy root cannot admit a new serving release before its migration is accepted.
+generation, Ready condition, suspension state and that the root health-checks the migration Job.
+Flux image automation advances the Gateway and migrator images like every other service
+([Later releases](#later-releases)).
 
 The activation configuration releases both environment roots. Merge staging activation only after
 testing acceptance, staging's backup/restore preflight and writer fence, and verification of the
@@ -24,8 +25,8 @@ exception does not apply to staging or establish testing acceptance.
 2. Before merging the activation change, merge the staged rollout configuration. Confirm both roots are suspended and each delivery
    Kustomization is blocked by its root. Inspect each root and serving ExternalArtifact to ensure
    the staged manifests and pinned images are available before releasing suspension.
-3. Recheck the published serving/migration digests in `cluster/cdk8s/agentplane/runner_gateway_go.py`.
-   These are a reviewed release pair. Image discovery does not advance them automatically.
+3. Confirm the `agentplane-runner-gateway-go` and `agentplane-runner-gateway-queue-migrate` entries in
+   the environment's `image-pins` name published tags.
 4. Follow [state preservation](staging_data_preservation.md): capture the existing Deployment
    manifests/images, resource identities, queue/opening identities and states, and backup/restore
    evidence. Verify the Dispatcher database's sole Alembic head is
@@ -48,7 +49,7 @@ A brief delivery outage is expected. Do not accept both Python and Go writers co
    expiry rather than deleting queue ownership rows or inventing a new command ID. Confirm no
    old workers can be recreated from an earlier artifact.
 3. Release this environment root's source `suspend` in the reviewed activation change. Reconcile
-   the new root artifact. Its full-digest-named Goose Job must complete; the serving dependency
+   the new root artifact. Its Goose Job must complete; the serving dependency
    then admits the pinned Go image. The root prunes obsolete Python configuration/account/RBAC,
    while protected Gateway resources are adopted by the delivery owner.
 4. Verify original Service/database UIDs, schema/queue identities and migration completion.
@@ -86,8 +87,20 @@ history, retained History and unrelated service databases are outside this deplo
 
 ## Later releases
 
-Update the reviewed serving/migration image pair together when schema changes. A different
-migrator digest produces a different Job name using all 256 digest bits; root health and the
-serving dependency follow that exact Job. Keep migration execution separate from serving startup.
-Restore rolling updates and remove temporary handoff protections only after both environments'
-acceptance, without dropping the Dispatcher database or its historical migration fixtures.
+Flux rolls the migrator and the Gateway independently, so neither image can assume the other is
+already running the matching release. A schema change therefore lands in order, each step merged
+only after the previous one is running in both environments:
+
+1. **Migration first.** Add the Goose migration alone, written so Gateway builds from before and
+   after it both work against the old and the new schema. Flux picks up the migrator and
+   force-recreates the root-owned Job; wait for it to complete and let it soak.
+2. **Code that uses it afterwards.** Merge the Gateway change that depends on the new schema only
+   once step 1 has soaked.
+3. **Removals go the other way.** Stop the Gateway using a column or table first; the migration that
+   drops it lands last.
+
+Every Gateway image change restarts the Deployment with `Recreate` until rolling updates are
+restored, so delivery drops briefly each time. Keep migration execution separate from serving
+startup. Restore rolling updates and remove temporary handoff protections only after both
+environments' acceptance, without dropping the Dispatcher database or its historical migration
+fixtures.

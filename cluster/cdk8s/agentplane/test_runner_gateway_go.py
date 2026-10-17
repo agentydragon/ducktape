@@ -128,46 +128,25 @@ def test_runner_platform_route_fences_name_the_gateway_listener_port(
     assert ports(clients["egress"], "toEndpoints") == listening
 
 
-def test_goose_job_name_follows_pinned_image_digest() -> None:
-    digest = "a" * 64
-    image = f"git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate@sha256:{digest}"
+def test_migration_job_is_force_recreated_when_the_pinned_image_changes() -> None:
     chart = Chart(Cdk8sTesting.app(), "migration", disable_resource_name_hashes=True)
     database_url = (
         SecretRef(namespace=staging.ENV.namespace, name="postgres-session-dispatcher")
         .key("uri")
         .env_value(chart, "database")
     )
-    migration = runner_gateway_go.QueueMigration(
-        chart, "migration", staging.ENV, image=image, database_url=database_url
-    )
+    runner_gateway_go.QueueMigration(chart, "migration", staging.ENV, database_url=database_url)
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    job = _resource(docs, "Job", migration.name)
-    assert migration.name == job["metadata"]["name"]
+    job = _resource(docs, "Job", runner_gateway_go.MIGRATION_JOB)
+    # A Job's pod template is immutable; Flux recreates it only on this annotation.
+    assert job["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/force"] == "enabled"
     pod = job["spec"]["template"]["spec"]
     assert pod["restartPolicy"] == "Never"
     assert pod["automountServiceAccountToken"] is False
-    assert pod["containers"][0]["image"] == image
     assert pod["containers"][0].get("args", []) == []
     assert {item["name"]: item["valueFrom"] for item in pod["containers"][0]["env"]} == {
         "DATABASE_URL": {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
     }
-    with pytest.raises(ValueError, match="full sha256 digest"):
-        runner_gateway_go.QueueMigration(
-            Chart(Cdk8sTesting.app(), "unpinned"),
-            "migration",
-            staging.ENV,
-            image=image.replace("@sha256:" + digest, ":latest"),
-            database_url=database_url,
-        )
-
-
-def test_migration_job_identity_uses_the_whole_digest() -> None:
-    prefix = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate@sha256:"
-    first = runner_gateway_go.migration_job_name(prefix + "a" * 64)
-    second = runner_gateway_go.migration_job_name(prefix + "a" * 63 + "b")
-    assert first != second
-    assert len(first) <= 63
-    assert len(second) <= 63
 
 
 if __name__ == "__main__":

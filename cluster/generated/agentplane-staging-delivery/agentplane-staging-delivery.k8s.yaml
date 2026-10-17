@@ -55,7 +55,7 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
-          image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go@sha256:6a297c455839afdeba41704bc6e1c805409e1a557a720efc4a11fbb0324831f3
+          image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 3

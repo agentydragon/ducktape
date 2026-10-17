@@ -31,10 +31,11 @@ consumer tests continue using lightweight gRPC peers.
 
 ## Deployment gate
 
-The environment root owns the stable Services, Dispatcher database/Secret and full-digest-named
-Goose Job. Its dependent delivery Kustomization owns the pinned Go serving workload and starts
-only after the current migration completes. Serving never migrates on startup. Image discovery
-does not advance the reviewed serving/migration release pair automatically.
+The environment root owns the stable Services, Dispatcher database/Secret and the Goose Job.
+Its dependent delivery Kustomization owns the Go serving workload and starts only while the root
+is Ready, which includes the Job. Serving never migrates on startup. Flux image automation
+advances the Gateway and migrator images independently; schema changes land migration first, then
+the code that uses it, per [Later releases](../docs/go_delivery_rollout.md#later-releases).
 
 The activation configuration releases both roots. Merge staging activation only after testing
 acceptance and staging's old writers are fenced. Use the [fenced rollout procedure](../docs/go_delivery_rollout.md) to stop

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import re
 from collections.abc import Mapping
 from dataclasses import replace
 from typing import cast
@@ -59,19 +57,10 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go:unset"
+_MIGRATION_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
 _RUNNER_TOKEN_FILE = "/var/run/secrets/agentplane-runner-gateway/token"
 _GRPC_PORT = 8080
-
-# Keep serving and schema changes in one reviewed release; discovery does not activate upgrades.
-GATEWAY_IMAGE = (
-    "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-go"
-    "@sha256:6a297c455839afdeba41704bc6e1c805409e1a557a720efc4a11fbb0324831f3"
-)
-MIGRATION_IMAGE = (
-    "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate"
-    "@sha256:5f534ab0a42edaaa41321ba399932abec6158eb52d15ac66e75a1dced4e7e42a"
-)
-
+MIGRATION_JOB = "runner-gateway-queue-migrate"
 
 _DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
 
@@ -309,30 +298,18 @@ class GoRunnerGateway(Construct):
         ).add_subjects(service_account)
 
 
-_MIGRATOR_RE = re.compile(
-    r"^git\.allegedly\.works/ducktape-ci/agentplane-runner-gateway-queue-migrate@sha256:([0-9a-f]{64})$"
-)
-
-
-def migration_job_name(image: str) -> str:
-    match = _MIGRATOR_RE.fullmatch(image)
-    if match is None:
-        raise ValueError("queue migrator image must be the published OCI image pinned by its full sha256 digest")
-    # Base32 carries the whole digest within Kubernetes' 63-character Job-name limit.
-    digest = base64.b32encode(bytes.fromhex(match.group(1))).decode().rstrip("=").lower()
-    return f"queue-{digest}"
-
-
 class QueueMigration(Construct):
-    """A digest-coupled Goose Job for the existing Agentplane root Kustomization.
+    """The Goose Job for the existing Agentplane root Kustomization.
 
     The root owns PostgreSQL and its Secret, so it also owns this Job and checks
     its completion. A separate Go serving Kustomization depends on that root.
+    Flux force-recreates the Job when image automation changes the migrator tag
+    (a Job's pod template is immutable). The migrator and serving images advance
+    independently: <agentplane/docs/go_delivery_rollout.md> § Later releases.
     """
 
-    def __init__(self, scope: Construct, id: str, env: Environment, *, image: str, database_url: EnvValue) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment, *, database_url: EnvValue) -> None:
         super().__init__(scope, id)
-        self.name = migration_job_name(image)
         labels = {"app.kubernetes.io/name": "runner-gateway-queue-migrate"}
         account = ServiceAccount(
             self,
@@ -343,7 +320,11 @@ class QueueMigration(Construct):
         job = Job(
             self,
             "job",
-            metadata=ApiObjectMetadata(name=self.name, namespace=env.namespace),
+            metadata=ApiObjectMetadata(
+                name=MIGRATION_JOB,
+                namespace=env.namespace,
+                annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"},
+            ),
             pod_metadata=ApiObjectMetadata(labels=labels),
             select=False,
             backoff_limit=3,
@@ -357,8 +338,8 @@ class QueueMigration(Construct):
         )
         job.add_container(
             name="migrate",
-            image=image,
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+            image=_MIGRATION_IMAGE,
+            image_pull_policy=ImagePullPolicy.ALWAYS,
             env_variables={"DATABASE_URL": database_url},
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
@@ -388,7 +369,6 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
         chart,
         "runner-gateway",
         env,
-        image=GATEWAY_IMAGE,
         database_url=SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
         .key("uri")
         .env_value(chart, "dispatcher-database-url"),
@@ -403,7 +383,7 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
     return chart
 
 
-def serving(chart: Chart, directory: RenderedDirectory, root: Kustomization, *, migration_name: str) -> Kustomization:
+def serving(chart: Chart, directory: RenderedDirectory, root: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         directory.artifact.name,
@@ -413,13 +393,13 @@ def serving(chart: Chart, directory: RenderedDirectory, root: Kustomization, *, 
             KustomizationSpecDependsOn(
                 name=root.name,
                 namespace=root.metadata.namespace,
-                # ExternalArtifacts update independently. Old Ready=True must not admit a
-                # new server before the root has observed this release's migration check.
+                # Ready on the root means its migration Job completed, so admit serving only
+                # from an unsuspended root that health-checks that Job.
                 ready_expr=(
                     "(!has(dep.spec.suspend) || !dep.spec.suspend) && "
                     "dep.metadata.generation == dep.status.observedGeneration && "
                     "dep.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True') && "
-                    f"dep.spec.healthChecks.exists(c, c.kind == 'Job' && c.name == '{migration_name}')"
+                    f"dep.spec.healthChecks.exists(c, c.kind == 'Job' && c.name == '{MIGRATION_JOB}')"
                 ),
             )
         ],

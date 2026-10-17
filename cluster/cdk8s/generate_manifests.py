@@ -1615,16 +1615,18 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         kyverno_kustomization,
     )
-    agentplane_testing_delivery_artifact = artifact("agentplane-testing-delivery", testing.ENV.delivery_output_dir)
+    agentplane_testing_delivery_artifact = artifact(
+        "agentplane-testing-delivery", testing.ENV.delivery_output_dir, testing.ENV.image_pins
+    )
     runner_gateway_go.serving(
         flux_chart,
         write_directory(
             root,
             agentplane_testing_delivery_artifact,
             functools.partial(runner_gateway_go.serving_chart, env=testing.ENV),
+            components=[posixpath.relpath(testing.ENV.image_pins, testing.ENV.delivery_output_dir)],
         ),
         agentplane_testing_kustomization,
-        migration_name=runner_gateway_go.migration_job_name(runner_gateway_go.MIGRATION_IMAGE),
     )
     agent_workspaces_app_artifact = artifact(
         "agent-workspaces-app", agent_workspaces.OUTPUT_DIR, agent_workspaces.PINS_DIR
@@ -1662,16 +1664,18 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         kyverno_kustomization,
     )
-    agentplane_staging_delivery_artifact = artifact("agentplane-staging-delivery", staging.ENV.delivery_output_dir)
+    agentplane_staging_delivery_artifact = artifact(
+        "agentplane-staging-delivery", staging.ENV.delivery_output_dir, staging.ENV.image_pins
+    )
     runner_gateway_go.serving(
         flux_chart,
         write_directory(
             root,
             agentplane_staging_delivery_artifact,
             functools.partial(runner_gateway_go.serving_chart, env=staging.ENV),
+            components=[posixpath.relpath(staging.ENV.image_pins, staging.ENV.delivery_output_dir)],
         ),
         agentplane_staging_kustomization,
-        migration_name=runner_gateway_go.migration_job_name(runner_gateway_go.MIGRATION_IMAGE),
     )
     public_coder_agent_access_artifact = artifact("public-coder-agent-access", public_coder_app.ACCESS_DIR)
     public_coder_agent_access_kustomization = agents_flux_kustomizations.public_coder_agent_access(

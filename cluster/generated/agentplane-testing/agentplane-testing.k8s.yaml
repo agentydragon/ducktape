@@ -1757,7 +1757,9 @@ automountServiceAccountToken: false
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: queue-l5juvmfef3nkuqjsdorztezkx3dbldvvfuk2yzxhlio45vhh4qva
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+  name: runner-gateway-queue-migrate
   namespace: agentplane-testing
 spec:
   activeDeadlineSeconds: 600
@@ -1776,8 +1778,8 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-session-dispatcher
-          image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate@sha256:5f534ab0a42edaaa41321ba399932abec6158eb52d15ac66e75a1dced4e7e42a
-          imagePullPolicy: IfNotPresent
+          image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset
+          imagePullPolicy: Always
           name: migrate
           resources:
             limits:

@@ -3821,7 +3821,7 @@ spec:
       name: agentplane-testing-egress-upstream-ca
     - apiVersion: batch/v1
       kind: Job
-      name: queue-l5juvmfef3nkuqjsdorztezkx3dbldvvfuk2yzxhlio45vhh4qva
+      name: runner-gateway-queue-migrate
       namespace: agentplane-testing
     - apiVersion: v1
       kind: ConfigMap
@@ -3851,7 +3851,7 @@ spec:
   dependsOn:
     - name: agentplane-testing
       namespace: ducktape-flux
-      readyExpr: (!has(dep.spec.suspend) || !dep.spec.suspend) && dep.metadata.generation == dep.status.observedGeneration && dep.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True') && dep.spec.healthChecks.exists(c, c.kind == 'Job' && c.name == 'queue-l5juvmfef3nkuqjsdorztezkx3dbldvvfuk2yzxhlio45vhh4qva')
+      readyExpr: (!has(dep.spec.suspend) || !dep.spec.suspend) && dep.metadata.generation == dep.status.observedGeneration && dep.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True') && dep.spec.healthChecks.exists(c, c.kind == 'Job' && c.name == 'runner-gateway-queue-migrate')
   interval: 10m
   path: ./cluster/generated/agentplane-testing-delivery
   prune: true
@@ -4031,7 +4031,7 @@ spec:
       name: agentplane-staging-egress-upstream-ca
     - apiVersion: batch/v1
       kind: Job
-      name: queue-l5juvmfef3nkuqjsdorztezkx3dbldvvfuk2yzxhlio45vhh4qva
+      name: runner-gateway-queue-migrate
       namespace: agentplane-staging
     - apiVersion: v1
       kind: ConfigMap
@@ -4081,7 +4081,7 @@ spec:
   dependsOn:
     - name: agentplane-staging
       namespace: ducktape-flux
-      readyExpr: (!has(dep.spec.suspend) || !dep.spec.suspend) && dep.metadata.generation == dep.status.observedGeneration && dep.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True') && dep.spec.healthChecks.exists(c, c.kind == 'Job' && c.name == 'queue-l5juvmfef3nkuqjsdorztezkx3dbldvvfuk2yzxhlio45vhh4qva')
+      readyExpr: (!has(dep.spec.suspend) || !dep.spec.suspend) && dep.metadata.generation == dep.status.observedGeneration && dep.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True') && dep.spec.healthChecks.exists(c, c.kind == 'Job' && c.name == 'runner-gateway-queue-migrate')
   interval: 10m
   path: ./cluster/generated/agentplane-staging-delivery
   prune: true

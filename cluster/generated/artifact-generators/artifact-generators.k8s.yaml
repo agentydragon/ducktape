@@ -13,6 +13,8 @@ spec:
     - copy:
         - from: "@repo/cluster/generated/agentplane-staging-delivery/**"
           to: "@artifact/cluster/generated/agentplane-staging-delivery/"
+        - from: "@repo/cluster/k8s/agentplane-staging/image-pins/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/image-pins/"
       name: agentplane-staging-delivery
       originRevision: "@repo"
     - copy:
@@ -40,6 +42,8 @@ spec:
     - copy:
         - from: "@repo/cluster/generated/agentplane-testing-delivery/**"
           to: "@artifact/cluster/generated/agentplane-testing-delivery/"
+        - from: "@repo/cluster/k8s/agentplane-testing-image-pins/**"
+          to: "@artifact/cluster/k8s/agentplane-testing-image-pins/"
       name: agentplane-testing-delivery
       originRevision: "@repo"
     - copy:
