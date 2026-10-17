@@ -2,7 +2,7 @@
 
 Scope: a transport experiment under `egress/x/goproxy`, independent of the runner sidecar Go
 conversion. No replacement image, manifests, activation, merge or auto-merge. The current central
-mitmproxy service remains authoritative. Task status lives in `plans/task_dag.md` (`GOPROXY_SPIKE`).
+mitmproxy service remains authoritative.
 
 ## Observed evidence
 
