@@ -1096,9 +1096,10 @@ artifact the spike exists to avoid, and one that cannot carry the code under tes
 
 Make the test build a guest disk itself, so it runs the runner **from the tree under test** rather than a
 published image. The Pod-side pattern already exists there: `//agentplane/x/k3s_env:runner_image` is
-`debian_trixie_slim` plus a `pkg_tar` of the Bazel-pinned Codex and Claude binaries, built with no registry
-credential, and the spike's own note records that the Nix-built image is the full-toolbox one. Something of
-that shape as an image the test boots — with KubeVirt installed in the spike, or the VM path exercised
+`debian_trixie_slim` plus the Bazel-built runner without native harnesses; `:runner_claude_image` adds
+only pinned Claude for the model smoke. Neither needs a registry credential. Build the guest from the
+tree under test and supply the required harness through the layering design. An image the test boots
+— with KubeVirt installed in the spike, or the VM path exercised
 against the host's KVM — is the deliverable, not a bigger image. Retain the production guest's
 delegated cgroup resource limits if this fixture exercises `VM_HARNESS_RESOURCE_LIMITS`: a lightweight
 test must not omit the limits being accepted.
