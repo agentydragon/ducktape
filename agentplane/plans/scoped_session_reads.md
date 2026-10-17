@@ -1,8 +1,8 @@
 # Scoped ServiceAccount reads of Session history — proposed contract
 
 Status: **proposed policy design**, not an implemented permission or a grant to existing
-callers. Tracked as `THREAD_READ_POLICY_DESIGN` in [the task DAG](task_dag.md).
-Review the choices below before implementing the policy. The durable raw Session Event
+callers. Tracked as `THREAD_READ_POLICY_DESIGN` in [the task DAG](task_dag.md), where the operator
+holds its decisions for now (2026-10-17 UTC). Review the choices below before implementing the policy. The durable raw Session Event
 history and its Thread fold live in the [History Service](../history_service/README.md),
 which today serves only its configured reader accounts.
 

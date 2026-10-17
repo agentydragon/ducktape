@@ -252,8 +252,8 @@ flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
     SESSION_ACCESS_RULES_DESIGN[Decision: Session-access rule and membership schema]
     SESSION_ACCESS_RULES[Blocked: shared Session-access rules]
-    THREAD_READ_POLICY_DESIGN[Decision: remaining history read contract]
-    HISTORY_ACCESS_AFTER_DELETION[Decision: who reads a deleted Sandbox's history]
+    THREAD_READ_POLICY_DESIGN[Held decision: remaining history read contract]
+    HISTORY_ACCESS_AFTER_DELETION[Held decision: who reads a deleted Sandbox's history]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SESSION_KEY_DESIGN[Decision: record the Sandbox UID in History, and key Sessions by it]
     HISTORY_SANDBOX_UID[Blocked: History records and checks the Sandbox UID]
@@ -369,7 +369,8 @@ respective nodes.
 
 ### `THREAD_READ_POLICY_DESIGN` — scoped history read policy
 
-**Decision; tentative Session-access rules, Sandbox minimum, explicit collections and all-Sandboxes target selected.**
+**Decision, held by the operator for now (2026-10-17 UTC): do not raise it until he reopens it. Tentative
+Session-access rules, Sandbox minimum, explicit collections and all-Sandboxes target selected.**
 Finalize read-specific grant administration within the agreed membership RBAC boundary and caller
 replacement semantics. Access to retained histories after Sandbox deletion is
 `HISTORY_ACCESS_AFTER_DELETION`. V1 has no
@@ -383,7 +384,8 @@ revocation and unknown historical associations. Do not block this on a messaging
 
 ### `HISTORY_ACCESS_AFTER_DELETION` — who reads a Sandbox's history once it is deleted
 
-**Decision; the operator is weighing it and asked not to rush (2026-10-17 UTC).** Retained history stays
+**Decision, held by the operator for now (2026-10-17 UTC): he asked not to rush it, and not to raise it until
+he reopens it.** Retained history stays
 readable after its Sandbox is deleted, and History already records the Sandbox that wrote each Session. A
 direct Sandbox grant needs only that record, as does an `allSandboxes` grant, so both keep working. Only a collection grant needs membership at read time, and membership lives in Kubernetes CRs that
 go away or dangle with the Sandbox. The operator wants agents to read old history, dislikes Kubernetes
@@ -416,8 +418,8 @@ operator-only either way.
 
 ### `THREAD_READ_POLICY` — authorized retained-history access
 
-**Blocked on reviewed read policy, on `HISTORY_ACCESS_AFTER_DELETION` and on `HISTORY_SANDBOX_UID`,
-which records the Sandbox UID the association needs.** Enforce the immutable Session-to-Sandbox association and
+**Blocked on reviewed read policy and on `HISTORY_ACCESS_AFTER_DELETION`, both held by the operator, and
+on `HISTORY_SANDBOX_UID`, which records the Sandbox UID the association needs.** Enforce the immutable Session-to-Sandbox association and
 Sandbox-scoped grants through shared Session-access rules at the owning backend across list,
 raw/native evidence, direct reads and feeds, including reconnect and revocation. Keep app-only UI
 folds separate. Test allowed/denied histories, two principals,
