@@ -45,6 +45,8 @@ first push that binds a writer also records its namespace and name as the Sessio
 (`SessionSummary.sandbox`, absent until recorded). `FindSessions` lists the Sessions whose Sandbox
 name equals or contains given text, deleted Sandboxes included. Sandbox UIDs are not recorded.
 
+A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
+
 ## Delta settlement
 
 Each `Store.append` batch that completes an item drops that

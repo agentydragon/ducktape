@@ -21,7 +21,6 @@ GitHub workflows served under `/docs/agents/`. Update the guides when those cont
 
 - [API, authorization, persistence and delivery semantics](docs/api.md)
 - [Staging GitHub acceptance record](docs/staging_github_acceptance.md) — live CI/comment delivery and its limits.
-- [Plans and deferred work](../plans/notifications.md)
 - `/openapi.json` and authenticated `GET /v1/sources`: schemas and available sources.
 
 While the History Service is down or rolling, webhooks are still accepted and inbox entries still

@@ -7,13 +7,6 @@ runs on staging and `agentplane-testing`; the Sandbox Controller writes each San
 catalog entry as a set. The [task DAG](task_dag.md) tracks the remaining nodes below.
 [Agent RBAC](../../cluster/docs/agent_rbac.md) describes deployed scope.
 
-## Accounts without a Sandbox (`MANAGED_SA_RBAC`)
-
-Static callers such as `claude-ai` get a Flux-owned `PolicyBinding` of the sets `CLAUDE_AI_SA`
-approves, in place of their per-namespace RoleBindings in `agent_access_profiles.py`. Group
-subjects (Haku OIDC; public-coder, until `PC_KUBERNETES_POLICY_SET`) remain Flux RoleBindings,
-because a binding names a ServiceAccount only.
-
 ## Old snapshot grants (`OLD_POLICY_KINDS_DROP`)
 
 Sandboxes created on agent-sandbox hold the old launch-time bindings and a `kubernetes-bindings`

@@ -54,4 +54,3 @@ The browser's old Sandbox session GET is already removed; retained Threads come 
 - [Session Dispatcher API](../proto/session_dispatcher.proto)
 - [Gateway proxy implementation](../runner_gateway/go/gateway/proxy.go)
 - [Gateway runtime](../runner_gateway/README.md)
-- [Gateway plan](../plans/task_dag.md#12-the-runner-gateway-serves-the-runners-own-service)

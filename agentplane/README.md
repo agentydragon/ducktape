@@ -318,5 +318,20 @@ source are retired; the History Service retains its database and authored histor
   current runner inventory and explicitly resumes a retained harness through the Sandbox control
   Service, with the Runner Proxy checking the live Sandbox name, UID and owner. Its queue uses the existing Dispatcher database; the Gateway has no separate registry database. The controller holds deletion until the runner has sealed its Sessions through the Gateway.
 
-Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
+Status, open work and design gates: [`plans/`](plans/README.md).
+
+## Implemented contracts
+
+Use the [Action Service specification](action_service/SPEC.md) and [README](action_service/README.md) for
+catalog, Decisions, events, bounded waits, cancellation, generic MCP, configured Identities, Connection grants,
+and OAuth/consent. The [app README](app/README.md) owns the consent and Action-review presentation contracts.
+[Executor liveness](docs/executor_liveness.md), [operator federation](docs/operator_federation.md),
+[workload authentication](docs/workload_authentication.md), [launch presets](docs/launch_presets.md) and
+[action policies](docs/action_policies.md) own the other implemented contracts.
+[Sandbox Actions](action_service/sandbox/README.md) owns the exec-target contract for agents hosted outside the
+cluster: sandboxes that run as the calling ServiceAccount, and Kubernetes reach from inside one.
+[Thread, runner, and harness layering](docs/thread_layering.md) owns the command/Event architecture, Thread
+identity continuity, native recovery and optional app-first acceptance. [Thread view
+synchronization](docs/thread_view_sync.md) owns the conversation model and sync-engine integration, on-demand Raw,
+history/catch-up and frontend state; it is distinct from the implemented raw-replay API. The rest are under
 [`docs/`](docs/).

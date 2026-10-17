@@ -155,8 +155,7 @@ Replacing that shell with declarative NixOS facilities is separate from PVC owne
 the initialization contract must be tested rather than assuming those checks are interchangeable.
 Existing data is never reformatted merely because the desired layout changes.
 
-Conversion is an accepted option for much later, tracked separately as `VOLUME_LAYOUT_CONVERSION`
-in the [task DAG](../plans/task_dag.md#volume_layout_conversion--explicit-offline-volume-conversion).
+Conversion is an accepted option for much later, tracked separately.
 It does not gate workspace ownership or template rollout; incompatible changes are rejected until
 a converter exists. A future conversion must:
 

@@ -80,6 +80,28 @@ so backend readers and the controller share the same typed Kubernetes contract.
 session adapter uses the History Service; it does not own Sandbox reconciliation or connect directly
 to runners. Thread identities do not travel in Runner control-stream metadata.
 
+## Invariants
+
+- **One durable event log outside the runner:** the History Service's, written only through its ingress.
+  The Dispatcher's command records are receipts of admission and delivery, not a second log.
+- **One Thread projection:** the History Service fold. No other service derives Thread state from Session
+  events, Electric serves only that fold, and the `app` database holds no raw Events or fold tables. Any fold
+  table can be dropped and rebuilt from the raw log.
+- **One database per service**, named for it, with its own role. No service reads another's database;
+  Electric's logical replication of the history fold is the one exception.
+- **The Runner Gateway routes and does not provision.** It holds the control stream and serves each runner's
+  own `Runner` service at its Sandbox's control address; it keeps no Session records and creates no Kubernetes
+  objects besides its connection records.
+- **The History Service never routes to, reads or manages Sandboxes.** It records which Sandbox wrote each
+  Session.
+- **One Session ID everywhere,** minted by the client: runner, Gateway, History Service and app use the same
+  UUID.
+- **Runners only dial out.** No runner listens for connections.
+- **The app is a facade.** It stores browser sessions, operator-set Thread metadata and the Thread → Session
+  link, and asks the History Service where a Session runs.
+- **Coordination lives in Kubernetes** (Leases, Services), except a fence that must commit in the same
+  transaction as the data it guards, the fold's `session_projection_lease`.
+
 ## Session access without the app
 
 The Runner Gateway authenticates proxy callers, resolves the current Sandbox and runner connection,

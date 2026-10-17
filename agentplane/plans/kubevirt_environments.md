@@ -1,18 +1,8 @@
 # KubeVirt execution environments
 
-Status: the Sandbox Controller runs a Sandbox as a KubeVirt VM, the launcher relay policy and the
-`runner-vm` template are deployed on `agentplane-testing`, and the guest runner dials the Runner
-Gateway through the relay. The remaining acceptance gates below are independent of initial boot.
-The basic VM provider, outbound control path and halted-VM template rerender are implemented:
-`TestStartRendersAHaltedVMFromTheTemplateAsItIsThen` verifies a changed guest image applies on start
-without replacing the halted VM or its disks. The [deployed suspend/resume](../acceptance/README.md#suspend-and-resume)
-and [workspace-storage](../acceptance/README.md#workspace-storage-layout-acceptance) acceptance cases
-cover VM session continuity and workspace retention through resume and VM-object replacement. The
-open gates below concern failure handling, cross-Sandbox security and resource limits beyond that path.
-The design and its constraints are in [VM Sandboxes](../docs/vm_sandboxes.md). Sequencing of the live checks is the
-[DAG VM lane](task_dag.md#4-vm-environment-phases); this plan keeps the gates that lane does not
-name. Warm pools, memory snapshots, live migration and arbitrary user-supplied VM specifications
-stay out of scope.
+The live gates for VM Sandboxes that no [DAG](task_dag.md#4-vm-environment-phases) node names. The design and its
+constraints are in [VM Sandboxes](../docs/vm_sandboxes.md); warm pools, memory snapshots, live migration and
+arbitrary user-supplied VM specifications are out of scope.
 
 ## Open gates
 
@@ -37,10 +27,5 @@ stay out of scope.
 - **Real egress gateway.** The prototype fixtures validated bearers with TokenReview. A VM Sandbox
   must show credential substitution and `CONNECT`/TLS through the production gateway for LLM and
   Action traffic, not only the control routes.
-- **Resource behavior not yet exercised on the VM.** Validate the delegated CPU, task and I/O limits,
-  plus per-harness memory OOM behavior: an over-budget harness subtree is killed while the Runner
-  remains available. Preserve native tool cancellation, Runner crash recovery and competing-owner
-  checks where they validate those existing contracts. The Sandbox is the security boundary; no
-  same-Sandbox process or Session-store isolation is required.
 - **Resource budgets.** Check quotas and capacity for guest RAM plus QEMU overhead, disk helpers and
   the relay, and that a guest is not scheduled on a node without KVM.

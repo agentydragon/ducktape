@@ -93,7 +93,7 @@ and resource budget. No separate per-tool budget or kill boundary is part of the
   native harness under its own, with memory, CPU, task and I/O limits and `memory.oom.group`.
 - When a harness subtree exceeds its memory budget, `memory.oom.group` kills that harness and its
   descendants; the Runner remains outside that group and can continue answering RPCs. Acceptance of
-  the VM cgroup limits is tracked in the [VM task lane](../plans/task_dag.md#4-vm-environment-phases).
+  the VM cgroup limits is still open.
 - [Tool memory isolation](harness_tool_memory_isolation.md) records optional research on putting
   tighter resource limits around a tool child. That would be a separate resource policy, not a change
   to the Sandbox security boundary.

@@ -13,7 +13,7 @@ rendering, scroll anchoring, sending commands — is shared.
 Electric sits behind one module on each side:
 
 - **Backend:** `electric.py` holds `ElectricProxy` and the `/threads/{thread_id}/sync/*` router,
-  which `api.py` always mounts; `electric_url` is a required setting. Its only read of the fold is
+  which `api.py` always mounts; `electric_url` is an optional setting. Its only read of the fold is
   `ContentStore.current_scope`, which any implementation needs for **P7**.
 - **Frontend:** `thread_sync.ts` defines the `ThreadSync` interface, and `projected_session.tsx`
   reads only that, from a context `app.tsx` fills. `thread_store.tsx` implements it as

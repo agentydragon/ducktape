@@ -22,14 +22,6 @@ and code/deployment rename remain open; this plan still uses Notification Servic
 component. Dispatcher retains command admission, wake and delivery. Moving more responsibilities
 into it remains a separate future review.
 
-## Current priority and service boundary
-
-Keep delivery workers in the notification service. Separate worker deployment is not planned
-unless worker deaths cause actual operational trouble; fix specific failures in place first.
-See the conditional [`NOTIFICATION_WORKER_ISOLATION`](task_freezer.md#notification_worker_isolation--separate-notification-api-and-delivery-workers)
-item. GitHub receipt retention is also deferred, not a current priority. Neither item should be
-presented as the immediate next project merely because the webhook work is complete.
-
 ## Subscription authorization and Action approval
 
 **Proposed design gate; no Action/API or broader grants are selected yet.** Subscribing is an
@@ -138,19 +130,6 @@ a relevant current-state change within its configured check interval; test resta
 races for no duplicate/lost observation. Test changed PR head/check states and access/backoff using
 the existing client seam. Do not induce real GitHub failures or revive the waived broad live matrix.
 Document current limits and the final authoritative-state check agents should perform regardless.
-
-## Proportional verification
-
-The broad live event/permission/filter matrix moves to the
-[freezer](task_freezer.md#broader-verification-inventory), revisited when enabling a new path or
-investigating a concrete gap. Successful deliveries do not establish every installation's coverage,
-but absence of those anecdotes is not a release gate. Prefer focused automated regressions.
-
-The bounded security check remains in
-[`NOTIFICATION_INGRESS_BOUNDARY`](task_dag.md#notification_ingress_boundary--bounded-public-route-security-check):
-unsigned public webhook requests and public attempts at private API routes must be refused.
-Invalid-signature service tests already exist; this remaining check is route wiring, not an induced
-GitHub outage. Hosted builds, preset use and waived backoff/refresh-reuse exercises stay closed.
 
 ## Deferred: event-driven Actions consumption
 

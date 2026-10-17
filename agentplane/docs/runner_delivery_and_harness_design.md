@@ -7,7 +7,6 @@ facade is gRPC-Gateway. This does not authorize runtime/API cutover. Other secti
 schemas, database ownership, identity mappings or caller permissions. Keep the existing security
 checks and durable queue until a replacement contract is reviewed.
 
-The related decision nodes are in [section 13 of the task DAG](../plans/task_dag.md#13-delivery-boundaries-apis-and-harness-identity).
 The current runner contracts remain in [Session layering](thread_layering.md), the
 [Dispatcher README](../session_dispatcher/README.md), the [Gateway control-surface audit](control_surface_retirement.md),
 and the [scripted harness capability index](../native/README.md#behavioral-coverage).
@@ -65,9 +64,8 @@ service boundaries rather than a Dispatcher dependency:
   committed watermark and entries to checkpoint receipts and confirm whether a command reached the
   runner journal. This is an outcome dependency of Notification, not Dispatcher routing. A
   Dispatcher admission or queued receipt does not prove that the runner admitted a command or that a
-  harness consumed it. Keep the
-  [`NOTIFICATION_COMMAND_OUTCOME_DESIGN`](../plans/task_dag.md#notification_command_outcome_design--notice-delivery-without-reading-conversation-history)
-  as a separate decision.
+  harness consumed it. Notice delivery
+  without reading conversation history is a separate decision.
 - **Runner ingress acknowledgements connect Runner to History.** Runner pushes each Session journal
   to the History ingress and persists the acknowledged cursor and seal state on its own state volume.
   During Quiesce, the Runner first drains admissions and seals the journals; its reported stage remains
@@ -196,8 +194,7 @@ work. Do not admit direct agent callers under this exception.
 
 **TODO — generalized send authority:** design destination- and operation-scoped grants (for example,
 RBAC-backed permissions), delegation proof, revocation behavior for queued work, and revalidation
-before delayed wake or execution. The DAG tracks this as
-[`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`](../plans/task_dag.md#dispatcher_send_authorization_generalize--replace-v0-service-trust-with-scoped-sender-grants).
+before delayed wake or execution. This is open design.
 
 The candidate has distinct outcomes. A missing or changed UID or wrong owner denies before any wake
 and again before forwarding if changed later. A temporarily unavailable runner
@@ -542,7 +539,7 @@ durably register its native ID with store and parent public Session before publi
 a stable runner-chosen public ID on first discovery and reusing it on replay/restart. Parentage, visibility in History/UI and independent control
 are separate: a child may be visible and read-only even when the harness cannot accept direct input
 for it. A child's Sandbox/store lineage does not automatically grant the parent's send permission.
-Child Session projection is [deferred](../plans/native_session_discovery.md); the selected native
+Child Session projection is deferred; the selected native
 delegation scope does not expose child Sessions or independent controls. This identity contract does not presume Claude root multiplexing from the bounded
 single-root stream-json evidence or select one versus several processes per store.
 

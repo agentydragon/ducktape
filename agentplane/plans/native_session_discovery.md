@@ -1,12 +1,11 @@
 # Native session discovery: characterization gaps and deferred design
 
 Status: **child Session discovery/projection deferred.** On 2026-10-16 the operator selected native
-delegation without child Session discovery or controls. [#10782](https://github.com/agentydragon/ducktape/pull/10782)
-implements that narrower runner boundary: raw child frames remain recorded, normalized output and
-turn/input bookkeeping remain root-only. Its review status is tracked in the
-[task DAG](task_dag.md#native_subagent_enable--land-native-delegation-with-root-only-output).
-The characterization in [#10776](https://github.com/agentydragon/ducktape/pull/10776) is merged;
-remaining configurations and independent-control experiments below are not gates for native delegation.
+delegation without child Session discovery or controls; it is merged
+([#10782](https://github.com/agentydragon/ducktape/pull/10782)): raw child frames remain recorded,
+normalized output and turn/input bookkeeping remain root-only. The characterization in
+[#10776](https://github.com/agentydragon/ducktape/pull/10776) is merged; remaining configurations
+and independent-control experiments below are not gates for native delegation.
 Discovery, if selected later, builds on the
 [event ingress](../docs/runner_control.md#event-ingress): the runner pushes every Session it
 declares, roots and discovered children alike, and the History Service's index is the record of

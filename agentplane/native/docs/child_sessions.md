@@ -15,8 +15,8 @@ not by itself remove the remaining product/authority decisions for child Session
 
 The runner's [root-only normalization contract](../../runner/README.md#native-subagents) retains
 raw child frames and parent delegation results without letting children mutate root turn/input state.
-The [discovery proposal](../../plans/native_session_discovery.md) remains deferred; its unmeasured
-configurations and control experiments are not additional acceptance gates for native delegation.
+Child Session discovery remains deferred; its unmeasured configurations and control experiments
+are not additional acceptance gates for native delegation.
 
 ## Claude stream-json (2.1.252)
 

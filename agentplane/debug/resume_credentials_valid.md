@@ -23,5 +23,4 @@ strict reader-side expiry cutoff or live-token behavior.
 capability or a prerequisite for a useful resumed Sandbox? Separately, should
 readers enforce `expiresAt` against wall-clock time, or is controller deletion
 the intended boundary? Under either choice, resume must not silently renew or
-recreate authority. See the `RESUME_CREDENTIALS_VALID` node in
-[`task_dag.md`](../plans/task_dag.md).
+recreate authority. The open question is tracked in the task DAG.
