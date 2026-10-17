@@ -16,6 +16,7 @@ def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any
 
 def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
     docs = fixture_chart.objects(
+        node_ip="192.0.2.20",
         ca_cert="fixture-ca\n",
         ca_key="fixture-key\n",
         system_roots="system-roots\n",
@@ -58,12 +59,9 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
         == "IfNotPresent"
     )
     for service in (doc for doc in docs if doc["kind"] == "Service"):
-        if service["metadata"]["name"] in {
-            fixture_chart.RUNNER_GATEWAY,
-            fixture_chart.SESSION_DISPATCHER,
-            fixture_database.SERVICE,
-        }:
-            assert service["spec"].get("clusterIP") != "None", service["metadata"]["name"]
+        assert service["spec"]["clusterIP"] == "None", service["metadata"]["name"]
+        for port in service["spec"]["ports"]:
+            assert port["port"] == port["targetPort"], service["metadata"]["name"]
 
     gateway = _resource(docs, "Deployment", fixture_chart.RUNNER_GATEWAY)
     pod = gateway["spec"]["template"]["spec"]
@@ -94,13 +92,13 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
         (fixture_chart.SESSION_DISPATCHER, fixture_chart.DISPATCHER_PORT),
     ):
         service = _resource(docs, "Service", name)
-        assert service["spec"].get("clusterIP") != "None"
+        assert service["spec"]["clusterIP"] == "None"
         assert all(
             pod_label == gateway["spec"]["template"]["metadata"]["labels"][name]
             for name, pod_label in service["spec"]["selector"].items()
         )
         port = next(entry for entry in service["spec"]["ports"] if entry["name"] == "grpc")
-        assert port["port"] == expected_port
+        assert port["port"] == port["targetPort"] == expected_port
 
     endpoint = f"{fixture_chart.SESSION_DISPATCHER}.{fixture_chart.NAMESPACE}.svc.cluster.local:{fixture_chart.DISPATCHER_PORT}"
     app = _resource(docs, "Deployment", "app")
@@ -127,7 +125,7 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
     )
     assert postgres_container["image"] == fixture_database.IMAGE
     postgres_service = _resource(docs, "Service", fixture_database.SERVICE)
-    assert postgres_service["spec"].get("clusterIP") != "None"
+    assert postgres_service["spec"]["clusterIP"] == "None"
     assert not any(doc["kind"] in {"Cluster", "Database"} for doc in docs)
 
     bootstrap_env = {entry["name"]: entry for entry in postgres_container["env"]}

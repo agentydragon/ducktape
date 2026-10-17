@@ -1,8 +1,8 @@
 # k3s environment spike
 
-Does the Agentplane testing chart come up on a bare k3s in an RBE action (no Cilium)? The fixture
-uses k3s's kube-proxy and ordinary ClusterIP Services. The model-free lifecycle target runs in the
-separate [`Agentplane k3s lifecycle` workflow](../../../.github/workflows/agentplane-k3s-lifecycle.yml), launched explicitly with
+Does the Agentplane testing chart come up on a bare k3s in an RBE action (no Cilium, no
+kube-proxy)? The model-free lifecycle target runs in the separate
+[`Agentplane k3s lifecycle` workflow](../../../.github/workflows/agentplane-k3s-lifecycle.yml), launched explicitly with
 `workflow_dispatch`. It does not run automatically on pull requests or pushes while its cost remains
 high. Agents can still run it
 directly with `bbr test //agentplane/x/k3s_env:test_lifecycle --test_output=all`. The separate
@@ -12,10 +12,15 @@ Both targets drive the app's REST/SSE API and omit Electric and the browser fron
 frontend sync protocol run Electric separately. The database bootstrap still creates the `electric`
 role required by the existing migrations; it does not start an Electric process.
 
+The current Firecracker executor lacks the iptables `MARK` target required by kube-proxy. The
+fixture uses headless Services, node-IP API access and host-network CoreDNS; it does not cover
+ClusterIP routing. See the [Service networking investigation](../../debug/2026-10-16-k3s-service-networking.md)
+for the failed real-k3s run and the capability checks required before removing these compensations.
+
 [`fixture_chart.py`](fixture_chart.py) constructs the chart directly
 with shared service constructs and explicit bare-k3s settings. It supplies fixture Secrets,
-normal ClusterIP Services, local-path storage and a test egress CA. One PostgreSQL 18 Deployment
-uses the repo's pinned OCI image, an emptyDir data volume and [`bootstrap.sql`](bootstrap.sql) to create the
+headless Services, local-path storage and a test egress CA. One PostgreSQL 18 Deployment uses the
+repo's pinned OCI image, an emptyDir data volume and [`bootstrap.sql`](bootstrap.sql) to create the
 service-owned databases. Unsupported Cilium, Gateway API, Kyverno, Prometheus, cert-manager and External
 Secrets resources are omitted during construction. The chart instantiates the Go Runner Gateway
 directly with one gRPC listener on port 8080; the stable `runner-gateway` and `session-dispatcher`
@@ -26,7 +31,8 @@ the Bazel-built OCI image layouts into containerd, applies the rendered stack an
 readiness. It uses the pinned K3s binary from Bazel runfiles, so lifecycle actions do not download K3s
 at runtime.
 
-Node readiness has a 180-second bootstrap deadline. API probes have bounded subprocess timeouts and stop when k3s exits;
+Node readiness and the appearance of the bundled DNS/storage Deployments share a 180-second
+bootstrap deadline. API probes have bounded subprocess timeouts and stop when k3s exits;
 bootstrap failures include the last probe result and k3s log tail and stop the server process.
 
 The image list includes the Go Runner Gateway and Goose queue migration images. A fast
@@ -40,9 +46,7 @@ Docker-format `oci_load` tarballs.
 
 ## Lifecycle coverage
 
-The model-free [lifecycle tests](test_lifecycle.py) verify that pod DNS resolves the Kubernetes API
-Service to its ClusterIP and that the app reaches the API over that Service. They also wait for the
-Sandbox's own `Ready=True`
+The model-free [lifecycle tests](test_lifecycle.py) wait for the Sandbox's own `Ready=True`
 condition, check the runner process is non-root, check a bootstrap-created file, and
 suspend until the effective mode is `Suspended` and the Pod is gone. Resume waits for Ready again
 and verifies the state-volume marker survived.
@@ -211,11 +215,14 @@ result for the new Go composition. Breaks found on the way, in order:
   interpreters duplicated under each binary's `.runfiles` tree. The shared-runtime prototype moves those
   interpreter files into one layer reused by the Python images; containerd still needs about 1 GiB per image.
   The default 12 GiB disk failed on the 10th image; `EstimatedFreeDiskBytes=50GB` fixes it.
+- **No ClusterIP:** without kube-proxy, Pods reach neither the `kube-dns` Service nor `kubernetes.default`.
+  CoreDNS runs with `hostNetwork` on the node IP, the kubelet's `cluster-dns` points at it, and every
+  container gets `KUBERNETES_SERVICE_HOST`/`PORT` for the node IP.
 - **KubeVirt:** an earlier fixture applied schemaless VM/VMI CRDs to satisfy the controller cache.
   The Sandbox Controller now discovers whether those APIs are served, so the current fixture starts
   without them: Pod Sandboxes work and VM Sandboxes report `KubeVirtMissing`.
 - **PostgreSQL:** a single-replica Deployment uses the repository's pinned PostgreSQL 18 image, an emptyDir data
-  volume, and a `postgres-primary` ClusterIP Service. `bootstrap.sql` creates each
+  volume, and a headless `postgres-primary` Service that works without kube-proxy. `bootstrap.sql` creates each
   service role and database with the matching owner; the separate `fixture_admin` account exists only to bootstrap
   the disposable database. Logical WAL remains enabled for the existing publication migrations. No operator,
   CRD, release download, or CoreDNS rewrite is needed.
@@ -241,8 +248,9 @@ result for the new Go composition. Breaks found on the way, in order:
   `litellm-key-cheap-experiments`, and llm-ingress and the egress rules dial `https://litellm.allegedly.works`
   instead of the cluster-internal Service.
 
-The fixture omits Dex/OIDC public-hostname flows, KubeVirt and Cilium, so it does not validate
-those integrations or real external identity.
+Not yet reached: Service port≠targetPort under headless Services (egress is 80→8082; only the agent-facing
+rules URL uses it) and Dex/OIDC public hostnames. The k3s lifecycle tests use stub KubeVirt CRDs and no
+Cilium, so they do not validate those integrations or real external identity.
 
 The [historical image inventory](k3s_image_inventory_2026_10_14.md) records the layer and unpacked-file
 breakdown for the 21-image Python-service snapshot before Sandbox Service image retirement and this
