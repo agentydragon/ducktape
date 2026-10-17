@@ -7,9 +7,11 @@ import contextlib
 import json
 import logging
 from collections import defaultdict
+from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
+import anyio
 import asyncpg
 from babel.numbers import get_currency_precision
 
@@ -66,8 +68,6 @@ class SpendService:
         self._configuration = configuration
         self._dashboard_url = dashboard_url
         self._pool: asyncpg.Pool | None = None
-        self._listener_task: asyncio.Task[None] | None = None
-        self._stopping = asyncio.Event()
         self._listening = asyncio.Event()
         self._revision = 0
         self._subscribers: set[asyncio.Queue[None]] = set()
@@ -80,20 +80,23 @@ class SpendService:
     def revision(self) -> int:
         return self._revision
 
-    async def start(self) -> None:
-        self._pool = await asyncpg.create_pool(self._database_url, min_size=1, max_size=8)
-        self._listener_task = asyncio.create_task(self._listen_forever(), name="plaid-spend-listener")
+    @property
+    def is_running(self) -> bool:
+        return self._pool is not None
 
-    async def close(self) -> None:
-        self._stopping.set()
-        if self._listener_task is not None:
-            self._listener_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._listener_task
-            self._listener_task = None
-        if self._pool is not None:
-            await self._pool.close()
-            self._pool = None
+    @contextlib.asynccontextmanager
+    async def lifespan(self) -> AsyncIterator[None]:
+        async with asyncpg.create_pool(self._database_url, min_size=1, max_size=8) as pool:
+            self._pool = pool
+            try:
+                async with anyio.create_task_group() as task_group:
+                    task_group.start_soon(self._listen_forever, name="plaid-spend-listener")
+                    try:
+                        yield
+                    finally:
+                        task_group.cancel_scope.cancel()
+            finally:
+                self._pool = None
 
     def report_day(self, instant: datetime) -> date:
         """Policy-local reporting date; UTC when no allowance is configured."""
@@ -634,7 +637,7 @@ class SpendService:
         return self._pool
 
     async def _listen_forever(self) -> None:
-        while not self._stopping.is_set():
+        while True:
             connection: asyncpg.Connection | None = None
             try:
                 connection = await asyncpg.connect(self._database_url)
@@ -643,17 +646,7 @@ class SpendService:
                 await connection.add_listener(_CHANNEL, self._on_notification)
                 self._listening.set()
                 self._wake_subscribers()
-                stopped_task = asyncio.create_task(self._stopping.wait())
-                terminated_task = asyncio.create_task(terminated.wait())
-                try:
-                    await asyncio.wait({stopped_task, terminated_task}, return_when=asyncio.FIRST_COMPLETED)
-                finally:
-                    stopped_task.cancel()
-                    terminated_task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await stopped_task
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await terminated_task
+                await terminated.wait()
             except (asyncpg.PostgresError, asyncpg.InterfaceError, OSError, TimeoutError) as error:
                 logger.warning("Postgres spend listener disconnected (%s); reconnecting", type(error).__name__)
             finally:
@@ -661,10 +654,20 @@ class SpendService:
                     self._listening.clear()
                     self._wake_subscribers()
                 if connection is not None:
-                    await connection.close()
-            if not self._stopping.is_set():
-                with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(self._stopping.wait(), timeout=3)
+                    await self._close_listener_connection(connection)
+            await asyncio.sleep(3)
+
+    async def _close_listener_connection(self, connection: asyncpg.Connection) -> None:
+        # Task-group cancellation must still release the LISTEN session; bound graceful shutdown, then terminate.
+        try:
+            with anyio.move_on_after(2, shield=True) as closing:
+                await connection.close()
+        except (asyncpg.PostgresError, asyncpg.InterfaceError, OSError, TimeoutError) as error:
+            connection.terminate()
+            logger.warning("Postgres spend listener close failed (%s); terminated", type(error).__name__)
+        else:
+            if closing.cancel_called:
+                connection.terminate()
 
     def _on_notification(self, connection: object, pid: int, channel: str, payload: object) -> None:
         del connection, pid, channel, payload

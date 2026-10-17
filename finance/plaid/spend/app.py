@@ -14,7 +14,7 @@ from typing import Annotated, cast
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from finance.plaid.spend.allowance import EstimatePeriodId, PeriodId, TransactionPeriodId
@@ -98,11 +98,8 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        await service.start()
-        try:
+        async with service.lifespan():
             yield
-        finally:
-            await service.close()
 
     app = FastAPI(title="Plaid Spend", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.spend_service = service
@@ -112,8 +109,9 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
     install_login(app, web_login_config)
 
     @app.get("/healthz")
-    async def healthz() -> dict[str, bool]:
-        return {"ok": True}
+    async def healthz() -> JSONResponse:
+        running = service.is_running
+        return JSONResponse({"ok": running}, status_code=200 if running else status.HTTP_503_SERVICE_UNAVAILABLE)
 
     if include_ui:
 

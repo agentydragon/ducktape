@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncGenerator
+from contextlib import aclosing
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 from zoneinfo import ZoneInfo
@@ -143,11 +144,8 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
         ]
     )
     service = SpendService(postgres_url, configuration, dashboard_url="https://spend.example.test")
-    await service.start()
-    try:
+    async with service.lifespan():
         view = await service.read_view()
-    finally:
-        await service.close()
     early_card, late_card = view.cards
     assert early_card.statement_period.kind == "statement"
     assert early_card.statement_period.start == early_cycle_start
@@ -184,11 +182,8 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
         ),
         dashboard_url="https://spend.example.test",
     )
-    await service.start()
-    try:
+    async with service.lifespan():
         view = await service.read_view()
-    finally:
-        await service.close()
     cards = {card.account_id: card for card in view.cards}
     first, empty = cards["card-first"], cards["card-empty"]
     assert first.statement_period.kind == "provisional"
@@ -278,8 +273,7 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         ),
     )
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
-    await service.start()
-    try:
+    async with service.lifespan():
         result = await service.read_view()
         assert result.allowance is not None
         assert result.allowance.available_minor_units == 8_800
@@ -294,8 +288,6 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         unavailable = (await service.read_view()).allowance
         assert unavailable is not None
         assert unavailable.status == Status.UNAVAILABLE
-    finally:
-        await service.close()
 
 
 async def test_prior_purchases_are_queried_for_pace_but_not_balance(
@@ -317,11 +309,8 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
         ),
     )
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
-    await service.start()
-    try:
+    async with service.lifespan():
         allowance = (await service.read_view()).allowance
-    finally:
-        await service.close()
     assert allowance is not None
     assert allowance.available_minor_units == 10_000
     observed = {report.period.id: report.observed_daily_minor_units for report in allowance.recorded_pace_periods}
@@ -352,21 +341,15 @@ async def test_event_stream_sends_initial_view_and_notification_update(
         SpendConfiguration(cards=[CardConfig(account_id="card-1", label="Test", enabled=True)]),
         dashboard_url="https://spend.example.test",
     )
-    await service.start()
-    stream: AsyncGenerator[str] | None = None
-    try:
+    async with service.lifespan():
         await asyncio.wait_for(service.listening.wait(), timeout=10)
-        stream = _event_stream(cast(Any, _ConnectedRequest()), service)
-        initial = json.loads((await asyncio.wait_for(anext(stream), timeout=10)).partition("data: ")[2])
-        assert initial["cards"][0]["spend_minor_units"] == 1_000
-        await connection.execute("UPDATE public.transactions SET amount = 25 WHERE transaction_id = 'purchase'")
-        await connection.execute("SELECT pg_notify('plaid_spend_changed', '')")
-        updated = json.loads((await asyncio.wait_for(anext(stream), timeout=10)).partition("data: ")[2])
-        assert updated["cards"][0]["spend_minor_units"] == 2_500
-    finally:
-        if stream is not None:
-            await stream.aclose()
-        await service.close()
+        async with aclosing(_event_stream(cast(Any, _ConnectedRequest()), service)) as stream:
+            initial = json.loads((await asyncio.wait_for(anext(stream), timeout=10)).partition("data: ")[2])
+            assert initial["cards"][0]["spend_minor_units"] == 1_000
+            await connection.execute("UPDATE public.transactions SET amount = 25 WHERE transaction_id = 'purchase'")
+            await connection.execute("SELECT pg_notify('plaid_spend_changed', '')")
+            updated = json.loads((await asyncio.wait_for(anext(stream), timeout=10)).partition("data: ")[2])
+            assert updated["cards"][0]["spend_minor_units"] == 2_500
     assert not service._subscribers
 
 
