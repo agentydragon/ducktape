@@ -242,7 +242,7 @@ async def test_close_continues_on_per_server_failure(make_simple_mcp):
         async def failing_cleanup():
             raise RuntimeError("Simulated cleanup failure")
 
-        mount1.cleanup = failing_cleanup  # type: ignore[method-assign]
+        mount1.cleanup = failing_cleanup
 
         # Store initial state
         entries_before = await comp.server_entries()
