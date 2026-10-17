@@ -222,7 +222,7 @@ The logical profiles are distinct from the transport identities:
 | Managed `haku` preset              | Includes public coder; matches each static Haku path, including the exact Coinbase grant below      |
 | Managed `finance-agent` preset     | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied |
 
-| `agentplane-staging/claude-ai` ServiceAccount | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, testing acceptance-token minting, and the testing Dispatcher acceptance grant |
+| `agentplane-staging/claude-ai` ServiceAccount | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting |
 | `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset |
 | `public-coder-agent/openclaw` ServiceAccount | Static OpenClaw Action caller; Action Service reads labeled ServiceAccount metadata here, while its policy binding and sets stay in `agentplane-staging` |
 
@@ -407,20 +407,15 @@ RoleBinding remain Flux-owned. This is a
 Pod exec and port-forward sessions, create/patch/delete PolicySets and
 PolicyBindings, and mint the `agentplane-agent` ServiceAccount token used
 by the testing app. It also reads testing SandboxTemplates, Pods, and Pod logs.
+For the Dispatcher acceptance probes it mints tokens for exactly the `app` and
+`notifications` ServiceAccounts (the Gateway's wake callers, so a token bound to a
+live Pod authenticates as that caller to the Dispatcher), patches and scales only the
+`runner-gateway` Deployment, and deletes Pods, which cannot be named ahead of time
+and so covers every testing Pod.
 It grants no write access in `agentplane-staging` and no direct Kubernetes
 Secret read. Pod exec can expose data mounted in testing Pods, and a holder can
 operate every Sandbox in the testing namespace and use that environment's
 credentialless MCP fixtures. Treat it as operator authority, not a diagnostics reader.
-
-#### Dispatcher acceptance grant (`claude-ai` only)
-
-Deviation: the `agentplane-dispatcher-acceptance` Role is bound to `claude-ai` alone, not through
-a PolicySet, so Haku and the managed presets do not receive it. It lets a `claude-ai` Sandbox run
-`//agentplane/acceptance:test_dispatcher_deployed`: mint tokens for exactly the `app` and
-`notifications` ServiceAccounts (the Gateway's wake callers, so a token bound to a live Pod
-authenticates as that caller to the Dispatcher), patch and scale only the `runner-gateway`
-Deployment, and delete Pods in `agentplane-testing`. Pod `delete` cannot be named ahead of
-time, so it covers every testing Pod. Nothing here reaches `agentplane-staging`.
 
 ### Retired devbox restart capability
 

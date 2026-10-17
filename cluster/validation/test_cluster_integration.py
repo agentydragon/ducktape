@@ -550,7 +550,6 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
             ("ClusterRole", "cluster-diagnostics-reader", None),
             ("Role", "claude-ai-coinbase-reader", "agentplane-staging"),
             ("Role", "agentplane-testing-operator", "agentplane-testing"),
-            ("Role", "agentplane-dispatcher-acceptance", "agentplane-testing"),
             ("Role", "agentplane-testing-login-reader", "public-coder-agent"),
             ("Role", "claude-ai-sandbox-reader", "agentplane-staging"),
             ("Role", "agent-haku-console-metadata-reader", "haku-console"),
