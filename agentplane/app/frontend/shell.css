@@ -26,7 +26,8 @@
 }
 
 .agentplane-shell-main-content {
-  flex: 1;
+  /* Normal routes grow with their content so the final control keeps its bottom gutter. */
+  flex: 1 0 auto;
   min-height: 0;
   width: 100%;
   max-width: 1200px;
@@ -37,6 +38,7 @@
 }
 
 .agentplane-shell-main-content.agentplane-shell-fullbleed {
+  flex: 1;
   max-width: none;
   /* The session view owns its own full-height layout (composer pinned to the bottom, transcript
      scrolling above it), so no vertical padding here -- but it still needs the same horizontal

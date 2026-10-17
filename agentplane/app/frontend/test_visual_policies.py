@@ -595,9 +595,13 @@ async def test_action_history_paging_control(view: VisualPage, app: AgentplaneFi
     await expect(load_more).to_have_text("Load more")
     await page.locator(".agentplane-shell-main").evaluate("element => { element.scrollTop = element.scrollHeight; }")
     await wait_for_stable(page)
-    # The scroll extent can grow after the first move. Bring the control into view after
-    # that layout settles, then verify the final captured state.
+    # The final control must retain a gutter at the scroll extent, not be clipped by it.
     await _focus(page, load_more)
+    bottom_gutter = await load_more.evaluate("""button => {
+        const viewport = button.closest('.agentplane-shell-main').getBoundingClientRect();
+        return viewport.bottom - button.getBoundingClientRect().bottom;
+    }""")
+    assert bottom_gutter >= 8
     await view.capture(target=view.page.locator("#app"))
 
 
