@@ -36,7 +36,11 @@ func Placeholder(credentialName string) string { return PlaceholderPrefix + cred
 // Target is one exact location a credential may be presented in: a closed set of variants,
 // dispatched on with a type switch. Each names a total parse of that value into the credential
 // component and the text around it; adding a presentation means adding a variant, never loosening one.
-type Target interface{ isTarget() }
+type Target interface {
+	isTarget()
+	// ToAPI is the target as an EgressCredential declares it, which is also how a sandbox is told it.
+	ToAPI() egressapi.Target
+}
 
 // WholeValue is `<credential>`: the header value is the credential and nothing else.
 type WholeValue struct{ Header string }
@@ -62,6 +66,30 @@ func (BasicUsername) isTarget() {}
 func (BasicPassword) isTarget() {}
 func (BasicWhole) isTarget()    {}
 func (JSONField) isTarget()     {}
+
+func (t WholeValue) ToAPI() egressapi.Target {
+	return egressapi.Target{Method: egressapi.WholeValue, Header: t.Header}
+}
+
+func (t SchemeToken) ToAPI() egressapi.Target {
+	return egressapi.Target{Method: egressapi.SchemeToken, Header: t.Header, Scheme: t.Scheme}
+}
+
+func (t BasicUsername) ToAPI() egressapi.Target {
+	return egressapi.Target{Method: egressapi.BasicUsername, Header: t.Header}
+}
+
+func (t BasicPassword) ToAPI() egressapi.Target {
+	return egressapi.Target{Method: egressapi.BasicPassword, Header: t.Header}
+}
+
+func (t BasicWhole) ToAPI() egressapi.Target {
+	return egressapi.Target{Method: egressapi.BasicWhole, Header: t.Header}
+}
+
+func (t JSONField) ToAPI() egressapi.Target {
+	return egressapi.Target{Method: egressapi.JSONField, Field: t.Field}
+}
 
 // Source is where a credential's value comes from: a closed set of variants.
 type Source interface{ isSource() }

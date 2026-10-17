@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "policy",
     srcs = [
+        "effective.go",
         "evaluate.go",
         "index.go",
     ],
@@ -19,6 +20,7 @@ go_library(
 go_test(
     name = "policy_test",
     srcs = [
+        "effective_test.go",
         "evaluate_test.go",
         "index_test.go",
     ],
