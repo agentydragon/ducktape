@@ -20,7 +20,6 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-import anyio
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -176,11 +175,9 @@ def create_app(
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-        stack = AsyncExitStack()
-        # Register before startup work so partial startup still disposes the pool.
-        stack.push_async_callback(db_engine.dispose)
-        try:
-            await stack.__aenter__()
+        async with AsyncExitStack() as stack:
+            # Register before startup work so partial startup still disposes the pool.
+            stack.push_async_callback(db_engine.dispose)
             static_definitions = (
                 static_agent_definitions
                 if static_agent_definitions is not None
@@ -191,10 +188,6 @@ def create_app(
             # Cancel in-flight approved-call executions before expiry maintenance is torn down.
             stack.push_async_callback(tool_calls.aclose)
             yield
-        finally:
-            # Lifespan shutdown can run inside an AnyIO cancellation scope.
-            with anyio.CancelScope(shield=True):
-                await stack.__aexit__(*sys.exc_info())
 
     app = FastAPI(title="Haku console", lifespan=_lifespan)
     # The capability router reads settings off app.state (see haku.console.capabilities).
