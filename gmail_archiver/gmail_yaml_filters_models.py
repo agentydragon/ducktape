@@ -6,7 +6,7 @@ Compatible with gmail-yaml-filters format (https://github.com/mesozoic/gmail-yam
 from __future__ import annotations
 
 import builtins
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -52,6 +52,12 @@ class FilterRule(BaseModel):
     smaller: str | int | None = None
     size: str | int | None = None
     rfc822msgid: str | None = None
+    # Gmail filter API criteria. `size` above remains the existing YAML search
+    # operator; `size_bytes` is the API's RFC822 message size in bytes.
+    has_attachment: bool | None = None
+    exclude_chats: bool | None = None
+    size_bytes: int | None = None
+    size_comparison: Literal["larger", "smaller"] | None = None
 
     # Actions
     label: str | None = None

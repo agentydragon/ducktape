@@ -38,6 +38,12 @@ Archived emails get `gmail-archiver/inbox-auto-cleaned` label and are removed fr
 - **Filter Models** (`gmail_archiver/gmail_yaml_filters_models.py`): Pydantic V2 models for filter YAML (compatible with [gmail-yaml-filters](https://github.com/mesozoic/gmail-yaml-filters))
 - **Filter Sync** (`gmail_archiver/filter_sync.py`): filter normalization, diffing, CRUD
 
+Filter exports retain Gmail's `has_attachment`, `exclude_chats`, `size_bytes`, and
+`size_comparison` criteria. `size_bytes` is distinct from the legacy YAML `size`
+search operator. Manual `filters apply` accepts attachment presence and paired
+`size_bytes`/`size_comparison` criteria; it rejects criteria without a verified
+equivalent Gmail search query before changing messages.
+
 ## TODO
 
 - Strip PDFs and anonymize emails for test data

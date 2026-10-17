@@ -24,9 +24,9 @@ def test_representable_rule_normalizes():
     )
 
 
-# Every criteria field NormalizedFilter cannot represent: setting any of them must
-# fail closed rather than silently broaden the synced filter. Parameterized so a
-# typo/omission in the reject list regresses a test. (attr, expected-name-in-error)
+# Legacy YAML search operators cannot be represented as Gmail filter API fields:
+# setting any of them must fail closed rather than silently broaden the synced
+# filter. Parameterized so an omission in the reject list regresses a test.
 UNREPRESENTABLE_FIELDS = [
     ("match", "match"),
     ("missing", "missing"),

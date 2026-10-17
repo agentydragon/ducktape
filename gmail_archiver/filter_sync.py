@@ -7,7 +7,13 @@ from typing import Self
 
 from gmail_api.labels import GmailLabel, SystemLabel, resolve_label_id
 from gmail_archiver.filter_planner import criteria_to_gmail_query
-from gmail_archiver.gmail_api_models import CreateFilterRequest, FilterAction, FilterCriteria, GmailFilter
+from gmail_archiver.gmail_api_models import (
+    CreateFilterRequest,
+    FilterAction,
+    FilterCriteria,
+    GmailFilter,
+    SizeComparison,
+)
 from gmail_archiver.gmail_yaml_filters_models import CompoundCondition, FilterRule
 
 
@@ -40,6 +46,10 @@ class NormalizedFilter:
     subject: str | None = None
     query: str | None = None
     negated_query: str | None = None
+    has_attachment: bool | None = None
+    exclude_chats: bool | None = None
+    size: int | None = None
+    size_comparison: SizeComparison | None = None
     # Actions
     add_labels: frozenset[str] = field(default_factory=frozenset)
     remove_labels: frozenset[str] = field(default_factory=frozenset)
@@ -62,6 +72,10 @@ def normalize_gmail_filter(gmail_filter: GmailFilter, labels_by_id: dict[str, st
         subject=_strip_gmail_quotes(criteria.subject),
         query=_strip_gmail_quotes(criteria.query),
         negated_query=_strip_gmail_quotes(criteria.negated_query),
+        has_attachment=criteria.has_attachment,
+        exclude_chats=criteria.exclude_chats,
+        size=criteria.size,
+        size_comparison=criteria.size_comparison,
         add_labels=add_labels,
         remove_labels=remove_labels,
         forward=action.forward,
@@ -71,13 +85,12 @@ def normalize_gmail_filter(gmail_filter: GmailFilter, labels_by_id: dict[str, st
 def normalize_yaml_rule(rule: FilterRule) -> NormalizedFilter:
     """Convert FilterRule from YAML to normalized form.
 
-    Raises ValueError if the rule uses criteria that NormalizedFilter cannot
-    represent. Silently dropping such criteria would produce a Gmail filter that
+    Raises ValueError if the rule uses criteria that cannot be represented by
+    Gmail's filter API. Silently dropping such criteria would produce a Gmail filter that
     matches a *broader* set of messages than the YAML intended -- and for
     trash/delete rules that over-deletes mail matching the residual criteria.
     """
-    # Criteria fields NormalizedFilter has no slot for. Dropping any would broaden
-    # the synced filter beyond what the YAML specified.
+    # Search operators in the legacy YAML format have no direct filter API field.
     unrepresentable = [
         name
         for name, value in [
@@ -103,6 +116,9 @@ def normalize_yaml_rule(rule: FilterRule) -> NormalizedFilter:
         raise ValueError(
             f"FilterRule uses criteria that cannot be synced to Gmail filters: {', '.join(unrepresentable)}"
         )
+
+    if (rule.size_bytes is None) != (rule.size_comparison is None):
+        raise ValueError("FilterRule size_bytes and size_comparison must be supplied together")
 
     # from/to/subject and has/does_not_have accept compound (any/all/not) conditions
     # in the YAML model, but NormalizedFilter can only carry plain string criteria.
@@ -165,6 +181,10 @@ def normalize_yaml_rule(rule: FilterRule) -> NormalizedFilter:
         subject=rule.subject if isinstance(rule.subject, str) else None,
         query=query,
         negated_query=negated_query,
+        has_attachment=rule.has_attachment,
+        exclude_chats=rule.exclude_chats,
+        size=rule.size_bytes,
+        size_comparison=SizeComparison(rule.size_comparison) if rule.size_comparison else None,
         add_labels=add_labels,
         remove_labels=remove_labels,
         forward=rule.forward,
@@ -211,6 +231,10 @@ def normalized_to_create_request(normalized: NormalizedFilter, label_name_to_id:
         subject=normalized.subject,
         query=normalized.query,
         negated_query=normalized.negated_query,
+        has_attachment=normalized.has_attachment,
+        exclude_chats=normalized.exclude_chats,
+        size=normalized.size,
+        size_comparison=normalized.size_comparison,
     )
 
     add_label_ids = [resolve_label_id(name, label_name_to_id) for name in normalized.add_labels]
@@ -253,7 +277,16 @@ def format_filter_for_display(f: NormalizedFilter) -> str:
     """Format a filter for human-readable display."""
     # Build criteria using the shared conversion logic
     criteria = FilterCriteria(from_=f.from_, to=f.to, subject=f.subject, query=f.query, negated_query=f.negated_query)
-    criteria_str = criteria_to_gmail_query(criteria) or "(no criteria)"
+    criteria_parts = [criteria_to_gmail_query(criteria)]
+    for name, value in (
+        ("hasAttachment", f.has_attachment),
+        ("excludeChats", f.exclude_chats),
+        ("size", f.size),
+        ("sizeComparison", f.size_comparison),
+    ):
+        if value is not None:
+            criteria_parts.append(f"{name}={value}")
+    criteria_str = " ".join(part for part in criteria_parts if part) or "(no criteria)"
 
     # Actions
     actions = []

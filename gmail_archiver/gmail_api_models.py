@@ -96,7 +96,7 @@ class FilterCriteria(BaseModel):
     size: int | None = None
     size_comparison: SizeComparison | None = Field(default=None, alias="sizeComparison")
 
-    model_config = {"populate_by_name": True}
+    model_config = {"populate_by_name": True, "extra": "forbid"}
 
 
 class FilterAction(BaseModel):

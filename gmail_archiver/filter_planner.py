@@ -1,12 +1,19 @@
 """FilterPlanner - integrates YAML filters with the Plan system."""
 
-from gmail_archiver.gmail_api_models import FilterCriteria, GmailFilter
+from gmail_archiver.gmail_api_models import FilterCriteria, GmailFilter, SizeComparison
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.plan import Plan
 
 
 def criteria_to_gmail_query(criteria: FilterCriteria) -> str:
-    """Convert FilterCriteria to Gmail search query string."""
+    """Convert criteria to a Gmail search query, rejecting uncertain mappings."""
+    if criteria.has_attachment is False:
+        raise ValueError("Cannot apply hasAttachment=false with a verified Gmail search equivalent")
+    if criteria.exclude_chats is not None:
+        raise ValueError("Cannot apply excludeChats with a verified Gmail search equivalent")
+    if (criteria.size is None) != (criteria.size_comparison is None):
+        raise ValueError("Cannot apply a size criterion without both size and sizeComparison")
+
     parts = []
     if criteria.from_:
         parts.append(f"from:({criteria.from_})")
@@ -18,6 +25,15 @@ def criteria_to_gmail_query(criteria: FilterCriteria) -> str:
         parts.append(criteria.query)
     if criteria.negated_query:
         parts.append(f"-({criteria.negated_query})")
+    if criteria.has_attachment:
+        parts.append("has:attachment")
+    if criteria.size is not None:
+        if criteria.size_comparison == SizeComparison.LARGER:
+            parts.append(f"larger:{criteria.size}")
+        elif criteria.size_comparison == SizeComparison.SMALLER:
+            parts.append(f"smaller:{criteria.size}")
+        else:
+            raise ValueError(f"Unsupported sizeComparison: {criteria.size_comparison}")
     return " ".join(parts)
 
 
