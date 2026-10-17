@@ -56,7 +56,8 @@ explicit envtest issuer/key/bound-object setup with equivalent evidence.
 Exact hosts, methods and paths plus whole-value header targets form the supported test subset.
 Wildcards, path globs, all other credential presentations/sources, EgressCredential/Secret watches,
 watch freshness bookkeeping, status writing, decision history, rules/admin APIs, health/readiness,
-metrics, production address pin caching and bounded graceful drain remain unimplemented.
+metrics, complete refusal-reason/status projection, production address pin caching and bounded
+graceful drain remain unimplemented.
 Snapshot expiry is tested as an enforcement input; it is not proof of production watch health.
 The lab creates a transport per admitted request to prevent connection pooling/coalescing from
 bypassing its request pin; throughput/pooling costs remain an explicit production design question.
@@ -65,7 +66,7 @@ IPv6 and complete reserved-address policy require further work before any produc
 ## First CI results and required patch
 
 Draft [#10816](https://github.com/agentydragon/ducktape/pull/10816), head `690358ca34`, tested
-with GitHub's merge commit in [CI 38995208063](https://github.com/agentydragon/ducktape/actions/runs/38995208063),
+with GitHub merge `e92ce8b97a33d5bb021009d392e7b7c61a96865c` in [CI 38995208063](https://github.com/agentydragon/ducktape/actions/runs/38995208063),
 [test invocation 9be02e8c-1189-5f91-bcbf-f103aa8573e7](https://app.buildbuddy.io/invocation/9be02e8c-1189-5f91-bcbf-f103aa8573e7):
 
 - `//agentplane/egress:test_proxy` passed all 47 cases, including identical current/Go HTTP
@@ -84,8 +85,54 @@ with GitHub's merge commit in [CI 38995208063](https://github.com/agentydragon/d
 - Repository-wide test summary was 1466 passing, one failing target. This was a red run;
   compilation and unrelated passing tests do not make the spike accepted.
 
-## Decision pending patched socket evidence
+## Patched socket evidence and recommendation
 
-Do not select GoProxy for central production replacement from compilation or source inspection.
-The spike must report actual protocol/security outcomes and any required upstream patches or
-wrappers, then stop with a bounded recommendation. A service port would be a separate decision.
+Head `a90ec93bb5234d4a172e51c57bdee344610fa518`, GitHub merge
+`599c46e769ed58fe2c671d2f8ac44ea7c48529ed` on base `d558dcc30d`, passed
+[CI 38995643200](https://github.com/agentydragon/ducktape/actions/runs/38995643200),
+[test invocation b9227412-40dc-5c15-bdc4-ea87e091838f](https://app.buildbuddy.io/invocation/b9227412-40dc-5c15-bdc4-ea87e091838f).
+`transport_test` freshly passed in 8.3 seconds; full `test_proxy` freshly passed all 51 cases in 77.2 seconds (pytest body: 63.32 seconds).
+The graph-wide run reports 1467 passing targets, of which these two executed and the others were
+cached. Pre-commit and Nix wheel/import checks also passed. This is automated lab evidence;
+no deployed central proxy was replaced or exercised.
+
+| Contract                                              | Current mitmproxy and candidate                                         | Additional candidate evidence                                                                                                    |
+| ----------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Authenticated CONNECT and header substitution         | Identical real aiohttp clients and upstream assertions                  | Existing shared TokenReview resolver/interface                                                                                   |
+| Intercepted TLS H2 gRPC and prior-knowledge h2c       | Write/read before request EOF, two messages, trailers                   | Raw H2 frames and required initial-header flush regression                                                                       |
+| gRPC deadlines and cancellation                       | Client status plus observed upstream handler completion                 | Request context cancellation reaches upstream                                                                                    |
+| Denied request inside admitted tunnel                 | Raw TCP accept counter stays zero; positive counter control             | Counted listener before TLS, with zero DNS resolution on path denial                                                             |
+| Incremental SSE and WebSockets                        | First SSE frame arrives while upstream waits; two WebSocket exchanges   | Raw WebSocket frame relay                                                                                                        |
+| Upstream TLS trust and hostname                       | Existing service coverage retained; no new shared certificate assertion | Reject unknown CA, interception CA and wrong hostname; no HTTP reaches upstream                                                  |
+| Approved literal address used by actual dial          | No new shared resolver assertion                                        | `.test` name reaches approved listener with exactly one lookup; forbidden second answer cannot rebind; environment proxy ignored |
+| Policy change during DNS and mixed forbidden answers  | No new shared resolver assertion                                        | Zero TCP accepts for post-DNS revocation and mapped link-local answer                                                            |
+| Existing-connection revocation/staleness/auth cleanup | Existing current-service tests retained                                 | Binding deletion, snapshot expiry, invalid replacement bearer and changed Pod UID all refuse later streams                       |
+| Real Kubernetes API policy source                     | Existing Python fake remains for comparison                             | Real CRD create/list/watch/delete, shared egress fields preserved, next held-connection request refused                          |
+
+**Recommendation: GoProxy is feasible as the central transport library for a separately reviewed
+service port, with the pinned header-flush patch and explicit wrappers.** A secure transport with
+independent upstream roots and no environment proxy, a dial hook that receives only an approved
+literal address, per-inner-request policy/auth gates, and a dedicated pinned h2c transport are
+required. GoProxy's defaults are unsuitable at this boundary. Stock v1.9.2 alone fails the
+initial-metadata contract; the retained regression now passes with the four-line patch.
+
+The experiment does not authorize production replacement. Complete the documented policy,
+credential, watch/freshness, API/history, error projection and lifecycle behaviors in a separate
+port before discussing cutover. Preserve a decision after DNS, prevent H2 pooling/coalescing
+from escaping the approved address, and keep metadata/body credentials bound to the current
+principal. The lab avoids pooling by creating a transport per admitted request; production pool
+ownership and throughput remain open. Upstreaming/removing the small patch is maintenance work,
+not a reason to weaken the header-only-open contract. No performance claim was measured here.
+
+## Envtest recommendation
+
+Use the existing envtest assets and shared Go schemes for the real CRD admission/list/watch
+contracts. This catches field loss and API validation behavior that the permissive fake cannot.
+Retain the narrow TokenReviews interface as a controlled dependency for deterministic token-error,
+identity-replacement and existing-connection cleanup contracts. Keep real bound-token issuance,
+audience and Pod deletion/replacement semantics in the Kubernetes integration tier until an
+explicit envtest issuer/key/bound-object setup proves those behaviors. Do not treat replacing a
+policy store with envtest as a reason to remove authentication coverage or to rewrite every fixture.
+
+No real deployment or traffic cutover was exercised. The spike's transport subset is independent
+of the integration app and needs no Sandbox lookup, new authority, token issuer or RBAC grant.

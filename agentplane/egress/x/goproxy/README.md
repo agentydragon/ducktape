@@ -23,7 +23,8 @@ tokens or assume that an envtest server provides Kubernetes bound-token authenti
 The supported policy subset is exact hosts, exact method/path matching, and whole-value header
 credentials. Unsupported wildcard/path syntax does not match. Credential CR watches, JSON/basic/
 scheme/projected-token substitution, decision history, rules/admin APIs, production address pin
-cache, readiness, metrics and graceful drain are deliberately outside this transport experiment.
+cache, readiness, metrics, complete refusal-reason/status projection and graceful drain are
+deliberately outside this transport experiment.
 The snapshot callback is a lab seam, not a replacement informer implementation.
 
 Evidence, gaps and source references: [investigation](../../debug/2026_10_16_goproxy_spike.md).
