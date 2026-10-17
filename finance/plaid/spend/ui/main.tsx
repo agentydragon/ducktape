@@ -1438,23 +1438,31 @@ function App() {
   }, []);
   useEffect(() => {
     let mounted = true;
-    let firstEvent = true;
+    let viewRequest: AbortController | undefined;
     const estimateQuery = selectedEstimatePeriodId ? `?estimate_period_id=${selectedEstimatePeriodId}` : "";
     const load = async () => {
+      viewRequest?.abort();
+      const controller = new AbortController();
+      viewRequest = controller;
       try {
-        const response = await fetch(`/api/v1/view${estimateQuery}`, { cache: "no-store", credentials: "same-origin" });
+        const response = await fetch(`/api/v1/view${estimateQuery}`, {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
         if (response.status === 401) {
           window.location.assign("/auth/login");
           return;
         }
         if (!response.ok) throw new Error(`View request returned ${response.status}`);
         const data: View = await response.json();
-        if (mounted) {
+        if (!controller.signal.aborted) {
           setView(data);
           setError(null);
         }
       } catch (cause) {
-        if (mounted) {
+        if (!controller.signal.aborted) {
           setError(cause instanceof Error ? cause.message : "View request failed");
           setState("Unable to refresh");
         }
@@ -1465,12 +1473,13 @@ function App() {
     events.addEventListener("view", (event) => {
       try {
         if (mounted) {
-          setView(JSON.parse(event.data));
+          const snapshot: View = JSON.parse(event.data);
+          // A live snapshot supersedes any pending startup or reconnect GET.
+          viewRequest?.abort();
+          setView(snapshot);
           setError(null);
           setState("Live updates");
-          // The initial SSE snapshot duplicates the initial GET; only refresh transactions on later updates.
-          if (!firstEvent) setViewRevision((revision) => revision + 1);
-          firstEvent = false;
+          setViewRevision((revision) => revision + 1);
         }
       } catch (cause) {
         if (mounted) setError(cause instanceof Error ? cause.message : "Could not read live update");
@@ -1484,6 +1493,7 @@ function App() {
     };
     return () => {
       mounted = false;
+      viewRequest?.abort();
       events.close();
     };
   }, [selectedEstimatePeriodId]);
