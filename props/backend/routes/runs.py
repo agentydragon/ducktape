@@ -19,7 +19,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import case, func
+from sqlalchemy import String, case, cast, func
 
 from openai_utils.api_shape import LLMApiShape
 from props.backend.auth import (
@@ -70,6 +70,22 @@ class JobStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class RunSortKey(StrEnum):
+    """Fields that the run list endpoint can order by."""
+
+    AGENT_RUN_ID = "agent_run_id"
+    IMAGE_DIGEST = "image_digest"
+    SPLIT = "split"
+    MODEL = "model"
+    STATUS = "status"
+    CREATED_AT = "created_at"
+
+
+class RunSortDirection(StrEnum):
+    ASC = "asc"
+    DESC = "desc"
 
 
 # --- Models ---
@@ -424,6 +440,8 @@ def list_runs(
     example_kind: ExampleKind | None = None,
     offset: int = 0,
     limit: int = 100,
+    sort_by: RunSortKey = RunSortKey.CREATED_AT,
+    sort_dir: RunSortDirection = RunSortDirection.DESC,
 ) -> RunsListResponse:
     """List all agent runs with optional filters and pagination.
 
@@ -485,7 +503,7 @@ def list_runs(
             .subquery()
         )
 
-        runs_with_extras = (
+        runs_query = (
             query.add_columns(
                 Snapshot.split,
                 issues_subq.c.issues_count,
@@ -500,11 +518,31 @@ def list_runs(
             .outerjoin(grading_subq, AgentRun.agent_run_id == grading_subq.c.critique_run_id)
             .outerjoin(llm_requests_subq, AgentRun.agent_run_id == llm_requests_subq.c.agent_run_id)
             .outerjoin(RecallByRun, AgentRun.agent_run_id == RecallByRun.critic_run_id)
-            .order_by(AgentRun.created_at.desc())
-            .offset(offset)
-            .limit(limit)
-            .all()
         )
+
+        # These are the only sortable list columns. Display-only aggregates stay
+        # unsortable until they have explicit SQL ordering semantics.
+        sort_column = {
+            RunSortKey.AGENT_RUN_ID: AgentRun.agent_run_id,
+            RunSortKey.IMAGE_DIGEST: AgentRun.image_digest,
+            RunSortKey.SPLIT: cast(Snapshot.split, String),
+            RunSortKey.MODEL: AgentRun.model,
+            RunSortKey.STATUS: cast(AgentRun.status, String),
+            RunSortKey.CREATED_AT: AgentRun.created_at,
+        }[sort_by]
+        if sort_by is RunSortKey.SPLIT:
+            # Missing splits sort first ascending and last descending.
+            primary_order = (
+                sort_column.asc().nullsfirst() if sort_dir is RunSortDirection.ASC else sort_column.desc().nullslast()
+            )
+        else:
+            primary_order = sort_column.asc() if sort_dir is RunSortDirection.ASC else sort_column.desc()
+
+        ordering = [primary_order]
+        if sort_by is not RunSortKey.AGENT_RUN_ID:
+            ordering.append(AgentRun.agent_run_id.asc())
+
+        runs_with_extras = runs_query.order_by(*ordering).offset(offset).limit(limit).all()
 
         return RunsListResponse(
             runs=[

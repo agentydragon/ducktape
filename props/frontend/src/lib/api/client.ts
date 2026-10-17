@@ -67,6 +67,8 @@ export function isGraderRun(run: AgentRunDetail): run is AgentRunDetail & { deta
 }
 
 export type AgentRunStatus = components["schemas"]["AgentRunStatus"];
+export type RunSortKey = components["schemas"]["RunSortKey"];
+export type RunSortDirection = components["schemas"]["RunSortDirection"];
 export type JobInfo = components["schemas"]["JobInfo"];
 export type JobsResponse = components["schemas"]["JobsResponse"];
 export type AgentType = components["schemas"]["AgentType"];
@@ -158,6 +160,8 @@ export interface RunsFilters {
   example_kind?: ExampleKind;
   offset?: number;
   limit?: number;
+  sort_by?: RunSortKey;
+  sort_dir?: RunSortDirection;
 }
 
 export async function fetchRuns(filters?: RunsFilters) {

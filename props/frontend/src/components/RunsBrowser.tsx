@@ -10,6 +10,8 @@ import {
   type CriticTypeConfig,
   type ExampleKind,
   type RunInfo,
+  type RunSortDirection,
+  type RunSortKey,
   type RunsFilters,
   type Split,
 } from "../lib/api/client";
@@ -32,25 +34,6 @@ interface Props {
 }
 
 const LIMIT = 50;
-
-function sortValue(run: RunInfo, column: string): number | string {
-  switch (column) {
-    case "agent_run_id":
-      return run.agent_run_id;
-    case "image_digest":
-      return run.image_digest;
-    case "split":
-      return run.split ?? "";
-    case "model":
-      return run.model;
-    case "status":
-      return run.status;
-    case "created_at":
-      return Date.parse(run.created_at);
-    default:
-      return "";
-  }
-}
 
 function statusColor(status: AgentRunStatus): string {
   switch (status) {
@@ -79,19 +62,28 @@ export default function RunsBrowser({
   const [offset, setOffset] = useState(0);
   const [statusFilter, setStatusFilter] = useState<AgentRunStatus | "">("");
   const [agentTypeFilter, setAgentTypeFilter] = useState<AgentType | "">("");
-  const [sortColumn, setSortColumn] = useState("created_at");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [sortColumn, setSortColumn] = useState<RunSortKey>("created_at");
+  const [sortDirection, setSortDirection] = useState<RunSortDirection>("desc");
   const skipInitialFetch = useRef(Boolean(initialRuns));
 
   const filters = useMemo<RunsFilters>(() => {
-    const result: RunsFilters = { offset, limit: LIMIT };
+    const result: RunsFilters = { offset, limit: LIMIT, sort_by: sortColumn, sort_dir: sortDirection };
     if (statusFilter) result.status = statusFilter;
     if (agentTypeFilter) result.agent_type = agentTypeFilter;
     if (initialDefinitionId) result.image_digest = initialDefinitionId;
     if (initialSplit) result.split = initialSplit;
     if (initialKind) result.example_kind = initialKind;
     return result;
-  }, [offset, statusFilter, agentTypeFilter, initialDefinitionId, initialSplit, initialKind]);
+  }, [
+    offset,
+    statusFilter,
+    agentTypeFilter,
+    initialDefinitionId,
+    initialSplit,
+    initialKind,
+    sortColumn,
+    sortDirection,
+  ]);
 
   useEffect(() => {
     if (skipInitialFetch.current) {
@@ -122,24 +114,13 @@ export default function RunsBrowser({
     };
   }, [filters]);
 
-  const sortedRuns = useMemo(() => {
-    return [...runs].sort((left, right) => {
-      const leftValue = sortValue(left, sortColumn);
-      const rightValue = sortValue(right, sortColumn);
-      const comparison =
-        typeof leftValue === "number" && typeof rightValue === "number"
-          ? leftValue - rightValue
-          : String(leftValue).localeCompare(String(rightValue));
-      return sortDirection === "asc" ? comparison : -comparison;
-    });
-  }, [runs, sortColumn, sortDirection]);
-
-  function handleSort(column: string): void {
+  function handleSort(column: RunSortKey): void {
     if (sortColumn === column) setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
     else {
       setSortColumn(column);
       setSortDirection("asc");
     }
+    setOffset(0);
   }
 
   function indicator(column: string): string {
@@ -148,7 +129,7 @@ export default function RunsBrowser({
 
   const pageStart = totalCount === 0 ? 0 : offset + 1;
   const pageEnd = Math.min(offset + LIMIT, totalCount);
-  const sortableHeader = (column: string, label: string, align: "left" | "right" = "left") => (
+  const sortableHeader = (column: RunSortKey, label: string, align: "left" | "right" = "left") => (
     <Table.Th
       key={column}
       ta={align}
@@ -263,7 +244,7 @@ export default function RunsBrowser({
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {sortedRuns.map((run) => {
+              {runs.map((run) => {
                 const config = run.type_config.agent_type === "critic" ? (run.type_config as CriticTypeConfig) : null;
                 const grading = run.grading;
                 const fullyGraded = grading != null && grading.drift_edges === 0;
