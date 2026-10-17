@@ -47,11 +47,8 @@ def _assets_hash(assets: Sequence[tuple[str, bytes]]) -> str:
 
 
 def _file_hash(path: Path) -> bytes:
-    digest = hashlib.sha256()
     with path.open("rb") as artifact:
-        for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.digest()
+        return hashlib.file_digest(artifact, "sha256").digest()
 
 
 def main() -> None:

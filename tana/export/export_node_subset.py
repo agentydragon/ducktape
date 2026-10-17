@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import heapq
 import json
 import sys
 from pathlib import Path
@@ -216,7 +217,7 @@ def main():
 
     # Show first few node names if available
     node_names = []
-    for node_id in sorted(touched_nodes)[:PRETTY_PRINT_LIMIT]:
+    for node_id in heapq.nsmallest(PRETTY_PRINT_LIMIT, touched_nodes):
         node = tracking_store.get(node_id)
         if node and node.name:
             node_names.append(f"  - {node.name[:50]}... ({node_id})")

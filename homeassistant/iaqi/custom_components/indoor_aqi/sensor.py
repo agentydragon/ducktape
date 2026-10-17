@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -108,9 +109,7 @@ def compute_iaqi(pollutant: str, c: float) -> float | None:
         return float(bp[-1][1])
 
     # Otherwise, find i such that bp[i][0] <= c <= bp[i+1][0]
-    for idx in range(len(bp) - 1):
-        c_lo, i_lo = bp[idx]
-        c_hi, i_hi = bp[idx + 1]
+    for (c_lo, i_lo), (c_hi, i_hi) in pairwise(bp):
         if c_lo <= c <= c_hi:
             # linear interpolation
             if c_hi == c_lo:

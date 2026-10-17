@@ -52,15 +52,9 @@ def gid_to_name(gid: int) -> str:
 
 
 def sha256_file(path: str) -> str | None:
-    h = hashlib.sha256()
     try:
         with Path(path).open("rb") as f:
-            while True:
-                chunk = f.read(1 << 16)
-                if not chunk:
-                    break
-                h.update(chunk)
-        return h.hexdigest()
+            return hashlib.file_digest(f, "sha256").hexdigest()
     except OSError:
         return None
 

@@ -20,7 +20,7 @@ import subprocess
 import tarfile
 import urllib.parse
 import urllib.request
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, cast
@@ -269,11 +269,7 @@ def fetch_bes_events(invocation_id: str) -> list[dict[str, Any]]:
 
 
 def bes_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
-    id_counts: dict[str, int] = {}
-    for event in events:
-        event_id = as_json_dict(event.get("id"))
-        for key in event_id:
-            id_counts[key] = id_counts.get(key, 0) + 1
+    id_counts = Counter(key for event in events for key in as_json_dict(event.get("id")))
 
     started: dict[str, Any] = next((as_json_dict(event.get("started")) for event in events if event.get("started")), {})
     metrics: dict[str, Any] = next(
