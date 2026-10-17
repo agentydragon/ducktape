@@ -741,8 +741,8 @@ flowchart LR
 
 ### `GOPROXY_SPIKE` — central egress GoProxy feasibility
 
-**In flight; operator-selected exception, worker `/root/goproxy_spike`, reported 2026-10-17
-02:26 UTC (2026-10-16 PDT).** Branch `spike/central-goproxy`, isolated worktree
+**In review; operator-selected exception, worker `/root/goproxy_spike`, reported 2026-10-17
+02:36 UTC (2026-10-16 PDT).** Draft [#10816](https://github.com/agentydragon/ducktape/pull/10816). Branch `spike/central-goproxy`, isolated worktree
 `/tmp/ducktape-worktrees/2026-10-16-goproxy-spike`, base `d558dcc30d`. Explore a small central
 transport candidate using shared Go policy types and authentication interfaces; evaluate real
 kube-apiserver/etcd envtest for CRD/list/watch/revocation. Independent of the runner-side
