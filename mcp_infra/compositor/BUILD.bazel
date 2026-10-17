@@ -44,7 +44,6 @@ py_library(
         "//mcp_infra:prefix",
         "//mcp_infra:resource_utils",
         "//mcp_infra:snapshots",
-        "//mcp_infra/enhanced:server",
         "//mcp_infra/resources:types",
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp_slim",

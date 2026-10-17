@@ -5,13 +5,13 @@ from collections.abc import Iterator, Sequence
 from typing import Annotated, Final, Literal
 
 from fastmcp.exceptions import ToolError
+from fastmcp.server import FastMCP
 from fastmcp.tools.function_tool import FunctionTool
 from mcp import types as mcp_types
 from mcp.shared.exceptions import MCPError
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field
 
 from mcp_infra.compositor.server import BaseCompositor
-from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import add_resource_prefix
 from mcp_infra.resources.types import ResourceEntry
@@ -243,7 +243,7 @@ def _build_window_payload(
     )
 
 
-class ResourcesServer(EnhancedFastMCP):
+class ResourcesServer(FastMCP):
     """Resources MCP server with typed tool access.
 
     Aggregates resources across servers for discovery and reading.
