@@ -21,7 +21,8 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 ### Handoff snapshot — 2026-10-16 UTC
 
 **The handoff pause remains except operator-selected lanes.** On 2026-10-16 Rai selected Go delivery
-rollout preparation, the workload-tools VM prototype and current K3s profiling. Live Go activation
+rollout preparation, the workload-tools VM prototype, current K3s profiling and the Go egress-sidecar
+conversion. Live Go activation
 still needs its reviewed fenced cutover. Other projects remain paused. The following change is implemented on a review branch, **not merged**;
 its published-head checks passed when checked for this handoff. Recheck GitHub before resuming.
 Rai merges every PR by hand; do not merge or enable auto-merge.
@@ -587,6 +588,7 @@ flowchart LR
     K3S_SHARED_PACKAGE_LAYERS[Candidate: share Python package layers]
     K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
     K3S_IMPORT_CONCURRENCY[Candidate: native containerd import and unpack concurrency]
+    EGRESS_SIDECAR_GO[In progress: convert complete egress sidecar to Go]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
@@ -651,6 +653,19 @@ Python services still need the shared interpreter.
 Keep the fixture declarative: supply images and manifests, let Kubernetes reconcile, wait
 for readiness, then test. Startup dependency ordering belongs to Kubernetes; do not add
 PostgreSQL-first sequencing or a custom parallel import/unpack scheduler to the test harness.
+
+### `EGRESS_SIDECAR_GO` — convert the complete egress sidecar to Go
+
+**In progress; operator dispatch, 2026-10-16 19:07 PDT; worker `egress_sidecar_go`.** Replace the
+Python sidecar runtime with Go, including the HTTP/CONNECT relay and generic gRPC platform routes.
+Preserve projected-token rotation, audience/header replacement, fail-closed refusals, transparent
+duplex streams, deadlines/cancellation/status/trailers, configuration and readiness/shutdown.
+Update all image/configuration consumers atomically; the central mitmproxy service stays separate.
+Exit: a scoped PR with contract coverage, passing real k3s lifecycle and Claude smoke, and a matched
+comparison of Sandbox readiness, lifecycle time and distinct image bytes. Keep assertions, timeouts
+and the manual-only workflow. The shared Python runtime remains needed by other images; do not
+count the sidecar's full image size as removable bytes. Publish for Rai's manual merge; live rollout
+is separate.
 
 ### `K3S_SHARED_PACKAGE_LAYERS` — share third-party Python package layers
 
