@@ -283,10 +283,12 @@ func rewriteRequestHead(head []byte, token string, projected map[string]string, 
 	for _, line := range lines[1:] {
 		name, _, _ := bytes.Cut(line, []byte(":"))
 		name = bytes.ToLower(bytes.TrimSpace(name))
-		if name == "proxy-authorization" || name == "proxy-connection" || name == strings.ToLower(projectedTokenHeader) {
+		nameString := string(name)
+		if nameString == "proxy-authorization" || nameString == "proxy-connection" ||
+			nameString == strings.ToLower(projectedTokenHeader) {
 			continue
 		}
-		if !connect && name == "connection" {
+		if !connect && nameString == "connection" {
 			continue
 		}
 		rewritten = append(rewritten, line)
