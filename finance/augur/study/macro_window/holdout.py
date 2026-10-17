@@ -33,7 +33,6 @@ from __future__ import annotations
 import logging
 import tempfile
 from bisect import bisect_left
-from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -41,6 +40,7 @@ from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
+from more_itertools import map_reduce
 from numpyro import distributions as dist
 
 from finance.augur.fit.scoring import gaussian_crps, joint_log_density
@@ -193,9 +193,7 @@ def _first_origin(path: MacroStatePath, *, latest_start: date) -> int:
 
 
 def describe(scores: Sequence[ArmScore]) -> str:
-    by_horizon: defaultdict[int, list[ArmScore]] = defaultdict(list)
-    for score in scores:
-        by_horizon[score.horizon].append(score)
+    by_horizon = map_reduce(scores, keyfunc=lambda score: score.horizon)
     lines = []
     for horizon, rows in sorted(by_horizon.items()):
         lines.append(f"horizon {horizon} month(s) — {rows[0].origins} origins")

@@ -185,6 +185,7 @@ py_library(
     deps = [
         ":series",
         "//finance/augur:frames",
+        "@pypi//more_itertools",
         "@pypi//numpy",
         "@pypi//polars",
     ],

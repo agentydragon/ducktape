@@ -172,13 +172,7 @@ def _dedup(outputs: Iterable[Output]) -> list[Output]:
     they built. `by_path` collapsed them for free by being a dict; `by_label`
     groups into lists and would otherwise hand a caller one file twice.
     """
-    seen: set[Output] = set()
-    unique = []
-    for output in outputs:
-        if output not in seen:
-            seen.add(output)
-            unique.append(output)
-    return unique
+    return list(dict.fromkeys(outputs))
 
 
 def parse(raw: bytes) -> Invocation:

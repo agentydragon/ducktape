@@ -6,6 +6,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
+from more_itertools import duplicates_everseen
 from pydantic import (
     Field,
     NonNegativeFloat,
@@ -144,7 +145,7 @@ class FundingPolicy(ApiModel):
             for sleeve in self.sleeve_weights
         ]
         if len(set(named)) != len(named):
-            duplicated = sorted({name for name in named if named.count(name) > 1})
+            duplicated = sorted(set(duplicates_everseen(named)))
             raise ValueError(
                 f"sleeve weights name {duplicated} more than once; a sleeve weighted twice is double-counted"
             )

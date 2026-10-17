@@ -48,6 +48,7 @@ py_library(
         "//finance/augur/x/models:structural_macro",
         "//finance/augur/x/models:structural_macro_fit",
         "@pypi//jax",
+        "@pypi//more_itertools",
         "@pypi//numpy",
         "@pypi//numpyro",
     ],

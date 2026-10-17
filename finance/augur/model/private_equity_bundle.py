@@ -38,6 +38,7 @@ from enum import StrEnum
 import numpy as np
 import numpy.typing as npt
 import polars as pl
+from more_itertools import duplicates_everseen
 
 from finance.augur.frames import FrameSpec
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
@@ -206,12 +207,11 @@ class PrivateEquityBundle:
         """Concatenate per-issuer bundles. Rejects duplicate issuer ids."""
 
         frames = [part.frame for part in parts]
-        seen: set[str] = set()
-        for frame in frames:
-            for issuer in _issuer_ids_in_frame(frame):
-                if issuer in seen:
-                    raise ValueError(f"private-equity bundle has duplicate issuer {issuer!r}")
-                seen.add(issuer)
+        duplicate = next(
+            duplicates_everseen(issuer for frame in frames for issuer in _issuer_ids_in_frame(frame)), None
+        )
+        if duplicate is not None:
+            raise ValueError(f"private-equity bundle has duplicate issuer {duplicate!r}")
         return cls(frame=PRIVATE_EQUITY_BUNDLE_FRAME.concat(frames))
 
     def issuer_ids(self) -> frozenset[IssuerId]:

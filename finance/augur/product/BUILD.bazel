@@ -13,6 +13,7 @@ py_library(
         "//finance/augur/sim:events",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:ids",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
 )
