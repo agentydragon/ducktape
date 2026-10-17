@@ -16,13 +16,20 @@ its label. Disconnected and unidentified ports have no managed label.
 tofu-controller plans it every 15 minutes, from a runner pod pinned to the home LAN node
 (`topology.kubernetes.io/zone: home-lan`), but unlike the other `tf/gitops` modules applies only a
 plan a person approves ([Approving a plan](#approving-a-plan)); the CR is generated in
-`cluster/cdk8s/monitoring/home_switch.py`. Two passwords, neither stored anywhere but the cluster
-and the switch:
+`cluster/cdk8s/monitoring/home_switch.py`. Three RouterOS accounts:
 
 - `monitoring/home-switch-tofu-password`: the full-access `tofu` user this module logs in as.
   `bootstrap.sh` generates it and writes it to `cluster/k8s/home-switch/tofu-password.sops.yaml`.
 - `monitoring/home-switch-monitoring`: the read-only `monitoring` user this module manages, minted
   by ESO.
+- `monitoring/home-switch-agentplane`: the full-access `agentplane` SSH user this module manages,
+  with a password minted by ESO and the public key from `ssh_keys/home-switch-agentplane.pub`.
+  Its private key is stored separately in the SOPS-encrypted
+  `cluster/k8s/ssh-mcp/keys-agentplane.sops.yaml`, mounted only in the SSH MCP backend.
+
+The `agentplane` account has RouterOS `full` privileges, restricted to `lan_cidr`. Agentplane's
+staging SSH action still requires a person to approve each command; the account itself does not
+limit which RouterOS commands an approved SSH session can run.
 
 cert-manager issues the switch's TLS certificate, `monitoring/home-switch-tls`, from the cluster CA
 (`cluster-internal-ca`) for `IP:192.168.1.100`, so the Terraform verifies `api-ssl` against the CA

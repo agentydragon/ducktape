@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: ssh-mcp-keys-agentplane
+    namespace: ssh-mcp
+    annotations:
+        description: Dedicated private key for Agentplane SSH access to the home switch.
+type: Opaque
+stringData:
+    home-switch-agentplane: ENC[AES256_GCM,data:Axi5qbVnGNE7TBKEjZV8MNCLnFtmrQFnq6qJLBApRPJycfLGVHProT9yhSsdJHM4BgZSt+/q2rBQpg2mTlRh14aVHQiuGo+X6vf1UvJ4WMGLMPrBlR6aB/0raoRjFYsPHxZOcObBD0IBNUF493hsWVp7PBAxJE4deSydqpJcEGp91CfxZ8qZ+rO2t/xOWZXyKsXeBgPT6eDqpF/9y8RFlfa/LTkTJBCdFzcqJilnB1G/cGvQqhhlYlfvcNZ6U/rF58DRCiB5aWjOfyhuNaSEtF+UF+rj1hYD0jl+aHIC+Ob6tKFMVBgDuZeGrvmwgUXPUt+rrXshcCloFZKMm/fT6XkattiKYzwVAC0fsqtpLBN2CvE3nn2UDXLW5uOrSp4zjShOQEW3SZUeZuA+uDr6SPcDeCGnCtyEEDnXea4v6F2SaEKwCeupIr0PCUtTH8374xBiXxeBQPmaEMc+fo0wZFFDWL45Hxiyv5+9ZjeivjMwChq+uQ5pKpJKjnBHqKhlNzh9h9AM5Rum+TktCTtAB1M2QyCQp26hdr56VNj5AUP6EZk=,iv:8GTLuGePUmpJQEoFjixK0P+S8+GB05TNzBvHJHJyr/s=,tag:734a9rIngCNdhy9cvYFwKg==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBPN2Nxa0t3MWR3VG1CZnJU
+            K2J1N0M3MFRqbjhCN0NnZlBJQndHY0ZaVjBzCjVUN3RmWUFTbnNFbndIeWoxWmk2
+            cjBydzBtS2JzQ2RoM2h5SVJycEJKSEEKLS0tIEZlNlJFVHpoTk1TVHcwVCtXTkl5
+            L1A5RXVXZStaV1RvWFJvQnh5TjNPMTQKknEywOAYM8UzbIs4hRqQ1L8qVA8v0YiA
+            Y3bfz4JxSrMuDtvnUDSDwTzcFNl8lqt3KxsRtOHwfUUnv/IyMxFs2g==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA2eDNTV3VNNHQyT2lNWEkx
+            TWpiVHRUaTh1Z2gyOVNxbnNyanhTeklFaTJ3CkhuSU1XQ1BHbmZGNGNOcVRNWjMv
+            UEU3bW9OK3puMnhDRFNxTzdqV3k5TW8KLS0tIFpSbXVzUVg1Q0lLaWp0UmFTVVFY
+            bi94TzY2a2FEZU5FSXY1dGxVTGozTkkKq8igNkostEFfSXqpIm6VFr+0AIvqEhi4
+            TxSeVyVYRi4xxnOSvQ3fnqKXFb3G7l8tcCdro5INcVfIjXYT4hfhiw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-10-17T05:01:37Z"
+    mac: ENC[AES256_GCM,data:snGOWOgKGf7suBpcVk6YJeyVmK9+77YLYlEKmdJ3XEdzM7BPwOcAX7x50H588jOBx1tnQmtDYsLnFgtW4s0Ez6waHdyCWubeVnNP7+wRPvhurQOZXe8g3/fRYXL1+joYzj7QGZC0UwbxWEVcc6q8ivBISjmWlQy3Xbq7tRhtJmo=,iv:+U1MJv/Mminvo3pXjxc3c16wNCRXMb8M7ipKy+duzW0=,tag:Pkpq6bmnxPBJYQliyld34g==,type:str]
+    version: 3.13.3

@@ -628,7 +628,11 @@ def generate_manifests(root: Path) -> None:
         write_directory(
             root,
             monitoring_home_switch_artifact,
-            functools.partial(monitoring_home_switch.chart, module=home_switch_module),
+            functools.partial(
+                monitoring_home_switch.chart,
+                module=home_switch_module,
+                agentplane_ssh_public_key=ssh_config.switch_agent_public_key,
+            ),
             siblings=[monitoring_home_switch.TOFU_PASSWORD_FILE],
         ),
         cert_manager_kustomization,

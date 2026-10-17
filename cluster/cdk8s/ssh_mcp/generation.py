@@ -11,7 +11,12 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.ssh_mcp import config, sshpiper
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ssh-mcp"
-KEY_FILES = ("keys-atlas.sops.yaml", "keys-public-coder-devbox.sops.yaml", "keys.sops.yaml")
+KEY_FILES = (
+    "keys-agentplane.sops.yaml",
+    "keys-atlas.sops.yaml",
+    "keys-public-coder-devbox.sops.yaml",
+    "keys.sops.yaml",
+)
 
 
 def sshpiper_pipe_chart(app: App, *, ssh_config: config.SshMcpConfig) -> Chart:

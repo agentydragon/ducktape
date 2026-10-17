@@ -53,6 +53,7 @@ data:
     rugged.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA5khWiTDnTSkz83F+0JwYIOOT+QpV0/u3cc02L5LLFm
     atlas.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINI/boyFdYuUJYBF4mnkK4O8/YcSfhZUSaUx1Mhdis+G
     public-coder-devbox-ssh.public-coder-agent.svc.cluster.local ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIARgvl0zwplvewSpQLX6v8ayfrwo4bsuLBIOwNstBzQB
+    192.168.1.100 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDJKANlp+W5MVndg58Qaf78yjTCJydv9S+D2Xx2p3wbX+143lJ7plTW87NTj87gQ6NV/ZaEAE6eHL2HH53m+yG8bc7DSwfrD12OJU5M6y8b+KZY/6johBx7geWp7BL1VsigZV2hncHCrcIP+I85wFw1Z3kFj2VZvoCOAnEaVrJ6PbS/AKJ2yKhdaS74E4R+ke0rD6wdfRikCwOnB/XSpY82OZKm/N0io0/dDSE8A96pcDPjh/AuIQOu8j+XDiziLmVX/crJiZSPagN3ei7F6Zxs9pau3BukreByEoy83iDFtDP7uxPs704PDUKcbmvq8/CzcYg4Q5TOgXquCAYcWgsN
   settings.yaml: |
     known_hosts_file: /etc/ssh-mcp/known_hosts
     command_timeout_seconds: 300
@@ -84,6 +85,9 @@ data:
       - host: atlas.nebula.allegedly.works
         user: agentydragon
         identity_file: /etc/ssh-mcp/keys-atlas/atlas-agentydragon
+      - host: 192.168.1.100
+        user: agentplane
+        identity_file: /etc/ssh-mcp/keys-agentplane/home-switch-agentplane
 immutable: false
 ---
 apiVersion: apps/v1
@@ -179,6 +183,9 @@ spec:
             - mountPath: /etc/ssh-mcp/keys-atlas
               name: keys-atlas
               readOnly: true
+            - mountPath: /etc/ssh-mcp/keys-agentplane
+              name: keys-agentplane
+              readOnly: true
       dnsPolicy: ClusterFirst
       enableServiceLinks: false
       hostAliases:
@@ -194,6 +201,8 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: home-lan
       restartPolicy: Always
       securityContext:
         fsGroupChangePolicy: Always
@@ -221,6 +230,10 @@ spec:
           secret:
             optional: true
             secretName: ssh-mcp-keys-atlas
+        - name: keys-agentplane
+          secret:
+            optional: true
+            secretName: ssh-mcp-keys-agentplane
 ---
 apiVersion: v1
 kind: Service
@@ -272,6 +285,12 @@ spec:
               protocol: TCP
     - toCIDR:
         - 10.42.0.5/32
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP
+    - toCIDR:
+        - 192.168.1.100/32
       toPorts:
         - ports:
             - port: "22"

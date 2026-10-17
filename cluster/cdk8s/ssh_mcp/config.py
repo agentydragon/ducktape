@@ -1,14 +1,14 @@
 """The shared SSH MCP service, credential, and target configuration contract.
 
-The ssh-mcp ConfigMap and sshpiper's Pipe both pin the public-coder devbox from its
-Service and committed public host key. Keep those inputs and the SSH target roster
-here so the two generated outputs cannot disagree.
+Keep SSH targets, their private-key paths, and pinned host keys in one place so the
+generated ssh-mcp ConfigMap and sshpiper Pipe cannot disagree.
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
+from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from x.ssh_mcp_server.server import SshSettings
@@ -28,12 +28,15 @@ CONFIG_DIR = "/etc/ssh-mcp"
 
 DEVBOX_HOST_KEY = "ssh_keys/public-coder-devbox-host.pub"
 AGENT_DOWNSTREAM_KEY = "ssh_keys/public-coder-agent-devbox.pub"
+SWITCH_HOST_KEY = "ssh_keys/home-switch-host-key.pub"
+SWITCH_AGENT_PUBLIC_KEY = "ssh_keys/home-switch-agentplane.pub"
 NEBULA_SUFFIX = ".nebula.allegedly.works"
 NEBULA_HOST_KEY = "ssh_keys/{name}-host-ed25519.pub"
 
 _WYRM2 = "wyrm2.nebula.allegedly.works"
 _RUGGED = "rugged.nebula.allegedly.works"
 _ATLAS = "atlas.nebula.allegedly.works"
+_SWITCH = str(HOME_LAN.switch)
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class SshMcpConfig:
     settings: dict[str, object]
     known_hosts: str
     agent_downstream_key: str
+    switch_agent_public_key: str
 
     @property
     def nebula_hostnames(self) -> tuple[str, ...]:
@@ -75,6 +79,7 @@ def _targets(devbox_host: str) -> tuple[Target, ...]:
         *_targets_for(_RUGGED, ("agentydragon", "root"), "keys", "rugged"),
         *_targets_for(devbox_host, ("root", "coder"), "keys-public-coder-devbox", "public-coder-devbox"),
         *_targets_for(_ATLAS, ("root", "agentydragon"), "keys-atlas", "atlas"),
+        Target(_SWITCH, "agentplane", f"{CONFIG_DIR}/keys-agentplane/home-switch-agentplane"),
     )
 
 
@@ -113,7 +118,9 @@ def load(devbox_ssh: ServiceRef) -> SshMcpConfig:
         f"{name}{NEBULA_SUFFIX} {_host_key(NEBULA_HOST_KEY.format(name=name))}\n" for name in _nebula_hostnames(targets)
     )
     known_hosts += f"{devbox_host} {host_key}\n"
+    known_hosts += f"{_SWITCH} {_host_key(SWITCH_HOST_KEY)}\n"
     agent_downstream_key = _read_input(AGENT_DOWNSTREAM_KEY)
+    switch_agent_public_key = " ".join(_read_input(SWITCH_AGENT_PUBLIC_KEY).split()[:2])
     return SshMcpConfig(
         devbox_host=devbox_host,
         devbox_key_type=key_type,
@@ -123,4 +130,5 @@ def load(devbox_ssh: ServiceRef) -> SshMcpConfig:
         settings=settings,
         known_hosts=known_hosts,
         agent_downstream_key=agent_downstream_key,
+        switch_agent_public_key=switch_agent_public_key,
     )

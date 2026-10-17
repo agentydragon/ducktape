@@ -9,6 +9,8 @@ py_library(
     srcs = ["config.py"],
     data = [
         "//ssh_keys:atlas-host-ed25519.pub",
+        "//ssh_keys:home-switch-agentplane.pub",
+        "//ssh_keys:home-switch-host-key.pub",
         "//ssh_keys:public-coder-agent-devbox.pub",
         "//ssh_keys:public-coder-devbox-host.pub",
         "//ssh_keys:rugged-host-ed25519.pub",
@@ -16,6 +18,7 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:service_ref",
         "//util/bazel:runfiles",
@@ -32,6 +35,7 @@ py_library(
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:secret_ref",

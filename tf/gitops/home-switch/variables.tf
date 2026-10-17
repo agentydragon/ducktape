@@ -5,6 +5,11 @@ variable "switch_address" {
   description = "The switch's management address, which its certificates name."
 }
 
+variable "agentplane_ssh_public_key" {
+  type        = string
+  description = "Public SSH key for the Agentplane switch user."
+}
+
 variable "lan_cidr" {
   type        = string
   description = "The only network management services and the monitoring user accept connections from."

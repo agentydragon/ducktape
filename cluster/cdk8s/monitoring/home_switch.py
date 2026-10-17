@@ -1,13 +1,16 @@
 """The home MikroTik switch (CRS310): the `tf/gitops/home-switch` Terraform, and what it installs
 on the switch.
 
-Two RouterOS passwords, held nowhere but here and on the switch:
+Three RouterOS accounts, with credentials held in cluster Secrets and on the switch:
 
 - `tofu`: the full-access user the Terraform logs in as. `tf/gitops/home-switch/bootstrap.sh`
   creates it on the switch with a fresh password, which it writes to this directory's
   `tofu-password.sops.yaml`; re-running it rotates the password.
 - `monitoring`: the read-only user the Terraform manages, which a RouterOS exporter will log in as.
   ESO mints it.
+- `agentplane`: the full-access SSH user whose public key Tofu installs for Agentplane's SSH MCP
+  backend. ESO mints its password; SSH uses the separately SOPS-encrypted private key mounted into
+  the backend.
 
 cert-manager issues the switch's api-ssl/www-ssl certificate, `home-switch-tls`, from the cluster CA,
 so clients verify it against the CA bundle: `bootstrap.sh` installs it for the Terraform's first
@@ -44,6 +47,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 TOFU_PASSWORD_FILE = "tofu-password.sops.yaml"
 # tf/gitops/home-switch/main.tf and bootstrap.sh read these Secrets and keys by name.
 MONITORING_PASSWORD = SecretRef(namespace=NAMESPACE, name="home-switch-monitoring").key("password")
+AGENTPLANE_PASSWORD = SecretRef(namespace=NAMESPACE, name="home-switch-agentplane").key("password")
 TLS_SECRET = "home-switch-tls"
 # The switch is reachable only from the home LAN; OptiPlex is the cluster node on it.
 _HOME_LAN = {"topology.kubernetes.io/zone": "home-lan"}
@@ -57,6 +61,7 @@ class HomeSwitchVars(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     switch_address: str = Field(description="The switch's management address, which its certificate names.")
+    agentplane_ssh_public_key: str = Field(description="Public SSH key Tofu installs for the Agentplane user.")
     lan_cidr: str = Field(
         description="The only network management services and the monitoring user accept connections from."
     )
@@ -76,13 +81,19 @@ def _mint(chart: Chart, id: str, key: SecretKey, description: str) -> None:
     )
 
 
-def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
+def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_public_key: str) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _mint(
         chart,
         "monitoring-password",
         MONITORING_PASSWORD,
         "Password of the home switch's read-only RouterOS user; tf/gitops/home-switch sets it on the switch.",
+    )
+    _mint(
+        chart,
+        "agentplane-password",
+        AGENTPLANE_PASSWORD,
+        "Password of the home switch's full-access Agentplane SSH user; SSH uses its public key.",
     )
     Certificate(
         chart,
@@ -102,6 +113,7 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         module=module,
         variables=HomeSwitchVars(
             switch_address=str(HOME_LAN.switch),
+            agentplane_ssh_public_key=agentplane_ssh_public_key,
             lan_cidr=str(HOME_LAN.network),
             # Where alloy-syslog listens.
             syslog_address=str(HOME_LAN.optiplex),

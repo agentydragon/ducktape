@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ipaddress import ip_address
+
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
 from cdk8s_plus_34 import (
     Capability,
@@ -25,7 +27,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
-from cluster.cdk8s import cilium, namespaces, pod_policy
+from cluster.cdk8s import cilium, namespaces, node_scheduling, pod_policy
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
@@ -56,6 +58,7 @@ _KEY_VOLUMES = (
     ("keys", "ssh-mcp-keys", f"{CONFIG_DIR}/keys"),
     ("keys-public-coder-devbox", "ssh-mcp-keys-public-coder-devbox", f"{CONFIG_DIR}/keys-public-coder-devbox"),
     ("keys-atlas", "ssh-mcp-keys-atlas", f"{CONFIG_DIR}/keys-atlas"),
+    ("keys-agentplane", "ssh-mcp-keys-agentplane", f"{CONFIG_DIR}/keys-agentplane"),
 )
 
 
@@ -86,6 +89,15 @@ def _egress(mesh: Mesh, config: SshMcpConfig) -> list[CiliumNetworkPolicySpecEgr
     ]
     if external_ips:
         rules.append(EgressRule.to_cidrs(*external_ips, ports=[22]))
+    direct_ips: list[str] = []
+    for target in config.targets:
+        try:
+            address = ip_address(target.host)
+        except ValueError:
+            continue
+        direct_ips.append(f"{address}/{address.max_prefixlen}")
+    if direct_ips:
+        rules.append(EgressRule.to_cidrs(*direct_ips, ports=[22]))
     return rules
 
 
@@ -154,6 +166,12 @@ class SshMcp(Construct):
                 # The aspect_rules_py launcher materializes its venv in the image's runfiles.
                 read_only_root_filesystem=False,
             ),
+        )
+        # The home switch is reachable from the home-LAN node. Keep the backend
+        # there so its egress follows the same routed path as the tofu runner.
+        pod_policy.place(
+            deployment,
+            node_scheduling.Placement(node_selector={"topology.kubernetes.io/zone": "home-lan"}),
         )
         config_volume = Volume.from_config_map(self, "config-volume", config_map)
         deployment.containers[0].mount(CONFIG_DIR, config_volume, read_only=True)

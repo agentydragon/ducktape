@@ -18,6 +18,13 @@ data "kubernetes_secret_v1" "monitoring" {
   }
 }
 
+data "kubernetes_secret_v1" "agentplane" {
+  metadata {
+    name      = "home-switch-agentplane"
+    namespace = "monitoring"
+  }
+}
+
 data "kubernetes_secret_v1" "tls" {
   metadata {
     name      = "home-switch-tls"
@@ -95,6 +102,22 @@ resource "routeros_system_user" "monitoring" {
   address  = var.lan_cidr
   password = data.kubernetes_secret_v1.monitoring.data["password"]
   comment  = "Read-only RouterOS exporter; password minted by ESO, see tf/gitops/home-switch."
+}
+
+# The SSH MCP private key is held in its own SOPS-encrypted Secret. Tofu installs only
+# its public half here; the full-access account remains a distinct identity from admin/tofu.
+resource "routeros_system_user" "agentplane" {
+  name     = "agentplane"
+  group    = "full"
+  address  = var.lan_cidr
+  password = data.kubernetes_secret_v1.agentplane.data["password"]
+  comment  = "Agentplane SSH MCP; managed by tf/gitops/home-switch."
+}
+
+resource "routeros_system_user_sshkeys" "agentplane" {
+  user    = routeros_system_user.agentplane.name
+  key     = var.agentplane_ssh_public_key
+  comment = "Agentplane SSH MCP home-switch key."
 }
 
 # Log history on the switch, so a log puller can backfill what happened while it couldn't reach
