@@ -1,4 +1,4 @@
-"""Check the current migration head and repeat-upgrade stability.
+"""Check the upgraded schema and repeat-upgrade stability.
 
 Only a disposable testcontainer database is used; no deployed database is contacted.
 """
