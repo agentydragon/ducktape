@@ -6,6 +6,13 @@ read-only `monitoring` user for the RouterOS exporter, and bounded log history o
 (10k lines in RAM, 5 x 10k lines rotating on flash) for backfill after an outage, also
 forwarded as BSD syslog over UDP to `alloy-syslog` on optiplex (`192.168.1.10:514`).
 
+[`ports.tf`](ports.tf) labels verified physical connections with interface comments,
+which mktxp exports as `mktxp_interface_comment_info`. Interfaces keep their factory
+names. The provider's Ethernet resource selects an existing interface by
+`factory_name` and updates it; no separate state import is needed. Confirm a moved
+connection through `/interface/bridge/host` and the endpoint's MAC before updating
+its label. Disconnected and unidentified ports have no managed label.
+
 tofu-controller plans it every 15 minutes, from a runner pod pinned to the home LAN node
 (`topology.kubernetes.io/zone: home-lan`), but unlike the other `tf/gitops` modules applies only a
 plan a person approves ([Approving a plan](#approving-a-plan)); the CR is generated in
