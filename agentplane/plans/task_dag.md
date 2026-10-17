@@ -805,7 +805,80 @@ flowchart LR
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
     ACTION_SURFACES_DESIGN -. related .-> NOTIFICATION_PRESENTATION
     BUILD_BOX_BAZEL[Unscheduled: build Sandboxes can run Bazel]
+    PLATFORM_SERVICE_NAMES_DESIGN[Decision, unscheduled: reserved sidecar names for platform services]
+    PLATFORM_SERVICE_ROUTING_DESIGN[Decision, unscheduled: direct platform access vs central egress]
+    PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
 ```
+
+### `PLATFORM_SERVICE_NAMES_DESIGN` — stable sidecar names for platform services
+
+**Decision, unscheduled; operator idea, 2026-10-16 PDT.** Evaluate reserved names such as
+`gateway-control.agentplane`, `history-ingress.agentplane`, `notifications.agentplane` and
+`actions.agentplane` that map to deployment-configured service endpoints. Decide where the mapping
+lives alongside `PLATFORM_SERVICE_ROUTING_DESIGN`; stable names need not select a central or local route.
+Cover platform services an agent can access, including discovery of their APIs and effective access;
+distinguish runner-internal interfaces from agent-facing interfaces. Keep namespace, cluster domain
+and ports out of client configuration. Decide whether these are proxy-only authorities or resolvable
+names usable by direct HTTP/gRPC clients; account for proxy exclusions, Pod/VM networking,
+TLS authority if applicable, and the
+overlap of `gateway.agentplane` with Kubernetes Service/namespace DNS shorthand.
+
+Use exact deployment-owned mappings, coupled to endpoint, audience/token projection and
+network-policy wiring; `cluster/cdk8s/agentplane/platform_routes.py` owns today's direct routes.
+Preserve independent backend authorization and audience-specific identity. Naming alone grants no
+access; any change to a service's egress-policy or credential requirements belongs to the routing
+decision below, not an incidental alias change.
+Unknown reserved names and unavailable routes fail closed without ordinary
+DNS/public-egress fallback. No general wildcard-to-cluster-service rewrite is implied.
+
+Exit: a reviewed naming and transport contract with concrete Gateway-control, History-ingress,
+Notifications and Actions client examples, plus a bounded implementation/acceptance scope covering
+routing, service discovery, effective access, injected identity, denials and supported Pod/VM clients.
+This node authorizes design work; runtime changes wait for
+the transport decision. No prerequisites on the other section 5 candidates.
+
+### `PLATFORM_SERVICE_ROUTING_DESIGN` — direct platform access versus central egress
+
+**Decision, unscheduled; operator discussion, 2026-10-16 PDT.** Compare routing agent-accessible
+Agentplane services through the central egress proxy with direct local-relay routes or direct
+authenticated clients. Include Actions and Notifications as well as runner Gateway control and
+History ingress. Gateway/ingress previously used central egress; existing proxy coverage includes
+interactive plaintext bidirectional gRPC with metadata substitution. Protocol alone does not require
+their current special routes. Naming and API discovery can be designed independently; settle the
+combined transport contract before implementation.
+
+The central proxy keeps real substituted credentials outside the Sandbox/Pod/VM and outside what
+its ServiceAccount can access, records request/decision evidence, and applies Agentplane egress
+policy. Agentplane's own services instead authenticate the agent as itself: distinguish that workload
+identity from delegated external credentials the agent must never possess. Backend authorization
+remains required on every route.
+
+Arguments for direct platform access: these services are naturally agent-facing, their caller's own
+identity may be acceptable for the agent to hold, and required runner control/history delivery would
+not depend on central-proxy availability or egress-policy readiness. A local relay could attach
+identity without requiring `Bearer <placeholder>`; weigh that small convenience against an asymmetric
+client contract that hides authentication. Stable reserved names help prompts and instructions under
+either routing choice.
+
+Costs of direct relay routes: another route/configuration surface to distribute and update across
+Pod and VM runners, and another place that attaches workload authentication to requests. The minimal
+relay already authenticates its hop to central egress, but per-service forwarding expands its role.
+Compare generated startup configuration with mounted ConfigMaps or another existing distribution
+mechanism; specify update/reload behavior, rollout scope and failure behavior. Central routing
+consolidates policy, substitution and decision logging, but adds those dependencies to platform calls.
+Decide what request/decision visibility and access controls direct routes need and who owns them.
+
+Evaluate making central egress optional for deployments that need neither external credential
+substitution nor Agentplane egress filtering: external networking may be independently disabled, or
+the operator may accept unrestricted access and agent-held credentials. State which functions and
+diagnostics are absent in that mode and how platform identity, authorization and discovery still work.
+Absence of the proxy alone does not disable external networking.
+
+Exit: a reviewed routing/dependency and identity contract, including whether central egress is optional,
+configuration lifecycle, and concrete client examples coordinated with `PLATFORM_SERVICE_NAMES_DESIGN`.
+Define bounded acceptance for actual runner control and History push/reconnect, agent calls to Actions
+and Notifications, authorization denials and the selected proxy-unavailable/absent behavior. No runtime
+change or removal of existing policy checks is selected by this node.
 
 ### `ACTION_SURFACES_DESIGN` — where and in what states Actions render
 
