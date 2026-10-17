@@ -34,9 +34,6 @@ require github.com/go-logr/logr v1.4.4
 // Direct dependencies for agentplane/llm_ingress
 require gopkg.in/yaml.v3 v3.0.1
 
-// Bounded central-egress transport spike (no deployment consumer).
-require github.com/elazarl/goproxy v1.9.2
-
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect

@@ -54,14 +54,32 @@ func (r *reviewer) Create(_ context.Context, review *authenticationv1.TokenRevie
 type countedListener struct {
 	net.Listener
 	accepts atomic.Int64
+	closed  chan struct{} // receives once per accepted connection that is closed
 }
 
 func (l *countedListener) Accept() (net.Conn, error) {
 	c, err := l.Listener.Accept()
-	if err == nil {
-		l.accepts.Add(1)
+	if err != nil {
+		return nil, err
 	}
-	return c, err
+	l.accepts.Add(1)
+	return &closeSignalConn{Conn: c, closed: l.closed}, nil
+}
+
+type closeSignalConn struct {
+	net.Conn
+	closed chan<- struct{}
+	once   sync.Once
+}
+
+func (c *closeSignalConn) Close() error {
+	c.once.Do(func() {
+		select {
+		case c.closed <- struct{}{}:
+		default: // only tests that wait on it read the channel
+		}
+	})
+	return c.Conn.Close()
 }
 
 type lab struct {
@@ -117,7 +135,7 @@ func (l *lab) start(t *testing.T) {
 func (l *lab) upstream(t *testing.T, name string, tlsEnabled bool, handler http.Handler) (*httptest.Server, *countedListener) {
 	t.Helper()
 	server := httptest.NewUnstartedServer(handler)
-	counted := &countedListener{Listener: server.Listener}
+	counted := &countedListener{Listener: server.Listener, closed: make(chan struct{}, 16)}
 	server.Listener = counted
 	server.EnableHTTP2 = true
 	if tlsEnabled {
@@ -293,6 +311,27 @@ func TestInteractiveH2AndH2CTrailersCredentialAndCancellation(t *testing.T) {
 			}
 			if counted.accepts.Load() != 2 || l.resolutions.Load() != 2 {
 				t.Fatalf("TCP=%d DNS=%d", counted.accepts.Load(), l.resolutions.Load())
+			}
+		})
+	}
+}
+
+func TestUpstreamConnectionIsReleasedAfterItsOnlyResponse(t *testing.T) {
+	for _, encrypted := range []bool{true, false} {
+		t.Run(fmt.Sprint("tls=", encrypted), func(t *testing.T) {
+			l := newLab(t)
+			upstream, counted := l.upstream(t, fixtureHost, encrypted, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("done")) }))
+			_, client := l.tunnel(t, portOf(upstream), encrypted)
+			response, err := client.RoundTrip(request(bounded(t), portOf(upstream), "/allowed", encrypted, nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			io.Copy(io.Discard, response.Body)
+			response.Body.Close()
+			select {
+			case <-counted.closed:
+			case <-time.After(5 * time.Second):
+				t.Fatal("upstream connection stayed open after its only response")
 			}
 		})
 	}
