@@ -230,8 +230,9 @@ guarantee before that mechanism exists.
 ## 3. Multiagent decisions before implementations
 
 These are operator-reviewable decisions, not permission to implement every possibility. Drafts can
-be developed together, but publish a coherent shared identity/authority vocabulary before downstream
-APIs. Do not equate creating a resource, reading history, sending a message or receiving/acking it.
+be developed together, but publish a coherent Session-access rule schema before the nodes that use it,
+and the identity/authority vocabulary before create and launch policy. Do not equate creating a
+resource, reading history, sending a message or receiving/acking it.
 
 [The cross-agent plan](multiagent_communication.md#tentative-implementation-direction) tentatively
 selects service-enforced Session-access `PolicySet` rules assigned through existing `PolicyBinding`s.
@@ -249,8 +250,10 @@ the remaining contracts below still require review before implementation.
 ```mermaid
 flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
+    SESSION_ACCESS_RULES_DESIGN[Decision: Session-access rule and membership schema]
     SESSION_ACCESS_RULES[Blocked: shared Session-access rules]
     THREAD_READ_POLICY_DESIGN[Decision: remaining history read contract]
+    HISTORY_ACCESS_AFTER_DELETION[Decision: who reads a deleted Sandbox's history]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SESSION_KEY_DESIGN[Decision: record the Sandbox UID in History, and key Sessions by it]
     HISTORY_SANDBOX_UID[Blocked: History records and checks the Sandbox UID]
@@ -264,12 +267,14 @@ flowchart TD
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
-    MULTIAGENT_MODEL --> THREAD_READ_POLICY_DESIGN
-    MULTIAGENT_MODEL --> SESSION_ACCESS_RULES
-    MULTIAGENT_MODEL --> AGENT_MESSAGING_DESIGN
     MULTIAGENT_MODEL --> THREAD_CREATE_POLICY
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
+    SESSION_ACCESS_RULES_DESIGN --> SESSION_ACCESS_RULES
+    SESSION_ACCESS_RULES_DESIGN --> THREAD_READ_POLICY_DESIGN
+    SESSION_ACCESS_RULES_DESIGN --> AGENT_MESSAGING_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
+    HISTORY_ACCESS_AFTER_DELETION --> THREAD_READ_POLICY
+    HISTORY_ACCESS_AFTER_DELETION -. may change membership storage .-> SESSION_ACCESS_RULES
     SESSION_ACCESS_RULES --> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN --> HISTORY_SANDBOX_UID
     HISTORY_SESSION_KEY_DESIGN -. read API shape .-> THREAD_READ_POLICY
@@ -297,20 +302,31 @@ flowchart TD
 **Decision; no runtime work implied.** Present concrete API examples for independent agents,
 Sandboxes and Sessions, with creator, manager and parent/provenance represented separately. Ask
 the operator to choose remaining addressing/ownership and delegation semantics. Use the agreed
-SA-level caller attribution and the [tentative Session-access rule direction](multiagent_communication.md#tentative-implementation-direction).
+SA-level caller attribution and the [tentative Session-access rule direction](multiagent_communication.md#tentative-implementation-direction),
+without choosing a mandatory topology. No permission inheritance from an organizational edge or
+preset. Review how native harness children could later be ingested: linked execution in the same
+Sandbox trust boundary versus independently provisioned Sandboxes, addressability, observability
+and which controls must remain unavailable. Native integration itself stays frozen, and v1 excludes
+native children from the messaging and access model.
+
+This gates `THREAD_CREATE_POLICY` and `AGENT_LAUNCH_POLICY_DESIGN`. Messaging and history reads
+need only the rule schema in `SESSION_ACCESS_RULES_DESIGN`, so creator, manager and parent semantics
+do not hold them up. The app's existing auth path may remain a special case for v1. Reducing that
+special handling is optional, separately reviewed follow-up work and does not gate multiagent
+implementation.
+
+### `SESSION_ACCESS_RULES_DESIGN` — Session-access rule and membership schema
+
+**Decision; gates `SESSION_ACCESS_RULES`, `THREAD_READ_POLICY_DESIGN` and `AGENT_MESSAGING_DESIGN`.**
 Finalize the common rule/member-reference schema, concrete administrative RBAC and freshness
 settings under the agreed [policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness),
-without choosing a mandatory topology or requiring an auth-engine migration. No permission
-inheritance from an organizational edge or preset. Prefer Kubernetes resources for grants and explicit collection
-membership, with separate CRs for individual Sandbox-to-collection enrollments so Flux and the app
-can own different memberships independently. Support name-based Sandbox references that follow
-recreation and UID-pinned references for a single instance; app launches default to UID pinning,
-while GitOps-managed named Sandboxes may use name-based membership. Other storage remains allowed
-if concrete implementation friction warrants it. Storage is separate from the selected
-service-enforced evaluator direction. Review how native harness children could later be ingested:
-linked execution in the same Sandbox trust boundary versus independently provisioned Sandboxes,
-addressability, observability and which controls must remain unavailable. Native integration itself
-stays frozen, and v1 excludes native children from the messaging and access model.
+without requiring an auth-engine migration. Prefer Kubernetes resources for grants and explicit
+collection membership, with separate CRs for individual Sandbox-to-collection enrollments so Flux
+and the app can own different memberships independently. Support name-based Sandbox references that
+follow recreation and UID-pinned references for a single instance; app launches default to UID
+pinning, while GitOps-managed named Sandboxes may use name-based membership. Other storage remains
+allowed if concrete implementation friction warrants it. Storage is separate from the selected
+service-enforced evaluator direction.
 
 Membership CR writes use ordinary Kubernetes RBAC, initially granted to operator/GitOps and trusted
 provisioning. Read/send grants confer no membership administration; explicit administrative grants
@@ -323,16 +339,27 @@ token ([agreed route](multiagent_communication.md#oauth-callers)); no OAuth admi
 other backends. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and
 Connection representation/storage changes are outside this work.
 
-The app's existing auth path may remain a special case for v1. Reducing that special handling is
-optional, separately reviewed follow-up work and does not gate multiagent implementation.
+**Open question: a wildcard target** (operator, 2026-10-17 UTC: permissions like "send messages to
+any Sandbox" and "read from any Session"). A Session's scope is its Sandbox, so both are one target form.
+Alternatives:
+
+- **Direct Sandboxes and explicit collections only.** A grant over everything needs a collection every
+  Sandbox joins, and its membership has to follow every launch.
+- **Add an `allSandboxes` target.** It applies to Sandboxes created later and needs no membership data,
+  so a reader of every history is unaffected by `HISTORY_ACCESS_AFTER_DELETION`. Operations stay
+  independent (read-any does not imply send-any) and only whoever writes PolicySets can grant it.
+
+**Recommendation:** add it, since it is one more equality in the shared evaluator and covers an analyst
+agent that reads every history. **Question for review:** include `allSandboxes` in the v1 rule schema?
 
 ### `SESSION_ACCESS_RULES` — shared Session-access rule support
 
-**Blocked on the reviewed common contract in `MULTIAGENT_MODEL`.** Extend PolicySet schemas with the
+**Blocked on the reviewed schema in `SESSION_ACCESS_RULES_DESIGN`.** Extend PolicySet schemas with the
 tentative Session-access rule family and implement shared rule-reading/evaluation code for API owners.
 Reuse existing SA authentication and PolicyBindings. Match independently grantable listing,
-transcript-read and Session-inbox append operations against direct Sandbox targets or current
-explicit collection memberships represented by separate enrollment CRs.
+transcript-read and Session-inbox append operations against direct Sandbox targets, current
+explicit collection memberships represented by separate enrollment CRs and, if selected, an
+all-Sandboxes target.
 Honor both name-based and UID-pinned Sandbox member references without changing recorded Session
 associations when a Sandbox name is reused.
 Implement independent watched policy views, initial-sync and configurable freshness checks, and
@@ -346,8 +373,9 @@ respective nodes.
 ### `THREAD_READ_POLICY_DESIGN` — scoped history read policy
 
 **Decision; tentative Session-access rules, Sandbox minimum and explicit collections selected.**
-Finalize read-specific grant administration within the agreed membership RBAC boundary, caller
-replacement semantics and access to retained histories after Sandbox deletion. V1 has no
+Finalize read-specific grant administration within the agreed membership RBAC boundary and caller
+replacement semantics. Access to retained histories after Sandbox deletion is
+`HISTORY_ACCESS_AFTER_DELETION`. V1 has no
 individual-Session grants or computed collection selection. Presets
 may seed authorized launch enrollment; subsequent removals persist. Reading a Session resolves its
 recorded Sandbox identity, and all Sessions in that Sandbox use the same scope. Defaults expose
@@ -356,10 +384,42 @@ independent from send; its metadata fields are selected, and raw history read/fo
 imply send/create, and no folded-read API is required for v1. Cover discovery, linked evidence, live-feed
 revocation and unknown historical associations. Do not block this on a messaging transport.
 
+### `HISTORY_ACCESS_AFTER_DELETION` — who reads a Sandbox's history once it is deleted
+
+**Decision; the operator is weighing it and asked not to rush (2026-10-17 UTC).** Retained history stays
+readable after its Sandbox is deleted, and History already records the Sandbox that wrote each Session. A
+direct Sandbox grant needs only that record, as would an `allSandboxes` grant if selected, so both keep
+working. Only a collection grant needs membership at read time, and membership lives in Kubernetes CRs that
+go away or dangle with the Sandbox. The operator wants agents to read old history, dislikes Kubernetes
+references to Sandboxes that no longer exist, does not want to keep heavy Sandbox resources only for
+history, does not want membership split awkwardly between History and Kubernetes, does not want Kubernetes
+to be a historical log, and finds a collection grant that stops covering deleted members annoying.
+
+Alternatives:
+
+- **Live-only memberships.** UID-pinned membership CRs carry an ownerReference to their Sandbox, so
+  Kubernetes removes them with it; GitOps name-based memberships stay Flux's. Collection grants cover only
+  live members, and old history is reached by direct or all-Sandboxes grants.
+- **Reduced Sandbox kept.** Suspend the Sandbox and drop its workspace PVC, keeping the object and the small
+  harness data directory, so memberships stay valid. Deletion becomes archiving: a new lifecycle state and
+  a Sandbox, ServiceAccount, PolicyBinding and PVC per dead Sandbox, to protect transcripts History already
+  stores.
+- **Memberships in a database.** One owner (History or Notifications) with an API, administrative
+  authorization and audit; no dangling references. Membership writes leave Kubernetes RBAC and GitOps, so
+  Flux and the app no longer own different memberships through CRs.
+- **Kubernetes CRs plus a database record.** The CRs stay authoritative while the Sandbox exists, and a
+  record of its collections, written at deletion or kept from History's last push, serves reads afterwards.
+  Two places for one fact, one a cache of the other, and History needs read access to membership CRs.
+
+**Recommendation:** decide it when `THREAD_READ_POLICY` is next in line, because nothing else waits on it:
+sending and live reads need no retained membership, and direct grants work after deletion under every
+alternative. **Questions for review:** which alternative? Should an `allSandboxes` read also reach histories
+with no recorded Sandbox UID, which are operator-only today (`HISTORY_SESSION_KEY_DESIGN`)?
+
 ### `THREAD_READ_POLICY` — authorized retained-history access
 
-**Blocked on reviewed read policy and on `HISTORY_SANDBOX_UID`, which records the Sandbox UID the
-association needs.** Enforce the immutable Session-to-Sandbox association and
+**Blocked on reviewed read policy, on `HISTORY_ACCESS_AFTER_DELETION` and on `HISTORY_SANDBOX_UID`,
+which records the Sandbox UID the association needs.** Enforce the immutable Session-to-Sandbox association and
 Sandbox-scoped grants through shared Session-access rules at the owning backend across list,
 raw/native evidence, direct reads and feeds, including reconnect and revocation. Keep app-only UI
 folds separate. Test allowed/denied histories, two principals,

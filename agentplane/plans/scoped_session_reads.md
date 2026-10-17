@@ -31,7 +31,8 @@ History owns the durable Session ID and its recorded Sandbox association. The ch
 representation must keep the facts needed for authorized historical reads after live Kubernetes
 objects disappear. Follow the [Kubernetes-resource storage preference](multiagent_communication.md#target-collections-and-launch-enrollment),
 with alternatives allowed on concrete implementation friction; historical membership and policy
-resource lifetime after Sandbox deletion remain explicit design questions.
+resource lifetime after Sandbox deletion remain the open design question
+`HISTORY_ACCESS_AFTER_DELETION` in [the task DAG](task_dag.md).
 
 ## Scope, identity and enforcement
 
