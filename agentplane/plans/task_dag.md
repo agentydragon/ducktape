@@ -351,6 +351,9 @@ deployment initially, with optional subscription/source integrations; leave Disp
 Use `subscription` for source-following and `notice` for the batched inbox prompt. The exact service
 name, send API and discovery metadata fields remain open. Inbox read/ack retains the receiving
 Sandbox's owner-SA boundary; v1 adds no delegable inbox-read or acknowledgement permissions.
+The [sender-facing receipt contract](multiagent_communication.md#sender-facing-receipts-open)
+remains open: acceptance-only plus explicit replies versus additional system read/handled receipts.
+Acceptance-only is a recommendation, not a selected v1 scope.
 OAuth-bound SAs can be senders; v1 does not provide inboxes for externally running agents.
 Distinguish accepted, noticed, admitted, handled and task-success evidence. Define retention, limits,
 deduplication and offline/deleted-recipient behavior. Reading a transcript grants neither send nor ack.

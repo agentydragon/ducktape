@@ -4,6 +4,7 @@ Status: **service-enforced Session-access PolicySet rules tentatively selected f
 collection and API schemas remain open. This records design directions, not implemented behavior;
 the operator may revisit the choice if implementation does not work well.
 Implementation gates remain in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations).
+Resume the interview with the [open sender-facing receipt decision](#sender-facing-receipts-open).
 
 ## Requirements and preferences
 
@@ -418,6 +419,16 @@ not confer authority to read or acknowledge another Sandbox's inboxes.
 Delegated inbox reading and acknowledgement are
 [potential follow-up work](task_freezer.md#delegated_inbox_access--delegated-inbox-reading-and-acknowledgement),
 not v1 prerequisites.
+
+### Sender-facing receipts (open)
+
+**Not yet decided:** should v1 sender-facing confirmation cover only durable inbox acceptance,
+with workflow confirmation through explicit replies, or also expose system-provided read/handled
+receipts? Acceptance-only plus explicit replies was recommended but has not been selected.
+Replies require their independently granted reverse send permission. Any sender-visible status
+must distinguish inbox acknowledgement from task success and does not confer inbox read/ack
+authority. This question remains in the active messaging design; delegated inbox read/ack access
+is separately deferred.
 
 ### Batching and wake behavior
 
