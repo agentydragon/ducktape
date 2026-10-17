@@ -941,7 +941,7 @@ function VirtualizedHistory({
                 top: item.start,
                 left: 0,
                 width: "100%",
-                paddingBottom: 4,
+                paddingBottom: "var(--mantine-spacing-xs)",
               }}
             >
               <HistoryRowView
