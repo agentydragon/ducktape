@@ -18,7 +18,6 @@ class OptimizerModels:
     """
 
     pe_model: OpenAIModelProto
-    runner_model: OpenAIModelProto
     grader_model: OpenAIModelProto
     summarizer_model: OpenAIModelProto
 
@@ -26,8 +25,7 @@ class OptimizerModels:
 def create_optimizer_models(cfg: OptimizerConfig, *, enable_debug_logging: bool = False) -> OptimizerModels:
     """Build standard adapter model instances from OptimizerConfig.
 
-    - pe_model, runner_model: use cfg.prompt_engineer.* fields (model + reasoning_effort)
-      with the shared optimizer context window size.
+    - pe_model: use cfg.prompt_engineer.* fields (model + reasoning_effort).
     - grader_model: uses cfg.grader.*
     - summarizer_model: uses cfg.summarizer.model without reasoning effort overrides.
     """
@@ -39,11 +37,6 @@ def create_optimizer_models(cfg: OptimizerConfig, *, enable_debug_logging: bool 
         enable_debug_logging=enable_debug_logging,
         reasoning_effort=ReasoningEffort(pe_effort) if pe_effort else None,
     )
-    runner_model = build_client(
-        cfg.prompt_engineer.model,
-        enable_debug_logging=enable_debug_logging,
-        reasoning_effort=ReasoningEffort(pe_effort) if pe_effort else None,
-    )
     grader_model = build_client(
         cfg.grader.model,
         enable_debug_logging=enable_debug_logging,
@@ -51,6 +44,4 @@ def create_optimizer_models(cfg: OptimizerConfig, *, enable_debug_logging: bool 
     )
     summarizer_model = build_client(cfg.summarizer.model, enable_debug_logging=enable_debug_logging)
 
-    return OptimizerModels(
-        pe_model=pe_model, runner_model=runner_model, grader_model=grader_model, summarizer_model=summarizer_model
-    )
+    return OptimizerModels(pe_model=pe_model, grader_model=grader_model, summarizer_model=summarizer_model)

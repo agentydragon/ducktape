@@ -427,16 +427,6 @@ class ClaudeRunnerTypeConfig(BaseModel):
     bash_timeout_ms: int = 120_000
 
 
-class MinicodexRunnerTypeConfig(BaseModel):
-    """`config:` block of a `minicodex_runner` entry in runners.yaml."""
-
-    model: str
-    reasoning_effort: Literal["minimal", "medium", "high"] = "medium"
-    timeout_s: int
-    truncate_bytes: int
-    max_cycles: int
-
-
 class ClaudeRunnerConfig(BaseModel):
     """A `claude_runner` entry in runners.yaml."""
 
@@ -444,14 +434,7 @@ class ClaudeRunnerConfig(BaseModel):
     config: ClaudeRunnerTypeConfig
 
 
-class MinicodexRunnerConfig(BaseModel):
-    """A `minicodex_runner` entry in runners.yaml."""
-
-    type: Literal["minicodex_runner"]
-    config: MinicodexRunnerTypeConfig
-
-
-RunnerConfig = Annotated[ClaudeRunnerConfig | MinicodexRunnerConfig, Field(discriminator="type")]
+RunnerConfig = ClaudeRunnerConfig
 
 
 class RunnersYaml(BaseModel):

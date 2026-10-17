@@ -16,13 +16,13 @@ from fastmcp import ClientGroup
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
 
-from mcp_infra.exec.direct import DirectExecServer
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from x.ember.config import (
     EnforcedSleepUntilUserMessagePolicy,
     LegacySleepUntilUserMessagePolicy,
     SleepUntilUserMessagePolicy,
 )
+from x.ember.direct_exec import DirectExecServer
 from x.ember.matrix_client import ConversationStatus
 
 

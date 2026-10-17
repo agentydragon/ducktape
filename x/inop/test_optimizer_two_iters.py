@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-import aiodocker
 import pytest
 import pytest_bazel
 
@@ -130,7 +129,7 @@ async def test_optimize_prompts_two_iterations_async(
         def get_environment(self) -> RunnerEnvironment | None:
             return getattr(self, "_env", None)
 
-    def _fake_create_runner(runner_name: str, runner_configs: dict, openai_model=None, docker_client=None):
+    def _fake_create_runner(runner_name: str, runner_configs: dict):
         return FakeRunner(runner_id=runner_name, config=runner_configs.get(runner_name, {}).get("config", {}))
 
     monkeypatch.setattr(runner_factory, "create_runner", _fake_create_runner)
@@ -155,35 +154,26 @@ async def test_optimize_prompts_two_iterations_async(
     # Ensure logging is initialized for optimizer
     optimizer.DualOutputLogging.setup_logging(verbose=False)
 
-    monkeypatch.setenv("DUCK_ALLOW_UNSANDBOXED", "1")
-
-    # Create a fake docker client (won't be used since we're mocking create_runner)
-    fake_docker = aiodocker.Docker()
-    try:
-        out_dir = await optimizer.optimize_prompts(
-            optimizer.OptimizeArgs(
-                anthropic_log=JSONLLogger(base_dir / "anthropic.jsonl"),
-                pe_model=fake_model,
-                runner_model=fake_model,
-                grader_model=fake_model,
-                summarizer_model=fake_model,
-                docker_client=fake_docker,
-                seed_tasks=seed_tasks,
-                criteria=criteria,
-                cfg=cfg_two_iters,
-                runner_name="claude",
-                task_types=task_types,
-                runner_configs=runner_configs,
-                task_type=AgentTaskType.CODING,
-                iterations=2,
-                rollouts_per_task=1,
-                max_parallel_rollouts=1,
-                tasks_per_iteration=1,
-                base_dir=base_dir,
-            )
+    out_dir = await optimizer.optimize_prompts(
+        optimizer.OptimizeArgs(
+            anthropic_log=JSONLLogger(base_dir / "anthropic.jsonl"),
+            pe_model=fake_model,
+            grader_model=fake_model,
+            summarizer_model=fake_model,
+            seed_tasks=seed_tasks,
+            criteria=criteria,
+            cfg=cfg_two_iters,
+            runner_name="claude",
+            task_types=task_types,
+            runner_configs=runner_configs,
+            task_type=AgentTaskType.CODING,
+            iterations=2,
+            rollouts_per_task=1,
+            max_parallel_rollouts=1,
+            tasks_per_iteration=1,
+            base_dir=base_dir,
         )
-    finally:
-        await fake_docker.close()
+    )
 
     # Iteration prompts
     iter1 = out_dir / "iter_001" / "CLAUDE.md"

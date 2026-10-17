@@ -38,28 +38,3 @@ py_library(
         "@pypi//pathspec",
     ],
 )
-
-py_library(
-    name = "openai_runner",
-    testonly = True,
-    srcs = ["openai_runner.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        "//agent_core:agent",
-        "//agent_core:handler",
-        "//agent_core:loop_control",
-        "//agent_core:mcp_provider",
-        "//agent_core:transcript_handler",
-        "//mcp_infra:constants",
-        "//mcp_infra/display:rich_display",
-        "//mcp_infra/exec:direct",
-        "//mcp_infra/exec/docker:server",
-        "//mcp_infra/exec/docker:types",
-        "//openai_utils:model",
-        "//x/inop/engine:models",
-        "//x/inop/io:file_utils",
-        "@pypi//aiodocker",
-        "@pypi//fastmcp_slim",
-    ],
-)

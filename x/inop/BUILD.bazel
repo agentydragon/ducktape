@@ -6,7 +6,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 py_test(
     name = "test_optimizer_two_iters",
     srcs = ["test_optimizer_two_iters.py"],
-    requires_docker = True,
     deps = [
         ":config",
         ":conftest",
@@ -20,7 +19,6 @@ py_test(
         "//x/inop/engine:runner_factory",
         "//x/inop/io:jsonl_logger",
         "//x/inop/runners:base",
-        "@pypi//aiodocker",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

@@ -113,7 +113,6 @@ class TaskClaude:
     # Current approach:
     # - Clone directly into workspace for each task
     # - No shared git volume needed
-    # - Simpler and more consistent with OpenAIRunner
     #
     # To re-enable git volume: set use_git_volume = True
     use_git_volume = False  # DISABLED in production path

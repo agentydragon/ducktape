@@ -42,7 +42,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-import aiodocker
 from fastmcp import ClientGroup
 from fastmcp.client import Client
 
@@ -106,10 +105,8 @@ def setup_signal_handlers():
 class OptimizeMcpArgs:
     anthropic_log: JSONLLogger
     pe_model: OpenAIModelProto
-    runner_model: OpenAIModelProto
     grader_model: OpenAIModelProto
     summarizer_model: OpenAIModelProto
-    docker_client: aiodocker.Docker
     seed_tasks: list[TaskDefinition]
     criteria: list[Criterion]
     cfg: OptimizerConfig
@@ -159,11 +156,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             results: list[GradedRollout] = []
             for t in tasks:
                 print(f"[_Deps.run_rollouts_with_prompt] setting up runner for task {t.id}")
-                # Create runner with the configured OpenAI model
-                runner_model = args.runner_model
-                runner = runner_factory.create_runner(
-                    args.runner_name, args.runner_configs, openai_model=runner_model, docker_client=args.docker_client
-                )
+                runner = runner_factory.create_runner(args.runner_name, args.runner_configs)
                 # Prepare task-type specific setup
                 if t.type not in args.task_types:
                     raise ValueError(f"Unknown task type: {t.type}")
@@ -307,10 +300,8 @@ class OptimizeArgs:
     anthropic_log: JSONLLogger
     # Required DI: adapter model instances for specific roles.
     pe_model: OpenAIModelProto
-    runner_model: OpenAIModelProto
     grader_model: OpenAIModelProto
     summarizer_model: OpenAIModelProto
-    docker_client: aiodocker.Docker
     seed_tasks: list[TaskDefinition]
     criteria: list[Criterion]
     cfg: OptimizerConfig
@@ -342,7 +333,7 @@ async def optimize_prompts(args: OptimizeArgs) -> Path:
     cfg : OptimizerConfig
         Configuration for the optimizer.
     runner_name : str
-        Name of the runner to use (e.g., "claude", "agent").
+        Name of the configured runner (currently "claude").
     task_types : dict
         Task type configurations.
     runner_configs : dict
@@ -364,10 +355,8 @@ async def optimize_prompts(args: OptimizeArgs) -> Path:
         OptimizeMcpArgs(
             anthropic_log=args.anthropic_log,
             pe_model=args.pe_model,
-            runner_model=args.runner_model,
             grader_model=args.grader_model,
             summarizer_model=args.summarizer_model,
-            docker_client=args.docker_client,
             seed_tasks=args.seed_tasks,
             criteria=args.criteria,
             cfg=args.cfg,
@@ -419,9 +408,7 @@ Examples:
         "--runner", type=str, default="claude", help="Runner to use for task execution (default: %(default)s)"
     )
 
-    parser.add_argument(
-        "--verbose", action="store_true", help="Enable verbose logging for agent actions (mini_codex only)"
-    )
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging for agent actions")
 
     parser.add_argument(
         "--task-type",
@@ -495,35 +482,28 @@ Examples:
     anthropic_log = JSONLLogger(base_dir / "anthropic_api_log.jsonl")
     # Build OpenAI models with debug logging enabled (HTTP frames captured to logger)
     models = create_optimizer_models(cfg, enable_debug_logging=True)
-    # Create async Docker client for runner
-    docker_client = aiodocker.Docker()
-    try:
-        run_dir = asyncio.run(
-            optimize_prompts(
-                OptimizeArgs(
-                    anthropic_log=anthropic_log,
-                    pe_model=models.pe_model,
-                    runner_model=models.runner_model,
-                    grader_model=models.grader_model,
-                    summarizer_model=models.summarizer_model,
-                    docker_client=docker_client,
-                    seed_tasks=seed_tasks,
-                    criteria=criteria,
-                    cfg=cfg,
-                    runner_name=args.runner,
-                    task_types=task_types,
-                    runner_configs=runner_configs,
-                    task_type=task_type_enum,
-                    iterations=args.iterations,
-                    rollouts_per_task=args.rollouts_per_task,
-                    max_parallel_rollouts=args.max_parallel,
-                    tasks_per_iteration=args.tasks_per_iteration,
-                    base_dir=base_dir,
-                )
+    run_dir = asyncio.run(
+        optimize_prompts(
+            OptimizeArgs(
+                anthropic_log=anthropic_log,
+                pe_model=models.pe_model,
+                grader_model=models.grader_model,
+                summarizer_model=models.summarizer_model,
+                seed_tasks=seed_tasks,
+                criteria=criteria,
+                cfg=cfg,
+                runner_name=args.runner,
+                task_types=task_types,
+                runner_configs=runner_configs,
+                task_type=task_type_enum,
+                iterations=args.iterations,
+                rollouts_per_task=args.rollouts_per_task,
+                max_parallel_rollouts=args.max_parallel,
+                tasks_per_iteration=args.tasks_per_iteration,
+                base_dir=base_dir,
             )
         )
-    finally:
-        asyncio.run(docker_client.close())
+    )
 
     logger.info("Optimization complete", extra={"run_directory": str(run_dir)})
 

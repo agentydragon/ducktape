@@ -169,10 +169,39 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":config",
+        ":direct_exec",
         ":matrix_client",
-        "//mcp_infra/exec:direct",
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp_slim",
+    ],
+)
+
+py_library(
+    name = "direct_exec",
+    srcs = ["direct_exec.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra/exec:read_image",
+        "//util/exec:models",
+        "//util/exec:subprocess",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_direct_exec",
+    srcs = ["test_direct_exec.py"],
+    deps = [
+        ":direct_exec",
+        "//:conftest",
+        "//mcp_infra/testing:exec_stubs",
+        "//util/exec:models",
+        "//util/exec:subprocess",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest_bazel",
     ],
 )
 
