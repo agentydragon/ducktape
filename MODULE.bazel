@@ -1656,14 +1656,6 @@ go_deps = use_extension(
 )
 go_deps.from_file(go_mod = "//third_party:go.mod")
 
-# Central transport spike: stock v1.9.2 buffers initial H2 headers until the
-# first body bytes. The real-socket header-only-open contract requires a flush.
-go_deps.module_override(
-    patch_strip = 1,
-    patches = ["//agentplane/egress/x/goproxy:flush_h2_headers.patch"],
-    path = "github.com/elazarl/goproxy",
-)
-
 # k8s.io/apimachinery's generated BUILD files import kube-openapi, but that
 # dependency is not imported by first-party Go files.
 go_deps.module(
@@ -2004,7 +1996,6 @@ use_repo(
     "com_github_coder_websocket",
     "com_github_docker_docker",
     "com_github_dustin_go_humanize",
-    "com_github_elazarl_goproxy",
     "com_github_elliotchance_orderedmap",
     "com_github_fatih_color",
     "com_github_firebase_genkit_go",

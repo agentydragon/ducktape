@@ -31,9 +31,6 @@ require kubevirt.io/api v1.8.2
 // Direct dependencies for agentplane/runner_gateway/go
 require github.com/go-logr/logr v1.4.4
 
-// Bounded central-egress transport spike (no deployment consumer).
-require github.com/elazarl/goproxy v1.9.2
-
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
