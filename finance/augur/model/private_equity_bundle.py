@@ -207,11 +207,7 @@ class PrivateEquityBundle:
         """Concatenate per-issuer bundles. Rejects duplicate issuer ids."""
 
         frames = [part.frame for part in parts]
-        if (
-            duplicate := next(
-                duplicates_everseen(issuer for frame in frames for issuer in _issuer_ids_in_frame(frame)), None
-            )
-        ) is not None:
+        for duplicate in duplicates_everseen(issuer for frame in frames for issuer in _issuer_ids_in_frame(frame)):
             raise ValueError(f"private-equity bundle has duplicate issuer {duplicate!r}")
         return cls(frame=PRIVATE_EQUITY_BUNDLE_FRAME.concat(frames))
 
