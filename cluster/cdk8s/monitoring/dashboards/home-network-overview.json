@@ -578,7 +578,7 @@
         "type": "prometheus",
         "uid": "mimir"
       },
-      "description": "Traffic through the gateway's WAN port.",
+      "description": "Traffic through the gateway's WAN port. Traffic scale selects linear or base-10 symlog; the log view remains linear below 1 bit/s so zero stays visible.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -596,7 +596,7 @@
           },
           "editorMode": "code",
           "expr": "rate(att_gateway_wan_receive_bytes_total[5m]) * 8",
-          "legendFormat": "download",
+          "legendFormat": "download (${traffic_scale})",
           "refId": "A",
           "range": true
         },
@@ -607,7 +607,7 @@
           },
           "editorMode": "code",
           "expr": "rate(att_gateway_wan_transmit_bytes_total[5m]) * 8",
-          "legendFormat": "upload",
+          "legendFormat": "upload (${traffic_scale})",
           "refId": "B",
           "range": true
         }
@@ -620,11 +620,31 @@
             "lineWidth": 2,
             "fillOpacity": 10,
             "spanNulls": false,
-            "showPoints": "never"
+            "showPoints": "never",
+            "scaleDistribution": {
+              "type": "linear"
+            }
           },
           "min": 0
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ [(]Log[)]$/"
+            },
+            "properties": [
+              {
+                "id": "custom.scaleDistribution",
+                "value": {
+                  "type": "symlog",
+                  "log": 10,
+                  "linearThreshold": 1
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -643,7 +663,7 @@
         "type": "prometheus",
         "uid": "mimir"
       },
-      "description": "Traffic on each home node's Nebula interface, which carries all of its cluster traffic to OVH, including metrics remote-write.",
+      "description": "Traffic on each home node's Nebula interface, which carries all of its cluster traffic to OVH, including metrics remote-write. Traffic scale selects linear or base-10 symlog; the log view remains linear below 1 bit/s so zero stays visible.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -661,7 +681,7 @@
           },
           "editorMode": "code",
           "expr": "rate(node_network_receive_bytes_total{job=\"node-exporter\",device=~\"nebula.*\"}[5m]) * 8 * on (instance) group_left (nodename) max by (instance, nodename) (node_uname_info{job=\"node-exporter\",nodename=~\"wyrm2|optiplex\"})",
-          "legendFormat": "{{nodename}} in",
+          "legendFormat": "{{nodename}} in (${traffic_scale})",
           "refId": "A",
           "range": true
         },
@@ -672,7 +692,7 @@
           },
           "editorMode": "code",
           "expr": "rate(node_network_transmit_bytes_total{job=\"node-exporter\",device=~\"nebula.*\"}[5m]) * 8 * on (instance) group_left (nodename) max by (instance, nodename) (node_uname_info{job=\"node-exporter\",nodename=~\"wyrm2|optiplex\"})",
-          "legendFormat": "{{nodename}} out",
+          "legendFormat": "{{nodename}} out (${traffic_scale})",
           "refId": "B",
           "range": true
         }
@@ -685,11 +705,31 @@
             "lineWidth": 2,
             "fillOpacity": 10,
             "spanNulls": false,
-            "showPoints": "never"
+            "showPoints": "never",
+            "scaleDistribution": {
+              "type": "linear"
+            }
           },
           "min": 0
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ [(]Log[)]$/"
+            },
+            "properties": [
+              {
+                "id": "custom.scaleDistribution",
+                "value": {
+                  "type": "symlog",
+                  "log": 10,
+                  "linearThreshold": 1
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -1891,7 +1931,7 @@
         "type": "prometheus",
         "uid": "mimir"
       },
-      "description": "Traffic on each switch port, as the switch counts it.",
+      "description": "Traffic on each switch port, as the switch counts it. Traffic scale selects linear or base-10 symlog; the log view remains linear below 1 bit/s so zero stays visible.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1909,7 +1949,7 @@
           },
           "editorMode": "code",
           "expr": "max by (name) (rate(mktxp_interface_rx_byte_total{routerboard_name=\"CRS310\",name=~\"ether.*|sfp.*\"}[5m])) * 8",
-          "legendFormat": "{{name}} in",
+          "legendFormat": "{{name}} in (${traffic_scale})",
           "refId": "A",
           "range": true
         },
@@ -1920,7 +1960,7 @@
           },
           "editorMode": "code",
           "expr": "max by (name) (rate(mktxp_interface_tx_byte_total{routerboard_name=\"CRS310\",name=~\"ether.*|sfp.*\"}[5m])) * 8",
-          "legendFormat": "{{name}} out",
+          "legendFormat": "{{name}} out (${traffic_scale})",
           "refId": "B",
           "range": true
         }
@@ -1933,11 +1973,31 @@
             "lineWidth": 2,
             "fillOpacity": 10,
             "spanNulls": false,
-            "showPoints": "never"
+            "showPoints": "never",
+            "scaleDistribution": {
+              "type": "linear"
+            }
           },
           "min": 0
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ [(]Log[)]$/"
+            },
+            "properties": [
+              {
+                "id": "custom.scaleDistribution",
+                "value": {
+                  "type": "symlog",
+                  "log": 10,
+                  "linearThreshold": 1
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -2274,7 +2334,7 @@
         "type": "prometheus",
         "uid": "mimir"
       },
-      "description": "Traffic on each home node's physical NIC.",
+      "description": "Traffic on each home node's physical NIC. Traffic scale selects linear or base-10 symlog; the log view remains linear below 1 bit/s so zero stays visible.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -2292,7 +2352,7 @@
           },
           "editorMode": "code",
           "expr": "rate(node_network_receive_bytes_total{job=\"node-exporter\",device=~\"en.*|eth.*\"}[5m]) * 8 * on (instance) group_left (nodename) max by (instance, nodename) (node_uname_info{job=\"node-exporter\",nodename=~\"wyrm2|optiplex\"})",
-          "legendFormat": "{{nodename}} {{device}} in",
+          "legendFormat": "{{nodename}} {{device}} in (${traffic_scale})",
           "refId": "A",
           "range": true
         },
@@ -2303,7 +2363,7 @@
           },
           "editorMode": "code",
           "expr": "rate(node_network_transmit_bytes_total{job=\"node-exporter\",device=~\"en.*|eth.*\"}[5m]) * 8 * on (instance) group_left (nodename) max by (instance, nodename) (node_uname_info{job=\"node-exporter\",nodename=~\"wyrm2|optiplex\"})",
-          "legendFormat": "{{nodename}} {{device}} out",
+          "legendFormat": "{{nodename}} {{device}} out (${traffic_scale})",
           "refId": "B",
           "range": true
         }
@@ -2316,11 +2376,31 @@
             "lineWidth": 2,
             "fillOpacity": 10,
             "spanNulls": false,
-            "showPoints": "never"
+            "showPoints": "never",
+            "scaleDistribution": {
+              "type": "linear"
+            }
           },
           "min": 0
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ [(]Log[)]$/"
+            },
+            "properties": [
+              {
+                "id": "custom.scaleDistribution",
+                "value": {
+                  "type": "symlog",
+                  "log": 10,
+                  "linearThreshold": 1
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -2627,5 +2707,35 @@
   },
   "timezone": "browser",
   "title": "Home network overview",
-  "uid": "home-network-overview"
+  "uid": "home-network-overview",
+  "templating": {
+    "list": [
+      {
+        "name": "traffic_scale",
+        "label": "Traffic scale",
+        "type": "custom",
+        "query": "Linear,Log",
+        "current": {
+          "text": "Linear",
+          "value": "Linear"
+        },
+        "options": [
+          {
+            "text": "Linear",
+            "value": "Linear",
+            "selected": true
+          },
+          {
+            "text": "Log",
+            "value": "Log",
+            "selected": false
+          }
+        ],
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  }
 }
