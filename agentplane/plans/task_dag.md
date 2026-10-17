@@ -1172,7 +1172,8 @@ flowchart TD
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume]
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
-    IDLE_SUSPEND_UI_DRIVE[Operator: drive auto-suspend and send-to-resume in staging]
+    IDLE_SUSPEND_UI_DRIVE[Blocked: drive auto-suspend and send-to-resume in staging, after the harness lifecycle decision]
+    HARNESS_LIFECYCLE_OWNERSHIP[Decision: the runner owns harness start, section 13] --> IDLE_SUSPEND_UI_DRIVE
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
 
@@ -1451,6 +1452,10 @@ rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` be
 
 ### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
 
+**Blocked on `HARNESS_LIFECYCLE_OWNERSHIP` (operator, 2026-10-17 UTC).** How suspend, resume and wake on send interact with
+harness shutdown and resume, and whether those stay commands at all, decides what the drive exercises; drive
+it after that decision. The rest of this node stands.
+
 **Operator, 2026-10-15 UTC: assigned to the operator, not dispatchable to a worker.** A human drives the
 whole loop through the staging web app on a real Session and reports what the UI actually does: the
 Sandbox goes idle, suspends on its own, and a message typed into the composer reaches that stopped
@@ -1697,6 +1702,7 @@ flowchart LR
     RUNNER_STORE_SESSION_IDENTITY[Candidate: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
     HARNESS_LIFECYCLE_OWNERSHIP[Decision: the runner owns harness start]
+    IDLE_SUSPEND_UI_DRIVE[Blocked: drive auto-suspend and send-to-resume in staging, section 7]
     APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume, section 7]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
@@ -1708,6 +1714,7 @@ flowchart LR
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
     HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
+    HARNESS_LIFECYCLE_OWNERSHIP -. sequences the idle-suspend drive after it, section 7 .-> IDLE_SUSPEND_UI_DRIVE
     HARNESS_LIFECYCLE_OWNERSHIP -. would supersede .-> APP_NATIVE_RESUME_CONTRACT
     HARNESS_LIFECYCLE_OWNERSHIP -. would drop the app ResumeSession carve-out .-> PROXY_START_METHODS_DISPATCHER_ONLY
     HARNESS_LIFECYCLE_OWNERSHIP -. folds open, resume and stop into .-> HARNESS_IDENTITY_DESIGN
