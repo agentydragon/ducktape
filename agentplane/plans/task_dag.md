@@ -584,11 +584,12 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
-    K3S_STARTUP_COST[Candidate: profile remaining containerd import and startup cost]
+    K3S_SHARED_PACKAGE_LAYERS[Candidate: share Python package layers]
+    K3S_DATABASE_STARTUP_OVERLAP[Candidate: start PostgreSQL during image import]
+    K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
+    K3S_IMPORT_CONCURRENCY[Candidate: bounded image import and unpack concurrency]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: baked harnesses versus on-demand delivery]
-    RUNNER_HARNESS_DELIVERY_DESIGN -. measured packaging option .-> K3S_STARTUP_COST
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
-    K3S_BUNDLED_SERVICES_SPIKE -. timing evidence .-> K3S_STARTUP_COST
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
@@ -637,35 +638,50 @@ frontend a custom frontend for Claude Code web sessions: show their conversation
 messages, by shimming the web interface's control protocol. Builds on the viewer and syncer under
 `devinfra/` and the reverse-engineering in `agentydragon/gaffer-private`.
 
-### `K3S_STARTUP_COST` — reduce remaining isolated-cluster startup cost
+### K3s startup experiment constraints
 
-**Candidate; no worker assigned.** Profile remaining containerd import/unpack and deployment
-readiness costs, then remove the measured bottleneck using existing Bazel/OCI rules where possible.
-The shared Python interpreter layers and matched lifecycle comparison are implemented; evidence
-belongs in [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
-
-Investigation candidates recorded at the operator's request, 2026-10-16 PDT:
-
-- Share third-party Python package layers through canonical package paths across service and
-  migration images; the interpreter layer is already shared. Preserve each binary's declared
-  dependency closure and import behavior.
-- Import PostgreSQL first and start it while the remaining images import, preserving migration
-  and service readiness dependencies. Compare total startup time, including resource contention.
-- Profile Python initialization in the remaining services; compare narrower imports and
-  precompiled bytecode against added image bytes. The app already ships bytecode.
-- Compare bounded containerd import/unpack concurrency with the current combined stream,
-  preserving distinct-blob deduplication. Count deferred unpacking through Pod readiness so
-  moving work later is not reported as a saving.
-
-Use equivalent source/scenarios and report transfer, import/unpack, process readiness and total
-test time separately. Rank proposed Go/Rust rewrites by unique image bytes removed and startup
-time on the dependency chain: Python services that remain still need the shared interpreter.
-The profiled tar-streaming time includes pipe backpressure; it is not a CPU-cost estimate or
-the expected saving from rewriting the streamer. Harness packaging alternatives belong to
-`RUNNER_HARNESS_DELIVERY_DESIGN` below.
-
+The independent candidates below were requested by the operator on 2026-10-16 PDT; none waits
+for the others. Use equivalent source/scenarios and report transfer, import/unpack, process
+readiness and total test time separately in
+[the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
 Preserve assertions and timeouts. The expensive lifecycle workflow stays **manual-only**;
-automatic triggers require a separate reviewed change. Language rewrites require Rai's decision.
+automatic triggers require a separate reviewed change. Language rewrites require Rai's decision;
+rank them by unique image bytes removed and startup time on the dependency chain. Remaining
+Python services still need the shared interpreter.
+
+### `K3S_SHARED_PACKAGE_LAYERS` — share third-party Python package layers
+
+**Candidate; no worker assigned; no prerequisites.** Use canonical package paths to share
+third-party Python layers across service and migration images with existing Bazel/OCI rules
+where possible. The interpreter layer is already shared. Preserve each binary's declared
+dependency closure and import behavior. Exit: a matched comparison of distinct layer bytes,
+import/unpack and total lifecycle time, passing affected import checks and lifecycle assertions,
+and a recommendation to adopt or discard the package-layer change.
+
+### `K3S_DATABASE_STARTUP_OVERLAP` — start PostgreSQL during remaining image imports
+
+**Candidate; no worker assigned; no prerequisites.** Import PostgreSQL first and start it while
+the remaining images import, preserving migration and service readiness dependencies. Exit:
+a matched comparison showing whether overlap shortens total startup despite resource contention,
+with unchanged lifecycle assertions and reliable image availability before dependent Pods start.
+
+### `K3S_PYTHON_INITIALIZATION` — reduce Python process initialization cost
+
+**Candidate; no worker assigned; no prerequisites.** Profile initialization in the remaining
+Python services and compare narrower imports or precompiled bytecode against added image bytes.
+The app already ships bytecode. Exit: a profile identifying the initialization work removed,
+passing affected service and lifecycle coverage, and a matched comparison of process readiness
+and total lifecycle time including any extra image transfer/unpack cost.
+
+### `K3S_IMPORT_CONCURRENCY` — measure bounded image import and unpack concurrency
+
+**Candidate; no worker assigned; no prerequisites.** Compare bounded containerd import/unpack
+concurrency with the current combined stream, preserving distinct-blob deduplication. Count
+deferred unpacking through Pod readiness so moving work later is not reported as a saving.
+The profiled tar-streaming time includes pipe backpressure; it is not a CPU-cost estimate or
+the expected saving from rewriting the streamer. Exit: a matched comparison of import/unpack,
+resource use and total lifecycle time with unchanged lifecycle assertions, and a recommendation
+to adopt or discard the concurrency change.
 
 ### `RUNNER_HARNESS_DELIVERY_DESIGN` — choose how runners obtain harness binaries
 
@@ -940,7 +956,7 @@ flowchart TD
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_POD[Blocked: a Pod takes runner and tools from separate images]
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[Blocked: a guest takes runner and tools from separate images]
     RUNNER_LAYERING_VM --> K3S_VM_IMAGE[Blocked: build a lightweight guest disk in Bazel]
-    K3S_STARTUP_COST[k3s startup cost, section 5] -. related .-> K3S_VM_IMAGE
+    RUNNER_HARNESS_DELIVERY_DESIGN[harness delivery, section 5] -. related .-> K3S_VM_IMAGE
 ```
 
 ### `SANDBOX_GENERIC_SPLIT` — separate the generic Sandbox from the runner's sealing
@@ -1097,8 +1113,8 @@ test must not omit the limits being accepted.
 Worth stating in the design, because it argues past the spike: a Bazel-built guest is worth more than the
 test. Once a guest root filesystem is an `oci_image` target, `RUNNER_LAYERING_VM` needs no Nix to build a
 candidate runtime, CI can build a guest without Attic, and a runtime experiment becomes an additive target
-rather than a second release pipeline. Check `K3S_STARTUP_COST` before adding image weight to that
-environment.
+rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` and
+`K3S_SHARED_PACKAGE_LAYERS` before adding image weight to that environment.
 
 ### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
 
