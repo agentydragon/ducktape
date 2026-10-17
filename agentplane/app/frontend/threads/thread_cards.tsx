@@ -327,11 +327,11 @@ function ReasoningPreview({
       trailing={open && expandable ? status : undefined}
       preview={
         body === null ? (
-          <Text component="span" c="dimmed" aria-busy={!error}>
+          <Text component="span" size="sm" c="dimmed" aria-busy={!error}>
             {error ? "Preview unavailable" : "Loading preview…"}
           </Text>
         ) : (
-          <Markdown source={body} singleLine />
+          <Markdown source={body} singleLine size="sm" />
         )
       }
       previewRef={preview}

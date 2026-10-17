@@ -467,6 +467,7 @@ async def test_revised_recovery_tool_output(recovery_tools: VisualPage) -> None:
 
 
 @DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
 async def test_reasoning_inside_tool_run(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standard_history(long_preview=True)
     await app.mount_thread(IDLE_THREAD)
@@ -476,12 +477,18 @@ async def test_reasoning_inside_tool_run(view: VisualPage, app: AgentplaneFixtur
     reasoning = page.locator(".agentplane-step-details").filter(
         has=page.locator(".agentplane-step-title:text-is('Reasoning')")
     )
+    title_size = await reasoning.locator(".agentplane-step-title").evaluate("el => getComputedStyle(el).fontSize")
+    preview_size = await reasoning.locator(".agentplane-markdown--single-line").evaluate(
+        "el => getComputedStyle(el).fontSize"
+    )
+    assert title_size == preview_size
     await reasoning.locator(".agentplane-disclosure-summary").first.click()
     await expect(reasoning.locator(".agentplane-disclosure-panel .agentplane-markdown")).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
 async def test_reasoning_heading_sticks_at_history_bottom(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standalone_reasoning(long_body=True)
     await app.mount_thread(IDLE_THREAD)
@@ -492,8 +499,20 @@ async def test_reasoning_heading_sticks_at_history_bottom(view: VisualPage, app:
     await expect(history).to_have_attribute("data-layout-settled", "true")
     await history.evaluate("element => { element.scrollTop = element.scrollHeight; }")
     await wait_for_stable(page)
-    await expect(reasoning.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
+    control = reasoning.locator(".agentplane-disclosure-summary").first
+    await expect(control).to_have_attribute("aria-expanded", "true")
+    title_size = await reasoning.locator(".agentplane-step-title").evaluate("el => getComputedStyle(el).fontSize")
+    preview_size = await reasoning.locator(".agentplane-markdown--single-line").evaluate(
+        "el => getComputedStyle(el).fontSize"
+    )
+    assert title_size == preview_size
+    await page.mouse.move(0, 0)
     await view.capture(target=view.page.locator("#app"))
+    await expect(control).to_be_in_viewport(ratio=1)
+    await control.click()
+    await expect(control).to_have_attribute("aria-expanded", "false")
+    await page.mouse.move(0, 0)
+    await view.capture(name=f"{view.capture_name}_collapsed", target=page.locator("#app"))
 
 
 async def test_standalone_reasoning_opens_session_standalone_reasoning_open(
