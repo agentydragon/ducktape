@@ -417,7 +417,7 @@ class ActionService:
             outcome = ProviderOutcome(verdict=ProviderVerdict.NO_OPINION, reason_code=PROVIDER_UNAVAILABLE_REASON)
         return ProviderVote(provider=provider.name, outcome=outcome)
 
-    def auto_approvable(self, principal: CallerPrincipal) -> frozenset[ActionIdentity]:
+    def auto_approvable(self, principal: CallerPrincipal) -> set[ActionIdentity]:
         """The Actions the caller's bindings could auto-approve now, for some arguments."""
         return auto_approvable(resolve_bindings(self._policies, principal.account))
 

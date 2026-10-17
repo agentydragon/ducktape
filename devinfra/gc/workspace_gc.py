@@ -33,7 +33,7 @@ import shutil
 import subprocess
 import sys
 import threading
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence, Set
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -289,7 +289,7 @@ def _active_worktree(repo: Path) -> Path | None:
     return Path(toplevel) if toplevel else None
 
 
-def _gather_prs(repo: Path, *, no_prs: bool, extra_branches: frozenset[str] = frozenset()) -> dict[str, PrInfo]:
+def _gather_prs(repo: Path, *, no_prs: bool, extra_branches: Set[str] = frozenset()) -> dict[str, PrInfo]:
     if no_prs:
         return {}
     return pr_states(repo, workspace_scan.pr_branch_candidates(repo) | extra_branches)
@@ -554,7 +554,7 @@ def run_all(
     progress = _ProgressReporter()
     try:
         foreign_roots = workspace_scan.foreign_clone_roots(repo, output_user_root)
-        extra_branches = frozenset(workspace_scan.foreign_clone_branch_candidates(foreign_roots))
+        extra_branches = workspace_scan.foreign_clone_branch_candidates(foreign_roots)
         prs = _gather_prs(repo, no_prs=no_prs, extra_branches=extra_branches)
         with progress:
             scan = _scan(

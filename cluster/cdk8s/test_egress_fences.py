@@ -20,32 +20,26 @@ import pytest_bazel
 
 from cluster.cdk8s import egress_fences
 
-
-def hosts(*names: str) -> frozenset[str]:
-    """A named host group, kept one indent deep at the call site."""
-    return frozenset(names)
-
-
 # GitHub's source and release-artifact hosts. Split out of the build bucket because "reads
 # source, builds nothing" is a real posture, and a fence holding these without the package
 # registries is a decision rather than the drift the all-or-none rule exists to catch. Still
 # one trust level internally, so it is all-or-none in its own right. Anonymous these are
 # read-only; a fence that also substitutes a credential for them turns them into a push
 # surface.
-GITHUB_GIT = hosts(
+GITHUB_GIT = {
     "github.com",
     "codeload.github.com",
     "objects.githubusercontent.com",
     "raw.githubusercontent.com",
     "release-assets.githubusercontent.com",
-)
+}
 
 # The shared build-registry bucket: public package, source and toolchain registries. Every
 # fence that builds code carries the whole set -- see `test_build_registries_are_all_or_none`.
 # They share one trust level (public, read-only, credential-gated to publish to), so splitting
 # them into nine groups bought a precision nobody used while letting the fences quietly drift
 # apart.
-BUILD_REGISTRIES = GITHUB_GIT | hosts(
+BUILD_REGISTRIES = GITHUB_GIT | {
     "ftp.gnu.org",
     # Language package registries and toolchains
     "pypi.org",
@@ -72,27 +66,27 @@ BUILD_REGISTRIES = GITHUB_GIT | hosts(
     # Forgejo's own public release/CDN hosts, not the in-cluster instance
     "code.forgejo.org",
     "data.forgejo.org",
-)
+}
 
 # A write surface, deliberately outside the bucket: anonymous github.com is read-only, while
 # the API is what makes gists, issues and pushes reachable. Folding it in would hand every
 # build fence a way to publish at once.
-GITHUB_API = hosts("api.github.com")
+GITHUB_API = {"api.github.com"}
 
 # Hosts serving the operator's own accounts. A prompt-injected agent holding these reads the
 # operator's mail, finances and study data, so the group is named to keep
 # `test_operator_data_reaches_only_haku_sandbox` honest as consumers are added.
-OPERATOR_DATA = hosts("api.coinbase.com", "haku-mailbox.allegedly.works", "*.ankiweb.net")
+OPERATOR_DATA = {"api.coinbase.com", "haku-mailbox.allegedly.works", "*.ankiweb.net"}
 
 # The operator's Google account (mail, calendar, tasks). No fence here reaches it: agents reach
 # it only through services that hold the token for them (agentplane's egress proxy, google-mcp).
-OPERATOR_GOOGLE = hosts("www.googleapis.com", "gmail.googleapis.com", "tasks.googleapis.com")
+OPERATOR_GOOGLE = {"www.googleapis.com", "gmail.googleapis.com", "tasks.googleapis.com"}
 
 # Keyed by the policy name, so a failure names the thing to open.
 OPERATOR_DATA_FENCE = "allow-haku-cloud-api-egress"
 
 # What each fence may connect to on the public internet.
-ALLOWLISTS = {OPERATOR_DATA_FENCE: frozenset(host for group in egress_fences._HAKU_CLOUD_API_GROUPS for host in group)}
+ALLOWLISTS = {OPERATOR_DATA_FENCE: {host for group in egress_fences._HAKU_CLOUD_API_GROUPS for host in group}}
 
 
 def test_build_registries_are_all_or_none() -> None:
@@ -105,7 +99,7 @@ def test_build_registries_are_all_or_none() -> None:
     """
     for fence, allowed in ALLOWLISTS.items():
         for bucket in (GITHUB_GIT, BUILD_REGISTRIES - GITHUB_GIT):
-            assert allowed & bucket in (frozenset(), bucket), fence
+            assert allowed & bucket in (set(), bucket), fence
 
 
 def test_operator_data_reaches_only_haku_sandbox() -> None:

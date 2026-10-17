@@ -62,12 +62,12 @@ def test_pod_hardening_names_the_container_and_what_it_lacks() -> None:
         _deployment("ok", containers=[{"name": "main", "resources": _RESOURCES}], pod=_HARDENED),
         _deployment("own-profile", containers=[{"name": "main", "resources": _RESOURCES, **_HARDENED}]),
     ]
-    assert pod_hardening(objects, unhardened=frozenset()) == [
+    assert pod_hardening(objects, unhardened=set()) == [
         "Deployment/bare container main: seccomp profile is None, not RuntimeDefault",
         "Deployment/bare container main: resources.requests lacks ['memory']",
         "Deployment/bare container main: resources.limits lacks ['memory']",
     ]
-    assert pod_hardening(objects, unhardened=frozenset({"Deployment/bare"})) == []
+    assert pod_hardening(objects, unhardened={"Deployment/bare"}) == []
 
 
 def test_pod_hardening_covers_init_containers_and_crd_pod_templates() -> None:
@@ -104,9 +104,7 @@ def test_pod_hardening_covers_init_containers_and_crd_pod_templates() -> None:
     )
     assert [
         error.split(":")[0]
-        for error in pod_hardening(
-            [sandbox, own_sandbox, own_vm_sandbox, scaled_job, deployment], unhardened=frozenset()
-        )
+        for error in pod_hardening([sandbox, own_sandbox, own_vm_sandbox, scaled_job, deployment], unhardened=set())
     ] == [
         "SandboxTemplate/runner container runner",
         "SandboxTemplate/runner container runner",
@@ -131,11 +129,11 @@ def test_https_egress_outside_the_cluster_needs_server_names() -> None:
             ],
         ),
     ]
-    assert pinned_https_egress(objects, unpinned=frozenset()) == [
+    assert pinned_https_egress(objects, unpinned=set()) == [
         "CiliumNetworkPolicy/proxy: HTTPS egress to ['host', 'remote-node', 'world'] without serverNames",
         "CiliumNetworkPolicy/actions: HTTPS egress to [{'matchName': 'api.example.test'}] without serverNames",
     ]
-    assert pinned_https_egress(objects, unpinned=frozenset({"proxy", "actions"})) == []
+    assert pinned_https_egress(objects, unpinned={"proxy", "actions"}) == []
 
 
 def test_cilium_rules_with_every_section_empty_are_named() -> None:
@@ -163,10 +161,8 @@ def test_waivers_name_objects_that_still_break_their_rule() -> None:
         _policy("open", [_https({"toEntities": ["world"]})]),
         _policy("pinned", [_https({"toEntities": ["world"]}, ["a.example.test"])]),
     ]
-    assert unused_waivers(objects, unhardened=frozenset({"Deployment/bare"}), unpinned=frozenset({"open"})) == []
-    assert unused_waivers(
-        objects, unhardened=frozenset({"Deployment/ok", "Deployment/gone"}), unpinned=frozenset({"pinned"})
-    ) == [
+    assert unused_waivers(objects, unhardened={"Deployment/bare"}, unpinned={"open"}) == []
+    assert unused_waivers(objects, unhardened={"Deployment/ok", "Deployment/gone"}, unpinned={"pinned"}) == [
         "pod hardening waived for Deployment/gone, which is not in this App or passes",
         "pod hardening waived for Deployment/ok, which is not in this App or passes",
         "unpinned HTTPS egress waived for CiliumNetworkPolicy/pinned, which is not in this App or passes",

@@ -6,8 +6,6 @@ since two groups define a `SandboxTemplate`, which the fleet rules also read, an
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from types import MappingProxyType
 from typing import Any
 
 from cdk8s import ApiObject, JsonPatch
@@ -16,20 +14,18 @@ from constructs import Construct
 
 from cluster.cdk8s.node_scheduling import CONTROL_PLANE_TOLERATION, Placement
 
-POD_SPEC_PATHS: Mapping[tuple[str, str], str] = MappingProxyType(
-    {
-        ("apps", "Deployment"): "/spec/template/spec",
-        ("apps", "StatefulSet"): "/spec/template/spec",
-        ("apps", "DaemonSet"): "/spec/template/spec",
-        ("apps", "ReplicaSet"): "/spec/template/spec",
-        ("batch", "Job"): "/spec/template/spec",
-        ("batch", "CronJob"): "/spec/jobTemplate/spec/template/spec",
-        ("extensions.agents.x-k8s.io", "SandboxTemplate"): "/spec/podTemplate/spec",
-        ("agentplane.allegedly.works", "SandboxTemplate"): "/spec/pod/spec",
-        ("", "PodTemplate"): "/template/spec",
-        ("keda.sh", "ScaledJob"): "/spec/jobTargetRef/template/spec",
-    }
-)
+POD_SPEC_PATHS: dict[tuple[str, str], str] = {
+    ("apps", "Deployment"): "/spec/template/spec",
+    ("apps", "StatefulSet"): "/spec/template/spec",
+    ("apps", "DaemonSet"): "/spec/template/spec",
+    ("apps", "ReplicaSet"): "/spec/template/spec",
+    ("batch", "Job"): "/spec/template/spec",
+    ("batch", "CronJob"): "/spec/jobTemplate/spec/template/spec",
+    ("extensions.agents.x-k8s.io", "SandboxTemplate"): "/spec/podTemplate/spec",
+    ("agentplane.allegedly.works", "SandboxTemplate"): "/spec/pod/spec",
+    ("", "PodTemplate"): "/template/spec",
+    ("keda.sh", "ScaledJob"): "/spec/jobTargetRef/template/spec",
+}
 _RUNTIME_DEFAULT = k8s.SeccompProfile(type="RuntimeDefault")
 _DROP_ALL = k8s.Capabilities(drop=["ALL"])
 

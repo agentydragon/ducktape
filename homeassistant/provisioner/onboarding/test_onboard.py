@@ -212,7 +212,7 @@ async def test_configure_http_restarts_and_promotes(monkeypatch, home_assistant_
     monkeypatch.setattr(home_assistant_client, "websocket_command", fake_websocket_command)
 
     async def wait_until_ready():
-        return frozenset()
+        return set()
 
     async def login(username, password):
         home_assistant_client._access_token = "refreshed-token"

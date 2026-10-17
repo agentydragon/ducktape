@@ -7,7 +7,7 @@ admission denial or a CreateContainerConfigError on the cluster.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Iterator, Set
 from itertools import combinations
 from typing import Any, cast
 
@@ -18,14 +18,14 @@ from constructs import Construct, IValidation
 from cluster.cdk8s.cilium_rule_sections import enforces_nothing
 from cluster.cdk8s.pod_policy import embeds_pod, pod_spec
 
-_OUTSIDE_ENTITIES = frozenset({"world", "remote-node", "host"})
+_OUTSIDE_ENTITIES = {"world", "remote-node", "host"}
 _HTTPS_PORT = "443"
 _NETWORKPOLICY_KIND = "CiliumNetworkPolicy"
 _CLUSTERWIDE_KIND = "CiliumClusterwideNetworkPolicy"
 # Pod-spec keys that name a Secret or ConfigMap: env valueFrom, envFrom, volumes (plain,
 # projected sources), imagePullSecrets.
-_SECRET_REF_KEYS = frozenset({"secretKeyRef", "secretRef", "imagePullSecrets"})
-_CONFIG_MAP_REF_KEYS = frozenset({"configMapKeyRef", "configMapRef"})
+_SECRET_REF_KEYS = {"secretKeyRef", "secretRef", "imagePullSecrets"}
+_CONFIG_MAP_REF_KEYS = {"configMapKeyRef", "configMapRef"}
 
 
 def _pod_specs(objects: list[dict[str, Any]]) -> Iterator[tuple[str, dict[str, Any]]]:
@@ -34,7 +34,7 @@ def _pod_specs(objects: list[dict[str, Any]]) -> Iterator[tuple[str, dict[str, A
             yield f"{obj['kind']}/{obj['metadata']['name']}", pod_spec(obj)
 
 
-def pod_hardening(objects: list[dict[str, Any]], *, unhardened: frozenset[str]) -> list[str]:
+def pod_hardening(objects: list[dict[str, Any]], *, unhardened: Collection[str]) -> list[str]:
     """Every container runs under the RuntimeDefault seccomp profile (its own or the
     Pod's) and declares cpu/memory requests and a memory limit. CPU limits are left to
     the namespace LimitRange's default on purpose. `unhardened` names the workloads
@@ -58,7 +58,7 @@ def pod_hardening(objects: list[dict[str, Any]], *, unhardened: frozenset[str]) 
     return errors
 
 
-def pinned_https_egress(objects: list[dict[str, Any]], *, unpinned: frozenset[str]) -> list[str]:
+def pinned_https_egress(objects: list[dict[str, Any]], *, unpinned: Collection[str]) -> list[str]:
     """A CiliumNetworkPolicy egress rule reaching port 443 outside the cluster (world,
     remote-node, host, FQDNs) names the TLS server names it allows: without SNI it is
     "any HTTPS server". `unpinned` names the policies allowed through by design -- a
@@ -249,18 +249,18 @@ def resolved_references(objects: list[dict[str, Any]]) -> list[str]:
     return errors
 
 
-def unused_waivers(objects: list[dict[str, Any]], *, unhardened: frozenset[str], unpinned: frozenset[str]) -> list[str]:
+def unused_waivers(objects: list[dict[str, Any]], *, unhardened: Set[str], unpinned: Set[str]) -> list[str]:
     """Every waiver names an object in this App that still breaks its rule, so a fixed or
     deleted object takes its waiver with it."""
     failing_pods = {
         f"{obj['kind']}/{obj['metadata']['name']}"
         for obj in objects
-        if embeds_pod(obj) and pod_hardening([obj], unhardened=frozenset())
+        if embeds_pod(obj) and pod_hardening([obj], unhardened=set())
     }
     failing_policies = {
         obj["metadata"]["name"]
         for obj in objects
-        if obj["kind"] == _NETWORKPOLICY_KIND and pinned_https_egress([obj], unpinned=frozenset())
+        if obj["kind"] == _NETWORKPOLICY_KIND and pinned_https_egress([obj], unpinned=set())
     }
     return [
         *(
@@ -280,8 +280,8 @@ class FleetRules:
         self, scope: Construct, *, unhardened_pods: Collection[str] = (), unpinned_https_egress: Collection[str] = ()
     ) -> None:
         self._scope = scope
-        self._unhardened_pods = frozenset(unhardened_pods)
-        self._unpinned_https_egress = frozenset(unpinned_https_egress)
+        self._unhardened_pods = set(unhardened_pods)
+        self._unpinned_https_egress = set(unpinned_https_egress)
 
     def validate(self) -> list[str]:
         objects = [

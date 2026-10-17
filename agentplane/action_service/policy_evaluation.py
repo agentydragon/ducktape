@@ -65,16 +65,16 @@ def _rule_set(binding: PolicyBinding, policy_set: PolicySet[Policy]) -> Resolved
     )
 
 
-def auto_approvable(bindings: Sequence[ResolvedBinding]) -> frozenset[ActionIdentity]:
+def auto_approvable(bindings: Sequence[ResolvedBinding]) -> set[ActionIdentity]:
     """Every Action some auto-approve policy of these bindings names, whatever its arguments."""
-    return frozenset(
+    return {
         ActionIdentity(group=group, name=name)
         for resolved in bindings
         for policy_set in resolved.policy_sets
         for _, policy in policy_set.policies
         for group, names in policy.actions.items()
         for name in names
-    )
+    }
 
 
 def _evidence(context: DecisionContext, matched: MatchedPolicy) -> PolicyEvidence:

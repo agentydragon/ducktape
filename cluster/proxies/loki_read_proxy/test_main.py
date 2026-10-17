@@ -18,7 +18,7 @@ from cluster.proxies.loki_read_proxy.main import (
     create_app,
 )
 
-ALLOWLIST = frozenset({"flux-system", "monitoring", "kube-system"})
+ALLOWLIST = {"flux-system", "monitoring", "kube-system"}
 
 QUERY_RANGE = "/loki/api/v1/query_range"
 QUERY_INSTANT = "/loki/api/v1/query"
@@ -28,9 +28,9 @@ QUERY_INSTANT = "/loki/api/v1/query"
 # subject may `get pods/log` in. Deliberately disjoint from ALLOWLIST where it
 # matters: RBAC must be the only thing a token-bearing request is judged by.
 TOKENS = {
-    "sa-token-rbac-monitoring": frozenset({"monitoring"}),
-    "sa-token-rbac-matrix": frozenset({"matrix", "monitoring"}),
-    "sa-token-rbac-nothing": frozenset[str](),
+    "sa-token-rbac-monitoring": {"monitoring"},
+    "sa-token-rbac-matrix": {"matrix", "monitoring"},
+    "sa-token-rbac-nothing": set(),
 }
 SETTINGS = Settings(
     upstream_url="http://loki-gateway.test",

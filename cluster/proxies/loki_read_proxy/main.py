@@ -210,7 +210,7 @@ def _has_unquoted_brace(rest: str) -> bool:
     return False
 
 
-def parse_log_query_namespaces(query: str) -> frozenset[str]:
+def parse_log_query_namespaces(query: str) -> set[str]:
     """Return the namespaces ``query`` pins, or raise QueryValidationError.
 
     Only a log query whose leading stream selector pins ``namespace`` with
@@ -276,7 +276,7 @@ def parse_log_query_namespaces(query: str) -> frozenset[str]:
             raise QueryValidationError(f"{matcher.raw_value!r} is not a valid Kubernetes namespace name")
     if _has_unquoted_brace(rest):
         raise QueryValidationError("query must contain exactly one stream selector")
-    return frozenset(m.raw_value for m in namespace_matchers)
+    return {m.raw_value for m in namespace_matchers}
 
 
 @dataclass(frozen=True)
@@ -292,7 +292,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Self:
-        allowlist = frozenset(ns.strip() for ns in os.environ["NAMESPACE_ALLOWLIST"].split(",") if ns.strip())
+        allowlist = {ns.strip() for ns in os.environ["NAMESPACE_ALLOWLIST"].split(",") if ns.strip()}
         if not allowlist:
             raise ValueError("NAMESPACE_ALLOWLIST must name at least one namespace")
         return cls(
