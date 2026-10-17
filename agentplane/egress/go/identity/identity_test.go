@@ -21,6 +21,8 @@ const (
 type reviews struct {
 	audience string
 	pods     map[string]string
+	// foreign names the tokens of a ServiceAccount outside the namespaces the resolver serves.
+	foreign map[string]bool
 }
 
 func (r reviews) Create(_ context.Context, review *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
@@ -28,11 +30,15 @@ func (r reviews) Create(_ context.Context, review *authenticationv1.TokenReview,
 	if pod == "error" {
 		return nil, errors.New("API server unreachable")
 	}
+	namespace := "workloads"
+	if r.foreign[review.Spec.Token] {
+		namespace = "elsewhere"
+	}
 	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
 		Authenticated: known,
 		Audiences:     []string{r.audience},
 		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:workloads:runner", UID: "sa-1",
+			Username: "system:serviceaccount:" + namespace + ":runner", UID: "sa-1",
 			Extra: map[string]authenticationv1.ExtraValue{
 				"authentication.kubernetes.io/pod-name": {pod}, "authentication.kubernetes.io/pod-uid": {"uid-" + pod},
 			},
@@ -42,11 +48,11 @@ func (r reviews) Create(_ context.Context, review *authenticationv1.TokenReview,
 
 func verifier(t *testing.T, hop, projected map[string]string) *Verifier {
 	t.Helper()
-	hopResolver, err := auth.NewResolver(reviews{hopAudience, hop}, hopAudience, []string{"workloads"})
+	hopResolver, err := auth.NewResolver(reviews{audience: hopAudience, pods: hop, foreign: map[string]bool{"foreign": true}}, hopAudience, []string{"workloads"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	projectedResolver, err := auth.NewResolver(reviews{projectedAudience, projected}, projectedAudience, []string{"workloads"})
+	projectedResolver, err := auth.NewResolver(reviews{audience: projectedAudience, pods: projected}, projectedAudience, []string{"workloads"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +72,16 @@ func TestIdentifyTellsARejectedTokenFromAnUnansweredReview(t *testing.T) {
 		if !errors.As(err, &refused) || refused.Reason != want {
 			t.Errorf("Identify(%s) = %v, want a rejection with reason %s", token, err, want)
 		}
+	}
+}
+
+func TestIdentifyRejectsAServiceAccountOutsideTheServedNamespaces(t *testing.T) {
+	v := verifier(t, map[string]string{"foreign": "pod-a"}, nil)
+
+	_, err := v.Identify(t.Context(), "foreign")
+	var refused *Rejection
+	if !errors.As(err, &refused) || refused.Reason != decision.TokenRejected {
+		t.Fatalf("Identify(foreign) = %v, want a %s rejection", err, decision.TokenRejected)
 	}
 }
 

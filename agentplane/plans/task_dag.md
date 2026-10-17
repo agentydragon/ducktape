@@ -800,6 +800,8 @@ flowchart LR
     K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
     K3S_IMPORT_CONCURRENCY[Candidate: native containerd import and unpack concurrency]
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
+    EGRESS_RELAY_CONFIGMAP[Candidate: sidecar settings from a mounted ConfigMap]
+    EGRESS_RELAY_RENAME -. same consumers .-> EGRESS_RELAY_CONFIGMAP
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
@@ -959,6 +961,18 @@ PostgreSQL-first sequencing or a custom parallel import/unpack scheduler to the 
 **TODO; operator request, 2026-10-16.** Rename the egress sidecar to "relay" across code,
 configuration, image names and docs. Update all consumers atomically.
 
+### `EGRESS_RELAY_CONFIGMAP` — sidecar settings from a mounted ConfigMap
+
+**Candidate; operator, 2026-10-17 PDT: a ConfigMap, as several changes, landing before
+[`EGRESS_GO_CUTOVER`](#egress_go_cutover--run-the-go-egress-proxy-in-the-cluster).** The sandbox egress
+sidecar and the VM launcher relay take their settings from `AGENTPLANE_EGRESS_SIDECAR_*` environment
+variables that `cluster/cdk8s/agentplane/sandbox_pod.py` writes into each Pod and the Kyverno policy
+copies into the launcher relay. Read them from a file in a mounted ConfigMap instead, the way the
+Go proxy reads its settings file. Open: whether the ConfigMap is shared by all sandbox Pods or
+rendered per Sandbox, and how the VM launcher relay receives it. Split by consumer: sidecar and
+renderer first, the VM relay after. Settings and the code reading them change in one PR; an outage
+until the image rolls is acceptable, so image-before-config does not gate it.
+
 ### `K3S_PYTHON_INITIALIZATION` — reduce Python process initialization cost
 
 **Candidate; no worker assigned; no prerequisites.** Profile initialization in the remaining
@@ -1052,19 +1066,25 @@ egress proxy as a header substitution, as the staging `claude-ai` Sandboxes' `BU
 
 ## 6. Existing access and lifecycle follow-ups
 
-### `GOPROXY_SPIKE` — central egress GoProxy feasibility
+### `EGRESS_GO_CUTOVER` — run the Go egress proxy in the cluster
 
-**In review; operator-selected exception, worker `/root/goproxy_spike`, reported 2026-10-17
-02:43 UTC (2026-10-16 PDT).** Draft [#10816](https://github.com/agentydragon/ducktape/pull/10816). Branch `spike/central-goproxy`, isolated worktree
-`/tmp/ducktape-worktrees/2026-10-16-goproxy-spike`, base `d558dcc30d`. Explore a small central
-transport candidate using shared Go policy types and authentication interfaces; evaluate real
-kube-apiserver/etcd envtest for CRD/list/watch/revocation. Independent of the runner-side
-`EGRESS_SIDECAR_GO` conversion; no deployment activation or merge is authorized.
+**Blocked on [#10816](https://github.com/agentydragon/ducktape/pull/10816) merging and CI publishing the
+two Go images** (`agentplane-egress-proxy`, `agentplane-egress-history-migrate`). #10816 holds the
+whole Go port and deletes the Python proxy source; testing and staging still run the last pinned Python
+image, whose flags `cluster/cdk8s/agentplane/egress.py` still renders. Image before config: register
+both names in `cluster/cdk8s/forgejo_registry/image_automation.py` with testing and staging
+`image-pins`, wait for the pins to land, then swap the Deployment to the Go image and its settings
+file under a new ConfigMap name, and the Alembic init container for the Go migrator (it takes over
+the Alembic-stamped database, see the [egress README](../egress/README.md#decision-history)). Testing
+first, then staging. Runs after the first `EGRESS_RELAY_CONFIGMAP` change lands. The same change
+restores the `egress` and `egress_migrate` images the k3s fixture loads (its manual tests cannot start
+without a proxy until then), deletes `egress/settings.py` and `MigrationSettings`, and updates the
+README diagram.
 
-Exit: a focused draft PR, comparable real-socket contracts where feasible, and an honest
-GoProxy suitability recommendation with exact revisions/invocations, unsupported features and
-security/streaming gaps. The transport decision is recorded in the
-[egress design](../egress/docs/design.md). Rai merges manually.
+Exit: testing, then staging, serve a request with a substituted credential and a refusal through the
+Go proxy with the pinned Go image, and both history databases carry `egress_goose_version`. Left to
+follow, each its own change: k8s codegen for the informer's types, upstream connection reuse, idle
+tunnel timeouts, metrics. Rai merges manually.
 
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current
 source/deployment state with the relevant owner when dispatching; old acceptance notes are not live
@@ -1072,7 +1092,7 @@ observations. New database work follows the task-specific review and rollout req
 
 ```mermaid
 flowchart LR
-    GOPROXY_SPIKE[In review: central GoProxy transport feasibility]
+    EGRESS_GO_CUTOVER[Blocked: #10816 merge and published Go images]
     PC_EGRESS[Unscheduled: prune OpenClaw-only wiring from the Iron proxy]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]

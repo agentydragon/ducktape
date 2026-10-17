@@ -2,7 +2,7 @@
 
 from alembic import context
 
-from agentplane.egress.decision_store import Base
+from agentplane.egress.decision_tables import Base
 
 connection = context.config.attributes["connection"]
 target_metadata = context.config.attributes.get("target_metadata", Base.metadata)

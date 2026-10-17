@@ -103,3 +103,19 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 		t.Fatal("ran without a database URL")
 	}
 }
+
+func TestADeploymentNamingNoWorkloadNamespaceIsRefused(t *testing.T) {
+	for name, namespaces := range map[string]string{
+		"absent": "", "empty list": `[]`, "empty entry": `["ns", ""]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			args := required()
+			if namespaces != "" {
+				args = append(args, "--allowed-service-account-namespaces="+namespaces)
+			}
+			if _, err := loadConfig(args, []string{databaseURLEnv}); err == nil {
+				t.Fatal("ran with no usable workload namespace")
+			}
+		})
+	}
+}

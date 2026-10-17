@@ -1,44 +1,21 @@
-"""Fixtures over the fake API server in `testing/fake_apiserver.py`, seeded with one namespace."""
+"""Seed data for the fake API server in `agentplane/testing/fake_apiserver.py`, and the history database."""
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import AsyncIterator, Callable, Mapping
-from datetime import timedelta
-from typing import Any, cast
-
-import pytest
-from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
-
 from agentplane.egress.database_migrate import RUNNER
-from agentplane.egress.decision_log import DecisionLog
-from agentplane.egress.decision_store import DecisionStore, make_engine
-from agentplane.egress.identity import ProjectedTokenVerifier, WorkloadIdentityVerifier
-from agentplane.egress.informer import Informer
-from agentplane.egress.policy import Index
-from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
-from agentplane.egress.upstream import PinnedDialEventLoop
+from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import (
-    CREDENTIALS_NAMESPACE,
-    NAMESPACE,
     SANDBOX_NAMESPACE,
-    SANDBOXES_PLURAL,
     SECRETS_PLURAL,
     FakeApiServer,
     TokenVerdict,
     credential,
     egress_policy_set,
-    fake_apiserver,
-    pod_for,
     policy_binding,
-    sandbox,
     secret,
 )
-from agentplane.workload_auth.principal import WorkloadPrincipalResolver
-from util.kubernetes import CustomObjectsClient
 from util.testing.postgres_fixtures import (
     database_clones,
     database_names,
@@ -50,67 +27,33 @@ from util.testing.postgres_fixtures import (
 
 AUDIENCE = "agentplane-egress-test"
 UPSTREAM_HOST = "localhost"
-# The rules API's Service host as tests address it; nothing resolves it but the tests' own resolver.
-RULES_HOST = "egress-rules.test"
-CREDENTIAL_NAME = "github-pat"
-PLACEHOLDER = placeholder_of(CREDENTIAL_NAME)
-SCHEME = "Bearer"
-SECRET_VALUE = "real-secret-v1"
-SECRET_NAME = "github-pat-secret"
 SANDBOX_A = "sb-a"
-SANDBOX_B = "sb-b"
 # Every sandbox runs as a ServiceAccount of its own, named after it: that account is the subject.
 SUBJECT_A = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_A)
-SUBJECT_B = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_B)
-POD_A_UID = "pod-a-uid-1"
-POD_B_UID = "pod-b-uid-1"
-POD_A_IP = "127.0.0.1"
-POD_B_IP = "10.0.0.2"
 TOKEN_A = "token-of-pod-a"
-TOKEN_B = "token-of-pod-b"
-# A second audience the same Pods hold a token for, standing in for the API server's: the hop
-# bearers above are minted for the proxy and a destination validating its own refuses them.
-PROJECTED_AUDIENCE = "https://kubernetes.test.invalid"
-PROJECTED_TOKEN_A = "api-server-token-of-pod-a"
-PROJECTED_TOKEN_B = "api-server-token-of-pod-b"
 GITHUB_POLICY = "github"
-
-
-def pytest_asyncio_loop_factories(
-    config: pytest.Config, item: pytest.Item
-) -> Mapping[str, Callable[[], asyncio.AbstractEventLoop]]:
-    """The loop the proxy runs on in production, which `EgressProxyServer` refuses to start without."""
-    return {"pinned-dial": PinnedDialEventLoop}
+_CREDENTIAL_NAME = "github-pat"
+_SECRET_NAME = "github-pat-secret"
 
 
 def seed(fake: FakeApiServer) -> None:
-    """Two workloads with Pods and tokens, each running as its own ServiceAccount; A bound to a
-    credentialed GitHub-shaped policy, B unbound."""
-    fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_A))
-    fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_B))
-    fake.pods[SANDBOX_A] = pod_for(fake, SANDBOX_A, pod_uid=POD_A_UID, ip=POD_A_IP)
-    fake.pods[SANDBOX_B] = pod_for(fake, SANDBOX_B, pod_uid=POD_B_UID, ip=POD_B_IP)
-    for token, name, uid, audience in (
-        (TOKEN_A, SANDBOX_A, POD_A_UID, AUDIENCE),
-        (TOKEN_B, SANDBOX_B, POD_B_UID, AUDIENCE),
-        (PROJECTED_TOKEN_A, SANDBOX_A, POD_A_UID, PROJECTED_AUDIENCE),
-        (PROJECTED_TOKEN_B, SANDBOX_B, POD_B_UID, PROJECTED_AUDIENCE),
-    ):
-        fake.tokens[token] = TokenVerdict(
-            username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{name}",
-            pod_name=name,
-            pod_uid=uid,
-            audiences=(audience,),
-        )
-    fake.put(SECRETS_PLURAL, secret(SECRET_NAME, {"token": SECRET_VALUE}))
+    """One workload with a token for the proxy's audience, running as its own ServiceAccount and bound
+    to a GitHub-shaped policy: one rule substituting a credential, one admitting `/public/**` as is."""
+    fake.tokens[TOKEN_A] = TokenVerdict(
+        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{SANDBOX_A}",
+        pod_name=SANDBOX_A,
+        pod_uid="pod-a-uid-1",
+        audiences=(AUDIENCE,),
+    )
+    fake.put(SECRETS_PLURAL, secret(_SECRET_NAME, {"token": "real-secret-v1"}))
     fake.put(
         CREDENTIALS_PLURAL,
         credential(
-            CREDENTIAL_NAME,
-            secret_name=SECRET_NAME,
+            _CREDENTIAL_NAME,
+            secret_name=_SECRET_NAME,
             key="token",
             targets=[
-                {"header": "Authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": SCHEME},
+                {"header": "Authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"},
                 {"header": "Authorization", "method": TargetMethod.BASIC_PASSWORD},
             ],
         ),
@@ -124,7 +67,7 @@ def seed(fake: FakeApiServer) -> None:
                     "hosts": [UPSTREAM_HOST],
                     "methods": ["GET"],
                     "paths": ["/repos/**"],
-                    "credentialRef": {"name": CREDENTIAL_NAME},
+                    "credentialRef": {"name": _CREDENTIAL_NAME},
                 },
                 {"hosts": [UPSTREAM_HOST], "paths": ["/public/**"]},
             ],
@@ -136,84 +79,6 @@ def seed(fake: FakeApiServer) -> None:
     )
 
 
-@pytest.fixture
-async def fake() -> AsyncIterator[FakeApiServer]:
-    async with fake_apiserver() as server:
-        seed(server)
-        yield server
-
-
-def informer(index: Index, api_client: ApiClient, **overrides: Any) -> Informer:
-    return Informer(
-        **{
-            "index": index,
-            "custom_objects": cast(CustomObjectsClient, CustomObjectsApi(api_client)),
-            "core_v1": CoreV1Api(api_client),
-            "namespace": NAMESPACE,
-            "credentials_namespace": CREDENTIALS_NAMESPACE,
-            "resync_seconds": 60,
-            **overrides,
-        }
-    )
-
-
-@pytest.fixture
-async def api_client(fake: FakeApiServer) -> AsyncIterator[ApiClient]:
-    configuration = k8s_client.Configuration(host=f"http://127.0.0.1:{fake.port}")
-    async with ApiClient(configuration=configuration) as api:
-        yield api
-
-
-@pytest.fixture
-def workload_resolver(api_client: ApiClient) -> WorkloadPrincipalResolver:
-    """TokenReview for the proxy's own audience, admitting the sandbox namespace."""
-    return WorkloadPrincipalResolver(
-        authentication=AuthenticationV1Api(api_client),
-        audience=AUDIENCE,
-        allowed_service_account_namespaces=(SANDBOX_NAMESPACE,),
-    )
-
-
-@pytest.fixture
-def verifier(workload_resolver: WorkloadPrincipalResolver) -> WorkloadIdentityVerifier:
-    return WorkloadIdentityVerifier(workload_resolver)
-
-
-@pytest.fixture
-def projected(api_client: ApiClient) -> ProjectedTokenVerifier:
-    return ProjectedTokenVerifier(
-        resolvers={
-            PROJECTED_AUDIENCE: WorkloadPrincipalResolver(
-                authentication=AuthenticationV1Api(api_client),
-                audience=PROJECTED_AUDIENCE,
-                allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
-            )
-        }
-    )
-
-
 database_template, history_db_url = migrated_database_fixtures(
     RUNNER, drivername="postgresql+asyncpg", url_name="history_db_url"
 )
-
-
-@pytest.fixture
-async def decision_log(
-    history_db_url: str, decision_queue_size: int, decision_flush_seconds: float
-) -> AsyncIterator[DecisionLog]:
-    async with DecisionLog(
-        DecisionStore(make_engine(history_db_url), retention=timedelta(days=7)),
-        queue_size=decision_queue_size,
-        flush_seconds=decision_flush_seconds,
-    ) as log:
-        yield log
-
-
-@pytest.fixture
-def decision_queue_size() -> int:
-    return 2000
-
-
-@pytest.fixture
-def decision_flush_seconds() -> float:
-    return 5

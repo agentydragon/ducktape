@@ -1,4 +1,9 @@
-"""Egress Proxy deployment settings and configuration file name."""
+"""Egress Proxy deployment settings and configuration file name.
+
+CLEANUP(added 2026-10-17): Delete once `cluster/cdk8s/agentplane/egress.py` deploys the Go proxy. Until
+then it authors the flags of the pinned Python image, and `testing/go_replica.py` dumps it as the
+Go binary's settings file, which rejects a key the binary does not know.
+"""
 
 from __future__ import annotations
 

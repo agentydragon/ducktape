@@ -29,8 +29,6 @@ IMAGES = {
     ),
     "app": ("//agentplane/app:image", "agentplane/app/image"),
     "app_migrate": ("//agentplane/app:migration_image", "agentplane/app/migration_image"),
-    "egress": ("//agentplane/egress:image", "agentplane/egress/image"),
-    "egress_migrate": ("//agentplane/egress:migration_image", "agentplane/egress/migration_image"),
     "egress_sidecar": ("//agentplane/egress:sidecar_image", "agentplane/egress/sidecar_image"),
     "history_migrate": (
         "//agentplane/history_service/storage:migration_image",

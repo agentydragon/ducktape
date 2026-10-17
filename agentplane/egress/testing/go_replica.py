@@ -1,18 +1,20 @@
-"""Launch and own the built Go egress proxy, with the surface of `replica` for the same black-box tests."""
+"""Launch and own the built Go egress proxy for the black-box tests."""
 
 from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from textwrap import dedent
 
+import aiohttp
 from sqlalchemy.engine import make_url
+from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.egress.settings import Settings
-from agentplane.egress.testing.replica import expect_health
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _PROXY = get_required_path(own_repo_rlocation("agentplane/egress/go/cmd/egress-proxy_/egress-proxy"))
@@ -21,9 +23,45 @@ _MIGRATOR = get_required_path(
 )
 _GRACE_SECONDS = 55
 
-# Settings the Go binary has no use for: mitmproxy's working directory, and a flush interval the Go
-# history log replaces with a fixed one.
+# Keys of `Settings` only the Python proxy reads: the Go binary rejects keys it does not know.
 _PYTHON_ONLY = {"confdir", "decision_flush_seconds"}
+
+
+async def expect_health(
+    admin_port: int, status: int, *, alive: Callable[[], bool], exit_description: Callable[[], str]
+) -> None:
+    """Until the admin listener on `admin_port` answers `/healthz` with `status`; fails at once if the proxy died."""
+    async with aiohttp.ClientSession() as client:
+        async for attempt in AsyncRetrying(stop=stop_after_delay(20), wait=wait_fixed(0.05), reraise=True):
+            with attempt:
+                assert alive(), f"proxy exited with {exit_description()}"
+                async with client.get(f"http://127.0.0.1:{admin_port}/healthz") as response:
+                    assert response.status == status
+                    await response.read()
+                    return
+    raise AssertionError("health retry exhausted")
+
+
+def kubeconfig(path: Path, api_port: int) -> Path:
+    path.write_text(
+        dedent(f"""apiVersion: v1
+kind: Config
+clusters:
+- name: test
+  cluster:
+    server: http://127.0.0.1:{api_port}
+contexts:
+- name: test
+  context:
+    cluster: test
+    user: test
+current-context: test
+users:
+- name: test
+  user: {{}}
+""")
+    )
+    return path
 
 
 @dataclass
