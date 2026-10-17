@@ -5,7 +5,7 @@ go_library(
     srcs = ["auth.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth",
     visibility = [
-        "//agentplane/egress/x/goproxy:__subpackages__",
+        "//agentplane/egress:__subpackages__",
         "//agentplane/runner_gateway:__subpackages__",
         "//agentplane/runner_gateway/go:__subpackages__",
     ],
