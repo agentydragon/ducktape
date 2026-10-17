@@ -178,7 +178,7 @@ class Mount:
 
             # Create client with optional message handler
             handler = child_handler_factory(self._prefix) if child_handler_factory else None
-            # mode="legacy": server_entries()/ResourcesServer rely on client.initialize_result
+            # mode="legacy": server_entries relies on client.initialize_result
             # (the full InitializeResult, incl. capabilities) for status/capability reporting.
             # fastmcp v4 defaults new clients to mode="auto", which adopts the modern
             # server/discover era against another v4 server and leaves initialize_result

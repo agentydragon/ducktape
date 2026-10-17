@@ -65,14 +65,10 @@ async def test_compositor_get_inproc_servers_returns_all(compositor):
 
     servers = await compositor.get_inproc_servers()
 
-    # Should include our three servers plus infrastructure servers (resources, compositor_meta)
-    assert len(servers) >= 3
+    assert len(servers) == 3
     assert servers[MCPMountPrefix("s1")] is server1
     assert servers[MCPMountPrefix("s2")] is server2
     assert servers[MCPMountPrefix("s3")] is server3
-    # Infrastructure servers are also present
-    assert MCPMountPrefix("resources") in servers
-    assert MCPMountPrefix("compositor_meta") in servers
 
 
 async def test_compositor_get_inproc_servers_excludes_external():
@@ -91,13 +87,11 @@ async def test_compositor_get_inproc_servers_excludes_external():
 
         servers = await comp.get_inproc_servers()
 
-        # Should include in-process server plus infrastructure servers, but NOT external mount
+        # Only the in-process server should be returned, NOT the external mount
         assert MCPMountPrefix("inproc") in servers
         assert servers[MCPMountPrefix("inproc")] is inproc_server
         assert MCPMountPrefix("external") not in servers
-        # Infrastructure servers should be present
-        assert MCPMountPrefix("resources") in servers
-        assert MCPMountPrefix("compositor_meta") in servers
+        assert len(servers) == 1
 
 
 if __name__ == "__main__":

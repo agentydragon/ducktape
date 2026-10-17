@@ -1,17 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "meta_server",
-    srcs = ["meta_server.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":server",
-        "//mcp_infra:prefix",
-        "@pypi//fastmcp_slim",
-    ],
-)
-
-py_library(
     name = "mount",
     srcs = ["mount.py"],
     visibility = ["//:__subpackages__"],
@@ -32,23 +21,6 @@ py_library(
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "@pypi//mako",
-    ],
-)
-
-py_library(
-    name = "resources_server",
-    srcs = ["resources_server.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":server",
-        ":snapshots",
-        "//mcp_infra:prefix",
-        "//mcp_infra:resource_utils",
-        "//openai_utils:pydantic_strict_mode",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
     ],
 )
 
@@ -78,14 +50,8 @@ py_library(
     visibility = ["//x/agent_cli:__subpackages__"],
     deps = [
         ":compositor",
-        ":resources_server",
-        ":resources_stub",
         "//agent_core/testing:fixtures",
-        "//agent_core/testing:responses",
-        "//mcp_infra:prefix",
-        "//mcp_infra/testing:docker_fixtures",
         "//mcp_infra/testing:fixtures",
-        "//third_party/containers:fixtures",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
     ],
@@ -123,29 +89,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_meta",
-    srcs = ["test_meta.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":meta_server",
-        ":snapshots",
-        "//:conftest",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "constants",
-    srcs = ["constants.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//mcp_infra:prefix"],
-)
-
 py_library(
     name = "mount_types",
     srcs = ["mount_types.py"],
@@ -169,22 +112,7 @@ py_library(
     srcs = ["compositor.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":constants",
-        ":meta_server",
-        ":resources_server",
         ":server",
-        "//mcp_infra:mounted",
-    ],
-)
-
-py_library(
-    name = "resources_stub",
-    testonly = True,
-    srcs = ["resources_stub.py"],
-    visibility = ["//x/agent_cli:__subpackages__"],
-    deps = [
-        ":resources_server",
-        "//mcp_infra/testing/stubs:server_stubs",
     ],
 )
 
@@ -200,58 +128,6 @@ py_test(
         "//mcp_infra:prefix",
         "@pypi//mcp",
         "@pypi//mcp_types",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_resources_flow",
-    srcs = ["test_resources_flow.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":resources_server",
-        "//:conftest",
-        "//agent_core:agent",
-        "//agent_core:events",
-        "//agent_core:handler",
-        "//agent_core:loop_control",
-        "//agent_core:mcp_provider",
-        "//agent_core/testing/mcp:responses",
-        "//mcp_infra:prefix",
-        "//mcp_infra/exec/docker:server",
-        "//openai_utils:model",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_list_resources_null_filters",
-    srcs = ["test_list_resources_null_filters.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":resources_server",
-        "//:conftest",
-        "//mcp_infra:prefix",
-        "@pypi//fastmcp_slim",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_read_blocks",
-    srcs = ["test_read_blocks.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":resources_server",
-        "//:conftest",
-        "//mcp_infra:prefix",
-        "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],
 )

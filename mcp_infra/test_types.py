@@ -29,7 +29,6 @@ class TestMCPMountPrefix:
             "my_server_2",  # Multiple underscores
             "run__time",  # Double underscores allowed (old restriction removed)
             "policy_reader",  # Real-world example
-            "compositor_meta",  # Real-world example
         ],
     )
     def test_valid_names(self, valid_name: str):

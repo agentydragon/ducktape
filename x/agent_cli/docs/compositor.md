@@ -1,6 +1,6 @@
 # Compositor
 
-Aggregates multiple MCP servers behind a single interface with tool namespacing, resource aggregation, and lifecycle management.
+Aggregates multiple MCP servers behind a single interface with tool namespacing and lifecycle management.
 
 ## API Conventions
 
@@ -8,20 +8,17 @@ Aggregates multiple MCP servers behind a single interface with tool namespacing,
 
 - **Mount prefix** (`MCPMountPrefix`): tools namespaced as `{prefix}_{tool}`. ALWAYS use `MCPMountPrefix` type, NEVER raw strings. ALWAYS use `build_mcp_function(prefix, tool)` from `mcp_infra.naming` to construct prefixed names.
 - **Server name**: just `FastMCP(name=...)` metadata. Nothing outside the server should care.
-- Standard prefixes: `RESOURCES_MOUNT_PREFIX`, `COMPOSITOR_META_MOUNT_PREFIX` (from `x.agent_cli.compositor.constants`). `ContainerExecServer.RUNTIME_MOUNT_PREFIX` is on the server class.
-- Resource URIs: typed attributes on server classes (e.g., `CompositorMetaServer.server_state_resource`).
+- `ContainerExecServer.RUNTIME_MOUNT_PREFIX` is defined on the server class.
 
 ## Architecture
 
 Usage: `async with Compositor() as comp`. Mount with `comp.mount_server(prefix, server)`, create client with `async with Client(comp) as client`.
 
-**Pinned in-proc servers** (auto-mounted): `resources` (aggregates resources from all mounts), `compositor_meta` (metadata).
-
 Each mount encapsulates: `MountState` enum, `FastMCPProxy` (routing), persistent `Client` session (notifications), `AsyncExitStack` (owns resources like Docker containers).
 
 ### Resource Notifications
 
-Child servers emit `ResourceUpdatedNotification` -> per-mount child session -> `compositor_meta` mount listener -> compositor aggregated `ResourceUpdated` -> subscribed clients. Mount/unmount events trigger `ResourceListChangedNotification`.
+Per-mount child handlers capture resource notifications. The compositor records resource-list changes and passes resource-update events to registered listeners.
 
 ### Lifecycle
 

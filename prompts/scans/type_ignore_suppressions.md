@@ -98,7 +98,7 @@ from typing import cast
 
 # Declare that this is actually a NotifyingFastMCP client
 # (when function already returns the right type but inference fails)
-server = cast(NotifyingFastMCP, make_resources_server(...))
+server = cast(NotifyingFastMCP, make_notifying_server(...))
 await server.broadcast_resource_list_changed()
 ```
 

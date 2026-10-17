@@ -84,8 +84,7 @@ class BaseCompositor(FastMCP):
     """Base class for MCP server aggregation. Use Compositor for typical usage.
 
     Aggregates upstream MCP servers under a single FastMCP surface.
-    Most users should use Compositor (which extends this and auto-mounts
-    infrastructure servers like resources and compositor_meta).
+    Most users should use Compositor, the public implementation in this package.
 
     MUST be used as async context manager:
         async with BaseCompositor() as comp:
@@ -392,33 +391,8 @@ class BaseCompositor(FastMCP):
             ValueError: If server not found
 
         Note:
-            TODO (Pinning Architecture): Current situation and future improvement
-
-            CURRENT STATE:
-            - Pinning is available to ALL servers via mount_inproc(pinned=True)
-            - This _allow_pinned flag allows __aexit__ to cleanup pinned servers
-            - Two categories of pinned servers exist:
-              1) Compositor internals: resources, compositor_meta (pure Python, minimal cleanup)
-              2) Application servers: runtime/docker (Docker containers!), stateful servers (critic_submit, etc.)
-
-            PROBLEM:
-            - Application servers (category 2) have CRITICAL external resources that need cleanup
-            - Docker containers: Must be stopped/removed via scoped_container().__aexit__
-            - But they're marked "pinned" which conceptually means "lives as long as compositor"
-            - This contradicts the cleanup need, requiring _allow_pinned workaround
-
-            FUTURE ARCHITECTURAL OPTION:
-            - Restrict pinning to compositor-internal servers ONLY
-            - Remove public pinned= parameter from mount_inproc()
-            - Add internal _mount_internal_pinned() for resources/compositor_meta only
-            - Force applications to manage lifecycle explicitly (no pinning for app servers)
-            - Benefits: clearer ownership, no _allow_pinned flag needed, no Docker container leak risk
-
-            RATIONALE FOR CURRENT FIX:
-            - Immediate: fixes ~75 test teardown errors (77% → 93% pass rate)
-            - Safe: prevents Docker container leaks by ensuring cleanup runs
-            - Minimal: preserves current API, no application code changes needed
-            - Future work can migrate to restricted pinning incrementally
+            `_allow_pinned` is reserved for compositor teardown so pinned mounts still
+            release owned resources, such as Docker containers, when the context closes.
         """
         # Defensive check: prevent unmount when closed
         async with self._state_lock:
@@ -649,7 +623,7 @@ class BaseCompositor(FastMCP):
     async def read_resource_contents(
         self, uri: AnyUrl
     ) -> list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]:
-        """Read resource contents, converting from FastMCP's ResourceResult to MCP protocol types."""
+        """Read a resource exposed through this compositor as MCP protocol contents."""
         result = await self.read_resource(str(uri))
         mcp_result = result.to_mcp_result(uri)
         return list(mcp_result.contents)
