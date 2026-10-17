@@ -144,8 +144,7 @@ class FundingPolicy(ApiModel):
             else f"portfolio {sleeve.portfolio_id}"
             for sleeve in self.sleeve_weights
         ]
-        if len(set(named)) != len(named):
-            duplicated = sorted(set(duplicates_everseen(named)))
+        if duplicated := sorted(set(duplicates_everseen(named))):
             raise ValueError(
                 f"sleeve weights name {duplicated} more than once; a sleeve weighted twice is double-counted"
             )
