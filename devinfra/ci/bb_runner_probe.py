@@ -93,10 +93,6 @@ def sha256_file(path: Path) -> str:
         return hashlib.file_digest(f, "sha256").hexdigest()
 
 
-def sha256_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
 def parse_float(value: str | None) -> float | None:
     if value is None:
         return None
@@ -268,7 +264,7 @@ def capture_bytes(src: Path, dest: Path, *, max_bytes: int = 2_000_000) -> dict[
         "path": rel,
         "exists": True,
         "size": len(data),
-        "sha256": sha256_bytes(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
         "truncated": truncated,
     }
 
