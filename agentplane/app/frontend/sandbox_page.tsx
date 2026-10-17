@@ -1,10 +1,12 @@
 import { NotificationStatus } from "./notification_status";
+import { archiveBlockReason } from "./thread_status";
 import {
   ActionIcon,
   Badge,
   Button,
   Group,
   Menu,
+  Paper,
   Select,
   Stack,
   Switch,
@@ -28,6 +30,7 @@ import {
   displayableError,
   findThread,
   getSessionOpening,
+  getRunnerStatus,
   getThread,
   HttpError,
   modelsForHarness,
@@ -35,6 +38,7 @@ import {
   openSession,
   type Harness,
   type ModelCatalog,
+  type RunnerStatusView,
   type SessionDefaults,
   type SandboxView,
   type ThreadView,
@@ -171,8 +175,177 @@ function ConditionsTable({ title, conditions }: { title: string; conditions: Raw
   );
 }
 
+function harnessLabel(harness: RunnerStatusView["processes"][number]["harness"]): string {
+  switch (harness) {
+    case "HARNESS_CLAUDE":
+      return "Claude";
+    case "HARNESS_CODEX":
+      return "Codex";
+  }
+}
+
+function processStateLabel(state: RunnerStatusView["processes"][number]["state"]): string {
+  switch (state) {
+    case "PROCESS_STATE_STARTING":
+      return "Starting";
+    case "PROCESS_STATE_RUNNING":
+      return "Running";
+    case "PROCESS_STATE_STOPPING":
+      return "Stopping";
+  }
+}
+
+function executionStateLabel(state: RunnerStatusView["sessions"][number]["execution_state"]): string {
+  switch (state) {
+    case "SESSION_EXECUTION_STATE_DORMANT":
+      return "Dormant";
+    case "SESSION_EXECUTION_STATE_PREPARING":
+      return "Preparing";
+    case "SESSION_EXECUTION_STATE_READY":
+      return "Ready";
+    case "SESSION_EXECUTION_STATE_FAILED":
+      return "Failed";
+  }
+}
+
+type RunnerDiagnosticsState =
+  | { kind: "loading" }
+  | { kind: "available"; value: RunnerStatusView; observedAt: string }
+  | { kind: "unavailable"; reason: string }
+  | { kind: "suspended" };
+
+function RunnerDiagnostics({ sandbox, active }: { sandbox: SandboxView; active: boolean }): JSX.Element {
+  const [state, setState] = useState<RunnerDiagnosticsState>({ kind: "loading" });
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    if (sandbox.phase === "Suspended" || sandbox.operating_mode === "Suspended") {
+      setState({ kind: "suspended" });
+      return;
+    }
+    let current = true;
+    setState({ kind: "loading" });
+    void getRunnerStatus(sandbox.name).then(
+      (value) => {
+        if (current) setState({ kind: "available", value, observedAt: new Date().toISOString() });
+      },
+      (reason: unknown) => {
+        if (current) setState({ kind: "unavailable", reason: displayableError(reason) });
+      }
+    );
+    return () => {
+      current = false;
+    };
+  }, [active, refreshVersion, sandbox.name, sandbox.operating_mode, sandbox.phase]);
+
+  return (
+    <Stack gap="xs" data-testid="sandbox-runner-diagnostics">
+      <Group justify="space-between" align="flex-start" wrap="wrap" gap="xs">
+        <div>
+          <Title order={5}>Runner diagnostics</Title>
+          <Text size="xs" c="dimmed">
+            Read-only snapshot of process and Session state reported by the runner.
+          </Text>
+        </div>
+        <Button
+          size="xs"
+          variant="subtle"
+          disabled={state.kind === "loading" || state.kind === "suspended"}
+          onClick={() => setRefreshVersion((version) => version + 1)}
+        >
+          Refresh
+        </Button>
+      </Group>
+      {state.kind === "loading" && (
+        <Text size="sm" role="status" c="dimmed">
+          Loading runner diagnostics…
+        </Text>
+      )}
+      {state.kind === "suspended" && (
+        <Text size="sm" role="status" c="dimmed">
+          Sandbox suspended. Runner diagnostics are unavailable until it is running.
+        </Text>
+      )}
+      {state.kind === "unavailable" && (
+        <Text size="sm" role="status" c="dimmed">
+          Runner diagnostics unavailable: {state.reason}
+        </Text>
+      )}
+      {state.kind === "available" && (
+        <Stack gap="xs">
+          <Text size="xs" c="dimmed">
+            Snapshot read at <time dateTime={state.observedAt}>{new Date(state.observedAt).toLocaleString()}</time>
+          </Text>
+          <Text size="sm">Runner boot ID · {state.value.runner_boot_id}</Text>
+          {state.value.processes.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              No harness processes reported.
+            </Text>
+          ) : (
+            <Stack gap="xs">
+              <Title order={6}>Harness processes</Title>
+              {state.value.processes.map((process) => (
+                <Paper key={process.process_id} withBorder p="sm" radius="md">
+                  <Stack gap={4}>
+                    <Group justify="space-between" wrap="wrap" gap="xs">
+                      <Text fw={600}>{harnessLabel(process.harness)}</Text>
+                      <Badge>{processStateLabel(process.state)}</Badge>
+                    </Group>
+                    <Text size="sm">PID {process.pid ?? "not started"}</Text>
+                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                      Process ID · {process.process_id}
+                    </Text>
+                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                      Assigned Sessions ·{" "}
+                      {process.assigned_session_ids.length ? process.assigned_session_ids.join(", ") : "None"}
+                    </Text>
+                  </Stack>
+                </Paper>
+              ))}
+            </Stack>
+          )}
+          {state.value.sessions.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              No Sessions reported.
+            </Text>
+          ) : (
+            <Stack gap="xs">
+              <Title order={6}>Sessions</Title>
+              {state.value.sessions.map((session) => (
+                <Paper key={session.session_id} withBorder p="sm" radius="md">
+                  <Stack gap={4}>
+                    <Group justify="space-between" wrap="wrap" gap="xs">
+                      <Text fw={600} style={{ overflowWrap: "anywhere" }}>
+                        {session.session_id}
+                      </Text>
+                      <Badge>{executionStateLabel(session.execution_state)}</Badge>
+                    </Group>
+                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                      Process ID · {session.process_id ?? "—"}
+                    </Text>
+                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                      Native Session ID · {session.native_session_id ?? "—"}
+                    </Text>
+                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                      Active turn · {session.active_turn_id ?? "—"}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      Failure cursor · {session.failure_cursor ?? "—"}
+                      {session.busy ? " · Work in progress" : ""}
+                    </Text>
+                  </Stack>
+                </Paper>
+              ))}
+            </Stack>
+          )}
+        </Stack>
+      )}
+    </Stack>
+  );
+}
+
 /** What Kubernetes says about the sandbox: the Sandbox CR's own status, then its Pod's. */
-function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
+function StatusView({ sandbox, active }: { sandbox: SandboxView; active: boolean }): JSX.Element {
   const [raw, setRaw] = useState(false);
   const sandboxConditions = rawConditions(sandbox.status);
   const podConditions = rawConditions(sandbox.pod?.status ?? null);
@@ -298,6 +471,7 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
           )}
         </>
       )}
+      <RunnerDiagnostics sandbox={sandbox} active={active} />
     </Stack>
   );
 }
@@ -658,7 +832,7 @@ export function SandboxPage({
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
-          {sandbox && <StatusView sandbox={sandbox} />}
+          {sandbox && <StatusView sandbox={sandbox} active={tab === "status"} />}
         </Tabs.Panel>
         {vmConsoleAvailable && (
           <Tabs.Panel value="console" pt="sm">
@@ -770,7 +944,7 @@ export function SandboxPage({
               <Table.Tbody>
                 {visibleThreads.map((thread) => {
                   const sessionId = thread.id;
-                  const running = thread.harness_state === "HARNESS_STATE_RUNNING";
+                  const archiveBlock = archiveBlockReason(thread);
                   return (
                     <Table.Tr key={sessionId}>
                       <Table.Td>
@@ -795,8 +969,12 @@ export function SandboxPage({
                             {thread.archived ? (
                               <Menu.Item onClick={() => void threadAct(thread.id, "unarchive")}>Unarchive</Menu.Item>
                             ) : (
-                              <Menu.Item disabled={running} onClick={() => void threadAct(thread.id, "archive")}>
-                                {running ? "Stop harness before archiving" : "Archive"}
+                              <Menu.Item
+                                disabled={archiveBlock !== null}
+                                title={archiveBlock ?? undefined}
+                                onClick={() => void threadAct(thread.id, "archive")}
+                              >
+                                {archiveBlock ?? "Archive"}
                               </Menu.Item>
                             )}
                           </Menu.Dropdown>

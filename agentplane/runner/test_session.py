@@ -99,6 +99,15 @@ class NativeThreadAdapter(UnexpectedAdapter):
         return (self.session.record.native_session_id or "") if self.resuming else "fresh-thread"
 
 
+class FailingReconcileAdapter(NativeThreadAdapter):
+    def command(self) -> list[str]:
+        return [sys.executable, "-c", "import sys; sys.stdin.read()"]
+
+    async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
+        del turn_id, resumed
+        raise RuntimeError("injected reconciliation failure")
+
+
 @dataclass
 class Commits:
     count: int = 0
@@ -337,6 +346,27 @@ async def test_a_restart_resumes_the_recorded_thread_only_once_a_turn_started(
             assert (adapter.resuming, stored.native_session_id, started.resumed) == expected
         finally:
             await session.stop()
+
+
+async def test_failed_recovery_reconciliation_stops_the_unready_harness(tmp_path: Path) -> None:
+    record = codex_record(tmp_path / "workspace")
+    record.native_session_id = "recorded-thread"
+    config = RunnerConfig(state_dir=tmp_path / "state", launch=launches.SANDBOX_LAUNCH)
+
+    async with open_session("test-session", record, config=config, make_adapter=FailingReconcileAdapter) as session:
+        await session.emit(event_pb2.TurnStarted(turn_id="recovery-turn"), sources=[])
+
+        with pytest.raises(RuntimeError, match="injected reconciliation failure"):
+            await session.ensure_running()
+
+        assert not session.running
+        assert session.process is None
+        assert session.process_id is None
+        assert session._process_state == runner_pb2.PROCESS_STATE_UNSPECIFIED
+        assert any(
+            entry.event.HasField("harness_exited") and entry.event.harness_exited.stopped_by_runner
+            for entry in await session.journal.since(0, limit=128)
+        )
 
 
 if __name__ == "__main__":

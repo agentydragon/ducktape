@@ -28,7 +28,7 @@ from agentplane.history_service.fold_runner import FOLD_EPOCH, HEALTH_SERVICE, F
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
 from agentplane.history_service.testing.sessions import retained_session
-from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, history_service_pb2, runner_pb2
 
 PAGE_SIZE = 8
 
@@ -150,6 +150,42 @@ async def test_a_session_ends_only_once_its_harness_launch_has_an_outcome(engine
     # Setup succeeded; the harness is still launching.
     assert await fold_end(entry(3, setup_finished=event_pb2.SetupFinished(exit_code=0))) is None
     assert await fold_end(entry(4, harness_launch_failed=event_pb2.HarnessLaunchFailed(reason="test failure"))) == {}
+
+
+async def test_admitted_input_keeps_dormant_session_feed_open_until_startup_outcome(
+    engine: AsyncEngine, history: Store
+) -> None:
+    session_id = await retained_session(
+        history,
+        [entry(1, harness_started=event_pb2.HarnessStarted()), entry(2, harness_exited=event_pb2.HarnessExited())],
+    )
+    await history.record_feed_state(
+        session_id,
+        history_service_pb2.SessionFeedState(
+            attached=runner_pb2.Attached(
+                session_id=str(session_id),
+                harness_state=runner_pb2.HARNESS_STATE_STOPPED,
+                launch_outcome=runner_pb2.LAUNCH_OUTCOME_STARTED,
+            )
+        ),
+    )
+    folder = FoldRunner(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def fold_end(*entries: event_log_pb2.EventEntry) -> dict[str, str] | None:
+        if entries:
+            await history.append(session_id, list(entries))
+        await folder.cycle()
+        async with sessions() as session:
+            summary = await session.get(ThreadHistorySummary, session_id)
+            assert summary is not None
+            return summary.end
+
+    assert await fold_end() == {}
+    command = command_pb2.Command(command_id="wake", submit_input=command_pb2.SubmitInput(text="continue"))
+    assert await fold_end(entry(3, command_admitted=event_pb2.CommandAdmitted(command=command))) is None
+    assert await fold_end(entry(4, harness_launch_failed=event_pb2.HarnessLaunchFailed(reason="failed"))) is None
+    assert await fold_end(entry(5, command_failed=event_pb2.CommandFailed(command_id="wake", reason="failed"))) == {}
 
 
 async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: AsyncEngine, history: Store) -> None:

@@ -68,10 +68,13 @@ The target writes `test.outputs/storage-{pod-directory,vm-raw}.json`. It is `man
 
 `//agentplane/acceptance:test_suspend_resume` tests two Threads (Claude and Codex) in one Pod Sandbox,
 and a separate Codex Thread in a VM Sandbox. It suspends until the old launcher or Pod is gone,
-then resumes the original Threads. Each case verifies the state PVC UID and bound PV survive,
+then resumes the original Threads by sending their next input. Each case verifies all Sandbox-owned
+state and workspace PVC UIDs and bound PVs survive,
 the incarnation changes, the sealed archived history remains byte-for-byte unchanged, and one
 `JournalReopened` continues its source sequence before a resumed native turn recalls its token.
-The two-Thread case also checks token isolation. Intentional delta settlement may leave gaps in
+It also checks that Open reserves a Session without a harness process, that a completed turn has a
+ready process assignment, and that the new runner retains dormant Sessions and their native IDs
+before the next input. The two-Thread case also checks token isolation. Intentional delta settlement may leave gaps in
 archive cursors; retained entries remain ordered and unique.
 
 Run only after the app, controller and runner changes have reached testing. Check the VM image's

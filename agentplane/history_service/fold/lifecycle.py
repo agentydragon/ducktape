@@ -3,9 +3,10 @@
 from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict, ParseDict
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.history_service.fold.models import ThreadHistorySummary
+from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadHistorySummary
 from agentplane.history_service.fold.recording import EventReplicationError, set_operational
 from agentplane.proto import event_log_pb2, history_service_pb2, runner_pb2
 
@@ -46,13 +47,24 @@ async def project_lifecycle(
         # Any suffix invalidates a failure at the old prefix, including failed setup/restart.
         end = None
     if not end:
-        # A feed ends where its harness stopped, and a resumed harness reopens it. A harness
-        # waiting on setup or still launching has not started yet, so it has not ended either.
+        # An admitted input owns work while its harness starts. Process absence alone cannot end
+        # the stream before that input's startup/delivery outcome arrives.
+        pending_command = await session.scalar(
+            select(ThreadEntity.entity_id)
+            .join(
+                ThreadCheckpoint,
+                (ThreadEntity.thread_id == ThreadCheckpoint.thread_id)
+                & (ThreadEntity.projection_epoch == ThreadCheckpoint.projection_epoch),
+            )
+            .where(ThreadEntity.thread_id == thread_id, ThreadEntity.entity_kind == "command", ThreadEntity.pending)
+            .limit(1)
+        )
         end = (
             {}
             if attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
             and attached.setup_state != runner_pb2.SETUP_STATE_RUNNING
             and attached.launch_outcome != runner_pb2.LAUNCH_OUTCOME_PENDING
+            and pending_command is None
             else None
         )
     summary.attached = MessageToDict(attached)

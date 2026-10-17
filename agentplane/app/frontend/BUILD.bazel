@@ -858,6 +858,7 @@ ts_library(
         ":sandbox_console",
         ":sandbox_status",
         ":status_mark",
+        ":thread_status",
         ":time_ago",
         ":topbar",
         "//:node_modules/@bufbuild/protobuf",

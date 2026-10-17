@@ -547,11 +547,55 @@ it("keeps the open Thread in the list while it is archived and the archived swit
   expect(container.textContent).not.toContain("Open archive");
 });
 
+it("archives an idle Session while its harness process remains running", async () => {
+  await render(
+    [
+      thread({
+        id: "t-1",
+        sandbox: "demo",
+        name: "Live thread",
+        harness_state: "HARNESS_STATE_RUNNING",
+      }),
+    ],
+    { demo: sandbox("demo") }
+  );
+  const archiveButton = container.querySelector('button[aria-label="Archive Live thread"]');
+  if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
+  expect(archiveButton.disabled).toBe(false);
+  await act(async () => archiveButton.click());
+  const archiveCall = fetchMock.mock.calls.find(
+    ([request]) => new URL((request as Request).url).pathname === "/threads/t-1/archive"
+  );
+  expect(archiveCall).toBeDefined();
+});
+
+it("archives a reserved dormant Session before its first input", async () => {
+  await render(
+    [
+      thread({
+        id: "t-1",
+        sandbox: "demo",
+        name: "Reserved thread",
+        harness_state: "HARNESS_STATE_STOPPED",
+        launch_outcome: "LAUNCH_OUTCOME_PENDING",
+      }),
+    ],
+    { demo: sandbox("demo") }
+  );
+  const archiveButton = container.querySelector('button[aria-label="Archive Reserved thread"]');
+  if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
+  expect(archiveButton.disabled).toBe(false);
+  await act(async () => archiveButton.click());
+  const archiveCall = fetchMock.mock.calls.find(
+    ([request]) => new URL((request as Request).url).pathname === "/threads/t-1/archive"
+  );
+  expect(archiveCall).toBeDefined();
+});
+
 it.each([
-  [{ active_turn_id: null }, "idle"],
-  [{ active_turn_id: "turn-1" }, "running"],
-  [{ last_turn_status: "TURN_STATUS_FAILED" }, "turn_error"],
-] as const)("blocks archiving a live harness, whatever its status: %o", async (overrides, kind) => {
+  [{ active_turn_id: "turn-1" }, "Wait for the active turn to finish before archiving"],
+  [{ setup_state: "SETUP_STATE_RUNNING" }, "Wait for setup to finish before archiving"],
+] as const)("blocks archiving while Session work is visible: %o", async (overrides, reason) => {
   await render(
     [
       thread({
@@ -564,9 +608,8 @@ it.each([
     ],
     { demo: sandbox("demo") }
   );
-  expect(container.querySelector(".agentplane-thread-status-indicator")?.getAttribute("data-status")).toBe(kind);
-  const archiveButton = container.querySelector('button[aria-label="Stop harness before archiving Live thread"]');
-  if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
+  const archiveButton = container.querySelector(`button[aria-label="${reason} · Live thread"]`);
+  if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing blocked archive button");
   expect(archiveButton.disabled).toBe(true);
 });
 

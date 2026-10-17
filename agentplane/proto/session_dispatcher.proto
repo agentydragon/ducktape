@@ -17,11 +17,9 @@ service SessionDispatcher {
   rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
   rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
   rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
-  // Not stored and not queued: delivered at once to a `Ready` Sandbox, and otherwise a no-op.
+  // Not stored or queued: delivered at once to a Ready Sandbox. A stale turn is rejected
+  // by the runner with FAILED_PRECONDITION; unavailable Sandbox behavior remains explicit below.
   rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse);
-  // Goes ahead of the Session's queue: the inputs queued before it end `CANCELLED_IN_DISPATCHER` with
-  // reason `stopped`. Never counts against the queue cap.
-  rpc StopRunnerSession(StopRunnerSessionRequest) returns (StopRunnerSessionResponse);
   // Stores the request and answers with the Session's `SessionOpening` in
   // `DELIVERY_STATE_QUEUED_IN_DISPATCHER`; the opening is delivered once the Sandbox is `Ready`, before any
   // command for the Session. `session_id` is the idempotency key: a retry with the same Sandbox and request
@@ -56,6 +54,7 @@ enum Operation {
   OPERATION_SUBMIT_INPUT = 1;
   OPERATION_CHANGE_MODEL = 2;
   OPERATION_CHANGE_REASONING_EFFORT = 3;
+  // Historical receipts remain readable; no RPC accepts this operation.
   OPERATION_STOP_RUNNER_SESSION = 4;
 }
 
@@ -120,17 +119,6 @@ message InterruptTurnResponse {
   optional string reason = 2;
   optional agentplane.proto.event_log.EventEntry admission = 3;
 }
-
-message StopRunnerSessionRequest {
-  string command_id = 1;
-  string session_id = 2;
-  string sandbox = 3;
-}
-
-message StopRunnerSessionResponse {
-  Dispatch dispatch = 1;
-}
-
 message GetDispatchRequest {
   string command_id = 1;
 }

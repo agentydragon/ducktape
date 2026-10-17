@@ -197,7 +197,10 @@ it("refuses payload changes under an existing local command id", () => {
   expect(store.remember(COMMAND)).toEqual(existing);
   expect(() =>
     store.remember(
-      create(CommandSchema, { commandId: COMMAND.commandId, operation: { case: "stopRunnerSession", value: {} } })
+      create(CommandSchema, {
+        commandId: COMMAND.commandId,
+        operation: { case: "changeModel", value: { model: "other-model" } },
+      })
     )
   ).toThrow("cannot be reused");
 });
@@ -217,7 +220,7 @@ it("refuses to retain more commands than the bounded server selection can reconc
     store.remember(
       create(CommandSchema, {
         commandId: `command-${index}`,
-        operation: { case: "stopRunnerSession", value: {} },
+        operation: { case: "changeModel", value: { model: `model-${index}` } },
       })
     );
   }
@@ -225,7 +228,7 @@ it("refuses to retain more commands than the bounded server selection can reconc
     store.remember(
       create(CommandSchema, {
         commandId: "one-too-many",
-        operation: { case: "stopRunnerSession", value: {} },
+        operation: { case: "changeModel", value: { model: "last-model" } },
       })
     )
   ).toThrow(`maximum ${MAX_RETAINED_COMMANDS}`);

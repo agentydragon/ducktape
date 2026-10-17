@@ -1,10 +1,12 @@
 # Runner delivery boundaries and harness identity
 
-Status: **design review only.** This note records current code paths, approved direction, alternatives
+Status: **design and implementation planning only.** This note records current code paths, approved direction, alternatives
 and remaining questions. The operator approved gRPC for internal APIs, a generated HTTP/JSON facade,
 and an ergonomic CLI, adopted incrementally by service and interface. The selected HTTP/JSON
-facade is gRPC-Gateway. This does not authorize runtime/API cutover. Other sections do not authorize changes to behavior,
-schemas, database ownership, identity mappings or caller permissions. Keep the existing security
+facade is gRPC-Gateway. Harness lifecycle ownership is approved below (operator, 2026-10-17); its
+implementation and rollout remain unfinished. This note does not authorize runtime/API cutover or
+otherwise authorize changes to behavior, schemas, database ownership, identity mappings or caller
+permissions. Keep the existing security
 checks and durable queue until a replacement contract is reviewed.
 
 The current runner contracts remain in [Session layering](thread_layering.md), the
@@ -58,8 +60,8 @@ service boundaries rather than a Dispatcher dependency:
 - **The app uses History for retained Thread data.** `EventLogStore` reads archived events and
   observations and validates the History Service's committed prefix; summaries come from the History
   fold. Opening a Thread does not wait for History to observe the Session because the runner pushes
-  its journal asynchronously. App resume separately checks the app's Thread/feed state and live
-  `Runner.ListSessions` for the current runner's retained Session and spec.
+  its journal asynchronously. Sending input uses Dispatcher; the runner owns native readiness.
+  Live `GetStatus` supplies Sandbox diagnostics and archive safety without waking a Sandbox.
 - **Notifications uses History to reconcile command outcomes.** It reads the Session journal's
   committed watermark and entries to checkpoint receipts and confirm whether a command reached the
   runner journal. This is an outcome dependency of Notification, not Dispatcher routing. A
@@ -86,16 +88,15 @@ There are two different Session inventories:
   Session is present in the current runner incarnation. See the
   [History README](../history_service/README.md).
 
-| Consumer                                                | Fact it needs                                                                                                | Present authority and disposition to review                                                                                                                                                                                            |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App Thread table, Sandbox filter/search and Thread view | Retained Thread identity, Sandbox association and folded display state, including after Sandbox deletion     | History `FindSessions`/summaries through `ThreadStore` and `Summaries`; keep as retained inventory. `ContentStore` uses summary scope for retained evidence, not live presence.                                                        |
-| App archive safety                                      | Whether this Thread's harness is running in the current, ready runner                                        | `api.py` calls `RunnerBridge.list_sessions`; keep a live check or approve an equally authoritative narrower state read. A Pod whose runner is not ready currently blocks archive.                                                      |
-| App explicit native resume                              | Current runner's retained Session, recoverable spec and setup state, compared with the History-backed Thread | `RunnerBridge.resume_thread` checks live `ListSessions`, then calls `Runner.ResumeSession` through the per-Sandbox proxy with the live Sandbox identity. History's old attachment cannot establish present membership or current spec. |
-| Notification subscription                               | Session membership in the requested UID/owner Sandbox at subscription time                                   | `Service.subscribe` validates namespace, UID and owner, then calls live `ListSessions`; preserve an equivalent preflight or explicitly revise offline subscription semantics. This read alone is not send permission.                  |
-| Notification outcome reconciliation                     | Durable command journal watermark and entries                                                                | History `ReadSessionEvents` is evidence of runner admission/confirmation after an attempt, not destination inventory; its separate outcome design remains open.                                                                        |
+| Consumer                                                | Fact it needs                                                                                            | Present authority and disposition to review                                                                                                                                                                           |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App Thread table, Sandbox filter/search and Thread view | Retained Thread identity, Sandbox association and folded display state, including after Sandbox deletion | History `FindSessions`/summaries through `ThreadStore` and `Summaries`; keep as retained inventory. `ContentStore` uses summary scope for retained evidence, not live presence.                                       |
+| App archive safety                                      | Whether this Session has unfinished work in the current ready runner                                     | `api.py` reads `Runner.GetStatus` and checks the Session's `busy` flag. An idle process does not block archive; a Pod whose runner cannot be checked does.                                                            |
+| Notification subscription                               | Session membership in the requested UID/owner Sandbox at subscription time                               | `Service.subscribe` validates namespace, UID and owner, then calls live `ListSessions`; preserve an equivalent preflight or explicitly revise offline subscription semantics. This read alone is not send permission. |
+| Notification outcome reconciliation                     | Durable command journal watermark and entries                                                            | History `ReadSessionEvents` is evidence of runner admission/confirmation after an attempt, not destination inventory; its separate outcome design remains open.                                                       |
 
 The app's History reads are appropriate for retained views. No History inventory read can stand in for
-the three current live decisions. A narrower runner state or membership API could replace broad
+current live decisions. A narrower runner state or membership API could replace broad
 `ListSessions` only after each caller's required fields, identity fence and unavailable-runner behavior
 are preserved. The current app and Notification callers still require the live read.
 
@@ -126,7 +127,7 @@ The current path has different authority at each step:
 | Boundary                             | Current check                                                                                                                                                                                                                       | Gap the decision must close                                                                                                                                                                                                            |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Notification subscription and worker | Caller/source access; configured namespace; live Sandbox UID and owner; live membership at creation. The worker rechecks UID and owner before sending.                                                                              | A source-read subscription is not a durable grant to send or wake after owner/grant revocation. Its Dispatcher request carries the Sandbox name and Session ID, not the stored UID.                                                    |
-| App command and resume               | The app resolves a retained Thread from History; explicit resume compares runner state. Live reads carry expected UID and owner.                                                                                                    | Retained association and a live preflight do not authorize a future command after replacement or revocation. App and Notification need the same reviewed send contract.                                                                |
+| App command and diagnostics          | The app resolves a retained Thread from History; live diagnostic reads carry expected UID and owner.                                                                                                                                | Retained association and a live preflight do not authorize a future command after replacement or revocation. App and Notification need the same reviewed send contract.                                                                |
 | Dispatcher admission and wake        | Authenticated service-account allowlist; a separate wake-caller allowlist. It resolves the requested name in its watch, persists that UID with queued work, compares UID before delivery, and UID-guards the Kubernetes wake patch. | The caller does not supply the expected UID. Current admission can bind a same-name replacement. V0 delegates user checks to App/Notification; generalized per-destination grants and queued-work revocation need a separate decision. |
 | Gateway proxy and runner             | Proxy authenticates an allowed service account and routes to the connection holder. UID and owner headers are optional; when supplied, the proxy checks the exact Sandbox and ready Pod. Runner rejects an unknown Session.         | The Go Dispatcher carries the watched UID into proxy calls, rejecting a same-name replacement. Proxy's broad caller list is not a per-destination send grant; runner membership cannot be checked while offline.                       |
 
@@ -286,10 +287,10 @@ uses an explicit PostgreSQL transaction mapping. Preserve the existing
 `session_dispatcher` rows and idempotency keys (`dispatch`, `session_opening`, `sandbox_ownership`,
 `wake_attempt`). Keep the Dispatcher database role and run only additive migrations if the Go
 implementation truly needs them; an applied migration is immutable. Do not add Gateway database
-configuration or a Gateway registry migration to the Go service. The app's explicit native Resume action uses `Runner.ResumeSession`
-through the per-Sandbox control proxy, so the unified service must preserve that proxy and Runner
-method. Do not port the removed Gateway Session wrappers or registry. The Gateway table and
-database resources are removed through their separate rollout-gated retirement.
+configuration or a Gateway registry migration to the Go service. Preserve the per-Sandbox Runner
+proxy for live inventory/diagnostics, Dispatcher delivery and controller quiesce. Native preparation
+belongs to runner command execution. Do not port removed Gateway Session wrappers or registry.
+The Gateway table and database resources retain their separate rollout-gated retirement.
 
 Keep the current `agentplane-session-dispatcher` and `agentplane-runner-gateway` Service names and
 token audiences as two logical front doors to the unified Pods. Expose Dispatcher, the per-Sandbox Runner proxy and runner-control services on one gRPC listener;
@@ -521,13 +522,13 @@ path for an ID assigned by the harness.
 **Store and Session lifecycle proposal for review:** a store has a durable internal ID, harness type
 and binding to the exact Sandbox UID; it survives process exit, Runner restart and Sandbox suspension.
 The runner creates or reuses a store under its selected policy. Public store operations are needed
-only if callers truly need to choose or manage stores; the ordinary API opens, resumes, stops and
-changes model/effort on Sessions unless a harness proves an option is necessarily shared. A process
-has only ephemeral start/health/hosted-Session status and runner-selected capacity; it is never the
+only if callers truly need to choose or manage stores; the ordinary API opens Sessions, sends input,
+interrupts an exact turn and changes model/effort unless a harness proves an option is necessarily
+shared. A process has only ephemeral start/health/hosted-Session status and runner-selected capacity; it is never the
 API target for opening a Session. The runner may restart or replace a process without
-changing the store or public Session address. A stopped Session keeps its mapping and data for
-resume. Retiring a store stops new Sessions and requires an explicit policy for existing ones;
-deleting its authored native files is a separate, explicitly authorized data operation, never a
+changing the store or public Session address. A dormant Session keeps its mapping and data for
+runner-managed resume on input. Retiring a store stops new Sessions and requires an explicit policy
+for existing ones; deleting its authored native files is a separate, explicitly authorized data operation, never a
 side effect of stopping a Session/process, failed creation or Sandbox replacement. Moving/copying a
 store across Sandbox UIDs needs a new binding and authorization; do not silently preserve the old
 destination. Until shared-store concurrent writes are proven safe for a pinned adapter, serialize or
@@ -549,6 +550,136 @@ or unreachable, queued acceptance cannot prove live membership and keeps the exa
 delivery. Loss of runner storage ends runner-owned state; retained History is not a native store or
 mapping reconstruction source. An unknown delivery response is handled by the same command ID,
 not by inventing another Session.
+
+## Runner-owned harness lifecycle
+
+**Approved direction (operator, 2026-10-17).** Callers address durable Sessions; the runner owns
+harness startup, native conversation preparation, reconciliation and process replacement. Process
+allocation stays internal. This decision does not select process/store counts, shared-store write
+safety or the remaining native-ID creation contract above.
+
+### Admission and execution
+
+Dispatcher durably queues the exact destination, command ID and payload before acknowledging queued
+acceptance or requesting authorized Sandbox wake. Runner validates membership and durably admits
+input **before** starting or resuming its harness. Admission is not native readiness or confirmation
+that the harness consumed the input. An unknown Session is rejected, never implicitly created.
+
+Once admitted, work belongs to the runner despite caller disconnect. It ensures setup and native
+conversation preparation, reconciles durable evidence, then delivers input. Concurrent inputs share
+one necessary startup attempt and preserve Session input order. Startup must not hold the admission
+lock across native I/O or prevent controls from being processed. Definitive startup failures become
+journaled command failures with their concrete cause. Specify bounded transient retries and how
+all affected admitted commands settle; do not leave them pending indefinitely. Ambiguous native
+creation or delivery requires reconciliation before retry, not blind recreation or replay of tool
+effects. Same command ID/payload returns the original admission; conflicting reuse is rejected.
+
+### Runner protocol and callers
+
+- Remove `ResumeSession` and `StopRunnerSession`, their request/response messages, the executable
+  stop command variant, and corresponding Dispatcher/client surfaces. Preserve field 5 as an
+  archive-only `historical_harness_stop` payload so retained Events remain foldable; no RPC accepts it. Add no process kill/restart RPC.
+- Keep `OpenSession` as an idempotent durable Session reservation with immutable creation
+  configuration. Its acknowledgement does not prove a running harness or completed native creation;
+  repeated open confirms the reservation rather than acting as a resume command.
+- Keep the `SubmitInput` request and admission response shapes. Return durable admission without
+  waiting for startup; later startup/delivery outcomes belong in the journal.
+- Keep `InterruptTurn` and its required target `turn_id`. For a new command, atomically check the
+  active turn and journal admission; a mismatch returns `FAILED_PRECONDITION` without admission.
+  A retry of an already admitted command returns its original admission before checking current turn
+  state. Serialize native interrupt dispatch with turn transitions so it cannot affect a successor.
+  If the target finishes naturally after admission, record that outcome. Interrupt never starts a
+  harness or cancels other queued/admitted inputs. No Session-wide interrupt or pause is introduced.
+- Preserve Sandbox `Quiesce`: refuse new execution, settle work, stop harnesses, seal journals
+  and wait for ingress acknowledgement before reporting quiescence. Serialize admission against
+  quiescing; a racing send is either owned by the runner or remains queued for retry/wake.
+  Let running Session setup and Sandbox bootstrap scripts finish naturally before teardown
+  completes, rather than cancelling them partway through initialization. Orderly runner shutdown
+  also waits for them; unexpected process loss is recorded as interrupted and never silently rerun.
+
+Update all proto, backend, Dispatcher, app, CLI and pinned-image callers atomically within the
+protocol change. Remove the frontend's harness shutdown and **Resume harness** buttons, handlers,
+backing app endpoints and stale gating that prevents sending solely because a harness is absent.
+Keep the guarded turn interrupt control and distinct Sandbox suspend/resume controls. Sending to a
+dormant Session uses runner-managed readiness; existing Sandbox wake authorization still applies.
+The direct app `ResumeSession` proxy carve-out retires with these callers, not in advance.
+
+### Provisional introspection model and Sandbox page
+
+Expose a coherent runner snapshot of harness processes and Sessions for frontend introspection.
+Include per-spawn process identity, PID, harness kind, process state and assigned Session IDs;
+per-Session status includes its assigned process (if any), persisted native conversation ID (if
+known), preparation/readiness, setup state, active turn and failure evidence. Store identity may
+appear as diagnostic information. Commands continue to target public Sessions, never a process ID.
+
+The initial Session states are `DORMANT`, `PREPARING`, `READY` and `FAILED`. `READY` means native
+conversation creation/resume and reconciliation have completed and the process can serve that
+Session; no turn need have started. `PREPARING` includes process assignment/startup and conversation
+preparation. Assignment may therefore precede readiness. A running Codex app server does not make
+all conversations in its data directory ready or assigned: retained conversations remain dormant
+until the runner prepares them. The default is lazy preparation when input needs it. Process status
+uses `assigned_session_ids`, including preparing Sessions, rather than implying that all are ready.
+
+Show process topology, Session mappings and per-Session status on the frontend **Sandbox page**.
+Distinguish live status from unavailable status when suspended or disconnected; reading status must
+not wake a Sandbox. Identify any retained snapshot as stale. Status fields and enum shapes are a
+provisional information model and may change; clients must not use them to authorize, route or
+coordinate lifecycle operations. The runner remains authoritative at execution boundaries.
+
+### Scope and acceptance
+
+V1 covers admission-before-startup, runner-managed readiness/reconciliation, exact-turn interruption,
+removal of explicit harness lifecycle controls, and Sandbox-page introspection. Validate both Claude
+and Codex for concurrent sends, startup failure, caller disconnect/retry, runner restart, ambiguous
+native outcomes, stale interrupts and turn-transition races. Prove context retention with a follow-up
+input after restart. Cover send/quiesce races and identity/wake denial boundaries. Review desktop and
+phone screenshots of Sandbox diagnostics and the updated Session controls. Archive checks unfinished
+Session work rather than harness process existence; an idle live Session can be archived without a
+shutdown button.
+
+**V2, deferred:** idle Claude process reclamation to reduce memory. Measure idle RAM and define safe
+eligibility and thresholds first. Reaping must not end active turns, pending commands, dependent
+children, background work or another hosted Session. Startup on send provides the recovery path;
+V1 does not implement automatic idle reaping or depend on it. Shared-process placement and store
+concurrency remain separate decisions.
+
+### Rollout and rollback
+
+The implementation changes protocol and callers together; publish a staging image-promotion hold
+before merging it. Testing receives the release first. The held staging image families are the app,
+Gateway/Dispatcher, Notification and History services (including their migration images), `runner`,
+`runner-ducktape` and the runner VM. Testing acceptance must identify the exact tested tags rather
+than assuming every image shares a build SHA.
+
+1. Validate the release on fresh Claude and Codex Sessions in testing, including Pod and VM paths.
+   Test retained state created by the old runner as well as new state. Cover automatic startup on
+   input, context retention, startup failure, interruption, retry/reconnect and suspend/wake. Review
+   Sandbox diagnostics and the controls on desktop and phone.
+2. Inventory staging Sessions, pending Dispatches, historical receipts, journals/native histories,
+   workspace and state volumes. Settle outstanding old stop commands before removing their wire
+   variant; keep settled historical receipt readers. Pause submissions and notification delivery at
+   cutover so the old and new stacks do not execute work concurrently. Preserve admitted work and
+   all person-authored data. Back up at a consistent boundary and verify restore in isolation before
+   any persistent-format migration; do not restore an old snapshot over post-cutover writes.
+3. Keep staging Sandbox starts disabled, quiesce any remaining runners with the old stack, and verify
+   no runner workloads remain. The operator suspended all four staging Sandboxes and agreed to hold
+   new starts (2026-10-17); recheck this condition immediately before cutover. Testing Sandboxes may
+   be deleted/recreated under the operator's authorization. Staging Sandbox CRs, UIDs and retained
+   PVCs must survive.
+4. Promote the exact tested service and template tags through GitOps with automatic promotion still
+   held. Replace affected caller replicas as a coordinated cutover; do not serve old callers against
+   the new protocol. Updating a template alone does not upgrade an already running Sandbox. Upgrade
+   every template, including suspended-only and VM templates, before allowing starts. Verify image
+   revisions, migrations and connections before reopening submissions/notifications.
+5. Start existing Sessions through the new send path and prove their context is retained; perform
+   the idle-suspend/send-to-wake drive after lifecycle deployment. Check exact-turn rejection and
+   process/Session status. Keep the rollout incomplete until behavior is observed, not just Flux or
+   Deployment readiness. Restore staging image-automation markers only after acceptance.
+
+Keep previous image revisions and a tested persistent-format rollback policy. Before new work is
+accepted, revert the coordinated release if necessary. After new writes, reconcile/preserve them;
+rollback must not overwrite new authored data or replay command side effects. No live data deletion
+or Sandbox replacement is implicit in this rollout.
 
 ## Harness capability boundary
 

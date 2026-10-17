@@ -15,13 +15,11 @@ import {
   submitInput,
   changeModel,
   changeReasoningEffort,
-  stopRunnerSession,
   interruptTurn,
   commandDispatch,
   getThread,
   models,
   resumeSandbox,
-  resumeThread,
   type SandboxView,
   type ThreadView,
 } from "../client";
@@ -52,13 +50,11 @@ vi.mock("../client", async (importOriginal) => ({
   submitInput: vi.fn(),
   changeModel: vi.fn(),
   changeReasoningEffort: vi.fn(),
-  stopRunnerSession: vi.fn(),
   interruptTurn: vi.fn(),
   commandDispatch: vi.fn(),
   getThread: vi.fn(),
   models: vi.fn(),
   resumeSandbox: vi.fn(),
-  resumeThread: vi.fn(),
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -136,10 +132,9 @@ beforeEach(() => {
     models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
     harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
   });
-  for (const operation of [submitInput, changeModel, changeReasoningEffort, stopRunnerSession, interruptTurn]) {
+  for (const operation of [submitInput, changeModel, changeReasoningEffort, interruptTurn]) {
     vi.mocked(operation).mockReturnValue(new Promise(() => {}));
   }
-  vi.mocked(resumeThread).mockResolvedValue({} as never);
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
@@ -307,15 +302,6 @@ function buttonIn(row: Element | null | undefined, text: string): HTMLButtonElem
   return [...(row?.querySelectorAll("button") ?? [])].find((candidate) => candidate.textContent === text);
 }
 
-async function openMenuItem(container: HTMLDivElement, text: string): Promise<HTMLButtonElement> {
-  await act(async () => button(container, "More").click());
-  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-    (candidate) => candidate.textContent === text
-  );
-  if (!item) throw new Error(`Missing menu item ${text}`);
-  return item;
-}
-
 function sentOperations(): unknown[] {
   const sent = [
     ...vi.mocked(submitInput).mock.calls.map(([, , text], index) => ({
@@ -329,10 +315,6 @@ function sentOperations(): unknown[] {
     ...vi.mocked(changeReasoningEffort).mock.calls.map(([, , effort], index) => ({
       order: vi.mocked(changeReasoningEffort).mock.invocationCallOrder[index],
       operation: { case: "changeReasoningEffort", value: { effort } },
-    })),
-    ...vi.mocked(stopRunnerSession).mock.calls.map((_, index) => ({
-      order: vi.mocked(stopRunnerSession).mock.invocationCallOrder[index],
-      operation: { case: "stopRunnerSession", value: {} },
     })),
     ...vi.mocked(interruptTurn).mock.calls.map(([, , turnId], index) => ({
       order: vi.mocked(interruptTurn).mock.invocationCallOrder[index],
@@ -513,34 +495,39 @@ it("sends the draft from the Send button, which an empty draft disables", async 
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
 });
 
-it("resumes the existing Thread and restores sending on the open and reloaded pages", async () => {
-  const ended = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
-  const original = await render(ended);
-  expect(composer(original).disabled).toBe(true);
-  await act(async () => button(original, "Resume harness").click());
-  expect(resumeThread).toHaveBeenCalledWith(THREAD.id);
-
-  const running = threadState();
-  await rerender(original, running);
-  expect(composer(original).disabled).toBe(false);
-  await type(composer(original), "from the open page");
-  await press(composer(original), {});
-
-  const reloaded = await render(running);
-  expect(composer(reloaded).disabled).toBe(false);
-  await type(composer(reloaded), "from the reloaded page");
-  await press(composer(reloaded), {});
-  expect(sentOperations()).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ case: "submitInput", value: expect.objectContaining({ text: "from the open page" }) }),
-      expect.objectContaining({
-        case: "submitInput",
-        value: expect.objectContaining({ text: "from the reloaded page" }),
-      }),
-    ])
+it.each([
+  [
+    "a newly reserved Session",
+    { harness_state: "HARNESS_STATE_STOPPED", feed_status: "active", launch_outcome: "LAUNCH_OUTCOME_PENDING" },
+  ],
+  [
+    "a Session whose harness exited",
+    { harness_state: "HARNESS_STATE_STOPPED", feed_status: "ended", launch_outcome: "LAUNCH_OUTCOME_STARTED" },
+  ],
+] as const)("sends input to %s without an explicit resume action", async (_name, snapshot) => {
+  sharedThread = snapshot;
+  const dormant = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+  const container = await render(dormant);
+  expect(composer(container).disabled).toBe(false);
+  expect(document.body.textContent).not.toContain("Resume harness");
+  expect(container.querySelector(".agentplane-thread-status-indicator")?.getAttribute("aria-label")).toBe(
+    "Harness not running"
   );
-  expect(new Set(vi.mocked(submitInput).mock.calls.map(([, commandId]) => commandId)).size).toBe(2);
-  expect(vi.mocked(submitInput).mock.calls.every(([threadId]) => threadId === THREAD.id)).toBe(true);
+  await type(composer(container), "Wake for this message");
+  await press(composer(container), {});
+  expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "Wake for this message" } }]);
+  expect(vi.mocked(submitInput).mock.calls[0]?.[0]).toBe(THREAD.id);
+});
+
+it.each([
+  ["failed Thread operation", threadState({ rows: [viewState({ status: "failed" })] })],
+  ["failed Thread synchronization", threadState({ windowError: "shape unavailable" })],
+] as const)("keeps the composer read-only during %s", async (_label, state) => {
+  const container = await render(state);
+  expect(composer(container).disabled).toBe(true);
+  await type(composer(container), "Do not submit");
+  await press(composer(container), {});
+  expect(submitInput).not.toHaveBeenCalled();
 });
 
 it("shows the thread id in the More menu, not inline once a name is set", async () => {
@@ -550,22 +537,15 @@ it("shows the thread id in the More menu, not inline once a name is set", async 
   expect(document.body.textContent).toContain(THREAD.id);
 });
 
-it("shuts the harness down from the More menu, not a control on the row", async () => {
-  const container = await render();
-  expect(document.body.textContent).not.toContain("Shut down harness");
-  await act(async () => (await openMenuItem(container, "Shut down harness")).click());
-  expect(sentOperations()).toMatchObject([{ case: "stopRunnerSession" }]);
-});
-
-it("disables shutdown while the harness is not running", async () => {
-  const container = await render(threadState({ rows: [viewState({ harness: "stopped" })] }));
-  expect((await openMenuItem(container, "Shut down harness")).disabled).toBe(true);
-});
-
 it.each([
   [{ feed_status: "failed" }, "Runner feed failed", "failed"],
   [{ feed_status: "ended" }, "Runner feed ended", "inactive"],
-  // Where a harness shutdown settles: its feed has ended and the harness is down.
+  [
+    { feed_status: "active", harness_state: "HARNESS_STATE_STOPPED", launch_outcome: "LAUNCH_OUTCOME_PENDING" },
+    "Harness not running",
+    "stopped",
+  ],
+  // A stopped native harness can outlive its last attached feed.
   [{ feed_status: "ended", harness_state: "HARNESS_STATE_STOPPED" }, "Harness not running", "stopped"],
   [{ harness_state: "HARNESS_STATE_STOPPED" }, "Harness not running", "stopped"],
   [{ active_turn_id: "turn-1" }, "Turn running · Runner feed active · harness running", "running"],

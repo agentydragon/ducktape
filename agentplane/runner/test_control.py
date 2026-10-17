@@ -1,10 +1,12 @@
 """The runner's `Runner` service, called through its control stream by a stand-in Runner Gateway:
 typed command operations are admitted once and answered from the journal, refusals carry their status,
-lifecycle calls start a harness only when they say so, and a lost connection is replaced by a fresh
-one."""
+lifecycle calls reserve sessions and submitted work starts a harness in the background, and a lost
+connection is replaced by a fresh one."""
 
 import asyncio
+import shlex
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -12,9 +14,17 @@ import grpc
 import pytest
 import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.grpc.tunnel import local_server
-from agentplane.proto import event_log_pb2, event_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
+from agentplane.proto import (
+    command_pb2,
+    event_log_pb2,
+    event_pb2,
+    runner_control_pb2,
+    runner_control_pb2_grpc,
+    runner_pb2,
+)
 from agentplane.runner.config import ClaudeLaunch, RunnerConfig
 from agentplane.runner.control import RunnerControlClient, RunnerService
 from agentplane.runner.harness_process import HarnessProcess
@@ -53,14 +63,25 @@ type Service = runner_control_pb2_grpc.RunnerAsyncStub
 class RecordingAdapter(UnexpectedAdapter):
     def __init__(self) -> None:
         self.submitted: list[str] = []
+        self.interrupted: list[str] = []
 
     async def submit(self, command_id: str, text: str) -> None:
         self.submitted.append(command_id)
+
+    async def interrupt(self, turn_id: str) -> None:
+        self.interrupted.append(turn_id)
+
+    async def change_model(self, command_id: str, model: str) -> None:
+        return
+
+    async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
+        return
 
 
 class RunningProcess:
     def __init__(self) -> None:
         self.running = True
+        self.native_pid = 123
 
     async def stop(self) -> None:
         self.running = False
@@ -88,6 +109,9 @@ async def runner(tmp_path: Path) -> AsyncIterator[Runner]:
         running = runner.sessions[RUNNING]
         running.adapter = RecordingAdapter()
         running.process = cast(HarnessProcess, RunningProcess())
+        running.process_id = "test-process-running"
+        running._process_state = runner_pb2.PROCESS_STATE_RUNNING
+        running._ready = True
         runner.store.write(FAILED_SETUP, SessionRecord.from_spec(stored(FAILED_SETUP), setup_script="exit 1"))
         await (await runner._load(FAILED_SETUP)).emit(event_pb2.SetupFinished(exit_code=1), sources=[])
         yield runner
@@ -102,6 +126,9 @@ def started(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         if not session.running:
             started.append(session.session_id)
             session.adapter, session.process = RecordingAdapter(), cast(HarnessProcess, RunningProcess())
+            session.process_id = f"test-process-{session.session_id}"
+            session._process_state = runner_pb2.PROCESS_STATE_RUNNING
+            session._ready = True
 
     monkeypatch.setattr(Session, "ensure_running", start)
     return started
@@ -123,6 +150,7 @@ async def dial(runner: Runner, gateway: Gateway) -> AsyncIterator[Callable[[], A
             RunnerService(runner),
             target=gateway.endpoint.target,
             bearer="test-placeholder",
+            boot_id=runner.boot_id,
             timing=TIMING,
             adopt_incarnation=runner.adopt_incarnation,
             facts=runner.facts,
@@ -158,6 +186,14 @@ def open_session(
     return runner_control_pb2.OpenSessionRequest(session_id=session_id, spec=spec, setup_script=setup_script)
 
 
+async def wait_for_file(path: Path) -> None:
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(10), wait=wait_fixed(0.01), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            assert await asyncio.to_thread(path.exists), path
+
+
 async def test_a_redelivered_command_is_admitted_once_and_answered_from_the_journal(
     runner: Runner, gateway: Gateway, dial: Callable[[], Awaitable[Service]]
 ) -> None:
@@ -181,6 +217,7 @@ async def test_a_welcome_without_an_incarnation_uid_is_rejected_before_serving_c
         service,
         target=gateway.endpoint.target,
         bearer="test-placeholder",
+        boot_id=runner.boot_id,
         timing=TIMING,
         adopt_incarnation=runner.adopt_incarnation,
         facts=runner.facts,
@@ -201,8 +238,9 @@ async def test_a_welcome_without_an_incarnation_uid_is_rejected_before_serving_c
 
 
 async def test_each_command_rpc_admits_its_command_and_a_command_id_belongs_to_one_operation(
-    dial: Callable[[], Awaitable[Service]],
+    runner: Runner, dial: Callable[[], Awaitable[Service]]
 ) -> None:
+    await runner.sessions[RUNNING].emit(event_pb2.TurnStarted(turn_id="test-turn"), sources=[])
     service = await dial()
     admissions: dict[str, event_log_pb2.EventEntry] = {
         "submit_input": (
@@ -229,11 +267,6 @@ async def test_each_command_rpc_admits_its_command_and_a_command_id_belongs_to_o
                 )
             )
         ).admission,
-        "stop_runner_session": (
-            await service.StopRunnerSession(
-                runner_control_pb2.StopRunnerSessionRequest(session_id=RUNNING, command_id="test-stop")
-            )
-        ).admission,
     }
     for operation, admission in admissions.items():
         assert admission.event.command_admitted.command.WhichOneof("operation") == operation
@@ -253,7 +286,7 @@ async def test_each_command_rpc_admits_its_command_and_a_command_id_belongs_to_o
 
 @pytest.mark.parametrize("ending", ["stopped", "sealed"])
 async def test_a_redelivery_after_the_harness_ended_is_answered_with_the_original_admission(
-    ending: str, runner: Runner, dial: Callable[[], Awaitable[Service]]
+    ending: str, runner: Runner, dial: Callable[[], Awaitable[Service]], started: list[str]
 ) -> None:
     # The gateway settles a submission whose answer was lost only by delivering it again.
     service = await dial()
@@ -275,17 +308,11 @@ async def test_refusals_carry_their_status(dial: Callable[[], Awaitable[Service]
         await refusal(service.SubmitInput(request))
         for request in [
             submit(RUNNING, "test-conflict", "different"),
-            submit(STOPPED, "test-stopped"),
             submit("test-unknown-session", "test-unknown"),
             runner_control_pb2.SubmitInputRequest(session_id=RUNNING, text="missing command ID"),
         ]
     ]
-    assert refused == [
-        grpc.StatusCode.ALREADY_EXISTS,
-        grpc.StatusCode.FAILED_PRECONDITION,
-        grpc.StatusCode.NOT_FOUND,
-        grpc.StatusCode.INVALID_ARGUMENT,
-    ]
+    assert refused == [grpc.StatusCode.ALREADY_EXISTS, grpc.StatusCode.NOT_FOUND, grpc.StatusCode.INVALID_ARGUMENT]
 
 
 @pytest.mark.parametrize("ending", ["superseded", "silent"])
@@ -314,25 +341,25 @@ async def test_list_sessions_reports_every_session(dial: Callable[[], Awaitable[
     }
 
 
-async def test_open_creates_a_session_and_starts_it(
+async def test_open_creates_a_durable_reservation_without_starting_it(
     runner: Runner, dial: Callable[[], Awaitable[Service]], started: list[str]
 ) -> None:
     opened = (await (await dial()).OpenSession(open_session("test-new-session"))).attached
     assert (opened.session_id, opened.spec, opened.harness_state) == (
         "test-new-session",
         stored("test-new-session"),
-        runner_pb2.HARNESS_STATE_RUNNING,
+        runner_pb2.HARNESS_STATE_STOPPED,
     )
-    assert started == ["test-new-session"]
+    assert started == []
     assert runner.store.exists("test-new-session")
 
 
-async def test_opening_an_existing_session_confirms_it_and_starts_its_stopped_harness(
+async def test_opening_an_existing_session_confirms_its_durable_reservation(
     dial: Callable[[], Awaitable[Service]], started: list[str]
 ) -> None:
     opened = (await (await dial()).OpenSession(open_session(STOPPED))).attached
-    assert (opened.session_id, opened.harness_state) == (STOPPED, runner_pb2.HARNESS_STATE_RUNNING)
-    assert started == [STOPPED]
+    assert (opened.session_id, opened.harness_state) == (STOPPED, runner_pb2.HARNESS_STATE_STOPPED)
+    assert started == []
 
 
 @pytest.mark.parametrize(
@@ -352,27 +379,289 @@ async def test_opening_an_existing_session_with_another_spec_is_refused(
     assert started == []
 
 
-async def test_resume_restarts_a_stopped_harness_on_its_retained_spec(
-    dial: Callable[[], Awaitable[Service]], started: list[str]
-) -> None:
-    resumed = await (await dial()).ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=STOPPED))
-    assert (resumed.attached.spec, resumed.attached.harness_state) == (
-        stored(STOPPED),
-        runner_pb2.HARNESS_STATE_RUNNING,
-    )
-    assert started == [STOPPED]
-
-
-@pytest.mark.parametrize(
-    ("session_id", "code"),
-    [(FAILED_SETUP, grpc.StatusCode.FAILED_PRECONDITION), ("test-unknown-session", grpc.StatusCode.NOT_FOUND)],
-)
-async def test_a_resume_the_runner_cannot_serve_is_refused(
-    session_id: str, code: grpc.StatusCode, dial: Callable[[], Awaitable[Service]], started: list[str]
+@pytest.mark.parametrize(("session_id", "code"), [("test-unknown-session", grpc.StatusCode.NOT_FOUND)])
+async def test_submit_to_an_unknown_session_is_refused(
+    session_id: str, code: grpc.StatusCode, dial: Callable[[], Awaitable[Service]]
 ) -> None:
     service = await dial()
-    assert await refusal(service.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=session_id))) == code
-    assert started == []
+    assert await refusal(service.SubmitInput(submit(session_id, "test-input"))) == code
+
+
+async def test_submit_admits_before_one_shared_background_start_and_status_tracks_incarnation(
+    runner: Runner, dial: Callable[[], Awaitable[Service]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entered, release = asyncio.Event(), asyncio.Event()
+    starts = 0
+
+    async def held_start(session: Session) -> None:
+        nonlocal starts
+        starts += 1
+        entered.set()
+        await release.wait()
+        session.adapter = RecordingAdapter()
+        session.process = cast(HarnessProcess, RunningProcess())
+        session.process_id = "test-process-stopped"
+        session._process_state = runner_pb2.PROCESS_STATE_RUNNING
+        session._ready = True
+
+    monkeypatch.setattr(Session, "ensure_running", held_start)
+    service = await dial()
+    first, second = await asyncio.gather(
+        service.SubmitInput(submit(STOPPED, "test-first")), service.SubmitInput(submit(STOPPED, "test-second"))
+    )
+    await entered.wait()
+    session = runner.sessions[STOPPED]
+    assert first.admission.event.HasField("command_admitted")
+    assert second.admission.event.HasField("command_admitted")
+    assert {command.command_id for command in await session.journal.pending_commands()} == {"test-first", "test-second"}
+    assert starts == 1
+
+    preparing = await service.GetStatus(runner_pb2.GetStatusRequest())
+    assert preparing.runner_boot_id == runner.boot_id
+    preparing_session = next(row for row in preparing.sessions if row.session_id == STOPPED)
+    assert preparing_session.execution_state == runner_pb2.SESSION_EXECUTION_STATE_PREPARING
+    assert preparing_session.busy
+    assert not preparing_session.HasField("process_id")
+    (existing_process,) = preparing.processes
+    assert existing_process.assigned_session_ids == [RUNNING]
+    assert existing_process.state == runner_pb2.PROCESS_STATE_RUNNING
+
+    release.set()
+    assert session._activation_task is not None
+    await session._activation_task
+    ready = await service.GetStatus(runner_pb2.GetStatusRequest())
+    ready_session = next(row for row in ready.sessions if row.session_id == STOPPED)
+    processes = {process.assigned_session_ids[0]: process for process in ready.processes}
+    process = processes[STOPPED]
+    assert ready.runner_boot_id == runner.boot_id
+    assert ready_session.execution_state == runner_pb2.SESSION_EXECUTION_STATE_READY
+    assert ready_session.process_id == process.process_id == "test-process-stopped"
+    assert ready_session.busy
+    assert process.HasField("pid")
+    assert process.pid == 123
+    assert process.assigned_session_ids == [STOPPED]
+
+
+async def test_startup_failure_settles_admitted_work_and_status_returns_to_idle(
+    runner: Runner, dial: Callable[[], Awaitable[Service]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def failed_start(_session: Session) -> None:
+        raise RuntimeError("injected startup failure")
+
+    monkeypatch.setattr(Session, "ensure_running", failed_start)
+    service = await dial()
+    response = await service.SubmitInput(submit(STOPPED, "startup-failure-input"))
+    session = runner.sessions[STOPPED]
+    assert response.admission.event.command_admitted.command.command_id == "startup-failure-input"
+    assert session._activation_task is not None
+    await session._activation_task
+    for _ in range(3):
+        if not session.busy:
+            break
+        await asyncio.sleep(0)
+
+    status = await service.GetStatus(runner_pb2.GetStatusRequest())
+    failed = next(row for row in status.sessions if row.session_id == STOPPED)
+    assert failed.execution_state == runner_pb2.SESSION_EXECUTION_STATE_FAILED
+    assert failed.failure_cursor is not None
+    assert not failed.busy
+    assert not failed.HasField("process_id")
+    assert all(STOPPED not in process.assigned_session_ids for process in status.processes)
+    assert await session.journal.pending_commands() == []
+
+
+async def test_startup_failure_preserves_prior_commands_with_uncertain_native_effects(
+    runner: Runner, dial: Callable[[], Awaitable[Service]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = runner.sessions[STOPPED]
+    uncertain = command_pb2.Command(
+        command_id="prior-dispatch", submit_input=command_pb2.SubmitInput(text="may already have reached the harness")
+    )
+    await session.journal.admit(uncertain)
+    assert await session.journal.dispatch_planned(uncertain.command_id)
+    session._pending_command_ids.add(uncertain.command_id)
+
+    async def failed_start(_session: Session) -> None:
+        raise RuntimeError("injected startup failure")
+
+    monkeypatch.setattr(Session, "ensure_running", failed_start)
+    service = await dial()
+    response = await service.SubmitInput(submit(STOPPED, "new-before-dispatch"))
+    assert response.admission.event.command_admitted.command.command_id == "new-before-dispatch"
+    assert session._activation_task is not None
+    await session._activation_task
+
+    prior = await session.journal.get(uncertain.command_id)
+    newly_admitted = await session.journal.get("new-before-dispatch")
+    assert prior is not None
+    assert prior.dispatch_planned
+    assert prior.terminal_cursor is None
+    assert newly_admitted is not None
+    assert newly_admitted.terminal_cursor is not None
+    assert [command.command_id for command in await session.journal.pending_commands()] == [uncertain.command_id]
+
+
+async def test_stale_and_empty_interrupt_targets_are_rejected_before_admission(
+    runner: Runner, dial: Callable[[], Awaitable[Service]]
+) -> None:
+    service = await dial()
+    stale = runner_control_pb2.InterruptTurnRequest(session_id=RUNNING, command_id="stale", turn_id="old-turn")
+    empty = runner_control_pb2.InterruptTurnRequest(session_id=RUNNING, command_id="empty", turn_id="")
+    assert await refusal(service.InterruptTurn(stale)) == grpc.StatusCode.FAILED_PRECONDITION
+    assert await refusal(service.InterruptTurn(empty)) == grpc.StatusCode.INVALID_ARGUMENT
+    assert await runner.sessions[RUNNING].journal.pending_commands() == []
+    assert await runner.sessions[RUNNING].journal.get("stale") is None
+    assert await runner.sessions[RUNNING].journal.get("empty") is None
+
+
+async def test_runner_restart_settles_an_interrupt_without_starting_a_harness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = RunnerConfig(state_dir=tmp_path / "state", launch=launches.SANDBOX_LAUNCH)
+    session_id = "interrupt-only-recovery"
+    command = command_pb2.Command(
+        command_id="interrupt-before-restart", interrupt_turn=command_pb2.InterruptTurn(turn_id="turn-before-restart")
+    )
+    async with Runner(config) as first:
+        await first.startup()
+        first.store.write(session_id, SessionRecord.from_spec(stored(session_id)))
+        session = await first._load(session_id)
+        await session.emit(event_pb2.HarnessStarted(resumed=False, pid=123), sources=[])
+        await session.emit(event_pb2.TurnStarted(turn_id="turn-before-restart"), sources=[])
+        await session.journal.admit(command, expected_active_turn_id="turn-before-restart")
+        assert await session.journal.dispatch_planned(command.command_id)
+        session._pending_command_ids.add(command.command_id)
+        original_admission = await session.journal.admitted_entry(command.command_id)
+        await session.emit(
+            event_pb2.TurnCompleted(turn_id="turn-before-restart", status=event_pb2.TURN_STATUS_COMPLETED), sources=[]
+        )
+
+    activation_attempts: list[str] = []
+
+    def track_activation(session: Session) -> None:
+        activation_attempts.append(session.session_id)
+
+    monkeypatch.setattr(Session, "ensure_activation", track_activation)
+    async with Runner(config) as restarted:
+        await restarted.startup()
+        session = restarted.sessions[session_id]
+        await session.command(command)
+
+        terminal = await session.journal.get(command.command_id)
+        assert terminal is not None
+        assert terminal.dispatch_planned
+        assert terminal.terminal_cursor is not None
+        assert await session.journal.pending_commands() == []
+        assert (await session.journal.admitted_entry(command.command_id)).cursor == original_admission.cursor
+        entries = await session.journal.since(0, limit=128)
+        admissions = [
+            entry
+            for entry in entries
+            if entry.event.HasField("command_admitted")
+            and entry.event.command_admitted.command.command_id == command.command_id
+        ]
+        assert [entry.cursor for entry in admissions] == [original_admission.cursor]
+        assert any(
+            entry.event.HasField("command_noop") and entry.event.command_noop.command_id == command.command_id
+            for entry in entries
+        )
+        assert not any(
+            entry.event.HasField("harness_started") and entry.cursor > original_admission.cursor for entry in entries
+        )
+        assert activation_attempts == []
+
+
+async def test_new_incarnation_recovers_admitted_work_only_after_reopening_its_seal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = RunnerConfig(state_dir=tmp_path / "state", launch=launches.SANDBOX_LAUNCH)
+    session_id = "sealed-admission-recovery"
+    command = command_pb2.Command(command_id="uncertain-input", submit_input=command_pb2.SubmitInput(text="retained"))
+    async with Runner(config) as first:
+        first.store.adopt_incarnation("old-incarnation")
+        first.store.write(session_id, SessionRecord.from_spec(stored(session_id)))
+        session = await first._load(session_id)
+        await session.journal.admit(command)
+        assert await session.journal.dispatch_planned(command.command_id)
+        await first.quiesce()
+        assert session.journal.sealed_cursor is not None
+
+    requested_activation: list[str] = []
+
+    def defer_activation(session: Session) -> None:
+        requested_activation.append(session.session_id)
+
+    monkeypatch.setattr(Session, "ensure_activation", defer_activation)
+    async with Runner(config) as restarted:
+        await restarted.startup()
+        assert requested_activation == []
+        assert restarted.sessions[session_id].journal.sealed_cursor is not None
+        await restarted.adopt_incarnation("new-incarnation")
+        assert requested_activation == [session_id]
+        assert restarted.sessions[session_id].journal.sealed_cursor is None
+        assert [item.command_id for item in await restarted.sessions[session_id].journal.pending_commands()] == [
+            command.command_id
+        ]
+        # A control-stream reconnect must not repeat recovery or turn a live interrupt into a loss.
+        await restarted.adopt_incarnation("new-incarnation")
+        assert requested_activation == [session_id]
+
+
+async def test_process_lost_turn_recovery_survives_restart_until_native_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = RunnerConfig(state_dir=tmp_path / "state", launch=launches.SANDBOX_LAUNCH)
+    session_id = "process-lost-recovery"
+    async with Runner(config) as first:
+        await first.startup()
+        first.store.write(session_id, SessionRecord.from_spec(stored(session_id)))
+        session = await first._load(session_id)
+        await session.emit(event_pb2.HarnessStarted(resumed=False, pid=123), sources=[])
+        await session.emit(event_pb2.TurnStarted(turn_id="lost-turn"), sources=[])
+
+    requested_activation: list[str] = []
+
+    def defer_activation(session: Session) -> None:
+        requested_activation.append(session.session_id)
+
+    async with Runner(config) as restarted_before_harness_start:
+        with monkeypatch.context() as patcher:
+            patcher.setattr(Session, "ensure_activation", defer_activation)
+            await restarted_before_harness_start.startup()
+        session = restarted_before_harness_start.sessions[session_id]
+        assert requested_activation == [session_id]
+        entries = await session.journal.since(0, limit=128)
+        process_lost = next(
+            entry
+            for entry in entries
+            if entry.event.HasField("turn_completed")
+            and entry.event.turn_completed.status == event_pb2.TURN_STATUS_PROCESS_LOST
+        )
+        placeholder = next(
+            entry
+            for entry in entries
+            if entry.event.HasField("conversation_reconciled")
+            and entry.event.conversation_reconciled.turn_id == "lost-turn"
+        )
+        assert process_lost.cursor < placeholder.cursor
+        assert await session.journal.unreconciled_process_lost_turns() == ["lost-turn"]
+
+    async def reconcile_with_empty_native_history(session: Session) -> None:
+        session.process = cast(HarnessProcess, RunningProcess())
+        session.process_id = "recovered-process"
+        session._process_state = runner_pb2.PROCESS_STATE_RUNNING
+        await session.emit(event_pb2.HarnessStarted(resumed=True, pid=123), sources=[])
+        for turn_id in await session.journal.recovery_turns():
+            await session.emit(event_pb2.ConversationReconciled(turn_id=turn_id), sources=[])
+        session._ready = True
+
+    async with Runner(config) as recovered:
+        monkeypatch.setattr(Session, "ensure_running", reconcile_with_empty_native_history)
+        await recovered.startup()
+        session = recovered.sessions[session_id]
+        assert session._activation_task is not None
+        await session._activation_task
+        assert await session.journal.unreconciled_process_lost_turns() == []
 
 
 async def test_a_quiesce_waits_for_the_admission_under_way_and_a_delivery_after_it_is_refused(
@@ -455,51 +744,83 @@ async def test_quiesce_does_not_wait_for_model_resolution_or_allow_a_late_sessio
     assert not runner.store.exists("test-open-under-quiesce")
 
 
-async def test_quiesce_does_not_wait_for_bootstrap_or_allow_a_late_session(
-    runner: Runner, gateway: Gateway, dial: Callable[[], Awaitable[Service]], monkeypatch: pytest.MonkeyPatch
+async def test_quiesce_waits_for_bootstrap_and_settles_admitted_work(
+    runner: Runner, dial: Callable[[], Awaitable[Service]]
 ) -> None:
-    bootstrap_started, continue_bootstrap = asyncio.Event(), asyncio.Event()
-
-    async def held_bootstrap() -> None:
-        bootstrap_started.set()
-        await continue_bootstrap.wait()
-
-    monkeypatch.setattr(runner, "_bootstrap", held_bootstrap)
-    service = await dial()
-    opening = asyncio.ensure_future(service.OpenSession(open_session("test-open-under-bootstrap")))
-    await bootstrap_started.wait()
-
+    state_dir = runner.config.state_dir
+    started, continue_bootstrap, completed = (
+        state_dir / name for name in ("bootstrap-started", "bootstrap-continue", "bootstrap-completed")
+    )
+    script = (
+        f"printf started > {shlex.quote(str(started))}\n"
+        f"while [ ! -f {shlex.quote(str(continue_bootstrap))} ]; do sleep 0.01; done\n"
+        f"printf completed > {shlex.quote(str(completed))}\n"
+    )
+    runner.config = replace(runner.config, launch=replace(runner.config.launch, bootstrap=script))
+    initialization: asyncio.Task[None] | None = None
+    admitted: runner_control_pb2.SubmitInputResponse | None = None
+    draining: asyncio.Future[runner_pb2.ListSessionsResponse] | None = None
     try:
+        _, initialization = await runner.initialize(script)
+        assert initialization is not None
+        service = await dial()
+        await service.OpenSession(open_session("test-open-under-bootstrap"))
+        admitted = await service.SubmitInput(submit("test-open-under-bootstrap", "test-bootstrap-gated-input"))
+        await wait_for_file(started)
+
         response = await service.Quiesce(runner_pb2.QuiesceRequest())
         assert int(response.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
-        await service.ListSessions(runner_pb2.ListSessionsRequest())
-        await gateway.control.wait_for_facts(Facts(quiesce_stage=Facts.QUIESCE_STAGE_FLUSHING))
-        assert all(session.journal.sealed_cursor is not None for session in runner.sessions.values())
-        assert not runner.store.exists("test-open-under-bootstrap")
+        draining = asyncio.ensure_future(service.ListSessions(runner_pb2.ListSessionsRequest()))
+        await asyncio.sleep(0)
+        assert not draining.done()
+        assert not completed.exists()
+        assert int(runner.facts().bootstrap) == Facts.BOOTSTRAP_RUNNING
     finally:
-        # The delete drain has completed before the Sandbox bootstrap is released; always release
-        # it on assertion failures so the runner fixture can shut down.
-        continue_bootstrap.set()
-        await asyncio.gather(opening, return_exceptions=True)
-    assert await refusal(opening) == grpc.StatusCode.ABORTED
-    assert not runner.store.exists("test-open-under-bootstrap")
+        continue_bootstrap.touch()
+        if draining is not None:
+            await asyncio.wait_for(draining, timeout=10)
+    assert initialization is not None
+    assert admitted is not None
+    assert draining is not None
+    assert draining.done()
+    assert completed.exists()
+    assert initialization.done()
+    assert runner.store.exists("test-open-under-bootstrap")
+    session = runner.sessions["test-open-under-bootstrap"]
+    assert await session.journal.pending_commands() == []
+    assert session.journal.sealed_cursor is not None
+    entries = await session.journal.since(admitted.admission.cursor - 1, limit=16)
+    assert any(entry.event.HasField("command_failed") for entry in entries)
 
 
-async def test_empty_quiesce_reaches_quiesced_while_bootstrap_is_still_held(
-    tmp_path: Path, gateway: Gateway, monkeypatch: pytest.MonkeyPatch
+async def test_empty_runner_can_reserve_before_bootstrap_finishes_and_quiesce_it(
+    tmp_path: Path, gateway: Gateway
 ) -> None:
-    async with Runner(RunnerConfig(state_dir=tmp_path / "empty-runner", launch=launches.SANDBOX_LAUNCH)) as empty:
-        bootstrap_started, continue_bootstrap = asyncio.Event(), asyncio.Event()
-
-        async def held_bootstrap() -> None:
-            bootstrap_started.set()
-            await continue_bootstrap.wait()
-
-        monkeypatch.setattr(empty, "_bootstrap", held_bootstrap)
+    started, continue_bootstrap, completed = (
+        tmp_path / name for name in ("bootstrap-started", "bootstrap-continue", "bootstrap-completed")
+    )
+    script = (
+        f"printf started > {shlex.quote(str(started))}\n"
+        f"while [ ! -f {shlex.quote(str(continue_bootstrap))} ]; do sleep 0.01; done\n"
+        f"printf completed > {shlex.quote(str(completed))}\n"
+    )
+    async with Runner(
+        RunnerConfig(
+            state_dir=tmp_path / "empty-runner",
+            launch=replace(launches.SANDBOX_LAUNCH, bootstrap=script),
+            claude=ClaudeLaunch(
+                binary=tmp_path / "test-unlaunched-harness",
+                base_url="http://agentplane-test-endpoint.invalid",
+                auth_token="test-token",
+            ),
+        )
+    ) as empty:
+        await empty.startup()
         client = RunnerControlClient(
             RunnerService(empty),
             target=gateway.endpoint.target,
             bearer="test-placeholder",
+            boot_id=empty.boot_id,
             timing=TIMING,
             adopt_incarnation=empty.adopt_incarnation,
             facts=empty.facts,
@@ -507,26 +828,43 @@ async def test_empty_quiesce_reaches_quiesced_while_bootstrap_is_still_held(
         )
         connection = asyncio.create_task(client.run())
         opening: asyncio.Task[runner_control_pb2.OpenSessionResponse] | None = None
+        draining: asyncio.Future[runner_pb2.ListSessionsResponse] | None = None
         try:
             service = await gateway.control.runner()
             opening = asyncio.ensure_future(service.OpenSession(open_session("test-empty-bootstrap")))
-            await bootstrap_started.wait()
+            await opening
+            admitted = await service.SubmitInput(submit("test-empty-bootstrap", "test-empty-bootstrap-input"))
+            await wait_for_file(started)
 
             response = await service.Quiesce(runner_pb2.QuiesceRequest())
             assert int(response.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
-            await service.ListSessions(runner_pb2.ListSessionsRequest())
+            draining = asyncio.ensure_future(service.ListSessions(runner_pb2.ListSessionsRequest()))
+            await asyncio.sleep(0)
+            assert not draining.done()
+            assert not completed.exists()
+            assert int(empty.facts().bootstrap) == Facts.BOOTSTRAP_RUNNING
+            continue_bootstrap.touch()
+            await asyncio.wait_for(draining, timeout=10)
             await gateway.control.wait_for_facts(Facts(quiesce_stage=Facts.QUIESCE_STAGE_QUIESCED))
-            assert not continue_bootstrap.is_set()
-            assert not opening.done()
-            assert empty.store.session_ids() == []
+            assert completed.exists()
+            assert empty._initialization_task is not None
+            assert empty._initialization_task.done()
+            assert opening.done()
+            assert empty.store.session_ids() == ["test-empty-bootstrap"]
+            session = empty.sessions["test-empty-bootstrap"]
+            assert session.journal.sealed_cursor is not None
+            assert await session.journal.pending_commands() == []
+            assert admitted.admission.cursor <= session.journal.sealed_cursor
         finally:
-            continue_bootstrap.set()
+            continue_bootstrap.touch()
             if opening is not None:
                 await asyncio.gather(opening, return_exceptions=True)
+            if draining is not None:
+                await asyncio.wait_for(asyncio.gather(draining, return_exceptions=True), timeout=10)
             connection.cancel()
             await asyncio.gather(connection, return_exceptions=True)
         assert opening is not None
-        assert await refusal(opening) == grpc.StatusCode.ABORTED
+        assert opening.done()
 
 
 async def test_quiesce_seals_a_durable_open_before_its_setup_can_start(
@@ -566,18 +904,60 @@ async def test_quiesce_seals_a_durable_open_before_its_setup_can_start(
     assert session._setup_task is None
 
 
-async def test_quiesce_waits_for_an_admitted_resume_to_finish(
+async def test_quiesce_waits_for_running_setup_to_finish(
+    tmp_path: Path, runner: Runner, dial: Callable[[], Awaitable[Service]]
+) -> None:
+    started, continue_setup, completed = (
+        tmp_path / name for name in ("setup-started", "setup-continue", "setup-completed")
+    )
+    script = (
+        f"printf started > {shlex.quote(str(started))}\n"
+        f"while [ ! -f {shlex.quote(str(continue_setup))} ]; do sleep 0.01; done\n"
+        f"printf completed > {shlex.quote(str(completed))}\n"
+    )
+    session_id = "test-setup-under-quiesce"
+    service = await dial()
+    draining: asyncio.Future[runner_pb2.ListSessionsResponse] | None = None
+    try:
+        await service.OpenSession(open_session(session_id, setup_script=script))
+        await wait_for_file(started)
+
+        response = await service.Quiesce(runner_pb2.QuiesceRequest())
+        assert int(response.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
+        draining = asyncio.ensure_future(service.ListSessions(runner_pb2.ListSessionsRequest()))
+        await asyncio.sleep(0)
+        assert not draining.done()
+        assert not completed.exists()
+        assert runner.sessions[session_id].setup_active
+    finally:
+        continue_setup.touch()
+        if draining is not None:
+            await asyncio.wait_for(draining, timeout=10)
+    assert draining is not None
+    assert draining.done()
+    session = runner.sessions[session_id]
+    assert completed.exists()
+    assert session.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
+    assert not session.setup_active
+    assert session.journal.sealed_cursor is not None
+    entries = await session.journal.since(0, limit=32)
+    assert any(
+        entry.event.HasField("setup_finished") and entry.event.setup_finished.exit_code == 0 for entry in entries
+    )
+
+
+async def test_quiesce_settles_admitted_work_when_it_cancels_background_startup(
     runner: Runner, dial: Callable[[], Awaitable[Service]], started: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     starting, continue_start = asyncio.Event(), asyncio.Event()
-    start = runner._start
+    start = Session.ensure_running
 
     async def held_start(session: Session) -> None:
         starting.set()
         await continue_start.wait()
         await start(session)
 
-    monkeypatch.setattr(runner, "_start", held_start)
+    monkeypatch.setattr(Session, "ensure_running", held_start)
     quiesce = runner.quiesce
     quiesces = 0
 
@@ -588,24 +968,22 @@ async def test_quiesce_waits_for_an_admitted_resume_to_finish(
 
     monkeypatch.setattr(runner, "quiesce", counted_quiesce)
     service = await dial()
-    resuming = asyncio.ensure_future(service.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=STOPPED)))
+    admission = await service.SubmitInput(submit(STOPPED, "test-quiesce-pending"))
     try:
         await starting.wait()
 
         response = await service.Quiesce(runner_pb2.QuiesceRequest())
         assert int(response.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
-        assert quiesces == 0
-
-        continue_start.set()
-        assert await refusal(resuming) == grpc.StatusCode.ABORTED
         await service.ListSessions(runner_pb2.ListSessionsRequest())
         assert quiesces == 1
-        assert runner.sessions[STOPPED].journal.sealed_cursor is not None
+        sealed_cursor = runner.sessions[STOPPED].journal.sealed_cursor
+        assert sealed_cursor is not None
         assert not runner.sessions[STOPPED].running
         assert started == []
+        assert await runner.sessions[STOPPED].journal.pending_commands() == []
+        assert admission.admission.cursor < sealed_cursor
     finally:
         continue_start.set()
-        await asyncio.gather(resuming, return_exceptions=True)
 
 
 async def test_quiescing_again_does_not_repeat_the_drain_and_opening_is_refused(
@@ -626,9 +1004,6 @@ async def test_quiescing_again_does_not_repeat_the_drain_and_opening_is_refused(
     await service.ListSessions(runner_pb2.ListSessionsRequest())
     assert quiesces == 1
     assert await refusal(service.OpenSession(open_session("test-new-session"))) == grpc.StatusCode.ABORTED
-    assert await refusal(service.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=STOPPED))) == (
-        grpc.StatusCode.ABORTED
-    )
     assert not runner.sessions[RUNNING].running
     assert started == []
 
@@ -737,6 +1112,7 @@ async def test_quiesce_drain_survives_control_cancellation_and_reconnect(
             service,
             target=gateway.endpoint.target,
             bearer=gateway.endpoint.bearer,
+            boot_id=runner.boot_id,
             timing=TIMING,
             adopt_incarnation=runner.adopt_incarnation,
             facts=runner.facts,

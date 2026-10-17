@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import cast
@@ -11,11 +11,13 @@ from typing import cast
 import httpx
 import pytest
 import pytest_bazel
+from pydantic import BaseModel
 
-from agentplane.proto import command_pb2, event_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.config import CodexLaunch, RunnerConfig
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.model_config import HttpModelConfigResolver
+from agentplane.runner.observation import Observation
 from agentplane.runner.session import Session
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.adapters import UnexpectedAdapter
@@ -49,7 +51,31 @@ class BlockingAdapter(UnexpectedAdapter):
 
 
 class RunningProcess:
-    running = True
+    def __init__(self) -> None:
+        self.running = True
+        self.writes: list[str] = []
+        self.stdin_lock = asyncio.Lock()
+        self.write_waiting = asyncio.Event()
+
+    async def write_line(self, line: str, *, before_write: Callable[[], None] | None = None) -> None:
+        self.write_waiting.set()
+        async with self.stdin_lock:
+            if before_write is not None:
+                before_write()
+            self.writes.append(line)
+
+
+def control_dispatch_task(session: Session, command_id: str) -> asyncio.Task[None]:
+    task = next(
+        (
+            candidate
+            for candidate in session._dispatch_tasks
+            if candidate.get_name() == f"{session.session_id}-{command_id}-control"
+        ),
+        None,
+    )
+    assert task is not None
+    return task
 
 
 def model_config_resolver(windows: Mapping[str, int]) -> HttpModelConfigResolver:
@@ -83,8 +109,26 @@ async def session_with_blocked_adapter(
     ) as session:
         session.adapter = adapter
         session.process = cast(HarnessProcess, RunningProcess())
-        session.active_turn_id = "turn-1"
+        session.process_id = "test-process"
+        session._process_state = runner_pb2.PROCESS_STATE_RUNNING
+        session._ready = True
+        await session.emit(event_pb2.TurnStarted(turn_id="turn-1"), sources=[])
         yield session, adapter
+
+
+class OutboundInterrupt(BaseModel):
+    method: str = "interrupt"
+
+
+class SendingInterruptAdapter(BlockingAdapter):
+    def __init__(self, session: Session) -> None:
+        super().__init__()
+        self.session = session
+
+    async def interrupt(self, turn_id: str) -> None:
+        self.interrupted_turn_ids.append(turn_id)
+        self.interrupt_started.set()
+        await self.session.send(OutboundInterrupt())
 
 
 async def test_interrupt_is_admitted_and_dispatched_while_a_prior_input_blocks(tmp_path: Path) -> None:
@@ -138,6 +182,120 @@ async def test_interrupt_is_admitted_and_dispatched_while_a_prior_input_blocks(t
             await asyncio.gather(
                 input_task, *(task for task in [interrupt_task] if task is not None), return_exceptions=True
             )
+
+
+async def test_interrupt_is_fenced_at_the_native_write_after_the_old_turn_ends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with session_with_blocked_adapter(tmp_path) as (session, _):
+        adapter = SendingInterruptAdapter(session)
+        session.adapter = adapter
+        process = cast(RunningProcess, session.process)
+        emit = session.emit
+
+        async def emit_then_advance_turn(
+            observation: Observation,
+            *,
+            sources: Sequence[int] = (),
+            terminal_command_ids: Sequence[str] = (),
+            native_correlation: dict[str, str] | None = None,
+        ) -> event_log_pb2.EventEntry:
+            entry = await emit(
+                observation,
+                sources=sources,
+                terminal_command_ids=terminal_command_ids,
+                native_correlation=native_correlation,
+            )
+            if isinstance(observation, event_pb2.Native) and observation.direction == event_pb2.DIRECTION_TO_HARNESS:
+                await emit(
+                    event_pb2.TurnCompleted(turn_id="turn-1", status=event_pb2.TURN_STATUS_COMPLETED), sources=[]
+                )
+                await emit(event_pb2.TurnStarted(turn_id="turn-2"), sources=[])
+            return entry
+
+        monkeypatch.setattr(session, "emit", emit_then_advance_turn)
+        await session.command(
+            command_pb2.Command(command_id="interrupt-1", interrupt_turn=command_pb2.InterruptTurn(turn_id="turn-1"))
+        )
+        dispatch = control_dispatch_task(session, "interrupt-1")
+        async with asyncio.timeout(5):
+            await dispatch
+
+        assert adapter.interrupted_turn_ids == ["turn-1"]
+        assert process.writes == []
+        entries = await session.journal.since(0, limit=128)
+        assert entries[-1].event.command_noop.command_id == "interrupt-1"
+        assert "ended before interruption was sent" in entries[-1].event.command_noop.reason
+
+
+async def test_interrupt_rechecks_its_target_after_waiting_for_the_stdin_write_lock(tmp_path: Path) -> None:
+    async with session_with_blocked_adapter(tmp_path) as (session, _):
+        adapter = SendingInterruptAdapter(session)
+        session.adapter = adapter
+        process = cast(RunningProcess, session.process)
+        await process.stdin_lock.acquire()
+        owns_stdin_lock = True
+        dispatch: asyncio.Task[None] | None = None
+        try:
+            await session.command(
+                command_pb2.Command(
+                    command_id="interrupt-waiting-for-stdin", interrupt_turn=command_pb2.InterruptTurn(turn_id="turn-1")
+                )
+            )
+            dispatch = control_dispatch_task(session, "interrupt-waiting-for-stdin")
+            await adapter.interrupt_started.wait()
+            await process.write_waiting.wait()
+
+            await session.turn_completed("turn-1", event_pb2.TURN_STATUS_COMPLETED, sources=[])
+            await session.emit(event_pb2.TurnStarted(turn_id="turn-2"), sources=[])
+            process.stdin_lock.release()
+            owns_stdin_lock = False
+            async with asyncio.timeout(5):
+                await dispatch
+        finally:
+            if owns_stdin_lock:
+                process.stdin_lock.release()
+            if dispatch is not None and not dispatch.done():
+                dispatch.cancel()
+                await asyncio.gather(dispatch, return_exceptions=True)
+
+        assert process.writes == []
+        entries = await session.journal.since(0, limit=128)
+        assert entries[-1].event.command_noop.command_id == "interrupt-waiting-for-stdin"
+        assert "ended before interruption was sent" in entries[-1].event.command_noop.reason
+
+
+async def test_quiesce_fences_a_command_waiting_on_model_lookup_before_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with session_with_blocked_adapter(tmp_path) as (session, adapter):
+        lookup_started, release_lookup = asyncio.Event(), asyncio.Event()
+
+        async def held_lookup(*, harness: object, model: str) -> None:
+            del harness, model
+            lookup_started.set()
+            await release_lookup.wait()
+
+        monkeypatch.setattr(session.config, "resolve_model_config", held_lookup)
+        await session.command(
+            command_pb2.Command(command_id="model-while-quiescing", change_model=command_pb2.ChangeModel(model="next"))
+        )
+        dispatch = session._normal_dispatch_task
+        assert dispatch is not None
+        await lookup_started.wait()
+
+        await session._begin_sealing()
+        release_lookup.set()
+        await dispatch
+
+        stored = await session.journal.get("model-while-quiescing")
+        assert stored is not None
+        assert not stored.dispatch_planned
+        await session._settle_undispatched_commands("quiesce test settled the undispatched command")
+        settled = await session.journal.get("model-while-quiescing")
+        assert settled is not None
+        assert settled.terminal_cursor is not None
+        assert adapter.model_changes == []
 
 
 async def test_terminal_commands_release_scheduling_state_and_retry_is_deduplicated(tmp_path: Path) -> None:

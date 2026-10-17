@@ -527,5 +527,25 @@ def test_a_reopened_journal_advances_the_projection_without_a_row() -> None:
     assert store.state.position.through_cursor == 1
 
 
+def test_retained_stop_command_wire_evidence_remains_foldable_without_execution_api() -> None:
+    # Original command_id field 1 and empty stop payload field 5 from a retained journal.
+    original = b"\x0a\x04stop\x2a\x00"
+    recorded = command_pb2.Command.FromString(original)
+    assert recorded.SerializeToString() == original
+    folded = Store()
+    folded.apply(
+        [
+            entry(1, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=recorded))),
+            entry(
+                2,
+                event_pb2.Event(
+                    harness_exited=event_pb2.HarnessExited(stopped_by_runner=True, stopped_by_command_id="stop")
+                ),
+            ),
+        ]
+    )
+    assert folded.commands["stop"].outcome is CommandOutcome.EFFECTED
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

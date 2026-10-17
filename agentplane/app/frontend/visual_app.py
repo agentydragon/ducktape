@@ -48,7 +48,7 @@ class Scene(StrEnum):
     ADD_SUSPENDED_SANDBOXES = "addSuspendedSandboxes"
     LONG_PENDING_ACTION = "longPendingAction"
     HIDDEN_CODEPOINTS = "hiddenCodepoints"
-    ENDED_ATTACHMENT = "endedAttachment"
+    DORMANT_SESSION = "dormantSession"
     INTERLEAVED_EVENTS = "interleavedEvents"
     LIFECYCLE_GROUP = "lifecycleGroup"
     THREAD_SETUP = "threadSetup"

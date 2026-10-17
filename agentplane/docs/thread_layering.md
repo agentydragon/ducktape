@@ -456,8 +456,9 @@ sequenceDiagram
     R2->>HS: Push {announce:Attached{last_cursor:N+loss-events}}
     HS-->>R2: Acknowledgement {cursor:K}
     R2->>HS: E(K+1) onward
-    A->>G: POST /threads/T/resume (explicit native resume)
-    G->>R2: Runner.ResumeSession {session_id:T}: stored spec
+    A->>G: SubmitInput {session_id:T, command_id:C}
+    G->>R2: Runner.SubmitInput {session_id:T, command_id:C}
+    R2->>S: Durably admit C before native startup
     R2->>H: Claude argv --resume native-id, or<br/>Codex method:thread/resume, params:{threadId:native-id}
     H-->>R2: Native initialization/resume response with native-id
     R2->>S: Record evidence, reconcile only proven-safe commands
@@ -466,10 +467,9 @@ sequenceDiagram
 A harness-only crash follows the same evidence rules without replacing the runner.
 An app or History Service outage by itself never triggers native resume. A broken control
 stream or push is not a harness stop. Sharing a Thread id and counter does not prove native continuation.
-The explicit app resume route gets the Sandbox name from the History Thread and checks the live
-runner's retained Session, setup state and launch spec before calling `Runner.ResumeSession` through
-the Sandbox control Service. The proxy checks the live Sandbox name, UID and owner; this path does
-not use the legacy Gateway registry. See the [control-surface audit](control_surface_retirement.md).
+The app submits input through Dispatcher to the exact Sandbox/Session destination. The runner
+validates membership, durably admits work and prepares its retained native conversation. The proxy
+checks the live Sandbox UID and owner; caller reconnect and opening a Thread do not start a harness.
 
 ## Timeline, pending queue, and operational state
 

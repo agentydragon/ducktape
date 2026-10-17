@@ -101,17 +101,6 @@ class RunnerProxyBackedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherS
         return session_dispatcher_pb2.ChangeReasoningEffortResponse(dispatch=dispatch)
 
     @override
-    async def StopRunnerSession(self, request, context):
-        dispatch = await self._deliver(
-            request,
-            context,
-            "StopRunnerSession",
-            runner_control_pb2.StopRunnerSessionRequest(session_id=request.session_id, command_id=request.command_id),
-            session_dispatcher_pb2.OPERATION_STOP_RUNNER_SESSION,
-        )
-        return session_dispatcher_pb2.StopRunnerSessionResponse(dispatch=dispatch)
-
-    @override
     async def InterruptTurn(self, request, context):
         runner = self.runners.client(request.sandbox)
         try:

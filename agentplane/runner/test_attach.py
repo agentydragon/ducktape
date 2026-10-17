@@ -85,6 +85,7 @@ async def test_followers_share_events_and_a_command_delivered_twice_at_once_runs
     driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     first = await driver.attach("observers-1", spec=spec)
+    await first.submit_input("input-1", "Reply with exactly: SECOND_OK")
     await first.until(events.is_kind("harness_started"))
     replay_cursor = first.cursor
     second = await driver.attach("observers-1", after_cursor=replay_cursor)
@@ -105,7 +106,7 @@ async def test_followers_share_events_and_a_command_delivered_twice_at_once_runs
     await first.until(events.turn_completed)
 
 
-async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
+async def test_shutdown_leaves_the_conversation_dormant_until_the_next_input(
     driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     first = await driver.attach("shutdown-1", spec=spec)
@@ -114,7 +115,7 @@ async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
     await model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
     observer = await driver.attach("shutdown-1", after_cursor=first.cursor)
-    await first.stop_runner_session("stop-1")
+    await driver.shutdown("shutdown-1")
     exited = await first.until(events.is_kind("harness_exited"))
     assert exited.event.harness_exited.stopped_by_runner
     await first.drain_until_end()
@@ -129,10 +130,10 @@ async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
     assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
 
     second = await driver.attach("shutdown-1", spec=spec, after_cursor=first.cursor)
+    assert second.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     started = await second.until(events.is_kind("harness_started"))
     assert started.event.harness_started.resumed
-    assert second.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
     assert request.assistant_texts == ["SEED_OK"]
@@ -164,14 +165,14 @@ async def test_resume_sends_the_model_the_reasoning_of_the_previous_harness(
     await first.submit_input("input-1", "Reply with exactly: SEED_OK")
     await model.reply(await model.request(), Reasoning("SEED_THOUGHT"), Text("SEED_OK"))
     await first.until(events.turn_completed)
-    await first.stop_runner_session("stop-1")
+    await driver.shutdown("reasoning-1")
     await first.until(events.is_kind("harness_exited"))
     await first.drain_until_end()
 
     second = await driver.attach("reasoning-1", spec=spec, after_cursor=first.cursor)
+    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     started = await second.until(events.is_kind("harness_started"))
     assert started.event.harness_started.resumed
-    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert request.reasoning_texts == ["SEED_THOUGHT"]
     await model.reply(request, Text("RESUMED_OK"))
@@ -210,6 +211,7 @@ async def test_setup_runs_in_thread_cwd_before_harness_and_replays_output(
     gate.write_text("go")
     finished = await first.until(events.is_kind("setup_finished"))
     assert finished.event.setup_finished.exit_code == 0
+    await first.submit_input("setup-success-input", "Continue after setup.")
     await first.until(events.is_kind("harness_started"))
     assert [entry.event.WhichOneof("observation") for entry in first.seen].index("setup_finished") < [
         entry.event.WhichOneof("observation") for entry in first.seen

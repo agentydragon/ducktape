@@ -411,7 +411,7 @@ func (w *DeliveryWorker) markRefused(uid, incarnation string) {
 	w.mu.Unlock()
 }
 
-func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation, operation string, err error) (string, string) {
+func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation string, err error) (string, string) {
 	grpcStatus, okay := status.FromError(err)
 	if !okay {
 		w.backoff(sessionID, workID)
@@ -424,10 +424,6 @@ func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation, op
 	case codes.Unavailable, codes.DeadlineExceeded:
 		w.backoff(sessionID, workID)
 		return QueueState, fmt.Sprintf("runner_unreachable: %s: %s", grpcStatus.Code(), grpcStatus.Message())
-	case codes.FailedPrecondition:
-		if operation == "stop_runner_session" {
-			return "NO_OP", "nothing_running"
-		}
 	}
 	return FailedState, fmt.Sprintf("runner %s: %s", grpcStatus.Code(), grpcStatus.Message())
 }
@@ -466,7 +462,7 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	admission, callErr := w.Runner.Deliver(ctx, sandbox, head.SessionID, head.Command)
 	state, reason := AdmittedState, ""
 	if callErr != nil {
-		state, reason = w.deliveryFailure(head.SessionID, head.CommandID, head.SandboxUID, sandbox.Incarnation, head.Operation, callErr)
+		state, reason = w.deliveryFailure(head.SessionID, head.CommandID, head.SandboxUID, sandbox.Incarnation, callErr)
 	}
 	w.retryStorage(ctx, func() error {
 		_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, state, reason, admission)
@@ -491,7 +487,7 @@ func (w *DeliveryWorker) deliverOpening(ctx context.Context, opening *Opening, s
 	callErr := w.Runner.OpenSession(ctx, sandbox, opening.SessionID, opening.Spec, opening.SetupScript)
 	state, reason := AdmittedState, ""
 	if callErr != nil {
-		state, reason = w.deliveryFailure(opening.SessionID, key, opening.SandboxUID, sandbox.Incarnation, "open_session", callErr)
+		state, reason = w.deliveryFailure(opening.SessionID, key, opening.SandboxUID, sandbox.Incarnation, callErr)
 	}
 	w.retryStorage(ctx, func() error {
 		_, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{DeliveringState}, state, reason)

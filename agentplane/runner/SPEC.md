@@ -11,10 +11,11 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 ## Initialization
 
 - The Sandbox's launch file (`--launch-file`, written by the Sandbox controller) carries the
-  Sandbox's identity and the bootstrap shell source. The runner executes the bootstrap with
-  `/bin/sh -eu` from `state_dir` when the runner starts, before any Session opens; a Sandbox without a bootstrap
-  runs nothing. An `OpenSession` that would create a Session waits for a running bootstrap, and a failed or
-  interrupted one refuses it with `FAILED_PRECONDITION`.
+  Sandbox's identity and the bootstrap shell source. The runner starts the bootstrap with
+  `/bin/sh -eu` from `state_dir` when the runner starts; a Sandbox without a bootstrap runs
+  nothing. `OpenSession` durably reserves a Session without waiting for the bootstrap. The runner
+  does not run session setup or start a native harness until the bootstrap succeeds. If it fails
+  or is interrupted, admitted commands receive durable failure outcomes.
 - The first request durably selects the script digest at the fixed path
   `<state_dir>/initialization/request.json`, before the script starts. The runner thereafter refuses
   changed source, including after a failed attempt: two possibly incompatible initializations must
@@ -34,18 +35,17 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - A session is one native conversation. Its id is client-chosen, up to 128 characters of
   `[A-Za-z0-9._-]` starting alphanumeric, and the runner keeps everything about it under
   `<state_dir>/sessions/<session_id>/`: the harness's own persistence and the runner's session log.
-- `OpenSession` with an unknown id creates the session from `spec`, creating `spec.cwd`, which must
-  be absolute, when it does not exist yet, and starts its harness. With a known id it only confirms
-  the session: the `spec` must equal the stored one, and a stopped harness stays stopped.
-  `ResumeSession` restarts a stopped harness on the retained spec, resuming the native conversation
-  when the session has one. A harness that does not survive its launch and handshake refuses the
-  request with its exit status and the end of its stderr.
+- `OpenSession` with an unknown id durably reserves the session from `spec`; `spec.cwd` must be
+  absolute. With a known id it confirms the reservation: the `spec` must equal the stored one.
+  Opening never starts a harness. Later admitted execution work starts it in the background, and the
+  runner returns that command's admission without waiting for startup. A harness that does not
+  survive its launch and handshake produces durable launch-failure and command-failure events.
 - An unknown session may select one setup script on `OpenSession`. The runner creates `spec.cwd`,
-  executes the script with `/bin/sh -eu` from that directory, and records started, stdout/stderr, and
-  terminal events in the session's durable Event log. `OpenSession` does not wait for setup to
-  complete. The harness starts only after setup exits successfully. A failed or interrupted setup is
-  terminal for that session: it is never rerun, and `ResumeSession` is refused. A different setup
-  source is refused. Start a new session to try again.
+  executes the script with `/bin/sh -eu` from that directory after bootstrap succeeds, and records
+  started, stdout/stderr, and terminal events in the session's durable Event log. `OpenSession` does
+  not wait for setup. The harness starts only after setup exits successfully and a command is
+  admitted. A failed or interrupted setup is terminal for that session and is never rerun. A
+  different setup source is refused. Start a new session to try again.
 - `spec.instructions` are the session's standing instructions: what the session is for, and the
   orders that hold for every turn of it. They reach the model appended to the harness's own system
   prompt, so each harness keeps its coding-agent policy. A caller's empty task leaves the platform part. They are
@@ -74,20 +74,24 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   `--control-target` and keeps one `Connect` stream for as long as it runs, reconnecting on a fresh
   connection after any loss, and serves the `Runner` service to the gateway through it. It accepts
   no network connections.
-- `OpenSession` and `ResumeSession` answer with the session's `Attached` snapshot: the spec, setup
-  and harness states, `last_cursor`, and the active turn id as of that position.
+- `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
+  `last_cursor`, and the active turn id as of that position. `GetStatus` returns one in-memory
+  snapshot with a runner boot UUID, per-spawn process UUIDs, and session execution and busy state.
 - Delivered commands are client-chosen and idempotent; the runner serializes them with the session
   lock and deduplicates by `command_id`. A delivered command is answered from the journal:
   its `CommandAdmitted` entry, also when the command was already journaled with the same payload,
-  even after its harness stopped or its journal was sealed. Otherwise it is refused with its cause: an unknown session, a harness that is not running or a
-  sealed journal, a command ID already used for other work, or a command without an ID and an
-  operation. Delivery never creates a session or starts a harness.
+  even after its harness stopped or its journal was sealed. Otherwise it is refused with its cause:
+  an unknown session, a sealed journal, a command ID already used for other work, or a command
+  without an ID and an operation. Delivery never creates a session. A newly admitted execution command
+  triggers shared background startup; concurrent commands do not wait for it, and the runner
+  recovers pending admitted commands after a process restart without relying on gateway redelivery.
+  A process-lost active turn also triggers native reconciliation even if its input was already
+  confirmed. Completed idle sessions remain dormant. Interrupts neither start a harness nor prevent
+  recovery required by other work; an admitted interrupt whose target ended is settled as a no-op.
 - Each `Runner` call is answered once, with its result or a gRPC status naming the cause.
-  `ListSessions` and `Quiesce` answer as the RPCs of the same name do. `OpenSession` creates a session
-  from its spec and starts it; for an existing session with the same spec, and setup script when
-  given, it confirms it and starts its harness if stopped, and any other spec is refused.
-  `ResumeSession` restarts a stopped harness on the retained spec, and is refused for an unknown or
-  sealed session or one whose setup failed or was interrupted. A `Quiesce` takes effect after every
+  `ListSessions` and `Quiesce` answer as the RPCs of the same name do. `OpenSession` durably reserves
+  a session from its spec; for an existing session with the same spec and setup script when given,
+  it confirms the reservation, and any other spec is refused. A `Quiesce` takes effect after every
   command delivered before it is answered; a call after it that starts or resumes work is refused
   at once (see Teardown quiesce), and `ListSessions` waits for it. A lost connection drops
   the answers of calls in flight, never an operation halfway through.
@@ -112,15 +116,20 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 
 - `Quiesce` is for Sandbox teardown only. The runner first records, durably, that the Sandbox is in
   lameduck in this incarnation, naming the incarnation UID its latest `Welcome` carried; from then on,
-  including after a restart in the same incarnation, it is in lameduck: `OpenSession`, `ResumeSession` and
-  every delivered command except an interrupt or a stop are refused with `ABORTED`, which a sender
-  reads as "retry after the Sandbox resumes", and a command already admitted but not dispatched is
-  left pending. It then interrupts each active turn, waits up to a grace period for it to end, and
-  stops every setup script and harness; the turn's `TurnCompleted` has `ended_by_teardown` set, which
+  including after a restart in the same incarnation, it is in lameduck: `OpenSession` and every
+  delivered command except an interrupt are refused with `ABORTED`, which a sender reads as "retry
+  after the Sandbox resumes". An admitted command whose dispatch marker was not committed is
+  terminally failed before the journal is sealed; a command with a dispatch marker stays pending
+  because its native effect is uncertain. The runner then interrupts each active turn, waits up to a grace period for it to end, and
+  stops every harness. Running Session setup and Sandbox bootstrap scripts finish naturally before
+  teardown completes, avoiding partially initialized workspaces; their waiters cannot cancel them.
+  The turn's `TurnCompleted` has `ended_by_teardown` set, which
   tells it from a user's interrupt. It seals each session's journal at its
   final cursor, returning those cursors. Quiescing again returns the same cursors. Each cursor comes
   with `flushed`: whether the ingress has acknowledged that seal, as the runner recorded it, so it
   holds across a restart.
+- Orderly runner shutdown also waits for running setup and bootstrap. An unexpected process loss
+  can still interrupt a script; recovery records that outcome and never silently reruns it.
 - A sealed journal takes no further Events, so its commands are refused. Its ingress push sends
   every entry through the seal's cursor, then `Sealed`.
 - Every persisted seal names the nonempty incarnation UID from the authenticated `Welcome`; a seal
@@ -192,9 +201,6 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   unlisted route. Same-window changes and changes between unlisted models keep their existing
   behavior. This keeps the per-process context and compaction limit aligned with the route for the
   lifetime of its native thread; start a new session to use a different window.
-- `StopRunnerSession` interrupts an active turn, stops the harness, and is terminal as
-  `HarnessExited`, naming its command id. The session stays resumable. A stopped harness is instead
-  a `CommandNoop`.
 
 ## Durability and restart
 
@@ -228,9 +234,9 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   reopening the journal. The interrupted transaction may or may not survive, but cannot reuse a cursor
   already published for another Event. Harness output recording failures stop the harness.
 - A runner that finds a session it had running reports `HarnessLost`, then `TurnCompleted` with
-  `PROCESS_LOST` if a turn was active. It replays committed Events unchanged and
-  reconciles the remaining commands after the next `ResumeSession` starts the
-  harness. There is no indeterminate command outcome.
+  `PROCESS_LOST` if a turn was active. It replays committed Events unchanged and automatically
+  starts the harness in the background to reconcile remaining admitted commands. There is no
+  indeterminate command outcome.
 - A runner that finds a session whose setup had started without a terminal event records
   `SetupInterrupted`. It never executes that script again. The inherited state-owner descriptor
   keeps a replacement runner out until a surviving setup child exits.

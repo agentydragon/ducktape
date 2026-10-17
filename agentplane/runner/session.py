@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 import os
 from collections import deque
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 from pydantic import BaseModel
 
@@ -19,7 +21,7 @@ from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.harness_process import HarnessProcess
-from agentplane.runner.journal import Journal, JournalSealedError
+from agentplane.runner.journal import ActiveTurnChangedError, CommandConflictError, Journal, JournalSealedError
 from agentplane.runner.model_config import ModelConfigLookupError
 from agentplane.runner.observation import Observation
 from agentplane.runner.recovery import observed_items, unknown_report
@@ -35,11 +37,15 @@ logger = logging.getLogger(__name__)
 _INTERRUPT_GRACE_S = 15
 
 # Commands a sealing Session still admits and runs: they end work rather than start it.
-DRAINING_OPERATIONS = {"interrupt_turn", "stop_runner_session"}
+DRAINING_OPERATIONS = {"interrupt_turn"}
 
 
 class HarnessGoneError(RuntimeError):
     """The harness ended before a frame could be written to it, or while its response was awaited."""
+
+
+class StaleTurnError(RuntimeError):
+    """An interrupt named a turn that is not active when the runner admits it."""
 
 
 @dataclass(frozen=True)
@@ -60,10 +66,12 @@ class Session:
         make_adapter: Callable[[Session], HarnessAdapter],
         state_owner_descriptor: int,
         activity_changed: Callable[[], None],
+        ensure_ready: Callable[[Session], Awaitable[None]] | None = None,
     ) -> None:
         self.session_id = session_id
         # Called whenever `busy` may have changed.
         self.activity_changed = activity_changed
+        self.ensure_ready_callback = ensure_ready
         self.record = record
         # Whether the harness this Session launches resumes `record.native_session_id`; set at each launch.
         self.resuming = False
@@ -80,6 +88,7 @@ class Session:
         # Per-process only. A restarted runner consults the durable journal and intentionally
         # tries outstanding commands again using their original ids.
         self._dispatched_commands: set[str] = set()
+        self._pending_command_ids: set[str] = set()
         # Admission is serialized and durable, while native operations run afterwards. Normal
         # operations retain their admission order; controls bypass an unrelated blocked input.
         self._scheduled_commands: set[str] = set()
@@ -87,7 +96,17 @@ class Session:
         self._normal_dispatch_task: asyncio.Task[None] | None = None
         self._dispatch_tasks: set[asyncio.Task[None]] = set()
         self._interrupt_commands: dict[str, str] = {}
-        self._stop_command_id = ""
+        self.process_id: str | None = None
+        self._process_state = runner_pb2.PROCESS_STATE_UNSPECIFIED
+        self._ready = False
+        self._failure_cursor: int | None = None
+        self._setup_failure_reason = ""
+        self._startup_lock = asyncio.Lock()
+        self._startup_task: asyncio.Task[None] | None = None
+        self._activation_task: asyncio.Task[None] | None = None
+        self._interrupt_target: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            f"{session_id}-interrupt-target", default=None
+        )
         self.process: HarnessProcess | None = None
         self.adapter: HarnessAdapter | None = None
         self._tasks: list[asyncio.Task[None]] = []
@@ -99,6 +118,9 @@ class Session:
         self._sealing = journal.sealed_cursor is not None
         self._tearing_down = False
         self._lock = asyncio.Lock()
+        # Sealing and the durable "possibly sent" marker share this gate. A command with no
+        # marker can then be failed safely; one whose marker won the gate remains uncertain.
+        self._dispatch_gate = asyncio.Lock()
         self._shutdown_lock = asyncio.Lock()
         self.setup_state = (
             runner_pb2.SETUP_STATE_RUNNING
@@ -117,10 +139,11 @@ class Session:
         ):
             entries = await self.journal.since(cursor, limit=128)
             if not entries:
-                return
+                break
             for entry in entries:
                 cursor = entry.cursor
                 self._apply_prefix(entry)
+        self._pending_command_ids = {command.command_id for command in await self.journal.pending_commands()}
 
     def _apply_prefix(self, entry: event_log_pb2.EventEntry) -> None:
         """The setup and launch outcomes `entry` settles, each only the first time."""
@@ -142,16 +165,26 @@ class Session:
                 )
             elif kind == "setup_interrupted":
                 self.setup_state = runner_pb2.SETUP_STATE_INTERRUPTED
+        if (kind == "setup_finished" and event.setup_finished.exit_code != 0) or kind in (
+            "setup_interrupted",
+            "harness_launch_failed",
+        ):
+            self._failure_cursor = entry.cursor
 
-    def start_setup(self, script: str) -> None:
+    def start_setup(self, script: str, *, before_run: Callable[[], Awaitable[None]] | None = None) -> None:
         if self.setup_state != runner_pb2.SETUP_STATE_RUNNING or self._setup_task is not None:
             raise RuntimeError("session setup was already started or completed")
-        self._setup_task = asyncio.create_task(self._run_setup(script), name=f"{self.session_id}-setup")
+        self._setup_task = asyncio.create_task(
+            self._run_setup(script, before_run=before_run), name=f"{self.session_id}-setup"
+        )
+        self.activity_changed()
 
-    async def _run_setup(self, script: str) -> None:
+    async def _run_setup(self, script: str, *, before_run: Callable[[], Awaitable[None]] | None) -> None:
         process: HarnessProcess | None = None
         readers: list[asyncio.Task[None]] = []
         try:
+            if before_run is not None:
+                await before_run()
             await self.emit(event_pb2.SetupStarted(), sources=[])
             isolation = self.config.process_isolation
             cwd = await ensure_workspace(
@@ -177,14 +210,10 @@ class Session:
             exit_code = await process.wait()
             await asyncio.gather(stdout, stderr)
             await self.emit(event_pb2.SetupFinished(exit_code=exit_code), sources=[])
-            if exit_code == 0:
-                try:
-                    await self.ensure_running()
-                except Exception as error:
-                    await self.emit(event_pb2.HarnessLaunchFailed(reason=str(error)), sources=[])
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
+            self._setup_failure_reason = str(error)
             logger.exception("session %s: setup interrupted", self.session_id)
             if process is not None and process.running:
                 await self._stop_setup_process(process)
@@ -239,6 +268,16 @@ class Session:
                 self.active_turn_id = ""
         self._scheduled_commands.difference_update(terminal_command_ids)
         self._dispatched_commands.difference_update(terminal_command_ids)
+        self._pending_command_ids.difference_update(terminal_command_ids)
+        kind = entry.event.WhichOneof("observation")
+        if kind == "harness_exited":
+            self._ready = False
+            if not entry.event.harness_exited.stopped_by_runner:
+                self._failure_cursor = entry.cursor
+        elif kind == "harness_lost":
+            self._ready = False
+        elif kind == "harness_started":
+            self._failure_cursor = None
         self.activity_changed()
         return entry
 
@@ -247,8 +286,19 @@ class Session:
         if self.setup_state == runner_pb2.SETUP_STATE_RUNNING:
             await self.emit(event_pb2.SetupInterrupted(), sources=[])
         if not self.harness_running:
+            self._ready = False
+            self.process_id = None
+            if self.active_turn_id:
+                await self._record_turn_completed(
+                    self.active_turn_id,
+                    event_pb2.TURN_STATUS_PROCESS_LOST,
+                    "the runner restarted without a harness for the active turn",
+                    sources=[],
+                )
             return
         await self.emit(event_pb2.HarnessLost(), sources=[])
+        self.process_id = None
+        self._process_state = runner_pb2.PROCESS_STATE_UNSPECIFIED
         if self.active_turn_id:
             await self._record_turn_completed(
                 self.active_turn_id,
@@ -257,15 +307,60 @@ class Session:
                 sources=[],
             )
 
+    async def settle_recovered_interrupts(self) -> None:
+        """A Runner restart cannot wake a harness just to deliver an interruption to its lost turn."""
+        async with self._lock:
+            for command in await self.journal.pending_commands():
+                if command.WhichOneof("operation") != "interrupt_turn":
+                    continue
+                target = command.interrupt_turn.turn_id
+                if target == self.active_turn_id:
+                    await self._record_turn_completed(
+                        target,
+                        event_pb2.TURN_STATUS_PROCESS_LOST,
+                        "the runner restarted before it could deliver the interruption",
+                        sources=[],
+                    )
+                await self._noop(
+                    command.command_id, f"turn {target!r} is no longer active after the runner restarted", sources=[]
+                )
+
     @property
     def running(self) -> bool:
         return self.process is not None and self.process.running
 
     @property
+    def ready(self) -> bool:
+        """The native handshake and recovery reconciliation both completed for this process."""
+        return self._ready and self.running
+
+    @property
+    def failure_cursor(self) -> int | None:
+        return self._failure_cursor
+
+    @property
+    def execution_state(self) -> runner_pb2.SessionExecutionState:
+        """Current Session execution state for the diagnostic Runner snapshot."""
+        if self._failure_cursor is not None:
+            return runner_pb2.SESSION_EXECUTION_STATE_FAILED
+        if (
+            self.setup_state == runner_pb2.SETUP_STATE_RUNNING
+            or (self._activation_task is not None and not self._activation_task.done())
+            or (not self.ready and (self.process_id is not None or self._pending_command_ids))
+        ):
+            return runner_pb2.SESSION_EXECUTION_STATE_PREPARING
+        if self.ready:
+            return runner_pb2.SESSION_EXECUTION_STATE_READY
+        return runner_pb2.SESSION_EXECUTION_STATE_DORMANT
+
+    @property
     def busy(self) -> bool:
         """A turn runs, a command is admitted and not finished, or the setup script runs."""
         return (
-            bool(self.active_turn_id or self._scheduled_commands) or self.setup_state == runner_pb2.SETUP_STATE_RUNNING
+            bool(self.active_turn_id or self._scheduled_commands)
+            or bool(self._pending_command_ids)
+            or self.setup_state == runner_pb2.SETUP_STATE_RUNNING
+            or (self._activation_task is not None and not self._activation_task.done())
         )
 
     @property
@@ -273,17 +368,35 @@ class Session:
         return self._setup_task is not None and not self._setup_task.done()
 
     async def ensure_running(self) -> None:
-        async with self._lock:
-            if self.running:
+        async with self._startup_lock:
+            if self.ready:
                 return
-            if self._sealing:
-                raise JournalSealedError("the session is sealed")
+            task = self._startup_task
+            if task is None or task.done():
+                task = asyncio.create_task(self._start_harness(), name=f"{self.session_id}-harness-startup")
+                self._startup_task = task
+        await asyncio.shield(task)
+
+    async def _start_harness(self) -> None:
+        if self._sealing:
+            raise JournalSealedError("the session is sealed")
+        if self.running and self.ready:
+            return
+        self._ready = False
+        self._process_state = runner_pb2.PROCESS_STATE_STARTING
+        if not self.running:
+            self.process_id = None
+        self.activity_changed()
+        try:
+            if self.running:
+                await self._stop_unready_process()
+                if self.running:
+                    raise RuntimeError("the previous harness process could not be stopped after startup failed")
             # Neither harness persists a conversation until its first turn, so a recorded id before
             # then names nothing to resume. The adapter starts its conversation anew and its
             # handshake id replaces the recorded one.
             self.resuming = self.record.native_session_id is not None and await self.journal.has_started_turn()
             adapter = self.make_adapter(self)
-            # The session's working directory is the spec's; a fresh one is created for the harness.
             isolation = self.config.process_isolation
             cwd = await ensure_workspace(
                 Path(self.record.cwd),
@@ -299,6 +412,7 @@ class Session:
                 process_isolation=self.config.process_isolation,
             )
             await process.start()
+            self.process_id = str(uuid4())
             self.process, self.adapter, self._stopping = process, adapter, False
             self._tasks = [
                 asyncio.create_task(self._read_stdout(process, adapter), name=f"{self.session_id}-stdout"),
@@ -306,14 +420,16 @@ class Session:
             ]
             try:
                 native_session_id = await adapter.handshake()
-            except BaseException as error:  # cleanup, then the failure reaches Open
+            except BaseException as error:  # cleanup, then failure is durably settled by activation
                 self._stopping = True
+                self._process_state = runner_pb2.PROCESS_STATE_STOPPING
                 await process.stop()
                 await asyncio.gather(*self._tasks, return_exceptions=True)
                 self.process, self.adapter = None, None
+                self.process_id = None
+                self._process_state = runner_pb2.PROCESS_STATE_UNSPECIFIED
                 if not isinstance(error, Exception):
                     raise
-                # A harness that died mid-handshake surfaces here as HarnessGoneError; its exit says why.
                 raise RuntimeError(f"harness handshake failed: {error!r}; {process.describe_exit()}") from error
             if self.record.native_session_id != native_session_id:
                 self.record.native_session_id = native_session_id
@@ -322,13 +438,147 @@ class Session:
             if self.resuming:
                 for turn_id in await self.journal.recovery_turns():
                     await self.emit(await adapter.reconcile(turn_id, resumed=True), sources=[])
-            await self._reconcile_commands(recovering=True)
+            async with self._lock:
+                await self._reconcile_commands(recovering=True)
+                self._ready = True
+                self._process_state = runner_pb2.PROCESS_STATE_RUNNING
+                self.activity_changed()
+        except BaseException:
+            self._ready = False
+            try:
+                await self._stop_unready_process()
+            except BaseException:
+                logger.exception("session %s: could not stop its unready harness process", self.session_id)
+            raise
+
+    async def _stop_unready_process(self) -> None:
+        """Stop a process whose handshake/recovery did not make this session ready."""
+        process = self.process
+        if process is None:
+            return
+        self._stopping = True
+        self._process_state = runner_pb2.PROCESS_STATE_STOPPING
+        if process.running:
+            await process.stop()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        if process.running:
+            return
+        if self.process is process:
+            self.process, self.adapter = None, None
+        self.process_id = None
+        self._process_state = runner_pb2.PROCESS_STATE_UNSPECIFIED
+        self._stopping = False
+
+    def _ensure_activation(self) -> None:
+        task = self._activation_task
+        if task is None or task.done():
+            self._activation_task = asyncio.create_task(self._activate(), name=f"{self.session_id}-activation")
+            self._activation_task.add_done_callback(self._activation_finished)
+        self.activity_changed()
+
+    def _activation_finished(self, task: asyncio.Task[None]) -> None:
+        self.activity_changed()
+        if task.cancelled():
+            return
+        if error := task.exception():
+            logger.error(
+                "session %s: activation could not settle its admitted commands",
+                self.session_id,
+                exc_info=(type(error), error, error.__traceback__),
+            )
+
+    async def _activate(self) -> None:
+        try:
+            if self.ensure_ready_callback is None:
+                await self.ensure_running()
+            else:
+                await self.ensure_ready_callback(self)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            logger.exception("session %s: admitted work could not start its harness", self.session_id)
+            try:
+                async with self._lock:
+                    await self._settle_undispatched_commands(
+                        f"harness startup failed before this command was dispatched: {error}"
+                    )
+                    if self.failure_cursor is None:
+                        await self.emit(event_pb2.HarnessLaunchFailed(reason=str(error)), sources=[])
+            except Exception:
+                logger.exception("session %s: could not settle commands after startup failure", self.session_id)
+                raise
+        finally:
+            self.activity_changed()
+
+    def ensure_activation(self) -> None:
+        """Start one shared, detached preparation attempt after command admission commits."""
+        self._ensure_activation()
 
     async def command(self, command: command_pb2.Command) -> None:
         """Durably admit a command before arranging its potentially blocking native work."""
         async with self._lock:
-            await self.journal.admit(command)
+            stored = await self.journal.get(command.command_id)
+            if stored is not None:
+                if command_pb2.Command.FromString(stored.payload) != command:
+                    raise CommandConflictError("the command id was admitted for other work")
+                if stored.terminal_cursor is None:
+                    if command.WhichOneof("operation") == "interrupt_turn":
+                        await self._reconcile_interrupt_retry(command)
+                    elif self.ready:
+                        await self._schedule(command)
+                    else:
+                        self._ensure_activation()
+                return
+            operation = command.WhichOneof("operation")
+            if operation == "interrupt_turn":
+                target = command.interrupt_turn.turn_id
+                if not target:
+                    raise ValueError("interrupt_turn.turn_id is required")
+                if target != self.active_turn_id:
+                    raise StaleTurnError(f"turn {target!r} is not active")
+            try:
+                await self.journal.admit(
+                    command,
+                    expected_active_turn_id=command.interrupt_turn.turn_id if operation == "interrupt_turn" else None,
+                )
+            except ActiveTurnChangedError as error:
+                raise StaleTurnError(str(error)) from error
+            self._pending_command_ids.add(command.command_id)
+            if self.ready:
+                await self._schedule(command)
+            elif operation == "interrupt_turn":
+                await self._reconcile_interrupt_retry(command)
+            else:
+                self._ensure_activation()
+
+    async def _reconcile_interrupt_retry(self, command: command_pb2.Command) -> None:
+        """Retry a durable interrupt only while its target can still receive it."""
+        target = command.interrupt_turn.turn_id
+        if target != self.active_turn_id:
+            await self._noop(command.command_id, f"turn {target!r} is no longer active", sources=[])
+            return
+        if self.ready:
             await self._schedule(command)
+            return
+        if any(task is not None and not task.done() for task in (self._activation_task, self._startup_task)):
+            # The existing startup task will reconcile this admitted command after its handshake.
+            return
+        await self._noop(command.command_id, "the harness is not ready to receive this interruption", sources=[])
+
+    async def reconcile_admitted_command(self, command: command_pb2.Command) -> None:
+        """Resume one durable nonterminal command after a control-stream retry."""
+        async with self._lock:
+            stored = await self.journal.get(command.command_id)
+            if stored is None or stored.terminal_cursor is not None:
+                return
+            if command_pb2.Command.FromString(stored.payload) != command:
+                raise CommandConflictError("the command id was admitted for other work")
+            if command.WhichOneof("operation") == "interrupt_turn":
+                await self._reconcile_interrupt_retry(command)
+            elif self.ready:
+                await self._schedule(command)
+            else:
+                self._ensure_activation()
 
     async def _reconcile_commands(self, *, recovering: bool = False) -> None:
         """Resume journaled work after this process has a fresh native harness attachment."""
@@ -390,8 +640,8 @@ class Session:
             if not text:
                 await self._fail(command_id, "submit_input.text is required", sources=[])
                 return
-            await self.journal.dispatch_planned(command_id)
-            self._dispatched_commands.add(command_id)
+            if not await self._plan_dispatch(command_id):
+                return
             try:
                 await self._debug_checkpoint("after-dispatch-planned", command_id)
                 await self.adapter.submit(command_id, text)
@@ -422,8 +672,8 @@ class Session:
                     sources=[],
                 )
                 return
-            await self.journal.dispatch_planned(command_id)
-            self._dispatched_commands.add(command_id)
+            if not await self._plan_dispatch(command_id):
+                return
             try:
                 await self.adapter.change_model(command_id, model)
             except (HarnessGoneError, RuntimeError) as error:
@@ -438,8 +688,8 @@ class Session:
             if effort == self.record.reasoning_effort:
                 await self._noop(command_id, "the requested reasoning effort is already active", sources=[])
                 return
-            await self.journal.dispatch_planned(command_id)
-            self._dispatched_commands.add(command_id)
+            if not await self._plan_dispatch(command_id):
+                return
             try:
                 await self.adapter.change_reasoning_effort(command_id, effort)
             except (HarnessGoneError, RuntimeError) as error:
@@ -454,23 +704,43 @@ class Session:
             if target != self.active_turn_id:
                 await self._noop(command_id, f"turn {target!r} is no longer active", sources=[])
                 return
-            await self.journal.dispatch_planned(command_id, native_correlation={"turn_id": target})
-            self._dispatched_commands.add(command_id)
+            if not await self._plan_dispatch(command_id, native_correlation={"turn_id": target}, allow_sealing=True):
+                return
+            # The turn may have ended while the durable dispatch marker was committed. A Claude
+            # interrupt targets the harness's current turn, so never send a stale target after that
+            # boundary; Codex also receives this exact native turn id.
+            if target != self.active_turn_id:
+                self._dispatched_commands.discard(command_id)
+                await self._noop(command_id, f"turn {target!r} ended before interruption was sent", sources=[])
+                return
             self._interrupt_commands[target] = command_id
+            token = self._interrupt_target.set(target)
             try:
                 await self.adapter.interrupt(target)
+            except StaleTurnError as error:
+                self._interrupt_commands.pop(target, None)
+                self._dispatched_commands.discard(command_id)
+                await self._noop(command_id, str(error), sources=[])
             except (HarnessGoneError, RuntimeError) as error:
                 self._interrupt_commands.pop(target, None)
                 self._dispatched_commands.discard(command_id)
                 await self._fail(command_id, str(error), sources=[])
-            return
-        if operation == "stop_runner_session":
-            await self.journal.dispatch_planned(command_id)
-            self._dispatched_commands.add(command_id)
-            self._stop_command_id = command_id
-            await self._shutdown()
+            finally:
+                self._interrupt_target.reset(token)
             return
         await self._fail(command_id, f"unrecognized command operation {operation!r}", sources=[])
+
+    async def _plan_dispatch(
+        self, command_id: str, *, native_correlation: dict[str, str] | None = None, allow_sealing: bool = False
+    ) -> bool:
+        """Fence the durable dispatch marker against teardown and terminal evidence."""
+        async with self._dispatch_gate:
+            if self._sealing and not allow_sealing:
+                return False
+            planned = await self.journal.dispatch_planned(command_id, native_correlation=native_correlation)
+            if planned:
+                self._dispatched_commands.add(command_id)
+            return planned
 
     async def _fail(self, command_id: str, reason: str, *, sources: Sequence[int]) -> None:
         observation = event_pb2.CommandFailed(command_id=command_id, reason=reason)
@@ -604,26 +874,32 @@ class Session:
     async def _shutdown(self) -> None:
         async with self._shutdown_lock:
             if self.process is None or self.adapter is None or not self.running:
-                if self._stop_command_id:
-                    await self._noop(self._stop_command_id, "the harness is already stopped", sources=[])
-                    self._stop_command_id = ""
                 return
             self._stopping = True
+            self._process_state = runner_pb2.PROCESS_STATE_STOPPING
             if turn_id := self.active_turn_id:
-                await self.adapter.interrupt(turn_id)
-                turn_end = asyncio.create_task(self._await_turn_end())
+                token = self._interrupt_target.set(turn_id)
                 try:
-                    await asyncio.wait_for(turn_end, timeout=_INTERRUPT_GRACE_S)
-                except TimeoutError:
-                    logger.warning(
-                        "session %s: the harness did not end its turn within the grace period", self.session_id
-                    )
+                    # If the named turn ended during the durable native-frame write, stopping the
+                    # process handles shutdown without interrupting a successor.
+                    with suppress(StaleTurnError):
+                        await self.adapter.interrupt(turn_id)
+                finally:
+                    self._interrupt_target.reset(token)
+                if self.active_turn_id == turn_id:
+                    turn_end = asyncio.create_task(self._await_turn_end(turn_id))
+                    try:
+                        await asyncio.wait_for(turn_end, timeout=_INTERRUPT_GRACE_S)
+                    except TimeoutError:
+                        logger.warning(
+                            "session %s: the harness did not end its turn within the grace period", self.session_id
+                        )
             await self.process.stop()
             await asyncio.gather(*self._tasks)
 
-    async def _await_turn_end(self) -> None:
+    async def _await_turn_end(self, turn_id: str) -> None:
         cursor = self.journal.last_cursor
-        while self.active_turn_id and self.running:
+        while self.active_turn_id == turn_id and self.running:
             await self.journal.wait_beyond(cursor)
             cursor = self.journal.last_cursor
 
@@ -635,7 +911,15 @@ class Session:
         await self.emit(event_pb2.Native(direction=event_pb2.DIRECTION_TO_HARNESS, line=line), sources=[])
         await self._commit_batch()
         try:
-            await self.process.write_line(line)
+            if target := self._interrupt_target.get():
+
+                def check_interrupt_target() -> None:
+                    if self.active_turn_id != target:
+                        raise StaleTurnError(f"turn {target!r} ended before interruption was sent")
+
+                await self.process.write_line(line, before_write=check_interrupt_target)
+            else:
+                await self.process.write_line(line)
         except (BrokenPipeError, ConnectionResetError) as error:
             # The harness died after the check above; the stdout reader reports its exit.
             raise HarnessGoneError(f"the harness closed its stdin: {error!r}") from error
@@ -709,17 +993,10 @@ class Session:
             if not request.reply.done():
                 request.reply.set_exception(HarnessGoneError(f"the harness exited with {exit_code=}"))
         self._waiters, self._replies = [], []
-        stop_command_id = self._stop_command_id if self._stopping else ""
-        if stop_command_id:
-            observation = event_pb2.HarnessExited(
-                exit_code=exit_code, stopped_by_runner=self._stopping, stopped_by_command_id=stop_command_id
-            )
-            self._stop_command_id = ""
-        else:
-            observation = event_pb2.HarnessExited(
-                exit_code=exit_code, stopped_by_runner=self._stopping, stopped_by_command_id=""
-            )
-        await self.emit(observation, sources=[], terminal_command_ids=[stop_command_id] if stop_command_id else [])
+        await self.emit(event_pb2.HarnessExited(exit_code=exit_code, stopped_by_runner=self._stopping), sources=[])
+        self._ready = False
+        self.process_id = None
+        self._process_state = runner_pb2.PROCESS_STATE_UNSPECIFIED
         if self.active_turn_id:
             await self._record_turn_completed(
                 self.active_turn_id,
@@ -747,14 +1024,31 @@ class Session:
             raise
 
     async def seal(self, incarnation_uid: str) -> int:
-        """Sandbox teardown: interrupt the active turn, stop setup and the harness, then make the journal
+        """Sandbox teardown: interrupt the active turn, finish setup and stop the harness, then make the journal
         final at its cursor for `incarnation_uid`."""
-        async with self._lock:
-            self._sealing = True
-            self._tearing_down = True
+        await self._begin_sealing()
+        await self._cancel_preparation()
         await self._shutdown()
+        # A command with no durable dispatch marker is known not to have crossed the native
+        # boundary. Settle it before sealing so teardown does not leave accepted work busy forever.
+        # Commands with a dispatch marker remain pending: their native side effect is uncertain and
+        # the next incarnation must reconcile them from evidence.
+        await self._settle_undispatched_commands("the Sandbox was quiesced before this command was dispatched")
         await self.stop()
         return await self.journal.seal(incarnation_uid)
+
+    async def _begin_sealing(self) -> None:
+        """Fence future dispatch markers before teardown settles known-undispatched commands."""
+        async with self._dispatch_gate, self._lock:
+            self._sealing = True
+            self._tearing_down = True
+
+    async def _settle_undispatched_commands(self, reason: str) -> None:
+        """Finish admitted commands the journal proves never crossed the native boundary."""
+        for command in await self.journal.pending_commands():
+            stored = await self.journal.get(command.command_id)
+            if stored is not None and not stored.dispatch_planned:
+                await self._fail(command.command_id, reason, sources=[])
 
     async def reopen(self, incarnation_uid: str) -> None:
         """Let a Session sealed by an earlier incarnation take work again, its harness stopped."""
@@ -764,18 +1058,29 @@ class Session:
             self._tearing_down = False
 
     async def stop(self) -> None:
-        """Runner shutdown: stop the harness without interrupting; the log records the exit."""
+        """Runner shutdown: let setup finish, then stop the harness and record its exit."""
+        await self._cancel_preparation()
         if self._setup_task is not None and not self._setup_task.done():
-            self._setup_task.cancel()
-            await asyncio.gather(self._setup_task, return_exceptions=True)
-            if self.setup_state == runner_pb2.SETUP_STATE_RUNNING:
-                await self.emit(event_pb2.SetupInterrupted(), sources=[])
+            # Setup can make non-transactional workspace changes. An orderly shutdown must not
+            # leave those half-applied; cancellation of this waiter must not cancel the script.
+            await asyncio.shield(self._setup_task)
         async with self._shutdown_lock:
             if self.process is not None and self.running:
                 self._stopping = True
                 await self.process.stop()
                 await asyncio.gather(*self._tasks)
         tasks = [task for task in self._dispatch_tasks if task is not asyncio.current_task()]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _cancel_preparation(self) -> None:
+        current = asyncio.current_task()
+        tasks = [
+            task
+            for task in (self._activation_task, self._startup_task)
+            if task is not None and task is not current and not task.done()
+        ]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

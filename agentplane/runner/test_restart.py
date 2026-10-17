@@ -7,6 +7,7 @@ import ctypes
 import errno
 import json
 import os
+import shlex
 import shutil
 import signal
 import tarfile
@@ -15,17 +16,16 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
-import grpc
 import pytest
 import pytest_bazel
 
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.codex.testing.responses import OpenAIResponses
-from agentplane.proto import event_pb2, runner_control_pb2, runner_pb2
+from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.store import StateOwner
 from agentplane.runner.testing import events, launches
-from agentplane.runner.testing.driver import RunnerDriver, refusal
+from agentplane.runner.testing.driver import RunnerDriver
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
@@ -83,23 +83,71 @@ async def _exited(pid: int) -> None:
         os.close(fd)
 
 
-async def test_runner_shutdown_interrupts_setup_without_rerunning_it(
-    spec: runner_pb2.SessionSpec, start_runner: Callable[..., Awaitable[RunnerProcess]], driver: RunnerDriver
+async def test_runner_shutdown_waits_for_setup_to_finish(
+    spec: runner_pb2.SessionSpec,
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
+    driver: RunnerDriver,
+    tmp_path: Path,
 ) -> None:
-    first_runner = await start_runner()
-    first = await driver.attach(
-        "setup-interrupted", spec=spec, setup_script='printf "started\\n"; while :; do sleep 1; done'
+    started, continue_setup, completed = (
+        tmp_path / name for name in ("setup-started", "setup-continue", "setup-completed")
     )
+    script = (
+        f"printf started > {shlex.quote(str(started))}\n"
+        'printf "started\\n"\n'
+        f"while [ ! -f {shlex.quote(str(continue_setup))} ]; do sleep 0.01; done\n"
+        f"printf completed > {shlex.quote(str(completed))}\n"
+    )
+    first_runner = await start_runner()
+    first = await driver.attach("setup-graceful-shutdown", spec=spec, setup_script=script)
     await first.until(events.is_kind("setup_output"))
-    await first_runner.stop()
+    stopping = asyncio.create_task(first_runner.stop())
+    try:
+        await asyncio.sleep(0.05)
+        assert not stopping.done()
+        assert not completed.exists()
+    finally:
+        continue_setup.touch()
+        await asyncio.gather(stopping, return_exceptions=True)
 
     await start_runner()
-    second = await driver.attach("setup-interrupted", spec=spec)
+    second = await driver.attach("setup-graceful-shutdown")
+    await second.until(events.is_kind("setup_finished"))
+    assert second.attached.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
+    assert len(events.of_kind(second.seen, "setup_started")) == 1
+    assert len(events.of_kind(second.seen, "setup_finished")) == 1
+    assert not events.of_kind(second.seen, "setup_interrupted")
+    assert not events.of_kind(second.seen, "harness_started")
+    assert completed.exists()
+
+
+async def test_runner_kill_interrupts_setup_without_rerunning_it(
+    spec: runner_pb2.SessionSpec,
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
+    driver: RunnerDriver,
+    tmp_path: Path,
+) -> None:
+    pid_file, runs = tmp_path / "setup-pid", tmp_path / "setup-runs"
+    script = (
+        f"echo run >> {shlex.quote(str(runs))}\n"
+        f"echo $$ > {shlex.quote(str(pid_file))}\n"
+        'printf "started\\n"\n'
+        "while :; do sleep 1; done\n"
+    )
+    first_runner = await start_runner()
+    first = await driver.attach("setup-interrupted-by-kill", spec=spec, setup_script=script)
+    await first.until(events.is_kind("setup_output"))
+    setup_pid = int(pid_file.read_text())
+    await first_runner.crash([setup_pid])
+
+    await start_runner()
+    second = await driver.attach("setup-interrupted-by-kill")
     assert second.attached.setup_state == runner_pb2.SETUP_STATE_INTERRUPTED
     await second.drain_until_end()
     assert len(events.of_kind(second.seen, "setup_started")) == 1
     assert len(events.of_kind(second.seen, "setup_interrupted")) == 1
     assert not events.of_kind(second.seen, "harness_started")
+    assert runs.read_text() == "run\n"
 
 
 async def test_runner_death_interrupts_bootstrap_without_rerunning_it(
@@ -118,10 +166,16 @@ async def test_runner_death_interrupts_bootstrap_without_rerunning_it(
     await first_runner.crash([pid])
 
     await start_runner(bootstrap=script)
-    first = await refusal(driver.attach("bootstrap-1", spec=spec))
-    second = await refusal(driver.attach("bootstrap-2", spec=spec))
+    first = await driver.attach("bootstrap-1", spec=spec)
+    await first.submit_input("bootstrap-1-input", "Must not reach the harness.")
+    await first.until(events.is_kind("harness_launch_failed"))
+    second = await driver.attach("bootstrap-2", spec=spec)
+    await second.submit_input("bootstrap-2-input", "Must not reach the harness.")
+    await second.until(events.is_kind("command_failed"))
 
-    assert first == second == grpc.StatusCode.FAILED_PRECONDITION
+    assert len(events.of_kind(first.seen, "command_failed")) == 1
+    assert not events.of_kind(first.seen, "harness_started")
+    assert not events.of_kind(second.seen, "harness_started")
     assert (state / "runs").read_text() == "run\n"
 
 
@@ -267,8 +321,6 @@ async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement
     confirmed = await replacement.until(events.is_kind("harness_user_message_confirmed"))
     assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [command_id]
     await replacement.until(events.turn_completed)
-    await replacement.stop_runner_session("stop-after-writer-handoff")
-    await replacement.drain_until_end()
     events.assert_contiguous([*first.seen, *replacement.seen])
 
 
@@ -379,8 +431,6 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
     assert model.request_count == 2
     await model.reply(successor_request, Text("SUCCESSOR_FENCE_OK"))
     await replacement.until(events.turn_completed)
-    await replacement.stop_runner_session("stop-after-active-fence")
-    await replacement.drain_until_end()
 
 
 async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
@@ -401,11 +451,12 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     await start_runner()
     second = await driver.attach("restart-1", spec=spec, after_cursor=first.cursor)
     lost = await second.until(events.is_kind("harness_lost"))
+    assert second.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     started = await second.until(events.is_kind("harness_started"))
     assert lost.cursor < started.cursor
     assert started.event.harness_started.resumed
     assert not events.of_kind(second.seen, "turn_completed")
-    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
     assert request.assistant_texts == ["SEED_OK"]
@@ -413,8 +464,6 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     done = await second.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
     events.assert_contiguous([*first.seen, *second.seen])
-    await second.stop_runner_session("stop-after-crash")
-    await second.drain_until_end()
 
 
 async def test_a_session_that_never_took_a_turn_carries_on_after_its_runner_restarts(
@@ -423,23 +472,23 @@ async def test_a_session_that_never_took_a_turn_carries_on_after_its_runner_rest
     spec: runner_pb2.SessionSpec,
     driver: RunnerDriver,
 ) -> None:
-    """Neither harness has a thread to resume before its first turn."""
+    """An unused reservation stays dormant across runner replacement and starts a fresh thread."""
     first_runner = await start_runner()
     first = await driver.attach("restart-before-first-turn", spec=spec)
-    await first.until(events.is_kind("harness_started"))
-    harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
-    await first_runner.crash(harness_pids)
+    assert first.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+    await first_runner.stop()
 
     await start_runner()
     second = await driver.attach("restart-before-first-turn", spec=spec, after_cursor=first.cursor)
+    assert second.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
     await second.submit_input("input-1", "Reply with exactly: FIRST_OK")
+    started = await second.until(events.is_kind("harness_started"))
+    assert not started.event.harness_started.resumed
     request = await model.request()
     assert request.user_texts == ["Reply with exactly: FIRST_OK"]
     await model.reply(request, Text("FIRST_OK"))
     done = await second.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-    await second.stop_runner_session("stop-after-first-turn")
-    await second.drain_until_end()
 
 
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
@@ -519,12 +568,12 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     await session.drain_until_end()
 
     second = await driver.attach("sparse-child-root", spec=child_spec, after_cursor=exited.cursor)
+    await second.submit_input("input-3", "Reply with exactly: SPARSE_ROOT_RESUME_OK")
     resumed = await second.until(
         lambda entry: events.is_kind("harness_started")(entry) and entry.event.harness_started.resumed
     )
     assert resumed.cursor > exited.cursor
     assert workload_proof.read_text() == "WORKLOAD_IMAGE_TOOL_OK\n"
-    await second.submit_input("input-3", "Reply with exactly: SPARSE_ROOT_RESUME_OK")
     request = await model.request()
     assert request.user_texts == [
         "Reply with exactly: SPARSE_ROOT_TURN_OK",
@@ -561,9 +610,6 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     resumed_tool_done = await second.until(events.turn_completed)
     assert resumed_tool_done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
-    await second.stop_runner_session("stop-after-sparse-root-resume")
-    await second.drain_until_end()
-
 
 async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps_history(
     start_runner: Callable[[], Awaitable[RunnerProcess]],
@@ -581,9 +627,6 @@ async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps
         await session.until(events.turn_completed)
         (started,) = events.of_kind(session.seen, "harness_started")
         source_id = started.origin.source_id
-        await session.stop_runner_session(f"{suffix}-stop-before-restart")
-        await session.until(events.is_kind("harness_exited"))
-        await session.drain_until_end()
         return session.cursor, source_id
 
     pending_cursor, pending_source_id = await seed_and_stop("pending-after-wake", "PENDING")
@@ -595,13 +638,12 @@ async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps
     assert summaries["pending-after-wake"].harness_state == runner_pb2.HARNESS_STATE_STOPPED
     assert summaries["dormant-after-wake"].harness_state == runner_pb2.HARNESS_STATE_STOPPED
 
-    runner = await driver.gateway.control.runner()
-    await runner.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id="pending-after-wake"))
     pending = await driver.attach("pending-after-wake", after_cursor=pending_cursor)
+    assert pending.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+    await pending.submit_input("pending-after-wake-input", "Reply with exactly: PENDING_RESUMED_OK")
     pending_started = await pending.until(events.is_kind("harness_started"))
     assert pending_started.event.harness_started.resumed
     assert pending_started.origin.source_id == pending_source_id
-    await pending.submit_input("pending-after-wake-input", "Reply with exactly: PENDING_RESUMED_OK")
     pending_request = await model.request()
     assert pending_request.user_texts == [
         "Reply with exactly: PENDING_SEED_OK",
@@ -613,13 +655,13 @@ async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps
     summaries = {summary.session_id: summary for summary in await driver.list_sessions()}
     assert summaries["dormant-after-wake"].harness_state == runner_pb2.HARNESS_STATE_STOPPED
 
-    # A user-initiated resume remains available for a dormant Session and has the same continuity.
-    await runner.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id="dormant-after-wake"))
+    # A dormant session stays stopped until the next durable command wakes it.
     dormant = await driver.attach("dormant-after-wake", after_cursor=dormant_cursor)
+    assert dormant.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+    await dormant.submit_input("dormant-after-wake-input", "Reply with exactly: DORMANT_RESUMED_OK")
     dormant_started = await dormant.until(events.is_kind("harness_started"))
     assert dormant_started.event.harness_started.resumed
     assert dormant_started.origin.source_id == dormant_source_id
-    await dormant.submit_input("dormant-after-wake-input", "Reply with exactly: DORMANT_RESUMED_OK")
     dormant_request = await model.request()
     assert dormant_request.user_texts == [
         "Reply with exactly: DORMANT_SEED_OK",
@@ -628,11 +670,6 @@ async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps
     assert dormant_request.assistant_texts == ["DORMANT_SEED_OK"]
     await model.reply(dormant_request, Text("DORMANT_RESUMED_OK"))
     await dormant.until(events.turn_completed)
-
-    await pending.stop_runner_session("stop-pending-after-wake")
-    await pending.drain_until_end()
-    await dormant.stop_runner_session("stop-dormant-after-manual-resume")
-    await dormant.drain_until_end()
 
 
 async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
@@ -678,8 +715,6 @@ async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
     confirmed = await second.until(events.is_kind("harness_user_message_confirmed"))
     assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [command_id]
     await second.until(events.turn_completed)
-    await second.stop_runner_session("stop-after-retry")
-    await second.drain_until_end()
 
 
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
@@ -768,8 +803,6 @@ async def test_codex_acceptance_before_confirmation_crash_replays_input_with_ori
     assert message.turn_id != original_turn_id
     await second.until(events.turn_completed)
     assert effect_file.read_text() == "ran\n"
-    await second.stop_runner_session("stop-after-codex-acceptance-recovery")
-    await second.drain_until_end()
 
 
 async def test_crash_after_terminal_effect_persists_replays_that_effect(
@@ -867,10 +900,10 @@ async def test_sigterm_stops_the_harness_cleanly_and_a_new_incarnation_resumes(
     second = await driver.attach("sigterm-1", spec=spec, after_cursor=first.cursor)
     exited = await second.until(events.is_kind("harness_exited"))
     assert exited.event.harness_exited.stopped_by_runner
+    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     started = await second.until(events.is_kind("harness_started"))
     assert started.event.harness_started.resumed
     assert not events.of_kind(second.seen, "harness_lost")
-    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
     assert request.assistant_texts == ["SEED_OK"]
@@ -880,8 +913,6 @@ async def test_sigterm_stops_the_harness_cleanly_and_a_new_incarnation_resumes(
     done = await second.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
     events.assert_contiguous([*first.seen, *second.seen])
-    await second.stop_runner_session("stop-after-sigterm")
-    await second.drain_until_end()
 
 
 async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and_not_replayed(
@@ -912,8 +943,6 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
     assert request.reasoning_texts == []
     await model.reply(request, Text("RESUMED_OK"))
     await second.until(events.turn_completed)
-    await second.stop_runner_session("stop-after-cut-off")
-    await second.drain_until_end()
 
 
 if __name__ == "__main__":

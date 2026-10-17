@@ -275,8 +275,8 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	}
 
 	// Exercise the actual Dispatcher Runner client through the Gateway proxy and
-	// runner tunnel. It must carry the full destination fence, resume before an
-	// input, and return the runner's admission rather than a proxy receipt.
+	// runner tunnel. It carries the full destination fence and returns the
+	// runner's admission rather than a proxy receipt.
 	tokenFile := filepath.Join(t.TempDir(), "gateway-token")
 	if err := os.WriteFile(tokenFile, []byte("app-token"), 0o600); err != nil {
 		t.Fatal(err)
@@ -309,19 +309,6 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 			err   error
 		}{entry, callErr}
 	}()
-	resumeBeforeInput := receiveTunnelCall(t, runnerStream)
-	if resumeBeforeInput.GetMethod() != "/agentplane.proto.runner_control.Runner/ResumeSession" {
-		t.Fatalf("Dispatcher did not resume before sending input: %v", resumeBeforeInput)
-	}
-	resumeResponse, err := proto.Marshal(&runnercontrolpb.ResumeSessionResponse{Attached: &runnerpb.Attached{SessionId: "session-a"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := runnerStream.Send(&runnercontrolpb.RunnerFrame{Frame: &runnercontrolpb.RunnerFrame_Reply{
-		Reply: &tunnelpb.Reply{CallId: resumeBeforeInput.GetCallId(), Response: resumeResponse},
-	}}); err != nil {
-		t.Fatal(err)
-	}
 	inputCall := receiveTunnelCall(t, runnerStream)
 	var inputRequest runnercontrolpb.SubmitInputRequest
 	if inputCall.GetMethod() != "/agentplane.proto.runner_control.Runner/SubmitInput" ||
@@ -348,23 +335,26 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	}
 
 	var trailers metadata.MD
-	resumeDone := make(chan error, 1)
+	statusDone := make(chan error, 1)
 	go func() {
 		ctx, cancel := context.WithTimeout(callerContext("app-token"), 5*time.Second)
 		defer cancel()
-		_, callErr := client.ResumeSession(ctx, &runnercontrolpb.ResumeSessionRequest{SessionId: "session-missing"}, grpc.Trailer(&trailers))
-		resumeDone <- callErr
+		_, callErr := client.GetStatus(ctx, &runnerpb.GetStatusRequest{}, grpc.Trailer(&trailers))
+		statusDone <- callErr
 	}()
-	resumeCall := receiveTunnelCall(t, runnerStream)
+	statusCall := receiveTunnelCall(t, runnerStream)
 	if err := runnerStream.Send(&runnercontrolpb.RunnerFrame{Frame: &runnercontrolpb.RunnerFrame_Reply{
 		Reply: &tunnelpb.Reply{
-			CallId: resumeCall.GetCallId(), Code: int32(codes.NotFound), Details: "session missing",
+			CallId: statusCall.GetCallId(), Code: int32(codes.NotFound), Details: "status unavailable",
 			TrailingMetadata: []*tunnelpb.Metadata{{Key: "runner-trace", Value: &tunnelpb.Metadata_Text{Text: "trace-a"}}},
 		},
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := <-resumeDone; status.Code(err) != codes.NotFound {
+	if statusCall.GetMethod() != "/agentplane.proto.runner_control.Runner/GetStatus" {
+		t.Fatalf("runner status method did not survive the proxy: %v", statusCall)
+	}
+	if err := <-statusDone; status.Code(err) != codes.NotFound {
 		t.Fatalf("runner status did not survive the tunnel: %v", err)
 	}
 	if got := trailers.Get("runner-trace"); len(got) != 1 || got[0] != "trace-a" {
@@ -733,21 +723,21 @@ func TestGeneratedRunnerClientPreservesTunnelStatusTrailersAndCancellation(t *te
 		}
 	}
 	var trailers metadata.MD
-	resumeDone := make(chan error, 1)
+	statusDone := make(chan error, 1)
 	go func() {
-		_, err := connection.runner.ResumeSession(context.Background(),
-			&runnercontrolpb.ResumeSessionRequest{SessionId: "session-a"}, grpc.Trailer(&trailers))
-		resumeDone <- err
+		_, err := connection.runner.GetStatus(context.Background(),
+			&runnerpb.GetStatusRequest{}, grpc.Trailer(&trailers))
+		statusDone <- err
 	}()
-	resumeCall := nextCall()
-	if resumeCall.GetMethod() != "/agentplane.proto.runner_control.Runner/ResumeSession" {
-		t.Fatalf("generated Runner method did not reach tunnel: %v", resumeCall)
+	statusCall := nextCall()
+	if statusCall.GetMethod() != "/agentplane.proto.runner_control.Runner/GetStatus" {
+		t.Fatalf("generated GetStatus method did not reach tunnel: %v", statusCall)
 	}
 	connection.tunnel.answer(&tunnelpb.Reply{
-		CallId: resumeCall.GetCallId(), Code: int32(codes.NotFound), Details: "session missing",
+		CallId: statusCall.GetCallId(), Code: int32(codes.NotFound), Details: "status unavailable",
 		TrailingMetadata: []*tunnelpb.Metadata{{Key: "runner-trace", Value: &tunnelpb.Metadata_Text{Text: "trace-a"}}},
 	})
-	if err := <-resumeDone; status.Code(err) != codes.NotFound {
+	if err := <-statusDone; status.Code(err) != codes.NotFound {
 		t.Fatalf("generated client lost runner status: %v", err)
 	}
 	if got := trailers.Get("runner-trace"); len(got) != 1 || got[0] != "trace-a" {

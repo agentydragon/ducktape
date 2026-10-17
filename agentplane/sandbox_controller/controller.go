@@ -319,7 +319,7 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *sandboxapi.
 }
 
 // holdSuspend holds a suspend that has not begun quiescing while the incarnation's bootstrap or any
-// Session's setup runs: quiescing would interrupt it, and an interrupted bootstrap is terminal. The
+// Session's setup runs, keeping delivery fenced while initialization finishes. The
 // runner's next fact enqueues the Sandbox, so no retry is set. A delete does not come here.
 func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *sandboxapi.Sandbox, runner string) (*unready, error) {
 	lease, err := r.runnerLease(ctx, sandbox)

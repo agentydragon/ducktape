@@ -226,6 +226,7 @@ async def dialing(runner: Runner, gateway: Gateway) -> AsyncIterator[None]:
                 RunnerService(runner),
                 target=target,
                 bearer=bearer,
+                boot_id=runner.boot_id,
                 timing=TIMING,
                 adopt_incarnation=runner.adopt_incarnation,
                 facts=runner.facts,

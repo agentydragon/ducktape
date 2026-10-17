@@ -142,7 +142,7 @@ flowchart LR
     sandboxctl[Sandbox Controller]
     k8s[Kubernetes API]
     app -->|session opens + commands| dispatcher
-    app -->|per-Sandbox Runner Proxy: live checks + explicit resume| gateway
+    app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
     dispatcher -->|queued opens + commands| gateway
     sandboxctl -->|Quiesce| gateway
     dispatcher -->|watch + guarded wake| k8s

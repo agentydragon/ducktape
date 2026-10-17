@@ -80,7 +80,7 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     assert INSTRUCTIONS in request.system_text
     await model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
-    await first.stop_runner_session("stop-instructions")
+    await driver.shutdown("instructions-1")
     await first.until(events.is_kind("harness_exited"))
     await first.drain_until_end()
 
@@ -91,9 +91,9 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
         "instructions-1", spec=with_instructions(spec, INSTRUCTIONS), after_cursor=first.cursor
     )
     assert second.attached.spec == first.attached.spec
+    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     started = await second.until(events.is_kind("harness_started"))
     assert started.event.harness_started.resumed
-    await second.submit_input("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert INSTRUCTIONS in request.system_text
     await model.reply(request, Text("RESUMED_OK"))

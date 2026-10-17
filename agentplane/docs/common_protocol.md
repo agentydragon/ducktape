@@ -23,8 +23,7 @@ separate facts; the app does not own a server-side command queue.
 - Only common behavior proved by the scripted Claude/Codex harness tests. A caller
   selects a harness through SessionSpec.harness, not with adapter-specific operations.
 
-The current commands are `SubmitInput`, `ChangeModel`, `InterruptTurn`, and
-`StopRunnerSession`. `SubmitInput` joins a running turn; it is not a common steer or
+The commands are `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` and `InterruptTurn`. `SubmitInput` joins a running turn; it is not a common steer or
 queue abstraction. The runner reconciles uncompleted commands after restart. Native
 execution before durable outcome evidence needs its own recovery proof; journal
 deduplication alone does not guarantee exactly-once native execution.

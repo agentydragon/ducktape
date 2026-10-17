@@ -25,7 +25,7 @@ from google.protobuf.json_format import ParseDict, ParseError
 from agentplane.app.live import DecisionsSnapshot, DecisionsUnavailable, SandboxesSnapshot
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPresetView
-from agentplane.app.sandbox_models import NewSandbox, SandboxView
+from agentplane.app.sandbox_models import NewSandbox, RunnerStatusView, SandboxView
 from agentplane.app.threads.bridge import NewSession
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.egress.decisions import Decision
@@ -112,6 +112,9 @@ class Client:
 
     async def sandbox(self, name: str) -> SandboxView:
         return SandboxView.model_validate(await self._json("GET", f"/sandboxes/{name}"))
+
+    async def runner_status(self, name: str) -> RunnerStatusView:
+        return RunnerStatusView.model_validate(await self._json("GET", f"/sandboxes/{name}/runner-status"))
 
     async def sandbox_snapshots(self) -> AsyncGenerator[SandboxesSnapshot]:
         """Initial inventory and watch-triggered changes; the caller bounds the subscription.
@@ -256,11 +259,6 @@ class Client:
                 if time.monotonic() >= deadline:
                     raise TimeoutError(f"Thread {thread_id} was not projected within {timeout_s:g}s") from error
                 await asyncio.sleep(0.2)
-
-    async def resume_thread(self, thread_id: UUID) -> Attachment:
-        """Resume the runner session already bound to this Thread."""
-        answered = await self._json("POST", f"/threads/{thread_id}/resume")
-        return Attachment(ParseDict(answered, runner_pb2.Attached()))
 
     async def thread(self, thread_id: UUID) -> ThreadView:
         """The persistent Thread of a created Session; its ID is the Session's public ID."""

@@ -112,8 +112,6 @@ func operation(command *commandpb.Command) (string, error) {
 		return "change_model", nil
 	case *commandpb.Command_ChangeReasoningEffort:
 		return "change_reasoning_effort", nil
-	case *commandpb.Command_StopRunnerSession:
-		return "stop_runner_session", nil
 	default:
 		return "", errors.New("not a stored command operation")
 	}
@@ -184,7 +182,7 @@ func (s *Store) Enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 			return err
 		}
 		// A command ID is global, even when two senders race through different
-		// Session locks. Serialize that conflict before any stop/cap side effect.
+		// Session locks.
 		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "command:"+command.GetCommandId()); err != nil {
 			return err
 		}
@@ -203,21 +201,16 @@ func (s *Store) Enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if op == "stop_runner_session" {
-			_, err = tx.ExecContext(ctx, `UPDATE dispatch SET state=$1, reason='stopped', updated_at=now()
-				WHERE session_id=$2 AND state=$3`, CancelledState, sessionID, QueueState)
-		} else {
-			var count int
-			err = tx.QueryRowContext(ctx, "SELECT count(*) FROM dispatch WHERE session_id=$1 AND state=$2", sessionID, QueueState).Scan(&count)
-			if err == nil && count >= s.QueueCap {
-				return fmt.Errorf("%w: session %s holds %d queued commands", ErrQueueFull, sessionID, count)
-			}
+		var count int
+		err = tx.QueryRowContext(ctx, "SELECT count(*) FROM dispatch WHERE session_id=$1 AND state=$2", sessionID, QueueState).Scan(&count)
+		if err == nil && count >= s.QueueCap {
+			return fmt.Errorf("%w: session %s holds %d queued commands", ErrQueueFull, sessionID, count)
 		}
 		if err != nil {
 			return err
 		}
 		var ns, name any
-		wakeEligible := wakeCaller != nil && op != "stop_runner_session"
+		wakeEligible := wakeCaller != nil
 		if wakeEligible {
 			ns, name = wakeCaller.Namespace, wakeCaller.Name
 		}

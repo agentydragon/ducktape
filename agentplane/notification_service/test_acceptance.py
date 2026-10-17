@@ -432,13 +432,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     if entry.event.HasField("command_admitted")
                 ]
                 assert admitted.count(page["notice"]["command_id"]) == 1
-                await dispatcher.stub.StopRunnerSession(
-                    session_dispatcher_pb2.StopRunnerSessionRequest(
-                        sandbox=SANDBOX, session_id=session_id, command_id="stop"
-                    ),
-                    metadata=await bearer(dispatcher.token_file),
-                    timeout=dispatcher.request_timeout_s,
-                )
+                await native_session.shutdown()
 
 
 if __name__ == "__main__":

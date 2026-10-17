@@ -87,19 +87,17 @@ class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
         )
 
     @override
+    async def GetStatus(
+        self, request: runner_pb2.GetStatusRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.RunnerStatus:
+        return await self._forward("GetStatus", request, context, runner_pb2.RunnerStatus, RunnerService.GetStatus)
+
+    @override
     async def OpenSession(
         self, request: runner_control_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.OpenSessionResponse:
         return await self._forward(
             "OpenSession", request, context, runner_control_pb2.OpenSessionResponse, RunnerService.OpenSession
-        )
-
-    @override
-    async def ResumeSession(
-        self, request: runner_control_pb2.ResumeSessionRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.ResumeSessionResponse:
-        return await self._forward(
-            "ResumeSession", request, context, runner_control_pb2.ResumeSessionResponse, RunnerService.ResumeSession
         )
 
     @override
@@ -142,18 +140,6 @@ class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
     ) -> runner_control_pb2.InterruptTurnResponse:
         return await self._forward(
             "InterruptTurn", request, context, runner_control_pb2.InterruptTurnResponse, RunnerService.InterruptTurn
-        )
-
-    @override
-    async def StopRunnerSession(
-        self, request: runner_control_pb2.StopRunnerSessionRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.StopRunnerSessionResponse:
-        return await self._forward(
-            "StopRunnerSession",
-            request,
-            context,
-            runner_control_pb2.StopRunnerSessionResponse,
-            RunnerService.StopRunnerSession,
         )
 
 

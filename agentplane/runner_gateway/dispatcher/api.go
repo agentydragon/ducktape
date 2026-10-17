@@ -233,17 +233,6 @@ func (s *Service) ChangeReasoningEffort(ctx context.Context, request *dispatcher
 	return &dispatcherpb.ChangeReasoningEffortResponse{Dispatch: row}, nil
 }
 
-func (s *Service) StopRunnerSession(ctx context.Context, request *dispatcherpb.StopRunnerSessionRequest) (*dispatcherpb.StopRunnerSessionResponse, error) {
-	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetSandbox(),
-		&commandpb.Command{CommandId: request.GetCommandId(), Operation: &commandpb.Command_StopRunnerSession{
-			StopRunnerSession: &commandpb.StopRunnerSession{},
-		}})
-	if err != nil {
-		return nil, err
-	}
-	return &dispatcherpb.StopRunnerSessionResponse{Dispatch: row}, nil
-}
-
 func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSessionRequest) (*dispatcherpb.OpenSessionResponse, error) {
 	wake, err := s.caller(ctx)
 	if err != nil {
@@ -365,7 +354,7 @@ func (s *Service) InterruptTurn(ctx context.Context, request *dispatcherpb.Inter
 	if _, err := s.caller(ctx); err != nil {
 		return nil, err
 	}
-	if err := required(request.GetCommandId(), request.GetSessionId(), request.GetSandbox()); err != nil {
+	if err := required(request.GetCommandId(), request.GetSessionId(), request.GetSandbox(), request.GetTurnId()); err != nil {
 		return nil, err
 	}
 	current, err := s.sandbox(ctx, request.GetSandbox())
@@ -382,10 +371,6 @@ func (s *Service) InterruptTurn(ctx context.Context, request *dispatcherpb.Inter
 		&commandpb.Command{CommandId: request.GetCommandId(), Operation: &commandpb.Command_InterruptTurn{
 			InterruptTurn: &commandpb.InterruptTurn{TurnId: request.GetTurnId()},
 		}})
-	if status.Code(err) == codes.FailedPrecondition {
-		reason := "nothing_running"
-		return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP, Reason: &reason}, nil
-	}
 	if err != nil {
 		return nil, status.Error(status.Code(err), fmt.Sprintf("runner: %s", status.Convert(err).Message()))
 	}

@@ -100,4 +100,4 @@ async def gateway() -> AsyncIterator[Gateway]:
 async def driver(runner: Runner, gateway: Gateway) -> AsyncIterator[RunnerDriver]:
     """Drives `runner`, which dials `gateway` for the duration of the test."""
     async with dialing(runner, gateway):
-        yield RunnerDriver(gateway)
+        yield RunnerDriver(gateway, runner)

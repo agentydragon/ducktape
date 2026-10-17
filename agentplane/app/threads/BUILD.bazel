@@ -123,7 +123,6 @@ py_library(
         "//agentplane/app/threads/view:content",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:session_dispatcher_pb2",
-        "//agentplane/runner:harness",
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//protobuf",

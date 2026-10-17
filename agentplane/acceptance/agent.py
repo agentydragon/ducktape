@@ -175,12 +175,6 @@ class Agent:
                     continue
         raise AssertionError(f"the session's stream ended before the turn completed:\n{turn.transcript}")
 
-    async def resume(self) -> None:
-        """Reopen this Thread's existing runner session without changing its identity or cursor."""
-        async for attempt in runner_startup_retries():
-            with attempt:
-                await self._client.resume_thread(self._thread_id)
-
 
 def _completed(item: event_pb2.ItemCompleted, turn: Turn) -> None:
     match item.WhichOneof("outcome"):

@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
-import type { SandboxView, ThreadView } from "./client";
+import type { RunnerStatusView, SandboxView, ThreadView } from "./client";
 import type * as LiveModule from "./live";
 import type { Live, SandboxSnapshot } from "./live";
 import { SandboxRoute } from "./app";
@@ -132,7 +132,47 @@ async function render(
   sessions: (request: Request) => Promise<Response>,
   threadActions: (request: Request) => Promise<Response> = async () => new Response(null, { status: 204 }),
   claudePaused = false,
-  routeNavigation = false
+  routeNavigation = false,
+  runnerStatus: () => Promise<Response> = async () =>
+    Response.json({
+      runner_boot_id: "boot-visual-001",
+      processes: [
+        {
+          process_id: "process-claude-001",
+          pid: 4312,
+          harness: "HARNESS_CLAUDE",
+          state: "PROCESS_STATE_RUNNING",
+          assigned_session_ids: ["session-ready-001"],
+        },
+        {
+          process_id: "process-codex-002",
+          pid: null,
+          harness: "HARNESS_CODEX",
+          state: "PROCESS_STATE_STARTING",
+          assigned_session_ids: ["session-preparing-002"],
+        },
+      ],
+      sessions: [
+        {
+          session_id: "session-ready-001",
+          process_id: "process-claude-001",
+          native_session_id: "native-claude-001",
+          execution_state: "SESSION_EXECUTION_STATE_DORMANT",
+          active_turn_id: null,
+          failure_cursor: null,
+          busy: false,
+        },
+        {
+          session_id: "session-preparing-002",
+          process_id: "process-codex-002",
+          native_session_id: null,
+          execution_state: "SESSION_EXECUTION_STATE_PREPARING",
+          active_turn_id: null,
+          failure_cursor: null,
+          busy: false,
+        },
+      ],
+    })
 ): Promise<ReturnType<typeof vi.fn>> {
   vi.stubGlobal("EventSource", SilentEventSource);
   fetchMock.mockImplementation((request: Request) => {
@@ -163,6 +203,7 @@ async function render(
         ])
       );
     }
+    if (/^\/sandboxes\/(startup-test|other-test)\/runner-status$/.test(path)) return runnerStatus();
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);
     if (threadPath && request.method === "GET") {
       const threads = Array.isArray(live.snapshot.threads) ? live.snapshot.threads : [];
@@ -196,6 +237,14 @@ async function render(
   await act(async () => root.render(app()));
   rerender = async () => act(async () => root.render(app()));
   return onOpenThread;
+}
+
+function tab(label: string): HTMLButtonElement {
+  const found = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (node) => node.textContent === label
+  );
+  if (!found) throw new Error(`Missing ${label} tab`);
+  return found;
 }
 
 function newSession(): HTMLButtonElement {
@@ -247,6 +296,120 @@ it("resets the launch form when navigating directly between sandbox routes", asy
   const nextInstructions = container.querySelector('textarea[aria-label="Standing instructions"]');
   expect(nextInstructions).toBeInstanceOf(HTMLTextAreaElement);
   expect((nextInstructions as HTMLTextAreaElement).value).toBe("");
+});
+
+it("shows runner process and Session diagnostics, including a dormant Session", async () => {
+  await render(async () => Response.json([]));
+  await act(async () => tab("Status").click());
+  await vi.waitFor(() => expect(container.textContent).toContain("boot-visual-001"));
+  expect(container.textContent).toContain("Snapshot read at");
+  expect(container.textContent).toContain("Harness processes");
+  expect(container.textContent).toContain("PID 4312");
+  expect(container.textContent).toContain("process-claude-001");
+  expect(container.textContent).toContain("Codex");
+  expect(container.textContent).toContain("Starting");
+  expect(container.textContent).toContain("PID not started");
+  expect(container.textContent).toContain("session-ready-001");
+  expect(container.textContent).toContain("session-preparing-002");
+  expect(container.textContent).toContain("native-claude-001");
+  expect(container.textContent).toContain("Dormant");
+});
+
+it("refreshes the runner snapshot and replaces old process and Session details", async () => {
+  let status: RunnerStatusView = {
+    runner_boot_id: "boot-before-refresh",
+    processes: [
+      {
+        process_id: "process-before-refresh",
+        pid: 4312,
+        harness: "HARNESS_CLAUDE",
+        state: "PROCESS_STATE_RUNNING",
+        assigned_session_ids: ["session-before-refresh"],
+      },
+    ],
+    sessions: [
+      {
+        session_id: "session-before-refresh",
+        process_id: "process-before-refresh",
+        native_session_id: "native-before-refresh",
+        execution_state: "SESSION_EXECUTION_STATE_READY",
+        active_turn_id: null,
+        failure_cursor: null,
+        busy: false,
+      },
+    ],
+  };
+  await render(
+    async () => Response.json([]),
+    undefined,
+    false,
+    false,
+    async () => Response.json(status)
+  );
+  await act(async () => tab("Status").click());
+  await vi.waitFor(() => expect(container.textContent).toContain("session-before-refresh"));
+
+  status = {
+    runner_boot_id: "boot-after-refresh",
+    processes: [
+      {
+        process_id: "process-after-refresh",
+        pid: null,
+        harness: "HARNESS_CODEX",
+        state: "PROCESS_STATE_STARTING",
+        assigned_session_ids: ["session-after-refresh"],
+      },
+    ],
+    sessions: [
+      {
+        session_id: "session-after-refresh",
+        process_id: "process-after-refresh",
+        native_session_id: null,
+        execution_state: "SESSION_EXECUTION_STATE_PREPARING",
+        active_turn_id: null,
+        failure_cursor: null,
+        busy: false,
+      },
+    ],
+  };
+  const refresh = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Refresh"
+  );
+  if (!refresh) throw new Error("missing Refresh button");
+  await act(async () => refresh.click());
+  await vi.waitFor(() => expect(container.textContent).toContain("boot-after-refresh"));
+  expect(container.textContent).toContain("process-after-refresh");
+  expect(container.textContent).toContain("session-after-refresh");
+  expect(container.textContent).toContain("PID not started");
+  expect(container.textContent).not.toContain("session-before-refresh");
+  expect(container.textContent).not.toContain("process-before-refresh");
+});
+
+it("reports suspended runner diagnostics without a read or wake request", async () => {
+  readySandbox.operating_mode = "Suspended";
+  readySandbox.phase = "Suspended";
+  readySandbox.pod = null;
+  await render(async () => Response.json([]));
+  await act(async () => tab("Status").click());
+  await vi.waitFor(() =>
+    expect(container.textContent).toContain("Runner diagnostics are unavailable until it is running")
+  );
+  const paths = fetchMock.mock.calls.map(([request]) => [request.method, new URL(request.url).pathname]);
+  expect(paths).not.toContainEqual(["GET", "/sandboxes/startup-test/runner-status"]);
+  expect(paths).not.toContainEqual(["POST", "/sandboxes/startup-test/resume"]);
+});
+
+it("reports backend runner diagnostics failures as unavailable", async () => {
+  await render(
+    async () => Response.json([]),
+    undefined,
+    false,
+    false,
+    async () => Response.json({ detail: "runner connection unavailable" }, { status: 503 })
+  );
+  await act(async () => tab("Status").click());
+  await vi.waitFor(() => expect(container.textContent).toContain("Runner diagnostics unavailable"));
+  expect(container.textContent).toContain("runner connection unavailable");
 });
 
 /** The JSON body of the first POST the page made to the sessions endpoint. */
@@ -364,7 +527,7 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   const menuButton = actionButton();
   if (!menuButton) throw new Error("Missing retained Session actions menu");
   await act(async () => menuButton.click());
-  expect((menuItem("Stop harness before archiving") as HTMLButtonElement).disabled).toBe(true);
+  expect((menuItem("Wait for the active turn to finish before archiving") as HTMLButtonElement).disabled).toBe(true);
   await act(async () => menuButton.click());
 
   // History outlives the Sandbox row itself. Removing the Sandbox must not hide authored Threads.
@@ -582,21 +745,42 @@ it("hides an archived thread's session by default, reveals it via Show archived,
   ]);
 });
 
-it("disables archiving a thread while its harness is running", async () => {
+it("allows archiving an idle Session while its harness is running", async () => {
   live.snapshot.threads = [thread({ id: "existing-session", harness_state: "HARNESS_STATE_RUNNING" })];
+  const archiveRequests: Request[] = [];
+  await render(
+    async () => Response.json({ detail: "History owns the Sandbox inventory" }, { status: 500 }),
+    async (request) => {
+      archiveRequests.push(request);
+      return new Response(null, { status: 204 });
+    }
+  );
+  const menuButton = [...container.querySelectorAll("button")].find(
+    (node) => node.getAttribute("aria-label") === "More actions for existing-session"
+  );
+  if (!menuButton) throw new Error("Missing per-session actions menu");
+  await act(async () => menuButton.click());
+  const archiveItem = menuItem("Archive");
+  expect(archiveItem).toBeInstanceOf(HTMLButtonElement);
+  expect((archiveItem as HTMLButtonElement).disabled).toBe(false);
+  await act(async () => archiveItem.click());
+  expect(archiveRequests.map((request) => [request.method, new URL(request.url).pathname])).toEqual([
+    ["POST", "/threads/existing-session/archive"],
+  ]);
+});
+
+it.each([
+  [{ active_turn_id: "turn-1" }, "Wait for the active turn to finish before archiving"],
+  [{ setup_state: "SETUP_STATE_RUNNING" }, "Wait for setup to finish before archiving"],
+] as const)("blocks archiving when Session work is visible: %o", async (overrides, reason) => {
+  live.snapshot.threads = [thread({ id: "existing-session", harness_state: "HARNESS_STATE_RUNNING", ...overrides })];
   await render(async () => Response.json({ detail: "History owns the Sandbox inventory" }, { status: 500 }));
   const menuButton = [...container.querySelectorAll("button")].find(
     (node) => node.getAttribute("aria-label") === "More actions for existing-session"
   );
   if (!menuButton) throw new Error("Missing per-session actions menu");
   await act(async () => menuButton.click());
-  const archiveItem = menuItem("Stop harness before archiving");
-  expect(archiveItem).toBeInstanceOf(HTMLButtonElement);
-  expect((archiveItem as HTMLButtonElement).disabled).toBe(true);
-  await act(async () => archiveItem.click());
-  expect(
-    fetchMock.mock.calls.some(([request]) => new URL((request as Request).url).pathname.endsWith("/archive"))
-  ).toBe(false);
+  expect((menuItem(reason) as HTMLButtonElement).disabled).toBe(true);
 });
 
 it("defaults new sessions to an offered harness while retaining existing Claude threads", async () => {

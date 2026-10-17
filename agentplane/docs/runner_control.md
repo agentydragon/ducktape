@@ -7,7 +7,7 @@ lifecycle requests (`runner_gateway/gateway/tunnel.go`) for Sandboxes routed to 
 dials it at `--control-target` (`runner/control.py`), which every runner `SandboxTemplate` passes
 (`cluster/cdk8s/agentplane/platform_routes.py`); runner Pods admit no connections. This is the contract it implements. It
 covers command delivery, authentication, connection ownership, lifecycle
-requests (listing, opening, resuming and sealing Sessions), and the push of Events to the runner's
+requests (listing, reserving and sealing Sessions), and the push of Events to the runner's
 ingress.
 
 ## Shape
@@ -17,7 +17,7 @@ The runner dials out to two endpoints its Sandbox names. It pushes its journals'
 commands and lifecycle requests. Each runner process is a gRPC client of the Runner Gateway and
 holds one HTTP/2 connection to it. On that connection it keeps one long-lived bidirectional
 `Connect` stream. Events never travel on it, so no event catch-up can starve a command. No
-operation creates a Session or starts a stopped harness.
+control-stream reconnect creates a Session or starts a harness by itself.
 
 The runner serves the `Runner` service, and the gateway calls it **through** `Connect`: each unary
 call travels as a `Call` frame and comes back as a `Reply` with the call's gRPC status
@@ -32,13 +32,12 @@ service RunnerControl {
 service Runner {
   rpc ListSessions(runner.ListSessionsRequest) returns (runner.ListSessionsResponse);
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
-  rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
+  rpc GetStatus(runner.GetStatusRequest) returns (runner.RunnerStatus);
   rpc Quiesce(runner.QuiesceRequest) returns (runner.QuiesceResponse);
   rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
   rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
   rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
   rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse);
-  rpc StopRunnerSession(StopRunnerSessionRequest) returns (StopRunnerSessionResponse);
 }
 
 message RunnerFrame {
@@ -375,34 +374,38 @@ No routing record is kept: runners dial out, so nothing is routed inbound.
 
 ## Lifecycle operations
 
-Status: **built.** The Runner Gateway makes every Session call through the
-control stream (`runner_gateway/gateway/tunnel.go`). A runner fails `OpenSession` for a Session it created but could not
-start; asked again, it confirms the Session and starts the stopped harness. The App and the Notification
-Service reach the holder through the control Service (`control_target`, a required setting).
+The Runner Gateway makes Session calls through the control stream. App and Notification callers
+reach the holder through the control Service (`control_target`, a required setting).
 
-Each operation is its own `Runner` method:
+- `ListSessions` reads retained Session inventory.
+- `GetStatus` reads a coherent live snapshot of process incarnations, Session assignments and
+  execution status. It never wakes the Sandbox or starts a harness.
+- `OpenSession` durably reserves or confirms the immutable Session configuration. Its response
+  does not assert native conversation creation or process readiness.
+- `SubmitInput` durably admits work before the runner starts/resumes its harness and reconciles
+  native evidence. Startup/delivery failures are later journaled outcomes. Caller disconnect does
+  not abandon admitted work. Model/effort changes use the same runner-owned preparation path.
+- `InterruptTurn` requires the exact active turn. A stale target fails `FAILED_PRECONDITION` before
+  admission. An already admitted retry returns its original receipt; native dispatch cannot affect
+  a successor turn. It never starts a harness.
+- `Quiesce` fences, interrupts active turns, stops harnesses and seals journals. Running Session
+  setup and Sandbox bootstrap finish naturally before teardown completes; they are not cancelled.
+  It waits for preceding admissions; subsequent new-work calls fail `ABORTED`. Final ingress acknowledgement
+  is required for `QUIESCED`.
 
-- `ListSessions` reads.
-- `OpenSession` creates a Session with a spec and starts it once the Sandbox's
-  bootstrap, which the runner began at start, has succeeded; an existing Session is confirmed and its
-  stopped harness started.
-- `ResumeSession` restarts a stopped harness on its retained spec.
-- `Quiesce` fences, interrupts active turns, stops every harness and setup, and seals every journal.
+Only the replica holding the runner's stream calls it. Callers reach that replica through the
+Sandbox's control Service. Transport reconnect never replays calls; durable command retry uses the
+original command ID. Process identities in diagnostics are per-spawn UUIDs, not command addresses.
+Stored native conversations may be dormant while their store's app server is running. A Session
+becomes ready after its native conversation preparation/reconciliation, without needing a turn.
 
-Only `OpenSession` and `ResumeSession` create a Session or start a harness. The runner orders `Quiesce` by arrival: it waits for every command admission
-already under way, and every call that arrives after it that starts or resumes work is refused
-with `ABORTED` at once, so no command delivered before it lands after it and none after it is lost
-silently. Only the replica holding the runner's stream calls the runner: callers reach it through the Sandbox's control Service
-([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Calls are bounded by the
-calling RPC's deadline, like command deliveries, and a reconnect replays none of them.
-
-| Caller/path                    | Control operation                                  |
-| ------------------------------ | -------------------------------------------------- |
-| App and Notification inventory | `ListSessions`                                     |
-| Session Dispatcher opening     | `OpenSession` with the admitted Session ID         |
-| App explicit resume            | `ResumeSession`                                    |
-| Teardown sealing               | `Quiesce`, repeated until every Session is flushed |
-| Dispatcher command delivery    | Matching per-operation Runner RPC                  |
+| Caller/path                    | Control operation                                   |
+| ------------------------------ | --------------------------------------------------- |
+| App and Notification inventory | `ListSessions`                                      |
+| App Sandbox diagnostics        | `GetStatus`                                         |
+| Session Dispatcher opening     | `OpenSession` with the admitted Session ID          |
+| Teardown sealing               | `Quiesce`, repeated until journals are acknowledged |
+| Dispatcher command delivery    | Matching per-operation Runner RPC                   |
 
 The VM experiment's runtime acceptance drives the guest runner directly through a port-forward and
 moves with the selected VM control path.

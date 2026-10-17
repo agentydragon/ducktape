@@ -188,8 +188,8 @@ ingress has acknowledged it.
 
 | Once quiescing has begun, the runner                                                 |
 | ------------------------------------------------------------------------------------ |
-| refuses `OpenSession`, `ResumeSession` and any command that starts or continues work |
-| accepts interrupts and `StopRunnerSession` (both drain), and repeated `Quiesce`      |
+| refuses `OpenSession` and any command that starts or continues work                  |
+| accepts guarded interrupts (draining work), and repeated `Quiesce`                   |
 | answers a redelivered `command_id` it already admitted, rather than refusing it      |
 | answers reads (`ListSessions`), which today wait for an in-progress `Seal`           |
 | interrupts active turns, stops harnesses, finalizes journals, pushes through cursors |
@@ -260,20 +260,20 @@ Rollout, reader before writer:
 
 The legacy shape carries a removal node.
 
-**Setup and bootstrap meet quiesce**. A Sandbox is not suspendable until its Sandbox-level
-bootstrap has succeeded or failed, and a suspend also waits for every Session's setup to complete; deletion waits
-for neither. Quiesce would otherwise cancel a running setup (`SetupInterrupted`) and `Runner.resume` refuses a
-Session whose setup is `FAILED` or `INTERRUPTED` (`SetupFailedError`), and an interrupted bootstrap is terminal,
-so a suspend during either would permanently lose the Session or the Sandbox. Running setup and bootstrap also
-count as busy for idle suspension. Delete interrupts them, since the Sandbox is going away.
+**Setup and bootstrap meet quiesce**. Orderly suspension, deletion quiesce and runner shutdown let
+running Sandbox bootstrap and Session setup finish naturally. They must not deliberately interrupt
+non-transactional initialization. Unexpected process loss can still leave a script interrupted;
+that outcome is terminal and the script is never silently rerun. Running setup and bootstrap also
+count as busy for idle suspension.
 
 How the wait works. `RunnerFacts` carries a Sandbox-level fact for the setups running.
 While an operator suspend waits for it and for the bootstrap, the controller holds `Ready` False with reason
 `SuspendPending`. The Dispatcher already waits on `Ready`, so it stops delivering, new `OpenSession` included, and
 the wait is bounded by the setups already running; the runner needs no mode of its own. That bound holds only if the
 Dispatcher is the only caller of the runner's `OpenSession` (D4). A
-setup that never ends makes the suspend wait forever and leaves delete working, which is intended. An automatic
-suspend needs none of it: a running setup is busy, so the conditional `Quiesce` refuses.
+setup that never ends keeps orderly suspension or deletion draining until it completes. An automatic
+suspend needs none of it: a running setup is busy, so the conditional `Quiesce` refuses. The runner
+also waits for bootstrap when there are no Session journals to seal.
 
 ### Reopening a sealed journal
 
@@ -345,18 +345,12 @@ the invariant that makes `Quiesced` safe, and option 2 would need option 1's pat
 **Commands that meet lameduck.** Three states differ. A command admitted but not yet dispatched stays pending in
 the journal (#10341); the next incarnation does not dispatch it, since the conversation has moved on, and the
 Dispatcher fails it with the reason `ended_by_teardown`. A command dispatched and in flight ends its turn as
-`ended_by_teardown`. A refused send is retried after resume. A `StopRunnerSession` that
-completes as a no-op (nothing running, or Sandbox suspended) ends in the delivery state `NO_OP` (D4). An
-`InterruptTurn` is never stored: its outcome (`NO_OP`, or delivered) is its RPC response, in the same state
-names, with no durable record.
+`ended_by_teardown`. A refused send is retried after Sandbox resume. Dispatcher does not queue interrupts; it returns
+immediate delivery/no-op evidence. Runner admission and outcome remain durable.
 
-**Order per Session**. Inputs and model changes to one Session deliver in FIFO order.
-`InterruptTurn` is delivered at once when the Sandbox is `Ready`, else it ends `NO_OP`; it is never queued or stored
-and bypasses the FIFO, so stopping a runaway turn depends on neither the Dispatcher's database nor anything ahead of it
-(the command names its turn, and a runner does not carry an interrupt forward to a later one). `StopRunnerSession`
-stays durable and goes ahead of the line: it cancels the Session's earlier undelivered inputs, which end
-`CANCELLED_IN_DISPATCHER` with the reason `stopped`, because delivering them would restart the harness the user
-just stopped.
+**Order per Session.** Inputs and model changes deliver in FIFO order. `InterruptTurn` bypasses the
+Dispatcher queue, names the exact active turn and never wakes a Sandbox. A stale target is rejected
+with `FAILED_PRECONDITION` before runner admission. An admitted interrupt cannot affect a successor.
 
 Sequence for suspend and delete:
 
@@ -446,185 +440,17 @@ Sandbox's name, the gateway and the Kubernetes API. Idle policy is the controlle
 **Required or optional.** Decided (operator, 2026-10-14): _required for senders, not for the platform._ Production
 senders use the Dispatcher's command RPCs, so ordinary message delivery has one set of semantics:
 accepted, then delivered, or failed with a reason. The runner proxy at the Gateway remains the
-network path to the runner. The selected target is that only Dispatcher starts or continues work
-(`OpenSession`, `ResumeSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`); the controller
-alone calls `Quiesce`; `InterruptTurn`, `StopRunnerSession` and reads stay open to system callers and
-diagnostics. The app's explicit native resume directly calls `Runner.ResumeSession` through the proxy.
-This remains a direct start-work caller and blocks narrowing that method to Dispatcher alone until
-its method-level authorization has an explicit disposition. Track that gate in the
-[control-surface audit](control_surface_retirement.md).
+network path to the runner. Dispatcher owns ordinary work submissions (`OpenSession`, `SubmitInput`,
+`ChangeModel`, `ChangeReasoningEffort`); the runner owns native preparation after admission. The
+controller calls `Quiesce`; guarded `InterruptTurn` and reads remain separately authorized.
 
-Target Runner surface after the remaining direct callers and authorization gate are resolved:
-
-| `Runner` method                                       | After the Dispatcher                                                                                |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` | Dispatcher only                                                                                     |
-| `InterruptTurn`, `StopRunnerSession`                  | Dispatcher (senders); direct for system callers; never wake a Sandbox                               |
-| `OpenSession`                                         | Dispatcher only                                                                                     |
-| `ResumeSession`                                       | Dispatcher for command delivery; app's explicit user action remains direct through the Runner Proxy |
-| `Quiesce`                                             | Sandbox Controller only                                                                             |
-| `ListSessions`                                        | direct; reads need no wake                                                                          |
-
-A deployment with no Dispatcher is a valid reduced configuration, because the runner, gateway and controller do
-not depend on the Dispatcher. Idle policy is the controller's, so such a Sandbox still suspends when idle, and only
-an explicit resume wakes it: there is no wake-on-send. That optionality costs nothing in code: absent callers.
-
-**The Dispatcher's RPC surface.** Callers state intent; waking, resuming and delivering are internal steps:
-
-- `OpenSession(session_id, sandbox, spec, setup_script?)`: stores the Session's creation durably and
-  returns `QUEUED`. The client mints the Session ID, as everywhere (invariant: one ID, client-minted),
-  which makes it idempotent: a retry with the same payload returns the same record, and another Sandbox,
-  spec or setup script for a known ID is refused. The Dispatcher waits for the Sandbox to be `Ready`
-  (resuming it where the sender may wake it) and calls the runner's `OpenSession`, which is itself
-  idempotent within one runner build (the runner composes the stored instructions from its own platform text, so a
-  redelivery to an incarnation of another image can answer `ALREADY_EXISTS` for a Session that matches; the
-  Dispatcher treats that as opened after a `ListSessions` check that the Session is on the runner). The Dispatcher's `OpenSession` is a different RPC from the runner's of the same name
-  (the name is kept): it queues, the runner's executes.
-- One RPC per command, mirroring the runner's: `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`,
-  `InterruptTurn` and `StopRunnerSession`, each taking `(command_id, session_id, <that command's fields>)`.
-  Each stores the command durably and returns `QUEUED`; none waits for delivery. `command_id` is the
-  idempotency key across all of them: a retry of the same operation and payload returns the same record, and
-  the same ID under another operation or payload fails `ALREADY_EXISTS`, as the runner's own admission
-  does. The Dispatcher resolves the Session's Sandbox from its own record or the History Service's Session
-  directory, resumes the Sandbox if suspended (where the sender may wake it), waits for `Ready`, resumes a
-  stopped harness, and calls the runner's RPC of the same name. `ChangeModel` and `ChangeReasoningEffort` are
-  start-or-continue-work commands like `SubmitInput`: a setting change to a Session on a suspended Sandbox wakes the
-  Sandbox where the sender may wake it and starts the harness. Rejected: applying the change
-  to the retained spec with no wake, which needs a new runner path (the runner records a model or effort change only
-  after the harness confirms it) and a hold in the Dispatcher for suspended Sandboxes. An unknown Session fails `NOT_FOUND`; a
-  command queued behind its Session's `OpenSession` waits for it. A notification is a `SubmitInput` from a
-  different caller, authorized by caller identity, so it has no RPC of its own. `InterruptTurn` and `StopRunnerSession` never wake a suspended Sandbox: with nothing running there is nothing to interrupt or stop, so they complete as no-ops. `InterruptTurn` is the exception to "stores the command durably": it is delivered at once or reports `NO_OP` in its response.
-- `GetDispatch`, `WatchDispatches` (stream, by Session or Sandbox), `ListDispatches`, `CancelDispatch`
-  (not once delivery is ambiguous). A Session's open is a dispatch like a command, with the same states.
-
-**Delivery states** (operator, 2026-10-14: each name says where the command is). One vocabulary for every
-dispatch, a command or a Session creation, recorded by the Dispatcher:
-
-| State                     | Meaning                                                                                                                                       | Survives an incarnation ending                         |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `QUEUED_IN_DISPATCHER`    | Stored durably, not yet sent. A reason says what it waits for: Sandbox suspended, resuming, not `Ready`, or `wakeOnSend` off                  | yes (Dispatcher database)                              |
-| `DELIVERING_TO_RUNNER`    | A call to the runner is in flight                                                                                                             | no: back to `QUEUED_IN_DISPATCHER` if the call is lost |
-| `RUNNER_ADMITTED`         | The runner journaled it (today's `CommandAdmitted`). Terminal for commands with no model-context step                                         | yes (runner journal on the state volume)               |
-| `HARNESS_CONFIRMED`       | It reached the model's context (today's `harness_user_message_confirmed`). Only `SubmitInput` gets here                                       | yes (History Service)                                  |
-| `NO_OP`                   | Nothing to do, e.g. `InterruptTurn` or `StopRunnerSession` on a suspended Sandbox or with nothing running; a reason says where it was decided | yes                                                    |
-| `FAILED`                  | Terminal, with a reason that names where it failed, e.g. `ended_by_teardown` for an admitted-but-undispatched command                         | yes                                                    |
-| `CANCELLED_IN_DISPATCHER` | Cancelled before delivery began, by its sender or by a later `StopRunnerSession`; a reason says which                                         | yes                                                    |
-| `UNKNOWN`                 | Only for a deleted Sandbox, whose journal can no longer answer a redelivery                                                                   | yes                                                    |
-
-Transitions: `QUEUED_IN_DISPATCHER → DELIVERING_TO_RUNNER → RUNNER_ADMITTED → HARNESS_CONFIRMED`. A refusal because
-the runner is quiescing returns `DELIVERING_TO_RUNNER` to `QUEUED_IN_DISPATCHER`, a retry rather than a failure.
-`QUEUED_IN_DISPATCHER → NO_OP` for a stop that finds nothing to do; an interrupt that finds nothing to do reports `NO_OP` in its response. Redelivery of a `command_id`
-after a lost reply resolves from the runner's journal, which is why `UNKNOWN` is rare.
-
-**Where a new Session's spec comes from.** `OpenSession` carries it, from the caller (the app resolves its
-presets into a concrete `SessionSpec` first; the Dispatcher knows no preset). The Dispatcher stores it on the Session's
-`OpenSession` dispatch row and does not interpret it. Decided (operator, 2026-10-14): the app stores nothing per
-Sandbox; it resolves the full `SessionSpec` at launch from the preset label and the config catalog. Per-Sandbox
-overrides, if they are ever needed, would go in an app database table keyed by Sandbox UID.
-
-**The Dispatcher watches the Sandbox CR.** It learns a Sandbox's state through the shared
-`util.kubernetes_watch.ListWatch` on `sandboxes`, as the app (`app/live.py`) already does, reading the `Ready` condition with its reason and
-`status.incarnation`. Its ServiceAccount gets one `get/list/watch` rule on `sandboxes`, and its one write is the wake (`spec.running`, `wakeGeneration`) through the helper.
-
-**The Dispatcher never creates Sandboxes.** The Sandbox named in `OpenSession` must exist; a missing one
-fails the dispatch. Creating, deleting and templating Sandboxes stays with the app. The Dispatcher
-only wakes a suspended one. It needs a Sandbox _name_, never an address; the gateway resolves the
-name from the dialed host.
-
-**Who writes desired state.** Decided (operator, 2026-10-14): there is no Sandbox Service. The app creates, deletes,
-suspends and resumes Sandboxes through the Kubernetes API itself, as it already writes PolicyBindings for egress grants.
-The Dispatcher wakes a suspended Sandbox by patching `spec.running` and `spec.wakeGeneration` with the same helper.
-Requesters (the app; the Dispatcher for a send) write `spec`; the controller writes `status`, and the runner and the
-gateway publish facts on the Lease that the controller folds. "Layers that act on CRs do not edit them" holds for the
-controller, gateway and runner. What it costs:
-
-- The Service's checks (name format and length, script size, harness, template exists, default policy sets) and its
-  idempotent create move to the app. The controller keeps rejecting what it cannot run, and static limits can live in the
-  CRD schema.
-- The app's Role gains `create/patch/delete` on `sandboxes`, `list` on `sandboxtemplates` and `get` on the KubeVirt console subresource; the Dispatcher's gains
-  `patch` on `sandboxes` beside `get/list/watch`. RBAC cannot narrow a patch to two fields, so each can write any field
-  of any Sandbox, which no Service call allowed.
-- One helper serves both: the UID- and resourceVersion-guarded `spec.running` patch, the `wakeGeneration` bump, and the
-  advisory refusal while the Sandbox is quiescing (a retryable error to its caller; the controller enforces).
-- The phase derivation is shared code, not an RPC. The app refuses to delete a running Sandbox and allows an idle-suspended
-  one. The Notification Service reads its one Sandbox through the shared `SandboxReader`. The VM serial console moves into
-  the app.
-
-**Placement.** Callers pass the Sandbox when they know it (the app resolves Thread to Session to
-Sandbox through the History Service already). The Dispatcher falls back to the History Service's
-Session directory when they do not. A Session that is only queued for creation is known to the
-Dispatcher alone until its runner pushes, so the `OpenSession` dispatch row is authoritative until the History
-Service's directory has the Session.
-
-**The queue is bounded.** Decided (operator, 2026-10-14): the Dispatcher holds at most about 1,000
-`QUEUED_IN_DISPATCHER` commands per Session and refuses to enqueue past that, with `RESOURCE_EXHAUSTED` and a detail
-naming the Session and the cap. The
-cap counts queued commands only: delivered and terminal rows do not count, `InterruptTurn` is never stored, and
-`StopRunnerSession` is exempt so a full queue can still be cleared.
-
-**No TTL; a deleted Sandbox ends its queue.** Decided (operator, 2026-10-14): a queued command waits until it is
-delivered, however long that takes. The one exception is a Sandbox that is gone from Kubernetes entirely: the
-Dispatcher's watch on the Sandbox CR delivers the deletion, and it ends the Sandbox's `QUEUED_IN_DISPATCHER` commands
-as `FAILED` with the reason `sandbox_deleted` (they never reached a runner, and `FAILED` names where the failure was
-decided; `CANCELLED_IN_DISPATCHER` is for a sender or a later `StopRunnerSession`). A command in
-`DELIVERING_TO_RUNNER`, or in `RUNNER_ADMITTED` and not yet `HARNESS_CONFIRMED` (which can never arrive once the state
-volume is gone), has an unknown outcome and becomes `UNKNOWN`: deletion ends every non-terminal row of the Sandbox. The cleanup
-runs off the watch event, not a timer, and the Dispatcher's relist at start ends the queue of a Sandbox deleted while it
-was down. A sender watching the dispatch sees the terminal state and the reason. A new command to a missing Sandbox fails
-the same way at once, as `OpenSession` does above. Each dispatch row is keyed to the Sandbox's name and UID, because a
-name is free again after delete: otherwise a Sandbox deleted and recreated under one name while the Dispatcher was down
-would look, on relist, like the same Sandbox, and the old queue would be delivered into the new one.
-
-**Dispatch rows are kept while their Sandbox exists.** Decided (operator, 2026-10-14): for now no row is deleted while
-its Sandbox exists, since it is comparatively little data, and a different policy may come later. A row serves the
-sender (status reads and `command_id` idempotency on a retried RPC) and the `OpenSession` window above, so a retried
-`OpenSession` or command always finds its record for as long as the Sandbox lasts. Candidates for a later policy:
-delete terminal rows after a window, or once the History Service has them. Design default, not the operator's ruling:
-on the Sandbox's deletion event the Dispatcher ends its non-terminal rows (published on `WatchDispatches`), then deletes
-all of its rows, so a watcher sees the reason and a later `GetDispatch` is `NOT_FOUND`.
-
-**History Service dependency.** Delivery does not need it: admission is the runner's receipt, and
-placement is passed or looked up. Placement lookup and the reading of final-cursor acks (already required
-for any suspend or delete) are the only touches. For idle policy the controller should not derive
-activity from history at all (below), so idle policy and the Dispatcher run with the History Service down, except
-that, as today, nothing can finish quiescing while the ingress is down. An outage therefore stops a quiesce from
-finishing, not messaging: a Sandbox keeps accepting messages until its quiesce enters lameduck. There is no
-ingress-health gate before an automatic suspend (accepted as a trade): an automatic
-quiesce started during a History Service outage can sit in lameduck, refusing new work, until the outage ends.
-
-**Idle signal.** Two different things get called "last active":
-
-- _Busyness_: is any turn, command, background process or attached terminal active in this runner
-  right now? The runner knows authoritatively and the controller must have it without the History
-  Service.
-- _Last model activity_: a folded timestamp the UI and notification quiet-window read. The History
-  Service owns it.
-
-Decided (operator, 2026-10-14): suspension uses the first: the runner publishes `idleSince`, absent while it is busy
-(carried like other runner facts in D2), and the Sandbox Controller runs the timer against
-`spec.idleSuspendAfter`, then suspends through the D3 sequence. The facts that define idleness live in the runner and
-Lease; the elapsed time is controller memory, from its first sight of each `idleSince` value, so a restart starts the
-wait over. `idleSuspendAfter` is at least a minute, which bounds how often a refused or failing request repeats.
-The Dispatcher keeps no pending mark
-and the controller reads nothing from it; a message racing a suspend is handled by the conditional `Quiesce` (D3).
-
-**Per Session and per Sandbox.** The UI shows the idle time of a _Session_; suspension needs the aggregate over _all Sessions_ in the Sandbox. The runner computes both from the same per-Session facts: a Sandbox is busy while any Session is busy, and its `idleSince` is when the last of them went idle. Only the Sandbox aggregate goes on the Lease. Per-Session idle times stay out of Kubernetes (the boundary in requirement 8): their number is unbounded, they change with every turn, and no controller decision needs them. The activity stream is the History Service's: it already folds the runner's events into `SessionSummary` (`last_turn_status`, `last_model_activity_at`) and serves `watch_session_summaries`, so a per-Session `idleSince`, derived from the turn start and end events it ingests, is one more folded field on that summary and the stream carries it to listeners (the UI, the notification service). It is display-only: suspension never reads it. While a Sandbox is suspended nothing new is ingested, so each Session reads idle since its last turn ended.
-
-**Separate service or merge with the gateway.** Decided (operator, 2026-10-14): **separate**. "Both required" is not an
-argument to merge: required-ness says nothing about failure domain, state or replica shape. The gateway stays stateless
-and database-free, keeps working through a Dispatcher or History outage, and keeps its "never wakes a Sandbox" promise;
-the Dispatcher has one active owner per Sandbox without constraining gateway replicas. The cost is one more hop and a
-second Deployment with its own database. Multiple Dispatcher replicas shard Sandboxes by a per-Sandbox Lease, as the
-gateway fences connection epochs. Rejected: in the gateway (it would gain a database and the power to resume Sandboxes,
-and couple queue ownership to connection-holder replicas, which are sharded for a different reason); in the Sandbox
-Controller (a leader-elected reconciler with no database would gain a queue; idle policy, which needs none, does belong
-there); a CR per queued message (per-Session data in Kubernetes, against the stated boundary, at etcd's write rate).
-
-**Who may wake.** The Dispatcher knows the sender's identity, so it enforces which kinds of sender may
-resume a Sandbox (user message and notification yes; agent message no unless decided). Its ServiceAccount holds `patch` on `sandboxes` and the Dispatcher writes only `spec.running` and
-`spec.wakeGeneration`; RBAC cannot narrow it to those fields (above); the app writes the rest of desired state. A Sandbox with `spec.wakeOnSend: false` is not woken by a send:
-the Dispatcher queues the message and the Sandbox stays suspended. The setting doubles as the feature gate for
-wake-on-send, so the Dispatcher can land with waking off.
+| `Runner` method                                       | Caller/path                                 |
+| ----------------------------------------------------- | ------------------------------------------- |
+| `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` | Dispatcher ordinary command delivery        |
+| `InterruptTurn`                                       | Immediate guarded delivery; no Sandbox wake |
+| `OpenSession`                                         | Dispatcher durable Session reservation      |
+| `Quiesce`                                             | Sandbox Controller only                     |
+| `ListSessions`, `GetStatus`                           | Authorized direct reads; no wake            |
 
 ### D5. Where each fact lives
 
@@ -766,7 +592,8 @@ sequenceDiagram
     K->>CR: patch spec.running and wakeGeneration (an idle-suspended Sandbox needs the bump)
     CR-->>C: change seen on the watch
     C->>C: new incarnation, Ready for this incarnation
-    K->>R: ResumeSession, then SubmitInput (same command_id)
+    K->>R: SubmitInput (same command_id)
+    R->>R: admit, prepare harness, reconcile and deliver
     R-->>K: admission
     K->>K: mark delivered
 ```
@@ -775,7 +602,7 @@ sequenceDiagram
 
 - **Wake cost and abuse.** Resume starts a Pod or VM and every harness. Notifications and agent
   messages can wake Sandboxes in bulk; rate limits, per-sender quotas and per-Session lazy
-  `ResumeSession` (only Sessions with pending work) are needed. A resume storm also hits scheduling
+  harness preparation (only Sessions with pending work) are needed. A resume storm also hits scheduling
   and the state volume's node.
 - **Resume can be impossible.** With node-local volumes the Sandbox can only resume where its PVC
   lives; the node may be down or full. Queued commands have no TTL (decided in D4); they wait in
@@ -812,7 +639,7 @@ sequenceDiagram
 | Suspend waits for the bootstrap and every Session's setup; delete does not                                       | Decided | 2026-10-13 | D3             |
 | A waiting suspend holds `Ready` False with `SuspendPending`                                                      | Decided | 2026-10-14 | D3             |
 | Refusal codes: `ABORTED` for lameduck and a failed conditional `Quiesce`, `FAILED_PRECONDITION` terminal         | Decided | 2026-10-14 | D3             |
-| `InterruptTurn` bypasses the queue; `StopRunnerSession` goes ahead of the line                                   | Decided | 2026-10-14 | D3             |
+| `InterruptTurn` bypasses the queue and retains its exact-turn guard                                              | Decided | 2026-10-14 | D3             |
 | Delivery state names (`QUEUED_IN_DISPATCHER` and the rest)                                                       | Decided | 2026-10-14 | D4             |
 | `ChangeModel` and `ChangeReasoningEffort` start a stopped harness                                                | Decided | 2026-10-14 | D4             |
 | The Dispatcher watches the Sandbox CR                                                                            | Decided | 2026-10-14 | D4             |

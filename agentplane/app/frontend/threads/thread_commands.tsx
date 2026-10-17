@@ -8,7 +8,6 @@ import {
   CommandSubmissionRefused,
   displayableError,
   interruptTurn,
-  stopRunnerSession,
   submitInput,
   type CommandSubmission,
 } from "../client";
@@ -39,7 +38,6 @@ interface ProjectedCommands {
   submitInput: (text: string) => boolean;
   changeModel: (model: string) => boolean;
   changeReasoningEffort: (effort: string) => boolean;
-  stopRunnerSession: () => boolean;
   interruptTurn: (turnId: string) => boolean;
   deliver: (value: LocalCommand) => Promise<void>;
   store: LocalCommands;
@@ -93,9 +91,6 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
             break;
           case "changeReasoningEffort":
             result = await changeReasoningEffort(threadId, commandId, operation.value.effort);
-            break;
-          case "stopRunnerSession":
-            result = await stopRunnerSession(threadId, commandId);
             break;
           case "interruptTurn":
             result = await interruptTurn(threadId, commandId, operation.value.turnId);
@@ -207,8 +202,6 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
       submit({ commandId: crypto.randomUUID(), operation: { case: "changeModel", value: { model } } }),
     changeReasoningEffort: (effort: string) =>
       submit({ commandId: crypto.randomUUID(), operation: { case: "changeReasoningEffort", value: { effort } } }),
-    stopRunnerSession: () =>
-      submit({ commandId: crypto.randomUUID(), operation: { case: "stopRunnerSession", value: {} } }),
     interruptTurn: (turnId: string) =>
       submit({ commandId: crypto.randomUUID(), operation: { case: "interruptTurn", value: { turnId } } }),
   };
@@ -469,7 +462,7 @@ function LocalControlRows({
                       ? `Set reasoning effort to ${operation.value.effort}`
                       : operation.case === "interruptTurn"
                         ? `Interrupt turn ${operation.value.turnId}`
-                        : "Shut down harness"}
+                        : "Session action"}
                 </Text>
                 <CommandOutcome
                   stage={progressStage(null, admitted, value.dispatch ?? value.interruptResult, issue)}
@@ -534,7 +527,7 @@ export function ProjectedControlCommand({
                   : "Reasoning effort change"
                 : row.state.operation === "interrupt_turn"
                   ? "Interrupt turn"
-                  : "Shut down harness"}
+                  : "Session action"}
           </Text>
           <CommandOutcome
             stage={progressStage(row.state.outcome, true)}

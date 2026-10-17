@@ -13,7 +13,6 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -191,19 +190,6 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 
-	resume := receiveTunnelCall(t, stream)
-	if resume.GetMethod() != "/agentplane.proto.runner_control.Runner/ResumeSession" {
-		t.Fatalf("queued command did not resume runner: %v", resume)
-	}
-	resumeResponse, err := proto.Marshal(&runnercontrolpb.ResumeSessionResponse{Attached: &runnerpb.Attached{SessionId: "session-queue"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := stream.Send(&runnercontrolpb.RunnerFrame{Frame: &runnercontrolpb.RunnerFrame_Reply{
-		Reply: &tunnelpb.Reply{CallId: resume.GetCallId(), Response: resumeResponse},
-	}}); err != nil {
-		t.Fatal(err)
-	}
 	input := receiveTunnelCall(t, stream)
 	var request runnercontrolpb.SubmitInputRequest
 	if err := proto.Unmarshal(input.GetRequest(), &request); err != nil {

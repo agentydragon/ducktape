@@ -54,6 +54,25 @@ func (oneSandbox) GetSandbox(_ context.Context, name string) (SandboxSnapshot, b
 	return SandboxSnapshot{Name: name, UID: sandboxUID}, true, nil
 }
 
+type blockedSandbox struct{}
+
+func (blockedSandbox) GetSandbox(_ context.Context, name string) (SandboxSnapshot, bool, error) {
+	if name != "sandbox-api" {
+		return SandboxSnapshot{}, false, nil
+	}
+	return SandboxSnapshot{Name: name, UID: sandboxUID, Blocker: "sandbox_suspended"}, true, nil
+}
+
+type rejectingRunner struct {
+	command *commandpb.Command
+	err     error
+}
+
+func (r *rejectingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
+	r.command = command
+	return nil, r.err
+}
+
 func testStore(t *testing.T, cap int) *Store {
 	t.Helper()
 	url := os.Getenv("AGENTPLANE_TEST_DATABASE_URL")
@@ -71,12 +90,6 @@ func testStore(t *testing.T, cap int) *Store {
 func input(id, value string) *commandpb.Command {
 	return &commandpb.Command{CommandId: id, Operation: &commandpb.Command_SubmitInput{
 		SubmitInput: &commandpb.SubmitInput{Text: value},
-	}}
-}
-
-func stop(id string) *commandpb.Command {
-	return &commandpb.Command{CommandId: id, Operation: &commandpb.Command_StopRunnerSession{
-		StopRunnerSession: &commandpb.StopRunnerSession{},
 	}}
 }
 
@@ -107,20 +120,14 @@ func TestAdmissionIsDurableAndIdempotent(t *testing.T) {
 	if _, err := store.Enqueue(ctx, "session-a", "sandbox-a", sandboxUID, input("overflow", "x"), nil); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("cap: %v", err)
 	}
-	if _, err := store.Enqueue(ctx, "session-a", "sandbox-a", sandboxUID, stop("stop"), nil); err != nil {
-		t.Fatal(err)
-	}
 	rows, err := store.ListDispatches(ctx, "session-a", "")
-	if err != nil || len(rows) != 4 {
+	if err != nil || len(rows) != 3 {
 		t.Fatalf("list: %v, %v", rows, err)
 	}
-	for _, row := range rows[:3] {
-		if row.State != CancelledState || row.Reason != "stopped" {
-			t.Fatalf("stop did not cancel %+v", row)
+	for _, row := range rows {
+		if row.State != QueueState {
+			t.Fatalf("accepted command was unexpectedly cancelled: %+v", row)
 		}
-	}
-	if rows[3].State != QueueState {
-		t.Fatalf("stop was not queued: %+v", rows[3])
 	}
 }
 
@@ -390,6 +397,41 @@ func TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts(t *testing.T) {
 	}
 }
 
+func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
+	resolver, err := auth.NewResolver(reviewedCaller{}, "dispatcher-audience", []string{"agentplane"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := auth.Account{Namespace: "agentplane", Name: "app"}
+	callers := map[auth.Account]struct{}{account: {}}
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer caller-token"))
+
+	blocked := &Service{
+		Auth: resolver, Callers: callers, WakeCallers: callers, Sandboxes: blockedSandbox{},
+	}
+	_, err = blocked.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
+		CommandId: "interrupt-empty-turn", SessionId: "api-session", Sandbox: "sandbox-api",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("empty turn_id status = %v, want InvalidArgument", err)
+	}
+
+	rejection := status.Error(codes.FailedPrecondition, "turn is no longer current")
+	runner := &rejectingRunner{err: rejection}
+	service := &Service{
+		Auth: resolver, Callers: callers, WakeCallers: callers, Sandboxes: oneSandbox{}, Runner: runner,
+	}
+	_, err = service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
+		CommandId: "interrupt-stale-turn", SessionId: "api-session", Sandbox: "sandbox-api", TurnId: "turn-stale",
+	})
+	if status.Code(err) != codes.FailedPrecondition || status.Convert(err).Message() != "runner: turn is no longer current" {
+		t.Fatalf("runner rejection = %v, want propagated FailedPrecondition", err)
+	}
+	if got := runner.command.GetInterruptTurn().GetTurnId(); got != "turn-stale" {
+		t.Fatalf("runner received turn_id %q, want turn-stale", got)
+	}
+}
+
 type testCatalog struct{ sandbox SandboxSnapshot }
 
 func (c testCatalog) GetSandbox(_ context.Context, name string) (SandboxSnapshot, bool, error) {
@@ -542,7 +584,7 @@ func TestWorkerRetainsBackoffAcrossUncertainReplies(t *testing.T) {
 	recorded := &recordingDelayQueue{TypedRateLimitingInterface: worker.queue}
 	worker.queue = recorded
 	for attempt, delay := range []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second} {
-		state, reason := worker.deliveryFailure("session", "command", sandboxUID, "pod-1", "submit_input",
+		state, reason := worker.deliveryFailure("session", "command", sandboxUID, "pod-1",
 			status.Error(codes.Unavailable, "uncertain reply"))
 		if state != QueueState || reason != "runner_unreachable: Unavailable: uncertain reply" {
 			t.Fatalf("attempt %d: %s %s", attempt+1, state, reason)

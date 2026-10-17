@@ -164,6 +164,7 @@ async def async_main(config: RunnerConfig, *, control: ServiceEndpoint, ingress:
                     RunnerService(runner),
                     target=control.target,
                     bearer=control.bearer,
+                    boot_id=runner.boot_id,
                     timing=StreamTiming(),
                     adopt_incarnation=runner.adopt_incarnation,
                     facts=runner.facts,

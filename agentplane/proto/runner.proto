@@ -151,3 +151,46 @@ message Sealed {
   // earlier incarnation's, so a later one may continue the journal.
   optional string incarnation_uid = 2;
 }
+
+// Live introspection only. Process identifiers never become command destinations.
+message GetStatusRequest {}
+
+message RunnerStatus {
+  repeated HarnessProcessStatus processes = 1;
+  repeated SessionStatus sessions = 2;
+  string runner_boot_id = 3;
+}
+
+enum ProcessState {
+  PROCESS_STATE_UNSPECIFIED = 0;
+  PROCESS_STATE_STARTING = 1;
+  PROCESS_STATE_RUNNING = 2;
+  PROCESS_STATE_STOPPING = 3;
+}
+
+message HarnessProcessStatus {
+  // Unique per spawn; a PID can be reused.
+  string process_id = 1;
+  optional int64 pid = 2;
+  Harness harness = 3;
+  ProcessState state = 4;
+  repeated string assigned_session_ids = 5;
+}
+
+enum SessionExecutionState {
+  SESSION_EXECUTION_STATE_UNSPECIFIED = 0;
+  SESSION_EXECUTION_STATE_DORMANT = 1;
+  SESSION_EXECUTION_STATE_PREPARING = 2;
+  SESSION_EXECUTION_STATE_READY = 3;
+  SESSION_EXECUTION_STATE_FAILED = 4;
+}
+
+message SessionStatus {
+  string session_id = 1;
+  optional string process_id = 2;
+  optional string native_session_id = 3;
+  SessionExecutionState execution_state = 4;
+  optional string active_turn_id = 5;
+  optional uint64 failure_cursor = 6;
+  bool busy = 7;
+}

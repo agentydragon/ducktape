@@ -13,20 +13,21 @@ type queuedWork struct {
 	wakeCaller      *Account
 	wakeFrom        *string
 	wakeRequestedAt *time.Time
-	operation       string
 }
 
 func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, sandbox SandboxSnapshot, owner Owner) (bool, error) {
 	return w.prepare(ctx, queuedWork{
-		row.CommandID, row.SessionID, false, row.WakeEligible, row.WakeCaller,
-		row.WakeFromIncarnation, row.WakeRequestedAt, row.Operation,
+		id: row.CommandID, key: row.SessionID, wakeEligible: row.WakeEligible,
+		wakeCaller: row.WakeCaller, wakeFrom: row.WakeFromIncarnation,
+		wakeRequestedAt: row.WakeRequestedAt,
 	}, sandbox, owner)
 }
 
 func (w *DeliveryWorker) prepareOpening(ctx context.Context, row *Opening, sandbox SandboxSnapshot, owner Owner) (bool, error) {
 	return w.prepare(ctx, queuedWork{
-		row.SessionID, row.SessionID, true, row.WakeEligible, row.WakeCaller,
-		row.WakeFromIncarnation, row.WakeRequestedAt, "open_session",
+		id: row.SessionID, key: row.SessionID, opening: true, wakeEligible: row.WakeEligible,
+		wakeCaller: row.WakeCaller, wakeFrom: row.WakeFromIncarnation,
+		wakeRequestedAt: row.WakeRequestedAt,
 	}, sandbox, owner)
 }
 
@@ -96,11 +97,6 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 		return false, w.noteWaiting(ctx, work, owner, "sandbox_resuming")
 	}
 	if sandbox.Blocker != "" {
-		if sandbox.Blocker == "sandbox_suspended" && work.operation == "stop_runner_session" {
-			w.clearRetry(work.key)
-			_, err := w.Store.Settle(ctx, work.id, owner, []string{QueueState}, "NO_OP", "sandbox_suspended", nil)
-			return false, err
-		}
 		if sandbox.Blocker == "sandbox_suspended" && work.wakeEligible {
 			return false, w.wakeFor(ctx, work, sandbox, owner)
 		}

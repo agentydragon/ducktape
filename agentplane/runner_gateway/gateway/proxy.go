@@ -71,20 +71,20 @@ func (p *runnerProxy) ListSessions(ctx context.Context, request *runnerpb.ListSe
 	return connection.runner.ListSessions(ctx, request)
 }
 
+func (p *runnerProxy) GetStatus(ctx context.Context, request *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
+	connection, err := p.connection(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	return connection.runner.GetStatus(ctx, request)
+}
+
 func (p *runnerProxy) OpenSession(ctx context.Context, request *runnercontrolpb.OpenSessionRequest) (*runnercontrolpb.OpenSessionResponse, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
 	}
 	return connection.runner.OpenSession(ctx, request)
-}
-
-func (p *runnerProxy) ResumeSession(ctx context.Context, request *runnercontrolpb.ResumeSessionRequest) (*runnercontrolpb.ResumeSessionResponse, error) {
-	connection, err := p.connection(ctx, false)
-	if err != nil {
-		return nil, err
-	}
-	return connection.runner.ResumeSession(ctx, request)
 }
 
 func (p *runnerProxy) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequest) (*runnerpb.QuiesceResponse, error) {
@@ -125,14 +125,6 @@ func (p *runnerProxy) InterruptTurn(ctx context.Context, request *runnercontrolp
 		return nil, err
 	}
 	return connection.runner.InterruptTurn(ctx, request)
-}
-
-func (p *runnerProxy) StopRunnerSession(ctx context.Context, request *runnercontrolpb.StopRunnerSessionRequest) (*runnercontrolpb.StopRunnerSessionResponse, error) {
-	connection, err := p.connection(ctx, false)
-	if err != nil {
-		return nil, err
-	}
-	return connection.runner.StopRunnerSession(ctx, request)
 }
 
 var _ runnercontrolpb.RunnerServer = (*runnerProxy)(nil)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict, ParseDict
@@ -189,3 +189,32 @@ def create_request(value: NewSandbox) -> sandboxes_pb2.CreateSandboxRequest:
     if value.idle_suspend_after_seconds is not None:
         request.idle_suspend_after.FromSeconds(value.idle_suspend_after_seconds)
     return request
+
+
+class HarnessProcessView(BaseModel):
+    process_id: str
+    pid: int | None = None
+    harness: Harness
+    state: Literal["PROCESS_STATE_STARTING", "PROCESS_STATE_RUNNING", "PROCESS_STATE_STOPPING"]
+    assigned_session_ids: list[str]
+
+
+class RunnerSessionView(BaseModel):
+    session_id: str
+    process_id: str | None = None
+    native_session_id: str | None = None
+    execution_state: Literal[
+        "SESSION_EXECUTION_STATE_DORMANT",
+        "SESSION_EXECUTION_STATE_PREPARING",
+        "SESSION_EXECUTION_STATE_READY",
+        "SESSION_EXECUTION_STATE_FAILED",
+    ]
+    active_turn_id: str | None = None
+    failure_cursor: str | None = None
+    busy: bool
+
+
+class RunnerStatusView(BaseModel):
+    runner_boot_id: str
+    processes: list[HarnessProcessView]
+    sessions: list[RunnerSessionView]

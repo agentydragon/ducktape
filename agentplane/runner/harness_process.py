@@ -136,10 +136,12 @@ class HarnessProcess:
     def running(self) -> bool:
         return self._process is not None and self._process.returncode is None
 
-    async def write_line(self, line: str) -> None:
+    async def write_line(self, line: str, *, before_write: Callable[[], None] | None = None) -> None:
         stdin = self.process.stdin
         assert stdin is not None
         async with self._stdin_lock:
+            if before_write is not None:
+                before_write()
             stdin.write(line.encode() + b"\n")
             await stdin.drain()
 

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import TracebackType
 from typing import Self, assert_never, cast
+from uuid import uuid4
 
 from google.protobuf.timestamp_pb2 import Timestamp
 
@@ -60,7 +61,7 @@ class SandboxNotIdleError(Exception):
 
 
 class SetupFailedError(OpenError):
-    """The session's setup failed or was interrupted, so it never resumes."""
+    """The session's one-shot setup failed or was interrupted, so it never runs again."""
 
 
 class InvalidRequestError(OpenError):
@@ -72,7 +73,7 @@ class InitializationConflictError(Exception):
 
 
 class BootstrapFailedError(OpenError):
-    """The Sandbox bootstrap failed or was interrupted, so no Session opens in this Sandbox."""
+    """The Sandbox bootstrap failed or was interrupted, so setup and native harnesses cannot run."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +102,7 @@ def make_adapter(session: Session) -> HarnessAdapter:
 class Runner:
     def __init__(self, config: RunnerConfig) -> None:
         self.config = config
+        self.boot_id = str(uuid4())
         self._state_owner = StateOwner(config.state_dir)
         try:
             if config.process_isolation is not None:
@@ -324,6 +326,7 @@ class Runner:
         for session_id in self.store.session_ids():
             session = await self._load(session_id)
             await session.recover_after_restart()
+            await self._resume_recovered_work(session)
         if self.config.launch.bootstrap is not None:
             try:
                 await self.initialize(self.config.launch.bootstrap)
@@ -331,6 +334,19 @@ class Runner:
                 # Every open refuses with the same error, which is where the caller sees it.
                 logger.exception("the Sandbox selected a different bootstrap script")
         self.note_activity()
+
+    async def _resume_recovered_work(self, session: Session) -> None:
+        """Recover owned work once this incarnation is allowed to write and execute it."""
+        if self.lameduck or session.journal.sealed_cursor is not None:
+            return
+        await session.settle_recovered_interrupts()
+        pending = await session.journal.pending_commands()
+        if any(command.WhichOneof("operation") != "interrupt_turn" for command in pending) or (
+            await session.journal.unreconciled_process_lost_turns()
+        ):
+            # A receipt or an unreconciled lost turn is the runner's durable responsibility;
+            # recovery cannot depend on the Gateway redelivering an already admitted command.
+            session.ensure_activation()
 
     async def _load(self, session_id: str) -> Session:
         async with self._sessions_lock:
@@ -352,6 +368,7 @@ class Runner:
                     state_owner_descriptor=self._state_owner.descriptor,
                     make_adapter=make_adapter,
                     activity_changed=self.note_activity,
+                    ensure_ready=self._ensure_session_ready,
                 )
                 await self.sessions[session_id].load_prefix_state()
                 await self._reopen_earlier_seal(self.sessions[session_id])
@@ -369,25 +386,21 @@ class Runner:
         return await self._load(session_id) if self.store.exists(session_id) else None
 
     async def open_session(self, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None) -> Session:
-        """Create the session with `spec` and start it once the Sandbox bootstrap has succeeded; or confirm an existing one with the same spec and start its stopped harness."""
+        """Durably reserve a session with `spec`, or confirm an existing session."""
         session_id = self._valid_session_id(session_id)
         self.refuse_work()
         launched = runner_pb2.SessionSpec()
         launched.CopyFrom(spec)
         launched.instructions = self.config.launch.instructions(session_id, spec.instructions)
-        if not self.store.exists(session_id):
-            await self._bootstrap()
-            self.refuse_work()
         async with self._create_lock:
             if self.store.exists(session_id):
                 session = await self._confirm(session_id, launched, setup_script)
             else:
                 session = await self._create(session_id, launched, setup_script)
-        await self._start(session)
         return session
 
     async def _bootstrap(self) -> None:
-        """Wait for the Sandbox's bootstrap, which `startup` began, and refuse unless it succeeded."""
+        """Wait for the Sandbox's bootstrap, which `startup` began, and refuse execution unless it succeeded."""
         if self.config.launch.bootstrap is None:
             return
         log, execution = await self.initialize(self.config.launch.bootstrap)
@@ -398,19 +411,21 @@ class Runner:
         if outcome.WhichOneof("observation") == "interrupted":
             raise BootstrapFailedError("the Sandbox bootstrap was interrupted and never runs again; use a new Sandbox")
         if outcome.result.exit_code != 0:
-            raise BootstrapFailedError("the Sandbox bootstrap failed and never runs again; no session was opened")
+            raise BootstrapFailedError(
+                "the Sandbox bootstrap failed and never runs again; session setup and harnesses cannot start"
+            )
 
-    async def resume(self, session_id: str) -> Session:
-        """Restart a stopped harness on the session's retained spec."""
-        session_id = self._valid_session_id(session_id)
-        self.refuse_work()
-        if not self.store.exists(session_id):
-            raise SessionUnknownError(f"session {session_id} does not exist")
-        session = await self._load(session_id)
+    async def _ensure_session_ready(self, session: Session) -> None:
+        """Wait for one-shot setup and Sandbox bootstrap, then attach the native harness on demand."""
+        if session.setup_state == runner_pb2.SETUP_STATE_RUNNING:
+            if session._setup_task is None:
+                raise SetupFailedError(f"session {session.session_id}'s setup was interrupted; create a new session")
+            await asyncio.shield(session._setup_task)
         if session.setup_state in (runner_pb2.SETUP_STATE_FAILED, runner_pb2.SETUP_STATE_INTERRUPTED):
-            raise SetupFailedError(f"session {session_id}'s setup failed or was interrupted; create a new session")
-        await self._start(session)
-        return session
+            reason = session._setup_failure_reason or "setup failed or was interrupted"
+            raise SetupFailedError(f"session {session.session_id}'s setup {reason}; create a new session")
+        await self._bootstrap()
+        await session.ensure_running()
 
     @staticmethod
     def _valid_session_id(session_id: str) -> str:
@@ -442,7 +457,7 @@ class Runner:
     def refuse_work(self) -> None:
         """Raise unless the runner still accepts new work; a sender retries after the Sandbox resumes."""
         if self.lameduck:
-            raise SandboxQuiescedError("this Sandbox is quiesced: its sessions can be followed, not created or resumed")
+            raise SandboxQuiescedError("this Sandbox is quiesced: new sessions and non-interrupt commands are refused")
 
     async def _confirm(self, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None) -> Session:
         session = await self._load(session_id)
@@ -492,25 +507,19 @@ class Runner:
             # Loading the just-written record can yield while Quiesce seals the inventory. Do not
             # start setup afterward; it would otherwise begin work on an already-final journal.
             self.refuse_work()
-            session.start_setup(script)
+            session.start_setup(script, before_run=self._bootstrap)
         return session
-
-    async def _start(self, session: Session) -> None:
-        """Start the harness of a session whose setup allows it; one still in setup starts when the
-        setup succeeds."""
-        if self.lameduck:
-            # Sealing began meanwhile and may have listed the store before it held this session.
-            await session.seal(self.store.require_incarnation_uid())
-            self.refuse_work()
-        if session.setup_state in (runner_pb2.SETUP_STATE_NOT_REQUIRED, runner_pb2.SETUP_STATE_SUCCEEDED):
-            await session.ensure_running()
 
     async def adopt_incarnation(self, incarnation_uid: str) -> None:
         """Learn the incarnation from the gateway's `Welcome`, then take back every Session an earlier
         incarnation sealed."""
+        was_lameduck = self.lameduck
         self.store.adopt_incarnation(incarnation_uid)
         for session in list(self.sessions.values()):
+            was_sealed = session.journal.sealed_cursor is not None
             await self._reopen_earlier_seal(session)
+            if (was_lameduck and not self.lameduck) or (was_sealed and session.journal.sealed_cursor is None):
+                await self._resume_recovered_work(session)
 
     async def _reopen_earlier_seal(self, session: Session) -> None:
         """Reopen a journal sealed by an incarnation other than this one, and have the ingress continue it.
@@ -530,12 +539,16 @@ class Runner:
             loaded(session)
 
     async def quiesce(self) -> list[SealedSession]:
-        """Sandbox teardown: refuse new work, interrupt running turns, stop every harness, seal every journal."""
+        """Refuse new work, finish setup/bootstrap, stop harnesses and seal every journal."""
         self.begin_quiesce()
         try:
             incarnation_uid = self.store.require_incarnation_uid()
             sessions = [await self._load(session_id) for session_id in self.store.session_ids()]
             cursors = await asyncio.gather(*(session.seal(incarnation_uid) for session in sessions))
+            if self._initialization_task is not None:
+                # This also holds an empty Sandbox in DRAINING: there may be no Session journal
+                # whose setup already waits for the one-shot bootstrap to finish.
+                await asyncio.shield(self._initialization_task)
         finally:
             self.finish_quiesce()
         return [
@@ -615,6 +628,40 @@ class Runner:
             )
             for session in sorted(self.sessions.values(), key=lambda session: session.session_id)
         ]
+
+    def status(self) -> runner_pb2.RunnerStatus:
+        """Build one coherent in-memory snapshot without awaiting between related fields."""
+        status = runner_pb2.RunnerStatus(runner_boot_id=self.boot_id)
+        for session in sorted(self.sessions.values(), key=lambda item: item.session_id):
+            process_id = session.process_id
+            row = runner_pb2.SessionStatus(
+                session_id=session.session_id, execution_state=session.execution_state, busy=session.busy
+            )
+            if process_id is not None:
+                row.process_id = process_id
+            if session.record.native_session_id is not None:
+                row.native_session_id = session.record.native_session_id
+            if session.active_turn_id:
+                row.active_turn_id = session.active_turn_id
+            if session.failure_cursor is not None:
+                row.failure_cursor = session.failure_cursor
+            status.sessions.add().CopyFrom(row)
+
+            if process_id is not None:
+                process = session.process
+                process_row = status.processes.add(
+                    process_id=process_id,
+                    harness=runner_pb2.Harness.Value(str(session.record.harness)),
+                    state=(
+                        session._process_state
+                        if process is None or process.running
+                        else runner_pb2.PROCESS_STATE_STOPPING
+                    ),
+                    assigned_session_ids=[session.session_id],
+                )
+                if process is not None and process.running:
+                    process_row.pid = process.native_pid
+        return status
 
 
 def build_attached(session: Session, published: RecoveryState) -> runner_pb2.Attached:

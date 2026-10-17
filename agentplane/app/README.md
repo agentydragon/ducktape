@@ -2,8 +2,8 @@
 
 The human-facing frontend over Agentplane's services: a FastAPI service that manages Sandboxes
 through the Kubernetes API as the requesting operator, opens Sessions and submits commands through
-the Session Dispatcher, and uses the Runner Gateway for UID-fenced live checks and explicit native
-resume. It reads archived Session history and Threads (each Session's conversation projection) from
+the Session Dispatcher, and uses the Runner Gateway for UID-fenced live checks and read-only runner
+status diagnostics. It reads archived Session history and Threads (each Session's conversation projection) from
 the History Service and synchronizes selected rows and content to the browser through authenticated
 Electric endpoints. It also presents Actions, operator decisions and Connection consent.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
@@ -65,9 +65,9 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   fields.
 - Sandbox provisioning uses the shared `agentplane/sandboxes` inventory directly as the requesting
   operator. Session openings and commands use `SessionDispatcherClient`; the Sandbox control client
-  reaches current-incarnation live checks and explicit native resume through the per-Sandbox Runner
-  Proxy, carrying the live Sandbox name, UID and owner. Native resume calls the Runner directly. The
-  app reads Kubernetes projections for UI updates and has no Gateway Session API client.
+  reads current-incarnation checks and runner status through the per-Sandbox Runner Proxy, carrying
+  the live Sandbox name, UID and owner. Runner status is informational and never wakes a Sandbox.
+  The app reads Kubernetes projections for UI updates and has no Gateway Session API client.
 - `egress_access.py`: egress-policy/binding projections for the UI, and the operator's grants and
   revocations of `PolicyBinding`s, written through the Kubernetes API by the app itself. Bindings remain
   desired-state grants, with expiry/revocation per binding; Flux-owned and Sandbox-controlled bindings
@@ -133,8 +133,8 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 
 ### Replica-safe command delivery
 
-Any app replica accepts typed `submit-input`, `change-model`, `change-reasoning-effort`,
-`stop-runner-session`, and `interrupt-turn` requests under `/threads/{id}/`, each with a stable
+Any app replica accepts typed `submit-input`, `change-model`, `change-reasoning-effort`, and
+`interrupt-turn` requests under `/threads/{id}/`, each with a stable
 command id. The required `session_dispatcher_target` calls the matching generated Session Dispatcher
 RPC. Durable operations return their stored `Dispatch`; `InterruptTurn` returns its immediate
 result without a queue row. A Dispatcher
@@ -152,9 +152,13 @@ setting.
 
 The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
 runner Pod does not clear the inventory. Harness state and turn IDs in that table are last observed
-History values; they do not assert that a harness is still running or can be resumed. Explicitly
-resuming a retained Session calls `Runner.ResumeSession` through the per-Sandbox Runner proxy. Every
-new Session opening is submitted to the Dispatcher with the complete Session spec. A `SessionOpening` reports queued,
+History values. The Status tab reads `GET /sandboxes/{name}/runner-status` for current runner process
+and Session diagnostics; it does not wake a suspended Sandbox. A missing or unavailable runner is
+shown as unavailable, while suspended Sandboxes show that diagnostics are unavailable until resumed.
+Idle Sessions can be archived while their harness process remains live. The UI disables archive for
+observable active turns, setup, or a pending local launch; the server checks whether Session work is
+unfinished before accepting the archive request.
+Every new Session opening is submitted to the Dispatcher with the complete Session spec. A `SessionOpening` reports queued,
 delivering, runner-admitted, or failed state, and
 `GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
 History Service has projected a Thread yet. Opening always uses the Dispatcher; generated ConfigMaps
@@ -169,10 +173,10 @@ History Service's ingress, and the History Service folds them under per-Session 
 
 A Session gets its Thread from the History Service's watch, which names each Session it records
 on the runner's first push; every stream resumes after the last one the replica opened, and a new
-process starts from the first. Opening a Thread does not restart its harness. Explicit Open starts or resumes it without waiting for its history;
-its feed reads ended while the harness is stopped and active again once the resumed harness reports
-started. On a Thread page, **Resume harness** opens that Thread's existing runner session using its retained
-runner-owned spec; it cannot create a new Thread or substitute another harness.
+process starts from the first. Opening a Thread does not restart its harness. A composer may submit
+input to an eligible dormant Session; the Dispatcher wakes and admits the Session as needed. A
+suspended Sandbox still follows its `wake_on_send` policy. Exact-turn interruption remains available
+while that turn is active.
 
 After interruption/resume, runner `ConversationReconciled` events give each affected item a
 `recovery` disposition and `recovery_reason`. The fold retains absent/unknown observations;
@@ -583,8 +587,8 @@ one. Which lists the service enforces is its contract
   this evidence from the pending-command queue and operational snapshot.
 - **Failed model turns:** normal and Raw views show the terminal failure and its plain-text
   diagnostic at the completion position, retaining any partial output. A confirmed input remains
-  confirmed; a failed turn neither creates a delivery retry nor resends that input. Later input
-  can start another turn while the harness remains available.
+  confirmed; a failed turn neither creates a delivery retry nor resends that input. Later input can
+  be submitted to an eligible dormant Session, which the Dispatcher wakes as needed.
 - **Interrupted or lost turns:** the fold keeps streamed text, tool arguments, and any tool output
   the harness reported. An item without a terminal native result stays incomplete; an unfinished
   tool result is unknown and is never retried automatically. Resume continues the same native

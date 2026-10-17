@@ -153,6 +153,10 @@ class CommandConflictError(ValueError):
     """One command id was reused with different requested work."""
 
 
+class ActiveTurnChangedError(ValueError):
+    """A turn-targeted admission lost its target before the journal committed it."""
+
+
 class JournalStorageError(OSError):
     """Publication stopped; reopen the database before serving this source again."""
 
@@ -514,12 +518,18 @@ class Journal:
         appended.append(entry)
         return entry
 
-    async def admit(self, command: command_pb2.Command) -> event_log_pb2.EventEntry | None:
+    async def admit(
+        self, command: command_pb2.Command, *, expected_active_turn_id: str | None = None
+    ) -> event_log_pb2.EventEntry | None:
         if not command.command_id or command.WhichOneof("operation") is None:
             raise ValueError("command requires command_id and operation")
         # Freeze the full caller-owned protobuf before the first await.
         command = command_pb2.Command.FromString(command.SerializeToString())
         async with self._transaction() as (session, appended):
+            # This check shares the journal's serialized writer transaction with TurnCompleted and
+            # TurnStarted. The in-memory Session view may lag while an inbound native batch commits.
+            if expected_active_turn_id is not None and self._state.active_turn_id != expected_active_turn_id:
+                raise ActiveTurnChangedError(f"turn {expected_active_turn_id!r} is no longer active")
             previous = await session.get(Command, command.command_id)
             if previous is not None:
                 if command_pb2.Command.FromString(previous.payload) != command:
@@ -552,14 +562,17 @@ class Journal:
                     command.native_correlation = {**command.native_correlation, **(native_correlation or {})}
         return entry
 
-    async def dispatch_planned(self, command_id: str, *, native_correlation: dict[str, str] | None = None) -> None:
+    async def dispatch_planned(self, command_id: str, *, native_correlation: dict[str, str] | None = None) -> bool:
+        """Durably mark a pending command as possibly sent; return false if it is already terminal."""
         async with self._transaction() as (session, _):
             command = await session.get(Command, command_id)
             if command is None:
                 raise ValueError(f"unknown command id {command_id!r}")
-            if command.terminal_cursor is None:
-                command.dispatch_planned = True
-                command.native_correlation = {**command.native_correlation, **(native_correlation or {})}
+            if command.terminal_cursor is not None:
+                return False
+            command.dispatch_planned = True
+            command.native_correlation = {**command.native_correlation, **(native_correlation or {})}
+        return True
 
     async def has_started_turn(self) -> bool:
         async with self._reading() as session:
@@ -579,6 +592,47 @@ class Journal:
                     .order_by(TurnBoundary.start_cursor)
                 )
             )
+
+    async def unreconciled_process_lost_turns(self) -> list[str]:
+        """Lost turns not yet inspected through a later native harness attachment.
+
+        Losing a process immediately writes an UNKNOWN report for the frontend. That placeholder
+        does not discharge recovery: only reconciliation after a new HarnessStarted does.
+        """
+        async with self._reading() as session:
+            lost = {
+                turn_id: end_cursor
+                for turn_id, end_cursor in await session.execute(
+                    select(TurnBoundary.turn_id, TurnBoundary.end_cursor).where(
+                        TurnBoundary.status == event_pb2.TURN_STATUS_PROCESS_LOST
+                    )
+                )
+                if end_cursor is not None
+            }
+            if not lost:
+                return []
+        cursor = min(lost.values())
+        through = self.last_cursor
+        attached_after_loss: set[str] = set()
+        # Native frames can dominate a long journal. Bound each read and stop as soon as all
+        # candidate turns have reconciliation, rather than loading the whole suffix into memory.
+        while lost and cursor < through:
+            entries = await self.since(cursor, limit=128)
+            if not entries:
+                break
+            for entry in entries:
+                if entry.cursor > through:
+                    break
+                cursor = entry.cursor
+                event = entry.event
+                if event.HasField("harness_started"):
+                    attached_after_loss.update(turn_id for turn_id, ended in lost.items() if cursor > ended)
+                elif event.HasField("conversation_reconciled"):
+                    turn_id = event.conversation_reconciled.turn_id
+                    if turn_id in attached_after_loss:
+                        lost.pop(turn_id, None)
+                        attached_after_loss.discard(turn_id)
+        return sorted(lost, key=lost.__getitem__)
 
     async def turn_events(self, turn_id: str) -> AsyncIterator[event_log_pb2.EventEntry]:
         async with self._reading() as session:

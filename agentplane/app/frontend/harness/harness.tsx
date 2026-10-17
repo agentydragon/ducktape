@@ -638,13 +638,12 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   },
 ];
 
-/** The `endedAttachment` fixture: the states thread's harness was shut down, and the runner feed has ended. */
-function withEndedAttachment(thread: ThreadView): ThreadView {
+function withDormantSession(thread: ThreadView): ThreadView {
   return thread.id === RUNNING_THREAD
     ? {
         ...thread,
-        name: "Shut-down thread",
-        feed_status: "ended",
+        name: "Dormant harness session",
+        feed_status: "active",
         harness_state: "HARNESS_STATE_STOPPED",
         active_turn_id: null,
       }
@@ -1291,15 +1290,6 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
     ),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
-}
-
-function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
-  return interleavedRows(threadId).map((row) => {
-    if (row.entity_kind !== "view_state") return row;
-    const state = row.state as Record<string, unknown>;
-    const operational = state.operational as Record<string, unknown>;
-    return { ...row, state: { ...state, operational: { ...operational, status: "ended" } } };
-  });
 }
 
 /** Close-packed command states so the semaphore and its real labels can be inspected on a phone. */
@@ -2495,6 +2485,42 @@ routes.push(
     (match) => ({ ...ACTIONS.find((request) => request.id === match[1]), state: "allowed", version: 2 }),
   ],
   [
+    "GET",
+    /^\/sandboxes\/([^/]+)\/runner-status$/,
+    () => ({
+      runner_boot_id: "visual-runner-boot-01",
+      processes: [
+        {
+          process_id: "visual-claude-process-01",
+          pid: 18001,
+          harness: "HARNESS_CLAUDE",
+          state: "PROCESS_STATE_RUNNING",
+          assigned_session_ids: ["ready-session"],
+        },
+      ],
+      sessions: [
+        {
+          session_id: "dormant-session",
+          process_id: null,
+          native_session_id: null,
+          execution_state: "SESSION_EXECUTION_STATE_DORMANT",
+          active_turn_id: null,
+          failure_cursor: null,
+          busy: false,
+        },
+        {
+          session_id: "ready-session",
+          process_id: "visual-claude-process-01",
+          native_session_id: "visual-native-session-01",
+          execution_state: "SESSION_EXECUTION_STATE_READY",
+          active_turn_id: null,
+          failure_cursor: null,
+          busy: false,
+        },
+      ],
+    }),
+  ],
+  [
     "POST",
     /^\/sandboxes\/([^/]+)\/sessions$/,
     (match, _query, _signal, body) => {
@@ -2742,7 +2768,7 @@ routes.push(
   // No runner here admits a command, so one the page delivers on load stays unadmitted.
   [
     "POST",
-    /^\/threads\/([0-9a-f-]+)\/(?:submit-input|change-model|change-reasoning-effort|stop-runner-session|interrupt-turn)$/,
+    /^\/threads\/([0-9a-f-]+)\/(?:submit-input|change-model|change-reasoning-effort|interrupt-turn)$/,
     () =>
       flags.has("commandAdmissionTimedOut")
         ? Response.json({ detail: "runner admission was not confirmed within 15 seconds" }, { status: 504 })
@@ -3130,9 +3156,9 @@ const visualHarness = {
     mapThread = withFailedTurn;
     threadEntityRows = (id) => failedRows(id, afterContent);
   },
-  endedAttachment(): void {
-    mapThread = withEndedAttachment;
-    threadEntityRows = endedAttachmentRows;
+  dormantSession(): void {
+    mapThread = withDormantSession;
+    threadEntityRows = interleavedRows;
   },
   interleavedEvents(): void {
     threadEntityRows = interleavedRows;

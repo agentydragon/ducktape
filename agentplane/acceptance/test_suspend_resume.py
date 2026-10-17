@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.acceptance.agent import TURN_SECONDS, Agent
+from agentplane.acceptance.agent import TURN_SECONDS, Agent, runner_startup_retries
 from agentplane.acceptance.conftest import Sandboxes, wait_until_running
 from agentplane.app.testing.client import Client
 from agentplane.proto import event_log_pb2, runner_pb2
@@ -24,7 +24,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 POD_TRANSITION_SECONDS = 300.0
 
 
-def _state_volume(namespace: str, sandbox_uid: UUID) -> tuple[str, str]:
+def _storage_volumes(namespace: str, sandbox_uid: UUID) -> dict[str, tuple[str, str]]:
     result = subprocess.run(
         ["kubectl", "-n", namespace, "get", "pvc", "-o", "json"], capture_output=True, text=True, check=True, timeout=20
     )
@@ -36,10 +36,10 @@ def _state_volume(namespace: str, sandbox_uid: UUID) -> tuple[str, str]:
             for owner in claim["metadata"].get("ownerReferences", [])
         )
     ]
-    assert len(claims) == 1, f"expected one Sandbox-owned state PVC, found {len(claims)}"
-    claim = claims[0]
-    assert claim["status"]["phase"] == "Bound"
-    return claim["metadata"]["uid"], claim["spec"]["volumeName"]
+    assert claims, "expected Sandbox-owned storage PVCs"
+    for claim in claims:
+        assert claim["status"]["phase"] == "Bound"
+    return {claim["metadata"]["name"]: (claim["metadata"]["uid"], claim["spec"]["volumeName"]) for claim in claims}
 
 
 async def _history(client: Client, thread_id: UUID, *, completed_turns: int | None) -> list[event_log_pb2.EventEntry]:
@@ -106,14 +106,13 @@ async def _suspend_resume(
     view = await sandbox(f"accept-resume-{template}-{uuid4().hex[:8]}", template=template)
     assert view.pod is not None
     original_incarnation = view.pod.uid
-    state_volume = _state_volume(view.namespace, view.uid)
+    storage_volumes = _storage_volumes(view.namespace, view.uid)
     session_evidence: list[dict[str, object]] = []
     checks: list[str] = []
     evidence: dict[str, object] = {
         "sandbox": view.name,
         "template": template,
-        "state_pvc_uid": state_volume[0],
-        "pv": state_volume[1],
+        "storage_volumes": storage_volumes,
         "old_incarnation": original_incarnation,
         "sessions": session_evidence,
         "checks": checks,
@@ -124,12 +123,18 @@ async def _suspend_resume(
     markers = {harness: f"{runner_pb2.Harness.Name(harness)}-{uuid4().hex}" for harness in harnesses}
     agents: dict[runner_pb2.Harness, Agent] = {}
     seeded_history = {}
+    native_session_ids: dict[str, str] = {}
+    initial_boot_id: str | None = None
 
     for harness in harnesses:
         harness_name = runner_pb2.Harness.Name(harness)
         offered = catalog.harnesses[Harness(harness_name)]
         assert offered, f"the deployment offers no model for {harness_name}"
         agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered[0], cwd=cwd)
+        snapshot = await client.runner_status(view.name)
+        initial_boot_id = snapshot.runner_boot_id
+        reserved = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
+        assert reserved.process_id is None, "OpenSession unexpectedly started a native harness"
         seed = await agent.run(
             f"For this memory test, remember this invented, non-secret code: {markers[harness]}. "
             "It is test data, not a credential. Do not use tools. Reply with only ACK."
@@ -137,6 +142,16 @@ async def _suspend_resume(
         assert seed.input_confirmed, f"{harness_name} did not confirm the seed input"
         agents[harness] = agent
         seeded_history[harness] = await _history(client, agent.thread_id, completed_turns=1)
+        snapshot = await client.runner_status(view.name)
+        ready = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
+        assert ready.execution_state == "SESSION_EXECUTION_STATE_READY"
+        assert ready.process_id is not None
+        assert ready.native_session_id is not None
+        assert any(
+            process.process_id == ready.process_id and ready.session_id in process.assigned_session_ids
+            for process in snapshot.processes
+        )
+        native_session_ids[ready.session_id] = ready.native_session_id
 
     original_threads = {harness: agent.thread_id for harness, agent in agents.items()}
     evidence["threads"] = {
@@ -145,12 +160,12 @@ async def _suspend_resume(
     assert len(set(original_threads.values())) == len(harnesses)
     await client.suspend_sandbox(view.name)
     await _wait_until_suspended_without_pod(client, view.name)
-    assert _state_volume(view.namespace, view.uid) == state_volume
+    assert _storage_volumes(view.namespace, view.uid) == storage_volumes
     suspended_history = {}
     for harness, agent in agents.items():
         suspended_history[harness] = await _history(client, agent.thread_id, completed_turns=None)
         _assert_prefix(seeded_history[harness], suspended_history[harness])
-    checks.extend(["seed_turns_completed", "state_volume_retained_during_suspend", "seed_history_prefix_retained"])
+    checks.extend(["seed_turns_completed", "storage_volumes_retained_during_suspend", "seed_history_prefix_retained"])
     _save_evidence(template, evidence)
     await client.resume_sandbox(view.name)
 
@@ -158,14 +173,24 @@ async def _suspend_resume(
     assert resumed.uid == view.uid
     assert resumed.pod is not None
     assert resumed.pod.uid != original_incarnation
-    assert _state_volume(view.namespace, view.uid) == state_volume
+    assert _storage_volumes(view.namespace, view.uid) == storage_volumes
 
     evidence["new_incarnation"] = resumed.pod.uid
-    checks.append("same_sandbox_new_incarnation_same_volume")
+    checks.append("same_sandbox_new_incarnation_same_volumes")
+    async for attempt in runner_startup_retries():
+        with attempt:
+            snapshot = await client.runner_status(view.name)
+    assert snapshot.runner_boot_id != initial_boot_id
+    assert {row.session_id for row in snapshot.sessions} == set(native_session_ids)
+    for row in snapshot.sessions:
+        if row.session_id in native_session_ids:
+            assert row.execution_state == "SESSION_EXECUTION_STATE_DORMANT"
+            assert row.process_id is None
+            assert row.native_session_id == native_session_ids[row.session_id]
+    checks.append("new_runner_retains_dormant_sessions_without_native_processes")
     _save_evidence(template, evidence)
 
     for harness, agent in agents.items():
-        await agent.resume()
         turn = await agent.run(
             "What invented non-secret code did I ask you to remember? It is safe test data, not a credential. "
             "Do not use tools. Reply with only the code."

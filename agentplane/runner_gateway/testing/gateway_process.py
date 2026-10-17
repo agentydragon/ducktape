@@ -113,6 +113,7 @@ class GatewayProcess:
             runner_control.RunnerService(runner),
             target=self.target,
             bearer=token,
+            boot_id=runner.boot_id,
             timing=_RUNNER_TIMING,
             adopt_incarnation=runner.adopt_incarnation,
             facts=runner.facts,

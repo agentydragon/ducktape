@@ -163,12 +163,3 @@ class Runner(runner_control_pb2_grpc.RunnerServicer):
             command_id=request.command_id, interrupt_turn=command_pb2.InterruptTurn(turn_id=request.turn_id)
         )
         return runner_control_pb2.InterruptTurnResponse(admission=await self.admit(command, context))
-
-    @override
-    async def StopRunnerSession(
-        self, request: runner_control_pb2.StopRunnerSessionRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.StopRunnerSessionResponse:
-        command = command_pb2.Command(
-            command_id=request.command_id, stop_runner_session=command_pb2.StopRunnerSession()
-        )
-        return runner_control_pb2.StopRunnerSessionResponse(admission=await self.admit(command, context))

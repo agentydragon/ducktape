@@ -2,7 +2,7 @@
 
 The durable command queue is the Dispatcher role of the
 [Runner Gateway](../runner_gateway/README.md). Python App and Notification callers use the
-unchanged Session Dispatcher gRPC contract; the stable Dispatcher Service maps its port `8080`
+Session Dispatcher gRPC contract; the stable Dispatcher Service maps its port `8080`
 to the shared listener on `8080`. The worker delivers through the Runner proxy once
 the exact Sandbox is ready, with per-Sandbox Lease and PostgreSQL generation fencing.
 
@@ -13,20 +13,21 @@ replica and wake probes are documented in the [acceptance suite](../acceptance/R
 ## Contract
 
 - **One RPC per command**: `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`,
-  `StopRunnerSession`, `OpenSession`, `GetSessionOpening`, plus `GetDispatch`, `ListDispatches`, `WatchDispatches` and `CancelDispatch`
+  `OpenSession`, `GetSessionOpening`, plus `GetDispatch`, `ListDispatches`, `WatchDispatches` and `CancelDispatch`
   ([proto](../proto/session_dispatcher.proto)). Callers name the Sandbox and the Session; `command_id` is
   the idempotency key across every command RPC.
 - **Delivery states** say where a command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`,
   `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN` (a deleted Sandbox's). A
   `Dispatch`'s `reason` says what a queued command waits for or where a terminal one ended.
-- **Order**: first in, first out per Session. `StopRunnerSession` goes first and cancels the inputs queued
-  before it (reason `stopped`). `InterruptTurn` is not stored: it goes to a `Ready` Sandbox at once, and
-  otherwise answers `NO_OP`.
+- **Order**: first in, first out per Session. `InterruptTurn` is not queued: it goes to a Ready
+  Sandbox at once, otherwise answers `NO_OP`. The runner rejects a stale target with
+  `FAILED_PRECONDITION` before admission. It never interrupts a successor turn.
 - **Opening a Session**: `OpenSession` stores the request keyed by the caller-minted `session_id` and answers
   with a `SessionOpening` in the same delivery states. A retry with the same Sandbox, spec and
   `setup_script` returns the stored record; anything else under that ID is `ALREADY_EXISTS`. Once the Sandbox
   is `Ready` the runner's idempotent `OpenSession` is called before any of the Session's commands. A
-  matching runner retry returns its existing attachment; `ALREADY_EXISTS` means a requested spec or
+  matching runner retry returns its durable Session reservation; native preparation waits for work.
+  A reservation does not assert a running harness; `ALREADY_EXISTS` means a requested spec or
   setup conflicts, which the Dispatcher records as a failed opening.
   Openings follow the rules of commands below for deleted Sandboxes, runner statuses and retention.
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
@@ -43,7 +44,7 @@ replica and wake probes are documented in the [acceptance suite](../acceptance/R
   Lease still owns the runner stream; Dispatcher scheduling does not affect it. A new owner requeues
   only that Sandbox's in-flight work, preserving at-least-once redelivery with the same command IDs.
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
-  incarnation; `UNAVAILABLE` and deadline retry with backoff; `FAILED_PRECONDITION` on a stop is `NO_OP`;
+  incarnation; `UNAVAILABLE` and deadline retry with backoff;
   anything else is `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
 - **Send wake**: only work from authenticated identities listed in `wake_caller_accounts` may request a
   wake, and the Sandbox must also have `spec.wakeOnSend: true`. Both fields default off. The Dispatcher
@@ -57,7 +58,7 @@ replica and wake probes are documented in the [acceptance suite](../acceptance/R
   slot. A denied attempt stays queued with `wake_rate_limited` and retries when the oldest charge
   expires. A stored wake-eligible row without an authenticated caller fails closed as
   `wake_caller_unknown`. The Dispatcher delivers only after a different incarnation becomes
-  `Ready`; `InterruptTurn` and `StopRunnerSession` never wake. A queued command or session opening
+  `Ready`; `InterruptTurn` never wakes. A queued command or session opening
   that remains unready for ten minutes after its budgeted wake request becomes `FAILED`, with the
   Sandbox's current `Ready` condition reason and message recorded for the sender. The queue row is
   retained, and quota wait time does not count toward the deadline. The budget does not expand the

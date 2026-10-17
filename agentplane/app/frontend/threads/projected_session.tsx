@@ -4,7 +4,6 @@ import IconArrowDown from "@tabler/icons-react/dist/esm/icons/IconArrowDown.mjs"
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
-import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 import IconSend from "@tabler/icons-react/dist/esm/icons/IconSend.mjs";
 import { intlFormatDistance } from "date-fns";
 import {
@@ -26,7 +25,6 @@ import {
   models,
   modelsForHarness,
   resumeSandbox,
-  resumeThread,
   type ModelOption,
   type SandboxView,
   type ThreadView,
@@ -1068,18 +1066,17 @@ function ProjectedSessionBody({
   const view = entities.find((row) => row.entityKind === "view_state");
   const controls = view && "controls" in view.state ? view.state.controls : null;
   const operational = view && "controls" in view.state ? view.state.operational : null;
-  const running =
-    available && !thread.archived && operational?.status === "active" && controls?.harness_state === "running";
-  const resumableSession =
+  const syncWritable = sync.window?.caughtUp === true && sync.window.error === null;
+  const sessionCanAcceptInput =
+    syncWritable &&
     !thread.archived &&
     !["SETUP_STATE_RUNNING", "SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"].includes(thread.setup_state ?? "") &&
-    thread.launch_outcome !== "LAUNCH_OUTCOME_PENDING" &&
     operational?.status !== "failed";
-  const canSend = running || (canSendWhileSuspended && resumableSession);
-  const canResume =
-    available && resumableSession && (operational?.status !== "active" || controls?.harness_state !== "running");
-  const [resuming, setResuming] = useState(false);
-  const [resumeError, setResumeError] = useState<string | null>(null);
+  const running =
+    available && sessionCanAcceptInput && operational?.status === "active" && controls?.harness_state === "running";
+  // A ready Session accepts commands while its native harness is dormant. Suspended Sandboxes
+  // keep the Dispatcher wake path and policy intact.
+  const canSend = sessionCanAcceptInput && (available || canSendWhileSuspended);
   const activeTurn = controls?.active_turn_id ?? null;
   const threadsLive = useRequiredThreadsLive();
   const status = threadStatusFromSnapshot(
@@ -1182,19 +1179,6 @@ function ProjectedSessionBody({
     else submitting.current = false;
   }
 
-  async function resume(): Promise<void> {
-    if (!canResume || resuming) return;
-    setResuming(true);
-    setResumeError(null);
-    try {
-      await resumeThread(threadId);
-    } catch (reason: unknown) {
-      setResumeError(displayableError(reason));
-    } finally {
-      setResuming(false);
-    }
-  }
-
   function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
     if (event.key !== "Enter") return;
     event.preventDefault();
@@ -1244,11 +1228,6 @@ function ProjectedSessionBody({
             {commands.submissionError}
           </Text>
         )}
-        {resumeError && (
-          <Text role="alert" c="red">
-            Could not resume harness: {resumeError}
-          </Text>
-        )}
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}
@@ -1262,11 +1241,6 @@ function ProjectedSessionBody({
         />
         <Group className="agentplane-composer-controls" justify="space-between" gap="xs" wrap="nowrap" pb="xs">
           <Group className="agentplane-composer-settings" gap="xs" wrap="nowrap">
-            {canResume && (
-              <Button size="xs" aria-label="Resume harness" loading={resuming} onClick={() => void resume()}>
-                Resume harness
-              </Button>
-            )}
             <Select
               aria-label="Model"
               className="agentplane-composer-model"
@@ -1320,14 +1294,6 @@ function ProjectedSessionBody({
                   Debug history
                 </Menu.Item>
                 <Menu.Divider />
-                <Menu.Item
-                  color="red"
-                  leftSection={<IconPower size={15} />}
-                  disabled={!running}
-                  onClick={() => commands.stopRunnerSession()}
-                >
-                  Shut down harness
-                </Menu.Item>
               </Menu.Dropdown>
             </Menu>
           </TopbarActions>

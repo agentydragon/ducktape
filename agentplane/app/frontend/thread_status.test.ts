@@ -109,11 +109,12 @@ describe("a failed last turn colors only an otherwise idle thread", () => {
     [
       {
         ...failed,
+        feed_status: "active",
         harness_state: "HARNESS_STATE_STOPPED",
         setup_state: "SETUP_STATE_SUCCEEDED",
         launch_outcome: "LAUNCH_OUTCOME_PENDING",
       },
-      "inactive",
+      "stopped",
     ],
     [
       {

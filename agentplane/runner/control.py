@@ -9,7 +9,6 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import override
-from uuid import uuid4
 
 import grpc
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -39,7 +38,7 @@ from agentplane.runner.runner import (
     build_attached,
     finish_command,
 )
-from agentplane.runner.session import DRAINING_OPERATIONS, Session
+from agentplane.runner.session import DRAINING_OPERATIONS, Session, StaleTurnError
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -50,21 +49,18 @@ logger = logging.getLogger(__name__)
 OPERATOR_CODES = {grpc.StatusCode.PERMISSION_DENIED}
 
 
-class HarnessStoppedError(Exception):
-    """Delivery never starts a stopped harness."""
-
-
 # The first matching row answers; anything else fails the call with `UNKNOWN`, such as a harness that
 # did not launch.
 _REFUSALS: tuple[tuple[type[Exception] | tuple[type[Exception], ...], grpc.StatusCode], ...] = (
     (SessionUnknownError, grpc.StatusCode.NOT_FOUND),
     ((SpecConflictError, InitializationConflictError, CommandConflictError), grpc.StatusCode.ALREADY_EXISTS),
     (InvalidRequestError, grpc.StatusCode.INVALID_ARGUMENT),
+    (StaleTurnError, grpc.StatusCode.FAILED_PRECONDITION),
     # The Sandbox is tearing down: the same call succeeds once it resumes.
     (SandboxQuiescedError, grpc.StatusCode.ABORTED),
     # A conditional Quiesce found the Sandbox working: the caller resets its idle timer.
     (SandboxNotIdleError, grpc.StatusCode.ABORTED),
-    ((JournalSealedError, SetupFailedError, HarnessStoppedError, OpenError), grpc.StatusCode.FAILED_PRECONDITION),
+    ((JournalSealedError, SetupFailedError, OpenError), grpc.StatusCode.FAILED_PRECONDITION),
     # The state volume failed; a retry may find it working.
     ((OSError, SQLAlchemyError), grpc.StatusCode.UNAVAILABLE),
 )
@@ -95,6 +91,8 @@ async def _admit(
     # A delivery under way when the Quiesce arrived is admitted; the Quiesce waits for it.
     if not command.command_id or command.WhichOneof("operation") is None:
         raise InvalidRequestError("command_id and operation required")
+    if command.WhichOneof("operation") == "interrupt_turn" and not command.interrupt_turn.turn_id:
+        raise InvalidRequestError("interrupt_turn.turn_id is required")
     session = await runner.stored_session(session_id)
     if session is None:
         raise SessionUnknownError("no such session")
@@ -102,11 +100,13 @@ async def _admit(
     if stored is None:
         if in_lameduck and command.WhichOneof("operation") not in DRAINING_OPERATIONS:
             runner.refuse_work()
-        if not session.running:
-            raise HarnessStoppedError("the harness is not running")
         await finish_command(session.command(command))
     elif command_pb2.Command.FromString(stored.payload) != command:
         raise CommandConflictError("the command id was admitted for other work")
+    elif not in_lameduck and session.journal.sealed_cursor is None and stored.terminal_cursor is None:
+        # A retry of work admitted by an earlier runner is its recovery signal. Reconcile it without
+        # making the caller wait for the new process or native harness to start.
+        await finish_command(session.reconcile_admitted_command(command))
     return await session.journal.admitted_entry(command.command_id)
 
 
@@ -173,6 +173,12 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
         return runner_pb2.ListSessionsResponse(sessions=self.runner.summaries())
 
     @override
+    async def GetStatus(
+        self, request: runner_pb2.GetStatusRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.RunnerStatus:
+        return self.runner.status()
+
+    @override
     async def OpenSession(
         self, request: runner_control_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.OpenSessionResponse:
@@ -184,16 +190,6 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             async with self._admission(quiesce_barrier=False):
                 session = await finish_command(self.runner.open_session(request.session_id, request.spec, setup_script))
             return runner_control_pb2.OpenSessionResponse(attached=_attached(session))
-
-    @override
-    async def ResumeSession(
-        self, request: runner_control_pb2.ResumeSessionRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.ResumeSessionResponse:
-        async with _refusals(context):
-            self.runner.refuse_work()
-            async with self._admission():
-                session = await finish_command(self.runner.resume(request.session_id))
-            return runner_control_pb2.ResumeSessionResponse(attached=_attached(session))
 
     async def _quiesce(
         self, context: grpc.aio.ServicerContext, if_idle_since: Timestamp | None
@@ -270,17 +266,6 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             admission=await self._deliver(request.session_id, command, context)
         )
 
-    @override
-    async def StopRunnerSession(
-        self, request: runner_control_pb2.StopRunnerSessionRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.StopRunnerSessionResponse:
-        command = command_pb2.Command(
-            command_id=request.command_id, stop_runner_session=command_pb2.StopRunnerSession()
-        )
-        return runner_control_pb2.StopRunnerSessionResponse(
-            admission=await self._deliver(request.session_id, command, context)
-        )
-
 
 class RunnerControlClient:
     """Serves `runner` on one `Connect` stream to the Runner Gateway for as long as the runner runs.
@@ -295,6 +280,7 @@ class RunnerControlClient:
         *,
         target: str,
         bearer: str,
+        boot_id: str,
         timing: StreamTiming,
         adopt_incarnation: Callable[[str], Awaitable[None]],
         facts: Callable[[], runner_control_pb2.RunnerFacts],
@@ -310,7 +296,7 @@ class RunnerControlClient:
         # A placeholder the egress proxy swaps for this Pod's control token; the runner never holds it.
         self.bearer = bearer
         self.timing = timing
-        self.boot_id = str(uuid4())
+        self.boot_id = boot_id
 
     async def run(self) -> None:
         async with local_server(

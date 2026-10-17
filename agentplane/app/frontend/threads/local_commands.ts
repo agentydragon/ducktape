@@ -9,7 +9,6 @@ type PlainOperation =
   | { case: "submitInput"; value: { text: string } }
   | { case: "changeModel"; value: { model: string } }
   | { case: "changeReasoningEffort"; value: { effort: string } }
-  | { case: "stopRunnerSession"; value: object }
   | { case: "interruptTurn"; value: { turnId: string } };
 
 export type PendingCommand = {

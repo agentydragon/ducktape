@@ -15,23 +15,19 @@ service RunnerControl {
   rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
 }
 
-// Served by the runner, and called by the Runner Gateway through the runner's `Connect` stream. Only
-// `OpenSession` and `ResumeSession` start a harness. A `Quiesce` waits for every command admission
-// already under way, and every call the runner receives after it waits for it.
+// Served by the runner through its outbound control stream. Sessions are durable;
+// process startup, native readiness and reconciliation are runner-owned after admission.
 service Runner {
   rpc ListSessions(agentplane.proto.runner.ListSessionsRequest)
       returns (agentplane.proto.runner.ListSessionsResponse);
-  // Create a Session with `spec` and start it, after the Sandbox's bootstrap has run to success: the
-  // runner runs it once, before the Sandbox's first Session, and a failed or interrupted attempt
-  // refuses every later create with `FAILED_PRECONDITION`. The stored `spec` is `spec` with the
-  // platform instructions and the Sandbox's and Session's identity ahead of its `instructions`. An
-  // existing Session is confirmed against the same composition and, once its setup allows, a
-  // stopped harness is started: `spec`, and `setup_script` when present, must equal the stored ones,
-  // or the call fails with `ALREADY_EXISTS`.
+  // Durably reserve or confirm a Session and immutable creation configuration.
+  // An existing Session with another spec/setup returns ALREADY_EXISTS.
+  // This acknowledgement does not assert native creation or process readiness.
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
-  // Restart a stopped harness on the Session's retained spec. A running harness is left as it is.
-  rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
-  // Sandbox teardown: durably refuse new and resumed Sessions, stop every harness and setup script,
+  // Informational live snapshot; never starts a process or wakes a Sandbox.
+  rpc GetStatus(agentplane.proto.runner.GetStatusRequest)
+      returns (agentplane.proto.runner.RunnerStatus);
+  // Sandbox teardown: durably refuse new Sessions and execution, let setup/bootstrap finish, stop harnesses,
   // and seal every journal at its final cursor. Idempotent: a repeat returns the same cursors with
   // each Session's current `flushed`, so teardown repeats it until every Session is flushed.
   rpc Quiesce(agentplane.proto.runner.QuiesceRequest) returns (agentplane.proto.runner.QuiesceResponse);
@@ -41,8 +37,9 @@ service Runner {
   rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
   rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
   rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
+  // A new interrupt with a non-active turn_id fails FAILED_PRECONDITION before admission.
+  // Already admitted retries return their original admission; never affect a successor turn.
   rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse);
-  rpc StopRunnerSession(StopRunnerSessionRequest) returns (StopRunnerSessionResponse);
 }
 
 message RunnerFrame {
@@ -128,15 +125,8 @@ message OpenSessionResponse {
   agentplane.proto.runner.Attached attached = 1;
 }
 
-message ResumeSessionRequest {
-  string session_id = 1;
-}
-
-message ResumeSessionResponse {
-  agentplane.proto.runner.Attached attached = 1;
-}
-
-// The command RPCs' responses each carry the runner journal's CommandAdmitted entry for the command.
+// Command responses carry durable CommandAdmitted evidence, before any required startup.
+// Startup and delivery continue after caller disconnect; later failures are journal outcomes.
 message SubmitInputRequest {
   string session_id = 1;
   string command_id = 2;
@@ -174,14 +164,5 @@ message InterruptTurnRequest {
 }
 
 message InterruptTurnResponse {
-  agentplane.proto.event_log.EventEntry admission = 1;
-}
-
-message StopRunnerSessionRequest {
-  string session_id = 1;
-  string command_id = 2;
-}
-
-message StopRunnerSessionResponse {
   agentplane.proto.event_log.EventEntry admission = 1;
 }

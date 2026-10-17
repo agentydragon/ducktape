@@ -6,7 +6,6 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, cast, override
 from uuid import UUID, uuid4
 
@@ -34,7 +33,7 @@ from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
-from agentplane.app.threads.runner_directory import RunnerDirectory
+from agentplane.app.threads.runner_directory import RunnerDirectory, SandboxNotReachableError
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
@@ -620,33 +619,6 @@ async def test_runner_backed_sandbox_session_inventory_route_is_removed(
 
 
 @pytest.mark.parametrize("model_catalog", [CODEX_ONLY], indirect=True)
-async def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
-    client: httpx.AsyncClient, bridge: RunnerBridge, store: ThreadStore, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    assert (await client.get("/models")).json()["harnesses"]["HARNESS_CLAUDE"] == []
-    thread_id = UUID("be4017d0-8994-4a36-b58c-5e6e264d0119")
-
-    async def get_thread(_thread_id: UUID) -> Any:
-        return SimpleNamespace(sandbox="live", archived=False, harness=Harness.CLAUDE, cwd="/w")
-
-    calls: list[tuple[UUID, Harness | None, str | None]] = []
-
-    async def resume_thread(
-        thread: UUID, *, sandbox: str, expected_harness: Harness | None, expected_cwd: str | None
-    ) -> runner_pb2.Attached:
-        assert sandbox == "live"
-        calls.append((thread, expected_harness, expected_cwd))
-        return runner_pb2.Attached(session_id="regular-session")
-
-    monkeypatch.setattr(store, "get_thread", get_thread)
-    monkeypatch.setattr(bridge, "resume_thread", resume_thread)
-    response = await client.post(f"/threads/{thread_id}/resume")
-
-    assert response.status_code == 200, response.text
-    assert calls == [(thread_id, Harness.CLAUDE, "/w")]
-
-
-@pytest.mark.parametrize("model_catalog", [CODEX_ONLY], indirect=True)
 async def test_direct_session_launch_leaves_platform_instructions_to_service(
     client: httpx.AsyncClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1063,7 +1035,9 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
         assert (await http.post("/threads/00000000-0000-0000-0000-000000000000/unarchive")).status_code == 404
 
 
-async def test_a_running_thread_cannot_be_archived(
+@pytest.mark.parametrize("busy", [True, False])
+async def test_archive_checks_unfinished_work_instead_of_process_liveness(
+    busy: bool,
     bare_app: FastAPI,
     bridge: RunnerBridge,
     store: ThreadStore,
@@ -1075,7 +1049,6 @@ async def test_a_running_thread_cannot_be_archived(
     custom_objects.objects[(SANDBOXES_PLURAL, "live")], core_v1.pods["live"] = seed_runner(
         custom_objects, core_v1, "live"
     )
-    spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = await event_logs.seed("live", "s-1")
     assert event_logs.history is not None
     await event_logs.history.set_attached(
@@ -1087,24 +1060,19 @@ async def test_a_running_thread_cannot_be_archived(
 
     consulted: list[str] = []
 
-    async def running_sessions(sandbox: str) -> list[runner_pb2.SessionSummary]:
+    async def runner_status(sandbox: str) -> runner_pb2.RunnerStatus:
         consulted.append(sandbox)
-        return [
-            runner_pb2.SessionSummary(
-                session_id=str(thread_id), spec=spec, harness_state=runner_pb2.HARNESS_STATE_RUNNING
-            )
-        ]
+        return runner_pb2.RunnerStatus(sessions=[runner_pb2.SessionStatus(session_id=str(thread_id), busy=busy)])
 
-    monkeypatch.setattr(bridge, "list_sessions", running_sessions)
+    monkeypatch.setattr(bridge, "runner_status", runner_status)
     async with _agent_client(bare_app) as http:
         response = await http.post(f"/threads/{thread_id}/archive")
 
-    assert response.status_code == 409
-    # Only the running-harness refusal lists sessions; the unverifiable-Pod 409 comes before that.
+    assert response.status_code == (409 if busy else 204)
     assert consulted == ["live"]
     thread = await store.get_thread(thread_id)
     assert thread is not None
-    assert thread.archived is False
+    assert thread.archived is not busy
 
 
 async def test_a_thread_is_not_archived_when_its_live_runner_cannot_be_checked(
@@ -1121,10 +1089,10 @@ async def test_a_thread_is_not_archived_when_its_live_runner_cannot_be_checked(
     )
     thread_id = await event_logs.seed("live", "runner-loss")
 
-    async def runner_unavailable(_sandbox: str) -> list[runner_pb2.SessionSummary]:
+    async def runner_unavailable(_sandbox: str) -> runner_pb2.RunnerStatus:
         raise ServiceError(grpc.StatusCode.UNAVAILABLE, "runner connection unavailable")
 
-    monkeypatch.setattr(bridge, "list_sessions", runner_unavailable)
+    monkeypatch.setattr(bridge, "runner_status", runner_unavailable)
     async with _agent_client(bare_app) as http:
         response = await http.post(f"/threads/{thread_id}/archive")
 
@@ -1146,6 +1114,68 @@ async def test_notification_diagnostics_require_operator_login(client: httpx.Asy
     response = await client.get(url)
     assert response.status_code == 403
     assert response.json() == {"detail": "operator login required"}
+
+
+async def test_runner_status_preserves_topology_and_exact_failure_cursor(
+    client: httpx.AsyncClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def snapshot(sandbox: str) -> runner_pb2.RunnerStatus:
+        assert sandbox == "live"
+        return runner_pb2.RunnerStatus(
+            runner_boot_id="runner-boot",
+            processes=[
+                runner_pb2.HarnessProcessStatus(
+                    process_id="spawn-a",
+                    pid=123,
+                    harness=runner_pb2.HARNESS_CODEX,
+                    state=runner_pb2.PROCESS_STATE_RUNNING,
+                    assigned_session_ids=["ready", "loading"],
+                )
+            ],
+            sessions=[
+                runner_pb2.SessionStatus(
+                    session_id="ready",
+                    process_id="spawn-a",
+                    native_session_id="native-a",
+                    execution_state=runner_pb2.SESSION_EXECUTION_STATE_READY,
+                    busy=False,
+                ),
+                runner_pb2.SessionStatus(
+                    session_id="loading",
+                    process_id="spawn-a",
+                    execution_state=runner_pb2.SESSION_EXECUTION_STATE_PREPARING,
+                    busy=True,
+                ),
+                runner_pb2.SessionStatus(
+                    session_id="failed",
+                    execution_state=runner_pb2.SESSION_EXECUTION_STATE_FAILED,
+                    failure_cursor=2**63 + 1,
+                    busy=False,
+                ),
+            ],
+        )
+
+    monkeypatch.setattr(bridge, "runner_status", snapshot)
+    response = await client.get("/sandboxes/live/runner-status")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["runner_boot_id"] == "runner-boot"
+    assert body["processes"][0]["assigned_session_ids"] == ["ready", "loading"]
+    assert body["sessions"][0]["process_id"] == "spawn-a"
+    assert body["sessions"][1]["execution_state"] == "SESSION_EXECUTION_STATE_PREPARING"
+    assert body["sessions"][2]["failure_cursor"] == str(2**63 + 1)
+    assert body["sessions"][2]["process_id"] is None
+
+
+async def test_unreachable_runner_status_reports_unavailable(
+    client: httpx.AsyncClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def unavailable(sandbox: str) -> runner_pb2.RunnerStatus:
+        raise SandboxNotReachableError(sandbox)
+
+    monkeypatch.setattr(bridge, "runner_status", unavailable)
+    response = await client.get("/sandboxes/live/runner-status")
+    assert response.status_code == 503
 
 
 if __name__ == "__main__":

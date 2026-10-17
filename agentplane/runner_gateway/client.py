@@ -81,6 +81,11 @@ class SandboxRunner:
     async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
         return await self.control.list_sessions(self.destination)
 
+    async def status(self) -> runner_pb2.RunnerStatus:
+        return await self.control.runner_unary(
+            self.destination, lambda stub: stub.GetStatus, runner_pb2.GetStatusRequest()
+        )
+
     async def open_session(
         self, *, session_id: str | UUID, spec: runner_pb2.SessionSpec, setup_script: str | None = None
     ) -> runner_pb2.Attached:
@@ -90,15 +95,5 @@ class SandboxRunner:
             request.setup_script = setup_script
         response = await self.control.runner_unary(
             self.destination, lambda stub: stub.OpenSession, request, timeout_s=self.control.lifecycle_timeout_s
-        )
-        return response.attached
-
-    async def resume(self, session_id: str) -> runner_pb2.Attached:
-        """Resume a stopped harness on the Runner holding this Sandbox's connection."""
-        response = await self.control.runner_unary(
-            self.destination,
-            lambda stub: stub.ResumeSession,
-            runner_control_pb2.ResumeSessionRequest(session_id=session_id),
-            timeout_s=self.control.lifecycle_timeout_s,
         )
         return response.attached

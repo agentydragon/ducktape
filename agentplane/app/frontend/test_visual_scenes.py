@@ -149,10 +149,12 @@ async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.capture(target=view.page.locator("#app"))
 
 
+@DESKTOP_AND_MOBILE
 async def test_sandbox_status_idle_suspended(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.ADD_SUSPENDED_SANDBOXES)
     await app.mount_app("/sandboxes/idle-suspended-sandbox?tab=status")
     await view.page.get_by_text("Suspends once its runner has been idle for 30 minutes.").wait_for(state="visible")
+    await view.page.get_by_text("Runner diagnostics are unavailable until it is running.").wait_for(state="visible")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
@@ -260,8 +262,24 @@ async def test_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
 @DESKTOP_AND_MOBILE
 async def test_sandbox_status(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=status")
+    page = view.page
+    diagnostics = page.get_by_test_id("sandbox-runner-diagnostics")
+    await view.page.get_by_text("dormant-session", exact=True).wait_for(state="visible")
+    await view.page.get_by_text("ready-session", exact=True).wait_for(state="visible")
+    await view.page.get_by_text("PID 18001", exact=True).wait_for(state="visible")
+    sessions = page.get_by_role("heading", name="Sessions", exact=True)
+    native_session = page.get_by_text("visual-native-session-01")
+    dormant_session = page.get_by_text("dormant-session", exact=True)
+    ready_session = page.get_by_text("ready-session", exact=True)
+    await sessions.wait_for(state="visible")
+    await native_session.wait_for(state="visible")
+    await diagnostics.evaluate("element => element.scrollIntoView({ block: 'start', inline: 'nearest' })")
     await view.check(context="fixture ready")
-    await view.capture(target=view.page.locator("#app"))
+    await expect(sessions).to_be_in_viewport()
+    await expect(dormant_session).to_be_in_viewport()
+    await expect(ready_session).to_be_in_viewport()
+    await expect(native_session).to_be_in_viewport()
+    await view.capture(target=diagnostics)
 
 
 @DESKTOP_AND_MOBILE
@@ -415,11 +433,13 @@ async def test_session_streaming_interleaved(view: VisualPage, app: AgentplaneFi
     await view.capture(target=view.page.locator(".agentplane-shell-main-content"))
 
 
-async def test_session_resume(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.build(Scene.ENDED_ATTACHMENT)
+@DESKTOP_AND_MOBILE
+async def test_session_dormant(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.DORMANT_SESSION)
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[aria-label="Harness not running"]', state="attached")
-    await view.page.wait_for_selector('[aria-label="Resume harness"]', state="attached")
+    await expect(view.page.get_by_role("textbox", name="Message")).to_be_enabled()
+    await expect(view.page.get_by_role("button", name="Resume harness")).to_have_count(0)
     await view.check(context="fixture ready")
     await view.capture()
 

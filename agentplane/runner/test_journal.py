@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner.journal import (
+    ActiveTurnChangedError,
     Command,
     CommandConflictError,
     EventEntry,
@@ -197,6 +198,53 @@ async def test_a_batch_publishes_nothing_until_its_one_commit(
     assert journal.recovery_state.active_turn_id == "test-turn"
 
 
+async def test_interrupt_admission_fences_a_turn_completed_before_its_commit(
+    journal: Journal, commit_gate: CommitGate
+) -> None:
+    await journal.append(event_pb2.TurnStarted(turn_id="old-turn"))
+    command = command_pb2.Command(
+        command_id="old-turn-interrupt", interrupt_turn=command_pb2.InterruptTurn(turn_id="old-turn")
+    )
+
+    async def finish_old_start_next() -> None:
+        async with journal.batch():
+            await journal.append(event_pb2.TurnCompleted(turn_id="old-turn", status=event_pb2.TURN_STATUS_COMPLETED))
+            await journal.append(event_pb2.TurnStarted(turn_id="next-turn"))
+            commit_gate.armed = True
+
+    transition = asyncio.create_task(finish_old_start_next())
+    await commit_gate.reached.wait()
+    admission = asyncio.create_task(journal.admit(command, expected_active_turn_id="old-turn"))
+    await asyncio.sleep(0)
+    assert not admission.done()
+
+    commit_gate.release.set()
+    await transition
+    with pytest.raises(ActiveTurnChangedError, match=r"old-turn.*no longer active"):
+        await admission
+
+    assert journal.recovery_state.active_turn_id == "next-turn"
+    assert await journal.pending_commands() == []
+    assert not any(entry.event.HasField("command_admitted") for entry in await journal.since(0, limit=128))
+
+
+async def test_process_lost_turn_remains_unresolved_until_durable_reconciliation(journal: Journal) -> None:
+    await journal.append(event_pb2.TurnStarted(turn_id="lost-turn"), sources=[])
+    await journal.append(
+        event_pb2.TurnCompleted(turn_id="lost-turn", status=event_pb2.TURN_STATUS_PROCESS_LOST), sources=[]
+    )
+    assert await journal.unreconciled_process_lost_turns() == ["lost-turn"]
+
+    # Process-loss settlement itself writes an UNKNOWN placeholder report; it is not native evidence.
+    await journal.append(event_pb2.ConversationReconciled(turn_id="lost-turn"), sources=[])
+    assert await journal.unreconciled_process_lost_turns() == ["lost-turn"]
+
+    # Even an empty report after a new attachment is evidence that native recovery ran.
+    await journal.append(event_pb2.HarnessStarted(resumed=True, pid=123), sources=[])
+    await journal.append(event_pb2.ConversationReconciled(turn_id="lost-turn"), sources=[])
+    assert await journal.unreconciled_process_lost_turns() == []
+
+
 @pytest.mark.parametrize("persisted", [False, True])
 async def test_a_failed_batch_commit_publishes_none_of_it_and_recovery_keeps_it_whole(
     tmp_path: Path, commit_gate: CommitGate, persisted: bool
@@ -250,7 +298,7 @@ async def test_a_seal_is_final_across_reopening(journal: Journal, tmp_path: Path
         await journal.append(event_pb2.Native(line="after the seal"))
     with pytest.raises(JournalSealedError):
         await journal.admit(
-            command_pb2.Command(command_id="test-command", stop_runner_session=command_pb2.StopRunnerSession())
+            command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="hello"))
         )
     assert journal.last_cursor == last.cursor
     assert await journal.seal("test-other-incarnation") == last.cursor
@@ -394,7 +442,7 @@ async def test_sqlite_runtime_and_storage_contract(journal: Journal, tmp_path: P
     assert (await journal._connection.execute(text("PRAGMA synchronous"))).scalar_one() == 3
     await journal._connection.rollback()
     await journal.admit(
-        command_pb2.Command(command_id="test-stop", stop_runner_session=command_pb2.StopRunnerSession())
+        command_pb2.Command(command_id="test-submit", submit_input=command_pb2.SubmitInput(text="hello"))
     )
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'journal.sqlite'}")
     try:

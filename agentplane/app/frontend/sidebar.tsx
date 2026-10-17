@@ -28,7 +28,7 @@ import { groupThreads, type ThreadGroup } from "./thread_groups";
 import { ThreadNoticeBadge, type ThreadNotices, useThreadNotices } from "./thread_notices";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { ScrollDebugTools } from "./threads/scroll_debug_tools";
-import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
+import { archiveBlockReason, snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 
 const SEARCH_PAUSE_MS = 300;
 
@@ -88,7 +88,7 @@ function ThreadRow({
   const label = thread.name ?? thread.id;
   const readonly = sandbox === null;
   const status = threadStatusFromSnapshot(thread, sandbox ?? undefined, fresh);
-  const harnessRunning = status.kind === "running" || status.kind === "idle" || status.kind === "turn_error";
+  const archiveBlock = archiveBlockReason(thread);
   const className = [
     "agentplane-sidebar-row",
     current ? "current" : "",
@@ -119,23 +119,16 @@ function ThreadRow({
         <ThreadNoticeBadge inboxes={notices.bySession?.get(thread.id) ?? []} live={notices.live} />
       </span>
       <span className="agentplane-sidebar-row-name">{label}</span>
-      <Tooltip
-        label={thread.archived ? "Unarchive" : harnessRunning ? "Stop the harness before archiving" : "Archive"}
-        withArrow
-      >
+      <Tooltip label={thread.archived ? "Unarchive" : (archiveBlock ?? "Archive")} withArrow>
         <ActionIcon
           className="agentplane-sidebar-row-action"
           size="xs"
           variant="subtle"
-          disabled={!thread.archived && harnessRunning}
+          disabled={!thread.archived && archiveBlock !== null}
           aria-label={
-            thread.archived
-              ? `Unarchive ${label}`
-              : harnessRunning
-                ? `Stop harness before archiving ${label}`
-                : `Archive ${label}`
+            thread.archived ? `Unarchive ${label}` : archiveBlock ? `${archiveBlock} · ${label}` : `Archive ${label}`
           }
-          title={!thread.archived && harnessRunning ? "Stop the harness before archiving" : undefined}
+          title={!thread.archived ? (archiveBlock ?? undefined) : undefined}
           onClick={(event) => {
             event.stopPropagation();
             onToggleArchived(thread);

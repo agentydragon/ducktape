@@ -3,7 +3,7 @@ import createClient from "openapi-fetch";
 
 import type { components, paths } from "./api/schema";
 import { redirectToLogin } from "./operator_login";
-import { AttachedSchema, SessionSpecSchema, type Attached, type SessionSpec } from "../../proto/runner_pb";
+import { SessionSpecSchema, type SessionSpec } from "../../proto/runner_pb";
 import { EventEntrySchema, type EventEntry } from "../../proto/event_log_pb";
 
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
@@ -41,6 +41,7 @@ export function ok<T>(answer: { data?: T; error?: unknown; response: Response })
 }
 
 export type SandboxView = components["schemas"]["SandboxView"];
+export type RunnerStatusView = components["schemas"]["RunnerStatusView"];
 export type PodView = components["schemas"]["PodView"];
 export type RawResourceStatus = Record<string, unknown> | null;
 export type NewSandbox = components["schemas"]["NewSandbox"];
@@ -259,9 +260,12 @@ export async function getSessionOpening(sandbox: string, sessionId: string): Pro
   ) as SessionOpening;
 }
 
-export async function resumeThread(threadId: string): Promise<Attached> {
-  const data = ok(await api.POST("/threads/{thread_id}/resume", { params: { path: { thread_id: threadId } } }));
-  return fromJson(AttachedSchema, data as JsonValue);
+export async function getRunnerStatus(sandbox: string): Promise<RunnerStatusView> {
+  return ok(
+    await api.GET("/sandboxes/{name}/runner-status", {
+      params: { path: { name: sandbox } },
+    })
+  );
 }
 
 /** Asks for the Sandbox to run; the watch behind the live streams brings back the change. */
@@ -401,15 +405,6 @@ export async function changeReasoningEffort(
     api.POST("/threads/{thread_id}/change-reasoning-effort", {
       params: { path: { thread_id: threadId } },
       body: { commandId, effort },
-    })
-  );
-}
-
-export async function stopRunnerSession(threadId: string, commandId: string): Promise<CommandSubmission> {
-  return commandSubmission(() =>
-    api.POST("/threads/{thread_id}/stop-runner-session", {
-      params: { path: { thread_id: threadId } },
-      body: { commandId },
     })
   );
 }

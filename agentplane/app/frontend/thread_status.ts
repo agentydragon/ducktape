@@ -9,6 +9,12 @@ export function snapshotFresh(live: Live<ThreadsSnapshot>): boolean {
   return live.stream.standing === "current" && live.health?.fresh === true && live.snapshot?.updates_connected === true;
 }
 
+export function archiveBlockReason(thread: ThreadView): string | null {
+  if (thread.active_turn_id) return "Wait for the active turn to finish before archiving";
+  if (thread.setup_state === "SETUP_STATE_RUNNING") return "Wait for setup to finish before archiving";
+  return null;
+}
+
 export function threadStatusFromSnapshot(
   thread: ThreadView | undefined,
   sandbox: SandboxView | undefined,
@@ -27,20 +33,18 @@ export function threadStatusFromSnapshot(
   if (!sandboxReady(sandbox)) return { kind: "inactive", label: "Sandbox unavailable", tabLabel: "Unavailable" };
   if (thread.feed_status === "failed")
     return { kind: "failed", label: "Runner feed failed", tabLabel: "Runner failed" };
-  // The harness starts once the setup script succeeds; until it has, it is not running, but not stopped either.
+  // The harness starts on first input; a pending launch outcome can mean the Session is still dormant.
   if (thread.harness_state !== "HARNESS_STATE_RUNNING") {
     if (thread.setup_state === "SETUP_STATE_RUNNING")
       return { kind: "inactive", label: "Setup script running", tabLabel: "Setting up" };
-    if (thread.launch_outcome === "LAUNCH_OUTCOME_PENDING")
-      return { kind: "inactive", label: "Harness starting", tabLabel: "Starting" };
   }
-  // A stopped harness is down whether its feed is still attached or has ended: a stopped session has no
-  // live entries, so a feed attached to it ends at once, and a shutdown settles there.
+  // A dormant harness can be down while its Runner feed remains attached to the Session.
   const harnessStopped = thread.harness_state === "HARNESS_STATE_STOPPED";
   if (thread.feed_status === "ended" && !harnessStopped)
     return { kind: "inactive", label: "Runner feed ended", tabLabel: "Ended" };
-  if (thread.feed_status !== "active" && thread.feed_status !== "ended")
+  if (thread.feed_status !== "active" && thread.feed_status !== "ended" && !harnessStopped)
     return { kind: "inactive", label: "No live harness confirmed", tabLabel: "Starting" };
+  if (harnessStopped) return { kind: "stopped", label: "Harness not running", tabLabel: "Stopped" };
   if (thread.harness_state !== "HARNESS_STATE_RUNNING")
     return { kind: "stopped", label: "Harness not running", tabLabel: "Stopped" };
   if (thread.active_turn_id)

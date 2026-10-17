@@ -70,6 +70,7 @@ from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.sandbox_models import (
     NewSandbox,
+    RunnerStatusView,
     SandboxIdleSuspendChange,
     SandboxView,
     SandboxWakePolicyChange,
@@ -97,7 +98,7 @@ from agentplane.app.threads.view.content import CommandIdConflictError, ContentS
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.proto import command_pb2, session_dispatcher_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandboxes.egress_views import (
     BindingNotFoundError,
@@ -243,6 +244,17 @@ async def create_sandbox(spec: NewSandbox, services: Services) -> SandboxView:
     if spec.preset is not None and spec.preset not in services.presets.sandboxes:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"no preset named {spec.preset!r}")
     return sandbox_view(await services.inventory.create(create_request(spec)))
+
+
+@router.get("/{name}/runner-status")
+async def sandbox_runner_status(bridge: runner_bridge.Bridge, name: str) -> RunnerStatusView:
+    try:
+        snapshot = await bridge.runner_status(name)
+    except SandboxNotReachableError as error:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
+    return RunnerStatusView.model_validate(
+        MessageToDict(snapshot, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+    )
 
 
 @router.get("/{name}")
@@ -823,20 +835,6 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
     return view
 
 
-@threads.post("/{thread_id}/resume")
-async def resume_thread(store: Store, bridge: runner_bridge.Bridge, thread_id: UUID) -> dict[str, object]:
-    thread = await store.get_thread(thread_id)
-    if thread is None:
-        raise ThreadNotFoundError(thread_id)
-    if thread.archived:
-        raise HTTPException(status.HTTP_409_CONFLICT, "an archived Thread cannot be resumed")
-    return MessageToDict(
-        await bridge.resume_thread(
-            thread_id, sandbox=thread.sandbox, expected_harness=thread.harness, expected_cwd=thread.cwd
-        )
-    )
-
-
 @threads.patch("/{thread_id}")
 async def rename_thread(store: Store, thread_id: UUID, body: ThreadRename) -> ThreadView:
     return await store.rename(thread_id, body.name)
@@ -859,12 +857,11 @@ async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: 
                     status.HTTP_409_CONFLICT,
                     "cannot verify the runner while a Pod exists; wait for its status to become ready or for it to be removed",
                 )
-            sessions = await bridge.list_sessions(thread.sandbox)
-            if any(
-                session.session_id == str(thread.id) and session.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-                for session in sessions
-            ):
-                raise HTTPException(status.HTTP_409_CONFLICT, "stop the harness before archiving this thread")
+            snapshot = await bridge.runner_status(thread.sandbox)
+            if any(session.session_id == str(thread.id) and session.busy for session in snapshot.sessions):
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT, "finish or interrupt active work before archiving this thread"
+                )
     await store.archive(thread_id)
 
 
@@ -1009,31 +1006,6 @@ async def change_reasoning_effort(
             bridge.dispatcher.stub.ChangeReasoningEffort,
             session_dispatcher_pb2.ChangeReasoningEffortRequest(
                 command_id=body.command_id, session_id=str(thread_id), sandbox=target.sandbox, effort=body.effort
-            ),
-        )
-    except TimeoutError as error:
-        raise runner_bridge.DispatcherRequestTimeoutError(body.command_id) from error
-    return DispatchedCommand(dispatch=MessageToDict(response.dispatch))
-
-
-@threads.post("/{thread_id}/stop-runner-session", response_model=CommandSubmissionResponse)
-async def stop_runner_session(
-    store: Store, content: Content, bridge: runner_bridge.Bridge, thread_id: UUID, body: CommandIdBody
-) -> DispatchedCommand | ArchivedCommandAdmission:
-    target = await _submission_target(
-        store,
-        content,
-        bridge,
-        thread_id,
-        command_pb2.Command(command_id=body.command_id, stop_runner_session=command_pb2.StopRunnerSession()),
-    )
-    if isinstance(target, ArchivedCommandAdmission):
-        return target
-    try:
-        response = await bridge.dispatcher.unary(
-            bridge.dispatcher.stub.StopRunnerSession,
-            session_dispatcher_pb2.StopRunnerSessionRequest(
-                command_id=body.command_id, session_id=str(thread_id), sandbox=target.sandbox
             ),
         )
     except TimeoutError as error:

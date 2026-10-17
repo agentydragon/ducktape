@@ -54,9 +54,8 @@ so backend readers and the controller share the same typed Kubernetes contract.
   Sandbox `spec` and operator-owned `PolicyBinding` grants through Kubernetes. It reads Sandbox
   projections for the UI, opens Sessions and submits commands through the Session Dispatcher, uses
   the Runner Gateway for placement, and uses each Sandbox's Runner Proxy for UID/owner-fenced live
-  inventory and explicit native resume. Resume keeps the Thread's History-backed name as a routing
-  key, then verifies the current runner's retained Session and spec before calling
-  `Runner.ResumeSession`; it does not read a Gateway registry. The app reads Session history and Threads
+  inventory and process/Session diagnostics. The runner owns harness startup and reconciliation
+  after command admission. The app reads Session history and Threads
   from the History Service. See the [control-surface audit](control_surface_retirement.md).
 - **Sandbox Controller:** reconciles requested Sandbox state into ServiceAccounts, Pods or VMs,
   state volumes and controller-owned grants. It owns `Sandbox.status`, including quiescing facts,
