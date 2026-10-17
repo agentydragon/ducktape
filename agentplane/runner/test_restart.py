@@ -53,6 +53,20 @@ class RunnerProcess:
             await self.process.wait()
 
 
+async def _wait_for_session_ready(driver: RunnerDriver, session_id: str) -> None:
+    """Wait for startup recovery before attaching a follower with a status snapshot."""
+    runner = await driver.gateway.control.runner()
+    async with asyncio.timeout(60):
+        while True:
+            status = await runner.GetStatus(runner_pb2.GetStatusRequest())
+            session = next((row for row in status.sessions if row.session_id == session_id), None)
+            if session is not None:
+                assert session.execution_state != runner_pb2.SESSION_EXECUTION_STATE_FAILED, session
+                if session.execution_state == runner_pb2.SESSION_EXECUTION_STATE_READY:
+                    return
+            await asyncio.sleep(0.01)
+
+
 # Bazel's Python is built without os.pidfd_open; the syscall itself is on every kernel this runs on.
 _SYS_PIDFD_OPEN = 434
 
@@ -409,7 +423,8 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
     active_request = await model.request()
     assert active_request.user_texts[-1] == "Reply with exactly: ACTIVE_FENCE_OK"
     await model.hold(active_request)
-    await first.until(events.is_kind("harness_user_message_confirmed"))
+    confirmed = await first.until(events.is_kind("harness_user_message_confirmed"))
+    lost_turn_id = confirmed.event.harness_user_message_confirmed.turn_id
     harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
 
     await contend(tmp_path / "state")
@@ -419,9 +434,18 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
     await first_runner.crash(harness_pids)
 
     await start_runner()
+    await _wait_for_session_ready(driver, "writer-handoff-active")
     recovered = await driver.attach("writer-handoff-active", after_cursor=first.cursor)
     await recovered.until(events.is_kind("harness_lost"))
-    await recovered.drain_until_end()
+    started = await recovered.until(events.is_kind("harness_started"))
+    assert started.event.harness_started.resumed
+    reconciled = await recovered.until(
+        lambda entry: (
+            events.kind(entry) == "conversation_reconciled"
+            and entry.event.conversation_reconciled.turn_id == lost_turn_id
+        )
+    )
+    assert started.cursor < reconciled.cursor
 
     # Once the old group is fenced, a replacement owns the same state volume and can dispatch.
     replacement = await driver.attach("writer-handoff-successor", spec=spec)
@@ -841,19 +865,28 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
     ]
     # Command outcome and Event already committed together, before the checkpoint.
     assert published.cursor < debug.cursor
+    lost_turn_id = published.event.harness_user_message_confirmed.turn_id
     harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
     await first_runner.crash(harness_pids)
 
     await start_runner()
-    # Do not start a replacement harness here. This boundary proves the runner's own durable
-    # event replay before a later continuation contract decides how to resume an interrupted native
-    # turn; attaching without a spec is the protocol's diagnostic/replay path.
+    # Lost-turn recovery is runner-owned. Wait for READY before attaching so the follower snapshot
+    # includes the replacement process and can consume its durable recovery events.
+    await _wait_for_session_ready(driver, "restart-effect-1")
     second = await driver.attach("restart-effect-1")
     confirmed = await second.until(lambda entry: entry.cursor == published.cursor)
     assert confirmed.SerializeToString() == published.SerializeToString()
     assert confirmed.event.harness_user_message_confirmed.text == "Reply with exactly: EFFECT_REPLAY_OK"
     assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [command_id]
-    await second.drain_until_end()
+    started = await second.until(events.is_kind("harness_started"))
+    assert started.event.harness_started.resumed
+    reconciled = await second.until(
+        lambda entry: (
+            events.kind(entry) == "conversation_reconciled"
+            and entry.event.conversation_reconciled.turn_id == lost_turn_id
+        )
+    )
+    assert started.cursor < reconciled.cursor
     assert (
         len(
             [
