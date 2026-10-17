@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import ClassVar
 
 from pydantic import Field
-from pydantic_settings import SettingsConfigDict
 
 from agentplane.egress.platform_routes import PlatformRoute
 from util.yaml_file_settings import YamlFileSettings
@@ -22,9 +21,6 @@ class Settings(YamlFileSettings):
     else: no per-setting env variables and no flags."""
 
     config_file_env: ClassVar[str] = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
-    # CLEANUP(added 2026-10-17): Remove `env_prefix` once nothing calls `env_name(Settings, ...)`
-    #   (`launcher_relay.py`, `public_coder/egress.py`); it only names env the sidecar no longer reads.
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_EGRESS_SIDECAR_")
 
     proxy_host: str = Field(description="Host of the central egress proxy every request is relayed to.")
     proxy_port: int = Field(default=8888, description="The central proxy's listener port.")
