@@ -38,6 +38,8 @@ flowchart LR
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service's responsibilities]
     NOTIFICATION_SERVICE_SPLIT -. related .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
+    COMMAND_WATCH_SUBSCRIPTION_DESIGN[Unscheduled: a subscription kind that runs an agent's command on a schedule]
+    COMMAND_WATCH_SUBSCRIPTION_DESIGN -. related .-> NOTIFICATION_SERVICE_SPLIT
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
     SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
@@ -87,6 +89,19 @@ Related: whether notice delivery belongs with the Dispatcher
 ([freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership)),
 and the history-free notice outcome (`NOTIFICATION_COMMAND_OUTCOME_DESIGN`), which bears on the notice
 decision's last clause.
+
+### `COMMAND_WATCH_SUBSCRIPTION_DESIGN` — a subscription kind that runs an agent's command on a schedule
+
+**Unscheduled; operator, 2026-10-17 PDT: possibly useful as a subscription option, trigger to be decided.**
+An agent registers a command and the service runs it every N seconds, or until a given time, and puts a
+message in the agent's inbox when something worth noticing happens: the output changes, the command exits
+nonzero, or whatever turns out to make most sense. Open: where the command runs (inside the agent's own
+Sandbox, or elsewhere) and under whose identity and authority, which decides what it may reach; the
+trigger semantics (output change against what baseline, nonzero exit, a failure to run at all, how a
+long-running or hung command is cut off); the minimum interval, per-agent quotas and the stop condition;
+what the message carries (the output, a diff or only the fact); and the subscription authorization it needs
+(`SUBSCRIPTION_AUTHORIZATION_DESIGN`). Related: `NOTIFICATION_SERVICE_SPLIT`, which decides which service
+owns subscriptions and sources.
 
 ### `SESSION_INPUT_METADATA` — later typed annotations on input commands
 
