@@ -124,6 +124,10 @@ def test_direct_fixture_uses_go_gateway_and_goose_queue_migration() -> None:
         container for container in postgres["spec"]["template"]["spec"]["containers"] if container["name"] == "postgres"
     )
     assert postgres_container["image"] == fixture_database.IMAGE
+    assert postgres_container["command"] == ["/bin/bash", "/fixture/postgres_entrypoint.sh"]
+    assert postgres["spec"]["template"]["spec"]["securityContext"]["runAsUser"] == 26
+    bootstrap_config = _resource(docs, "ConfigMap", "postgres-bootstrap")
+    assert set(bootstrap_config["data"]) == {"bootstrap.sql", "postgres_entrypoint.sh"}
     postgres_service = _resource(docs, "Service", fixture_database.SERVICE)
     assert postgres_service["spec"]["clusterIP"] == "None"
     assert not any(doc["kind"] in {"Cluster", "Database"} for doc in docs)

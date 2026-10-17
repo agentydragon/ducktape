@@ -1,4 +1,4 @@
--- The official entrypoint creates only the fixture_admin bootstrap account and postgres database.
+-- The fixture entrypoint creates only the fixture_admin bootstrap account and postgres database.
 \getenv app_password AGENTPLANE_DB_PASSWORD_APP
 CREATE ROLE app WITH LOGIN PASSWORD :'app_password';
 CREATE DATABASE app OWNER app;

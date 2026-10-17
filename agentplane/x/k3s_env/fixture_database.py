@@ -44,8 +44,8 @@ def _password(length: int = 40) -> str:
     return "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(length))
 
 
-def _bootstrap_sql() -> str:
-    return get_required_path(own_repo_rlocation("agentplane/x/k3s_env/bootstrap.sql")).read_text(encoding="utf-8")
+def _fixture_file(name: str) -> str:
+    return get_required_path(own_repo_rlocation(f"agentplane/x/k3s_env/{name}")).read_text(encoding="utf-8")
 
 
 def _database_secret(
@@ -84,7 +84,10 @@ def add_database(scope: Construct, env: Environment) -> Construct:
         db_scope,
         "bootstrap-config",
         metadata=ApiObjectMetadata(name=f"{NAME}-bootstrap", namespace=env.namespace),
-        data={"01-bootstrap.sql": _bootstrap_sql()},
+        data={
+            "bootstrap.sql": _fixture_file("bootstrap.sql"),
+            "postgres_entrypoint.sh": _fixture_file("postgres_entrypoint.sh"),
+        },
     )
     labels = _LABELS
     deployment = Deployment(
@@ -95,12 +98,11 @@ def add_database(scope: Construct, env: Environment) -> Construct:
         replicas=1,
         strategy=DeploymentStrategy.recreate(),
         automount_service_account_token=False,
-        security_context=PodSecurityContextProps(ensure_non_root=True, user=999, group=999, fs_group=999),
+        security_context=PodSecurityContextProps(ensure_non_root=True, user=26, group=26, fs_group=26),
     )
     env_variables = {
         "PGDATA": EnvValue.from_value("/var/lib/postgresql/18/docker"),
         "POSTGRES_USER": EnvValue.from_value("fixture_admin"),
-        "POSTGRES_DB": EnvValue.from_value("postgres"),
         "POSTGRES_PASSWORD": SecretRef(namespace=env.namespace, name=f"{NAME}-bootstrap-credentials")
         .key("password")
         .env_value(db_scope, "postgres-bootstrap-password"),
@@ -116,7 +118,8 @@ def add_database(scope: Construct, env: Environment) -> Construct:
         name="postgres",
         image=IMAGE,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        args=["postgres", "-c", "wal_level=logical", "-c", "max_connections=300"],
+        command=["/bin/bash", "/fixture/postgres_entrypoint.sh"],
+        args=["-c", "wal_level=logical", "-c", "max_connections=300"],
         env_variables=env_variables,
         ports=[ContainerPort(name="postgres", number=PORT)],
         readiness=Probe.from_tcp_socket(
@@ -127,9 +130,7 @@ def add_database(scope: Construct, env: Environment) -> Construct:
         ),
         security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
     )
-    container.mount(
-        "/docker-entrypoint-initdb.d", Volume.from_config_map(db_scope, "bootstrap-volume", bootstrap, name="bootstrap")
-    )
+    container.mount("/fixture", Volume.from_config_map(db_scope, "bootstrap-volume", bootstrap, name="bootstrap"))
     container.mount("/var/lib/postgresql", Volume.from_empty_dir(db_scope, "data-volume", "data"))
 
     Service(

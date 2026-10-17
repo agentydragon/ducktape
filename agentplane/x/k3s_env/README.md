@@ -20,8 +20,9 @@ for the failed real-k3s run and the capability checks required before removing t
 [`fixture_chart.py`](fixture_chart.py) constructs the chart directly
 with shared service constructs and explicit bare-k3s settings. It supplies fixture Secrets,
 headless Services, local-path storage and a test egress CA. One PostgreSQL 18 Deployment uses the
-repo's pinned OCI image, an emptyDir data volume and [`bootstrap.sql`](bootstrap.sql) to create the
-service-owned databases. Unsupported Cilium, Gateway API, Kyverno, Prometheus, cert-manager and External
+pinned published CNPG minimal image, an emptyDir data volume and
+[`postgres_entrypoint.sh`](postgres_entrypoint.sh) with [`bootstrap.sql`](bootstrap.sql) to create
+the service-owned databases. Unsupported Cilium, Gateway API, Kyverno, Prometheus, cert-manager and External
 Secrets resources are omitted during construction. The chart instantiates the Go Runner Gateway
 directly with one gRPC listener on port 8080; the stable `runner-gateway` and `session-dispatcher`
 Service names remain. A Goose init container runs before the Go server container and uses the
@@ -72,6 +73,31 @@ The harness comparison measures the Go Gateway/Dispatcher fixture with shared ty
 constructs, one plain PostgreSQL instance, and a pinned K3s binary. Electric and the browser
 frontend remain outside this test. Earlier snapshots below use different source revisions;
 only each explicitly paired experiment supports its own comparison.
+
+### Published PostgreSQL minimal image, 2026-10-17
+
+The fixture uses `ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie`, pinned for linux/amd64 at
+`sha256:e5fffed938c8b55b41d9a6a88a47424d46f90aa15d807aa60348b85ea5bd498f`.
+[CNPG minimal images](https://github.com/cloudnative-pg/postgres-containers#minimal-images) omit LLVM
+JIT starting with PostgreSQL 18. They expect operator-managed startup, so this fixture supplies a
+20-line Bash entrypoint: initialize as UID 26, bootstrap existing service roles/databases over a
+Unix socket with TCP disabled, then start PostgreSQL with SCRAM authentication for network clients.
+Logical WAL and the existing connection limit remain. Initialization explicitly uses `C.UTF-8`;
+this test does not establish locale-specific sorting equivalence with the previous image.
+The shared Testcontainers PostgreSQL image is unchanged.
+
+A [fresh compatibility run](https://app.buildbuddy.io/invocation/bb29d0db-2a6f-4a38-88cc-b7b197d15268)
+passed all four unchanged lifecycle cases (create, bootstrap, suspend/resume with retained state,
+and delete), the fixture render test, and changed database-library mypy/ruff checks. Lifecycle
+TestRunner execution took 208.385 seconds. This is one unprofiled run without a matched timing
+control; no test speedup is established. [Recorded evidence](cnpg-minimal-compatibility-2026-10-17.json)
+retains the source/patch provenance, execution worker, per-case timings and test XML hash.
+
+The published image has 82,606,366 stored layer bytes (78.78 MiB), versus 162,433,831 (154.91 MiB)
+for the prior image in the [captured import inventory](import-blob-inventory-2026-10-17.md).
+Its different Debian base does not share a layer digest with the other captured images, so the
+net saving across that fixture's unique layers is 50,034,807 bytes (47.72 MiB). These are stored
+layer sizes, not unpacked storage or measured import-time savings.
 
 ### Go LLM ingress comparison, 2026-10-17
 
@@ -551,7 +577,7 @@ result for the new Go composition. Breaks found on the way, in order:
 - **KubeVirt:** an earlier fixture applied schemaless VM/VMI CRDs to satisfy the controller cache.
   The Sandbox Controller now discovers whether those APIs are served, so the current fixture starts
   without them: Pod Sandboxes work and VM Sandboxes report `KubeVirtMissing`.
-- **PostgreSQL:** a single-replica Deployment uses the repository's pinned PostgreSQL 18 image, an emptyDir data
+- **PostgreSQL:** a single-replica Deployment uses the pinned published CNPG minimal PostgreSQL 18 image, an emptyDir data
   volume, and a headless `postgres-primary` Service that works without kube-proxy. `bootstrap.sql` creates each
   service role and database with the matching owner; the separate `fixture_admin` account exists only to bootstrap
   the disposable database. Logical WAL remains enabled for the existing publication migrations. No operator,

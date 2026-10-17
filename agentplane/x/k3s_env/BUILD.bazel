@@ -84,7 +84,7 @@ _IMAGES = {
     "notification_service": "//agentplane/notification_service:image",
     "notification_service_migrate": "//agentplane/notification_service:migration_image",
     "policy_controller": "//agentplane/policy_controller:image",
-    "postgres": "@postgres_18_linux_amd64",
+    "postgres": "@postgres_18_minimal_linux_amd64",
     "runner_gateway_go": "//agentplane/runner_gateway:go_image",
     "runner_gateway_queue_migrate": "//agentplane/runner_gateway/migrations:image",
     "sandbox_controller": "//agentplane/sandbox_controller:image",
@@ -261,7 +261,10 @@ py_library(
 py_library(
     name = "fixture_database",
     srcs = ["fixture_database.py"],
-    data = ["bootstrap.sql"],
+    data = [
+        "bootstrap.sql",
+        "postgres_entrypoint.sh",
+    ],
     deps = [
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/agentplane:environment",
