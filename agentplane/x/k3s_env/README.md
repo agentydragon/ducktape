@@ -149,6 +149,28 @@ profiled, and import/setup/Ready rows overlap; do not add them or compare these 
 uninstrumented baseline. End-to-end Ready and lifecycle outcomes include any unpack work deferred
 past import. Failed DNS attempts before dispatch are excluded from these execution timings.
 
+### Imported OCI blobs, 2026-10-17
+
+The [complete blob inventory](import-blob-inventory-2026-10-17.md) maps every blob to its images
+and contents, using the exact transfer-mode TestRunner inputs above. All 91 digests and sizes
+match the captured import manifest: 55 filesystem layers (910,712,261 bytes), 18 manifests and
+18 configs (59,789 bytes), totaling 868.58 MiB stored. Layer downloads were SHA-256 verified;
+this is the lifecycle fixture without the optional Claude runner variant.
+[Machine-readable evidence](import-blob-inventory-2026-10-17.json) retains the ordered layers,
+full digests, media types, build history and input-artifact hash.
+
+All 18 images share the 28.41 MiB Debian base. The 11 Python images share the 202.48 MiB
+interpreter layer, but their package layers are distinct because dependency files live under
+binary-specific runfiles paths. Each also has an application/runfiles layer and a 10 KiB
+interpreter-alias tar; app additionally carries 29.57 MiB of precompiled Python bytecode.
+The inventory records the six Go executable layers and PostgreSQL's 12 additional layers too.
+
+Import streams the OCI blobs into containerd's content store, then unpacking applies filesystem
+layers into snapshots. Container creation assembles the image snapshots with a writable layer;
+it does not copy the full image again. Stored blob sizes are not unpacked storage or filesystem
+write totals, and this inventory does not assign per-blob timing. The package-layer experiment
+remains deferred; the native profile still identifies filesystem apply/writes as substantial work.
+
 ### Startup profile, 2026-10-17
 
 A fresh [profiled lifecycle run](https://app.buildbuddy.io/invocation/22cdbd11-6ee9-4bbf-b25c-6b811e3e4021)

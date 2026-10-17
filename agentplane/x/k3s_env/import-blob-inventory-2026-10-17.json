@@ -1,0 +1,1131 @@
+{
+  "source": "1290a748c5d1275b95b69ee354383413987dada4",
+  "invocation": "a96dd4cc-aa24-4d86-9e19-ec51aa1f6837",
+  "input_artifact": "agentplane_x_k3s_env_test_lifecycle__run_1_of_2__import-inputs.json",
+  "input_artifact_sha256": "2cd51c3793662bab1bfbf2a2541b243ba4963cd2261200e078f09b2452398565",
+  "canonical_inputs_sha256": "fb65366d88c5d74953f682c864694aa20dfea01049d2787a7009b62ab9b3e519",
+  "canonicalization": "Remove mode, then json.dumps(sort_keys=True, separators=(\",\", \":\")); UTF-8 SHA-256.",
+  "images": [
+    {
+      "image": "action_service",
+      "layout_runfiles_path": "_main/agentplane/action_service/image",
+      "manifest": "sha256:a30dab40c32ced2c885978ac935b7dc1082f4b295fd25c6159fd6d23eb1f43c5",
+      "config": "sha256:e4815837b8dd1ec5f1ddd9a595a6c1b6c3556ed3c4ae43be8b5fb4ce3e0af666",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:533486cd9f91d54c367db0262e41f96e1dc175e8d384a6952092b2f3cd4b0ef5",
+        "sha256:a4a09116a780e53610b8f62e8bfbdb8bc6bc37b109676bbdf9205c8e1ecfb46b",
+        "sha256:f3c78eff88886266ef9907a267e02f8d2cc6878a3db533de36570198d3c1f062",
+        "sha256:f9a8bbfa51540d7417ffc159b8f4cc27d7c42afaccb0aaf544f3fdb53ec2b335",
+        "sha256:08d222802010e951f4d1c5e2869807a4651b261c4d897b1d42ff2cb80fd6fe2a"
+      ]
+    },
+    {
+      "image": "action_service_migrate",
+      "layout_runfiles_path": "_main/agentplane/action_service/migration_image",
+      "manifest": "sha256:33c8033400677b89f8572620deaa7da43ad241e783eef0b866a706325c794b70",
+      "config": "sha256:b7d37e0e4021692a476479579f589f84b09855e83ed33e94806162298610efc4",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:533486cd9f91d54c367db0262e41f96e1dc175e8d384a6952092b2f3cd4b0ef5",
+        "sha256:567d81f7946bbe1118a2533e619d218342ff5053ab42acf2fe60f75a05f65a76",
+        "sha256:24cabb349892cfc9094794b41d1aaf1c4ccdd3750d2236c04218cc1da1e98898",
+        "sha256:65f90c5a842cc15e31182083d0900af2698184e1e54f17ad7be1320f3071e3a1"
+      ]
+    },
+    {
+      "image": "app",
+      "layout_runfiles_path": "_main/agentplane/app/image",
+      "manifest": "sha256:e6378d0a2887491dcf94d3bffae8569552fe82c3274aa37df5a8ef927159efbf",
+      "config": "sha256:91307ea8d07e555e4310b6976be40ff646043f300d62f5545b0498e57f6f16b3",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:533486cd9f91d54c367db0262e41f96e1dc175e8d384a6952092b2f3cd4b0ef5",
+        "sha256:930c57ea78954362f4155b834d16383b337af3c347e93837ce039e88281e31dc",
+        "sha256:023c842ff57364d92e43c430ab20ca08df8a74d620cabf2543889d05e8f751d4",
+        "sha256:b8b936ad3cfeb598a3e9c31b87358a870957752cef8a93a7758bc1ab993cc3c0",
+        "sha256:599c8d870114d8ec21d8063036e2ac75cf2c125fb506ae2ccedd2da6a99e5fb0",
+        "sha256:08d222802010e951f4d1c5e2869807a4651b261c4d897b1d42ff2cb80fd6fe2a"
+      ]
+    },
+    {
+      "image": "app_migrate",
+      "layout_runfiles_path": "_main/agentplane/app/migration_image",
+      "manifest": "sha256:64181fea5c86fda1fc8b6b0b73b9ff540e37a2ef33014d28e22af7178dbc86c9",
+      "config": "sha256:525990648344da593c19176b215cbca1ab590c1a9e9034b27e5b7401877f4189",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:533486cd9f91d54c367db0262e41f96e1dc175e8d384a6952092b2f3cd4b0ef5",
+        "sha256:05b185b2f76f59962bf751735e3d5142028d7cccd13f23004fc25018b680f942",
+        "sha256:aef439b1224af7f21f940b938dfef0eeb6282fa041010da2d8c1e9402c7ff428",
+        "sha256:86aab8bffc10dceadb43eed802ab75b255d18688974a2ea9e79cf361c6ac1a1f"
+      ]
+    },
+    {
+      "image": "egress",
+      "layout_runfiles_path": "_main/agentplane/egress/image",
+      "manifest": "sha256:65d3abcc0b49ccbe8d65cda715b9dd91def06ffc4c9c3bc6758cde4fdc9d4842",
+      "config": "sha256:5609f8db0b1c3323bc66294faa61d63644f3d44ad0b3c18b5bffcbc84f9c4924",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:533486cd9f91d54c367db0262e41f96e1dc175e8d384a6952092b2f3cd4b0ef5",
+        "sha256:9dfb2c80d7f2100491fb3cd152c5b8f7a47a3cc0b2abaf7d38e364aef0598c7c",
+        "sha256:b7bda6963f35ca643e719bea1dc86e54091d2cf397f944d2cf8bdb171d630e23",
+        "sha256:515ad991291369f4576404e0ef44cad117d0af17d2f541e03db09dea8601b3f5",
+        "sha256:08d222802010e951f4d1c5e2869807a4651b261c4d897b1d42ff2cb80fd6fe2a"
+      ]
+    },
+    {
+      "image": "egress_migrate",
+      "layout_runfiles_path": "_main/agentplane/egress/migration_image",
+      "manifest": "sha256:1feecc4146b29c66ff0969205f64f22b89667e5a36895a42d385032a2e2b8191",
+      "config": "sha256:93850103a12d01a5043c2f76f13813d77763edb125f668fedcad9bfa57b0ea08",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:533486cd9f91d54c367db0262e41f96e1dc175e8d384a6952092b2f3cd4b0ef5",
+        "sha256:dd0b130747d00ee8dd8e8e573228d160d30e75580ba63224288bf30283db36e0",
+        "sha256:9f9c334ca485ab0c6e404eb58801f2d04a4048ed482e3f19df191c5b10682cf8",
+        "sha256:abb5f702984871b6297ddb78fcfbce46537159ade379ec18686d42ecd4d00715"
+      ]
+    },
+    {
+      "image": "egress_sidecar",
+      "layout_runfiles_path": "_main/agentplane/egress/sidecar_image",
+      "manifest": "sha256:6a84c4c5175eee79328b06afc7ada445dd72ecc85732f40015bfad62890c2c18",
+      "config": "sha256:45f5083980af397b7beaaa2f7613e3c2f10e73de19b9b70b54ffe8a7476f39f2",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:31899dda0a85bd2e9958daac0e6705bffb264db8104151aa909baff0c38d78a9"
+      ]
+    },
+    {
+      "image": "history_migrate",
+      "layout_runfiles_path": "_main/agentplane/history_service/storage/migration_image",
+      "manifest": "sha256:c14402d21ff38dfb3381f1f54cbce04acc9baa071f1724e10d3fef44067154c3",
+      "config": "sha256:e469ec9577ee393325bdc72a7317f98c30b758ea01472bcc406ffa1966a7ccae",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:533486cd9f91d54c367db0262e41f96e1dc175e8d384a6952092b2f3cd4b0ef5",
+        "sha256:cdb84e23923decdb85931aab6400c8971575fa2055d4471c82e52066926fd641",
+        "sha256:ece7447df2105d041c6e006e055ee8cac76e63133a1e928ac3d9854d5f2a3ef3",
+        "sha256:05b6561030517e85788a0fb606f4390dc961bf7631e781b01b622208c82bd5f1"
+      ]
+    },
+    {
+      "image": "history_service",
+      "layout_runfiles_path": "_main/agentplane/history_service/image",
+      "manifest": "sha256:5713dce53f3471d1bd480fcdd1220d818b37c74f4e5d1ad1370f308af4f6e32a",
+      "config": "sha256:daf4f203f0ca9e65276eec787d7ede335e61adaaa018c8a6941f3e8eb067f6e0",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:533486cd9f91d54c367db0262e41f96e1dc175e8d384a6952092b2f3cd4b0ef5",
+        "sha256:9fa4d271542129c362810d6ffc974c71d0c7135de93e00f2f74ec93fdb3e1d4f",
+        "sha256:ef053635709c767e1671f8d523db795528b2a47cb30f8f7431c0ff2bd278fc60",
+        "sha256:c11aef9e48578ef36afcd6cfebffe502805e72a975058313396f8a5e8c0b9cd6",
+        "sha256:08d222802010e951f4d1c5e2869807a4651b261c4d897b1d42ff2cb80fd6fe2a"
+      ]
+    },
+    {
+      "image": "llm_ingress",
+      "layout_runfiles_path": "_main/agentplane/llm_ingress/image",
+      "manifest": "sha256:488d6275549c47349db68d76f2a5acb10d5de4823c3a040cabd68bc3dec2cc49",
+      "config": "sha256:b2e4ef0a1a63a43b926a09477da95daad9647906854b6a622220d9d49f36941b",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:c9c6bab4b549a9dcbd88417400601cfb991ec390995c207fd796b5d8d435c897",
+        "sha256:08d222802010e951f4d1c5e2869807a4651b261c4d897b1d42ff2cb80fd6fe2a"
+      ]
+    },
+    {
+      "image": "notification_service",
+      "layout_runfiles_path": "_main/agentplane/notification_service/image",
+      "manifest": "sha256:8b9215e1fb26b9af555851a6de7d092919b48a834583edc770c74d5dde0d82d0",
+      "config": "sha256:80b03cd48281118d42455c35b0ecbd762ec1c1081b86829c947aec8565d50ee5",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:533486cd9f91d54c367db0262e41f96e1dc175e8d384a6952092b2f3cd4b0ef5",
+        "sha256:4cca96ddc7dcdacbb5c38e147f7fcd6272a08dfa7d2ea60a7231bc30077c7f0e",
+        "sha256:c123a48f7259fa7c4aad9f8c1480d0e33473f0fc22eddac65acce419943d2ce5",
+        "sha256:0d0c104edb66dd96442c17c38e5b930e1338c094959a3ebc6a41d1be99806c0d"
+      ]
+    },
+    {
+      "image": "notification_service_migrate",
+      "layout_runfiles_path": "_main/agentplane/notification_service/migration_image",
+      "manifest": "sha256:f7b0b6b4d83c791172ecff4ad75fe27ea76352a87fdc8f011b91657eb98b2d02",
+      "config": "sha256:e0d36cf240938d73a4c6459c10572b302bc5d41c60dee7dd310eee597a119bc9",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:533486cd9f91d54c367db0262e41f96e1dc175e8d384a6952092b2f3cd4b0ef5",
+        "sha256:c6e702094327181ce8900a0252eb2632f68ef82690c1014160c84b1d546889ee",
+        "sha256:b9bb05b405de7914f5e3fc79281b2018f290547504b8b18ea33b9dc81056762f",
+        "sha256:71168da2a71a3d9a3091557d961eba237cc02f0426b66f616b6fa50b0821413a"
+      ]
+    },
+    {
+      "image": "policy_controller",
+      "layout_runfiles_path": "_main/agentplane/policy_controller/image",
+      "manifest": "sha256:8f3817ba419142462ce11d2366c58f3847d947671edc0adb02baeaa17a290d6f",
+      "config": "sha256:bd3062954208d3719f1f8f3b62615164109a97cd901b7f749fee22355289427f",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:0482808cb1e51ab9bca1f58c6f86762b10e979449bdab16b531ad6b4677ab743"
+      ]
+    },
+    {
+      "image": "postgres",
+      "layout_runfiles_path": "rules_oci++oci+postgres_18_linux_amd64/layout",
+      "manifest": "sha256:7341002d2b8c7c5bdd7542a671a95b36196c0b5b888daf454ae4fc33ba5346d7",
+      "config": "sha256:a6638641707cdf047e5d5c2781f437e2e809323cab22c70b280be8389fbb7878",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:6463c6b5c70320dc516e6ddd2381861493bc90ed29e1654a204f6df10575d055",
+        "sha256:8d6422da287d3f004bab103e0204f8c55d5cddd98dac7f21899aefe2e6db3c87",
+        "sha256:2fc0e69f8d7d3027b0921714635ca43e715347c0521a568b359fb2cb70c9f09c",
+        "sha256:5fa29c524b4efe024dba1cdc0c1a0a57a24d0e7965c5f832c7836c98b0fda0ad",
+        "sha256:ace4b5b96a9138c160b00a5acad3900eac771a13fad27e8948a66a7ed0270627",
+        "sha256:af2a6480a0588ba2d48e077961144ed182076ebac70c8c26e6ce1986c8c3ff22",
+        "sha256:5ee6c6ca7fd9b2a38ea430f570030b2eb87e9975e565897b3cce2f62e05411ba",
+        "sha256:c5694bff1357bc2fd0c382590ab729b949e8c4494a509cd55d9e3c90b453dc13",
+        "sha256:aedab71775047c7e8101a9fcdd8be088a9575b6b0cdad7650d6f67a4e076d73b",
+        "sha256:a4635eaec9b86bda9e3f2634e14915b9dbbc964755f336572e8ba56d6d7e6c0f",
+        "sha256:46e663abc8f5ed994cede123e749e21c7b0675bfc5cd0905d87d8cef3c7b74dd",
+        "sha256:1bb54e8f77276172953d507b21a7ad3af088aab59ce62a36c834348649641857"
+      ]
+    },
+    {
+      "image": "runner_gateway_go",
+      "layout_runfiles_path": "_main/agentplane/runner_gateway/go_image",
+      "manifest": "sha256:13ba61b1916726f7efdde53f565fc864432788263b3ce015f94b86828532943e",
+      "config": "sha256:d47d14b02cdbccdaf70c6d6913defef9cd3cb0e74d0182b6c2bad198493b5450",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:610e7ebc9ba6742bc4922f020d06d0656513cb63208d3c2b53b61af3c99e778e"
+      ]
+    },
+    {
+      "image": "runner_gateway_queue_migrate",
+      "layout_runfiles_path": "_main/agentplane/runner_gateway/migrations/image",
+      "manifest": "sha256:485c37453caf1181bf46ba52d63b238c0bdd2e8093a86f75c0f319dedb787524",
+      "config": "sha256:1ec2d37edfe493b68af92ff2a80b8b45976b2c625afb97346a0f35309ded9e70",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:92692c59914f25b71b18c8f0d491d169061f3bab35c5e58bbbf0d73bafa6d9f5"
+      ]
+    },
+    {
+      "image": "sandbox_controller",
+      "layout_runfiles_path": "_main/agentplane/sandbox_controller/image",
+      "manifest": "sha256:ca4c78351af994362029ff1a0b19852caf749ffdfd2bdbf13ebf7175f31e0320",
+      "config": "sha256:8eec3e728cb40aac0010195b4ee3c93d86e57c62c10d08cdefcae7d912e6fc19",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:78d93b926553fd2f04c3d7ced87dde75cb0971ff8d5d6e2b3bb806fd46883b85"
+      ]
+    },
+    {
+      "image": "runner",
+      "layout_runfiles_path": "_main/agentplane/x/k3s_env/runner_image",
+      "manifest": "sha256:c4f00bd7025a680ea66e24f8aa570e467015d2e7e4fbd830554e4c9bc7385200",
+      "config": "sha256:c7c105dcc371c47ce78ec1f77c8b14fd78d748274533f4436738ca52c788355f",
+      "layers": [
+        "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+        "sha256:533486cd9f91d54c367db0262e41f96e1dc175e8d384a6952092b2f3cd4b0ef5",
+        "sha256:836759fabeeff6f3cd67297c4a27eccbd58f9eb49b28cc42ae990287276d8430",
+        "sha256:2ae905236c5c2ef0398a85c91f90473bfecdb71dca536c33f0bdb6010b046b4b",
+        "sha256:98edc2f7ba4fc52c043d640049a127e8799cf43c0b944aabb2320c654d9dd5c0",
+        "sha256:08d222802010e951f4d1c5e2869807a4651b261c4d897b1d42ff2cb80fd6fe2a"
+      ]
+    }
+  ],
+  "blobs": [
+    {
+      "digest": "sha256:a30dab40c32ced2c885978ac935b7dc1082f4b295fd25c6159fd6d23eb1f43c5",
+      "kind": "manifest",
+      "bytes": 1438,
+      "images": ["action_service"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:e4815837b8dd1ec5f1ddd9a595a6c1b6c3556ed3c4ae43be8b5fb4ce3e0af666",
+      "kind": "config",
+      "bytes": 2081,
+      "images": ["action_service"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+      "kind": "layer",
+      "bytes": 29792658,
+      "images": [
+        "action_service",
+        "action_service_migrate",
+        "app",
+        "app_migrate",
+        "egress",
+        "egress_migrate",
+        "egress_sidecar",
+        "history_migrate",
+        "history_service",
+        "llm_ingress",
+        "notification_service",
+        "notification_service_migrate",
+        "policy_controller",
+        "postgres",
+        "runner_gateway_go",
+        "runner_gateway_queue_migrate",
+        "sandbox_controller",
+        "runner"
+      ],
+      "purpose": "Shared Debian trixie slim base filesystem, shell, system libraries and package metadata",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "# debian.sh --arch 'amd64' out/ 'trixie' '@1787529600'",
+      "regular_file_bytes": 78640866,
+      "regular_file_count": 2669
+    },
+    {
+      "digest": "sha256:533486cd9f91d54c367db0262e41f96e1dc175e8d384a6952092b2f3cd4b0ef5",
+      "kind": "layer",
+      "bytes": 212320824,
+      "images": [
+        "action_service",
+        "action_service_migrate",
+        "app",
+        "app_migrate",
+        "egress",
+        "egress_migrate",
+        "history_migrate",
+        "history_service",
+        "notification_service",
+        "notification_service_migrate",
+        "runner"
+      ],
+      "purpose": "Shared CPython 3.14 interpreter/toolchain, standard library and supporting files",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //devinfra/oci/python_runtime:runtime_layers_interpreter",
+      "regular_file_bytes": 638112751,
+      "regular_file_count": 1926
+    },
+    {
+      "digest": "sha256:a4a09116a780e53610b8f62e8bfbdb8bc6bc37b109676bbdf9205c8e1ecfb46b",
+      "kind": "layer",
+      "bytes": 1014009,
+      "images": ["action_service"],
+      "purpose": "Application code, launcher and supporting runfiles (including venv helper)",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/action_service:server_layers_default",
+      "regular_file_bytes": 2710684,
+      "regular_file_count": 111
+    },
+    {
+      "digest": "sha256:f3c78eff88886266ef9907a267e02f8d2cc6878a3db533de36570198d3c1f062",
+      "kind": "layer",
+      "bytes": 48788369,
+      "images": ["action_service"],
+      "purpose": "Python third-party dependencies under binary-specific runfiles paths; largest package trees: kubernetes_asyncio, glide_shared, glide, uvloop, cryptography, sqlalchemy",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/action_service:server_layers_packages",
+      "regular_file_bytes": 179668132,
+      "regular_file_count": 6742
+    },
+    {
+      "digest": "sha256:f9a8bbfa51540d7417ffc159b8f4cc27d7c42afaccb0aaf544f3fdb53ec2b335",
+      "kind": "layer",
+      "bytes": 10240,
+      "images": ["action_service"],
+      "purpose": "Symlink from this binary-specific Python runfiles path to the shared interpreter tree",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/action_service:server_layers_runtime_alias",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:08d222802010e951f4d1c5e2869807a4651b261c4d897b1d42ff2cb80fd6fe2a",
+      "kind": "layer",
+      "bytes": 136995,
+      "images": ["action_service", "app", "egress", "history_service", "llm_ingress", "runner"],
+      "purpose": "CA certificate bundle and update-ca-certificates script for HTTPS trust",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //third_party/debian_slim:cacerts",
+      "regular_file_bytes": 243389,
+      "regular_file_count": 2
+    },
+    {
+      "digest": "sha256:33c8033400677b89f8572620deaa7da43ad241e783eef0b866a706325c794b70",
+      "kind": "manifest",
+      "bytes": 1246,
+      "images": ["action_service_migrate"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:b7d37e0e4021692a476479579f589f84b09855e83ed33e94806162298610efc4",
+      "kind": "config",
+      "bytes": 1841,
+      "images": ["action_service_migrate"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:567d81f7946bbe1118a2533e619d218342ff5053ab42acf2fe60f75a05f65a76",
+      "kind": "layer",
+      "bytes": 890140,
+      "images": ["action_service_migrate"],
+      "purpose": "Application code, launcher and supporting runfiles (including venv helper)",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/action_service:migration_layers_default",
+      "regular_file_bytes": 2241940,
+      "regular_file_count": 64
+    },
+    {
+      "digest": "sha256:24cabb349892cfc9094794b41d1aaf1c4ccdd3750d2236c04218cc1da1e98898",
+      "kind": "layer",
+      "bytes": 30525213,
+      "images": ["action_service_migrate"],
+      "purpose": "Python third-party dependencies under binary-specific runfiles paths; largest package trees: uvloop, cryptography, sqlalchemy, asyncpg, psycopg_binary.libs, psycopg_binary",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/action_service:migration_layers_packages",
+      "regular_file_bytes": 111743434,
+      "regular_file_count": 2982
+    },
+    {
+      "digest": "sha256:65f90c5a842cc15e31182083d0900af2698184e1e54f17ad7be1320f3071e3a1",
+      "kind": "layer",
+      "bytes": 10240,
+      "images": ["action_service_migrate"],
+      "purpose": "Symlink from this binary-specific Python runfiles path to the shared interpreter tree",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/action_service:migration_layers_runtime_alias",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:e6378d0a2887491dcf94d3bffae8569552fe82c3274aa37df5a8ef927159efbf",
+      "kind": "manifest",
+      "bytes": 1631,
+      "images": ["app"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:91307ea8d07e555e4310b6976be40ff646043f300d62f5545b0498e57f6f16b3",
+      "kind": "config",
+      "bytes": 2193,
+      "images": ["app"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:930c57ea78954362f4155b834d16383b337af3c347e93837ce039e88281e31dc",
+      "kind": "layer",
+      "bytes": 2820594,
+      "images": ["app"],
+      "purpose": "Application code, launcher and supporting runfiles (including venv helper); bundled frontend JS and source map",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/app:app_layers_default",
+      "regular_file_bytes": 10223260,
+      "regular_file_count": 212
+    },
+    {
+      "digest": "sha256:023c842ff57364d92e43c430ab20ca08df8a74d620cabf2543889d05e8f751d4",
+      "kind": "layer",
+      "bytes": 55650824,
+      "images": ["app"],
+      "purpose": "Python third-party dependencies under binary-specific runfiles paths; largest package trees: kubernetes_asyncio, glide_shared, glide, grpc, uvloop, cryptography",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/app:app_layers_packages",
+      "regular_file_bytes": 196874934,
+      "regular_file_count": 6827
+    },
+    {
+      "digest": "sha256:b8b936ad3cfeb598a3e9c31b87358a870957752cef8a93a7758bc1ab993cc3c0",
+      "kind": "layer",
+      "bytes": 10240,
+      "images": ["app"],
+      "purpose": "Symlink from this binary-specific Python runfiles path to the shared interpreter tree",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/app:app_layers_runtime_alias",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:599c8d870114d8ec21d8063036e2ac75cf2c125fb506ae2ccedd2da6a99e5fb0",
+      "kind": "layer",
+      "bytes": 31006814,
+      "images": ["app"],
+      "purpose": "Precompiled Python bytecode for app and its runtime/dependency layers",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/app:app_bytecode",
+      "regular_file_bytes": 98148700,
+      "regular_file_count": 6081
+    },
+    {
+      "digest": "sha256:64181fea5c86fda1fc8b6b0b73b9ff540e37a2ef33014d28e22af7178dbc86c9",
+      "kind": "manifest",
+      "bytes": 1246,
+      "images": ["app_migrate"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:525990648344da593c19176b215cbca1ab590c1a9e9034b27e5b7401877f4189",
+      "kind": "config",
+      "bytes": 1775,
+      "images": ["app_migrate"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:05b185b2f76f59962bf751735e3d5142028d7cccd13f23004fc25018b680f942",
+      "kind": "layer",
+      "bytes": 882517,
+      "images": ["app_migrate"],
+      "purpose": "Application code, launcher and supporting runfiles (including venv helper)",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/app:migration_layers_default",
+      "regular_file_bytes": 2210563,
+      "regular_file_count": 59
+    },
+    {
+      "digest": "sha256:aef439b1224af7f21f940b938dfef0eeb6282fa041010da2d8c1e9402c7ff428",
+      "kind": "layer",
+      "bytes": 16605383,
+      "images": ["app_migrate"],
+      "purpose": "Python third-party dependencies under binary-specific runfiles paths; largest package trees: sqlalchemy, asyncpg, psycopg_binary.libs, psycopg_binary, pydantic_core, greenlet",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/app:migration_layers_packages",
+      "regular_file_bytes": 62291208,
+      "regular_file_count": 1487
+    },
+    {
+      "digest": "sha256:86aab8bffc10dceadb43eed802ab75b255d18688974a2ea9e79cf361c6ac1a1f",
+      "kind": "layer",
+      "bytes": 10240,
+      "images": ["app_migrate"],
+      "purpose": "Symlink from this binary-specific Python runfiles path to the shared interpreter tree",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/app:migration_layers_runtime_alias",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:65d3abcc0b49ccbe8d65cda715b9dd91def06ffc4c9c3bc6758cde4fdc9d4842",
+      "kind": "manifest",
+      "bytes": 1438,
+      "images": ["egress"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:5609f8db0b1c3323bc66294faa61d63644f3d44ad0b3c18b5bffcbc84f9c4924",
+      "kind": "config",
+      "bytes": 2033,
+      "images": ["egress"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:9dfb2c80d7f2100491fb3cd152c5b8f7a47a3cc0b2abaf7d38e364aef0598c7c",
+      "kind": "layer",
+      "bytes": 2403349,
+      "images": ["egress"],
+      "purpose": "Application code, launcher and supporting runfiles (including venv helper)",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/egress:egress_layers_default",
+      "regular_file_bytes": 6072511,
+      "regular_file_count": 64
+    },
+    {
+      "digest": "sha256:b7bda6963f35ca643e719bea1dc86e54091d2cf397f944d2cf8bdb171d630e23",
+      "kind": "layer",
+      "bytes": 44028735,
+      "images": ["egress"],
+      "purpose": "Python third-party dependencies under binary-specific runfiles paths; largest package trees: kubernetes_asyncio, zstandard, uvloop, cryptography, sqlalchemy, asyncpg",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/egress:egress_layers_packages",
+      "regular_file_bytes": 175282671,
+      "regular_file_count": 4871
+    },
+    {
+      "digest": "sha256:515ad991291369f4576404e0ef44cad117d0af17d2f541e03db09dea8601b3f5",
+      "kind": "layer",
+      "bytes": 10240,
+      "images": ["egress"],
+      "purpose": "Symlink from this binary-specific Python runfiles path to the shared interpreter tree",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/egress:egress_layers_runtime_alias",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:1feecc4146b29c66ff0969205f64f22b89667e5a36895a42d385032a2e2b8191",
+      "kind": "manifest",
+      "bytes": 1246,
+      "images": ["egress_migrate"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:93850103a12d01a5043c2f76f13813d77763edb125f668fedcad9bfa57b0ea08",
+      "kind": "config",
+      "bytes": 1793,
+      "images": ["egress_migrate"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:dd0b130747d00ee8dd8e8e573228d160d30e75580ba63224288bf30283db36e0",
+      "kind": "layer",
+      "bytes": 881025,
+      "images": ["egress_migrate"],
+      "purpose": "Application code, launcher and supporting runfiles (including venv helper)",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/egress:migration_layers_default",
+      "regular_file_bytes": 2196166,
+      "regular_file_count": 32
+    },
+    {
+      "digest": "sha256:9f9c334ca485ab0c6e404eb58801f2d04a4048ed482e3f19df191c5b10682cf8",
+      "kind": "layer",
+      "bytes": 21200464,
+      "images": ["egress_migrate"],
+      "purpose": "Python third-party dependencies under binary-specific runfiles paths; largest package trees: kubernetes_asyncio, sqlalchemy, asyncpg, psycopg_binary.libs, psycopg_binary, aiohttp",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/egress:migration_layers_packages",
+      "regular_file_bytes": 96024842,
+      "regular_file_count": 3194
+    },
+    {
+      "digest": "sha256:abb5f702984871b6297ddb78fcfbce46537159ade379ec18686d42ecd4d00715",
+      "kind": "layer",
+      "bytes": 10240,
+      "images": ["egress_migrate"],
+      "purpose": "Symlink from this binary-specific Python runfiles path to the shared interpreter tree",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/egress:migration_layers_runtime_alias",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:6a84c4c5175eee79328b06afc7ada445dd72ecc85732f40015bfad62890c2c18",
+      "kind": "manifest",
+      "bytes": 670,
+      "images": ["egress_sidecar"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:45f5083980af397b7beaaa2f7613e3c2f10e73de19b9b70b54ffe8a7476f39f2",
+      "kind": "config",
+      "bytes": 939,
+      "images": ["egress_sidecar"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:31899dda0a85bd2e9958daac0e6705bffb264db8104151aa909baff0c38d78a9",
+      "kind": "layer",
+      "bytes": 12277760,
+      "images": ["egress_sidecar"],
+      "purpose": "Go executable /usr/local/bin/egress-sidecar",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/egress:sidecar_go_binary_layer",
+      "regular_file_bytes": 12271778,
+      "regular_file_count": 1
+    },
+    {
+      "digest": "sha256:c14402d21ff38dfb3381f1f54cbce04acc9baa071f1724e10d3fef44067154c3",
+      "kind": "manifest",
+      "bytes": 1246,
+      "images": ["history_migrate"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:e469ec9577ee393325bdc72a7317f98c30b758ea01472bcc406ffa1966a7ccae",
+      "kind": "config",
+      "bytes": 1895,
+      "images": ["history_migrate"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:cdb84e23923decdb85931aab6400c8971575fa2055d4471c82e52066926fd641",
+      "kind": "layer",
+      "bytes": 870793,
+      "images": ["history_migrate"],
+      "purpose": "Application code, launcher and supporting runfiles (including venv helper)",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/history_service/storage:migration_layers_default",
+      "regular_file_bytes": 2158306,
+      "regular_file_count": 37
+    },
+    {
+      "digest": "sha256:ece7447df2105d041c6e006e055ee8cac76e63133a1e928ac3d9854d5f2a3ef3",
+      "kind": "layer",
+      "bytes": 12430249,
+      "images": ["history_migrate"],
+      "purpose": "Python third-party dependencies under binary-specific runfiles paths; largest package trees: sqlalchemy, psycopg_binary.libs, psycopg_binary, pydantic_core, greenlet, pydantic",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/history_service/storage:migration_layers_packages",
+      "regular_file_bytes": 46336979,
+      "regular_file_count": 1039
+    },
+    {
+      "digest": "sha256:05b6561030517e85788a0fb606f4390dc961bf7631e781b01b622208c82bd5f1",
+      "kind": "layer",
+      "bytes": 10240,
+      "images": ["history_migrate"],
+      "purpose": "Symlink from this binary-specific Python runfiles path to the shared interpreter tree",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/history_service/storage:migration_layers_runtime_alias",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:5713dce53f3471d1bd480fcdd1220d818b37c74f4e5d1ad1370f308af4f6e32a",
+      "kind": "manifest",
+      "bytes": 1438,
+      "images": ["history_service"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:daf4f203f0ca9e65276eec787d7ede335e61adaaa018c8a6941f3e8eb067f6e0",
+      "kind": "config",
+      "bytes": 2087,
+      "images": ["history_service"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:9fa4d271542129c362810d6ffc974c71d0c7135de93e00f2f74ec93fdb3e1d4f",
+      "kind": "layer",
+      "bytes": 1065430,
+      "images": ["history_service"],
+      "purpose": "Application code, launcher and supporting runfiles (including venv helper)",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/history_service:server_layers_default",
+      "regular_file_bytes": 3353856,
+      "regular_file_count": 118
+    },
+    {
+      "digest": "sha256:ef053635709c767e1671f8d523db795528b2a47cb30f8f7431c0ff2bd278fc60",
+      "kind": "layer",
+      "bytes": 22929834,
+      "images": ["history_service"],
+      "purpose": "Python third-party dependencies under binary-specific runfiles paths; largest package trees: kubernetes_asyncio, grpc, sqlalchemy, asyncpg, aiohttp, pydantic_core",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/history_service:server_layers_packages",
+      "regular_file_bytes": 93347108,
+      "regular_file_count": 3103
+    },
+    {
+      "digest": "sha256:c11aef9e48578ef36afcd6cfebffe502805e72a975058313396f8a5e8c0b9cd6",
+      "kind": "layer",
+      "bytes": 10240,
+      "images": ["history_service"],
+      "purpose": "Symlink from this binary-specific Python runfiles path to the shared interpreter tree",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/history_service:server_layers_runtime_alias",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:488d6275549c47349db68d76f2a5acb10d5de4823c3a040cabd68bc3dec2cc49",
+      "kind": "manifest",
+      "bytes": 862,
+      "images": ["llm_ingress"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:b2e4ef0a1a63a43b926a09477da95daad9647906854b6a622220d9d49f36941b",
+      "kind": "config",
+      "bytes": 1186,
+      "images": ["llm_ingress"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:c9c6bab4b549a9dcbd88417400601cfb991ec390995c207fd796b5d8d435c897",
+      "kind": "layer",
+      "bytes": 27248640,
+      "images": ["llm_ingress"],
+      "purpose": "Go executable /usr/local/bin/server",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/llm_ingress:binary_layer",
+      "regular_file_bytes": 27242658,
+      "regular_file_count": 1
+    },
+    {
+      "digest": "sha256:8b9215e1fb26b9af555851a6de7d092919b48a834583edc770c74d5dde0d82d0",
+      "kind": "manifest",
+      "bytes": 1247,
+      "images": ["notification_service"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:80b03cd48281118d42455c35b0ecbd762ec1c1081b86829c947aec8565d50ee5",
+      "kind": "config",
+      "bytes": 1856,
+      "images": ["notification_service"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:4cca96ddc7dcdacbb5c38e147f7fcd6272a08dfa7d2ea60a7231bc30077c7f0e",
+      "kind": "layer",
+      "bytes": 1110209,
+      "images": ["notification_service"],
+      "purpose": "Application code, launcher and supporting runfiles (including venv helper)",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/notification_service:server_layers_default",
+      "regular_file_bytes": 3545292,
+      "regular_file_count": 148
+    },
+    {
+      "digest": "sha256:c123a48f7259fa7c4aad9f8c1480d0e33473f0fc22eddac65acce419943d2ce5",
+      "kind": "layer",
+      "bytes": 36890903,
+      "images": ["notification_service"],
+      "purpose": "Python third-party dependencies under binary-specific runfiles paths; largest package trees: kubernetes_asyncio, grpc, uvloop, cryptography, sqlalchemy, asyncpg",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/notification_service:server_layers_packages",
+      "regular_file_bytes": 143835136,
+      "regular_file_count": 4942
+    },
+    {
+      "digest": "sha256:0d0c104edb66dd96442c17c38e5b930e1338c094959a3ebc6a41d1be99806c0d",
+      "kind": "layer",
+      "bytes": 10240,
+      "images": ["notification_service"],
+      "purpose": "Symlink from this binary-specific Python runfiles path to the shared interpreter tree",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/notification_service:server_layers_runtime_alias",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:f7b0b6b4d83c791172ecff4ad75fe27ea76352a87fdc8f011b91657eb98b2d02",
+      "kind": "manifest",
+      "bytes": 1246,
+      "images": ["notification_service_migrate"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:e0d36cf240938d73a4c6459c10572b302bc5d41c60dee7dd310eee597a119bc9",
+      "kind": "config",
+      "bytes": 1877,
+      "images": ["notification_service_migrate"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:c6e702094327181ce8900a0252eb2632f68ef82690c1014160c84b1d546889ee",
+      "kind": "layer",
+      "bytes": 874448,
+      "images": ["notification_service_migrate"],
+      "purpose": "Application code, launcher and supporting runfiles (including venv helper)",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/notification_service:migration_layers_default",
+      "regular_file_bytes": 2186359,
+      "regular_file_count": 31
+    },
+    {
+      "digest": "sha256:b9bb05b405de7914f5e3fc79281b2018f290547504b8b18ea33b9dc81056762f",
+      "kind": "layer",
+      "bytes": 12423694,
+      "images": ["notification_service_migrate"],
+      "purpose": "Python third-party dependencies under binary-specific runfiles paths; largest package trees: sqlalchemy, psycopg_binary.libs, psycopg_binary, pydantic_core, greenlet, pydantic",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/notification_service:migration_layers_packages",
+      "regular_file_bytes": 46336979,
+      "regular_file_count": 1039
+    },
+    {
+      "digest": "sha256:71168da2a71a3d9a3091557d961eba237cc02f0426b66f616b6fa50b0821413a",
+      "kind": "layer",
+      "bytes": 10240,
+      "images": ["notification_service_migrate"],
+      "purpose": "Symlink from this binary-specific Python runfiles path to the shared interpreter tree",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/notification_service:migration_layers_runtime_alias",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:8f3817ba419142462ce11d2366c58f3847d947671edc0adb02baeaa17a290d6f",
+      "kind": "manifest",
+      "bytes": 670,
+      "images": ["policy_controller"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:bd3062954208d3719f1f8f3b62615164109a97cd901b7f749fee22355289427f",
+      "kind": "config",
+      "bytes": 942,
+      "images": ["policy_controller"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:0482808cb1e51ab9bca1f58c6f86762b10e979449bdab16b531ad6b4677ab743",
+      "kind": "layer",
+      "bytes": 33320960,
+      "images": ["policy_controller"],
+      "purpose": "Go executable /usr/local/bin/policy-controller",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/policy_controller:binary_layer",
+      "regular_file_bytes": 33312930,
+      "regular_file_count": 1
+    },
+    {
+      "digest": "sha256:7341002d2b8c7c5bdd7542a671a95b36196c0b5b888daf454ae4fc33ba5346d7",
+      "kind": "manifest",
+      "bytes": 3439,
+      "images": ["postgres"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:a6638641707cdf047e5d5c2781f437e2e809323cab22c70b280be8389fbb7878",
+      "kind": "config",
+      "bytes": 10048,
+      "images": ["postgres"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:6463c6b5c70320dc516e6ddd2381861493bc90ed29e1654a204f6df10575d055",
+      "kind": "layer",
+      "bytes": 1170,
+      "images": ["postgres"],
+      "purpose": "Create postgres user/group and data directory ownership",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "RUN /bin/sh -c set -eux; \tgroupadd -r postgres --gid=999; \tuseradd -r -g postgres --uid=999 --home-dir=/var/lib/postgresql --shell=/bin/bash postgres; \tinstall --verbose --directory --owner postgres --group postgres --mode 1777 /var/lib/postgresql # buildkit",
+      "regular_file_bytes": 4324,
+      "regular_file_count": 8
+    },
+    {
+      "digest": "sha256:8d6422da287d3f004bab103e0204f8c55d5cddd98dac7f21899aefe2e6db3c87",
+      "kind": "layer",
+      "bytes": 6443010,
+      "images": ["postgres"],
+      "purpose": "Install gnupg, less and dependencies",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "RUN /bin/sh -c set -ex; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tgnupg \t\tless \t; \trm -rf /var/lib/apt/lists/* # buildkit",
+      "regular_file_bytes": 15864774,
+      "regular_file_count": 265
+    },
+    {
+      "digest": "sha256:2fc0e69f8d7d3027b0921714635ca43e715347c0521a568b359fb2cb70c9f09c",
+      "kind": "layer",
+      "bytes": 1256759,
+      "images": ["postgres"],
+      "purpose": "Install gosu privilege-switching helper and certificate/package changes",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "RUN /bin/sh -c set -eux; \tsavedAptMark=\"$(apt-mark showmanual)\"; \tapt-get update; \tapt-get install -y --no-install-recommends ca-certificates wget; \trm -rf /var/lib/apt/lists/*; \tdpkgArch=\"$(dpkg --print-architecture | awk -F- '{ print $NF }')\"; \twget -O /usr/local/bin/gosu \"https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch\"; \twget -O /usr/local/bin/gosu.asc \"https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch.asc\"; \texport GNUPGHOME=\"$(mktemp -d)\"; \tgpg --batch --keyserver hkps://keys.openpgp.org --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4; \tgpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu; \tgpgconf --kill all; \trm -rf \"$GNUPGHOME\" /usr/local/bin/gosu.asc; \tapt-mark auto '.*' > /dev/null; \t[ -z \"$savedAptMark\" ] || apt-mark manual $savedAptMark > /dev/null; \tapt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \tchmod +x /usr/local/bin/gosu; \tgosu --version; \tgosu nobody true # buildkit",
+      "regular_file_bytes": 3629289,
+      "regular_file_count": 18
+    },
+    {
+      "digest": "sha256:5fa29c524b4efe024dba1cdc0c1a0a57a24d0e7965c5f832c7836c98b0fda0ad",
+      "kind": "layer",
+      "bytes": 8203894,
+      "images": ["postgres"],
+      "purpose": "Install locales and generate en_US.UTF-8",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "RUN /bin/sh -c set -eux; \tif [ -f /etc/dpkg/dpkg.cfg.d/docker ]; then \t\tgrep -q '/usr/share/locale' /etc/dpkg/dpkg.cfg.d/docker; \t\tsed -ri '/\\/usr\\/share\\/locale/d' /etc/dpkg/dpkg.cfg.d/docker; \t\t! grep -q '/usr/share/locale' /etc/dpkg/dpkg.cfg.d/docker; \tfi; \tapt-get update; apt-get install -y --no-install-recommends locales; rm -rf /var/lib/apt/lists/*; \techo 'en_US.UTF-8 UTF-8' >> /etc/locale.gen; \tlocale-gen; \tlocale -a | grep 'en_US.utf8' # buildkit",
+      "regular_file_bytes": 25587162,
+      "regular_file_count": 693
+    },
+    {
+      "digest": "sha256:ace4b5b96a9138c160b00a5acad3900eac771a13fad27e8948a66a7ed0270627",
+      "kind": "layer",
+      "bytes": 1311680,
+      "images": ["postgres"],
+      "purpose": "Install libnss-wrapper, xz-utils and zstd",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tlibnss-wrapper \t\txz-utils \t\tzstd \t; \trm -rf /var/lib/apt/lists/* # buildkit",
+      "regular_file_bytes": 3383004,
+      "regular_file_count": 61
+    },
+    {
+      "digest": "sha256:af2a6480a0588ba2d48e077961144ed182076ebac70c8c26e6ce1986c8c3ff22",
+      "kind": "layer",
+      "bytes": 116,
+      "images": ["postgres"],
+      "purpose": "Create /docker-entrypoint-initdb.d",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "RUN /bin/sh -c mkdir /docker-entrypoint-initdb.d # buildkit",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:5ee6c6ca7fd9b2a38ea430f570030b2eb87e9975e565897b3cce2f62e05411ba",
+      "kind": "layer",
+      "bytes": 3141,
+      "images": ["postgres"],
+      "purpose": "PostgreSQL package-signing key",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "RUN /bin/sh -c set -ex; \tkey='B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8'; \texport GNUPGHOME=\"$(mktemp -d)\"; \tmkdir -p /usr/local/share/keyrings/; \tgpg --batch --keyserver keyserver.ubuntu.com --recv-keys \"$key\"; \tgpg --batch --export --armor \"$key\" > /usr/local/share/keyrings/postgres.gpg.asc; \tgpgconf --kill all; \trm -rf \"$GNUPGHOME\" # buildkit",
+      "regular_file_bytes": 3979,
+      "regular_file_count": 1
+    },
+    {
+      "digest": "sha256:c5694bff1357bc2fd0c382590ab729b949e8c4494a509cd55d9e3c90b453dc13",
+      "kind": "layer",
+      "bytes": 115395563,
+      "images": ["postgres"],
+      "purpose": "PostgreSQL 18 server/client and dependencies, including LLVM, ICU and libz3",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "RUN /bin/sh -c set -ex; \t\texport PYTHONDONTWRITEBYTECODE=1; \t\tdpkgArch=\"$(dpkg --print-architecture)\"; \taptRepo=\"[ signed-by=/usr/local/share/keyrings/postgres.gpg.asc ] http://apt.postgresql.org/pub/repos/apt trixie-pgdg main $PG_MAJOR\"; \tcase \"$dpkgArch\" in \t\tamd64 | arm64 | loong64 | ppc64el) \t\t\techo \"deb $aptRepo\" > /etc/apt/sources.list.d/pgdg.list; \t\t\tapt-get update; \t\t\t;; \t\t*) \t\t\techo \"deb-src $aptRepo\" > /etc/apt/sources.list.d/pgdg.list; \t\t\t\t\t\tsavedAptMark=\"$(apt-mark showmanual)\"; \t\t\t\t\t\ttempDir=\"$(mktemp -d)\"; \t\t\tcd \"$tempDir\"; \t\t\t\t\t\tapt-get update; \t\t\tapt-get install -y --no-install-recommends dpkg-dev; \t\t\techo \"deb [ trusted=yes ] file://$tempDir ./\" > /etc/apt/sources.list.d/temp.list; \t\t\t_update_repo() { \t\t\t\tdpkg-scanpackages . > Packages; \t\t\t\tapt-get -o Acquire::GzipIndexes=false update; \t\t\t}; \t\t\t_update_repo; \t\t\t\t\t\tnproc=\"$(nproc)\"; \t\t\texport DEB_BUILD_OPTIONS=\"nocheck parallel=$nproc\"; \t\t\tapt-get build-dep -y postgresql-common-dev; \t\t\tapt-get source --compile postgresql-common-dev; \t\t\t_update_repo; \t\t\tapt-get build-dep -y \"postgresql-$PG_MAJOR=$PG_VERSION\"; \t\t\tapt-get source --compile \"postgresql-$PG_MAJOR=$PG_VERSION\"; \t\t\t\t\t\t\t\t\tapt-mark showmanual | xargs apt-mark auto > /dev/null; \t\t\tapt-mark manual $savedAptMark; \t\t\t\t\t\tls -lAFh; \t\t\t_update_repo; \t\t\tgrep '^Package: ' Packages; \t\t\tcd /; \t\t\t;; \tesac; \t\tapt-get install -y --no-install-recommends postgresql-common; \tsed -ri 's/#(create_main_cluster) .*$/\\1 = false/' /etc/postgresql-common/createcluster.conf; \tapt-get install -y --no-install-recommends \t\t\"postgresql-$PG_MAJOR=$PG_VERSION\" \t; \tif apt-get install -s \"postgresql-$PG_MAJOR-jit\" > /dev/null 2>&1; then \t\tapt-get install -y --no-install-recommends \"postgresql-$PG_MAJOR-jit=$PG_VERSION\"; \tfi; \t\trm -rf /var/lib/apt/lists/*; \t\tif [ -n \"$tempDir\" ]; then \t\tapt-get purge -y --auto-remove; \t\trm -rf \"$tempDir\" /etc/apt/sources.list.d/temp.list; \tfi; \t\tfind /usr -name '*.pyc' -type f -exec bash -c 'for pyc; do dpkg -S \"$pyc\" &> /dev/null || rm -vf \"$pyc\"; done' -- '{}' +; \t\tpostgres --version # buildkit",
+      "regular_file_bytes": 329248765,
+      "regular_file_count": 4137
+    },
+    {
+      "digest": "sha256:aedab71775047c7e8101a9fcdd8be088a9575b6b0cdad7650d6f67a4e076d73b",
+      "kind": "layer",
+      "bytes": 19420,
+      "images": ["postgres"],
+      "purpose": "Adjust sample postgresql.conf to listen on all addresses",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "RUN /bin/sh -c set -eux; \tdpkg-divert --add --rename --divert \"/usr/share/postgresql/postgresql.conf.sample.dpkg\" \"/usr/share/postgresql/$PG_MAJOR/postgresql.conf.sample\"; \tcp -v /usr/share/postgresql/postgresql.conf.sample.dpkg /usr/share/postgresql/postgresql.conf.sample; \tln -sv ../postgresql.conf.sample \"/usr/share/postgresql/$PG_MAJOR/\"; \tsed -ri \"s!^#?(listen_addresses)\\s*=\\s*\\S+.*!\\1 = '*'!\" /usr/share/postgresql/postgresql.conf.sample; \tgrep -F \"listen_addresses = '*'\" /usr/share/postgresql/postgresql.conf.sample # buildkit",
+      "regular_file_bytes": 66762,
+      "regular_file_count": 4
+    },
+    {
+      "digest": "sha256:a4635eaec9b86bda9e3f2634e14915b9dbbc964755f336572e8ba56d6d7e6c0f",
+      "kind": "layer",
+      "bytes": 128,
+      "images": ["postgres"],
+      "purpose": "Create /run/postgresql with socket-directory ownership/permissions",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "RUN /bin/sh -c install --verbose --directory --owner postgres --group postgres --mode 3777 /var/run/postgresql # buildkit",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:46e663abc8f5ed994cede123e749e21c7b0675bfc5cd0905d87d8cef3c7b74dd",
+      "kind": "layer",
+      "bytes": 6107,
+      "images": ["postgres"],
+      "purpose": "Docker entrypoint and ensure-initdb shell scripts",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "COPY docker-entrypoint.sh docker-ensure-initdb.sh /usr/local/bin/ # buildkit",
+      "regular_file_bytes": 16894,
+      "regular_file_count": 2
+    },
+    {
+      "digest": "sha256:1bb54e8f77276172953d507b21a7ad3af088aab59ce62a36c834348649641857",
+      "kind": "layer",
+      "bytes": 185,
+      "images": ["postgres"],
+      "purpose": "docker-enforce-initdb.sh symlink",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "RUN /bin/sh -c ln -sT docker-ensure-initdb.sh /usr/local/bin/docker-enforce-initdb.sh # buildkit",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    },
+    {
+      "digest": "sha256:13ba61b1916726f7efdde53f565fc864432788263b3ce015f94b86828532943e",
+      "kind": "manifest",
+      "bytes": 670,
+      "images": ["runner_gateway_go"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:d47d14b02cdbccdaf70c6d6913defef9cd3cb0e74d0182b6c2bad198493b5450",
+      "kind": "config",
+      "bytes": 939,
+      "images": ["runner_gateway_go"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:610e7ebc9ba6742bc4922f020d06d0656513cb63208d3c2b53b61af3c99e778e",
+      "kind": "layer",
+      "bytes": 45086720,
+      "images": ["runner_gateway_go"],
+      "purpose": "Go executable /usr/local/bin/runner-gateway",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/runner_gateway:go_binary_layer",
+      "regular_file_bytes": 45080738,
+      "regular_file_count": 1
+    },
+    {
+      "digest": "sha256:485c37453caf1181bf46ba52d63b238c0bdd2e8093a86f75c0f319dedb787524",
+      "kind": "manifest",
+      "bytes": 669,
+      "images": ["runner_gateway_queue_migrate"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:1ec2d37edfe493b68af92ff2a80b8b45976b2c625afb97346a0f35309ded9e70",
+      "kind": "config",
+      "bytes": 964,
+      "images": ["runner_gateway_queue_migrate"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:92692c59914f25b71b18c8f0d491d169061f3bab35c5e58bbbf0d73bafa6d9f5",
+      "kind": "layer",
+      "bytes": 6553600,
+      "images": ["runner_gateway_queue_migrate"],
+      "purpose": "Go executable /usr/local/bin/runner-gateway-queue-migrate",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/runner_gateway/migrations:go_binary_layer",
+      "regular_file_bytes": 6549666,
+      "regular_file_count": 1
+    },
+    {
+      "digest": "sha256:ca4c78351af994362029ff1a0b19852caf749ffdfd2bdbf13ebf7175f31e0320",
+      "kind": "manifest",
+      "bytes": 670,
+      "images": ["sandbox_controller"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:8eec3e728cb40aac0010195b4ee3c93d86e57c62c10d08cdefcae7d912e6fc19",
+      "kind": "config",
+      "bytes": 944,
+      "images": ["sandbox_controller"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:78d93b926553fd2f04c3d7ced87dde75cb0971ff8d5d6e2b3bb806fd46883b85",
+      "kind": "layer",
+      "bytes": 46950400,
+      "images": ["sandbox_controller"],
+      "purpose": "Go executable /usr/local/bin/sandbox-controller",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/sandbox_controller:binary_layer",
+      "regular_file_bytes": 46944418,
+      "regular_file_count": 1
+    },
+    {
+      "digest": "sha256:c4f00bd7025a680ea66e24f8aa570e467015d2e7e4fbd830554e4c9bc7385200",
+      "kind": "manifest",
+      "bytes": 1438,
+      "images": ["runner"],
+      "purpose": "OCI image manifest: ordered layer descriptors and config reference"
+    },
+    {
+      "digest": "sha256:c7c105dcc371c47ce78ec1f77c8b14fd78d748274533f4436738ca52c788355f",
+      "kind": "config",
+      "bytes": 1886,
+      "images": ["runner"],
+      "purpose": "OCI runtime config: entrypoint, environment, user, rootfs diff IDs and build history"
+    },
+    {
+      "digest": "sha256:836759fabeeff6f3cd67297c4a27eccbd58f9eb49b28cc42ae990287276d8430",
+      "kind": "layer",
+      "bytes": 2388137,
+      "images": ["runner"],
+      "purpose": "Application code, launcher and supporting runfiles (including venv helper); harness supervisor executable",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/x/k3s_env:runner_layers_default",
+      "regular_file_bytes": 8407868,
+      "regular_file_count": 123
+    },
+    {
+      "digest": "sha256:2ae905236c5c2ef0398a85c91f90473bfecdb71dca536c33f0bdb6010b046b4b",
+      "kind": "layer",
+      "bytes": 16588758,
+      "images": ["runner"],
+      "purpose": "Python third-party dependencies under binary-specific runfiles paths; largest package trees: grpc, sqlalchemy, pydantic_core, pygments, greenlet, pydantic",
+      "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "build_history": "bazel build //agentplane/x/k3s_env:runner_layers_packages",
+      "regular_file_bytes": 53866803,
+      "regular_file_count": 1892
+    },
+    {
+      "digest": "sha256:98edc2f7ba4fc52c043d640049a127e8799cf43c0b944aabb2320c654d9dd5c0",
+      "kind": "layer",
+      "bytes": 10240,
+      "images": ["runner"],
+      "purpose": "Symlink from this binary-specific Python runfiles path to the shared interpreter tree",
+      "media_type": "application/vnd.oci.image.layer.v1.tar",
+      "build_history": "bazel build //agentplane/x/k3s_env:runner_layers_runtime_alias",
+      "regular_file_bytes": 0,
+      "regular_file_count": 0
+    }
+  ]
+}
