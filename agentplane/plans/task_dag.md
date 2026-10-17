@@ -1180,7 +1180,7 @@ flowchart TD
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
-    APP_NATIVE_RESUME_SURFACE[Approved: retain explicit resume UI; clarify wake-off affordance] --> APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume]
+    APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume]
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
     IDLE_SUSPEND_UI_DRIVE[Operator: drive auto-suspend and send-to-resume in staging]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
@@ -1536,22 +1536,6 @@ operation-scoped grants, delegated caller proof and the effect of revocation on 
 general senders are admitted. Consider RBAC-backed permissions, but choose the authority with the
 multiagent model. Include authorization before wake and any required execution-time recheck. The
 mandatory Sandbox UID fence is part of `DELIVERY_DESTINATION_CONTRACT`, independent of sender policy.
-
-### `APP_NATIVE_RESUME_SURFACE` — retain explicit resume and distinguish the two controls
-
-**Explicit native-resume action retained; exact wake-off affordance needs review.** The Thread page
-currently shows **Resume harness** only for a Ready Sandbox with a stopped harness. It calls the
-Gateway directly. A submitted input always makes Dispatcher call runner `ResumeSession` before
-delivery, independent of the `wake_on_send` setting. That opt-in setting controls waking a
-**suspended Sandbox**, not whether a command resumes a stopped native harness. The composer can
-queue a message while the Sandbox is suspended even when wake on message is off; the queue then
-waits for explicit Sandbox resume. The suspended indicator remains visible.
-
-The operator wants an explicit button when automatic resume on send is off. Decide whether this
-means a Thread-page **Resume Sandbox** affordance when `wake_on_send` is off, the existing **Resume
-harness** action once the Sandbox is Ready, or both. The native button cannot itself wake a
-suspended Sandbox because its current Gateway path requires a live runner. Keep explicit Sandbox
-resume available and do not erase the suspended indicator or turn on wake permission implicitly.
 
 ### `APP_NATIVE_RESUME_CONTRACT` — specify durable explicit native resume
 
