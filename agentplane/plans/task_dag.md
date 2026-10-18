@@ -334,6 +334,10 @@ provisioning. Read/send grants confer no membership administration; explicit adm
 remain possible without introducing agent categories. V1 requires no new collection-specific agent
 enrollment-delegation mechanism. Finalize the concrete RBAC and provisioning checks within this boundary.
 
+**Reads not bundled with send (operator, 2026-10-18 UTC, "probably"):** the first schema's rule carries
+`append_inbox` only. `list_sessions` and `read_transcript` join it or get their own rule type when
+`THREAD_READ_POLICY_DESIGN` reopens, and the target, membership and watch code is shared either way.
+
 Include OAuth-bound static SAs as subjects by namespace/name for permitted sends and reads. OAuth
 callers reach the backends from an Action box whose egress substitutes the SA's projected
 token ([agreed route](multiagent_communication.md#oauth-callers)); no OAuth admission path is added to
@@ -353,10 +357,11 @@ design's reading of "the controller's scope"; the schema draft confirms or repla
 ### `SESSION_ACCESS_RULES` — shared Session-access rule support
 
 **Blocked on the reviewed schema in `SESSION_ACCESS_RULES_DESIGN`.** Extend PolicySet schemas with the
-tentative Session-access rule family and implement shared rule-reading/evaluation code for API owners.
-Reuse existing SA authentication and PolicyBindings. Match independently grantable listing,
-transcript-read and Session-inbox append operations against direct Sandbox targets, current
-explicit collection memberships represented by separate enrollment CRs and an all-Sandboxes target.
+tentative Session-access rule, whose first operation is Session-inbox append, and implement shared
+rule-reading/evaluation code for API owners; listing and transcript reads are not bundled into it and
+reuse the shared code once they have a rule. Reuse existing SA authentication and PolicyBindings. Match
+the append operation against direct Sandbox targets, current explicit collection memberships
+represented by separate enrollment CRs and an all-Sandboxes target.
 Honor both name-based and UID-pinned Sandbox member references without changing recorded Session
 associations when a Sandbox name is reused.
 Implement independent watched policy views, initial-sync and configurable freshness checks, and
@@ -371,7 +376,8 @@ respective nodes.
 
 **Decision, held by the operator for now (2026-10-17 UTC): do not raise it until he reopens it. Tentative
 Session-access rules, Sandbox minimum, explicit collections and all-Sandboxes target selected.**
-Finalize read-specific grant administration within the agreed membership RBAC boundary and caller
+Reads are not bundled into the send rule, so this decision also settles their rule type or addition to
+`session_access`. Finalize read-specific grant administration within the agreed membership RBAC boundary and caller
 replacement semantics. Access to retained histories after Sandbox deletion is
 `HISTORY_ACCESS_AFTER_DELETION`. V1 has no
 individual-Session grants or computed collection selection. Presets
@@ -425,7 +431,7 @@ operator-only either way.
 
 **Blocked on reviewed read policy and on `HISTORY_ACCESS_AFTER_DELETION`, both held by the operator, and
 on `HISTORY_SANDBOX_UID`, which records the Sandbox UID the association needs.** Enforce the immutable Session-to-Sandbox association and
-Sandbox-scoped grants through shared Session-access rules at the owning backend across list,
+Sandbox-scoped grants through the shared rule evaluation at the owning backend across list,
 raw/native evidence, direct reads and feeds, including reconnect and revocation. Keep app-only UI
 folds separate. Test allowed/denied histories, two principals,
 deleted Sandboxes and revocation with deterministic service tests plus a bounded deployed auth check.

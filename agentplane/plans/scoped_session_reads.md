@@ -15,7 +15,9 @@ The [tentative implementation direction](multiagent_communication.md#tentative-i
 is service-enforced Session-access `PolicySet` rules assigned through existing `PolicyBinding`s,
 with shared evaluation code and enforcement by History on its own API. Exact schemas remain open;
 the representation may be revisited if implementation does not work well. No broader auth-engine
-replacement is a prerequisite. Sending and reading remain independent.
+replacement is a prerequisite. Sending and reading remain independent, and the first rule schema
+carries sending only ([not bundled](multiagent_communication.md#tentative-implementation-direction)),
+so reads get their own rule type or join it when this policy reopens.
 
 ## What is protected
 

@@ -286,10 +286,16 @@ Illustrative rule syntax, not a selected CRD schema or an implemented rule type:
 
 ```yaml
 type: session_access
-operations: [list_sessions, read_transcript, append_inbox]
+operations: [append_inbox]
 targets:
   sandboxCollections: [developers]
 ```
+
+**Send and transcript reads are not bundled, operator direction 2026-10-18 UTC (stated as
+"probably"):** they are separate capabilities, so the first `session_access` schema carries
+`append_inbox` only. `list_sessions` and `read_transcript` join it or get their own rule type when
+the held read decisions reopen; the target matching, collection and `PolicyWatch` code is shared
+either way.
 
 Support direct Sandbox targets as well as explicit collections. For Sandbox-hosted Session operations,
 the backend authenticates the SA, takes the Sandbox from the request (or, in History, which owns the
@@ -454,9 +460,9 @@ own for every history bound to a writer, which is what the split would build on.
   lookup inside one owner's keys, but a grant can match the recorded column without it, so the
   split does not force the re-key.
 - The send path is unaffected. `AGENT_MESSAGE_INGRESS` needs `append_inbox` against live Sandboxes
-  and History's recorded namespace and name. If the split is adopted, `session_access` keeps
-  `append_inbox` and the archive operations move to their own rule type, so the send-path schema
-  can carry `append_inbox` alone until the read decisions reopen.
+  and History's recorded namespace and name. The first `session_access` schema carries
+  `append_inbox` alone ([reads are not bundled](#tentative-implementation-direction)); with the split
+  the archive operations get their own rule type, and without it they join `session_access` later.
 
 ## Message storage, delivery and agent tools
 
