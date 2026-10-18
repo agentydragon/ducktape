@@ -1,20 +1,19 @@
 # Session Dispatcher
 
 The durable command queue is the Dispatcher role of the
-[Runner Gateway](../runner_gateway/README.md). Python App and Notification callers use the
+[Runner Gateway](../README.md). Python App and Notification callers use the
 Session Dispatcher gRPC contract; the stable Dispatcher Service maps its port `8080`
 to the shared listener on `8080`. The worker delivers through the Runner proxy once
 the exact Sandbox is ready, with per-Sandbox Lease and PostgreSQL generation fencing.
 
-This package retains the immutable Alembic migration history and its dependencies for the Goose
-handoff. Its Python serving implementation and deployment settings are removed. The manual queue,
-replica and wake probes are documented in the [acceptance suite](../acceptance/README.md#dispatcher-queue-and-replica-acceptance).
+The manual queue, replica and wake probes are documented in the
+[acceptance suite](../../acceptance/README.md#dispatcher-queue-and-replica-acceptance).
 
 ## Contract
 
 - **One RPC per command**: `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`,
   `OpenSession`, `GetSessionOpening`, plus `GetDispatch`, `ListDispatches`, `WatchDispatches` and `CancelDispatch`
-  ([proto](../proto/session_dispatcher.proto)). Callers name the Sandbox and the Session; `command_id` is
+  ([proto](../../proto/session_dispatcher.proto)). Callers name the Sandbox and the Session; `command_id` is
   the idempotency key across every command RPC.
 - **Delivery states** say where a command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`,
   `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN` (a deleted Sandbox's). A
@@ -79,5 +78,4 @@ The serving binary and image live under `//agentplane/runner_gateway` and
 `//agentplane/runner_gateway:image`. It uses explicit audience/caller flags, a projected
 Gateway token for calls to other holder replicas, and
 `AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. Apply the Goose queue migrator before
-serving; `grpc.health.v1` is available on the shared listener. The retained `:migrate` and
-`:migration_image` targets create the historical Alembic schema for historical handoff fixtures. They are not published as deployment images.
+serving; `grpc.health.v1` is available on the shared listener.

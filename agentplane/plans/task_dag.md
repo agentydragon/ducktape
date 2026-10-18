@@ -51,7 +51,7 @@ flowchart LR
     NOTIFICATION_NOTICE_METADATA --> NOTIFICATION_PRESENTATION
 ```
 
-Details: [command admission](../session_dispatcher/README.md#contract); later
+Details: [command admission](../runner_gateway/dispatcher/README.md#contract); later
 [notification presentation and input metadata](notification_presentation.md).
 
 Future ownership and wake-policy questions are recorded in the

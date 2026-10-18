@@ -202,10 +202,9 @@ async def run_gateway(
 ) -> AsyncIterator[GatewayProcess]:
     """Migrate the supplied database, then run the full Gateway using production flags.
 
-    The Kubernetes API and PostgreSQL clone are owned by the caller. The migration runner
-    performs the same Alembic-to-Goose handoff used by the deployed process, before its server
-    starts. All three gRPC services share a loopback listener, including the Dispatcher
-    calling the Runner proxy.
+    The Kubernetes API and PostgreSQL database are owned by the caller. The Goose migration
+    runner applies the schema before the server starts. All three gRPC services share a
+    loopback listener, including the Dispatcher calling the Runner proxy.
     """
     migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
     await asyncio.to_thread(_migrate, database_url, migration_log)

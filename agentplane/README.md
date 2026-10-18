@@ -12,7 +12,7 @@ an MCP approval gateway for any MCP-capable LLM product.
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   and an MCP endpoint over OAuth.
 - [Runner Gateway](runner_gateway/README.md): one process serving the runner control stream,
-  authorized live Runner proxy and [Session Dispatcher](session_dispatcher/README.md) durable queue.
+  authorized live Runner proxy and [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue.
   Serving waits for a root-owned queue migration ([deployment](runner_gateway/README.md#deployment)).
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.

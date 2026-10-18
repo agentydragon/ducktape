@@ -29,7 +29,7 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
 app endpoint. The shared `agentplane/sandboxes` library owns Sandbox request construction; the app uses
-it directly as the requesting operator. The [Session Dispatcher](../session_dispatcher/README.md)
+it directly as the requesting operator. The [Session Dispatcher](../runner_gateway/dispatcher/README.md)
 owns opening and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
 runner control stream and authorized live Runner proxy; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.

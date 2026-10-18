@@ -21,7 +21,6 @@ from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.reader import SandboxReader
-from agentplane.session_dispatcher.database_migrate import RUNNER as DISPATCHER_MIGRATIONS
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import (
     database_clones,
@@ -40,12 +39,6 @@ from util.testing.sqlalchemy_engines import managed_async_engine
 # gazelle:include_dep @pypi//psycopg
 
 database_template, db_url = migrated_database_fixtures(RUNNER, drivername="postgresql+asyncpg")
-dispatcher_database_template, dispatcher_db_url = migrated_database_fixtures(
-    DISPATCHER_MIGRATIONS,
-    drivername="postgresql+asyncpg",
-    template_name="dispatcher_database_template",
-    url_name="dispatcher_db_url",
-)
 
 
 @pytest.fixture

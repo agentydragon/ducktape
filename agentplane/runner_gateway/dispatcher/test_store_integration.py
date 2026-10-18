@@ -1,4 +1,4 @@
-"""Run the store parity tests against the actual Alembic dispatcher schema."""
+"""Run the store parity tests against the Dispatcher Goose schema."""
 
 import os
 import subprocess

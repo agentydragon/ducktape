@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import AsyncExitStack
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -51,8 +51,15 @@ from agentplane.runner_gateway.testing.gateway_process import run_gateway
 from agentplane.sandboxes.testing.api_server import NAMESPACE, SANDBOX, SandboxCluster, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.testing.postgres import DatabaseNames, create_temporary_database
 
 # gazelle:include_dep @pypi//protobuf
+
+
+@pytest.fixture
+def dispatcher_db_url(postgres_admin_url: str, database_names: DatabaseNames) -> Iterator[str]:
+    with create_temporary_database(postgres_admin_url, database_names()) as url:
+        yield url
 
 
 @pytest.fixture

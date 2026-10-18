@@ -10,7 +10,7 @@ The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox deliv
 and database ownership generations. The connection role keeps separate connection Leases and
 EndpointSlices; delivery on one replica routes to the replica holding the runner connection.
 There is no separate Gateway database or Session registry and no History Service client.
-[Queue semantics](../session_dispatcher/README.md) remain distinct from History's retained
+[Queue semantics](dispatcher/README.md) remain distinct from History's retained
 conversation and from Runner admission.
 
 ## Source and tests
@@ -18,7 +18,7 @@ conversation and from Runner admission.
 - `main.go`, `config.go`: process, listener wiring and deployment flags.
 - `gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
-- `migrations/`: Goose migrations and the data-preserving Dispatcher Alembic handoff.
+- `migrations/`: Goose migrations for the Dispatcher database.
 - `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and
   `gateway_process.py` runs the real binary for cross-language acceptance.
 
@@ -49,6 +49,5 @@ Each step merges only after the previous one is running in both environments:
 3. **Removals go the other way.** Stop the Gateway using a column or table first; the migration
    that drops it lands last.
 
-The Dispatcher database and its historical migration fixtures stay. The automated proof of the
-schema handoff is `//agentplane/runner_gateway/migrations:test_migrations`, including retained
-queued work and idempotent application; it does not replace an environment's backup/restore check.
+`//agentplane/runner_gateway/migrations:test_migrations` covers fresh schema creation,
+idempotent application and concurrent migration jobs.

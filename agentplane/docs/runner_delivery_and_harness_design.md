@@ -10,7 +10,7 @@ permissions. Keep the existing security
 checks and durable queue until a replacement contract is reviewed.
 
 The current runner contracts remain in [Session layering](thread_layering.md), the
-[Dispatcher README](../session_dispatcher/README.md), the [Gateway control-surface audit](control_surface_retirement.md),
+[Dispatcher README](../runner_gateway/dispatcher/README.md), the [Gateway control-surface audit](control_surface_retirement.md),
 and the [scripted harness capability index](../native/README.md#behavioral-coverage).
 
 ## Generated HTTP/JSON facade spike

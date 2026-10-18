@@ -49,7 +49,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "//agentplane/runner_gateway:conftest",
-        "//agentplane/session_dispatcher:database_migrate",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
         "@pypi//psycopg",
