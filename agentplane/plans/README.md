@@ -30,6 +30,10 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving
   agent-facing records through an extension apiserver, with RBAC via `SubjectAccessReview` as the
   cheaper route
+- [Kubernetes capabilities Agentplane borrows](kubernetes_borrowed_capabilities.md) — exploration
+  of what a second control plane or an own implementation would have to supply for the cluster
+  features Agentplane uses, what must stay on the real cluster, and how GitOps-managed kinds would
+  reach another plane
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
