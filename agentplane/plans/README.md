@@ -25,8 +25,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 - [Agent CLI](agent_cli.md) — proposed `agentplane` command, JSON and exit-code contract for
   Actions, notifications and egress rules, with one open exit-code question
 - [Generated HTTP facades](grpc_http_facade.md) — proposed extension of the approved gRPC-Gateway
-  direction to the browser, through the app, with a Dispatcher-reads spike first and one open
-  question
+  direction to the browser, through the app first with a Dispatcher-reads spike, and direct browser
+  access as a later option
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving
   agent-facing records through an extension apiserver, with RBAC via `SubjectAccessReview` as the
   cheaper route

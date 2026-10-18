@@ -1892,7 +1892,7 @@ service/interface at a time. Each migration needs its own caller inventory, auth
 behavior-preservation review, tests, rollout and rollback plan. Do not turn the approved direction
 into one repo-wide migration. No service has been selected for the first cutover;
 [generated HTTP facades](grpc_http_facade.md) recommends the Dispatcher's read RPCs and extends the
-facade to the browser through the app, pending one operator question.
+facade to the browser through the app first; direct browser access is a later option there.
 
 ### `AGENT_API_TOOLING_DESIGN` — preserve ergonomic, scriptable agent workflows
 

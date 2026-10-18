@@ -1,11 +1,13 @@
 # Generated HTTP facades for every service API, browser included
 
-Status: **proposed, awaiting operator review, 2026-10-18.** It extends the transport direction approved
-on 2026-10-15 ([API transports and agent workflows](../docs/runner_delivery_and_harness_design.md#api-transports-and-agent-workflows):
+Status: **proposed, 2026-10-18; the operator chose the app-fronted browser path for the first steps.**
+It extends the transport direction approved on 2026-10-15
+([API transports and agent workflows](../docs/runner_delivery_and_harness_design.md#api-transports-and-agent-workflows):
 gRPC between services, a gRPC-Gateway HTTP/JSON facade, an ergonomic CLI, adopted one service and
-interface at a time) from agents to the browser. One [question](#question-for-review) is open. This
-plan authorizes no proto, service, app or frontend change; on approval the contract graduates to a
-doc under `docs/` and the rollout becomes DAG nodes.
+interface at a time) from agents to the browser. Direct browser access to the facades stays open as a
+[later option](#direct-browser-access-later). This plan authorizes no proto, service, app or
+frontend change; on approval the contract graduates to a doc under `docs/` and the rollout becomes
+DAG nodes.
 
 A service's API is its proto. Every RPC meant to be reached over HTTP carries a `google.api.http`
 rule, and gRPC-Gateway generates the JSON facade from it inside the service's own process. Agents
@@ -197,13 +199,37 @@ agent guides and [agent CLI](agent_cli.md) with them.
 Deferred, not asked: whether the app's own views (Threads, Sandboxes) become protos. The steps above
 do not need it, and an early answer would be hard to reverse.
 
-## Question for review
-
-Should the browser reach service facades through the app, which keeps operator login and swaps the
-credential (recommended), or should each service's facade accept operator logins itself?
+## Direct browser access, later
 
 _Through the app_ keeps one browser origin, one login and one CSRF check, and leaves the History
-Service, Dispatcher, Notification Service and Egress admin API admitting only service accounts.
-_Direct_ removes the proxy but gives each of them its own OIDC validation and an operator identity
-their authorization does not carry today; the Dispatcher's wake budget, for one, is keyed on a service
-account.
+Service, Dispatcher, Notification Service and Egress admin API admitting only service accounts. The
+operator would accept _direct_ calls from the browser to each facade if they work well, and chose the
+app first as the lower risk. Nothing in the app-fronted steps blocks the move: protos, annotations and
+facades are identical either way, and only the proxy hop and the credential change. A service takes it
+only once these hold:
+
+- **A bearer the browser can hold.** The browser cannot run the Authentik exchange; the login access
+  token it is made from stays in `operator_browser_session`. The route
+  [operator federation](../docs/operator_federation.md) records as available is one
+  cookie-authenticated app call that returns a short-lived token from the same Authentik exchange the
+  Action Service already validates, which the browser sends in a header. Never an app-signed token.
+  The cost is the one federation names: the token is readable by script for its lifetime, where the
+  `__Host-` cookie never is, and revocation is lifetime-bounded rather than immediate.
+- **Operator admission in each service.** Each service validates issuer, audience and signature
+  beside its ServiceAccount TokenReview, as `action_service/operator_oidc.py` does. Each target needs
+  its own Authentik provider, application and policy under `tf/gitops/sso-providers`, or all share
+  one operator audience, which makes one bearer acceptable everywhere. Choose between them when the
+  first service goes direct.
+- **Edge routing.** One hostname with a path per facade avoids CORS. The Gateway API already routes
+  the app and the Action Service this way. The Action Service's public origin keeps operator REST
+  endpoints off it on purpose, so its operator facade needs a separate route.
+- **Streams end at token expiry.** The browser reopens with a fresh token on `reconnect_required`,
+  the frame `WatchSessionSummaries` already carries. Logout no longer ends a stream; expiry does.
+- **What the app supplies today moves or is dropped on purpose:** the Thread checks on History reads
+  (see [gaps](#gaps-the-facade-does-not-close)), and the Dispatcher's wake budget, keyed on a service
+  account now, would need the operator's identity to attribute a wake to them. CSRF stops applying,
+  because the credential is not ambient.
+
+Revisit once the Dispatcher reads have landed through the app and the proxy hop costs something
+measurable (a stream held open per tab, per-upstream settings), or when per-operator attribution is
+wanted.
