@@ -133,10 +133,6 @@ cluster/parked/** cluster-manifest-ignored=true
 x/codex_pod_image/deploy/** cluster-manifest-ignored=true
 # rotate.py's token list, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=true
-# dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
-haku/x/dispatch/deploy/job-template.yaml cluster-manifest-ignored=true
-# dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.
-haku/x/dispatch/deploy/zones.yaml cluster-manifest-ignored=true
 # A strategic-merge patch the tofu-controller image-pins Component applies — not a resource.
 cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml cluster-manifest-ignored=true
 # Dotfiles/dotdirs follow their own naming conventions
@@ -158,10 +154,6 @@ nix/artifact-pins.json rules-lint-ignored=true
 ansible/roles/legacy_*/** rules-lint-ignored=true
 tana/export/references/** rules-lint-ignored=true
 cluster/docs/inference/model_comparison/** rules-lint-ignored=true
-# Retired Haku dispatch-lane manifests; preserved as non-runnable reference material.
-cluster/k8s/x/haku/** cluster-manifest-ignored=true
-cluster/k8s/x/agents/haku-zones-mitmproxy/** cluster-manifest-ignored=true
-cluster/k8s/x/agents/haku-zones-mitmproxy-namespace/** cluster-manifest-ignored=true
 
 cluster/parked/haku-openclaw-spike/app/kustomization.yaml linguist-generated=true
 cluster/parked/haku-openclaw-spike/app/kube-client-config linguist-generated=true
