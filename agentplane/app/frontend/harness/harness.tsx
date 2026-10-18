@@ -3211,6 +3211,12 @@ const visualHarness = {
       description: "Check the exact call before approving.",
     };
   },
+  showActionResult(action: ActionRequestView["action"], args: ActionRequestView["arguments"], result: unknown): void {
+    ACTIONS[2]!.action = action;
+    ACTIONS[2]!.arguments = args;
+    ACTIONS[2]!.title = `Review ${action.name} result`;
+    ACTIONS[2]!.execution!.result = { content: [], structuredContent: result, isError: false };
+  },
   longPendingAction(): void {
     ACTIONS[1]!.arguments = {
       host: "test-archive-host",

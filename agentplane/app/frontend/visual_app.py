@@ -139,6 +139,12 @@ class AgentplaneFixture:
             [{"group": group, "name": name}, arguments],
         )
 
+    async def show_action_result(self, name: str, arguments: dict[str, object], result: dict[str, object]) -> None:
+        await self.page.evaluate(
+            "([action, args, result]) => window.agentplaneVisual.showActionResult(action, args, result)",
+            [{"group": "sandbox", "name": name}, arguments, result],
+        )
+
     async def set_flag(self, flag: Flag, on: bool = True) -> None:
         await self.page.evaluate("([flag, on]) => window.agentplaneVisual.set(flag, on)", [flag, on])
 

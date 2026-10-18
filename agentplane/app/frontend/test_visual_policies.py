@@ -153,6 +153,60 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
 
 @DESKTOP_AND_MOBILE
 @pytest.mark.parametrize(
+    ("name", "arguments", "result", "visible"),
+    [
+        (
+            "exec",
+            {"name": "timed-out-sandbox", "script": 'echo "$HOME"', "timeout_seconds": 1, "max_output_bytes": 32},
+            {
+                "exit": {"kind": "timed_out"},
+                "stdout": {"truncated_text": "partial output", "total_bytes": 256},
+                "stderr": "deadline reached",
+                "duration_seconds": 1.01,
+            },
+            "Timed out",
+        ),
+        (
+            "get",
+            {"name": "waiting-sandbox"},
+            {
+                "name": "waiting-sandbox",
+                "template": "python",
+                "phase": "Pending",
+                "conditions": [
+                    {
+                        "type": "Ready",
+                        "status": "False",
+                        "reason": "ContainersNotReady",
+                        "message": "Waiting for container startup",
+                    }
+                ],
+                "node_name": "worker-1",
+                "pod_ips": ["10.0.0.1"],
+            },
+            "ContainersNotReady",
+        ),
+        ("list", {}, {"sandboxes": []}, "No sandboxes."),
+        ("dispose", {"name": "absent-sandbox"}, {"name": "absent-sandbox", "existed": False}, "already absent"),
+    ],
+    ids=["exec-timeout-truncated", "get-not-ready", "list-empty", "dispose-absent"],
+)
+async def test_sandbox_action_results(
+    view: VisualPage,
+    app: AgentplaneFixture,
+    name: str,
+    arguments: dict[str, object],
+    result: dict[str, object],
+    visible: str,
+) -> None:
+    await app.show_action_result(name, arguments, result)
+    await app.mount_app("/actions/70000000-0000-4000-8000-000000000007")
+    await expect(view.page.get_by_text(visible, exact=False)).to_be_visible()
+    await view.capture()
+
+
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize(
     ("group", "name", "arguments", "visible"),
     [
         (
@@ -213,7 +267,18 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
             {"q": "from:deployments@example.com", "maxResults": 5},
             "from:deployments@example.com",
         ),
-        ("sandbox", "exec", {"name": "script-sandbox", "script": 'for f in *.txt; do\n  printf "%s\\n" "$f"\ndone', "timeout_seconds": 60, "max_output_bytes": 4096, "cwd": "/workspace"}, "Working directory /workspace"),
+        (
+            "sandbox",
+            "exec",
+            {
+                "name": "script-sandbox",
+                "script": 'for f in *.txt; do\n  printf "%s\\n" "$f"\ndone',
+                "timeout_seconds": 60,
+                "max_output_bytes": 4096,
+                "cwd": "/workspace",
+            },
+            "Working directory /workspace",
+        ),
         ("sandbox", "create", {"name": "new-sandbox", "template": "python"}, "python"),
         ("sandbox", "get", {"name": "inspected-sandbox"}, "No additional arguments."),
         ("sandbox", "dispose", {"name": "disposed-sandbox"}, "No additional arguments."),
