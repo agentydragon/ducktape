@@ -220,6 +220,7 @@ func serve(ctx context.Context, c config) error {
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctrllog.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
 	c, err := loadConfig(os.Args[1:], os.Getenv)
 	if err != nil {

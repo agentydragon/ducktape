@@ -2,12 +2,15 @@ package sandboxcontroller
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -24,7 +27,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
@@ -40,7 +42,7 @@ func eventually(t *testing.T, check func() bool) {
 
 // Exercise a real API server without KubeVirt and real SSA field ownership and manager watches.
 func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	ctrl.SetLogger(logr.FromSlogHandler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	asset, err := runfiles.Rlocation("envtest_kubernetes_linux_amd64/kube-apiserver")
 	if err != nil {
 		t.Fatal(err)

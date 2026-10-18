@@ -37,6 +37,7 @@ type environmentConfig struct {
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	if err := run(); err != nil {
 		slog.Error("Haku Kubernetes API proxy stopped", "error", err)
 		os.Exit(1)

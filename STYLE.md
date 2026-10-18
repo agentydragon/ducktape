@@ -244,6 +244,21 @@ persistence form of no-redundant-derived-fields (§ General): a materialized sta
 cache that can lie and demands a sweeper. Materialize only for a measured query-cost
 reason, stated where it happens.
 
+## Go
+
+One library per job, so a service reads like the next one. A job not listed takes the library
+the other Go services already import before it takes a new one, and gets its row with the change
+that needs it.
+
+| Job        | Use                                                                                                                                                  |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Logging    | `log/slog` with the JSON handler on stderr. A controller-runtime binary hands it over with `ctrl.SetLogger(logr.FromSlogHandler(...))`; never `zap`. |
+| HTTP       | Stdlib `net/http`; no router library.                                                                                                                |
+| Tests      | Stdlib `testing`.                                                                                                                                    |
+| PostgreSQL | `lib/pq` for the driver, `goose` for migrations.                                                                                                     |
+| UUIDs      | `google/uuid`.                                                                                                                                       |
+| YAML       | `gopkg.in/yaml.v3`.                                                                                                                                  |
+
 ## Build System (Bazel)
 
 ### Gazelle-managed Python BUILD files

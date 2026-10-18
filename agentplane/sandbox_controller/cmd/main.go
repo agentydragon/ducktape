@@ -4,9 +4,11 @@ package main
 import (
 	"errors"
 	"flag"
+	"log/slog"
 	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -21,7 +23,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
@@ -37,7 +38,7 @@ func main() {
 	gatewayTarget := flag.String("runner-gateway-target", "", "where the controller quiesces a Sandbox's runner through the Runner Gateway, for one Sandbox, a template of {sandbox} and {namespace}: the Sandbox's own control Service")
 	gatewayTokenFile := flag.String("runner-gateway-token-file", "", "the projected ServiceAccount token the Runner Gateway accepts from this controller")
 	flag.Parse()
-	ctrl.SetLogger(zap.New())
+	ctrl.SetLogger(logr.FromSlogHandler(slog.NewJSONHandler(os.Stderr, nil)))
 	log := ctrl.Log.WithName("sandbox-controller")
 	if err := run(*namespace, *metricsAddress, *probeAddress, sandboxcontroller.GatewayQuiescer{Target: *gatewayTarget, TokenFile: *gatewayTokenFile}); err != nil {
 		log.Error(err, "controller failed")

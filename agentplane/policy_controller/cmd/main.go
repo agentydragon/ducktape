@@ -3,9 +3,11 @@ package main
 
 import (
 	"flag"
+	"log/slog"
 	"os"
 	"strings"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -15,7 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
@@ -28,7 +29,7 @@ func main() {
 	metricsAddress := flag.String("metrics-bind-address", ":8080", "where Prometheus metrics are served")
 	probeAddress := flag.String("health-probe-bind-address", ":8081", "where /healthz and /readyz are served")
 	flag.Parse()
-	ctrl.SetLogger(zap.New())
+	ctrl.SetLogger(logr.FromSlogHandler(slog.NewJSONHandler(os.Stderr, nil)))
 	log := ctrl.Log.WithName("policy-controller")
 	if err := run(*policyNamespace, strings.Split(*subjectNamespaces, ","), *metricsAddress, *probeAddress); err != nil {
 		log.Error(err, "controller failed")

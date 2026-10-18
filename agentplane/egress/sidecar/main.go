@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	c, err := loadConfig(os.Getenv)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
