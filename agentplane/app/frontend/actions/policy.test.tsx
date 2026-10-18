@@ -30,13 +30,11 @@ async function render(policy: ActionPolicyView | ActionPolicyUnavailable | null)
 
 const EMPTY: ActionPolicyView = {
   synced: true,
-  bindings: [],
   auto_approve_if: [],
 };
 
-it("says an unbound sandbox waits for the operator on every Action", async () => {
+it("says an empty list leaves every Action waiting for the operator", async () => {
   await render(EMPTY);
-  expect(container.textContent).toContain("No binding names this ServiceAccount");
   expect(container.textContent).toContain("every Action from this ServiceAccount waits for the operator");
   expect(container.querySelector("[role=alert]")).toBeNull();
 });
@@ -70,32 +68,9 @@ it("renders nothing until the stream has delivered a snapshot", async () => {
   expect(container.querySelector("table, h5")).toBeNull();
 });
 
-it("shows each set's parse state, the missing one, and the effective lists in evaluation order", async () => {
+it("shows the auto-approval list in evaluation order, naming the binding and set behind each entry", async () => {
   await render({
     synced: true,
-    bindings: [
-      {
-        kind: "PolicyBinding",
-        name: "test-sandbox-launch",
-        provenance: "app",
-        generation: 2,
-        expires_at: null,
-        ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
-        policy_sets: [
-          {
-            name: "test-reads",
-            generation: 3,
-            refused: null,
-          },
-          {
-            name: "test-broken",
-            generation: 1,
-            refused: "rules[0]: unknown",
-          },
-        ],
-        missing_policy_sets: ["test-vanished"],
-      },
-    ],
     auto_approve_if: [
       {
         binding: "test-sandbox-launch",
@@ -111,12 +86,6 @@ it("shows each set's parse state, the missing one, and the effective lists in ev
     ],
   });
   const text = container.textContent ?? "";
-  expect(text).toContain("test-sandbox-launch");
-  expect(text).toContain("app, at launch");
-  expect(text).toContain("test-broken: invalid");
-  expect(text).toContain("test-vanished?");
-  // The binding's spec moved on from the generation the service judged.
-  expect(text).toContain("edited");
   expect(text).toContain("test-sandbox-launch · test-reads[1]");
   expect(text).toContain("github: create_issue");
   expect(text).toContain('"owner"');

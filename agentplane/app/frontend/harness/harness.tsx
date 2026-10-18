@@ -19,7 +19,7 @@ import type {
   Decision,
   DispatchReceipt,
   McpLinkageView,
-  PolicyView,
+  PolicySetView,
   SandboxView,
   ThreadView,
 } from "../client";
@@ -213,11 +213,15 @@ const PUBLIC_CODER_POLICY_SETS = [
   "ducktape-pr-failed-jobs",
 ];
 
-const POLICIES: PolicyView[] = [
+const POLICY_SETS: PolicySetView[] = [
   {
     name: "github-public",
+    generation: 1,
+    refused: null,
     rules: [
       {
+        kind: "egress",
+        number: 0,
         hosts: ["api.github.com", "github.com", "*.githubusercontent.com"],
         methods: ["GET", "POST"],
         paths: null,
@@ -235,8 +239,12 @@ const POLICIES: PolicyView[] = [
   },
   {
     name: "pypi",
+    generation: 1,
+    refused: null,
     rules: [
       {
+        kind: "egress",
+        number: 0,
         hosts: ["pypi.org", "files.pythonhosted.org"],
         methods: ["GET"],
         paths: ["/simple/**"],
@@ -245,81 +253,160 @@ const POLICIES: PolicyView[] = [
       },
     ],
   },
+  {
+    name: "public-coder",
+    generation: 2,
+    refused: null,
+    rules: [
+      {
+        kind: "other",
+        number: 0,
+        type: "action_auto_approve",
+        fields: {
+          policy: { type: "exact_actions", actions: { github: ["get_file_contents", "list_commits", "search_code"] } },
+        },
+      },
+      {
+        kind: "other",
+        number: 1,
+        type: "action_auto_approve",
+        fields: {
+          policy: {
+            type: "argument_schema",
+            actions: { github: ["create_issue"] },
+            argument_schema: {
+              properties: { owner: { const: "harness-owner" }, repo: { const: "harness-repo" } },
+              required: ["owner", "repo"],
+            },
+          },
+        },
+      },
+    ],
+  },
+  {
+    name: "harness-reviews",
+    generation: 1,
+    refused: null,
+    rules: [
+      {
+        kind: "other",
+        number: 0,
+        type: "action_auto_approve",
+        fields: { policy: { type: "exact_actions", actions: { github: ["pull_request_read", "list_pull_requests"] } } },
+      },
+    ],
+  },
+  {
+    name: "harness-push",
+    generation: 3,
+    refused: null,
+    rules: [
+      {
+        kind: "other",
+        number: 0,
+        type: "action_auto_approve",
+        fields: {
+          policy: {
+            type: "argument_schema",
+            actions: { github: ["push_files"] },
+            argument_schema: { properties: { branch: { pattern: "^harness/" } }, required: ["branch"] },
+          },
+        },
+      },
+    ],
+  },
+  {
+    name: "harness-edited",
+    generation: 1,
+    refused: "rules[0]: hosts: List should have at least 1 item after validation, not 0",
+    rules: [],
+  },
 ];
 
-/** One seed binding from git, which only git removes; one the app granted at launch, now expired. */
+function policySet(name: string): PolicySetView {
+  const found = POLICY_SETS.find((candidate) => candidate.name === name);
+  if (!found) throw new Error(`No harness PolicySet ${name}`);
+  return found;
+}
+
+/** A reader's condition on a binding, written at the generation it judged. */
+function verdict(
+  type: string,
+  status: "True" | "False",
+  message: string,
+  observedGeneration: number
+): BindingView["conditions"][number] {
+  return {
+    type,
+    status,
+    reason: status === "True" ? "Valid" : "PolicySetUnavailable",
+    message,
+    observed_generation: observedGeneration,
+  };
+}
+
+/**
+ * ready-sandbox's bindings, one of every state a binding mark shows: the Sandbox's own and two others
+ * that every reader accepts (one from git, one an operator grant that has since expired), one an operator
+ * grant no reader has judged yet, and one a reader refuses for the sets it names.
+ */
 const BINDINGS: BindingView[] = [
   {
-    name: "ready-sandbox-7q4xk",
-    from_git: false,
+    name: "ready-sandbox-k2m9x",
+    provenance: "sandbox",
+    generation: 1,
     subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
-    expires_at: ago(2 * HOUR),
-    policy_sets: [POLICIES[1].name],
-    policies: [POLICIES[1]],
-    missing_policies: [],
+    expires_at: null,
+    conditions: [verdict("ActionsReady", "True", "spec accepted", 1)],
+    // The preset names public-coder alone; harness-reviews was picked at launch.
+    policy_sets: [policySet("public-coder"), policySet("harness-reviews")],
+    missing_policy_sets: [],
   },
   {
     name: "ready-sandbox-github-public",
-    from_git: true,
+    provenance: "git",
+    generation: 1,
     subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
     expires_at: null,
-    policy_sets: [POLICIES[0].name],
-    policies: [POLICIES[0]],
-    missing_policies: [],
+    conditions: [verdict("EgressReady", "True", "egress rules enforced", 1)],
+    policy_sets: [policySet("github-public")],
+    missing_policy_sets: [],
+  },
+  {
+    name: "ready-sandbox-7q4xk",
+    provenance: "operator",
+    generation: 1,
+    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
+    expires_at: ago(2 * HOUR),
+    conditions: [verdict("EgressReady", "True", "egress rules enforced", 1)],
+    policy_sets: [policySet("pypi")],
+    missing_policy_sets: [],
+  },
+  {
+    name: "ready-sandbox-unjudged-grant",
+    provenance: "operator",
+    generation: 1,
+    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
+    expires_at: new Date(NOW + HOUR).toISOString(),
+    conditions: [],
+    policy_sets: [policySet("harness-reviews")],
+    missing_policy_sets: [],
+  },
+  {
+    name: "ready-sandbox-push-afternoon",
+    provenance: "operator",
+    generation: 2,
+    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
+    expires_at: new Date(NOW + 3 * HOUR).toISOString(),
+    conditions: [verdict("ActionsReady", "False", "missing PolicySets: harness-release", 2)],
+    policy_sets: [policySet("harness-push"), policySet("harness-edited")],
+    missing_policy_sets: ["harness-release"],
   },
 ];
 
-/**
- * What the Action Service auto-decides for ready-sandbox: the binding the app wrote at launch, one the
- * operator added for the afternoon, and every state a set can be in -- parsed, refused, and missing.
- */
+/** What the Action Service auto-decides for ready-sandbox, from the sets those bindings name. */
 const ACTION_POLICY: ActionPolicyView = {
   synced: true,
-  bindings: [
-    {
-      kind: "PolicyBinding",
-      name: "ready-sandbox-k2m9x",
-      provenance: "app",
-      generation: 1,
-      expires_at: null,
-      ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
-      // The preset names public-coder alone; harness-reviews was picked at launch.
-      policy_sets: [
-        {
-          name: "public-coder",
-          generation: 2,
-          refused: null,
-        },
-        {
-          name: "harness-reviews",
-          generation: 1,
-          refused: null,
-        },
-      ],
-      missing_policy_sets: [],
-    },
-    {
-      kind: "PolicyBinding",
-      name: "ready-sandbox-push-afternoon",
-      provenance: "operator",
-      generation: 2,
-      expires_at: new Date(NOW + 3 * HOUR).toISOString(),
-      ready: null,
-      policy_sets: [
-        {
-          name: "harness-push",
-          generation: 3,
-          refused: null,
-        },
-        {
-          name: "harness-edited",
-          generation: 1,
-          refused: "rules[0]: Input should be 'exact_actions' or 'argument_schema'",
-        },
-      ],
-      missing_policy_sets: ["harness-release"],
-    },
-  ],
   auto_approve_if: [
     {
       binding: "ready-sandbox-k2m9x",
@@ -2390,7 +2477,6 @@ routes.push(
   ],
   ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
   ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: [...PUBLIC_CODER_POLICY_SETS, "pypi", "github-public"] })],
-  ["GET", /^\/action-policy\/sets$/, () => ACTION_POLICY.bindings.flatMap((binding) => binding.policy_sets)],
   ["GET", /^\/actions$/, () => ACTIONS],
   [
     "GET",
@@ -2437,12 +2523,11 @@ routes.push(
     "GET",
     /^\/caller-grants\/([^/]+)\/([^/]+)$/,
     (match) => ({
-      egress_bindings: BINDINGS.map((binding) => ({
+      bindings: BINDINGS.map((binding) => ({
         ...binding,
         subjects: [{ namespace: match[1], name: match[2] }],
       })),
       action_policy: ACTION_POLICY,
-      bound_policy: null,
     }),
   ],
   ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
@@ -3019,7 +3104,6 @@ class HarnessEventSource extends EventTarget {
         sandbox: SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox)) ?? null,
         bindings: BINDINGS,
         action_policy: ACTION_POLICY,
-        bound_policy: null,
         threads: THREADS,
         updates_connected: !flags.has("threadDatabaseDisconnected"),
         watch: watch(),

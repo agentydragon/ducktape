@@ -289,6 +289,27 @@ async def test_sandbox_status(view: VisualPage, app: AgentplaneFixture) -> None:
 @DESKTOP_AND_MOBILE
 async def test_sandbox_policy(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=policy")
+    await expect(view.page.get_by_role("img", name="Refused")).to_have_count(1)
+    await expect(view.page.get_by_role("img", name="Not yet judged")).to_have_count(1)
+    await view.check(context="fixture ready")
+    await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_sandbox_policy_rules(view: VisualPage, app: AgentplaneFixture) -> None:
+    open_rules = "ready-sandbox-k2m9x,ready-sandbox-github-public,ready-sandbox-push-afternoon"
+    await app.mount_app(f"/sandboxes/ready-sandbox?tab=policy&rules={open_rules}")
+    await expect(view.page.get_by_role("button", name="Hide rules")).to_have_count(3)
+    await expect(view.page.get_by_text("harness-release: no such PolicySet")).to_be_visible()
+    await view.check(context="fixture ready")
+    await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_sandbox_policy_refused_binding_hover(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/sandboxes/ready-sandbox?tab=policy")
+    await view.page.get_by_role("img", name="Refused").hover()
+    await expect(view.page.get_by_role("tooltip")).to_contain_text("harness-release")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 

@@ -5,9 +5,8 @@ The shared `agentplane/sandboxes` `kubernetes_views.py` and `egress_views.py` an
 listing against the API server and hold nothing in between; this keeps the same objects between
 requests instead, so a change reaches a tab when it happens rather than at the next poll, and one
 watch serves every tab. The projections are theirs -- `sandbox_views`, `matching_bindings` -- so a
-pushed row and a fetched one cannot drift. The action
-policy is the Action Service's answer, not a projection of anything held here: the two policy kinds
-are watched only so that an event on either re-asks the service.
+pushed row and a fetched one cannot drift. The auto-approval list is the Action Service's answer,
+not a projection of anything held here: the two policy kinds are also what re-asks the service.
 
 A frame is a whole snapshot of what the subscription covers, not a delta. Kubernetes watch state is
 not a durable log to resume against: a relist replaces a kind wholesale and a `resourceVersion`
@@ -41,7 +40,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentplane import sandbox_resource
 from agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
-from agentplane.app.bound_policy import BoundPolicyView, bound_policy_view
 from agentplane.app.database_updates import Channel
 from agentplane.app.identity import CallerIdentity, require_caller
 from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
@@ -136,8 +134,8 @@ class DecisionsSnapshot(DecisionsWatching):
 
 
 class SandboxSnapshot(BaseModel):
-    """A frame of one sandbox's stream: the sandbox itself, what may leave it, what the Action
-    Service auto-decides for it, and its threads."""
+    """A frame of one sandbox's stream: the sandbox itself, the bindings that grant its account
+    things, what the Action Service auto-decides for it, and its threads."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -146,9 +144,6 @@ class SandboxSnapshot(BaseModel):
     action_policy: ActionPolicyView | ActionPolicyUnavailable | None = Field(
         description="The Action Service's answer for the sandbox, or why it could not be asked; None only with "
         "the sandbox, since a policy subject pins its UID and a gone sandbox has none."
-    )
-    bound_policy: BoundPolicyView | None = Field(
-        description="Every rule of the PolicySets the sandbox names; None only with the sandbox."
     )
     threads: list[ThreadView] | ThreadsUnavailable
     updates_connected: bool = Field(description="Whether this replica is listening for PostgreSQL Thread changes.")
@@ -191,12 +186,6 @@ class LiveIndex:
         api_client = self.core_v1.api_client  # type: ignore[attr-defined]
         parsed = Sandbox.model_validate(raw)
         return http_sandbox_view(sandbox_view(parsed, incarnation_pod(parsed, self.pods), api_client=api_client))
-
-    def bound_policy_for(self, name: str) -> BoundPolicyView | None:
-        raw = self.sandboxes.get(name)
-        if raw is None:
-            return None
-        return bound_policy_view(Sandbox.model_validate(raw).spec.policy_sets, self.rule_sets.values())
 
     def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         return matching_bindings(
@@ -516,7 +505,6 @@ async def live_sandbox(
             sandbox=sandbox,
             bindings=[] if sandbox is None else index.bindings_for(sandbox.service_account),
             action_policy=None if sandbox is None else await policy.for_subject(sandbox.service_account),
-            bound_policy=index.bound_policy_for(name),
             threads=await threads_frame(store, name, include_archived=include_archived),
             updates_connected=updates.listener.connected,
             watch=_health(index),

@@ -15,13 +15,13 @@ from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, PolicyBinding
 from agentplane.proto.sandboxes_pb2 import Sandbox
 from agentplane.sandboxes.egress_views import (
     EGRESS_API,
-    FLUX_KUSTOMIZATION_LABEL,
     BindingNotFoundError,
+    BindingProvenance,
     BindingView,
     EgressReader,
     FluxOwnedBindingError,
     SandboxOwnedBindingError,
-    is_sandbox_controlled,
+    binding_provenance,
 )
 from agentplane.sandboxes.errors import UnknownPolicySetError
 from agentplane.subjects import ServiceAccountRef
@@ -97,11 +97,13 @@ class EgressAccess:
     async def revoke(self, name: str) -> None:
         """Delete a runtime binding, which is how a grant is taken back; a Flux-applied one is
         refused, git being its owner, and so is a Sandbox's own, which its controller would recreate."""
-        binding = await self._binding(name)
-        if FLUX_KUSTOMIZATION_LABEL in binding.metadata.labels:
-            raise FluxOwnedBindingError(name)
-        if is_sandbox_controlled(binding):
-            raise SandboxOwnedBindingError(name)
+        match binding_provenance(await self._binding(name)):
+            case BindingProvenance.GIT:
+                raise FluxOwnedBindingError(name)
+            case BindingProvenance.SANDBOX:
+                raise SandboxOwnedBindingError(name)
+            case BindingProvenance.OPERATOR:
+                pass
         await self._custom_objects.delete_namespaced_custom_object(
             *EGRESS_API, self._namespace, POLICY_BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )

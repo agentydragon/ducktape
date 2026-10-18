@@ -17,8 +17,8 @@ afterEach(async () => {
 });
 const ACCOUNT = { namespace: "external", name: "caller" };
 const EMPTY: CallerGrantView = {
-  egress_bindings: [],
-  action_policy: { synced: true, bindings: [], auto_approve_if: [] },
+  bindings: [],
+  action_policy: { synced: true, auto_approve_if: [] },
 };
 async function render(read: CallerGrantReader): Promise<void> {
   container = document.createElement("div");
@@ -44,21 +44,22 @@ it("reads by account and renders honest empty policy without mutation controls",
   await render(read);
   expect(read.mock.calls[0][0]).toEqual(ACCOUNT);
   expect(container.textContent).toContain("Grants for external/caller");
-  expect(container.textContent).toContain("No egress binding names this ServiceAccount");
+  expect(container.textContent).toContain("No binding names this ServiceAccount");
   expect(container.textContent).toContain("every Action from this ServiceAccount waits for the operator");
   expect(container.textContent).not.toContain("Revoke");
   expect(container.textContent).not.toContain("Grant policy sets");
 });
-it("preserves expired and missing egress references even when Action policy is unavailable", async () => {
+it("preserves expired and missing policy set references even when Action policy is unavailable", async () => {
   await render(async () => ({
-    egress_bindings: [
+    bindings: [
       {
         name: "external-grants",
-        from_git: true,
+        provenance: "git",
+        generation: 1,
         subjects: [ACCOUNT],
-        policy_sets: ["removed-policy"],
-        policies: [],
-        missing_policies: ["removed-policy"],
+        conditions: [],
+        policy_sets: [],
+        missing_policy_sets: ["removed-policy"],
         expires_at: "2000-01-01T00:00:00Z",
       },
     ],
@@ -69,21 +70,21 @@ it("preserves expired and missing egress references even when Action policy is u
   expect(container.querySelector("time")?.getAttribute("datetime")).toBe("2000-01-01T00:00:00.000Z");
   expect(container.textContent).toContain("operator_federation_not_configured");
   await act(async () => button("Rules").click());
-  expect(container.textContent).toContain("removed-policy: no such egress policy");
+  expect(container.textContent).toContain("removed-policy: no such PolicySet");
 });
 it("shows unsynced policy separately from a request failure and supports refresh", async () => {
   const read = vi
     .fn<CallerGrantReader>()
-    .mockResolvedValueOnce({ ...EMPTY, action_policy: { synced: false, bindings: [], auto_approve_if: [] } })
+    .mockResolvedValueOnce({ ...EMPTY, action_policy: { synced: false, auto_approve_if: [] } })
     .mockRejectedValueOnce(new Error("read failed"))
     .mockResolvedValueOnce(EMPTY);
   await render(read);
   expect(container.textContent).toContain("watch has not synced");
   await act(async () => button("Refresh grants").click());
   expect(container.textContent).toContain("Could not load grants: read failed");
-  expect(container.textContent).not.toContain("No egress binding");
+  expect(container.textContent).not.toContain("No binding names");
   await act(async () => button("Refresh grants").click());
-  expect(container.textContent).toContain("No egress binding");
+  expect(container.textContent).toContain("No binding names");
   expect(container.textContent).not.toContain("read failed");
 });
 it("aborts stale refreshes and ignores their late results", async () => {
@@ -103,6 +104,6 @@ it("aborts stale refreshes and ignores their late results", async () => {
   expect(container.textContent).toContain("Loading grants");
   await act(async () => button("Refresh grants").click());
   expect(read.mock.calls[0][1].aborted).toBe(true);
-  await act(async () => finish({ ...EMPTY, action_policy: { synced: false, bindings: [], auto_approve_if: [] } }));
+  await act(async () => finish({ ...EMPTY, action_policy: { synced: false, auto_approve_if: [] } }));
   expect(container.textContent).not.toContain("watch has not synced");
 });

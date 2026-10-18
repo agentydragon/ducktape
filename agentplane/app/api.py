@@ -411,8 +411,7 @@ class PolicyGrant(BaseModel):
 
 @router.get("/{name}/egress")
 async def sandbox_egress(inventory: Inventory, egress: Egress, name: str) -> list[BindingView]:
-    """What may leave the sandbox: the bindings naming the ServiceAccount it runs as, with their
-    egress policies as they resolve."""
+    """The bindings naming the ServiceAccount the sandbox runs as, with the policy sets they name."""
     return await egress.bindings_for(sandbox_view(await inventory.get(name)).service_account)
 
 
@@ -562,7 +561,7 @@ class CallerGrantView(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    egress_bindings: list[BindingView]
+    bindings: list[BindingView]
     action_policy: ActionPolicyView | ActionPolicyUnavailable
 
 
@@ -577,7 +576,7 @@ async def caller_grants(
     bindings, policy = await asyncio.gather(
         egress.bindings_for(subject), action_policy_frame(request, caller, action_policy, subject)
     )
-    return CallerGrantView(egress_bindings=bindings, action_policy=policy)
+    return CallerGrantView(bindings=bindings, action_policy=policy)
 
 
 @connections_router.get("/connections")

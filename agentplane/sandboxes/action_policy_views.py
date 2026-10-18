@@ -1,4 +1,4 @@
-"""Public Action-policy projections and provenance; read-only Kubernetes access."""
+"""Public Action-policy projections; read-only Kubernetes access."""
 
 from typing import Any
 
@@ -12,9 +12,6 @@ from agentplane.policy_sets import POLICY_SETS_PLURAL, PolicySet, RefusedPolicyS
 from util.kubernetes import CustomObjectsClient
 
 ACTION_POLICY_API = (GROUP, VERSION)
-# Preserve these existing ownership stamps when adopting staging resources.
-MANAGED_BY_LABEL = f"app.{GROUP}/managed-by"
-MANAGED_BY_APP = "integration-app"
 
 
 class _ResourceList(BaseModel):

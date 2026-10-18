@@ -2,6 +2,7 @@ import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
 import { ActionPolicySection } from "./actions/policy";
+import { BindingsTable } from "./bindings_table";
 import {
   type CallerGrantReader,
   type CallerGrantView,
@@ -10,7 +11,6 @@ import {
   readCallerGrants,
   serviceAccountKey,
 } from "./client";
-import { EgressBindings } from "./egress";
 
 /** Read-only account snapshot. Sandbox pages use the same renderers with their live data. */
 export function CallerGrants({
@@ -48,8 +48,8 @@ export function CallerGrants({
         </Button>
       </Group>
       <Text size="sm" c="dimmed">
-        Egress and Action grants shared by all clients and workloads using this ServiceAccount. This is a snapshot;
-        refresh to see changes. Kubernetes RBAC is not included.
+        Policy bindings shared by all clients and workloads using this ServiceAccount. This is a snapshot; refresh to
+        see changes. Kubernetes RBAC is not included.
       </Text>
       {error && (
         <Alert color="red" role="alert">
@@ -59,9 +59,8 @@ export function CallerGrants({
       {!view && !error && <Text role="status">Loading grants…</Text>}
       {view && (
         <>
-          <Title order={6}>Egress</Title>
-          <EgressBindings bindings={view.egress_bindings} onRevoke={null} />
-          <Title order={6}>Action policy</Title>
+          <Title order={6}>Bindings</Title>
+          <BindingsTable bindings={view.bindings} onRevoke={null} />
           <ActionPolicySection policy={view.action_policy} />
         </>
       )}

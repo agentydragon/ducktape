@@ -865,8 +865,8 @@ async def test_egress_lists_the_bindings_naming_the_sandbox(client: httpx.AsyncC
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert [(b["name"], b["from_git"]) for b in body] == [("live-granted", False), ("live-seeded", True)]
-    assert body[1]["policies"][0]["rules"][0]["hosts"] == ["api.github.com"]
+    assert [(b["name"], b["provenance"]) for b in body] == [("live-granted", "operator"), ("live-seeded", "git")]
+    assert body[1]["policy_sets"][0]["rules"][0]["hosts"] == ["api.github.com"]
     # Nothing names `fresh`, so nothing may leave it.
     assert (await client.get("/sandboxes/fresh/egress")).json() == []
     assert (await client.get("/sandboxes/nope/egress")).status_code == 404
@@ -900,10 +900,9 @@ async def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
 
     assert granted.status_code == 201, granted.text
     binding = granted.json()
-    assert (binding["subjects"], binding["from_git"]) == ([{"namespace": NAMESPACE, "name": "live"}], False)
-    # Every named set is the binding's, of any rule type; only egress rules make a policy here.
-    assert binding["policy_sets"] == ["pypi", "github", "github-reads"]
-    assert [policy["name"] for policy in binding["policies"]] == ["pypi", "github"]
+    assert (binding["subjects"], binding["provenance"]) == ([{"namespace": NAMESPACE, "name": "live"}], "operator")
+    # Every named set is the binding's, of any rule type.
+    assert [policy_set["name"] for policy_set in binding["policy_sets"]] == ["pypi", "github", "github-reads"]
     assert custom_objects.objects[(POLICY_BINDINGS_PLURAL, binding["name"])]["spec"]["expiresAt"].startswith(
         "2099-01-01"
     )
@@ -982,7 +981,7 @@ async def test_binding_revocation(client: httpx.AsyncClient, custom_objects: Fak
     assert (await client.delete("/policy-bindings/live-seeded")).status_code == 409
     assert (await client.delete("/policy-bindings/live-granted")).status_code == 204
     assert (await client.delete("/policy-bindings/live-granted")).status_code == 404
-    assert [b["name"] for b in (await client.get("/sandboxes/live/egress")).json()] == ["live-seeded"]
+    assert [b["name"] for b in (await client.get("/sandboxes/live/egress")).json()] == ["live", "live-seeded"]
 
 
 async def test_presets_publish_editable_sandbox_and_session_defaults(client: httpx.AsyncClient) -> None:

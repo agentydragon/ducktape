@@ -142,6 +142,7 @@ py_test(
         ":conftest",
         ":egress_views",
         "//:conftest",
+        "//agentplane:policy_sets",
         "//agentplane:subjects",
         "//agentplane/egress:resources",
         "//agentplane/sandboxes/testing:fake_inventory",

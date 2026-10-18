@@ -1,5 +1,5 @@
 /**
- * What a status looks like, wherever it is drawn: a thread's or a Sandbox's indicator in the page, and
+ * What a status looks like, wherever it is drawn: a thread's, a Sandbox's or a binding's indicator in the page, and
  * a thread's mark in the tab favicon and title. This is the only place that decides a status's icon and
  * color; mark_glyph.tsx and thread_favicon.ts only draw what these tables say.
  */
@@ -7,6 +7,7 @@ import type { ComponentType } from "react";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconAlertTriangle from "@tabler/icons-react/dist/esm/icons/IconAlertTriangle.mjs";
 import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
+import IconCircleCheck from "@tabler/icons-react/dist/esm/icons/IconCircleCheck.mjs";
 import IconCircleX from "@tabler/icons-react/dist/esm/icons/IconCircleX.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
@@ -21,6 +22,9 @@ export type ThreadStatusKind =
 
 /** Each kind's meaning is on its row of `SANDBOX_STATUS_MARKS`. */
 export type SandboxStatusKind = "ready" | "pending" | "suspended" | "failed" | "gone";
+
+/** Each kind's meaning is on its row of `BINDING_STATE_MARKS`. */
+export type BindingStateKind = "ready" | "pending" | "refused";
 
 /** An icon the page draws: a library icon, or one of custom_mark_icons.tsx, sized by the CSS around it. */
 export type MarkIcon = ComponentType;
@@ -86,4 +90,13 @@ export const SANDBOX_STATUS_MARKS: Record<SandboxStatusKind, StatusMark> = {
   failed: { icon: IconCircleX, color: RED },
   // Deleted, deleting, or a Pod that has ended.
   gone: { icon: IconCircleX, color: GRAY },
+};
+
+export const BINDING_STATE_MARKS: Record<BindingStateKind, StatusMark> = {
+  // Every reader that has judged the binding accepts its current spec.
+  ready: { icon: IconCircleCheck, color: GREEN },
+  // No reader has judged the binding yet, or its spec has changed since they did.
+  pending: { icon: IconClock, color: YELLOW },
+  // A reader refuses the binding, or it names a PolicySet that is missing or refused.
+  refused: { icon: IconCircleX, color: RED },
 };

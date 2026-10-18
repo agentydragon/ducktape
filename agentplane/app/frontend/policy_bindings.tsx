@@ -1,8 +1,8 @@
 import { Button, Group, MultiSelect, Select, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
+import { BindingsTable } from "./bindings_table";
 import { api, displayableError, type BindingView } from "./client";
-import { EgressBindings } from "./egress";
 
 /** How long a grant lasts; the Policy Controller deletes the binding when it ends. */
 const GRANT_DURATIONS = [
@@ -32,7 +32,7 @@ function GrantPolicySets({
   return (
     <Group align="flex-end">
       <MultiSelect
-        label="Grant policy sets"
+        label="Policy sets"
         description="Added as a binding of its own; what this sandbox already has is untouched"
         hidePickedOptions
         data={policySets}
@@ -55,7 +55,7 @@ function GrantPolicySets({
   );
 }
 
-/** The bindings that name the sandbox's ServiceAccount, and where an operator adds one or revokes one. */
+/** The bindings that name the sandbox's ServiceAccount, where an operator adds one or revokes one. */
 export function PolicyBindingsSection({
   sandbox,
   bindings,
@@ -68,6 +68,7 @@ export function PolicyBindingsSection({
   const [policySets, setPolicySets] = useState<string[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
   const [duration, setDuration] = useState("forever");
+  const [granting, setGranting] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -95,22 +96,37 @@ export function PolicyBindingsSection({
       },
     });
     setError(failure ? displayableError(failure) : null);
-    if (!failure) setPicked([]);
+    if (!failure) {
+      setPicked([]);
+      setGranting(false);
+    }
   }
 
   return (
     <Stack gap="xs">
-      <Title order={5}>Bindings</Title>
+      <Group justify="space-between">
+        <Title order={5}>Bindings</Title>
+        <Button
+          size="compact-sm"
+          variant={granting ? "light" : "default"}
+          aria-expanded={granting}
+          onClick={() => setGranting((open) => !open)}
+        >
+          Grant policy sets
+        </Button>
+      </Group>
       {error && <Text c="red">{error}</Text>}
-      <GrantPolicySets
-        policySets={policySets}
-        picked={picked}
-        onPick={setPicked}
-        duration={duration}
-        onDuration={setDuration}
-        onGrant={() => void grant()}
-      />
-      {bindings && <EgressBindings bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
+      {granting && (
+        <GrantPolicySets
+          policySets={policySets}
+          picked={picked}
+          onPick={setPicked}
+          duration={duration}
+          onDuration={setDuration}
+          onGrant={() => void grant()}
+        />
+      )}
+      {bindings && <BindingsTable bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
     </Stack>
   );
 }

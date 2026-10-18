@@ -271,7 +271,6 @@ py_test(
         "//agentplane/history_service/testing:history",
         "//agentplane/postgres:wakeups",
         "//agentplane/runner_gateway:client",
-        "//agentplane/sandboxes:action_policy_views",
         "//agentplane/sandboxes/testing:fake_inventory",
         "//agentplane/workload_auth:principal",
         "//util:net",
@@ -696,7 +695,6 @@ py_library(
     deps = [
         ":action_federation",
         ":action_policy",
-        ":bound_policy",
         ":database_updates",
         ":identity",
         ":sandbox_models",
@@ -928,26 +926,6 @@ py_test(
 )
 
 py_library(
-    name = "bound_policy",
-    srcs = ["bound_policy.py"],
-    deps = [
-        "//agentplane:policy_sets",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_bound_policy",
-    srcs = ["test_bound_policy.py"],
-    deps = [
-        ":bound_policy",
-        ":conftest",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "action_policy",
     srcs = ["action_policy.py"],
     deps = [
@@ -957,9 +935,7 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/action_service:client",
         "//agentplane/action_service:policy_view",
-        "//agentplane/action_service:providers",
         "//agentplane/sandboxes:action_policy_views",
-        "//agentplane/sandboxes:egress_views",
         "@pypi//pydantic",
     ],
 )
@@ -972,14 +948,10 @@ py_test(
         ":action_policy",
         ":conftest",
         "//:conftest",
-        "//agentplane:policy_sets",
         "//agentplane:subjects",
         "//agentplane/action_service:client",
         "//agentplane/action_service:models",
         "//agentplane/action_service:policy_view",
-        "//agentplane/action_service:providers",
-        "//agentplane/sandboxes:action_policy_views",
-        "//agentplane/sandboxes:egress_views",
         "//agentplane/sandboxes/testing:fake_inventory",
         "@pypi//httpx",
         "@pypi//pytest_bazel",

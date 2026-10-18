@@ -212,8 +212,8 @@ READY: list[dict[str, Any]] = [
 """The conditions of a Sandbox whose controller reports its incarnation able to take work."""
 
 
-def egress_policy_set(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
-    """A PolicySet holding only `egress` rules, given without their `type`."""
+def policy_set(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
+    """A PolicySet holding these rules as given, each with its own `type`."""
     return {
         "metadata": {
             "name": name,
@@ -223,8 +223,13 @@ def egress_policy_set(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
             "resourceVersion": "1",
             "creationTimestamp": "2026-09-01T11:30:00Z",
         },
-        "spec": {"rules": [{"type": "egress", **rule} for rule in rules]},
+        "spec": {"rules": rules},
     }
+
+
+def egress_policy_set(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
+    """A PolicySet holding only `egress` rules, given without their `type`."""
+    return policy_set(name, [{"type": "egress", **rule} for rule in rules])
 
 
 def egress_credential(
@@ -244,9 +249,11 @@ def policy_binding(
     from_git: bool = True,
     expires_at: str | None = None,
     sandbox_controlled: str | None = None,
+    conditions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """A PolicyBinding as the API server holds it; `from_git` stamps Flux's inventory label, and
-    `sandbox_controlled` names the Sandbox whose controller owns it."""
+    """A PolicyBinding as the API server holds it; `from_git` stamps Flux's inventory label,
+    `sandbox_controlled` names the Sandbox whose controller owns it, and `conditions` are the
+    verdicts its readers have written."""
     return {
         "metadata": {
             "name": name,
@@ -277,6 +284,7 @@ def policy_binding(
             "policySets": policy_sets,
             **({"expiresAt": expires_at} if expires_at is not None else {}),
         },
+        **({"status": {"conditions": conditions}} if conditions is not None else {}),
     }
 
 

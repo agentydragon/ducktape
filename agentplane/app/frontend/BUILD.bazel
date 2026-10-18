@@ -267,8 +267,8 @@ ts_library(
     srcs = ["caller_grants.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":bindings_table",
         ":client",
-        ":egress",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -752,12 +752,50 @@ ts_library(
 )
 
 ts_library(
+    name = "binding_state",
+    srcs = ["binding_state.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":status_mark",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "binding_state_test",
+    srcs = ["binding_state.test.ts"],
+    deps = [
+        ":binding_state",
+        ":client",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "bindings_table",
+    srcs = ["bindings_table.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":binding_state",
+        ":client",
+        ":code_block",
+        ":mark_glyph",
+        ":status_mark",
+        ":time_ago",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
     name = "policy_bindings",
     srcs = ["policy_bindings.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":bindings_table",
         ":client",
-        ":egress",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",

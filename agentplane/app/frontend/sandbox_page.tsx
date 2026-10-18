@@ -37,7 +37,7 @@ import {
   type SandboxView,
   type ThreadView,
 } from "./client";
-import { ActionPolicySection, BoundPolicySection } from "./actions/policy";
+import { ActionPolicySection } from "./actions/policy";
 import { EgressLog } from "./egress";
 import { JsonView } from "./json_view";
 import { MarkGlyph } from "./mark_glyph";
@@ -325,7 +325,7 @@ function StatusView({ sandbox, active }: { sandbox: SandboxView; active: boolean
               Sandbox's: two sandboxes sharing an account share what they may do. */}
           <Text size="sm">
             Runs as ServiceAccount {sandbox.service_account.namespace}/{sandbox.service_account.name}, the subject its
-            egress and action-policy bindings name.
+            policy bindings name.
           </Text>
           {sandbox.preset && <Text size="sm">Made from preset {sandbox.preset}.</Text>}
           <Text size="sm">
@@ -744,11 +744,7 @@ export function SandboxPage({
         <Tabs.Panel value="policy" pt="sm">
           <Stack gap="md">
             <PolicyBindingsSection sandbox={name} bindings={live.snapshot?.bindings ?? null} />
-            <Stack gap="xs">
-              <Title order={5}>Action policy</Title>
-              <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
-            </Stack>
-            <BoundPolicySection policy={live.snapshot?.bound_policy ?? null} />
+            <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">

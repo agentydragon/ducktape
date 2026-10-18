@@ -4,7 +4,7 @@ How the single operator configures bounded auto-approval for both caller classes
 Service: external MCP Connections and harnesses running in Sandbox Threads. The contract is in the
 [Action Service specification](../action_service/SPEC.md) § Action policies, the implementation in
 its [README](../action_service/README.md) § Action policy sets and bindings, the integration app's
-binding writer and Sandbox view in the [app README](../app/README.md) § Action policy, and presets
+binding writer and Sandbox view in the [app README](../app/README.md) § Policy bindings, and presets
 in [launch presets](launch_presets.md). This document records the model's shape and the reasons
 for it.
 

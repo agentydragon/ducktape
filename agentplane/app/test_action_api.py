@@ -45,12 +45,7 @@ from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
-from agentplane.app.action_policy import (
-    ActionPolicyInventory,
-    ActionPolicyUnavailable,
-    ActionPolicyView,
-    BindingProvenance,
-)
+from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.api import CallerGrantView, create_app
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.consent import ConsentAllow
@@ -76,7 +71,6 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.sandboxes.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, policy_binding, sandbox
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
@@ -497,16 +491,12 @@ def _bind_live_sandbox(policies: PolicyIndex) -> None:
     """What the Action Service's informer would hold: a set and a binding naming the ServiceAccount
     the sandbox runs as, plus one naming a like-named account elsewhere that must not show."""
     add_policy_set(policies, "test-reads", [{"type": "exact_actions", "actions": {"test_review": ["record"]}}])
-    for name, namespace, labels in (
-        ("live-launch", NAMESPACE, {MANAGED_BY_LABEL: MANAGED_BY_APP}),
-        ("live-elsewhere", "agentplane-elsewhere", {}),
-    ):
+    for name, namespace in (("live-launch", NAMESPACE), ("live-elsewhere", "agentplane-elsewhere")):
         add_policy_binding(
             policies,
             name,
             ServiceAccountRef(namespace=namespace, name="live"),
             ["test-reads", "gone"],
-            labels=labels,
             namespace=NAMESPACE,
         )
 
@@ -534,9 +524,9 @@ async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_o
     review: Review, custom_objects: FakeCustomObjectsApi, live_index: LiveIndex, operator_connection: str
 ) -> None:
     """The live frame carries what the Action Service resolves for the ServiceAccount the sandbox
-    runs as, through the operator federation, with the app adding only who wrote each binding. Where the service cannot
-    be asked, the frame says so in place of the policy rather than showing an empty one, and an
-    agent watching the same stream is told why rather than shown an operator's answer."""
+    runs as, through the operator federation. Where the service cannot be asked, the frame says so
+    in place of the policy rather than showing an empty one, and an agent watching the same stream
+    is told why rather than shown an operator's answer."""
     custom_objects.objects[("sandboxes", "live")] = live_index.sandboxes["live"] = sandbox("live")
     _bind_live_sandbox(review.policies)
     browser = review.browser
@@ -554,12 +544,6 @@ async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_o
         view = frame.action_policy
         assert isinstance(view, ActionPolicyView)
         assert view.synced is True
-        (binding,) = view.bindings
-        assert (binding.name, binding.provenance, binding.missing_policy_sets) == (
-            "live-launch",
-            BindingProvenance.APP,
-            ["gone"],
-        )
         assert [(p.binding, p.policy_set, p.index) for p in view.auto_approve_if] == [("live-launch", "test-reads", 0)]
     assert as_agent.action_policy == ActionPolicyUnavailable(code="operator_session_required")
 
@@ -582,18 +566,17 @@ async def test_caller_grants_without_a_sandbox(
     response = await review.browser.get(f"/caller-grants/{NAMESPACE}/live")
     assert response.status_code == 200
     view = CallerGrantView.model_validate(response.json())
-    assert [binding.name for binding in view.egress_bindings] == ["external"]
-    assert view.egress_bindings[0].missing_policies == ["missing-policy"]
-    assert view.egress_bindings[0].expires_at == datetime(2000, 1, 1, tzinfo=UTC)
+    assert [binding.name for binding in view.bindings] == ["external"]
+    assert view.bindings[0].missing_policy_sets == ["missing-policy"]
+    assert view.bindings[0].expires_at == datetime(2000, 1, 1, tzinfo=UTC)
     if operator_connection == "disabled":
         assert view.action_policy == ActionPolicyUnavailable(code="operator_federation_not_configured")
     else:
         assert isinstance(view.action_policy, ActionPolicyView)
-        assert [binding.name for binding in view.action_policy.bindings] == ["live-launch"]
-        assert view.action_policy.bindings[0].missing_policy_sets == ["gone"]
+        assert [policy.binding for policy in view.action_policy.auto_approve_if] == ["live-launch"]
     other = await review.browser.get("/caller-grants/other-namespace/live")
     other.raise_for_status()
-    assert [binding["name"] for binding in other.json()["egress_bindings"]] == ["unrelated"]
+    assert [binding["name"] for binding in other.json()["bindings"]] == ["unrelated"]
 
 
 async def test_caller_grants_require_an_operator_session(review: Review) -> None:

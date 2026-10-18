@@ -70,12 +70,12 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   reads current-incarnation checks and runner status through the per-Sandbox Runner Proxy, carrying
   the live Sandbox name, UID and owner. Runner status is informational and never wakes a Sandbox.
   The app reads Kubernetes projections for UI updates and has no Gateway Session API client.
-- `egress_access.py`: egress-policy/binding projections for the UI, and the operator's grants and
+- `egress_access.py`: PolicyBinding projections for the UI, and the operator's grants and
   revocations of `PolicyBinding`s, written through the Kubernetes API by the app itself. Bindings remain
   desired-state grants, with expiry/revocation per binding; Flux-owned and Sandbox-controlled bindings
   are refused ([composition](../docs/egress_composition.md)).
-  The egress decision stream is in `live.py`; an unreachable proxy leaves egress-policy views readable.
-- `action_policy.py`: read-only binding views composed with Action Service's effective-policy answer.
+  The egress decision stream is in `live.py`; an unreachable proxy leaves the binding views readable.
+- `action_policy.py`: Action Service's auto-approval list for a ServiceAccount, read through the operator federation.
   App-level `default_policy_sets` are combined with the selected preset's policy sets by the shared
   Sandbox inventory; Policy Controller materializes the resulting grants.
 - `threads/`: Threads over the History Service. The app's database holds each Thread's identity
@@ -241,8 +241,8 @@ Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavai
 
 `/live/sandboxes` and `/live/sandboxes/{name}` are SSE, authenticated like every other route. Each
 carries a whole `snapshot` of what it covers whenever that changes, and a `health` frame through
-the quiet in between. What is pushed: the sandbox rows, one sandbox's egress bindings, its action
-policy, and its threads, the last of these from the store rather than a watch, since the app is the
+the quiet in between. What is pushed: the sandbox rows, one sandbox's bindings with each reader's verdict,
+its Action policy list, and its threads, the last of these from the store rather than a watch, since the app is the
 only writer of a thread's name. The Sandbox page uses those History Thread summaries as its retained
 Session inventory; its harness and turn fields are last observed History values. Suspending or
 removing a runner Pod does not clear projected Threads, and the app does not claim their harnesses
@@ -468,12 +468,12 @@ choice. Unlink instead revokes active/pending authority without deleting history
 already claimed executions. An ineligible current account is flagged separately from the grant's
 lifecycle status. The tab does not offer renaming a Connection.
 
-Each current account has a **View grants** disclosure, reusing the Sandbox egress and Action-policy
-renderers. The operator-only `GET /caller-grants/{namespace}/{name}` composes existing account-scoped
+Each current account has a **View grants** disclosure, reusing the Sandbox bindings list and Action-policy
+renderer. The operator-only `GET /caller-grants/{namespace}/{name}` composes existing account-scoped
 CR views and the Action Service's effective-policy answer; no Sandbox, Connection record or active
 caller-admission label is required for that read. The UI is a manually refreshable snapshot, not a
 watch. Missing references, expiry and unsynced/unavailable Action policy stay visible; an unavailable
-Action Service does not hide egress bindings. The disclosure is read-only and does not calculate
+Action Service does not hide bindings. The disclosure is read-only and does not calculate
 arbitrary Kubernetes RBAC. Existing Sandbox grant editing and live updates are unchanged.
 
 The BFF proxies `GET /connections[/{id}]`, `PATCH /connections/{id}`,
@@ -538,26 +538,34 @@ reads the Dispatcher opening and checks `GET /threads/{id}` for the projected Th
 runner-admitted opening is not presented as an existing Thread until History records it; the page
 keeps the status and reason visible while the projection catches up.
 
-## Action policy
+## Policy bindings
 
-The Sandbox page's "Action policy" tab, carried in the live snapshot frame, shows the Action
-Service's own answer for the ServiceAccount the Sandbox runs as, read through the operator
-federation (`/v1/operator/action-policy/service-accounts/{namespace}/{name}`, so an operator session
-is required as for the Actions page): the unexpired `PolicyBinding`s naming that account, each
-with expiry
-and the service's `ActionsReady` verdict; every `PolicySet` those name, as present, refused with the
-parse report, or missing; the resulting list of `action_auto_approve` policies in the order the service walks it, each entry naming the binding,
-set and index a Decision's evidence names; and `synced`, false while the service's watch
-has not synced and nothing auto-decides. It is the resolution an admission would use now, from the
-service that would use it, and says nothing about past Decisions; the Actions page holds those. The
-app adds only each binding's provenance (git, this app at launch, or the operator with kubectl),
-read from labels the service reports. The tab is read-only; the one place the app writes a binding is a launch, whose pick the create form
-draws from `GET /action-policy/sets`, the namespace's sets each with the same verdict. The app's own watch of the two kinds is
-a trigger: an event on either re-asks the service for the next frame, and a binding lapsing while
-nothing changes leaves the page at the next frame. The two watches are independent, so a frame can
-briefly precede the service's informer seeing the same event and show the answer from just before
-it. Where the service cannot be asked -- no federation configured, a session to log in again, a
-failed exchange or request -- the frame says so in place of the policy rather than showing an empty
+The Sandbox page's Policies tab, carried in the live snapshot frame, lists every `PolicyBinding` naming
+the ServiceAccount the Sandbox runs as, from the objects the app's own watch holds (`egress_views.py`).
+A row is the binding's provenance (git; the Sandbox's own, which its controller keeps equal to the
+Sandbox's policy sets; or an operator's grant), its expiry, and the sets it names, a missing or refused
+one in red. Its icon sums up the verdicts each reader wrote to the binding's status (`KubernetesReady`,
+`ActionsReady`, `EgressReady`): ready when every reader that has judged it accepts its current
+generation, pending while none has or one is behind, refused when one says false or a named set is
+missing or refused. The reasons are the icon's hover text. Expanding a row shows each set's rules of
+every type in the set's order: an egress rule as its hosts, methods, paths and credential, any other as
+the set states it. A binding is the grant, so nothing here depends on the Action Service being asked.
+
+Revoke deletes an operator's grant; a binding from git or the Sandbox's own refuses, since each would be
+applied again. **Grant policy sets** adds a binding naming the Sandbox and is, with revocation and the
+launch pick (drawn from `GET /sandboxes/form`, the namespace's PolicySet names), the only write the tab makes.
+
+Below the bindings, **Auto-approve if** is the Action Service's own answer for that account, read through
+the operator federation (`/v1/operator/action-policy/service-accounts/{namespace}/{name}`, so an operator
+session is required as for the Actions page): the `action_auto_approve` policies in the order the service
+walks them, each entry naming the binding, set and index a Decision's evidence names, and `synced`, false
+while the service's watch has not synced and nothing auto-decides. It is the resolution an admission would
+use now, from the service that would use it, and says nothing about past Decisions; the Actions page holds
+those. The app's own watch of the two kinds is a trigger: an event on either re-asks the service for the
+next frame, and a binding lapsing while nothing changes leaves the page at the next frame. The two watches
+are independent, so a frame can briefly precede the service's informer seeing the same event and show the
+answer from just before it. Where the service cannot be asked -- no federation configured, a session to log
+in again, a failed exchange or request -- the frame says so in place of the list rather than showing an empty
 one. Which lists the service enforces is its contract
 ([SPEC § Action policies](../action_service/SPEC.md#action-policies)).
 
