@@ -87,6 +87,9 @@ def command(
         "--output-format",
         "stream-json",
         "--verbose",
+        # Delegate approval to the stdio host instead of Claude's automatic classifier.
+        "--permission-mode",
+        "manual",
         "--permission-prompt-tool",
         "stdio",
         "--include-partial-messages",
