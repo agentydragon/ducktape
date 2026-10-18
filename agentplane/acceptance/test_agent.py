@@ -10,7 +10,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.acceptance import conftest as fixtures
+from agentplane.acceptance import agent as agent_module, conftest as fixtures
 from agentplane.acceptance.agent import RUNNER_ANSWERS_SECONDS, Agent
 from agentplane.acceptance.conftest import SandboxNotReadyError, suspend_and_delete
 from agentplane.app.live import SandboxesSnapshot
@@ -136,6 +136,27 @@ async def test_startup_refusals_and_other_server_failures_are_not_retried(status
     assert caught.value.response is response
     client.create_session.assert_awaited_once()
     client.thread.assert_not_awaited()
+
+
+async def test_run_deadline_closes_a_stream_kept_open_without_terminal_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(agent_module, "TURN_SECONDS", 0.01)
+    client = create_autospec(Client, instance=True)
+    closed = False
+
+    async def events() -> AsyncIterator[event_log_pb2.EventEntry]:
+        nonlocal closed
+        try:
+            yield event_log_pb2.EventEntry(cursor=1, event=event_pb2.Event(setup_started=event_pb2.SetupStarted()))
+            # SSE keepalives can keep the HTTP read alive without yielding another EventEntry.
+            await asyncio.Event().wait()
+        finally:
+            closed = True
+
+    client.events.return_value = events()
+    with pytest.raises(TimeoutError):
+        await Agent(client, thread_id=uuid4(), cursor=0).run("test prompt")
+    assert closed
+    client.submit_input.assert_awaited_once()
 
 
 async def test_run_returns_successful_turn_outputs() -> None:

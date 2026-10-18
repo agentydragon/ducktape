@@ -11,8 +11,10 @@ a scenario parametrised over `Harness` gets Claude and Codex from one body.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import TypeVar
@@ -150,29 +152,33 @@ class Agent:
         after = self._cursor
         await self._client.submit_input(self._thread_id, f"input-{uuid4().hex[:8]}", prompt)
         turn = Turn(admitted=time.monotonic())
-        async for entry in self._client.events(self._thread_id, after=after, read_seconds=TURN_SECONDS):
-            self._cursor = entry.cursor
-            event = entry.event
-            match event.WhichOneof("observation"):
-                case "harness_started":
-                    turn.resumed = event.harness_started.resumed
-                case "harness_user_message_confirmed":
-                    turn.input_confirmed = True
-                case "item_completed":
-                    _completed(event.item_completed, turn)
-                case "native" if event.native.direction == event_pb2.DIRECTION_FROM_HARNESS:
-                    turn.native.append(event.native.line)
-                case "turn_completed":
-                    completed = event.turn_completed
-                    turn.status = completed.status
-                    if turn.status != event_pb2.TURN_STATUS_COMPLETED:
-                        raise AssertionError(
-                            f"turn {completed.turn_id!r} ended with {event_pb2.TurnStatus.Name(turn.status)}: "
-                            f"{completed.error=}"
-                        )
-                    return turn
-                case _:
-                    continue
+        async with (
+            asyncio.timeout(TURN_SECONDS),
+            aclosing(self._client.events(self._thread_id, after=after, read_seconds=TURN_SECONDS)) as entries,
+        ):
+            async for entry in entries:
+                self._cursor = entry.cursor
+                event = entry.event
+                match event.WhichOneof("observation"):
+                    case "harness_started":
+                        turn.resumed = event.harness_started.resumed
+                    case "harness_user_message_confirmed":
+                        turn.input_confirmed = True
+                    case "item_completed":
+                        _completed(event.item_completed, turn)
+                    case "native" if event.native.direction == event_pb2.DIRECTION_FROM_HARNESS:
+                        turn.native.append(event.native.line)
+                    case "turn_completed":
+                        completed = event.turn_completed
+                        turn.status = completed.status
+                        if turn.status != event_pb2.TURN_STATUS_COMPLETED:
+                            raise AssertionError(
+                                f"turn {completed.turn_id!r} ended with {event_pb2.TurnStatus.Name(turn.status)}: "
+                                f"{completed.error=}"
+                            )
+                        return turn
+                    case _:
+                        continue
         raise AssertionError(f"the session's stream ended before the turn completed:\n{turn.transcript}")
 
 
