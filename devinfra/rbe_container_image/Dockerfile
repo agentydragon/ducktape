@@ -42,9 +42,6 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         clang \
         # lld: replaces the deprecated gold linker in the GCC toolchain
         lld \
-        # dbus-daemon: needed by tests that spawn a private D-Bus session
-        # (e.g. experimental/dbus_fast_example)
-        dbus-daemon \
         # git-lfs: needed by the runner, which inherits this layer — bb remote
         # re-fetches the repo there via plain git fetch (no LFS smudge), so
         # consumer scripts call `git lfs pull` before bazel runs to materialize

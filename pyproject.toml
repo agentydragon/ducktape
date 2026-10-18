@@ -235,7 +235,7 @@ dependencies = [
     "dbus-python>=1.3.0",
     "PyGObject>=3.40.0",
 
-    # dbus_fast_example
+    # cpap/gateway
     "dbus-fast>=4.0.0",
 
     # x/cotrl
