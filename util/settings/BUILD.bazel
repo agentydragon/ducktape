@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "settings",
+    srcs = ["settings.go"],
+    importpath = "github.com/agentydragon/ducktape/util/settings",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_caarlos0_env_v11//:env",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
+)
+
+go_test(
+    name = "settings_test",
+    srcs = ["settings_test.go"],
+    embed = [":settings"],
+)
