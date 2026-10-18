@@ -3,14 +3,11 @@ import {
   ActionIcon,
   Alert,
   Anchor,
-  Badge,
   Button,
   Group,
   Menu,
-  Paper,
   Stack,
   Switch,
-  Table,
   Tabs,
   Text,
   Title,
@@ -28,41 +25,23 @@ import {
   displayableError,
   findThread,
   getSessionOpening,
-  getRunnerStatus,
   getThread,
-  harnessLabel,
   HttpError,
   openSession,
-  type RunnerStatusView,
   type SandboxView,
   type ThreadView,
 } from "./client";
 import { ActionPolicySection } from "./actions/policy";
 import { EgressLog } from "./egress";
-import { JsonView } from "./json_view";
 import { MarkGlyph } from "./mark_glyph";
-import { durationLabel } from "./format_time";
-import { TimeAgo } from "./time_ago";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
 import { NewSessionForm } from "./new_session_form";
 import { PolicyBindingsSection } from "./policy_bindings";
-import { RawSwitch } from "./raw_switch";
 import { SandboxConsole } from "./sandbox_console";
 import { SessionsTable } from "./sandbox_sessions";
-import {
-  hasVmConsole,
-  containerStatuses,
-  podIp,
-  podPhase,
-  rawConditions,
-  rawString,
-  sandboxReady,
-  sandboxStatusDetail,
-  sandboxSummary,
-  suspensionReason,
-  type RawCondition,
-} from "./sandbox_status";
+import { StatusView } from "./sandbox_status_view";
+import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { snapshotFresh } from "./thread_status";
 import { TopbarActions, TopbarTitle } from "./topbar";
@@ -99,336 +78,6 @@ const DEFAULT_TAB: Tab = "sessions";
 
 function isTab(value: string | null): value is Tab {
   return TABS.includes(value as Tab);
-}
-
-function ConditionsTable({ title, conditions }: { title: string; conditions: RawCondition[] }): JSX.Element {
-  return (
-    <Stack gap="xs">
-      <Title order={5}>{title}</Title>
-      <Table.ScrollContainer minWidth={620} type="native">
-        <Table>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Condition</Table.Th>
-              <Table.Th>Status</Table.Th>
-              <Table.Th>Reason</Table.Th>
-              <Table.Th>Message</Table.Th>
-              <Table.Th>Transition</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {conditions.map((condition) => (
-              <Table.Tr key={condition.type}>
-                <Table.Td>{condition.type}</Table.Td>
-                <Table.Td>
-                  <Badge color={condition.status === "True" ? "green" : "orange"}>{condition.status}</Badge>
-                </Table.Td>
-                <Table.Td>{condition.reason ?? "—"}</Table.Td>
-                <Table.Td>{condition.message ?? "—"}</Table.Td>
-                <Table.Td>
-                  {condition.lastTransitionTime ?? "—"}
-                  {condition.lastProbeTime ? ` · probed ${condition.lastProbeTime}` : ""}
-                  {condition.observedGeneration !== null ? ` · generation ${condition.observedGeneration}` : ""}
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Table.ScrollContainer>
-    </Stack>
-  );
-}
-
-function processStateLabel(state: RunnerStatusView["processes"][number]["state"]): string {
-  switch (state) {
-    case "PROCESS_STATE_STARTING":
-      return "Starting";
-    case "PROCESS_STATE_RUNNING":
-      return "Running";
-    case "PROCESS_STATE_STOPPING":
-      return "Stopping";
-  }
-}
-
-function executionStateLabel(state: RunnerStatusView["sessions"][number]["execution_state"]): string {
-  switch (state) {
-    case "SESSION_EXECUTION_STATE_DORMANT":
-      return "Dormant";
-    case "SESSION_EXECUTION_STATE_PREPARING":
-      return "Preparing";
-    case "SESSION_EXECUTION_STATE_READY":
-      return "Ready";
-    case "SESSION_EXECUTION_STATE_FAILED":
-      return "Failed";
-  }
-}
-
-type RunnerDiagnosticsState =
-  | { kind: "loading" }
-  | { kind: "available"; value: RunnerStatusView; observedAt: string }
-  | { kind: "unavailable"; reason: string }
-  | { kind: "suspended" };
-
-function RunnerDiagnostics({ sandbox, active }: { sandbox: SandboxView; active: boolean }): JSX.Element {
-  const [state, setState] = useState<RunnerDiagnosticsState>({ kind: "loading" });
-  const [refreshVersion, setRefreshVersion] = useState(0);
-  useEffect(() => {
-    if (!active) return;
-    if (sandbox.phase === "Suspended" || sandbox.operating_mode === "Suspended") {
-      setState({ kind: "suspended" });
-      return;
-    }
-    let current = true;
-    setState({ kind: "loading" });
-    void getRunnerStatus(sandbox.name).then(
-      (value) => {
-        if (current) setState({ kind: "available", value, observedAt: new Date().toISOString() });
-      },
-      (reason: unknown) => {
-        if (current) setState({ kind: "unavailable", reason: displayableError(reason) });
-      }
-    );
-    return () => {
-      current = false;
-    };
-  }, [active, refreshVersion, sandbox.name, sandbox.operating_mode, sandbox.phase]);
-
-  return (
-    <Stack gap="xs" data-testid="sandbox-runner-diagnostics">
-      <Group justify="space-between" align="flex-start" wrap="wrap" gap="xs">
-        <div>
-          <Title order={5}>Runner diagnostics</Title>
-          <Text size="xs" c="dimmed">
-            Read-only snapshot of process and Session state reported by the runner.
-          </Text>
-        </div>
-        <Button
-          size="xs"
-          variant="subtle"
-          disabled={state.kind === "loading" || state.kind === "suspended"}
-          onClick={() => setRefreshVersion((version) => version + 1)}
-        >
-          Refresh
-        </Button>
-      </Group>
-      {state.kind === "loading" && (
-        <Text size="sm" role="status" c="dimmed">
-          Loading runner diagnostics…
-        </Text>
-      )}
-      {state.kind === "suspended" && (
-        <Text size="sm" role="status" c="dimmed">
-          Sandbox suspended. Runner diagnostics are unavailable until it is running.
-        </Text>
-      )}
-      {state.kind === "unavailable" && (
-        <Text size="sm" role="status" c="dimmed">
-          Runner diagnostics unavailable: {state.reason}
-        </Text>
-      )}
-      {state.kind === "available" && (
-        <Stack gap="xs">
-          <Text size="xs" c="dimmed">
-            Snapshot read at <time dateTime={state.observedAt}>{new Date(state.observedAt).toLocaleString()}</time>
-          </Text>
-          <Text size="sm">Runner boot ID · {state.value.runner_boot_id}</Text>
-          {state.value.processes.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              No harness processes reported.
-            </Text>
-          ) : (
-            <Stack gap="xs">
-              <Title order={6}>Harness processes</Title>
-              {state.value.processes.map((process) => (
-                <Paper key={process.process_id} withBorder p="sm" radius="md">
-                  <Stack gap={4}>
-                    <Group justify="space-between" wrap="wrap" gap="xs">
-                      <Text fw={600}>{harnessLabel(process.harness)}</Text>
-                      <Badge>{processStateLabel(process.state)}</Badge>
-                    </Group>
-                    <Text size="sm">PID {process.pid ?? "not started"}</Text>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Process ID · {process.process_id}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Assigned Sessions ·{" "}
-                      {process.assigned_session_ids.length ? process.assigned_session_ids.join(", ") : "None"}
-                    </Text>
-                  </Stack>
-                </Paper>
-              ))}
-            </Stack>
-          )}
-          {state.value.sessions.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              No Sessions reported.
-            </Text>
-          ) : (
-            <Stack gap="xs">
-              <Title order={6}>Sessions</Title>
-              {state.value.sessions.map((session) => (
-                <Paper key={session.session_id} withBorder p="sm" radius="md">
-                  <Stack gap={4}>
-                    <Group justify="space-between" wrap="wrap" gap="xs">
-                      <Text fw={600} style={{ overflowWrap: "anywhere" }}>
-                        {session.session_id}
-                      </Text>
-                      <Badge>{executionStateLabel(session.execution_state)}</Badge>
-                    </Group>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Process ID · {session.process_id ?? "—"}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Native Session ID · {session.native_session_id ?? "—"}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Active turn · {session.active_turn_id ?? "—"}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      Failure cursor · {session.failure_cursor ?? "—"}
-                      {session.busy ? " · Work in progress" : ""}
-                    </Text>
-                  </Stack>
-                </Paper>
-              ))}
-            </Stack>
-          )}
-        </Stack>
-      )}
-    </Stack>
-  );
-}
-
-/** What Kubernetes says about the sandbox: the Sandbox CR's own status, then its Pod's. */
-function StatusView({ sandbox, active }: { sandbox: SandboxView; active: boolean }): JSX.Element {
-  const [raw, setRaw] = useState(false);
-  const sandboxConditions = rawConditions(sandbox.status);
-  const podConditions = rawConditions(sandbox.pod?.status ?? null);
-  const containers = containerStatuses(sandbox.pod?.status ?? null);
-  return (
-    <Stack gap="xs">
-      <Group>
-        <Title order={4}>Status</Title>
-        <RawSwitch raw={raw} onChange={setRaw} />
-      </Group>
-      {raw ? (
-        <JsonView value={sandbox} />
-      ) : (
-        <>
-          <Text size="sm">
-            Sandbox {sandbox.phase.toLowerCase()}
-            {suspensionReason(sandbox) ? ` (${suspensionReason(sandbox)})` : ""}, created{" "}
-            <TimeAgo value={sandbox.created_at} />
-            {sandbox.pod?.node_name ? `, Pod placed on ${sandbox.pod.node_name}` : ", Pod not placed"}
-          </Text>
-          {/* The account its Pod runs as is what every binding names, so the tabs below are its policy, not this
-              Sandbox's: two sandboxes sharing an account share what they may do. */}
-          <Text size="sm">
-            Runs as ServiceAccount {sandbox.service_account.namespace}/{sandbox.service_account.name}, the subject its
-            policy bindings name.
-          </Text>
-          {sandbox.preset && <Text size="sm">Made from preset {sandbox.preset}.</Text>}
-          <Text size="sm">
-            {sandbox.idle_suspend_after_seconds
-              ? `Suspends once its runner has been idle for ${durationLabel(sandbox.idle_suspend_after_seconds)}.`
-              : "Never suspends for idleness."}
-          </Text>
-          {sandbox.status && rawString(sandbox.status.phase) && (
-            <Text size="sm">Sandbox status phase: {rawString(sandbox.status.phase)}</Text>
-          )}
-          {sandboxConditions.length > 0 ? (
-            <ConditionsTable title="Sandbox conditions" conditions={sandboxConditions} />
-          ) : (
-            <Text size="sm" c="dimmed">
-              No Sandbox conditions reported.
-            </Text>
-          )}
-          {sandbox.pod ? (
-            <>
-              <Text size="sm">
-                Pod {podPhase(sandbox) ?? "phase unknown"}
-                {podIp(sandbox) ? ` at ${podIp(sandbox)}` : ""}
-                {sandbox.pod.node_name ? ` on ${sandbox.pod.node_name}` : ""}
-                {sandbox.pod.deleting ? " · deleting" : ""}
-                {rawString(sandbox.pod.status?.reason) ? `: ${rawString(sandbox.pod.status?.reason)}` : ""}
-                {rawString(sandbox.pod.status?.message) ? ` (${rawString(sandbox.pod.status?.message)})` : ""}
-              </Text>
-              <Text size="xs" c="dimmed">
-                Pod {sandbox.pod.namespace}/{sandbox.pod.name} · UID {sandbox.pod.uid}
-                {rawString(sandbox.pod.status?.startTime)
-                  ? ` · started ${rawString(sandbox.pod.status?.startTime)}`
-                  : ""}
-                {rawString(sandbox.pod.status?.qosClass) ? ` · QoS ${rawString(sandbox.pod.status?.qosClass)}` : ""}
-              </Text>
-              {podConditions.length > 0 ? (
-                <ConditionsTable title="Pod conditions" conditions={podConditions} />
-              ) : (
-                <Text size="sm" c="dimmed">
-                  No Pod conditions reported.
-                </Text>
-              )}
-              {containers.length > 0 && (
-                <Stack gap="xs">
-                  <Title order={5}>Containers</Title>
-                  <Table.ScrollContainer minWidth={620} type="native">
-                    <Table>
-                      <Table.Thead>
-                        <Table.Tr>
-                          <Table.Th>Container</Table.Th>
-                          <Table.Th>State</Table.Th>
-                          <Table.Th>Ready</Table.Th>
-                          <Table.Th>Restarts</Table.Th>
-                          <Table.Th>Detail</Table.Th>
-                          <Table.Th>Started</Table.Th>
-                          <Table.Th>Finished</Table.Th>
-                        </Table.Tr>
-                      </Table.Thead>
-                      <Table.Tbody>
-                        {containers.map((container) => (
-                          <Table.Tr key={`${container.role}/${container.name}`}>
-                            <Table.Td>
-                              {container.role === "container" ? container.name : `${container.role} ${container.name}`}
-                            </Table.Td>
-                            <Table.Td>
-                              <Badge color={container.state === "running" ? "green" : "orange"}>
-                                {container.state}
-                              </Badge>
-                            </Table.Td>
-                            <Table.Td>{container.ready ? "yes" : "no"}</Table.Td>
-                            <Table.Td>
-                              {container.restartCount > 0 ? (
-                                <Badge color="red">{container.restartCount}</Badge>
-                              ) : (
-                                container.restartCount
-                              )}
-                            </Table.Td>
-                            <Table.Td>
-                              {[
-                                container.reason,
-                                container.message,
-                                container.exitCode !== null && `exit ${container.exitCode}`,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ") || "—"}
-                            </Table.Td>
-                            <Table.Td>{container.startedAt ?? "—"}</Table.Td>
-                            <Table.Td>{container.finishedAt ?? "—"}</Table.Td>
-                          </Table.Tr>
-                        ))}
-                      </Table.Tbody>
-                    </Table>
-                  </Table.ScrollContainer>
-                </Stack>
-              )}
-            </>
-          ) : (
-            <Text size="sm">No Pod.</Text>
-          )}
-        </>
-      )}
-      <RunnerDiagnostics sandbox={sandbox} active={active} />
-    </Stack>
-  );
 }
 
 export function SandboxPage({
@@ -748,7 +397,7 @@ export function SandboxPage({
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
-          {sandbox && <StatusView sandbox={sandbox} active={tab === "status"} />}
+          {sandbox && <StatusView sandbox={sandbox} active={tab === "status"} onError={setError} />}
         </Tabs.Panel>
         {vmConsoleAvailable && (
           <Tabs.Panel value="console" pt="sm">

@@ -21,13 +21,14 @@ import { useSearchParams } from "react-router";
 
 import { api, displayableError, type NewSandbox, type SandboxPresetView, type SandboxView } from "./client";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
-import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
+import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { MarkGlyph } from "./mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { TopbarTitle } from "./topbar";
+import { WakeOnSendCheckbox } from "./wake_on_send";
 
 const EMPTY_FORM: NewSandbox = {
   name: "",
@@ -61,23 +62,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [policySets, setPolicySets] = useState<string[]>([]);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
-  const [pendingWakePolicy, setPendingWakePolicy] = useState<Record<string, boolean>>({});
-  const [savingWakePolicy, setSavingWakePolicy] = useState<Set<string>>(new Set());
   const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
   const rows: SandboxView[] = useMemo(() => live.snapshot?.sandboxes ?? [], [live.snapshot?.sandboxes]);
-  useEffect(() => {
-    setPendingWakePolicy((current) => {
-      const next = { ...current };
-      let changed = false;
-      for (const row of rows) {
-        if (next[row.uid] === row.wake_on_send) {
-          delete next[row.uid];
-          changed = true;
-        }
-      }
-      return changed ? next : current;
-    });
-  }, [rows]);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPreset = searchParams.get(PRESET_PARAM);
   // An empty Name field creates the Sandbox under this free name, derived from the preset's.
@@ -153,32 +139,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       setSearchParams(params, { replace: true });
       setError(null);
       onOpen(data.name);
-    }
-  }
-
-  async function setWakePolicy(row: SandboxView, wake_on_send: boolean): Promise<void> {
-    setPendingWakePolicy((current) => ({ ...current, [row.uid]: wake_on_send }));
-    setSavingWakePolicy((current) => new Set(current).add(row.uid));
-    try {
-      const { error: failure } = await api.PATCH("/sandboxes/{name}/wake-policy", {
-        params: { path: { name: row.name } },
-        body: { uid: row.uid, wake_on_send },
-      });
-      if (failure) throw failure;
-      setError(null);
-    } catch (reason: unknown) {
-      setPendingWakePolicy((current) => {
-        const next = { ...current };
-        delete next[row.uid];
-        return next;
-      });
-      setError(displayableError(reason));
-    } finally {
-      setSavingWakePolicy((current) => {
-        const next = new Set(current);
-        next.delete(row.uid);
-        return next;
-      });
     }
   }
 
@@ -283,7 +243,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           {rows.map((row) => {
             const ip = podIp(row);
             const node = `${row.pod?.node_name ?? "—"} ${ip ? `(${ip})` : ""}`;
-            const deleting = row.phase === "Quiescing" || row.phase === "Tearing down";
             return (
               <Table.Tr key={row.name}>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
@@ -298,34 +257,24 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                     <Text size="xs" c="dimmed">
                       {node}
                     </Text>
-                    <Checkbox
+                    <WakeOnSendCheckbox
+                      sandbox={row}
+                      disabled={deleting(row)}
                       label="Wake on message"
-                      aria-label={"Wake on message for " + row.name}
-                      checked={pendingWakePolicy[row.uid] ?? row.wake_on_send ?? false}
-                      disabled={
-                        savingWakePolicy.has(row.uid) || row.phase === "Quiescing" || row.phase === "Tearing down"
-                      }
-                      onChange={(event) => void setWakePolicy(row, event.currentTarget.checked)}
+                      onError={setError}
                     />
                     <Group gap="xs" wrap="nowrap">
                       <Text size="sm">Suspend when idle (min)</Text>
-                      <IdleSuspendInput sandbox={row} disabled={deleting} onError={setError} />
+                      <IdleSuspendInput sandbox={row} disabled={deleting(row)} onError={setError} />
                     </Group>
                   </Stack>
                 </Table.Td>
                 <Table.Td visibleFrom="sm">{node}</Table.Td>
                 <Table.Td visibleFrom="sm">
-                  <Checkbox
-                    aria-label={"Wake on message for " + row.name}
-                    checked={pendingWakePolicy[row.uid] ?? row.wake_on_send ?? false}
-                    disabled={
-                      savingWakePolicy.has(row.uid) || row.phase === "Quiescing" || row.phase === "Tearing down"
-                    }
-                    onChange={(event) => void setWakePolicy(row, event.currentTarget.checked)}
-                  />
+                  <WakeOnSendCheckbox sandbox={row} disabled={deleting(row)} onError={setError} />
                 </Table.Td>
                 <Table.Td visibleFrom="sm">
-                  <IdleSuspendInput sandbox={row} disabled={deleting} onError={setError} />
+                  <IdleSuspendInput sandbox={row} disabled={deleting(row)} onError={setError} />
                 </Table.Td>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <Group gap="xs" wrap="nowrap" justify="flex-end">

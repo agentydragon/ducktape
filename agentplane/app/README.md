@@ -157,7 +157,9 @@ and authorize the app ServiceAccount before rolling out an app image that requir
 The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
 runner Pod does not clear the inventory. A row's status mark is derived from those last-observed History
 values and the Sandbox's own state, and reads as unconfirmed whenever the stream, the watch or the
-Thread-update listener (`updates_connected` in the frame) is not current. The Status tab reads
+Thread-update listener (`updates_connected` in the frame) is not current. The Status tab shows the
+Sandbox's state and lets an operator change its wake-on-message and idle-suspend settings, as the list
+does; the Kubernetes conditions and containers below start open only where one is unmet. It reads
 `GET /sandboxes/{name}/runner-status` for current runner process and Session diagnostics; it does not
 wake a suspended Sandbox. A missing or unavailable runner is
 shown as unavailable, while suspended Sandboxes show that diagnostics are unavailable until resumed.

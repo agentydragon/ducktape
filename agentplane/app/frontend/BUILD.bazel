@@ -508,6 +508,37 @@ ts_library(
 )
 
 ts_library(
+    name = "wake_on_send",
+    srcs = ["wake_on_send.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "sandbox_status_view",
+    srcs = ["sandbox_status_view.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":idle_suspend",
+        ":json_view",
+        ":lifecycle",
+        ":raw_switch",
+        ":sandbox_status",
+        ":time_ago",
+        ":wake_on_send",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "sandboxes",
     srcs = [
         "sandboxes.tsx",
@@ -528,6 +559,7 @@ ts_library(
         ":sandbox_status",
         ":status_mark",
         ":topbar",
+        ":wake_on_send",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -934,21 +966,18 @@ ts_library(
     deps = [
         ":client",
         ":egress",
-        ":format_time",
-        ":json_view",
         ":lifecycle",
         ":live",
         ":mark_glyph",
         ":new_session_form",
         ":notification_status",
         ":policy_bindings",
-        ":raw_switch",
         ":sandbox_console",
         ":sandbox_sessions",
         ":sandbox_status",
+        ":sandbox_status_view",
         ":status_mark",
         ":thread_status",
-        ":time_ago",
         ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",

@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
-import type { RunnerStatusView, SandboxView, ThreadView } from "./client";
+import { api, type RunnerStatusView, type SandboxView, type ThreadView } from "./client";
 import type * as LiveModule from "./live";
 import type { Live, SandboxSnapshot } from "./live";
 import { SandboxRoute } from "./app";
@@ -323,7 +323,7 @@ it("shows runner process and Session diagnostics, including a dormant Session", 
   await render(async () => Response.json([]));
   await act(async () => tab("Status").click());
   await vi.waitFor(() => expect(container.textContent).toContain("boot-visual-001"));
-  expect(container.textContent).toContain("Snapshot read at");
+  expect(container.textContent).toContain("Snapshot read");
   expect(container.textContent).toContain("Harness processes");
   expect(container.textContent).toContain("PID 4312");
   expect(container.textContent).toContain("process-claude-001");
@@ -334,6 +334,50 @@ it("shows runner process and Session diagnostics, including a dormant Session", 
   expect(container.textContent).toContain("session-preparing-002");
   expect(container.textContent).toContain("native-claude-001");
   expect(container.textContent).toContain("Dormant");
+});
+
+it("saves the wake policy from the Status tab", async () => {
+  await render(async () => Response.json([]));
+  await act(async () => tab("Status").click());
+  const patch = vi
+    .spyOn(api, "PATCH")
+    .mockResolvedValue({ data: undefined, response: new Response(null, { status: 204 }) } as never);
+  try {
+    const wake = container.querySelector<HTMLInputElement>('input[aria-label="Wake on message for startup-test"]');
+    if (!wake) throw new Error("Missing Wake on message checkbox");
+    await act(async () => wake.click());
+
+    expect(patch).toHaveBeenCalledWith("/sandboxes/{name}/wake-policy", {
+      params: { path: { name: "startup-test" } },
+      body: { uid: readySandbox.uid, wake_on_send: true },
+    });
+  } finally {
+    patch.mockRestore();
+  }
+});
+
+/** The Status tab's Kubernetes item with this title, which is open when its button says so. */
+function kubernetesItem(title: string): HTMLButtonElement {
+  const found = [...container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")].find((node) =>
+    node.textContent?.startsWith(title)
+  );
+  if (!found) throw new Error(`Missing ${title} item`);
+  return found;
+}
+
+it("opens the Kubernetes status items that have an unmet condition and no others", async () => {
+  readySandbox.status = { conditions: [{ type: "Ready", status: "False", reason: "TestNotReady" }] };
+  readySandbox.pod = {
+    ...readyPod!,
+    status: { phase: "Running", conditions: [{ type: "Ready", status: "True", reason: "TestAllMet" }] },
+  };
+  await render(async () => Response.json([]));
+  await act(async () => tab("Status").click());
+
+  expect(kubernetesItem("Sandbox conditions").getAttribute("aria-expanded")).toBe("true");
+  expect(kubernetesItem("Pod conditions").getAttribute("aria-expanded")).toBe("false");
+  await act(async () => kubernetesItem("Pod conditions").click());
+  expect(kubernetesItem("Pod conditions").getAttribute("aria-expanded")).toBe("true");
 });
 
 it("refreshes the runner snapshot and replaces old process and Session details", async () => {
