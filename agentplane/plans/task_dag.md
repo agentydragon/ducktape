@@ -1913,7 +1913,10 @@ design node authorizes runtime changes.
 
 ### `HARNESS_LIFECYCLE_OWNERSHIP` — implement runner-owned harness lifecycle
 
-**In flight (this session, operator-authorized implementation and rollout, 2026-10-17).** The runner owns startup,
+**In flight (this session, operator-authorized rollout acceptance, 2026-10-17).** Implementation
+#10950 and promotion #10961 are merged; live Pod/VM context retention and the retained-state staging
+canary passed. The bounded egress rerun remains pending after native Claude tool permission denials.
+See the owning design note's rollout checkpoint. The runner owns startup,
 native readiness and reconciliation after durable command admission. Keep explicit resume and stop
 RPCs absent; retain exact-turn interrupt with atomic active-turn validation and `FAILED_PRECONDITION`
 before admission on mismatch. Already admitted retries return the original admission; an admitted
@@ -1936,7 +1939,7 @@ introspection, not a client-side lifecycle or authorization contract; its shape 
 recovery, retained context, exact-turn rejection and interrupt races, and send/quiesce behavior;
 atomic caller/proto changes and focused desktop/phone visual review. Follow the owning design
 note's testing-first rollout and staging promotion hold; preserve suspended staging Sandbox UIDs
-and retained volumes. Implementation and rollout remain unfinished. Idle Claude reaping is deferred to v2 and does not gate this work. Store counts,
+and retained volumes. Rollout acceptance remains unfinished. Idle Claude reaping is deferred to v2 and does not gate this work. Store counts,
 shared-store safety and native-ID allocation retain their separate decision gates.
 
 ### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping

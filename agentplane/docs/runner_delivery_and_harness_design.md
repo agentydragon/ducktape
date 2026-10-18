@@ -1,10 +1,11 @@
 # Runner delivery boundaries and harness identity
 
-Status: **design and implementation planning only.** This note records current code paths, approved direction, alternatives
+Status: **approved direction, implementation planning and lifecycle rollout acceptance.** This note records current code paths, approved direction, alternatives
 and remaining questions. The operator approved gRPC for internal APIs, a generated HTTP/JSON facade,
 and an ergonomic CLI, adopted incrementally by service and interface. The selected HTTP/JSON
 facade is gRPC-Gateway. Harness lifecycle ownership is approved below (operator, 2026-10-17); its
-implementation and rollout remain unfinished. This note does not authorize runtime/API cutover or
+implementation is merged and rollout acceptance is in progress. The separate lifecycle rollout was
+authorized by the operator; this note does not otherwise authorize runtime/API cutover or
 otherwise authorize changes to behavior, schemas, database ownership, identity mappings or caller
 permissions. Keep the existing security
 checks and durable queue until a replacement contract is reviewed.
@@ -681,16 +682,21 @@ than assuming every image shares a build SHA.
    deployed revisions as Flux continues managing the pins. The separate `IDLE_SUSPEND_UI_DRIVE` node follows
    lifecycle rollout and remains assigned to the operator for the human staging UI drive.
 
-**Rollout checkpoint, 2026-10-17 PDT:** implementation merged in #10950
-(`2893ec865aa16c6be938f08d0314d7353496468f`); the exact-head suite passed 163 tests and the
-desktop/phone visual review passed. The released runner wheel is `agentplane-runner-70b9a3bb287b`,
-pinned by `e7fd6c3830b86463ad1dd3c27f2a42db250d515d`. Testing has the new services, standard runner
-and VM template; staging remains held with four suspended Sandbox CRs and their original volumes.
-The first deployed preset test completed a model/tool turn, then exposed a Pod-deletion wait race in
-the test; #10959 fixes that wait. Subsequent attempts failed before creating resources, first on host
-DNS and then on direct API TCP connection timeouts during token minting. Full Pod/VM suspend/resume
-and egress acceptance and retained-state staging acceptance remain pending. The promotion PR restores
-automatic image promotion on merge. No staging service stop or Flux suspension has been applied.
+**Rollout checkpoint, 2026-10-17 PDT:** implementation #10950 and promotion #10961 are merged.
+Testing and staging have the coordinated service and runner/template release; staging's old service
+Pods are gone. Flux Image Automation manages the restored image setters and its reconciliation
+reported the repository up to date. No service scale-to-zero or Flux suspension was applied.
+
+Deployed launch-preset acceptance passed. The Pod suspend/resume case passed for both Claude and
+Codex, and the VM case passed for Codex, including native context recall, dormant/ready status,
+unchanged history prefixes and retained PVC/PV identities. A retained staging Codex Session resumed
+and reconciled on the new Ducktape runner, settled an unchanged-setting command as a no-op, and
+returned to its original archived/suspended state without a model turn. All 184 preexisting history
+entries matched their pre-cutover hash; all four staging Sandbox UIDs and eight Sandbox PVC/PV
+identities were preserved. The bounded egress rerun remains pending following native Claude tool
+permission denials in an earlier diagnostic attempt. Keep that result distinct from completed
+lifecycle checks. Exact revisions, evidence and failed-attempt limitations are in the
+[rollout record](../debug/harness_lifecycle_rollout_20261017.md).
 
 Keep previous image revisions and a tested persistent-format rollback policy. Before new work is
 accepted, revert the coordinated release if necessary. After new writes, reconcile/preserve them;
