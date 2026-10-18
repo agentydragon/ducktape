@@ -33,7 +33,9 @@ representation must keep the facts needed for authorized historical reads after 
 objects disappear. Follow the [Kubernetes-resource storage preference](multiagent_communication.md#target-collections-and-launch-enrollment),
 with alternatives allowed on concrete implementation friction; historical membership and policy
 resource lifetime after Sandbox deletion remain the open design question
-`HISTORY_ACCESS_AFTER_DELETION` in [the task DAG](task_dag.md).
+`HISTORY_ACCESS_AFTER_DELETION` in [the task DAG](task_dag.md). The operator has tentatively floated
+authorizing the archive [apart from live objects](multiagent_communication.md#option-authorize-the-archive-apart-from-live-objects),
+held with the other read decisions.
 
 ## Scope, identity and enforcement
 

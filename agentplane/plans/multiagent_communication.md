@@ -375,6 +375,89 @@ separately reviewed auth proposal; it does not automatically make an engine migr
 prerequisite. Compare the incremental option first, and identify the benefit and migration cost of
 any broader change explicitly.
 
+### Option: authorize the archive apart from live objects
+
+**Floated by the operator, 2026-10-18 UTC, tentatively and with no date to decide.** Permissions on
+the **archive**, the retained Session history the History Service serves (raw Events, evidence,
+Thread folds, summaries), would live in a separate universe from permissions on **live objects**:
+Sandboxes, Session inboxes, Dispatcher commands and the Runner Proxy. A grant in one confers nothing
+in the other, and each names its targets in terms it owns. The rest of this section is the plan's
+reading of the idea. The archive here is not [`SANDBOX_ARCHIVE`](task_dag.md#sandbox_archive--a-suspended-sandbox-archived-to-object-storage),
+a suspended Sandbox's storage.
+
+**Where the line falls.** History is the only way into retained history, so every transcript read,
+including one of a running Sandbox's Session, is an archive read. The tentative `session_access`
+operations already divide by the service that enforces them:
+
+| Aspect               | Live objects                                           | Archive                                                            |
+| -------------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
+| Operations           | `append_inbox`; control, when designed                 | `list_sessions`, `read_transcript`                                 |
+| Enforced by          | the inbox owner, the Dispatcher, the Runner Gateway    | History, on its own API                                            |
+| Targets are named as | live Sandboxes: direct, membership CRs, `allSandboxes` | the Sandbox as History recorded it: namespace, name, UID once kept |
+| Lasts as long as     | the Sandbox                                            | the history                                                        |
+
+Today History checks only that the caller is one of its configured `reader_accounts` (staging: the
+app and Notifications), then serves any Session by ID; there is no per-Session or per-Sandbox check,
+and a workload ServiceAccount is refused (`grpc_api.py`, `workload_auth/grpc_caller.py`). Writes are
+fenced separately: the ingress binds a Session to its first pushing ServiceAccount (namespace, name,
+UID) and refuses any other (`ingress.py`). The archive therefore already holds an identity of its
+own for every history bound to a writer, which is what the split would build on.
+
+**What it would mean.**
+
+- Archive rules are their own rule type whose targets are archive subjects: a direct Sandbox
+  (namespace and name, optional UID) and `allSandboxes`, both matched on History's record. For
+  these two the split changes where the rule lives, not what it matches, since neither reads a live
+  object.
+- Collections are the one target form that needs data outside the archive (membership CRs of live
+  Sandboxes). The split asks the collection question for the archive alone: either archive grants
+  have no collections and list Sandboxes or namespaces, or the archive owns its enrollments, the
+  `Memberships in a database` alternative of `HISTORY_ACCESS_AFTER_DELETION`. Live collections stay
+  as agreed.
+- How separate is open. **Separate rule type**: same PolicySets and PolicyBindings, so assignment,
+  GitOps authoring, live bundle edits and the shared `PolicyWatch` carry over. **Separate
+  authority**: History stores and administers archive grants itself, with its own API and audit;
+  this alone removes History's dependency on Kubernetes policy resources, but archive grants then
+  lose GitOps and the [live-bundle semantics](#live-permission-bundles) a replacement must keep.
+  The first fits the tentative direction.
+
+**What it decouples.**
+
+- A read needs no live Kubernetes object: no membership CR, ownerReference or Sandbox has to
+  exist, and no Kubernetes object becomes a historical log. `HISTORY_ACCESS_AFTER_DELETION` reduces
+  to the collection question above.
+- History's read path watches archive grants only, not Sandboxes or memberships.
+- Deleting a Sandbox or removing its live membership never changes archive access, and an archive
+  grant never keeps a Sandbox alive.
+
+**Trade-offs.**
+
+- A person who expects one grant gets two: "X may send to and read `developers`" is a rule in each
+  universe, and a collection of that name can drift between them. Only collections cost this;
+  direct and `allSandboxes` targets read the same either way. Send and read are already independent
+  grants.
+- A second rule type and target vocabulary to review, test and document. Evaluator and watch code
+  are shared.
+- Archive access outlives the Sandbox, so deleting one no longer withdraws it. Ending it means
+  editing the grant or deleting the history, which is a separate data deletion.
+- A history with no recorded Sandbox stays operator-only in either universe.
+
+**Interaction with the History key decisions.**
+
+- `HISTORY_SANDBOX_UID` stays the first node to dispatch. The UID becomes the archive's own owner
+  identity, the value UID-pinned archive grants match, copied once from the writer ServiceAccount's
+  ownerReference at bind; afterwards the archive never reads the live object. A name-based archive
+  grant covers a deleted Sandbox and its same-name replacement alike; a UID-pinned one covers one
+  incarnation.
+- `HISTORY_SESSION_KEY_DESIGN`'s recommendation stands: record and check the UID first, decide the
+  re-key once recorded values exist. A `(sandbox_uid, session_id)` key would make a scoped read a
+  lookup inside one owner's keys, but a grant can match the recorded column without it, so the
+  split does not force the re-key.
+- The send path is unaffected. `AGENT_MESSAGE_INGRESS` needs `append_inbox` against live Sandboxes
+  and History's recorded namespace and name. If the split is adopted, `session_access` keeps
+  `append_inbox` and the archive operations move to their own rule type, so the send-path schema
+  can carry `append_inbox` alone until the read decisions reopen.
+
 ## Message storage, delivery and agent tools
 
 **V1 direction agreed:** reuse the Notification Service's durable inboxes for agent correspondence.
@@ -644,7 +727,8 @@ access control or silently discard accepted messages. The deferred item is
 
 These cases should compare allowed/denied operations, authorized discovery, evidence and operational
 cost for the tentative direction and any replacement. Open decisions include identity continuity,
-grant and relationship ownership, exact rule/membership schemas, freshness settings,
+grant and relationship ownership, exact rule/membership schemas, freshness settings, whether the
+archive is [authorized apart from live objects](#option-authorize-the-archive-apart-from-live-objects),
 remaining inbox/API semantics, optional protocol facades,
 provisioning/delegation, and migration across existing services. No runtime implementation or engine
 adoption is authorized by this document.

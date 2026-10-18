@@ -408,6 +408,11 @@ Alternatives:
 - **Kubernetes CRs plus a database record.** The CRs stay authoritative while the Sandbox exists, and a
   record of its collections, written at deletion or kept from History's last push, serves reads afterwards.
   Two places for one fact, one a cache of the other, and History needs read access to membership CRs.
+- **Archive grants apart from live objects** (floated by the operator, 2026-10-18 UTC, tentatively; see
+  [the option](multiagent_communication.md#option-authorize-the-archive-apart-from-live-objects)). Archive
+  reads get their own rule type matched on History's recorded Sandbox, so no live object is needed at
+  read time. That leaves the collection question for the archive alone: no archive collections, or
+  archive-owned enrollments (the database alternative above). Live sends and live collections are unchanged.
 
 **Recommendation:** decide it when `THREAD_READ_POLICY` is next in line, because nothing else waits on it:
 sending and live reads need no retained membership, and direct grants work after deletion under every
