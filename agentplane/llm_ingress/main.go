@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	c, err := loadConfig(os.Args[1:], os.Environ())
+	c, err := loadConfig(os.Environ())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

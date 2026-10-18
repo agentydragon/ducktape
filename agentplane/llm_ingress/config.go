@@ -35,8 +35,8 @@ func defaultConfig() config {
 	return config{Host: "0.0.0.0", Port: 8080, LogLevels: map[string]string{}}
 }
 
-func loadConfig(args, environ []string) (config, error) {
-	c, err := settings.Load(settings.Options{Prefix: settingPrefix, CheckFile: validateYAMLShapes}, defaultConfig(), args, environ)
+func loadConfig(environ []string) (config, error) {
+	c, err := settings.Load(settings.Options{Prefix: settingPrefix, CheckFile: validateYAMLShapes}, defaultConfig(), environ)
 	if err != nil {
 		return config{}, err
 	}

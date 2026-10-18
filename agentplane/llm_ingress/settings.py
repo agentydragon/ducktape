@@ -13,10 +13,10 @@ from util.yaml_file_settings import YamlFileSettings
 
 
 class Settings(YamlFileSettings):
-    """Each field is a flag and an `AGENTPLANE_LLM_INGRESS_*` environment variable."""
+    """Each field is a key of the YAML settings file and an `AGENTPLANE_LLM_INGRESS_*` environment variable."""
 
     config_file_env: ClassVar[str] = "AGENTPLANE_LLM_INGRESS_CONFIG_FILE"
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_LLM_INGRESS_", cli_parse_args=True, cli_kebab_case=True)
+    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_LLM_INGRESS_")
 
     allowed_service_account_namespaces: frozenset[str] = Field(
         min_length=1,

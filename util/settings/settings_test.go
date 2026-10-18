@@ -39,11 +39,11 @@ func writeFile(t *testing.T, contents string) string {
 	return path
 }
 
-func load(args []string, environ ...string) (sample, error) {
-	return Load(Options{Prefix: prefix}, defaults(), args, environ)
+func load(environ ...string) (sample, error) {
+	return Load(Options{Prefix: prefix}, defaults(), environ)
 }
 
-func TestEachSourceOverridesTheOneBeforeIt(t *testing.T) {
+func TestTheEnvironmentOverridesTheFileWhichOverridesTheDefaults(t *testing.T) {
 	path := writeFile(t, `listen_port: 1111
 verbose: true
 namespaces: [from-file]
@@ -52,16 +52,16 @@ models:
 backend_url: http://file.test
 `)
 	got, err := load(
-		[]string{"--listen-port=3333", `--models=[{"name":"from-flag","budget":3}]`},
 		prefix+"CONFIG_FILE="+path, prefix+"LISTEN_PORT=2222", prefix+"VERBOSE=false",
 		prefix+`NAMESPACES=["from-env"]`, prefix+`LEVELS={"root":"DEBUG"}`,
+		prefix+`MODELS=[{"name":"from-env","budget":3}]`,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := sample{
-		ListenPort: 3333, Verbose: false, Namespaces: []string{"from-env"},
-		Models: []model{{Name: "from-flag", Budget: 3}}, Levels: map[string]string{"root": "DEBUG"},
+		ListenPort: 2222, Verbose: false, Namespaces: []string{"from-env"},
+		Models: []model{{Name: "from-env", Budget: 3}}, Levels: map[string]string{"root": "DEBUG"},
 		Backend: "http://file.test",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -70,11 +70,7 @@ backend_url: http://file.test
 }
 
 func TestAFieldTaggedWithItsEnvironmentNameIsReadFromIt(t *testing.T) {
-	got, err := load([]string{"--backend-url=http://flag.test"})
-	if err != nil || got.Backend != "http://flag.test" {
-		t.Fatalf("got %+v, %v", got, err)
-	}
-	got, err = load(nil, prefix+"BACKEND_URL=http://env.test")
+	got, err := load(prefix + "BACKEND_URL=http://env.test")
 	if err != nil || got.Backend != "http://env.test" {
 		t.Fatalf("got %+v, %v", got, err)
 	}
@@ -83,26 +79,24 @@ func TestAFieldTaggedWithItsEnvironmentNameIsReadFromIt(t *testing.T) {
 func TestWhatTheStructHasNoSettingForIsRefused(t *testing.T) {
 	path := writeFile(t, "listen_port: 1\nconfdir: /tmp\n")
 	for name, attempt := range map[string]func() (sample, error){
-		"a file key":       func() (sample, error) { return load(nil, prefix+"CONFIG_FILE="+path) },
-		"a flag":           func() (sample, error) { return load([]string{"--confdir=/tmp"}) },
-		"a variable":       func() (sample, error) { return load(nil, prefix+"CONFDIR=/tmp") },
-		"a positional arg": func() (sample, error) { return load([]string{"extra"}) },
+		"a file key": func() (sample, error) { return load(prefix + "CONFIG_FILE=" + path) },
+		"a variable": func() (sample, error) { return load(prefix + "CONFDIR=/tmp") },
 	} {
 		if _, err := attempt(); err == nil {
 			t.Errorf("%s the struct has no setting for was accepted", name)
 		}
 	}
-	if _, err := load(nil, "OTHER_SERVICE_CONFDIR=/tmp"); err != nil {
+	if _, err := load("OTHER_SERVICE_CONFDIR=/tmp"); err != nil {
 		t.Errorf("a variable outside the prefix was refused: %v", err)
 	}
 }
 
 func TestASettingsFileThatIsNamedMustExistAndHoldOneDocument(t *testing.T) {
-	if _, err := load(nil, prefix+"CONFIG_FILE=/nonexistent/settings.yaml"); err == nil {
+	if _, err := load(prefix + "CONFIG_FILE=/nonexistent/settings.yaml"); err == nil {
 		t.Error("a missing settings file ran on defaults")
 	}
 	path := writeFile(t, "listen_port: 1\n---\nlisten_port: 2\n")
-	if _, err := load(nil, prefix+"CONFIG_FILE="+path); err == nil {
+	if _, err := load(prefix + "CONFIG_FILE=" + path); err == nil {
 		t.Error("a settings file with two documents was accepted")
 	}
 }
@@ -110,9 +104,9 @@ func TestASettingsFileThatIsNamedMustExistAndHoldOneDocument(t *testing.T) {
 func TestErrorsNeverCarryTheValuesGiven(t *testing.T) {
 	const secret = "never-print-this"
 	for name, attempt := range map[string]func() (sample, error){
-		"scalar":        func() (sample, error) { return load(nil, prefix+"LISTEN_PORT="+secret) },
-		"list":          func() (sample, error) { return load([]string{"--namespaces=" + secret}) },
-		"unknown field": func() (sample, error) { return load(nil, prefix+`MODELS=[{"name":"x","extra":"`+secret+`"}]`) },
+		"scalar":        func() (sample, error) { return load(prefix + "LISTEN_PORT=" + secret) },
+		"list":          func() (sample, error) { return load(prefix + "NAMESPACES=" + secret) },
+		"unknown field": func() (sample, error) { return load(prefix + `MODELS=[{"name":"x","extra":"` + secret + `"}]`) },
 	} {
 		_, err := attempt()
 		if err == nil {
@@ -130,7 +124,7 @@ func TestTheFileIsVettedBeforeItIsDecoded(t *testing.T) {
 	_, err := Load(Options{Prefix: prefix, CheckFile: func(contents []byte) error {
 		seen = string(contents)
 		return refusal
-	}}, defaults(), nil, []string{prefix + "CONFIG_FILE=" + path})
+	}}, defaults(), []string{prefix + "CONFIG_FILE=" + path})
 	if !errors.Is(err, refusal) || seen != "listen_port: 1\n" {
 		t.Fatalf("got %v after checking %q", err, seen)
 	}
@@ -141,7 +135,7 @@ func TestAStructWhoseEnvironmentNamesAreNotItsKeysIsRefused(t *testing.T) {
 		BackendURL string `yaml:"backend_url"`
 		LiteLLMURL string `yaml:"litellm_url"`
 	}
-	if _, err := Load(Options{Prefix: prefix}, misnamed{}, nil, nil); err == nil {
+	if _, err := Load(Options{Prefix: prefix}, misnamed{}, nil); err == nil {
 		t.Fatal("LiteLLMURL was accepted for litellm_url")
 	}
 }

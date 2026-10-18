@@ -728,7 +728,7 @@ func TestDependencyOutagesAreSanitizedAndDoNotForwardWorkloadCredentials(t *test
 	})
 }
 
-func TestRealBinaryStartsWithYAMLFlagsAndEnvironmentConfiguration(t *testing.T) {
+func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 	binary, err := runfiles.Rlocation("ducktape/agentplane/llm_ingress/server_/server")
 	if err != nil {
 		t.Fatal(err)
@@ -749,7 +749,7 @@ func TestRealBinaryStartsWithYAMLFlagsAndEnvironmentConfiguration(t *testing.T) 
 		// validates token signatures, audiences, revocation or Pod binding.
 		result := &authenticationv1.TokenReview{
 			TypeMeta: metav1.TypeMeta{APIVersion: "authentication.k8s.io/v1", Kind: "TokenReview"},
-			Status:   acceptedReview(testNamespace, "sandbox-a", "sandbox-a", "pod-a-uid", "flag-audience"),
+			Status:   acceptedReview(testNamespace, "sandbox-a", "sandbox-a", "pod-a-uid", "environment-audience"),
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(result)
@@ -780,6 +780,7 @@ func TestRealBinaryStartsWithYAMLFlagsAndEnvironmentConfiguration(t *testing.T) 
 	}
 	settings := filepath.Join(directory, "settings.yaml")
 	settingsYAML := "allowed_service_account_namespaces: [" + testNamespace + "]\n" +
+		"token_audience: yaml-audience\n" +
 		"models:\n  - model: configured/model\n    total_context_budget_tokens: 8192\n" +
 		"log_levels:\n  root: INFO\n"
 	if err := os.WriteFile(settings, []byte(settingsYAML), 0o600); err != nil {
@@ -793,17 +794,15 @@ func TestRealBinaryStartsWithYAMLFlagsAndEnvironmentConfiguration(t *testing.T) 
 	_ = listener.Close()
 
 	var logs bytes.Buffer
-	command := exec.Command(
-		binary,
-		"--host=127.0.0.1",
-		"--port="+strconv.Itoa(port),
-		"--kubeconfig="+kubeconfig,
-		"--token-audience=flag-audience",
-		"--litellm-url="+backendServer.URL,
-	)
+	command := exec.Command(binary)
 	command.Env = []string{
 		configFileEnv + "=" + settings,
 		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=" + testBackendKey,
+		"AGENTPLANE_LLM_INGRESS_HOST=127.0.0.1",
+		"AGENTPLANE_LLM_INGRESS_PORT=" + strconv.Itoa(port),
+		"AGENTPLANE_LLM_INGRESS_KUBECONFIG=" + kubeconfig,
+		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=environment-audience",
+		"AGENTPLANE_LLM_INGRESS_LITELLM_URL=" + backendServer.URL,
 	}
 	command.Stdout = &logs
 	command.Stderr = &logs
@@ -871,7 +870,7 @@ func TestRealBinaryStartsWithYAMLFlagsAndEnvironmentConfiguration(t *testing.T) 
 	for i := 0; i < 2; i++ {
 		select {
 		case spec := <-reviewsSeen:
-			if spec.Token != testTokenA || len(spec.Audiences) != 1 || spec.Audiences[0] != "flag-audience" {
+			if spec.Token != testTokenA || len(spec.Audiences) != 1 || spec.Audiences[0] != "environment-audience" {
 				t.Fatalf("TokenReview spec = %+v", spec)
 			}
 		case <-time.After(5 * time.Second):

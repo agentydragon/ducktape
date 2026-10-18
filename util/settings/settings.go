@@ -1,19 +1,18 @@
-// Package settings loads a service's settings from a YAML file, environment variables and flags.
+// Package settings loads a service's settings from a YAML file and environment variables.
 //
 // A settings struct has one exported field per setting, each tagged `yaml:"snake_case_key"`. The
-// setting is that key in the file named by <prefix>CONFIG_FILE, the environment variable
-// <prefix><KEY UPPER-CASED> and the flag --kebab-case-key. A flag overrides the environment, which
-// overrides the file, which overrides the defaults the caller passes in. A field is a scalar, or a
-// list or map that the environment and flags give as JSON (a struct inside one carries json tags).
-// A field whose Go name does not spell its key, such as LiteLLMURL for litellm_url, carries an
-// `env:"KEY"` tag; Load refuses a struct whose environment names and keys differ.
+// setting is that key in the file named by <prefix>CONFIG_FILE and the environment variable
+// <prefix><KEY UPPER-CASED>. The environment overrides the file, which overrides the defaults the
+// caller passes in. A field is a scalar, or a list or map that the environment gives as JSON (a
+// struct inside one carries json tags). A field whose Go name does not spell its key, such as
+// LiteLLMURL for litellm_url, carries an `env:"KEY"` tag; Load refuses a struct whose environment
+// names and keys differ.
 package settings
 
 import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"maps"
@@ -36,10 +35,10 @@ type Options struct {
 	CheckFile func(contents []byte) error
 }
 
-// Load returns defaults overlaid by the settings file, then the environment, then args. It refuses a
-// file or flag the struct has no setting for and an environment variable with the prefix that
-// names no setting. Its errors name settings and never carry the values given for them.
-func Load[T any](options Options, defaults T, args, environ []string) (T, error) {
+// Load returns defaults overlaid by the settings file, then the environment. It refuses a file key
+// the struct has no setting for and an environment variable with the prefix that names no setting.
+// Its errors name settings and never carry the values given for them.
+func Load[T any](options Options, defaults T, environ []string) (T, error) {
 	var zero T
 	loaded := defaults
 	settingsType := reflect.TypeFor[T]()
@@ -78,11 +77,6 @@ func Load[T any](options Options, defaults T, args, environ []string) (T, error)
 			return zero, err
 		}
 	}
-	flagged, err := flagValues(fields, args)
-	if err != nil {
-		return zero, err
-	}
-	maps.Copy(environment, flagged)
 	if err := env.ParseWithOptions(&loaded, envOptions); err != nil {
 		return zero, parseFailure(settingsType, err)
 	}
@@ -112,8 +106,8 @@ func parseJSONAs(valueType reflect.Type) env.ParserFunc {
 	}
 }
 
-// checkNames refuses a struct whose environment names are not its YAML keys upper-cased: the file,
-// the environment and the flags would otherwise name one setting three ways.
+// checkNames refuses a struct whose environment names are not its YAML keys upper-cased: the file
+// and the environment would otherwise name one setting two ways.
 func checkNames(settingsType reflect.Type, fields []env.FieldParams) error {
 	want := map[string]bool{}
 	for field := range settingsType.Fields() {
@@ -157,27 +151,6 @@ func readFile(path, configFileEnv string, check func([]byte) error, target any) 
 		return fmt.Errorf("settings file %s must hold one document", path)
 	}
 	return nil
-}
-
-// flagValues reads each setting's --kebab-case flag and returns the ones given, keyed by the
-// environment variable that gives the same setting.
-func flagValues(fields []env.FieldParams, args []string) (map[string]string, error) {
-	flags := flag.NewFlagSet("settings", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	given := map[string]string{}
-	for _, field := range fields {
-		flags.Func(strings.ReplaceAll(strings.ToLower(field.OwnKey), "_", "-"), field.OwnKey, func(value string) error {
-			given[field.Key] = value
-			return nil
-		})
-	}
-	if err := flags.Parse(args); err != nil {
-		return nil, fmt.Errorf("invalid command-line flags: %w", err)
-	}
-	if flags.NArg() != 0 {
-		return nil, errors.New("unexpected positional arguments")
-	}
-	return given, nil
 }
 
 // parseFailure names the settings that failed to parse and never carries their text: a database

@@ -33,7 +33,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import cli_args, env_name
+from util.settings_contract import checked_value, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "llm-ingress"
@@ -154,14 +154,16 @@ class LlmIngress(Construct):
             name="ingress",
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            args=cli_args(
-                Settings,
-                token_audience=WORKLOAD_TOKEN_AUDIENCE,
-                litellm_url=self.litellm_url,
-                host="0.0.0.0",
-                port=self.service.pod_port,
-            ),
             env_variables={
+                **{
+                    env_name(Settings, field): EnvValue.from_value(str(checked_value(Settings, field, value)))
+                    for field, value in {
+                        "token_audience": WORKLOAD_TOKEN_AUDIENCE,
+                        "litellm_url": self.litellm_url,
+                        "host": "0.0.0.0",
+                        "port": self.service.pod_port,
+                    }.items()
+                },
                 # The only real model credential in this service; runners never mount it.
                 env_name(Settings, "litellm_key"): SecretRef(
                     namespace=self.env.namespace, name=self.env.llm_ingress.litellm_key_secret_name
