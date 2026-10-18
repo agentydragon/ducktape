@@ -44,3 +44,11 @@ The shared primitives live in `../disclosure.tsx` and `../disclosure.css`:
 Gutter and hierarchy design changes belong in the shared policy tokens. Keep
 browser checks for actual text/heading alignment, full-row hit areas, action and
 chevron separation, stable clamp expansion, and nested sticky collapse behavior.
+
+## Rollout visual fixture provenance
+
+`../harness/realistic_rollout.json` and `../harness/reported_rollout.json` are layout fixtures
+based on staging metadata: event kinds and order, completion/failure state, and text size and line
+count. Their prose, command arguments, and outputs are newly authored safe stand-ins, not copied
+transcripts or evidence of realistic command semantics. The reported excerpt shows completed items
+even though its source thread had an active feed, so it does not reproduce that active state.
