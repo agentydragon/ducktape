@@ -106,6 +106,7 @@ async def test_queued_session_open_follows_live_projection_and_survives_return(
     await app.mount_app("/sandboxes/ready-sandbox?tab=sessions")
     page = view.page
     await page.get_by_role("button", name="New session").click()
+    await page.get_by_role("button", name="Start session").click()
     pending = page.get_by_role("status").filter(has_text="Open attempt")
     await expect(pending).to_contain_text("Queued in Dispatcher")
     match = re.search(r"Open attempt ([0-9a-f-]{36})", await pending.inner_text())
@@ -273,6 +274,7 @@ async def capture_paused_claude_harness_picker(view: VisualPage, app: Agentplane
     await view.page.wait_for_selector('[role="option"][data-combobox-disabled]', state="attached")
     await view.check(context="fixture ready")
     page = view.page
+    await page.get_by_role("button", name="New session").click()
     harness = page.get_by_role("combobox", name="Harness")
     await expect(harness).to_have_value("Codex")
     await harness.click()

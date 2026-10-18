@@ -8,7 +8,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { api, type SandboxPresetView, type SandboxView } from "./client";
 import { SandboxList } from "./sandboxes";
-import { DeleteButton, deletable, SuspendResume } from "./lifecycle";
+import { deletable, SuspendResume } from "./lifecycle";
 import { sandboxSummary } from "./sandbox_status";
 
 const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { sandboxes: unknown[] } | null }));
@@ -213,7 +213,6 @@ it("lets a suspended sandbox be deleted", () => {
 it("keeps lifecycle actions unavailable until the controller reports a mode", async () => {
   const unknown: SandboxView = { ...CREATED, operating_mode: null, phase: "Unspecified" };
   const onAct = vi.fn();
-  const onDelete = vi.fn();
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -222,13 +221,11 @@ it("keeps lifecycle actions unavailable until the controller reports a mode", as
     root.render(
       <MantineProvider env="test">
         <SuspendResume sandbox={unknown} onAct={onAct} />
-        <DeleteButton sandbox={unknown} onDelete={onDelete} />
       </MantineProvider>
     )
   );
 
   expect(container.querySelector<HTMLButtonElement>('[aria-label="Sandbox mode unavailable"]')?.disabled).toBe(true);
-  expect(container.querySelector('[aria-label="Delete"]')?.getAttribute("aria-disabled")).toBe("true");
   expect(deletable(unknown)).toBe(false);
 });
 

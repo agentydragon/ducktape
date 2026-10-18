@@ -1,11 +1,12 @@
-/** One status decision for the shell's shared /live/threads snapshot. */
+/** One status decision for a Thread, shared by every page that lists Threads from a live snapshot. */
 import type { SandboxView, ThreadView } from "./client";
-import type { Live, ThreadsSnapshot } from "./live";
+import type { Live } from "./live";
 import type { ThreadTabStatus } from "./tab_metadata";
 import { sandboxReady, sandboxSummary, suspensionReason } from "./sandbox_status";
 import { turnErrorLabel } from "./threads/history_rows";
 
-export function snapshotFresh(live: Live<ThreadsSnapshot>): boolean {
+/** Whether the stream is current and its Thread updates are being heard, so a snapshot's Thread states are live. */
+export function snapshotFresh(live: Live<{ updates_connected: boolean }>): boolean {
   return live.stream.standing === "current" && live.health?.fresh === true && live.snapshot?.updates_connected === true;
 }
 

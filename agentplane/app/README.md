@@ -155,9 +155,11 @@ projects its admission or command row; the app adds no command queue. Deploy the
 and authorize the app ServiceAccount before rolling out an app image that requires this setting.
 
 The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
-runner Pod does not clear the inventory. Harness state and turn IDs in that table are last observed
-History values. The Status tab reads `GET /sandboxes/{name}/runner-status` for current runner process
-and Session diagnostics; it does not wake a suspended Sandbox. A missing or unavailable runner is
+runner Pod does not clear the inventory. A row's status mark is derived from those last-observed History
+values and the Sandbox's own state, and reads as unconfirmed whenever the stream, the watch or the
+Thread-update listener (`updates_connected` in the frame) is not current. The Status tab reads
+`GET /sandboxes/{name}/runner-status` for current runner process and Session diagnostics; it does not
+wake a suspended Sandbox. A missing or unavailable runner is
 shown as unavailable, while suspended Sandboxes show that diagnostics are unavailable until resumed.
 Idle Sessions can be archived while their harness process remains live. The UI disables archive for
 observable active turns, setup, or a pending local launch; the server checks whether Session work is

@@ -151,6 +151,7 @@ class SandboxSnapshot(BaseModel):
         description="Every rule of the PolicySets the sandbox names; None only with the sandbox."
     )
     threads: list[ThreadView] | ThreadsUnavailable
+    updates_connected: bool = Field(description="Whether this replica is listening for PostgreSQL Thread changes.")
     watch: WatchHealth
 
 
@@ -517,6 +518,7 @@ async def live_sandbox(
             action_policy=None if sandbox is None else await policy.for_subject(sandbox.service_account),
             bound_policy=index.bound_policy_for(name),
             threads=await threads_frame(store, name, include_archived=include_archived),
+            updates_connected=updates.listener.connected,
             watch=_health(index),
         )
 

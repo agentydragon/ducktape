@@ -238,11 +238,15 @@ async def test_consent(view: VisualPage, app: AgentplaneFixture) -> None:
 async def test_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox")
     page = view.page
-    await page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
+    await expect(page.get_by_role("table")).to_be_visible()
     await view.check(context="fixture ready")
     await view.capture(target=page.locator("#app"))
 
     assert view.capture_name is not None
+    await page.get_by_role("button", name="New session").click()
+    await expect(page.get_by_role("combobox", name="Model")).not_to_have_value("")
+    await expect(page.get_by_role("button", name="Start session")).to_be_enabled()
+    await view.capture(target=page.locator("#app"), name=f"{view.capture_name}_new_session")
     for label, checkpoint in (
         ("Standing instructions", "standing_instructions"),
         ("Thread setup script", "thread_setup_script"),

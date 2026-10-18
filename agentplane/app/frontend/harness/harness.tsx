@@ -3021,6 +3021,7 @@ class HarnessEventSource extends EventTarget {
         action_policy: ACTION_POLICY,
         bound_policy: null,
         threads: THREADS,
+        updates_connected: !flags.has("threadDatabaseDisconnected"),
         watch: watch(),
       };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));

@@ -848,6 +848,42 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "new_session_form",
+    srcs = ["new_session_form.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":disclosure",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/proto:runner_pb",
+    ],
+)
+
+ts_library(
+    name = "sandbox_sessions",
+    srcs = [
+        "sandbox_sessions.tsx",
+        # The ambient declaration for the @tabler/icons-react subpaths this file imports; see the
+        # note in tabler_icons.d.ts.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":thread_status",
+        ":thread_status_indicator",
+        ":time_ago",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "sandbox_page",
     srcs = [
         "sandbox_page.tsx",
@@ -859,23 +895,23 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
-        ":disclosure",
         ":egress",
         ":format_time",
         ":json_view",
         ":lifecycle",
         ":live",
         ":mark_glyph",
+        ":new_session_form",
         ":notification_status",
         ":policy_bindings",
         ":raw_switch",
         ":sandbox_console",
+        ":sandbox_sessions",
         ":sandbox_status",
         ":status_mark",
         ":thread_status",
         ":time_ago",
         ":topbar",
-        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",

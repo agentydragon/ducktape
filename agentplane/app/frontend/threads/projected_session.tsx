@@ -22,6 +22,7 @@ import { ItemKind } from "../../../proto/event_pb";
 import {
   displayableError,
   getThread,
+  harnessLabel,
   models,
   modelsForHarness,
   resumeSandbox,
@@ -1394,17 +1395,6 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
     return "Sandbox is starting. Controls return when it is ready.";
   }
   return `Last observed Sandbox and Pod: ${summary.label}. Showing retained Thread history; controls are disabled.`;
-}
-
-function harnessLabel(harness: ThreadView["harness"]): string {
-  switch (harness) {
-    case "HARNESS_CLAUDE":
-      return "Claude";
-    case "HARNESS_CODEX":
-      return "Codex";
-    default:
-      return "Unknown harness";
-  }
 }
 
 export function ProjectedSession({

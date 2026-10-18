@@ -78,6 +78,18 @@ export function harnessOptions(catalog: ModelCatalog | null): { value: Harness; 
   });
 }
 
+/** A harness as the pages name it; null while a Thread has no runner attachment to say. */
+export function harnessLabel(harness: Harness | null): string {
+  switch (harness) {
+    case "HARNESS_CLAUDE":
+      return "Claude";
+    case "HARNESS_CODEX":
+      return "Codex";
+    case null:
+      return "Unknown harness";
+  }
+}
+
 /** The models offered for one harness, resolved from the catalog's deduplicated `models`
  * list via its `harnesses` id references. */
 export function modelsForHarness(catalog: ModelCatalog, harness: Harness): ModelOption[] {

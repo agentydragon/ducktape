@@ -8,7 +8,6 @@ import { ActionIcon, Button, Group, Modal, Stack, Text, Tooltip } from "@mantine
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
 import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
-import IconTrash from "@tabler/icons-react/dist/esm/icons/IconTrash.mjs";
 
 import type { SandboxView } from "./client";
 
@@ -50,26 +49,6 @@ export function SuspendResume({
         onClick={() => onAct(resume ? "resume" : "suspend")}
       >
         {resume ? <IconPlayerPlay size={16} /> : <IconPlayerPause size={16} />}
-      </ActionIcon>
-    </Tooltip>
-  );
-}
-
-export function DeleteButton({ sandbox, onDelete }: { sandbox: SandboxView; onDelete: () => void }): JSX.Element {
-  const allowed = deletable(sandbox);
-  return (
-    <Tooltip label={allowed ? "Delete" : DELETE_NEEDS_SUSPENDED} withArrow>
-      {/* Mantine's `disabled` takes the button out of the pointer events a tooltip needs, and the
-          reason is the point here, so the button stays live and refuses instead. */}
-      <ActionIcon
-        variant="light"
-        color="red"
-        aria-label="Delete"
-        aria-disabled={!allowed}
-        data-disabled={allowed ? undefined : true}
-        onClick={() => allowed && onDelete()}
-      >
-        <IconTrash size={16} />
       </ActionIcon>
     </Tooltip>
   );
