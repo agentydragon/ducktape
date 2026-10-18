@@ -13,7 +13,6 @@ import json
 import logging
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
-from dataclasses import dataclass
 from http import HTTPStatus
 from types import TracebackType
 from typing import Any, Self
@@ -64,13 +63,6 @@ class SessionStreamError(Exception):
 
 class _StreamDroppedError(Exception):
     """The stream's replica went away; the stream is to be reopened after its last entry."""
-
-
-@dataclass(frozen=True)
-class Attachment:
-    """The runner's snapshot returned by a direct resume."""
-
-    attached: runner_pb2.Attached
 
 
 class Client:
