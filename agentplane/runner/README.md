@@ -45,17 +45,13 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 
 ## VM workspace disk
 
-The guest declares `/state/workspaces` in NixOS `fileSystems` and keeps the mount format fixed at
-ext4. `autoFormat` stays disabled: NixOS formats when `blkid` finds no filesystem, while this
-volume may be formatted only when `wipefs` finds no signatures and a full-device scan finds only
-zero bytes. `workspace_disk.py` enforces that first-use rule, then accepts later boots only for one
-ext4 signature with the `APWORKSPACE` label. Unknown signatures, non-zero unrecognized content,
-unexpected filesystems or labels, and inspection errors stop the mount instead of rewriting data.
+The guest declares `/state/workspaces` in NixOS `fileSystems` as ext4 with `autoFormat`:
+`systemd-makefs` creates the filesystem when `blkid` finds no signature and skips any disk that
+has one, so a disk holding data but no recognized signature is formatted too
+([why that is accepted](../docs/vm_sandboxes.md#guest-and-storage)).
 
 `systemd.tmpfiles` owns the mounted workspace directory's `agent:agent` ownership, setgid mode,
-default ACL and private `.home` directory. The mount and runtime directory policy stay in NixOS;
-the small initialization program exists for the stronger blank-disk check that `autoFormat` does
-not express.
+default ACL and private `.home` directory.
 
 ## Tests
 

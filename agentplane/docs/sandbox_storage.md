@@ -148,12 +148,10 @@ does not inspect or repair filesystems through the Kubernetes API.
 
 ## Formatting and conversion
 
-The VM guest initializes a new disk and mounts the filesystem. The existing guest accepts ext4
-labelled `APWORKSPACE`; otherwise it scans the disk for nonzero contents before formatting it.
-Replacing that shell with declarative NixOS facilities is separate from PVC ownership. NixOS
-`fileSystems.*.autoFormat` tests for recognizable filesystem content, not that every byte is zero;
-the initialization contract must be tested rather than assuming those checks are interchangeable.
-Existing data is never reformatted merely because the desired layout changes.
+The VM guest mounts the disk with NixOS `fileSystems.*.autoFormat`: it formats a disk as ext4 only
+when `blkid` finds no signature and leaves a recognized filesystem alone, so an ext4 formatted on
+an earlier boot or by an earlier guest keeps its contents. Existing data is never reformatted
+merely because the desired layout changes.
 
 Conversion is an accepted option for much later, tracked separately.
 It does not gate workspace ownership or template rollout; incompatible changes are rejected until

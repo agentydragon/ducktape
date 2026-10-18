@@ -2,8 +2,8 @@
 #
 # The containerDisk supplies only this replaceable root filesystem. The Sandbox's state PVC reaches
 # the guest over virtiofs at /state, laid out exactly as in a runner Pod, so a Session moves between
-# kinds. The VM-local workspace disk is mounted over /state/workspaces, where Session working
-# directories live in both kinds; it survives stop/start of this VM and nothing else.
+# kinds. The workspace disk is mounted over /state/workspaces, where Session working directories
+# live in both kinds; its claim belongs to the Sandbox and survives stop/start.
 #
 # KubeVirt's virtiofsd runs as uid/gid 107 with no capabilities: every file the guest writes on
 # /state lands as 107:107 and chown fails, so only guest root and a user whose uid and gid are both
@@ -70,14 +70,6 @@ let
   consoleAutologinIs =
     autologin:
     "${pkgs.jq}/bin/jq 'if (.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeDir}/config.json";
-
-  # TODO: Package repo-owned code run in the VM as a Bazel-built binary (Python, Go, Rust,
-  # etc.) and consume that artifact here instead of embedding a raw script with a shebang.
-  workspaceDiskPreparation = pkgs.writeTextFile {
-    name = "agentplane-prepare-workspace";
-    executable = true;
-    text = "#!${pkgs.python3}/bin/python3\n" + builtins.readFile ./workspace_disk.py;
-  };
 in
 {
   imports = [ ./../../nix/nixos/modules/vm-hardware.nix ];
@@ -195,7 +187,7 @@ in
         "nodev"
         "nosuid"
       ];
-      autoFormat = false;
+      autoFormat = true;
       autoResize = false;
     };
   }
@@ -232,27 +224,6 @@ in
   ++ lib.mapAttrsToList (
     file: disk: "L ${runtimeDir}/${file} - - - - ${runtimeDir}/${disk}/${file}"
   ) seedDiskOf;
-
-  systemd.services.agentplane-workspace-prepare = {
-    description = "Format the Agentplane workspace disk when it is blank";
-    after = [ "systemd-udev-trigger.service" ];
-    before = [
-      "state-workspaces.mount"
-      "local-fs.target"
-    ];
-    requiredBy = [ "state-workspaces.mount" ];
-    unitConfig.DefaultDependencies = false;
-    path = [
-      pkgs.coreutils
-      pkgs.e2fsprogs
-      pkgs.util-linux
-    ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    serviceConfig.ExecStart = "${workspaceDiskPreparation} ${workspaceDevice}";
-  };
 
   systemd.services.agentplane-workspace = {
     description = "Give the harness user the Agentplane workspace";

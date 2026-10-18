@@ -60,10 +60,10 @@ lost.
   Its claim survives stop/start and replacement of the VM object. The Pod runner uses a
   Sandbox-owned `DirectoryTree` workspace. Custom VM templates may still declare generic
   DataVolume disks; those remain VM-owned and are not managed workspace declarations. The guest
-  formats its workspace disk only when it reads as zeros end to end
-  and fails on any other unrecognised content, so a disk that lost its filesystem is left for a person.
-  The zero scan reads in 16 MiB chunks, about 1.5 GB/s; `cmp` takes 45 s for 10 GiB on the guest's
-  single vCPU because it issues millions of tiny reads.
+  mounts its workspace disk with `autoFormat`: `systemd-makefs` creates the ext4 only when `blkid`
+  finds no filesystem or swap signature, so any other filesystem fails to mount instead of being
+  rewritten. A disk with data but no signature, or with only a partition table, is formatted too; the
+  layouts never produce one, and a zero-scan helper that refused it was dropped for that.
 - Stopping and starting a VM creates a new VMI on the same VM and disks. The VM supports neither live
   migration nor RAM suspension.
 - Commands reach a VM Sandbox only through the control stream. There is no guest exec path; `virt-launcher`

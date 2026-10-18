@@ -938,23 +938,6 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_workspace_disk",
-    srcs = ["test_workspace_disk.py"],
-    deps = [
-        ":conftest",
-        ":workspace_disk",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "workspace_disk",
-    srcs = ["workspace_disk.py"],
-)
-
 py_library(
     name = "workspace_create",
     srcs = ["workspace_create.py"],
