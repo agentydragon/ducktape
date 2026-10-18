@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   # Harness lifecycle rollout hold: entries without a Flux marker stay pinned until the
-  # testing-first promotion and stopped-runner staging cutover in ../README.md.
+  # testing-first promotion and staging cutover with no running Sandboxes in ../README.md.
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
     newTag: devel-20261017103103-16d63f9 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
@@ -15,17 +15,17 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
     newTag: devel-20261017094823-fd684b6 # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261017124212-d1c3714
+    newTag: devel-20261018010815-2893ec8
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261017094929-fd684b6
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway
-    newTag: devel-20261017123846-b5783f3
+    newTag: devel-20261018010815-2893ec8
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate
-    newTag: devel-20261017123847-b5783f3
+    newTag: devel-20261018011947-74f34f4
   - name: git.allegedly.works/ducktape-ci/runner
-    newTag: devel-20261017125041-66b37c8
+    newTag: devel-20261018011710-e7fd6c3
   - name: git.allegedly.works/ducktape-ci/runner-ducktape
-    newTag: devel-20261017125611-66b37c8
+    newTag: devel-20261018013530-e7fd6c3
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
     newTag: devel-20261017073323-704bdc4 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
@@ -39,14 +39,14 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
     newTag: devel-20261017094859-fd684b6
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261017094827-fd684b6
+    newTag: devel-20261018010838-2893ec8
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
     newTag: devel-20261017094830-fd684b6
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261017114548-e8bd50c
+    newTag: devel-20261018010813-2893ec8
   # The runner VM SandboxTemplate's containerDisk, which `images:` reaches through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-vm
-    newTag: devel-20261017122618-23dd881
+    newTag: devel-20261018011904-e7fd6c3
 configurations:
   - kustomizeconfig

@@ -673,10 +673,23 @@ than assuming every image shares a build SHA.
    service replicas, image revisions and migration gates, and wait for old service Pods to disappear
    before allowing any Sandbox start. If runners reappear, stop promotion and quiesce them first;
    updating a template alone does not upgrade a running Sandbox.
-5. Start existing Sessions through the new send path and prove their context is retained; perform
-   the idle-suspend/send-to-wake drive after lifecycle deployment. Check exact-turn rejection and
-   process/Session status. Keep the rollout incomplete until behavior is observed, not just Flux or
-   Deployment readiness. Restore staging image-automation markers only after acceptance.
+5. Activate retained Sessions with the new runner and verify native continuation, reconciliation,
+   unchanged archived history and retained storage. Testing's follow-up model turns prove context
+   recall on both harnesses. Check exact-turn rejection and process/Session status. Keep the rollout
+   incomplete until behavior is observed, not just Flux or Deployment readiness. Restore staging
+   image-automation markers only after acceptance. The separate `IDLE_SUSPEND_UI_DRIVE` node follows
+   lifecycle rollout and remains assigned to the operator for the human staging UI drive.
+
+**Rollout checkpoint, 2026-10-17 PDT:** implementation merged in #10950
+(`2893ec865aa16c6be938f08d0314d7353496468f`); the exact-head suite passed 163 tests and the
+desktop/phone visual review passed. The released runner wheel is `agentplane-runner-70b9a3bb287b`,
+pinned by `e7fd6c3830b86463ad1dd3c27f2a42db250d515d`. Testing has the new services, standard runner
+and VM template; staging remains held with four suspended Sandbox CRs and their original volumes.
+The first deployed preset test completed a model/tool turn, then exposed a Pod-deletion wait race in
+the test; #10959 fixes that wait. Subsequent attempts failed before creating resources, first on host
+DNS and then on direct API TCP connection timeouts during token minting. Full Pod/VM suspend/resume
+and egress acceptance, retained-state staging acceptance, and restoring automatic promotion remain
+pending. No staging service stop or Flux suspension has been applied.
 
 Keep previous image revisions and a tested persistent-format rollback policy. Before new work is
 accepted, revert the coordinated release if necessary. After new writes, reconcile/preserve them;
