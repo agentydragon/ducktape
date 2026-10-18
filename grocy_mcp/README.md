@@ -6,11 +6,18 @@ clients (claude.ai / Claude Code) through Authentik, then drives Grocy's
 REST API on behalf of the calling user through Grocy's existing Authentik
 proxy provider outpost.
 
-This is built on top of the pattern that the authentik MCP POC
-(<../authentik_mcp_poc/README.md>) proved out: FastMCP's `OIDCProxy` for the
-user-facing MCP OAuth dance, and an RFC 7521 jwt-bearer token exchange on
-the backend hop so Authentik's proxy outpost mints an identity-preserving
-token that Grocy's `ReverseProxyAuthMiddleware` accepts.
+FastMCP's `OIDCProxy` handles user-facing MCP OAuth. Before each backend call,
+`CurrentAccessToken` supplies the user's upstream Authentik JWT to an Authentik
+JWT-bearer `client_credentials` exchange. This is Authentik's JWT-bearer grant,
+not RFC 8693 token exchange. The exchanged token is scoped to Grocy's proxy
+provider so its outpost accepts the request and forwards the user's identity.
+
+The exchange must request `openid email profile ak_proxy`, and the corresponding
+scope mappings must be attached to the proxy provider. Omitting `ak_proxy` can
+still yield a successful outpost response with empty identity headers. The
+implementation is in <../mcp_infra/authentik_auth/token_exchange.py>; it uses
+`CurrentAccessToken`, not the raw HTTP `Authorization` header, because
+`OIDCProxy` exposes the upstream token through that dependency.
 
 ## Architecture
 
@@ -124,8 +131,7 @@ returned client; there is no cross-request token cache or ambient bearer lookup.
   - Kubernetes secrets in the `grocy-sf` / `grocy-vallejo` namespaces,
     carrying `client_id`, `client_secret`, and `grocy_proxy_client_id`.
 - **K8s manifests** are generated per household by <../cluster/cdk8s/grocy/mcp.py>,
-  settings file included, and follow the POC's three-layer pattern (namespace / TF / app) minus
-  the `tf/` layer since TF is shared with `agent-machine-access`.
+  with the settings file included. Terraform is shared with `agent-machine-access`.
 
 ## Refreshing the OpenAPI spec
 
@@ -148,9 +154,7 @@ bbr test //grocy_mcp:test_server
 
 ## End-to-end verification
 
-Same shape as <../authentik_mcp_poc/archive/2026_05_24_historical_runbook.md>'s
-"Verification in the cluster" section. After Flux reconciles the per-household grocy namespace →
-`authentik-tf` → grocy MCP app:
+After Flux reconciles the per-household Grocy MCP deployment:
 
 ```bash
 curl -i https://grocy-mcp-sf.allegedly.works/mcp
@@ -160,13 +164,12 @@ curl -i https://grocy-mcp-sf.allegedly.works/mcp
 claude mcp add --transport http grocy-mcp-sf https://grocy-mcp-sf.allegedly.works/mcp
 # Browser → Authentik consent → connected.
 
-# In /mcp → grocy-mcp, call one of the auto-generated tools, e.g. the
-# tool generated from `GET /objects/{entity}` with `entity=locations`.
+# In /mcp → grocy-mcp, call a tool generated from
+# `GET /objects/{entity}` with `entity=locations`.
 # Expected: JSON array of the user's Grocy locations.
 ```
 
-Failure-mode mapping is the POC's 12-component table
-(<../authentik_mcp_poc/archive/2026_05_24_historical_runbook.md>); the only new mode is "tool returns
-200 with an empty result" which usually means Grocy accepted the
-request but the authenticated user's permissions in Grocy hide
-everything.
+If the backend returns success but identity headers are empty, check that the
+exchange requests `ak_proxy` and that the Grocy proxy provider has its
+`ak_proxy` scope mapping attached. An empty Grocy result can also mean the
+authenticated user lacks permission to see those records.

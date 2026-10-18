@@ -10,9 +10,8 @@ dependency resolves the MCP user's upstream Authentik JWT to a
 Grocy-proxy-scoped client before each tool body runs. `TOOL_OVERRIDES` controls
 naming, descriptions, and enablement.
 
-See <grocy_mcp/README.md> for the architecture and end-to-end flow;
-<x/authentik_mcp_poc/NOTES.md> §5-§6 for why each piece of the token
-exchange is load-bearing.
+See <grocy_mcp/README.md> for the architecture, end-to-end flow, and the
+required Authentik exchange scopes.
 """
 
 from __future__ import annotations

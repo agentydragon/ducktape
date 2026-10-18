@@ -71,14 +71,6 @@
       "target": "//third_party/osmmcp:image",
       "registry": "forgejo"
     },
-    "authentik-mcp-poc-server": {
-      "target": "//x/authentik_mcp_poc:server_image",
-      "test": "//x/authentik_mcp_poc/..."
-    },
-    "authentik-mcp-poc-backend": {
-      "target": "//x/authentik_mcp_poc:backend_image",
-      "test": "//x/authentik_mcp_poc/..."
-    },
     "grocy-mcp": {
       "target": "//grocy_mcp:server_image",
       "test": "//grocy_mcp/...",

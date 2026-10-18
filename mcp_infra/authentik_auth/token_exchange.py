@@ -22,8 +22,9 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 
 # Scopes requested when exchanging the caller's token for a proxy-scoped one.
-# Each is load-bearing — see x/authentik_mcp_poc/NOTES.md §6 for why `ak_proxy`
-# is required (without it the outpost forwards empty identity headers).
+# `ak_proxy` must be both requested and attached to the provider; without it the
+# outpost can accept the token but forward empty identity headers. See
+# <../../grocy_mcp/README.md> for the active Grocy integration.
 EXCHANGE_SCOPES = "openid email profile ak_proxy"
 
 BackendTokenProvider = Callable[..., Awaitable[str]]

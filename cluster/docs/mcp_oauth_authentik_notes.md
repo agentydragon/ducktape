@@ -150,8 +150,12 @@ The existing Grocy pattern uses a _different_ exchange:
 `grant_type=client_credentials` with `client_assertion_type=jwt-bearer`
 and the user's JWT as `client_assertion`. The request-scoped dependency
 and `AuthentikTokenExchanger` in <../../mcp_infra/authentik_auth/token_exchange.py>
-implement it. But kubernetes-mcp-server doesn't speak that dialect, and
-writing a FastMCP wrapper around it is a significant rewrite.
+implement it. The request must include every scope whose property mappings
+should run, including `ak_proxy`; otherwise the outpost can accept the token
+while forwarding empty identity headers. The active Grocy integration documents
+this pattern in <../../grocy_mcp/README.md>. But kubernetes-mcp-server doesn't
+speak that dialect, and writing a FastMCP wrapper around it is a significant
+rewrite.
 
 ## The real fix: scope at token-issue time
 
@@ -241,9 +245,8 @@ leave the client secret empty (public client, PKCE).
 - [ ] Watch for Authentik DCR release (2026.8.0?); once shipped, we can
       switch to DCR and remove the pre-configured client setup (though
       the current setup is arguably fine forever)
-- [ ] Consider a FastMCP wrapper pattern for future MCP servers that
-      want DCR — `mcp_infra/authentik_auth/provider.py` provides
-      `build_authentik_auth`, while `mcp_infra/authentik_auth/token_exchange.py` provides
-      `AuthentikTokenExchanger` plus the
-      request-scoped dependency that implements DCR in-server and
-      Authentik-flavored JWT-bearer token exchange
+- `mcp_infra/authentik_auth/provider.py` provides `build_authentik_auth`, while
+  `mcp_infra/authentik_auth/token_exchange.py` provides `AuthentikTokenExchanger`
+  and the request-scoped dependency for in-server DCR and Authentik-flavored
+  JWT-bearer token exchange. The Grocy MCP integration is the current example
+  (<../../grocy_mcp/README.md>).

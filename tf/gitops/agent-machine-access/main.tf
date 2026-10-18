@@ -45,8 +45,7 @@ data "authentik_flow" "invalidation" {
 }
 
 # Signing key + OIDC scope property mappings for the grocy-mcp user-login
-# OAuth2 provider below. Mirrors
-# <../authentik-mcp-poc/main.tf>'s data-source block.
+# OAuth2 provider below.
 data "authentik_certificate_key_pair" "self_signed" {
   name = "authentik Self-signed Certificate"
 }
