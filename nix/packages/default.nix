@@ -190,7 +190,6 @@ let
     };
 
   # Python packages not in nixpkgs (used as propagatedBuildInputs)
-  compact-json = pkgs.callPackage ./compact-json.nix { };
   pyrage = pkgs.callPackage ./pyrage.nix { };
   ducktape-util = mkWheel {
     pname = "ducktape-util";
@@ -402,7 +401,6 @@ rec {
       pydantic-settings
       python-dateutil
       pyyaml
-      compact-json
       # skills deps (proxmox_vm)
       pillow
       ducktape-util

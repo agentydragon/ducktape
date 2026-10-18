@@ -158,9 +158,9 @@ invocation contains the actual `bazel test` results, targets, and artifacts.
 
 `bbapi artifact {cat,download}` and `bbapi target log` match against `"label/name"`:
 
-- `"test_lifecycle"` matches `//x/agent_cli/compositor:test_lifecycle/test.log`
-- `"test_lifecycle/test.xml"` matches the XML output specifically
-- `"compositor/test_lifecycle"` matches `//x/agent_cli/compositor:test_lifecycle/test.log`
+- `"test_handler"` matches `//agent_core:test_handler/test.log`
+- `"test_handler/test.xml"` matches the XML output specifically
+- `"agent_core/test_handler"` matches `//agent_core:test_handler/test.log`
 
 When no match is found, the CLI prints available labels as hints, and the names that would
 match if `-` and `_` were alike. Names are what the test wrote, not what you would derive from

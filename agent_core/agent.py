@@ -346,9 +346,8 @@ class Agent:
                 "At least one handler required to control the agent loop. "
                 "Without handlers, the agent will loop indefinitely. "
                 "Add a handler:\n"
-                "  • CompactDisplayHandler() - for console output\n"
                 "  • TranscriptHandler(events_path=...) - for logging\n"
-                "  • Custom handler - subclass BaseHandler for specialized control"
+                "  • Custom handler - subclass BaseHandler for console output or specialized control"
             )
 
     @property

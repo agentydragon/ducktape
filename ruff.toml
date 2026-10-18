@@ -167,7 +167,6 @@ known-first-party = [
     # bazel-out/ copies), so any first-party top-level package missing here gets its
     # imports mis-sorted into the third-party group, producing spurious I001. (When
     # ruff runs from the repo root — e.g. pre-commit — auto-detection masks omissions.)
-    "agent_cli",
     "agentplane",
     "aiquota",
     "airlock",

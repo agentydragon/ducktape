@@ -92,7 +92,6 @@ dependencies = [
     "jinja2>=3.1",
     "pathspec",
     "canonicaljson>=1.6.0",
-    "compact-json>=1.4.0",
     "tomli-w>=1.0.0",
     # HCL parsing: cluster/validation/test_nebula_mesh.py parses ovh-nodes.tf
     # structurally instead of regex-scraping it. pygohcl wraps HashiCorp's Go HCL2

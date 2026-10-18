@@ -337,7 +337,7 @@ func targetLogSubCmd() *cobra.Command {
 
 Uses the BES (Build Event Stream) artifacts to find and download the test.log
 for the given target. The second argument is matched as a substring against
-"label/name" (e.g., "test_lifecycle" matches "//x/agent_cli/compositor:test_lifecycle/test.log").
+"label/name" (e.g., "test_handler" matches "//agent_core:test_handler/test.log").
 
 A target that is sharded, runs more than once or is retried has one log per shard, run and
 attempt, so several can match. When they do, the logs of the results that did not pass are
@@ -346,9 +346,9 @@ others exist, and how to read them, is listed on stderr. Pick results yourself w
 (numbered from 1, as in shard_N_of_M) and --failed, or print every match with --all.
 
 Examples:
-  bbapi target log <invocation-id> test_lifecycle
-  bbapi target log <invocation-id> //x/agent_cli/compositor:test_lifecycle
-  bbapi target log <invocation-id> test_lifecycle --artifact test.xml
+  bbapi target log <invocation-id> test_handler
+  bbapi target log <invocation-id> //agent_core:test_handler
+  bbapi target log <invocation-id> test_handler --artifact test.xml
   bbapi target log <invocation-id> visual --shard 4     # one shard of a sharded test
   bbapi target log <invocation-id> visual --all         # every shard, with headers`,
 		Args: cobra.ExactArgs(2),

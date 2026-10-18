@@ -74,7 +74,6 @@ manifest:
     cloudpickle: cloudpickle
     colorama: colorama
     comm: comm
-    compact_json: compact_json
     constructs: constructs
     contourpy: contourpy
     cryptography: cryptography
@@ -210,7 +209,6 @@ manifest:
     hypothesis: hypothesis
     idna: idna
     ijson: ijson
-    importlib_resources: importlib_resources
     iniconfig: iniconfig
     inspect_ai: inspect_ai
     interface_meta: interface_meta
@@ -465,4 +463,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: fae3695ae4aeeb912ee5c5b005087bf4cc4ac2503146ddd0c20e562b5d4d9c65
+integrity: cb0d479d7940a003106c978adbd4a6a63d70168dae8f6536dbbec057c4f81f1d

@@ -328,7 +328,6 @@ py_wheel(
     requires = [
         "aiodocker",
         "anyio",
-        "compact-json",
         "fastmcp>=4.0.3,<4.1",
         "httpx",
         "jinja2",

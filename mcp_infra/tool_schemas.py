@@ -1,10 +1,7 @@
-"""Extract tool schemas from FastMCP servers for CompactDisplayHandler.
-
-Introspects tool return types from FastMCP server instances to build
-schema registries for typed display rendering.
+"""Extract tool schemas and input models from FastMCP servers.
 
 Uses FastMCP internal `_local_provider._components` because the public
-`list_tools()` API is async and callers need sync access.
+`list_tools()` API is async and callers need synchronous access.
 """
 
 from __future__ import annotations
