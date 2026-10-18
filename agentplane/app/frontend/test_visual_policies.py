@@ -803,5 +803,24 @@ async def test_sandbox_policy_grant_pick_updates_options(view: VisualPage, app: 
     await view.capture(target=view.page.locator("#app"))
 
 
+@DESKTOP_AND_MOBILE
+async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture, capture_name: str) -> None:
+    await app.set_flag(Flag.PENDING_ACTIONS)
+    await app.mount_app("/actions")
+    page = view.page
+    filtered = page.get_by_role("radio", name="Not auto-allowed", exact=True)
+    all_actions = page.get_by_role("radio", name="All actions", exact=True)
+    auto_allowed = page.get_by_text("search ducktape for auto_allow", exact=True)
+    await expect(filtered).to_be_checked()
+    await expect(page.get_by_text("list the test backup archive", exact=True)).to_be_visible()
+    await expect(auto_allowed).to_have_count(0)
+    await view.capture()
+    await all_actions.check()
+    await expect(auto_allowed).to_be_visible()
+    await view.capture(f"{capture_name}-all-actions")
+    await filtered.check()
+    await expect(auto_allowed).to_have_count(0)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

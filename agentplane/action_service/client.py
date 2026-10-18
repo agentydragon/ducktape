@@ -110,8 +110,14 @@ class OperatorActionServiceClient:
             TypeAdapter(list[ActionRequestView]), "GET", "/v1/operator/action-requests", params=params
         )
 
-    async def history(self, *, limit: int = 50, cursor: str | None = None) -> ActionHistoryPage:
-        params = {"limit": limit, **({"cursor": cursor} if cursor is not None else {})}
+    async def history(
+        self, *, limit: int = 50, cursor: str | None = None, include_auto_allowed: bool = True
+    ) -> ActionHistoryPage:
+        params = {
+            "limit": limit,
+            "include_auto_allowed": str(include_auto_allowed).lower(),
+            **({"cursor": cursor} if cursor is not None else {}),
+        }
         return await self._call(
             TypeAdapter(ActionHistoryPage), "GET", "/v1/operator/action-requests/history", params=params
         )

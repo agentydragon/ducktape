@@ -2485,9 +2485,13 @@ routes.push(
       const past = flags.has("gmailDraftHistory")
         ? [GMAIL_DRAFT_ACTION]
         : ACTIONS.filter((request) => request.state !== "decision_pending");
+      const filtered =
+        query.get("include_auto_allowed") === "false"
+          ? past.filter((request) => !(request.decision?.verdict === "allow" && request.decision.operator === null))
+          : past;
       return flags.has("pagedActionHistory") && !query.has("cursor")
-        ? { items: past.slice(0, 2), next_cursor: "second-page" }
-        : { items: flags.has("pagedActionHistory") ? past.slice(2) : past, next_cursor: null };
+        ? { items: filtered.slice(0, 2), next_cursor: "second-page" }
+        : { items: flags.has("pagedActionHistory") ? filtered.slice(2) : filtered, next_cursor: null };
     },
   ],
   [

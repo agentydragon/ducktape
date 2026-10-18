@@ -613,9 +613,12 @@ async def unbind_connection(connection_id: UUID, body: ConnectionVersion, client
 
 @actions_router.get("/history")
 async def action_history(
-    client: OperatorActions, limit: Annotated[int, Query(ge=1, le=100)] = 50, cursor: str | None = None
+    client: OperatorActions,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    cursor: str | None = None,
+    include_auto_allowed: bool = True,
 ) -> ActionHistoryPage:
-    return await client.history(limit=limit, cursor=cursor)
+    return await client.history(limit=limit, cursor=cursor, include_auto_allowed=include_auto_allowed)
 
 
 @actions_router.get("")

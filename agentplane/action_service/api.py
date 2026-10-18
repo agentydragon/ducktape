@@ -413,10 +413,15 @@ def create_app(
 
     @operator.get("/action-requests/history")
     async def operator_history(
-        principal: _Operator, limit: Annotated[int, Query(ge=1, le=100)] = 50, cursor: str | None = None
+        principal: _Operator,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+        cursor: str | None = None,
+        include_auto_allowed: bool = True,
     ) -> ActionHistoryPage:
         try:
-            items, next_cursor = await service.history(principal, limit=limit, cursor=cursor)
+            items, next_cursor = await service.history(
+                principal, limit=limit, cursor=cursor, include_auto_allowed=include_auto_allowed
+            )
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
         return ActionHistoryPage(items=items, next_cursor=next_cursor)

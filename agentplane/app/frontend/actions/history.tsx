@@ -1,5 +1,5 @@
 import { type JSX, type ReactNode, useEffect, useRef, useState } from "react";
-import { Alert, Badge, Button, Code, Paper, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Button, Code, Paper, SegmentedControl, Stack, Text } from "@mantine/core";
 
 import { displayableError } from "../client";
 import { JsonView } from "../json_view";
@@ -125,7 +125,7 @@ function useExecutorKinds(): {
 }
 
 /** Decided and terminal ActionRequests: durable receipts, not something an operator still acts on. */
-export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX.Element {
+function ActionHistoryRequests({ includeAutoAllowed }: { includeAutoAllowed: boolean }): JSX.Element {
   const [requests, setRequests] = useState<ActionRequestView[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -140,7 +140,7 @@ export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX
     async function refresh(): Promise<void> {
       const current = ++generation;
       try {
-        const page = await actionHistory();
+        const page = await actionHistory(undefined, includeAutoAllowed);
         if (!active || current !== generation) return;
         setRequests((previous) => {
           if (!loadedMore.current) return page.items;
@@ -166,12 +166,12 @@ export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX
       active = false;
       stop();
     };
-  }, []);
+  }, [includeAutoAllowed]);
   async function loadMore(): Promise<void> {
     if (!cursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const page = await actionHistory(cursor);
+      const page = await actionHistory(cursor, includeAutoAllowed);
       loadedMore.current = true;
       setRequests((previous) => [
         ...previous,
@@ -189,16 +189,6 @@ export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX
 
   return (
     <Stack>
-      {embedded && (
-        <Text fw={700} size="lg">
-          History
-        </Text>
-      )}
-      {!embedded && (
-        <Text c="dimmed" size="sm">
-          Denied and terminal ActionRequests, kept as durable receipts.
-        </Text>
-      )}
       {error && <Text c="red">{error}</Text>}
       {executors.error && <Alert color="orange">Action group metadata could not be loaded. {executors.error}</Alert>}
       {loading && <Text role="status">Loading actions…</Text>}
@@ -215,6 +205,34 @@ export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX
           Load more
         </Button>
       )}
+    </Stack>
+  );
+}
+
+export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX.Element {
+  const [filter, setFilter] = useState("not-auto-allowed");
+  return (
+    <Stack>
+      {embedded && (
+        <Text fw={700} size="lg">
+          History
+        </Text>
+      )}
+      {!embedded && (
+        <Text c="dimmed" size="sm">
+          Denied and terminal ActionRequests, kept as durable receipts.
+        </Text>
+      )}
+      <SegmentedControl
+        aria-label="Action history filter"
+        value={filter}
+        onChange={setFilter}
+        data={[
+          { value: "not-auto-allowed", label: "Not auto-allowed" },
+          { value: "all", label: "All actions" },
+        ]}
+      />
+      <ActionHistoryRequests key={filter} includeAutoAllowed={filter === "all"} />
     </Stack>
   );
 }

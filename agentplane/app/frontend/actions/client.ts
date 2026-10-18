@@ -21,8 +21,12 @@ export async function getAction(requestId: string): Promise<ActionRequestView> {
   return ok(await api.GET("/actions/{request_id}", { params: { path: { request_id: requestId } } }));
 }
 
-export async function actionHistory(cursor?: string): Promise<ActionHistoryPage> {
-  return ok(await api.GET("/actions/history", { params: { query: { cursor, limit: 50 } } }));
+export async function actionHistory(cursor?: string, includeAutoAllowed = true): Promise<ActionHistoryPage> {
+  return ok(
+    await api.GET("/actions/history", {
+      params: { query: { cursor, limit: 50, include_auto_allowed: includeAutoAllowed } },
+    })
+  );
 }
 
 export async function decideAction(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView> {

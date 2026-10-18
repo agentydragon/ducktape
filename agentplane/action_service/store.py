@@ -183,9 +183,16 @@ class ActionStore:
             return [await self._view(session, row, principal) for row in rows]
 
     async def history(
-        self, principal: OperatorPrincipal, *, limit: int, cursor: str | None
+        self, principal: OperatorPrincipal, *, limit: int, cursor: str | None, include_auto_allowed: bool = True
     ) -> tuple[list[ActionRequestView], str | None]:
         query = select(ActionRequestRow).where(ActionRequestRow.history_at.is_not(None))
+        if not include_auto_allowed:
+            auto_allowed = select(DecisionRow.request_id).where(
+                DecisionRow.request_id == ActionRequestRow.id,
+                DecisionRow.verdict == Verdict.ALLOW,
+                DecisionRow.operator_issuer.is_(None),
+            )
+            query = query.where(~auto_allowed.exists())
         if cursor is not None:
             if len(cursor) > 1024:
                 raise ValueError("invalid history cursor")

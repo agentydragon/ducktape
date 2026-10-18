@@ -546,5 +546,47 @@ async def test_invalid_arguments_are_rejected_before_persistence_and_provider_ev
         assert len(provider.contexts) == 1
 
 
+async def test_history_filters_auto_allows_before_pagination(
+    mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    store = action_store(make_sessionmaker(engine))
+    async with ActionService(store, echo_catalog, {"agentplane": mcp_executor}, dispatches=ChangeSignal()) as service:
+        human = await service.submit(body("history-human"), CALLER)
+        await service.decide(
+            human.id,
+            DecisionInput(verdict=Verdict.ALLOW, expected_version=human.version, idempotency_key="human-allow"),
+            OPERATOR,
+        )
+        cancelled = await service.submit(body("history-cancelled"), CALLER)
+        await service.cancel(cancelled.id, CALLER)
+        await service.submit(body("history-pending"), CALLER)
+    async with ActionService(
+        store,
+        echo_catalog,
+        {"agentplane": mcp_executor},
+        providers=[ScriptedProvider("deny", ProviderVerdict.DENY)],
+        dispatches=ChangeSignal(),
+    ) as service:
+        denied = await service.submit(body("history-auto-deny"), CALLER)
+    async with ActionService(
+        store,
+        echo_catalog,
+        {"agentplane": mcp_executor},
+        providers=[ScriptedProvider("allow", ProviderVerdict.ALLOW)],
+        dispatches=ChangeSignal(),
+    ) as service:
+        allowed = await service.submit(body("history-auto-allow"), CALLER)
+        all_items, _ = await service.history(OPERATOR, limit=50, cursor=None)
+        assert {item.id for item in all_items} == {human.id, cancelled.id, denied.id, allowed.id}
+        seen = []
+        cursor = None
+        for _ in range(3):
+            items, cursor = await service.history(OPERATOR, limit=1, cursor=cursor, include_auto_allowed=False)
+            assert len(items) == 1
+            seen.append(items[0].id)
+        assert seen == [denied.id, cancelled.id, human.id]
+        assert cursor is None
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
