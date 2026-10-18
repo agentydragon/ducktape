@@ -294,6 +294,7 @@ flowchart TD
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
+    RUNNER_HARNESS_OBJECTS_DESIGN --> RUNNER_CODEX_SHARED_PROCESS[Blocked: share at most one Codex app-server per Runner]
 ```
 
 ### `MULTIAGENT_MODEL` — shared identity and authority vocabulary
@@ -630,9 +631,43 @@ that as a modest migration-flexibility advantage, not a decision.
 Use measured interactive-multiplexing and native-child evidence; read-only/discoverable children do
 not prove independent interactive control. Reclaiming or replacing a process must account for every
 hosted Session; interrupting one turn must not affect another Session.
+**Operator-requested optimization to line up (2026-10-17 PDT):** prefer at most one
+Codex app-server per Runner, serving multiple Agentplane Sessions, rather than one per Session.
+Evaluate this concrete target in the placement recommendation and feed the reviewed contract into
+`RUNNER_CODEX_SHARED_PROCESS`. This does not require making the Runner Codex-only: Claude
+Sessions can retain their own processes. Resolve process-wide versus per-thread configuration,
+store ownership and retained per-Session `CODEX_HOME` data before implementation; do not silently
+choose a data migration as part of a process-count optimization.
+
 Deliver a recommendation and proposed API shape for review; implementation and migration/retirement
 nodes follow only if selected. This does not unfreeze the broader runner durability redesign or
 authorize native-subagent implementation.
+
+### `RUNNER_CODEX_SHARED_PROCESS` — share one Codex app-server across Sessions
+
+**Requested direction, awaiting the placement/store contract above (operator, 2026-10-17 PDT).**
+Optimize the Codex adapter to run zero processes until needed and at most one Codex app-server
+per Runner incarnation, hosting multiple independent root Sessions. The runner selects and
+supervises the process internally; keep public Session addresses and durable admission semantics.
+This is implementation after the relevant Codex placement/store decisions in
+`RUNNER_HARNESS_OBJECTS_DESIGN` and `HARNESS_IDENTITY_DESIGN`, not authorization for the broader
+store redesign or native child projection. The existing multi-thread characterization establishes
+native capability; it does not establish integration safety or migration behavior.
+
+Route requests, replies, notifications and server-initiated requests to the correct Session/thread.
+Preserve Session-specific workdir, instructions, model/effort and setup behavior; identify any
+incompatible process-wide options during design. Concurrent startup must create only one server.
+An exact-turn interrupt affects only its target. A shared server failure invalidates every hosted
+assignment; runner recovery must reconcile each affected Session and its admitted commands without
+duplicating side effects. Orderly quiesce still waits for setup/bootstrap. Persisted but unloaded
+Sessions remain dormant; status shows the shared process UUID and only assigned Sessions.
+
+**Exit:** automated concurrent multi-Session coverage for routing, configuration/context isolation,
+exact-turn interrupt isolation, startup races, shared-process crash/recovery, and quiesce; retained
+native data and history survive adoption and Sandbox suspend/resume. Measure process count and RAM
+against the existing per-Session baseline with multiple active and idle Codex Sessions, and record
+any shared-failure tradeoff. No public process controls, Claude process sharing or idle reaping is
+part of this node.
 
 ## 4. VM environment phases
 
@@ -1166,7 +1201,7 @@ flowchart TD
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
-    IDLE_SUSPEND_UI_DRIVE[Ready for operator: drive auto-suspend and send-to-resume in staging]
+    IDLE_SUSPEND_UI_DRIVE[In progress with operator: drive auto-suspend and send-to-resume in staging]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
 
@@ -1445,7 +1480,9 @@ rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` be
 
 ### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
 
-**Ready for the operator (2026-10-17 PDT).** Runner-owned lifecycle rollout acceptance is
+**In progress with the operator (2026-10-17 PDT).** The operator reports a basic Codex
+message works and is waiting for the five-minute idle timeout to observe suspension and
+send-to-wake; those two steps are not yet accepted. Runner-owned lifecycle rollout acceptance is
 complete; see the [rollout record](../docs/harness_lifecycle_rollout_20261017.md).
 Drive the approved send-to-start behavior after explicit harness shutdown/resume controls are removed;
 the ownership decision is settled. The rest of this node stands.
@@ -1695,7 +1732,7 @@ flowchart LR
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     RUNNER_STORE_SESSION_IDENTITY[Candidate: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
-    IDLE_SUSPEND_UI_DRIVE[Ready for operator: drive auto-suspend and send-to-resume in staging, section 7]
+    IDLE_SUSPEND_UI_DRIVE[In progress with operator: drive auto-suspend and send-to-resume in staging, section 7]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
@@ -1706,6 +1743,7 @@ flowchart LR
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
     HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
+    RUNNER_HARNESS_OBJECTS_DESIGN --> RUNNER_CODEX_SHARED_PROCESS[Blocked: share at most one Codex app-server per Runner]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
     K3S_VM_IMAGE -. real VM path prerequisite .-> CNPG_FREE_K3S_INTEGRATION_TIER
 ```
