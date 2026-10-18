@@ -54,8 +54,8 @@ enum Operation {
   OPERATION_SUBMIT_INPUT = 1;
   OPERATION_CHANGE_MODEL = 2;
   OPERATION_CHANGE_REASONING_EFFORT = 3;
-  // Historical receipts remain readable; no RPC accepts this operation.
-  OPERATION_STOP_RUNNER_SESSION = 4;
+  reserved 4;
+  reserved "OPERATION_STOP_RUNNER_SESSION";
 }
 
 message Dispatch {

@@ -38,8 +38,6 @@ func dispatchOperation(operation string) (dispatcherpb.Operation, error) {
 		return dispatcherpb.Operation_OPERATION_CHANGE_MODEL, nil
 	case "change_reasoning_effort":
 		return dispatcherpb.Operation_OPERATION_CHANGE_REASONING_EFFORT, nil
-	case "stop_runner_session":
-		return dispatcherpb.Operation_OPERATION_STOP_RUNNER_SESSION, nil
 	default:
 		return 0, fmt.Errorf("unknown dispatch operation %q", operation)
 	}

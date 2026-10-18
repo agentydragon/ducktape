@@ -577,8 +577,8 @@ effects. Same command ID/payload returns the original admission; conflicting reu
 ### Runner protocol and callers
 
 - Remove `ResumeSession` and `StopRunnerSession`, their request/response messages, the executable
-  stop command variant, and corresponding Dispatcher/client surfaces. Preserve field 5 as an
-  archive-only `historical_harness_stop` payload so retained Events remain foldable; no RPC accepts it. Add no process kill/restart RPC.
+  stop command variant, and corresponding Dispatcher/client surfaces. Reserve the removed wire
+  field numbers and names. Add no process kill/restart RPC.
 - Keep `OpenSession` as an idempotent durable Session reservation with immutable creation
   configuration. Its acknowledgement does not prove a running harness or completed native creation;
   repeated open confirms the reservation rather than acting as a resume command.
