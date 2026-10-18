@@ -279,8 +279,6 @@ def touched_keys(batch: EventBatch) -> TouchedKeys:
                 commands.add(event.model_changed.command_id)
             case "reasoning_effort_changed":
                 commands.add(event.reasoning_effort_changed.command_id)
-            case "harness_exited":
-                commands.add(event.harness_exited.stopped_by_command_id)
     return TouchedKeys(
         frozenset(items - {""}), frozenset(commands - {""}), frozenset(key for key in completed if key[0])
     )
@@ -510,8 +508,6 @@ class _Fold:
             case "harness_started":
                 controls = replace(controls, harness_state="running")
             case "harness_exited":
-                if event.harness_exited.stopped_by_command_id:
-                    self._settle(entry, event.harness_exited.stopped_by_command_id, CommandOutcome.EFFECTED)
                 controls = replace(controls, harness_state="stopped", active_turn_id=None)
             case "harness_lost":
                 controls = replace(controls, harness_state="lost", active_turn_id=None)

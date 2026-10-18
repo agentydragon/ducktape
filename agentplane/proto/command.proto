@@ -19,11 +19,9 @@ message InterruptTurn {
   string turn_id = 1;
 }
 
-// Retained solely to decode historical CommandAdmitted evidence. No RPC accepts this operation.
-message HistoricalHarnessStop {}
-
 message Command {
-  reserved "stop_runner_session";
+  reserved 5;
+  reserved "stop_runner_session", "historical_harness_stop";
   // Chosen by the caller and stable across every app/runner reconnect. Every command, including
   // an input, has one id; a distinct request id is neither needed nor accepted.
   string command_id = 1;
@@ -32,7 +30,5 @@ message Command {
     ChangeModel change_model = 3;
     InterruptTurn interrupt_turn = 4;
     ChangeReasoningEffort change_reasoning_effort = 6;
-    // Historical event payload only; execution uses the remaining per-operation RPCs.
-    HistoricalHarnessStop historical_harness_stop = 5;
   }
 }

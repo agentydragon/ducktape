@@ -35,7 +35,8 @@ message HarnessStarted {
 message HarnessExited {
   int32 exit_code = 1;
   bool stopped_by_runner = 2;
-  string stopped_by_command_id = 3;
+  reserved 3;
+  reserved "stopped_by_command_id";
 }
 
 message HarnessLost {}
