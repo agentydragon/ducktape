@@ -319,9 +319,9 @@ implementation.
 
 **Decision; the wildcard question is settled and [the schema draft](multiagent_communication.md#draft-schema-for-the-first-session-access-rule)
 (2026-10-18 UTC) awaits the operator's review. Gates `SESSION_ACCESS_RULES`, `THREAD_READ_POLICY_DESIGN`
-and `AGENT_MESSAGING_DESIGN`.** Question for review: should a direct target be able to name another
-namespace in v1? Recommended no, since the Notification service rejects a destination outside its own
-namespace; the field can be added later. Approval unblocks `SESSION_ACCESS_RULES`. The draft covers the
+and `AGENT_MESSAGING_DESIGN`.** Direct targets and memberships are same-namespace in v1 (operator,
+2026-10-18 UTC: he needs no way to name another namespace; the Notification service rejects one anyway).
+Approval of the draft unblocks `SESSION_ACCESS_RULES`. The draft covers the
 concrete rule/member-reference schema, including administrative RBAC and freshness
 settings under the agreed [policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness),
 without requiring an auth-engine migration. Prefer Kubernetes resources for grants and explicit

@@ -387,11 +387,9 @@ spec:
   kind is more than three resyncs old (15 minutes at the default).
 - **Namespace.** The Notification service serves the one namespace its `namespace` setting names and
   rejects a destination elsewhere (`Service.resolve_destination`). V1 direct targets and memberships
-  are therefore same-namespace, with no `namespace` field. It can be added without changing existing
+  are therefore same-namespace, with no `namespace` field; **settled with the operator, 2026-10-18
+  UTC**, who needs no way to name another namespace. A field can be added without changing existing
   rules when a service serves a second namespace.
-
-**Question for review:** should a direct target be able to name another namespace in v1?
-Recommended no, as above.
 
 ### Alternatives if the tentative direction needs revision
 
