@@ -60,6 +60,8 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 
 - `main.py`: the entry point; `Settings` names every knob as a flag, an `AGENTPLANE_*`
   variable, and a key of the YAML file `AGENTPLANE_CONFIG_FILE` points at.
+  `runner_gateway_target` is only for the health check; app live reads use the per-Sandbox
+  `runner_gateway_control_target` and projected `runner_gateway_token_file`.
 - `presets.py`: app-owned `SandboxPreset` and `ThreadPreset` configuration and concrete launch
   resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
   fields.
@@ -163,11 +165,7 @@ unfinished before accepting the archive request.
 Every new Session opening is submitted to the Dispatcher with the complete Session spec. A `SessionOpening` reports queued,
 delivering, runner-admitted, or failed state, and
 `GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
-History Service has projected a Thread yet. Opening always uses the Dispatcher; generated ConfigMaps
-omit the retired rollout flag.
-Both testing and staging activate queued openings when Flux pins this app image. The operator
-approved this combined rollout; bounded queued-opening and Thread-projection acceptance follow
-the image rollout in each environment.
+History Service has projected a Thread yet.
 
 The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
 History Service's ingress, and the History Service folds them under per-Session leases
@@ -579,8 +577,10 @@ one. Which lists the service enforces is its contract
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and
   then delete. A running sandbox answers `DELETE` with 409 and a message saying to suspend it.
-- **Resume during a suspend is retryable:** while the controller seals an incarnation, the app returns
-  HTTP 503 for `POST /sandboxes/{name}/resume`. Retry after the Sandbox reaches Suspended.
+- **Resume during a suspend is retryable:** the Sandbox page's explicit resume requests Sandbox
+  lifecycle state through `POST /sandboxes/{name}/resume`; while the controller seals an incarnation,
+  the app returns HTTP 503. Retry after the Sandbox reaches Suspended. This remains available when
+  `wake_on_send` is off; that setting controls whether queued work may wake the Sandbox.
 - **Raw is additive:** both modes use the same chronological thread blocks and disclosure
   state. Compact Event summaries sit between those blocks; expanded details retain the full generated
   envelope, native payload, and causal references. JSON wraps instead of forcing horizontal scrolling.

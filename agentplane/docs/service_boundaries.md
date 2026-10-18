@@ -14,7 +14,7 @@ and shared infrastructure, never services to the app.
 flowchart LR
     App[Integration app] --> Kubernetes[Kubernetes API: Sandbox spec and operator grants]
     App -->|health probe| Gateway[Runner Gateway]
-    App -->|UID/owner-fenced live checks and native resume| Proxy[Per-Sandbox Runner Proxy]
+    App -->|UID/owner-fenced live inventory and status| Proxy[Per-Sandbox Runner Proxy]
     App -->|openings and durable commands| Dispatcher[Session Dispatcher]
     Dispatcher -->|delivery through runner proxy| Gateway
     App --> History[History Service]
@@ -54,9 +54,11 @@ so backend readers and the controller share the same typed Kubernetes contract.
   Sandbox `spec` and operator-owned `PolicyBinding` grants through Kubernetes. It reads Sandbox
   projections for the UI, opens Sessions and submits commands through the Session Dispatcher, uses
   the Runner Gateway for placement, and uses each Sandbox's Runner Proxy for UID/owner-fenced live
-  inventory and process/Session diagnostics. The runner owns harness startup and reconciliation
-  after command admission. The app reads Session history and Threads
-  from the History Service. See the [control-surface audit](control_surface_retirement.md).
+  inventory and process/Session diagnostics. Manual resume is a Sandbox lifecycle request through
+  Kubernetes; the Runner owns native-state recovery after startup. It owns harness startup and
+  reconciliation after command admission. The app reads Session history and Threads from the History
+  Service. See the [Runner Gateway](../runner_gateway/README.md) and
+  [Session Dispatcher](../runner_gateway/dispatcher/README.md) contracts.
 - **Sandbox Controller:** reconciles requested Sandbox state into ServiceAccounts, Pods or VMs,
   state volumes and controller-owned grants. It owns `Sandbox.status`, including quiescing facts,
   and asks the Runner Gateway to seal Sessions before stopping or deleting a runner.
@@ -105,14 +107,13 @@ to runners. Thread identities do not travel in Runner control-stream metadata.
 
 The Runner Gateway authenticates proxy callers, resolves the current Sandbox and runner connection,
 and routes Runner RPCs to the replica holding the outbound stream. The app and Notification service
-use it for live Runner inventory; the app uses it for explicit native resume; the Sandbox Controller
-uses it for quiesce. The Session Dispatcher owns durable sender-facing command admission and delivery.
+use it for live Runner inventory; the Sandbox Controller uses its controller-only proxy authorization
+for quiesce. The app requests Sandbox lifecycle changes through Kubernetes. The Session Dispatcher owns durable sender-facing command admission and delivery.
 No backend needs the app process to keep serving these operations.
 
-The Gateway-specific Session API, registry runtime, and database resource are removed from current
-source and manifests. Notification-triggered wake and durable acceptance for offline destinations are
-separate features with their own rollout gates. Do not create another runner-command queue as a side
-effect of a service-boundary change.
+Notification-triggered wake and durable acceptance for offline destinations are separate features
+with their own rollout gates. Do not create another runner-command queue as a side effect of a
+service-boundary change.
 
 Runner journals remain durable on runner state volumes. Runners push them to the History Service,
 whose Session Event archive outlives the runner volume; the app reads history from that archive and

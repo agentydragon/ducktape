@@ -58,7 +58,8 @@ flowchart LR
     F[Frontend] -->|Command| A[App]
     A -->|openings and durable commands| SD[Session Dispatcher]
     SD -->|runner operations through proxy| G[Runner Gateway]
-    A -->|placement, live checks, explicit native resume| G
+    A -->|placement and live checks| G
+    A -->|Sandbox desired state and lifecycle| K[Kubernetes Sandbox state]
     G -->|RunnerControl stream| R[Runner journal and scheduler]
     R --> C[Claude adapter]
     R --> D[Codex adapter]
@@ -72,7 +73,7 @@ flowchart LR
     P -->|deterministic fold| V[History Service conversation read model]
     V -->|assembled, plus what an operator sets in the app| T[Thread]
     V -->|Electric snapshot and changes, through the app| F
-    K[Kubernetes Sandbox state] -->|operational snapshot| A
+    K -->|operational snapshot| A
     A -->|operational snapshot| F
 ```
 
@@ -107,13 +108,13 @@ Raw evidence; the projection does not change runner Events or command admission.
 One Sandbox can host multiple Threads. A Thread may resume through several harness
 processes on that Sandbox. Current runner storage calls its durable, resumable container
 a “session”; it already spans process restarts. That existing name does not establish
-the target product Thread/incarnation relationship. The historical Gateway registry table never
-covered Dispatcher-opened Sessions and has no current serving reader or writer; its removal is a
-separate rollout-gated database change. History separately records the writer's namespace and name.
+the target product Thread/incarnation relationship. The Gateway has no Session placement registry;
+it resolves proxy destinations from current Sandbox identity and connection state. History separately
+records the writer's namespace and name.
 App commands use the Thread's stored Sandbox name and send it to Dispatcher, which records the current
 Sandbox UID without checking the Session's earlier association. The complete Session-to-incarnation
 authority across opens, commands and resume remains under review in the
-[control-surface audit](control_surface_retirement.md).
+[service-boundary contract](service_boundaries.md).
 
 A Thread is a view/fold of one durable logical Session's Event log, with its own
 operator-set presentation; it is not a second execution source. Its id is the client-minted public
@@ -244,9 +245,9 @@ stores Thread presentation state; the browser keeps unconfirmed submissions loca
 commands to Dispatcher and reads queued/delivering/admitted results. Dispatcher wakes an eligible
 suspended Sandbox, waits for `Ready`, and delivers through the Runner Gateway proxy. A queued
 `Dispatch`, a runner `CommandAdmitted`, a History observation and a native effect remain separate
-facts. The app has no second command queue; the legacy Gateway `SubmitCommand` wrapper is retired.
-See the [control-surface audit](control_surface_retirement.md) for current service ownership and
-callers.
+facts. The app has no second command queue; the Gateway has no independent command queue.
+See the [Runner Gateway](../runner_gateway/README.md) and
+[Session Dispatcher](../runner_gateway/dispatcher/README.md) for current service ownership and callers.
 
 ### Message sketches used below
 

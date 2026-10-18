@@ -33,7 +33,7 @@ not redesign storage, the History Service, or policy.
   gateway's runner proxy and records `status.quiescedIncarnation` on any quiesce and sets `Quiesced` on a deleting Sandbox only (`finalize`), beside the older sealed names. It
   reads the connection Lease's facts. `Ready` is `WorkloadReady` AND `RunnerConnected`. `QuiesceResponse.stage` has
   one reader, the controller.
-- **Runner Gateway** (`runner_gateway/`): the `RunnerControl.Connect` listener and proxy of the runner's `Runner` service. It writes per-Sandbox Leases and EndpointSlices; it does not create the `<sandbox>-control` Service (its `services` RBAC rule stays until the controller's image is pinned). The Gateway-specific Session API, registry runtime, and database resource are removed from current source and manifests.
+- **Runner Gateway** (`runner_gateway/`): the `RunnerControl.Connect` listener and proxy of the runner's `Runner` service. It writes per-Sandbox Leases and EndpointSlices; it does not create the `<sandbox>-control` Service (its `services` RBAC rule stays until the controller's image is pinned). Session openings and durable commands belong to the Dispatcher; the Gateway owns no Session registry or database.
 - **Integration app** (`app/`): submits Sandbox desired state and operator-owned grants through the
   Kubernetes API, reads Sandbox views, and attaches the output-only VM console. It acts as the
   requesting operator; the Sandbox Controller owns status and reconciled resources.
@@ -44,10 +44,11 @@ not redesign storage, the History Service, or policy.
   Sandbox wrote each Session. Folds `last_model_activity_at`.
 
 The current sender path is queued: the app and Notification Service submit per-operation commands to
-Session Dispatcher, which durably records them and delivers after Sandbox readiness. This PR removes
-the legacy Gateway `SubmitCommand` wrapper, which has no production sender in this repository. Explicit user-requested
-native resume and live runner reads use the Runner Proxy through the per-Sandbox control Service; see the
-[control-surface audit](control_surface_retirement.md) for the remaining caller and authorization gates.
+Session Dispatcher, which durably records them and delivers after Sandbox readiness. The app requests
+Sandbox lifecycle changes through Kubernetes; the runner restores retained native state as it starts.
+Live Runner reads use the UID/owner-fenced proxy through the per-Sandbox control Service. See the
+[service-boundary contract](service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
+for current callers and authorization gates.
 
 ## Where the lines could fall
 

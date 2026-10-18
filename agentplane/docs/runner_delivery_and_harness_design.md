@@ -10,8 +10,9 @@ permissions. Keep the existing security
 checks and durable queue until a replacement contract is reviewed.
 
 The current runner contracts remain in [Session layering](thread_layering.md), the
-[Dispatcher README](../runner_gateway/dispatcher/README.md), the [Gateway control-surface audit](control_surface_retirement.md),
-and the [scripted harness capability index](../native/README.md#behavioral-coverage).
+[Dispatcher README](../runner_gateway/dispatcher/README.md), the
+[Runner Gateway README](../runner_gateway/README.md), and the
+[scripted harness capability index](../native/README.md#behavioral-coverage).
 
 ## Generated HTTP/JSON facade spike
 
@@ -576,9 +577,10 @@ effects. Same command ID/payload returns the original admission; conflicting reu
 
 ### Runner protocol and callers
 
-- Remove `ResumeSession` and `StopRunnerSession`, their request/response messages, the executable
-  stop command variant, and corresponding Dispatcher/client surfaces. Preserve field 5 as an
-  archive-only `historical_harness_stop` payload so retained Events remain foldable; no RPC accepts it. Add no process kill/restart RPC.
+- The Runner API has no `ResumeSession` or `StopRunnerSession` RPC, executable stop command
+  variant, or corresponding Dispatcher/client surface. Field 5 remains an archive-only
+  `historical_harness_stop` payload so retained Events remain foldable; no RPC accepts it. Add no
+  process kill/restart RPC.
 - Keep `OpenSession` as an idempotent durable Session reservation with immutable creation
   configuration. Its acknowledgement does not prove a running harness or completed native creation;
   repeated open confirms the reservation rather than acting as a resume command.
@@ -597,12 +599,10 @@ effects. Same command ID/payload returns the original admission; conflicting reu
   completes, rather than cancelling them partway through initialization. Orderly runner shutdown
   also waits for them; unexpected process loss is recorded as interrupted and never silently rerun.
 
-Update all proto, backend, Dispatcher, app, CLI and pinned-image callers atomically within the
-protocol change. Remove the frontend's harness shutdown and **Resume harness** buttons, handlers,
-backing app endpoints and stale gating that prevents sending solely because a harness is absent.
 Keep the guarded turn interrupt control and distinct Sandbox suspend/resume controls. Sending to a
 dormant Session uses runner-managed readiness; existing Sandbox wake authorization still applies.
-The direct app `ResumeSession` proxy carve-out retires with these callers, not in advance.
+The app's manual resume changes Sandbox lifecycle state through Kubernetes; retained native state
+recovery belongs to the Runner.
 
 ### Provisional introspection model and Sandbox page
 

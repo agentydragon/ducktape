@@ -1675,21 +1675,20 @@ flowchart TD
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization]
 ```
 
-The [completed control-surface audit](../docs/control_surface_retirement.md) records protobuf,
-HTTP/client, settings, deployment and guest-wheel consumers. Live `Runner.ListSessions` remains
-needed by app archive/native resume and Notification membership, so its conditional retirement
-node is removed. This does not remove the separate destination-authority decision `DELIVERY_DESTINATION_AUTHORITY_DESIGN` (section 13).
+The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
+describe the current proxy. Live `Runner.ListSessions` remains part of the app and Notification
+service caller contract. The separate destination-authority decision
+`DELIVERY_DESTINATION_AUTHORITY_DESIGN` (section 13) remains open.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
 **Needs policy revision coordinated with `HARNESS_LIFECYCLE_OWNERSHIP`.** The runner proxy
 (`runner_gateway/gateway/proxy.go`) currently lets configured caller accounts invoke allowed Runner
 methods, except `Quiesce` (controller only). Review per-method policy for `OpenSession`,
-`SubmitInput`, model/effort changes and `InterruptTurn` against the Dispatcher-only command boundary. The approved lifecycle change
-removes `ResumeSession` and `StopRunnerSession`; retire their methods and the direct app resume
-carve-out with all callers, including the frontend shutdown/resume controls. Preserve the existing
-app resume path until that atomic migration. Read-only diagnostics do not grant command or wake
-authority. This node does not select generalized send grants or broaden caller permissions.
+`SubmitInput`, model/effort changes and `InterruptTurn` against the Dispatcher-only command boundary.
+Manual app resume changes Sandbox lifecycle state through Kubernetes; native state recovery belongs
+to the Runner. Read-only diagnostics do not grant command or wake authority. This node does not
+select generalized send grants or broaden caller permissions.
 
 ## Scope and retirement of stale gates
 
@@ -1738,7 +1737,7 @@ flowchart LR
     HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
     HARNESS_LIFECYCLE_OWNERSHIP --> IDLE_SUSPEND_UI_DRIVE
-    HARNESS_LIFECYCLE_OWNERSHIP -. retires the app resume carve-out with its callers .-> PROXY_START_METHODS_DISPATCHER_ONLY
+    HARNESS_LIFECYCLE_OWNERSHIP -. coordinates Runner method caller policy .-> PROXY_START_METHODS_DISPATCHER_ONLY
     HARNESS_LIFECYCLE_OWNERSHIP -. preserves private mapping decision gates .-> HARNESS_IDENTITY_DESIGN
     HARNESS_LIFECYCLE_OWNERSHIP --> RUNNER_IDLE_HARNESS_REAP
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
@@ -1926,17 +1925,16 @@ design node authorizes runtime changes.
 ### `HARNESS_LIFECYCLE_OWNERSHIP` — implement runner-owned harness lifecycle
 
 **In flight (this session, operator-authorized implementation and rollout, 2026-10-17).** The runner owns startup,
-native readiness and reconciliation after durable command admission. Remove explicit resume and
-stop RPCs; retain exact-turn interrupt with atomic active-turn validation and `FAILED_PRECONDITION`
+native readiness and reconciliation after durable command admission. Keep explicit resume and stop
+RPCs absent; retain exact-turn interrupt with atomic active-turn validation and `FAILED_PRECONDITION`
 before admission on mismatch. Already admitted retries return the original admission; an admitted
 interrupt can never affect a successor turn. Do not add Session-wide cancellation or pause.
 
 The [approved lifecycle contract](../docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle)
 owns admission/failure/retry semantics and protocol deltas. Update proto and backend/client surfaces
-together, remove frontend harness shutdown/resume buttons and backing calls, and allow input to
-trigger readiness. Retire the direct app resume proxy carve-out only with that caller migration.
-Sandbox suspend/resume controls and wake authorization remain distinct. The separate durable
-explicit-resume design is superseded; `DISPATCHER_PERSISTENCE_MODEL_DESIGN` is unaffected.
+together and allow input to trigger readiness. The app has no harness shutdown/resume controls or
+backing endpoints. Sandbox suspend/resume controls and wake authorization remain distinct. The
+separate durable explicit-resume design is superseded; `DISPATCHER_PERSISTENCE_MODEL_DESIGN` is unaffected.
 Running Session setup and Sandbox bootstrap finish naturally during orderly quiesce and shutdown;
 do not abort initialization. Unexpected process loss remains interrupted and is never silently rerun.
 

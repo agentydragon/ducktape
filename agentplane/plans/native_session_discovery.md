@@ -518,11 +518,10 @@ unresolved record, not guessed identity or automatic retry of old work.
 
 #### Root creation and today's service IDs
 
-Before the wrapper retirement, `RunnerGateway.CreateSession` accepted a client-minted UUID as both
-public and runner Session ID, then recorded its Sandbox placement. The current opening path is
-Session Dispatcher `OpenSession`; the Gateway method and registry runtime have been removed. The
-runner is authoritative for its retained execution state, while History records a Session after its
-ingress accepts Events. See the [control-surface audit](../docs/control_surface_retirement.md).
+The Session Dispatcher owns openings and invokes Runner `OpenSession` through the Gateway proxy
+after the Sandbox is ready. The Runner owns retained execution state, while History records a
+Session after its ingress accepts Events. See the [Runner Gateway](../runner_gateway/README.md) and
+[Session Dispatcher opening contract](../runner_gateway/dispatcher/README.md).
 
 The native-root design does not yet choose how the Session Dispatcher and Runner should reserve a
 root ID or bind it to confirmed native creation. The example sequence below predates the current
