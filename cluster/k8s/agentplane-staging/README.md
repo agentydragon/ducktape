@@ -15,10 +15,9 @@ asynchronously outside the artifact.
 ## Harness lifecycle image promotion
 
 The shared `all-images` automation writes new tags to `image-pins/` entries carrying a Flux Setters
-marker. During the runner-owned lifecycle rollout, this directory omits markers from the app and
-runner-gateway image pairs, the notification-service and history-service pairs, `runner`, `runner-ducktape`, and the
-runner VM image. Their current staging tags stay fixed while `agentplane-testing-image-pins` keeps
-tracking CI tags.
+marker. The runner-owned lifecycle promotion restores these markers for the app and runner-gateway
+image pairs, the notification-service and history-service pairs, `runner`, `runner-ducktape`, and the
+runner VM image. Once the promotion merges, Flux Image Automation manages every image pin here.
 
 After testing has applied and accepted a release, record the exact tags from
 `cluster/k8s/agentplane-testing-image-pins/kustomization.yaml`. Keep new staging starts disabled and
@@ -30,15 +29,14 @@ kubectl get pods -n agentplane-staging \
   --field-selector=status.phase=Running
 ```
 
-Update the held `newTag` values in this directory to those tested tags, without restoring the Flux
-markers yet. The `agentplane-staging` and `agentplane-staging-delivery` Flux Kustomizations consume
+Update the held `newTag` values in this directory to those tested tags and restore their Flux
+markers in the same promotion PR. The `agentplane-staging` and `agentplane-staging-delivery` Flux Kustomizations consume
 this Component from the repo source after the change reaches `devel`; no direct cluster apply is
 needed. With no running staging Sandboxes and starts held, use normal Deployment rollouts; no
 separate service stop or Flux suspension is needed. Update all runner templates, including the
 unused VM template, and verify the new service revisions and the absence of old service Pods before
-allowing starts. Keep the existing Sandbox objects and their UIDs and storage. Verify the staging rollout and
-the lifecycle acceptance before restoring the `:tag` markers on the held entries to resume automatic
-staging promotion.
+allowing starts. Keep the existing Sandbox objects and their UIDs and storage. Record the actual
+deployed revisions during staging acceptance, since Flux may publish newer tags after the merge.
 
 ## Action policies
 
