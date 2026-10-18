@@ -693,9 +693,11 @@ unchanged history prefixes and retained PVC/PV identities. A retained staging Co
 and reconciled on the new Ducktape runner, settled an unchanged-setting command as a no-op, and
 returned to its original archived/suspended state without a model turn. All 184 preexisting history
 entries matched their pre-cutover hash; all four staging Sandbox UIDs and eight Sandbox PVC/PV
-identities were preserved. The bounded egress rerun remains pending following native Claude tool
-permission denials in an earlier diagnostic attempt. Keep that result distinct from completed
-lifecycle checks. Exact revisions, evidence and failed-attempt limitations are in the
+identities were preserved. The bounded egress rerun passed all three Codex cases and Claude model
+ingress, but both Claude tool cases hit the whole-turn deadline; native automatic permission denials
+were observed. The operator selected explicit `bypassPermissions` in #10965; its release and deployed
+Claude tool acceptance remain open. Keep those
+failures distinct from completed lifecycle checks. Exact revisions, evidence and failed-attempt limitations are in the
 [rollout record](../debug/harness_lifecycle_rollout_20261017.md).
 
 Keep previous image revisions and a tested persistent-format rollback policy. Before new work is

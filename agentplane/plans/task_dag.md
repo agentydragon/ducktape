@@ -1169,7 +1169,7 @@ flowchart TD
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
     IDLE_SUSPEND_UI_DRIVE[Blocked: drive auto-suspend and send-to-resume in staging, after harness lifecycle rollout]
-    HARNESS_LIFECYCLE_OWNERSHIP[In flight: implement runner-owned harness lifecycle, section 13] --> IDLE_SUSPEND_UI_DRIVE
+    HARNESS_LIFECYCLE_OWNERSHIP[In flight: accept runner-owned harness lifecycle rollout, section 13] --> IDLE_SUSPEND_UI_DRIVE
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
 
@@ -1712,7 +1712,7 @@ flowchart LR
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     RUNNER_STORE_SESSION_IDENTITY[Candidate: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
-    HARNESS_LIFECYCLE_OWNERSHIP[In flight: implement runner-owned harness lifecycle]
+    HARNESS_LIFECYCLE_OWNERSHIP[In flight: accept runner-owned harness lifecycle rollout]
     RUNNER_IDLE_HARNESS_REAP[Deferred v2: reclaim idle harness processes, section 7]
     IDLE_SUSPEND_UI_DRIVE[Blocked: drive auto-suspend and send-to-resume in staging, section 7]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
@@ -1915,7 +1915,9 @@ design node authorizes runtime changes.
 
 **In flight (this session, operator-authorized rollout acceptance, 2026-10-17).** Implementation
 #10950 and promotion #10961 are merged; live Pod/VM context retention and the retained-state staging
-canary passed. The bounded egress rerun remains pending after native Claude tool permission denials.
+canary passed. Egress passed four cases; both Claude tool cases timed out with native automatic
+permission denials observed. The operator selected explicit `bypassPermissions` in #10965;
+its release and deployed Claude tool acceptance remain open.
 See the owning design note's rollout checkpoint. The runner owns startup,
 native readiness and reconciliation after durable command admission. Keep explicit resume and stop
 RPCs absent; retain exact-turn interrupt with atomic active-turn validation and `FAILED_PRECONDITION`

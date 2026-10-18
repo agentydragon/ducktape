@@ -84,14 +84,46 @@ After the canary, all four staging Sandbox UIDs and all eight Sandbox state and
 workspace PVC UIDs, PV bindings and owner UIDs matched the pre-cutover inventory.
 All four Sandboxes were suspended again.
 
+The rollout hold temporarily changed `public-coder-2`'s `wakeOnSend` from `true`
+to `false`, fenced to UID `9daaf99f-38a3-4e2a-9fac-93a45d9c3003`.
+Restore its original value after acceptance and before releasing the starts hold;
+its desired `running: true` with idle suspension is otherwise unchanged.
+
 ## Remaining acceptance
 
-The bounded egress rerun is pending. An earlier diagnostic Claude case encountered
-repeated native automatic permission denials before the runner's `can_use_tool`
-handler and was stopped after the old driver failed to impose a whole-turn
-deadline despite continuing SSE traffic. It is not a passing egress result.
-The deadline regression is covered by #10962; permission behavior is a separate
-decision pending the bounded run.
+The bounded egress rerun completed with **four cases passing and two failing** in
+788.66 seconds. All three Codex cases passed: bound-policy reachability and
+credential substitution, model ingress, and granting a policy to a running
+Sandbox. Claude model ingress passed. Both Claude tool scenarios hit the
+300-second whole-turn deadline, including the initial unbound request in the
+policy-grant case, so that case never reached its grant assertion.
+[BuildBuddy invocation](https://app.buildbuddy.io/invocation/bafed821-ef82-4db0-a759-7599bc4b95d4).
+
+The Claude bound-policy Session's native init reported CLI 2.1.296 and
+`permissionMode: auto`. It emitted two `permission_denied` frames and two
+checking/done pairs before the deadline. This does not establish that the egress
+proxy admitted or denied the intended requests: native tool classification
+prevented the probe from completing. Setup also logged model-warmup connection
+timeouts; these were warnings, not the reported test failures. Fixture cleanup
+completed, and a fresh inventory found no testing Sandboxes.
+
+An earlier diagnostic attempt was stopped after the old driver failed to impose
+a whole-turn deadline despite continuing SSE traffic. #10962 merged as
+`15512183b2a5333a3bb99625362afd4849e416f4`, with its offline deadline/stream-closing
+regression and exact-head CI passing. The bounded deployed run now returned both
+whole-turn timeout failures without manual interruption.
+
+The operator selected explicit `bypassPermissions` for deployed harnesses in
+#10965. Pod harnesses run as UID/GID 1000; VM harness children drop to UID/GID 107.
+The earlier claim that deployed harnesses needed manual mode because they ran
+as root was incorrect. Native scripted scenarios retain manual mode to exercise
+host approval/denial responses. `CLAUDE_PERMISSION_MODE_REVIEW` defers revisiting
+native approval or classifier policy until explicitly wanted.
+
+Keep rollout acceptance and the staging starts/wake hold open until the selected
+mode reaches the released wheel and all runner image families, its deployed
+initialization reports `bypassPermissions`, and the two failed Claude tool cases
+pass. Do not report the previous full egress suite as passing.
 
 The operator's staging auto-suspend/send-to-resume UI drive remains separate.
 Idle Claude reaping is v2. Historical stop-frame/receipt cleanup remains tracked
