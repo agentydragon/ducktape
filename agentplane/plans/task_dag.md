@@ -710,8 +710,7 @@ flowchart LR
     K3S_VM_IMAGE -. optional VM test fixture .-> VM_HARNESS_RESOURCE_LIMITS
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
     VM_GUEST_MEMORY[Parked: 8 GiB PR held for workload-image prototype]
-    VM_GUEST_BUDGET_DERIVE[Blocked: guest budgets derive from the VM spec]
-    VM_GUEST_MEMORY --> VM_GUEST_BUDGET_DERIVE
+    VM_GUEST_BUDGET_DERIVE[Candidate: guest budgets derive from the VM spec]
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
     VM_GUEST_MEMORY --> LOCAL_BAZEL
 ```
@@ -800,7 +799,7 @@ One VM per OVH node is approved; CPU sizing and derived guest budgets remain sep
 
 ### `VM_GUEST_BUDGET_DERIVE` — derive the guest's cgroup budgets from the VM's memory
 
-**Blocked on `VM_GUEST_MEMORY`; pair with `VM_HARNESS_RESOURCE_LIMITS`, which owns the VM cgroup
+**Candidate; no prerequisites; pair with `VM_HARNESS_RESOURCE_LIMITS`, which owns the VM cgroup
 acceptance and already cites these files.** Two places set guest budgets as literals while guest RAM is a third number, and
 nothing connects them:
 
@@ -835,7 +834,6 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
-    K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
     K3S_IMPORT_CONCURRENCY[Blocked: needs a runtime exposing the unpack limit]
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
@@ -997,14 +995,6 @@ PostgreSQL-first sequencing or a custom parallel import/unpack scheduler to the 
 **TODO; operator request, 2026-10-16.** Rename the egress sidecar to "relay" across code,
 configuration, image names and docs. Update all consumers atomically.
 
-### `K3S_PYTHON_INITIALIZATION` — reduce Python process initialization cost
-
-**Candidate; no worker assigned; no prerequisites.** Profile initialization in the remaining
-Python services and compare narrower imports or precompiled bytecode against added image bytes.
-The app already ships bytecode. Exit: a profile identifying the initialization work removed,
-passing affected service and lifecycle coverage, and a matched comparison of process readiness
-and total lifecycle time including any extra image transfer/unpack cost.
-
 ### `K3S_IMPORT_CONCURRENCY` — measure native containerd import and unpack concurrency
 
 **Blocked on an operator runtime choice.** The matched `--local` comparison (#10879) found no useful speedup and the pinned containerd cannot bound unpacking, so dispatch only if a containerd or k3s version exposing the unpack limiter is selected; otherwise delete this node. Evaluate containerd's own concurrency
@@ -1081,7 +1071,7 @@ flowchart LR
 
 ### `BUILD_BOX_BAZEL` — build Sandboxes can run Bazel
 
-**Unscheduled; held by the [BuildBuddy auth policy](../docs/buildbuddy_remote_auth.md): no local Bazel client in an agent container until agents have VM-backed environments, which is `LOCAL_BAZEL`'s outcome.** Decide whether to fold this node into `LOCAL_BAZEL`. A build Sandbox cannot run Bazel here: the repo's configuration uses `remote.buildbuddy.io`,
+**Unscheduled; held by the [BuildBuddy auth policy](../docs/buildbuddy_remote_auth.md): no local Bazel client in an agent container until agents have VM-backed environments, which is `LOCAL_BAZEL`'s outcome.** Not the same outcome as `LOCAL_BAZEL`: build Sandboxes are Pods today, so a candidate route is letting Action-service Sandboxes be VM-backed (operator, 2026-10-18), after which `LOCAL_BAZEL`'s client would serve them. A build Sandbox cannot run Bazel here: the repo's configuration uses `remote.buildbuddy.io`,
 whose gRPC dial ignores the box's HTTP proxy and times out, and it needs credentials. `agentplane/` has no
 `go.mod`, so a plain `go build` is not available either. Options: a local-only Bazel configuration for boxes,
 or a BuildBuddy route through the box's egress (the Go egress for boxes exists). The key can stay in the
@@ -1586,14 +1576,14 @@ flowchart TD
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     RUNNER_RENAME[Decision, unscheduled: a better name than runner]
-    HARNESS_STOP_HISTORY_CLEANUP[Unscheduled: drop retained harness-stop records, needs the operator's say]
+    HARNESS_STOP_HISTORY_CLEANUP[Candidate: drop retained harness-stop records, operator approved]
 ```
 
 ### `HARNESS_STOP_HISTORY_CLEANUP` — remove retained harness-stop records and decoder remnants
 
-**Unscheduled; operator-requested follow-up, 2026-10-17. The runner-owned lifecycle rollout it waited on is
-accepted.** Removing the records deletes retained History and runner journal entries, so it stays a separate
-data-drop change that waits for the operator's say. Remove historical harness-stop control frames and
+**Candidate; operator-requested 2026-10-17 and approved 2026-10-18. The runner-owned lifecycle rollout it waited on is
+accepted.** Removing the records deletes retained History and runner journal entries, so it ships as its own
+data-drop PR and is never auto-merged. Remove historical harness-stop control frames and
 associated command outcomes and receipts from retained History and runner journals while preserving
 conversation content and history consistency. Once no stored record depends on them, delete
 `HistoricalHarnessStop` (`proto/command.proto`), its oneof variant, the historical Dispatcher
