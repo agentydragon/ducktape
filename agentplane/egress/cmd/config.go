@@ -7,13 +7,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/netip"
 	"os"
+	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
+	"github.com/caarlos0/env/v11"
 	"gopkg.in/yaml.v3"
 )
 
@@ -60,64 +62,27 @@ func defaultConfig() config {
 	}
 }
 
-// setting is one configuration key and where its value lands: a *string, an *int, or a pointer to
-// a list or map that environment variables and flags give as JSON.
-type setting struct {
-	name  string
-	value any
-}
-
-func (c *config) settings() []setting {
-	return []setting{
-		{"rules_namespace", &c.RulesNamespace},
-		{"credentials_namespace", &c.CredentialsNamespace},
-		{"allowed_service_account_namespaces", &c.AllowedServiceAccountNamespaces},
-		{"listen_host", &c.ListenHost},
-		{"listen_port", &c.ListenPort},
-		{"admin_host", &c.AdminHost},
-		{"admin_port", &c.AdminPort},
-		{"agent_api_host", &c.AgentAPIHost},
-		{"agent_api_port", &c.AgentAPIPort},
-		{"ca_cert", &c.CACert},
-		{"ca_key", &c.CAKey},
-		{"upstream_ca_file", &c.UpstreamCAFile},
-		{"token_audience", &c.TokenAudience},
-		{"projected_token_audiences", &c.ProjectedTokenAudiences},
-		{"kubeconfig", &c.Kubeconfig},
-		{"log_levels", &c.LogLevels},
-		{"resync_seconds", &c.ResyncSeconds},
-		{"database_url", &c.DatabaseURL},
-		{"decision_history_size", &c.DecisionHistorySize},
-		{"decision_retention_days", &c.DecisionRetentionDays},
-		{"decision_queue_size", &c.DecisionQueueSize},
-		{"decision_batch_size", &c.DecisionBatchSize},
-		{"exempt_networks", &c.ExemptNetworks},
+// environmentOptions makes env read each field from AGENTPLANE_EGRESS_<FIELD NAME IN UPPER SNAKE
+// CASE>, the field's YAML key upper-cased, and a list or map as JSON.
+func environmentOptions(environment map[string]string) env.Options {
+	return env.Options{
+		Environment: environment, Prefix: settingPrefix, UseFieldNameByDefault: true,
+		FuncMap: map[reflect.Type]env.ParserFunc{
+			reflect.TypeFor[[]string]():          parseJSON[[]string],
+			reflect.TypeFor[map[string]string](): parseJSON[map[string]string],
+			reflect.TypeFor[[]netip.Prefix]():    parseJSON[[]netip.Prefix],
+		},
 	}
 }
 
-func (s setting) envName() string  { return settingPrefix + strings.ToUpper(s.name) }
-func (s setting) flagName() string { return strings.ReplaceAll(s.name, "_", "-") }
-
-// assign parses text into the setting. An error names the setting and never carries the text: the
-// database URL holds a password.
-func (s setting) assign(text string) error {
-	switch target := s.value.(type) {
-	case *string:
-		*target = text
-	case *int:
-		parsed, err := strconv.Atoi(text)
-		if err != nil {
-			return fmt.Errorf("%s must be an integer", s.name)
-		}
-		*target = parsed
-	default:
-		decoder := json.NewDecoder(strings.NewReader(text))
-		decoder.DisallowUnknownFields()
-		if decoder.Decode(target) != nil || !errors.Is(decoder.Decode(new(any)), io.EOF) {
-			return fmt.Errorf("%s must be a JSON value of its type", s.name)
-		}
+func parseJSON[T any](text string) (any, error) {
+	var value T
+	decoder := json.NewDecoder(strings.NewReader(text))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&value) != nil || !errors.Is(decoder.Decode(new(any)), io.EOF) {
+		return nil, errors.New("not a JSON value of its type")
 	}
-	return nil
+	return value, nil
 }
 
 // loadConfig applies defaults, then the settings file, then environ, then args.
@@ -134,20 +99,38 @@ func loadConfig(args, environ []string) (config, error) {
 			return config{}, err
 		}
 	}
-	for _, s := range c.settings() {
-		if value, found := environment[s.envName()]; found {
-			if err := s.assign(value); err != nil {
-				return config{}, err
-			}
-		}
-	}
-	if err := applyFlags(&c, args); err != nil {
+	options := environmentOptions(environment)
+	flagged, err := flagValues(options, args)
+	if err != nil {
 		return config{}, err
+	}
+	maps.Copy(environment, flagged)
+	if err := env.ParseWithOptions(&c, options); err != nil {
+		return config{}, settingsError(err)
 	}
 	if err := c.validate(); err != nil {
 		return config{}, err
 	}
 	return c, nil
+}
+
+// settingsError names the settings that failed to parse and never carries their text: the database
+// URL holds a password.
+func settingsError(err error) error {
+	var aggregate env.AggregateError
+	if !errors.As(err, &aggregate) {
+		return err
+	}
+	var failed []string
+	for _, failure := range aggregate.Errors {
+		var parseFailure env.ParseError
+		if !errors.As(failure, &parseFailure) {
+			return failure
+		}
+		field, _ := reflect.TypeFor[config]().FieldByName(parseFailure.Name)
+		failed = append(failed, field.Tag.Get("yaml"))
+	}
+	return fmt.Errorf("settings must be a value of their type, a list or map as JSON: %s", strings.Join(failed, ", "))
 }
 
 // readSettingsFile decodes a file that must exist and hold exactly one document of known keys.
@@ -167,28 +150,29 @@ func readSettingsFile(path string, c *config) error {
 	return nil
 }
 
-func applyFlags(c *config, args []string) error {
+// flagValues reads each setting's --kebab-case flag and returns the ones given, keyed by the
+// environment variable that gives the same setting.
+func flagValues(options env.Options, args []string) (map[string]string, error) {
+	fields, err := env.GetFieldParamsWithOptions(&config{}, options)
+	if err != nil {
+		return nil, err
+	}
 	flags := flag.NewFlagSet("agentplane-egress", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	byFlag := map[string]setting{}
-	values := map[string]*string{}
-	for _, s := range c.settings() {
-		byFlag[s.flagName()] = s
-		values[s.flagName()] = flags.String(s.flagName(), "", s.name)
+	given := map[string]string{}
+	for _, field := range fields {
+		flags.Func(strings.ReplaceAll(strings.ToLower(field.OwnKey), "_", "-"), field.OwnKey, func(value string) error {
+			given[field.Key] = value
+			return nil
+		})
 	}
 	if err := flags.Parse(args); err != nil {
-		return fmt.Errorf("invalid command-line flags: %w", err)
+		return nil, fmt.Errorf("invalid command-line flags: %w", err)
 	}
 	if flags.NArg() != 0 {
-		return errors.New("unexpected positional arguments")
+		return nil, errors.New("unexpected positional arguments")
 	}
-	var failure error
-	flags.Visit(func(f *flag.Flag) {
-		if err := byFlag[f.Name].assign(*values[f.Name]); err != nil {
-			failure = errors.Join(failure, fmt.Errorf("--%s: %w", f.Name, err))
-		}
-	})
-	return failure
+	return given, nil
 }
 
 // bounded is an integer setting and the inclusive range it must fall in.

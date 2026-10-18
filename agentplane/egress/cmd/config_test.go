@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -117,5 +118,19 @@ func TestADeploymentNamingNoWorkloadNamespaceIsRefused(t *testing.T) {
 				t.Fatal("ran with no usable workload namespace")
 			}
 		})
+	}
+}
+
+// The manifests render each setting under its file key, as its upper-cased environment variable
+// and as its kebab-case flag.
+func TestEverySettingIsAFileKeyAnEnvironmentVariableAndAFlag(t *testing.T) {
+	configType := reflect.TypeFor[config]()
+	for i := range configType.NumField() {
+		key := configType.Field(i).Tag.Get("yaml")
+		flag := "--" + strings.ReplaceAll(key, "_", "-") + "=value"
+		given, err := flagValues(environmentOptions(nil), []string{flag})
+		if err != nil || given[settingPrefix+strings.ToUpper(key)] != "value" {
+			t.Errorf("%s is not the flag %s: %v, %v", key, flag, given, err)
+		}
 	}
 }
