@@ -657,8 +657,8 @@ than assuming every image shares a build SHA.
    Sandbox diagnostics and the controls on desktop and phone.
 2. Inventory staging Sessions, pending Dispatches, historical receipts, journals/native histories,
    workspace and state volumes. Settle outstanding old stop commands before removing their wire
-   variant; keep settled historical receipt readers. Pause submissions and notification delivery at
-   cutover so the old and new stacks do not execute work concurrently. Preserve admitted work and
+   variant; keep settled historical receipt readers. Hold Sandbox starts and automatic wake through
+   cutover so no old runner can execute work against the changing service stack. Preserve admitted work and
    all person-authored data. Back up at a consistent boundary and verify restore in isolation before
    any persistent-format migration; do not restore an old snapshot over post-cutover writes.
 3. Keep staging Sandbox starts disabled, quiesce any remaining runners with the old stack, and verify
@@ -666,11 +666,13 @@ than assuming every image shares a build SHA.
    new starts (2026-10-17); recheck this condition immediately before cutover. Testing Sandboxes may
    be deleted/recreated under the operator's authorization. Staging Sandbox CRs, UIDs and retained
    PVCs must survive.
-4. Promote the exact tested service and template tags through GitOps with automatic promotion still
-   held. Replace affected caller replicas as a coordinated cutover; do not serve old callers against
-   the new protocol. Updating a template alone does not upgrade an already running Sandbox. Upgrade
-   every template, including suspended-only and VM templates, before allowing starts. Verify image
-   revisions, migrations and connections before reopening submissions/notifications.
+4. With zero staging runner workloads and starts held, promote the exact tested service and template
+   tags together through GitOps with automatic image promotion still held. Normal Deployment
+   rollouts are sufficient; no separate service stop or Flux suspension is needed (operator,
+   2026-10-17). Upgrade every template, including suspended-only and VM templates. Verify all new
+   service replicas, image revisions and migration gates, and wait for old service Pods to disappear
+   before allowing any Sandbox start. If runners reappear, stop promotion and quiesce them first;
+   updating a template alone does not upgrade a running Sandbox.
 5. Start existing Sessions through the new send path and prove their context is retained; perform
    the idle-suspend/send-to-wake drive after lifecycle deployment. Check exact-turn rejection and
    process/Session status. Keep the rollout incomplete until behavior is observed, not just Flux or

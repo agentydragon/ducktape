@@ -33,7 +33,10 @@ kubectl get pods -n agentplane-staging \
 Update the held `newTag` values in this directory to those tested tags, without restoring the Flux
 markers yet. The `agentplane-staging` and `agentplane-staging-delivery` Flux Kustomizations consume
 this Component from the repo source after the change reaches `devel`; no direct cluster apply is
-needed. Keep the existing Sandbox objects and their UIDs and storage. Verify the staging rollout and
+needed. With no running staging Sandboxes and starts held, use normal Deployment rollouts; no
+separate service stop or Flux suspension is needed. Update all runner templates, including the
+unused VM template, and verify the new service revisions and the absence of old service Pods before
+allowing starts. Keep the existing Sandbox objects and their UIDs and storage. Verify the staging rollout and
 the lifecycle acceptance before restoring the `:tag` markers on the held entries to resume automatic
 staging promotion.
 
