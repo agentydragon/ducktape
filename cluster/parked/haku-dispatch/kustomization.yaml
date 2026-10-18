@@ -1,5 +1,0 @@
-# State-retention tombstone for the retired Haku dispatch Flux owner.
-# Keep this empty while its suspended owner has prune=false and deletionPolicy=Orphan.
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources: []

@@ -3866,28 +3866,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  annotations:
-    description: Retired Haku dispatch owner; suspended and orphan-safe while prior state is reviewed.
-    ducktape.org/parked: "true"
-  name: haku-dispatch
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  interval: 10m
-  path: ./cluster/parked/haku-dispatch
-  prune: false
-  retryInterval: 1m
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: haku-console
   namespace: ducktape-flux
 spec:

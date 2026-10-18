@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -138,27 +134,6 @@ def gecko_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> K
         # Keep this controller paused so Flux does not recreate the empty namespace.
         suspend=True,
         timeout="2m",
-    )
-
-
-def retired_haku_dispatch_tombstone(chart: Chart) -> Kustomization:
-    """Keep the old owner's identity until its live state has a reviewed disposition."""
-    name = "haku-dispatch"
-    return flux_kustomization(
-        chart,
-        name,
-        KustomizationSpecSourceRef(
-            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
-        ),
-        annotations={"ducktape.org/parked": "true"},
-        # Dispatch source and workloads are retired. Preserve any still-inventory
-        # resources until the live CNPG state has a reviewed disposition.
-        suspend=True,
-        prune=False,
-        timeout="10m",
-        path="./cluster/parked/haku-dispatch",
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        description="Retired Haku dispatch owner; suspended and orphan-safe while prior state is reviewed.",
     )
 
 
