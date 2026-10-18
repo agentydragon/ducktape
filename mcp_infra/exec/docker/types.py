@@ -7,7 +7,6 @@ This is intentional — see assert_no_deps test in BUILD.bazel.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -120,12 +119,6 @@ class ContainerImageInfo(BaseModel):
     name: str | None = None
     id: str | None = None
     tags: list[str] | None = None
-
-
-class NetworkMode(StrEnum):
-    NONE = "none"
-    BRIDGE = "bridge"
-    HOST = "host"
 
 
 class ContainerImageHistoryEntry(BaseModel):
