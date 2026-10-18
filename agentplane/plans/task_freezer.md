@@ -11,14 +11,6 @@ in active work. See [maintenance conventions](../AGENTS.md#task-dag-maintenance)
 
 Deferred by the operator on 2026-10-10. Revisit when the operator asks.
 
-### `HARNESS_STOP_HISTORY_CLEANUP` — remove retained harness-stop records and decoder remnants
-
-Operator-requested follow-up, 2026-10-17; revisit after the runner-owned lifecycle rollout. Remove
-historical harness-stop control frames and associated command outcomes/receipts from retained
-History and runner journals while preserving conversation content and history consistency. Once
-no stored record depends on them, delete `HistoricalHarnessStop`, its oneof variant, the historical
-Dispatcher operation/receipt mapping, and the remaining decode-only references and tests.
-
 ### `WORKLOAD_AUDIENCE_RENAME` — rename the `agentplane-egress` audience
 
 `workload_auth/README.md` calls `agentplane-egress` a compatibility audience that may become

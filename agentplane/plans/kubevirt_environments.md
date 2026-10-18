@@ -24,7 +24,5 @@ arbitrary user-supplied VM specifications are out of scope.
 - **Relay lifecycle.** The relay is an ordinary container in the launcher. Check its restart and
   termination against KubeVirt's launcher monitoring before choosing between ordinary and native
   sidecar lifecycle. Never patch a live launcher.
-- **Real egress gateway.** A VM Sandbox must show credential substitution and `CONNECT`/TLS through
-  the production gateway for LLM and Action traffic, not only the control routes.
 - **Resource budgets.** Check quotas and capacity for guest RAM plus QEMU overhead, disk helpers and
   the relay, and that a guest is not scheduled on a node without KVM.

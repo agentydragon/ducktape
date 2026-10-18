@@ -274,7 +274,7 @@ flowchart TD
     SESSION_ACCESS_RULES_DESIGN --> AGENT_MESSAGING_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     HISTORY_ACCESS_AFTER_DELETION --> THREAD_READ_POLICY
-    HISTORY_ACCESS_AFTER_DELETION -. may change membership storage .-> SESSION_ACCESS_RULES
+    HISTORY_ACCESS_AFTER_DELETION -. may change collection membership storage only .-> SESSION_ACCESS_RULES
     SESSION_ACCESS_RULES --> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN --> HISTORY_SANDBOX_UID
     HISTORY_SESSION_KEY_DESIGN -. read API shape .-> THREAD_READ_POLICY
@@ -577,7 +577,15 @@ creator visibility and revocation. Use the service-reserved Session identity, no
 public UUID. Opening in an existing Sandbox grants no isolation from its other Sessions; require a
 separate Sandbox when incompatible trust or credentials are needed. Decide whether launch-and-open
 is a composition of separate grants, never an implicit read/send/launch permission. This contract
-reuse the existing Session Dispatcher durable command queue.
+reuses the existing Session Dispatcher durable command queue.
+
+Two choices this decision must make before `THREAD_CREATE_AUTHORIZATION`. First, which service an
+agent calls to open a Session and how the Dispatcher admits it: the Dispatcher's callers are a fixed
+service allowlist, so either a service holding the create grant calls it as a trusted caller, or
+`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE` lands first. Second, the Session identity rule: the
+Dispatcher keys `OpenSession` on a caller-minted `session_id` today and
+`HARNESS_IDENTITY_DESIGN` recommends keeping client-chosen globally unique public IDs, so a
+service-reserved identity changes both. Neither depends on any History key or read-policy node.
 
 ### `THREAD_CREATE_AUTHORIZATION` — implement session-create grants
 
@@ -595,7 +603,7 @@ operation also opens a session; if so, depend on `THREAD_CREATE_AUTHORIZATION` f
 
 ### `AGENT_SANDBOX_LAUNCH` — constrained agent-requested launch
 
-**Blocked on launch policy and idempotent create.** Enforce the reviewed
+**Blocked on launch policy.** Enforce the reviewed
 effective spec and delegation server-side. Test allowed and forbidden launch parameters and
 concurrent retries. Reuse the app's create path (the shared Sandbox inventory), not harness-native agent tools. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
@@ -814,7 +822,7 @@ the rest. `runner_vm.py` then carries one number and every budget follows it. Ke
 and testable rather than a magic fraction, and fail loudly if the derived value would leave the runner
 less than it needs — the dangerous state is a cap so close to guest RAM that the first over-committed
 harness hits the **global** OOM instead of being killed as an identifiable subtree, which is exactly what
-`docs/vm_sandboxes.md`'s "Resource boundary" section says these groups exist to prevent. Exit evidence:
+[VM Sandboxes § Guest resource controls](../docs/vm_sandboxes.md#guest-resource-controls) says these groups exist to prevent. Exit evidence:
 one image booted at two guest sizes reports budgets that track it, and a harness that exhausts memory
 dies inside its own subtree with the runner still answering RPCs.
 
@@ -828,7 +836,7 @@ flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
-    K3S_IMPORT_CONCURRENCY[Candidate: native containerd import and unpack concurrency]
+    K3S_IMPORT_CONCURRENCY[Blocked: needs a runtime exposing the unpack limit]
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
@@ -999,7 +1007,7 @@ and total lifecycle time including any extra image transfer/unpack cost.
 
 ### `K3S_IMPORT_CONCURRENCY` — measure native containerd import and unpack concurrency
 
-**Candidate; no worker assigned; no prerequisites.** Evaluate containerd's own concurrency
+**Blocked on an operator runtime choice.** The matched `--local` comparison (#10879) found no useful speedup and the pinned containerd cannot bound unpacking, so dispatch only if a containerd or k3s version exposing the unpack limiter is selected; otherwise delete this node. Evaluate containerd's own concurrency
 configuration against the current combined stream, preserving distinct-blob deduplication. Count
 deferred unpacking through Pod readiness so moving work later is not reported as a saving.
 The profiled tar-streaming time includes pipe backpressure; it is not a CPU-cost estimate or
@@ -1024,7 +1032,7 @@ Operator preference: eventual delivery should decouple harnesses from the runner
 narrower test images are an interim optimization. Decide delivery and service/cache ownership. Any serving service must
 respect the backend dependency rule; the integration app cannot own this path.
 
-The [image-split comparison](https://github.com/agentydragon/ducktape/blob/41c322895f/agentplane/x/k3s_env/README.md#harness-specific-runner-comparison-2026-10-16)
+The [image-split comparison](../x/k3s_env/README.md#harness-specific-runner-comparison-2026-10-16)
 measures removal of unused harness payload; it does not measure runtime delivery of a needed harness.
 Its profiles and inventories are merged in [#10813](https://github.com/agentydragon/ducktape/pull/10813) (`x/k3s_env/`); the image split itself landed in #10812.
 
@@ -1073,7 +1081,7 @@ flowchart LR
 
 ### `BUILD_BOX_BAZEL` — build Sandboxes can run Bazel
 
-**Unscheduled.** A build Sandbox cannot run Bazel: the repo's configuration uses `remote.buildbuddy.io`,
+**Unscheduled; held by the [BuildBuddy auth policy](../docs/buildbuddy_remote_auth.md): no local Bazel client in an agent container until agents have VM-backed environments, which is `LOCAL_BAZEL`'s outcome.** Decide whether to fold this node into `LOCAL_BAZEL`. A build Sandbox cannot run Bazel here: the repo's configuration uses `remote.buildbuddy.io`,
 whose gRPC dial ignores the box's HTTP proxy and times out, and it needs credentials. `agentplane/` has no
 `go.mod`, so a plain `go build` is not available either. Options: a local-only Bazel configuration for boxes,
 or a BuildBuddy route through the box's egress (the Go egress for boxes exists). The key can stay in the
@@ -1146,6 +1154,11 @@ public-coder until `PC_KUBERNETES_POLICY_SET`) stay Flux bindings. Test an allow
 and verify intended versus unrelated scope, including Role edits and credential-use boundaries,
 without recording credentials. Use [agent RBAC](../../cluster/docs/agent_rbac.md) and existing tests;
 only unresolved deployed wiring needs a live check, not a repeat of every already-covered operation.
+What no acceptance test covers yet, to check with the affected accounts' own credentials and not a production
+account: two Sandboxes sharing a set and a third with a one-off grant, adding and removing a namespace in the
+set, widening and narrowing a referenced Role, and revoking the one-off and the shared binding independently;
+deleting a Sandbox, recreating a ServiceAccount of the same name and restarting the controller; and a grant
+that fails partway, which shows in the binding's `KubernetesReady` condition while the rest still applies.
 
 ### `NOTIFICATION_INGRESS_BOUNDARY` — bounded public-route security check
 
@@ -1336,9 +1349,7 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `RUNNER_IMAGE_LAYERING_DESIGN` — what carries the runner, the harnesses and the tools
 
-**Decision; operator, 2026-10-13 and 2026-10-15 PDT.** Supersedes `SANDBOX_RUNNER_LAYERING`, which the
-operator marked "very low priority unless easy" on 2026-10-13; the 2026-10-15 framing names the property
-wanted, so re-rank this node rather than inheriting that ranking. Today one artifact carries everything,
+**Decision; operator, 2026-10-13 and 2026-10-15 PDT.** The 2026-10-15 framing names the property wanted: independent updates and RAM headroom. Today one artifact carries everything,
 so bumping the runner or a template's installed tools rebuilds and republishes the whole VM:
 `agentplane/runner/container-disk.nix` bakes the runner and both harnesses into the NixOS qcow2 that
 KubeVirt boots, and `agentplane/runner/image.nix` does the same for the Pod from a wheel pinned in
@@ -1575,7 +1586,18 @@ flowchart TD
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     RUNNER_RENAME[Decision, unscheduled: a better name than runner]
+    HARNESS_STOP_HISTORY_CLEANUP[Unscheduled: drop retained harness-stop records, needs the operator's say]
 ```
+
+### `HARNESS_STOP_HISTORY_CLEANUP` — remove retained harness-stop records and decoder remnants
+
+**Unscheduled; operator-requested follow-up, 2026-10-17. The runner-owned lifecycle rollout it waited on is
+accepted.** Removing the records deletes retained History and runner journal entries, so it stays a separate
+data-drop change that waits for the operator's say. Remove historical harness-stop control frames and
+associated command outcomes and receipts from retained History and runner journals while preserving
+conversation content and history consistency. Once no stored record depends on them, delete
+`HistoricalHarnessStop` (`proto/command.proto`), its oneof variant, the historical Dispatcher
+operation and receipt mapping, and the remaining decode-only references and tests.
 
 ### `RUNNER_RENAME` — a better name than "runner"
 
@@ -1639,7 +1661,7 @@ optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; th
 `agentplane/README.md` showing exactly the deployed services and the traffic between them in
 `cluster/cdk8s/agentplane`. Known now: the test-only `PostgresListener.wait_until_disconnected`
 (`connected` turns false before the termination callback runs, so its tests cannot wait on
-`connected` instead); egress and app test support each build a throwaway CA. Findings are fixed in
+`connected` instead); egress and app test support each build a throwaway CA; `history_service/test_evidence.py` and `test_summaries.py` still say "folded by the shadow"; `docs/operator_federation.md` says "Event & Notification Hub"; `cluster/cdk8s/agentplane/test_sandbox_service.py` is named for the retired Sandbox Service. Findings are fixed in
 PRs of their own; this node leaves with the last of them.
 
 ## 10. Runner ingress and control split
@@ -1665,8 +1687,7 @@ resumed harness or a lost push reads back) once acknowledged entries are gone, i
 ## 12. The Runner Gateway serves the runner's own service
 
 The Gateway serves `Connect` and proxies the runner's
-`Runner` service with per-method authorization; commands use Dispatcher and typed Runner RPCs. The
-Python Session wrappers, registry runtime, and database artifacts have been retired.
+`Runner` service with per-method authorization; commands use Dispatcher and typed Runner RPCs.
 
 ```mermaid
 flowchart TD
@@ -1680,7 +1701,7 @@ service caller contract. The separate destination-authority decision
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
-**Needs policy revision against the [implemented lifecycle contract](../docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle).** The runner proxy
+**Candidate; the [lifecycle contract](../docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle) is implemented and `ResumeSession` is gone from the proxy.** The runner proxy
 (`runner_gateway/gateway/proxy.go`) currently lets configured caller accounts invoke allowed Runner
 methods, except `Quiesce` (controller only). Review per-method policy for `OpenSession`,
 `SubmitInput`, model/effort changes and `InterruptTurn` against the Dispatcher-only command boundary.
@@ -1710,8 +1731,8 @@ Decision nodes do not authorize runtime changes. Detailed code paths and alterna
 **Approved transport direction (operator, 2026-10-15 UTC):** gRPC for internal APIs,
 gRPC-Gateway for the generated HTTP/JSON facade, and an ergonomic CLI, adopted incrementally by
 service and interface. Use JSON server streams for watches/waits and native gRPC for full duplex.
-Facade integration, individual service migrations, and the CLI workflow contract remain separate work
-items below; this direction does not authorize runtime changes.
+Individual service migrations and the CLI workflow contract remain separate work items below, and the
+HTTP/JSON facade is built per service inside each migration; this direction does not authorize runtime changes.
 
 ```mermaid
 flowchart LR
@@ -1719,7 +1740,7 @@ flowchart LR
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
-    RUNNER_STORE_SESSION_IDENTITY[Candidate: implement reviewed private mapping]
+    RUNNER_STORE_SESSION_IDENTITY[Blocked: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
     IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive, section 7]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
@@ -1782,7 +1803,7 @@ contract, if selected, remains online-only and does not wake suspended Sandboxes
 mode remains the owner of wake-to-deliver.
 
 The existing `agentplane/x/k3s_env` suite already runs without the CNPG operator, KubeVirt, Cilium or cert-manager,
-against one plain PostgreSQL Deployment and the Go Gateway; this node is about removing the PostgreSQL dependency
+against one plain PostgreSQL Deployment and the Runner Gateway; this node is about removing the PostgreSQL dependency
 itself. Direct admission and new sender grants remain separate decisions.
 
 ### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign destination validation and send permission
@@ -1910,15 +1931,11 @@ one-versus-many store or shared-store safety decision is made here.
 Feed the reviewed process-diagnostic shape into
 [`RUNNER_HARNESS_OBJECTS_DESIGN`](#runner_harness_objects_design--decide-process-diagnostics-and-placement-policy).
 The approved public address lets destination migration proceed once its authority and locator are
-reviewed; private runner mapping can be implemented independently. This decision does not block
-Dispatcher/Gateway Go unification planning. A unified service may preserve today's wire first and
-consume the approved public address later. Neither
-design node authorizes runtime changes.
+reviewed; private runner mapping can be implemented independently. Neither design node authorizes runtime changes.
 
 ### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping
 
-**Requires review of the private mapping contract; independent of
-Go unification.** Add runner-owned durable store IDs, exact Sandbox
+**Blocked on review of the private mapping contract (`HARNESS_IDENTITY_DESIGN`).** Add runner-owned durable store IDs, exact Sandbox
 UID binding, public Session
 reservations and native-ID mappings using a new migration rather than editing landed state formats.
 Implement adapter-internal process selection, restart/resume and store write fencing; a process

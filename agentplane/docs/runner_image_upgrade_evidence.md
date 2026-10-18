@@ -34,5 +34,5 @@ operator-supervised manual Codex upgrades.
 The operator performed the mutation with `kubectl patch --type=json`; the
 current `kubernetes_admin` MCP tool only offers full server-side apply for
 general resources. Its `resources_get` response masks the Sandbox Secret
-volume reference, so reapplying that result is unsafe. The task DAG tracks a
-narrow, operator-approved JSON Patch Action as a follow-up.
+volume reference, so reapplying that result is unsafe. A narrow, operator-approved JSON Patch
+Action is the intended follow-up.

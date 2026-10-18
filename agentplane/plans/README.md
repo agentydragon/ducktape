@@ -29,8 +29,6 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   cheaper route
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
-- [Kubernetes grants through PolicySets](kubernetes_rbac_groups.md) — accounts without a
-  Sandbox, dropping the old policy kinds, and the verification still owed on a deployed environment
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
   DAG node names; the design is [VM Sandboxes](../docs/vm_sandboxes.md)
 - [User stories](user_stories.md) — north-star product context, not an implementation queue

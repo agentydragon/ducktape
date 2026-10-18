@@ -20,7 +20,7 @@ an MCP approval gateway for any MCP-capable LLM product.
   sandbox and journal what they do.
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.
 - [Policy Controller](policy_controller/README.md): expires `PolicyBinding`s and keeps the
-  RoleBindings they grant. Runs on staging and `agentplane-testing`; only Flux writes `PolicyBinding`s yet.
+  RoleBindings they grant. Runs on staging and `agentplane-testing`.
 - [Sandbox Controller](sandbox_controller/README.md): reconciles `Sandbox` into its ServiceAccount,
   `PolicyBinding`, state PVC and Pods or a KubeVirt VM (VMs on staging and `agentplane-testing`).
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
@@ -301,8 +301,7 @@ These direct links are also available in Markdown views that do not:
 
 The integration app writes Sandbox desired state and operator grants through the Kubernetes API;
 the Sandbox Controller reconciles those requests and owns `Sandbox.status`. Notifications and the
-Runner Gateway read Sandbox inventory directly. The Sandbox Service Deployment, API and server
-source are retired; the History Service retains its database and authored history.
+Runner Gateway read Sandbox inventory directly.
 
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its
   conversation view, folded by the History Service. Every runner pushes its Events to the History
@@ -317,14 +316,12 @@ source are retired; the History Service retains its database and authored histor
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
   `sandbox_service` (Session history,
   written by the History Service), `actions`, `egress`, `notifications` and `session_dispatcher`.
-  The History Service retains the existing `sandbox_service` database; no database or authored
-  history is removed with the Sandbox Service Deployment. The history and Dispatcher databases are drawn.
+  The History Service owns the `sandbox_service` database. The history and Dispatcher databases are drawn.
 - **Sandbox lifecycle and runner control.** The app writes requested Sandbox state and operator
   grants to Kubernetes; the Sandbox Controller reconciles resources and owns status. The Runner Gateway
   implements Dispatcher Session openings and durable command admission/delivery alongside its runner
   control stream and authorized live runner access. The app reads
-  current runner inventory and explicitly resumes a retained harness through the Sandbox control
-  Service, with the Runner Proxy checking the live Sandbox name, UID and owner. Its queue uses the existing Dispatcher database; the Gateway has no separate registry database. The controller holds deletion until the runner has sealed its Sessions through the Gateway.
+  current runner inventory and diagnostics through the Runner Proxy, which checks the live Sandbox name, UID and owner; the Runner starts and resumes its own harnesses. The Gateway's queue uses the existing Dispatcher database; the Gateway has no separate registry database. The controller holds deletion until the runner has sealed its Sessions through the Gateway.
 
 Status, open work and design gates: [`plans/`](plans/README.md).
 

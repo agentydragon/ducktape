@@ -60,8 +60,8 @@ substitutes that Sandbox SA's identity for `kubectl` requests. The workload rece
 placeholder kubeconfig, not the token. Kubernetes enforces the resulting SA's RBAC.
 
 [Agent RBAC](../../cluster/docs/agent_rbac.md#agentplane-managed-sandbox-grants) documents the
-implemented grant catalog, launch-time resolution and binding ownership. Runtime additions and
-removals of a Sandbox SA's grants are the open [RBAC grant-group design](kubernetes_rbac_groups.md).
+implemented grant catalog, launch-time resolution and binding ownership, and the
+[PolicySet design](../docs/adr_policy_sets.md) covers runtime grant changes.
 
 External OAuth Haku continues to use its static `claude-ai` caller through MCP-created
 sandboxes. It runs `kubectl` from that sandbox; no OAuth-to-Kubernetes gateway is part

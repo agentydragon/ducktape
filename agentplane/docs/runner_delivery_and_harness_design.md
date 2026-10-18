@@ -380,7 +380,7 @@ facade and CLI; a transport conversion must not weaken a service's existing perm
 Agent tooling should support both concise commands and composable JSON for listing Action groups and
 Actions, inspecting an Action schema, reading the authenticated caller's own Action status/results,
 waiting for completion, and subscribing to or cancelling GitHub PR notifications. The detailed CLI
-contract remains a separate DAG item. No runtime API or CLI implementation is authorized by this
+contract is separate work. No runtime API or CLI implementation is authorized by this
 direction alone.
 
 ## Harness process, store and Session identity
@@ -731,5 +731,5 @@ Dispatcher queue is not part of a tier that omits PostgreSQL.
 Cover both Pod and VM runner paths, with test ingress where a tested flow needs it. VM coverage must
 boot a real supported VM fixture: the existing k3s suite does not install KubeVirt and therefore
 exercises only Pod Sandboxes, not VM execution. Keep the test-tier design and
-implementation as a separate DAG item, gated on the reviewed execution-persistence contract and
+implementation are separate work, gated on the reviewed execution-persistence contract and
 the real VM fixture prerequisite.
