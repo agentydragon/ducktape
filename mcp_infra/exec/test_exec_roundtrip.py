@@ -9,9 +9,9 @@ import pytest_bazel
 from fastmcp.client import Client
 
 from agent_core.agent import Agent, AgentResult
-from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
+from agent_core.testing.handlers import FinishOnTextMessageHandler
 from agent_core.testing.responses import DecoratorMock, tool_roundtrip
 from openai_utils.model import UserMessage
 from util.exec.models import BaseExecResult, Exited

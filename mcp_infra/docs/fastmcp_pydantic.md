@@ -63,6 +63,7 @@ Pydantic `BaseModel` return type for structured data.
 
 ## Typed clients and display
 
-`TypedClient.from_server` and `extract_tool_input_schemas` derive Pydantic input
+For tests, `TypedClient.from_server` and
+`mcp_infra.testing.tool_schemas.extract_tool_input_schemas` derive Pydantic input
 models from each native `FunctionTool` signature. This keeps typed test clients
 and rich input rendering available without a custom FastMCP `Tool` subclass.

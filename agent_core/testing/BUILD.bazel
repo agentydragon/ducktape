@@ -7,9 +7,21 @@ py_library(
     srcs = ["fixtures.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":handlers",
         "//agent_core:events",
         "//agent_core:handler",
         "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "handlers",
+    srcs = ["handlers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
     ],
 )
 

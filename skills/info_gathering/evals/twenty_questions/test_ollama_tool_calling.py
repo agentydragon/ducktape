@@ -10,8 +10,8 @@ import pytest_bazel
 from pydantic import BaseModel, ConfigDict
 
 from agent_core.agent import Agent
-from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
+from agent_core.testing.handlers import FinishOnTextMessageHandler
 from agent_core.testing.responses import DecoratorMock
 from openai_utils.model import UserMessage
 from skills.info_gathering.evals.twenty_questions.direct_provider import DirectToolProvider

@@ -1,5 +1,23 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+py_library(
+    name = "naming",
+    testonly = True,
+    srcs = ["naming.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "tool_schemas",
+    testonly = True,
+    srcs = ["tool_schemas.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
 # Docker fixtures that depend on debian-slim OCI image
 # Only include in tests that actually need Docker execution
 py_library(

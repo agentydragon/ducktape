@@ -7,7 +7,8 @@ from collections.abc import Callable
 import pytest
 
 from agent_core.events import AssistantText, SystemText, ToolCall, ToolCallOutput, UserText
-from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
+from agent_core.handler import BaseHandler
+from agent_core.testing.handlers import FinishOnTextMessageHandler
 
 
 class RecordingHandler(BaseHandler):

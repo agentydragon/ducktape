@@ -4,7 +4,7 @@
 
 ## MCP Conventions
 
-- **Naming**: use `build_mcp_function(server, tool)` from `mcp_infra.naming`. No hard-coded `server_tool` strings.
+- **Test naming**: use `build_mcp_function(server, tool)` from `mcp_infra.testing.naming` when tests construct namespaced MCP tool names. Avoid hard-coded `server_tool` strings in those tests.
 - **Error handling**: do not wrap tool bodies in broad try/except. Uncaught exceptions become MCP errors (`isError=true`). Prefer Pydantic models for inputs/outputs.
 - **Typing**: convert loose external API objects at the boundary so internal code sees a single concrete type. Centralize boundary conversions.
 - **Server state**: constructors accept per-agent state (no globals/singletons). Keep mutable state scoped to the server instance.

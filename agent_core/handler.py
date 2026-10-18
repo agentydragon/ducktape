@@ -6,7 +6,7 @@ This module defines the BaseHandler interface and core handlers.
 from __future__ import annotations
 
 from agent_core.events import ApiRequest, AssistantText, Response, SystemText, ToolCall, ToolCallOutput, UserText
-from agent_core.loop_control import Abort, InjectItems, LoopDecision, NoAction
+from agent_core.loop_control import InjectItems, LoopDecision, NoAction
 from openai_utils.model import ReasoningItem, UserMessage
 
 
@@ -84,95 +84,6 @@ class BaseHandler:
             compacted: True if compaction succeeded, False if skipped
         """
         return
-
-
-class FinishOnTextMessageHandler(BaseHandler):
-    """Abort the agent loop when assistant sends a text message.
-
-    Used for interactive scenarios where each agent.run() should complete
-    after the assistant responds with text (allowing user to respond).
-
-    Usage:
-        handlers = [FinishOnTextMessageHandler(), ...]
-        agent = await Agent.create(..., handlers=handlers, tool_policy=AllowAnyToolOrTextMessage())
-        while True:
-            user_input = get_user_input()
-            agent.process_message(UserMessage.text(user_input))
-            await agent.run()  # Returns after assistant sends text
-    """
-
-    def __init__(self):
-        self._text_detected = False
-
-    def on_assistant_text_event(self, evt: AssistantText) -> None:
-        """Mark that assistant text was detected."""
-        self._text_detected = True
-
-    def on_before_sample(self) -> LoopDecision:
-        """Abort if assistant sent text in the previous turn."""
-        if self._text_detected:
-            self._text_detected = False
-            return Abort()
-        return NoAction()
-
-
-class CaptureTextHandler(BaseHandler):
-    """Capture assistant text and abort loop for conversational sub-agents.
-
-    Unlike FinishOnTextMessageHandler which just aborts, this handler captures
-    the text so it can be retrieved after run() completes. Used for sub-agents
-    that exchange messages with their parent agent.
-
-    Usage:
-        handler = CaptureTextHandler()
-        handlers = [handler, ...]
-        agent = await Agent.create(..., handlers=handlers, tool_policy=AllowAnyToolOrTextMessage())
-
-        agent.process_message(UserMessage.text("Do something"))
-        await agent.run()  # Returns after assistant sends text
-        response = handler.take()  # Get captured text, clears state
-
-        agent.process_message(UserMessage.text("Do more"))
-        await agent.run()
-        response = handler.take()
-    """
-
-    def __init__(self) -> None:
-        self._captured: str | None = None
-        self._text_detected = False
-
-    def on_assistant_text_event(self, evt: AssistantText) -> None:
-        """Capture assistant text and mark for abort."""
-        self._captured = evt.text
-        self._text_detected = True
-
-    def on_before_sample(self) -> LoopDecision:
-        """Abort if assistant sent text in the previous turn."""
-        if self._text_detected:
-            self._text_detected = False
-            return Abort()
-        return NoAction()
-
-    def take(self) -> str:
-        """Return captured text and clear state for next run.
-
-        Returns:
-            The captured assistant text.
-
-        Raises:
-            ValueError: If no text was captured (agent may have hit max turns
-                or aborted for another reason).
-        """
-        if self._captured is None:
-            raise ValueError("No text captured (agent may have exited before producing text)")
-        text = self._captured
-        self._captured = None
-        return text
-
-    @property
-    def has_text(self) -> bool:
-        """Check if text was captured without consuming it."""
-        return self._captured is not None
 
 
 class RedirectOnTextMessageHandler(BaseHandler):

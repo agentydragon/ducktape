@@ -10,7 +10,7 @@ py_test(
         ":config",
         ":conftest",
         "//:conftest",
-        "//mcp_infra:naming",
+        "//mcp_infra/testing:naming",
         "//openai_utils:model",
         "//openai_utils:types",
         "//x/inop/engine:models",

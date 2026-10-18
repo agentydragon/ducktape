@@ -8,8 +8,8 @@ from hamcrest import all_of, assert_that, has_item, has_properties, instance_of,
 
 from agent_core.agent import Agent
 from agent_core.events import AssistantText, SystemText, UserText
-from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
+from agent_core.testing.handlers import FinishOnTextMessageHandler
 from agent_core.testing.matchers import assert_items_include_instances
 from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME, EchoInput
 from agent_core.testing.mcp.responses import EchoMock

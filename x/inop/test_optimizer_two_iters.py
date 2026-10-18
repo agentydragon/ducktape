@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from mcp_infra.naming import build_mcp_function
+from mcp_infra.testing.naming import build_mcp_function
 from openai_utils.model import FunctionToolParam, OpenAIModelProto, ResponsesRequest
 from openai_utils.types import ReasoningEffort
 from x.inop.config import (

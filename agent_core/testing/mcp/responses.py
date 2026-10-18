@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME, EchoInput, EchoOutput
 from agent_core.testing.responses import DecoratorMock, PlayGen, ResponsesFactory, tool_roundtrip
 from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.naming import build_mcp_function
+from mcp_infra.testing.naming import build_mcp_function
 from openai_utils.model import FunctionCallItem, ResponsesRequest
 from util.exec.models import BaseExecResult
 

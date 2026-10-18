@@ -18,9 +18,10 @@ from pydantic import BaseModel
 
 from agent_core.agent import Agent, _sanitize_tool_result
 from agent_core.events import ToolCall, ToolCallOutput
-from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
+from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, InjectItems, RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
+from agent_core.testing.handlers import FinishOnTextMessageHandler
 from agent_core.testing.matchers import assert_function_call_output_structured, tool_call_with_error_text
 from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME
 from agent_core.testing.responses import DecoratorMock, ResponsesFactory

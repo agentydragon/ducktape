@@ -17,7 +17,7 @@ py_library(
     srcs = ["typed_stubs.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra:tool_schemas",
+        "//mcp_infra/testing:tool_schemas",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],

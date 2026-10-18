@@ -10,7 +10,7 @@ from fastmcp.server import FastMCP
 from fastmcp.tools.function_tool import FunctionTool
 from pydantic import BaseModel, TypeAdapter
 
-from mcp_infra.tool_schemas import input_model_for_tool
+from mcp_infra.testing.tool_schemas import input_model_for_tool
 
 
 class ToolStub[T_Out]:

@@ -5,8 +5,8 @@ py_test(
     srcs = ["test_fastmcp_native_tools.py"],
     deps = [
         ":conftest",
-        ":tool_schemas",
         "//:conftest",
+        "//mcp_infra/testing:tool_schemas",
         "//mcp_infra/testing/stubs:typed_stubs",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
@@ -50,12 +50,6 @@ py_library(
 )
 
 py_library(
-    name = "naming",
-    srcs = ["naming.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
     name = "request_scoped_openapi",
     srcs = ["request_scoped_openapi.py"],
     visibility = ["//:__subpackages__"],
@@ -85,16 +79,6 @@ py_library(
     srcs = ["static_bearer.py"],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//starlette"],
-)
-
-py_library(
-    name = "tool_schemas",
-    srcs = ["tool_schemas.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
-    ],
 )
 
 py_library(
