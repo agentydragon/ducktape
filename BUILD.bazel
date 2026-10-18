@@ -17,7 +17,6 @@
 # gazelle:exclude nix/nixos
 # gazelle:exclude tgarchive
 # gazelle:exclude x/domains
-# gazelle:exclude x/ember_evals
 # gazelle:exclude x/local_llm
 
 # gazelle:python_root
