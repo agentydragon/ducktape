@@ -1408,11 +1408,13 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     stop = command_pb2.Command(command_id="input-for-offline", submit_input=command_pb2.SubmitInput(text="archive me"))
     admitted = await _submit_input(replicas.survivor, thread, stop.command_id, stop.submit_input.text)
     await model.reply(await model.request(), Text("archived"))
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+    # Sending the model response can finish before the runner observes even the turn's start.
+    async with (
+        asyncio.timeout(10),
+        aclosing(follow(event_logs, database_updates.changes[Channel.THREADS], thread, after_cursor=0)) as frames,
     ):
-        with attempt:
-            assert not runner.sessions[str(thread)].active_turn_id
+        completed = await read_until(frame_lines(frames), "turnCompleted")
+        assert completed[-1].data["event"]["turnCompleted"]["status"] == "TURN_STATUS_COMPLETED"
     await runner.sessions[str(thread)].shutdown()
     async with aclosing(
         follow(replicas.survivor_event_logs, replicas.survivor_changes, thread, after_cursor=0)
