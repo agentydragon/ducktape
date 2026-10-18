@@ -223,7 +223,7 @@ enforced at `CONNECT`, before TLS — so this is an integrity and observability 
 not an escape.
 
 Cheap detector, since every request already transits an intercepting proxy —
-iron-proxy for `public-coder-agent`, mitmproxy for the Haku zones. The proxy sees
+iron-proxy for `public-coder-agent`, mitmproxy in the retired Haku zones. The proxy sees
 which client connections skip verification, and `-k`/`sslVerify=false` appearing in
 an agent's command history is a reliable signal that some control has broken. Worth
 alerting on rather than discovering by reading transcripts weeks later.

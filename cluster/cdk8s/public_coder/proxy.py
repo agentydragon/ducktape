@@ -1,7 +1,7 @@
 """The public-coder-agent egress proxy, and the holder of its mediated credentials.
 
-Deviation from agents/haku-zones-mitmproxy, which this used to mirror: it runs iron-proxy
-rather than mitmproxy, because it now does two jobs. It is still the TLS-intercepting forward
+The retired Haku worker-zone proxy used mitmproxy. This runs iron-proxy instead because it
+does two jobs: it is the TLS-intercepting forward
 proxy, and it additionally swaps a placeholder for the real credentials on the way out, so the
 agent container does not hold them. mitmproxy could do that too, through an addon we wrote and
 tested; iron-proxy was chosen because the substitution is a maintained project's product rather

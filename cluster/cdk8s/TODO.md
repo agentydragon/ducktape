@@ -125,10 +125,3 @@ and [ValidatingAdmissionPolicy CEL inputs](https://kubernetes.io/docs/reference/
 A second Haku deployment may justify Environment props. Namespace-default charts may
 help a purely namespaced component, but splitting mixed-scope charts solely to omit
 `namespace=` from each object's `ApiObjectMetadata` is not scheduled.
-
-## Parked
-
-`haku/x/dispatch` still duplicates its model roster between `zones.yaml` and its
-workers-LiteLLM generator. Derive both when the package is revived. Other project-owned
-raw deployment packages are listed in the remainder backlog; file presence does not
-establish live deployment.

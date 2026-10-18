@@ -23,8 +23,7 @@ filegroup(
 
 # Just the central ClusterPolicy manifests, so a per-policy test is not
 # invalidated by every unrelated manifest in the cluster (same reasoning as the
-# contract filegroups in //cluster/k8s). The retired Haku zone injector lives with its
-# package under //haku/x/zones/deploy and is intentionally outside this active filegroup.
+# contract filegroups in //cluster/k8s).
 filegroup(
     name = "kyverno_policy_files",
     srcs = ["generated/kyverno/policies/policies.k8s.yaml"],

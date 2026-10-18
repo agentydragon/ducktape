@@ -169,8 +169,7 @@ def check_sops_decryption_blocks(cluster: ParsedCluster, repo_root: Path) -> lis
 
 def check_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> list[str]:
     """No Cilium policy rule `enforces_nothing`. The fleet rules refuse a generated one at
-    synth; this holds hand-written policies (`haku/x/dispatch/deploy`'s) and anything a kustomize
-    patch changes after synth."""
+    synth; this holds hand-written policies and anything a kustomize patch changes after synth."""
     errors = []
     for origin, resource in _rendered_or_source_resources(cluster):
         if not isinstance(resource, CiliumPolicyResource):

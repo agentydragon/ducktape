@@ -1,9 +1,11 @@
 # Kitchen/household-stocking subagent
 
-**Status: undesigned — this doc is the first pass, from the operator's own framing
+**Status: superseded for implementation — this doc is the first pass, from the operator's own framing
 (2026-07-11).** Nothing here is built. It fleshes out the "Deferred: grocery-order
 bounded-write MCP" line in <../archive/2026_08_multi_agent.md> into a fuller shape; that
-line's intent is a building block of this plan, not a separate thing.
+line's intent is a building block of this plan, not a separate thing. The dispatch service
+and worker zones described below have been removed. Any implementation needs a new runner
+and an independently reviewed trust and egress boundary.
 
 ## Goal
 
@@ -20,56 +22,36 @@ Operator's framing: something collects what changed since the subagent's last ru
 Grocy, and possibly other sources) and decides whether to trigger; when it does trigger, it
 processes the whole batch of changes at once rather than reacting edit-by-edit.
 
-**Implementation note:** `haku/x/dispatch/app.py` is Haku-initiated only — `POST /jobs` (Haku's
-own bearer token), with no externally-triggered job creation path. The plane is **still in the
-tree** (`haku/x/dispatch/`, wired at `haku/x/dispatch/deploy/`) but **not deployed**: its
-root Flux registration is suspended, and its deployment package has no active child
-`flux-kustomization.yaml` registrations. Its design note has moved to
-<../archive/2026_08_multi_agent.md>. So option (1) below reuses code that exists and a
-service that does not currently run.
+**Implementation note:** the former dispatcher had a Haku-initiated job API, but its
+service, deployment, and worker-zone source have been removed. Neither batching option
+below has an existing job runner to call.
 Sensors (`changedetection.io` → webhook → `haku-state intake/`) are step 6 in
 `2026_08_multi_agent.md`'s build order and not built; even once they exist, they land findings in
 Haku's own intake for Haku to act on, not a direct dispatch trigger.
 
-Two ways to get the "batch since last run" behavior without waiting on sensor infra:
+Two trigger shapes for the "batch since last run" behavior remain possible, but each needs
+an execution model:
 
-1. **Haku-initiated batching (no new code, but the plane has to be running):** each Haku pass reads
-   Grocy's `stock_log` since a bookmark (exactly what `kitchen/grocy_log.py` already does), and when
-   there's a nonempty delta, Haku itself calls `POST /jobs` with the batch as the prompt. This
-   reuses 100% of existing dispatch-plane machinery; the "trigger decision" just lives in
-   Haku's own run cadence rather than a standalone watcher. What it is not free of, per the note
-   above, is redeploying that plane.
+1. **Haku-initiated batching:** each Haku pass reads Grocy's `stock_log` since a bookmark
+   (exactly what `kitchen/grocy_log.py` already does) and handles a nonempty delta in its own
+   run. This avoids a separate watcher but is not an isolated subagent; adding a worker
+   still requires a new runner.
 2. **A real collector/watcher (new infra):** a small always-on or cron-triggered component
    polls Grocy's `stock_log` (or a webhook, if Grocy has one — unverified) independent of
-   Haku's own run cadence, and calls `POST /jobs` directly once it has a batch worth acting on.
-   This is closer to the operator's framing ("something... can tell us whether we should
-   trigger") but needs a place to run (a CronJob in `haku-sandbox` is the obvious fit — Haku
-   already has full CRUD there) and its own bookmark storage (could reuse
+   Haku's own run cadence, then invokes a newly selected runner once it has a batch worth
+   acting on. It also needs a place to run and its own bookmark storage (could reuse
    `haku-state`'s `kitchen/board.yaml:grocy_bookmark`, or keep its own).
 
-Start with (1) — it is the cheaper of the two once the plane is up — and only build (2) if
-latency (Haku's own run cadence isn't tight enough) turns out to matter.
+Choose between them after selecting the runner and trust boundary; the trade-off is Haku's
+own run cadence versus separate watcher infrastructure.
 
 ## Zone / trust fit
 
-Operator's framing: "low sensitivity... run this one easily with z.ai." The former Haku
-zai zone's admission policy was **"public-by-construction" prompts only** — the
-bar today is about the _prompt_ being safe to leak, not just "low sensitivity" in a general
-sense. Household pantry contents aren't secret, but they're also not obviously
-public-by-construction the way a public-repo doc audit is. Two live options if zai's actual
-classifier turns out to be stricter than this task fits:
-
-- **The oai zone** (moderate trust, described but only partially built per `2026_08_multi_agent.md`'s
-  step 5) explicitly allows "project/calendar-shaped facts, coarse finances" — household
-  stock/shopping data fits comfortably there even if it doesn't clear zai's bar.
-- **A local model** (`../x/dispatch/local_dispatch_zone.md`, fully designed, nothing landed) sidesteps the
-  question — no data leaves the cluster at all, and the operator explicitly floated this
-  ("maybe even a local model, IDK — we would need to actually measure that").
-
-Whichever zone, the workload doesn't need real-time responsiveness (option 1 above ties it
-to Haku's run cadence anyway), so it's a good first real workload for whichever
-lower-cost lane ends up cleared for it — including being the forcing case that gets the oai
-zone or the local zone from "designed" to "built."
+The operator framed this as low sensitivity and suitable for z.ai. The former worker-zone
+policy required prompts to be public-by-construction; household pantry contents do not
+obviously meet that bar. Those worker zones no longer exist, so this proposal cannot rely
+on their model allowlists or egress controls. Any future worker runtime must establish its
+own data policy, model route, and egress boundary before handling household information.
 
 ## Write surface: needs a bounded-write MCP, not the existing grocy_mcp server as-is
 
@@ -78,7 +60,7 @@ zone or the local zone from "designed" to "built."
 permissions via Authentik identity passthrough (`mcp_infra/authentik_auth`) — there is no
 service-account/API-key path and no read-only-vs-read-write split at the tool level. That's
 the right shape for an operator-driven Haku session, but it's the wrong
-shape to hand directly to a low-trust dispatch-plane worker: the full tool surface includes
+shape to hand directly to a low-trust worker: the full tool surface includes
 `product_delete` (irreversible), arbitrary `entities_create/update/delete`, and no per-op
 allowlist.
 
@@ -90,7 +72,7 @@ kitchen-stocking-subagent write surface probably wants: `stock_add` / `stock_con
 `entities_delete`, or raw `entities_create` on arbitrary types. Whether that's a genuinely
 separate bounded-write MCP deployment or a scoped credential + tool-allowlist in front of
 the existing server is an open implementation question; the trust requirement (no
-irreversible ops reachable by a zai/oai-tier worker) is the fixed point.
+irreversible ops reachable by a future lower-trust worker) is the fixed point.
 
 ## Model selection: the existing Grocy eval harness is already set up for this
 

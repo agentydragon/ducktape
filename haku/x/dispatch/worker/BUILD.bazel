@@ -1,9 +1,0 @@
-# The worker image itself is a Dockerfile build (npm CLIs — see Dockerfile and
-# .github/workflows/haku-zone-worker-image.yml); this target exists so the
-# entrypoint gets lint/type coverage like any other Python in the repo.
-load("//devinfra/python:defs.bzl", "py_library")
-
-py_library(
-    name = "entrypoint",
-    srcs = ["entrypoint.py"],
-)

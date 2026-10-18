@@ -354,22 +354,6 @@ py_test(
 )
 
 py_test(
-    name = "test_haku_dispatch_zones_contract",
-    srcs = ["test_haku_dispatch_zones_contract.py"],
-    data = [
-        "//cluster/k8s:kustomization.yaml",
-        "//haku/x/dispatch/deploy:manifests",
-    ],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//haku/x/dispatch:config",
-        "//haku/x/dispatch/deploy/litellm:generate_workers_litellm",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_rotations_config",
     srcs = ["test_rotations_config.py"],
     data = [

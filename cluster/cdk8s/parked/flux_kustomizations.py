@@ -141,7 +141,8 @@ def gecko_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> K
     )
 
 
-def haku_dispatch(chart: Chart, cnpg: Kustomization, external_secrets_operator: Kustomization) -> Kustomization:
+def retired_haku_dispatch_tombstone(chart: Chart) -> Kustomization:
+    """Keep the old owner's identity until its live state has a reviewed disposition."""
     name = "haku-dispatch"
     return flux_kustomization(
         chart,
@@ -150,13 +151,14 @@ def haku_dispatch(chart: Chart, cnpg: Kustomization, external_secrets_operator: 
             kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
         ),
         annotations={"ducktape.org/parked": "true"},
-        # Haku dispatch is intentionally parked. Flip this to false only when the
-        # worker-zone and provider wiring has been deliberately restored.
+        # Dispatch source and workloads are retired. Preserve any still-inventory
+        # resources until the live CNPG state has a reviewed disposition.
         suspend=True,
+        prune=False,
         timeout="10m",
-        path="./haku/x/dispatch/deploy",
-        deletion_policy=KustomizationSpecDeletionPolicy.WAIT_FOR_TERMINATION,
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator),
+        path="./cluster/parked/haku-dispatch",
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        description="Retired Haku dispatch owner; suspended and orphan-safe while prior state is reviewed.",
     )
 
 

@@ -230,7 +230,7 @@ Kustomizations: admitting the HelmRelease does not install its CRDs synchronousl
 
 An app whose source ducktape does **not** own — a third-party image, Helm chart, or
 tool, as opposed to `<project>/deploy/`-pattern code like `props/deploy/`,
-`loom/wayback/deploy/`, `haku/x/dispatch/deploy/` — moves entirely to
+`loom/wayback/deploy/` — moves entirely to
 `cluster/parked/<name>/` when decommissioned or suspended indefinitely. Keep the
 layout it already had (flat, or `namespace/`/`db/`/`app/`/etc.). By default, its Flux
 Kustomization remains in the central chart with `spec.suspend: true` and

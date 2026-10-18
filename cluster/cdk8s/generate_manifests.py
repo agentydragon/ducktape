@@ -1627,7 +1627,7 @@ def generate_manifests(root: Path) -> None:
         ),
         agentplane_testing_kustomization,
     )
-    parked_flux_kustomizations.haku_dispatch(flux_chart, cnpg_kustomization, external_secrets_operator_kustomization)
+    parked_flux_kustomizations.retired_haku_dispatch_tombstone(flux_chart)
     haku_console_artifact = artifact("haku-console", haku_charts.PATH)
     haku_console_kustomization = haku_charts.haku_console(
         flux_chart,

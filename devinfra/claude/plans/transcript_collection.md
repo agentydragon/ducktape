@@ -79,7 +79,7 @@ slug). All intelligence is sink-side, so clients never change:
 access can read the sink's entire PVC**, i.e. all sources' transcripts. Acceptable
 within the current trust tier — all shippers are the operator's own Anthropic-harness
 agents, and transcripts of any of them are operator-sensitive-class anyway. Two hard
-lines: (1) worker-zone agents (zai/oai) get **no** kube credential by construction and
+lines: (1) any future lower-trust worker agents get **no** kube credential by construction and
 must never be granted this Role; (2) the sink pod carries no secrets and does nothing
 but receive, so exec access ≈ transcript-read access, nothing more. If tier-splitting
 is ever wanted, run per-tier sink pods in separate namespaces — additive, no client

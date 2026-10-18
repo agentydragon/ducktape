@@ -21,7 +21,6 @@ The findings below distinguish confirmed current divergence from latent extensio
 The highest-priority findings are:
 
 - frontend argument schemas already reject valid FastMCP calls and make custom previews fall back to raw JSON;
-- the dispatch database and Kubernetes independently model job lifecycle, producing reversible terminal states and orphaned Secrets;
 - long-lived runtimes refresh repositories at process startup rather than at the wake boundary;
 - console OAuth recreates part of the MCP SDK flow and has already missed a current-protocol `resource` branch;
 - OAuth status, refresh, and execution independently derive token state and can contradict or overwrite one another;
@@ -30,39 +29,6 @@ The highest-priority findings are:
 The common remedy is not simply more unit tests. The recreated behavior should be removed, generated from the owner, or covered by a parity/contract test that compares the recreation directly to the owner.
 
 ## Confirmed current divergence
-
-### B. Dispatch database state recreates Kubernetes Job lifecycle incompletely
-
-Severity: high
-
-Owner:
-
-- Kubernetes Job deadline and TTL in `haku/x/dispatch/deploy/job-template.yaml:18-21`
-
-Recreation:
-
-- `JobStatus` in `haku/x/dispatch/models.py:9-13`
-- result and kill transitions in `haku/x/dispatch/db.py:103-111`
-- result and delete endpoints in `haku/x/dispatch/app.py:165-190`
-
-Observed divergences:
-
-- deadline expiry, eviction, OOM, pod startup failure, or a failed result POST leaves the database row permanently `created`; there is no Job watcher or reconciler;
-- a result arriving after an explicit kill is accepted because result submission checks only whether `row.result` exists, then overwrites `killed` with `completed` or `failed`;
-- the same-named per-job Secret has no owner reference (`haku/x/dispatch/k8s_jobs.py:43-49`);
-- normal completion does not delete the Secret or revoke the LiteLLM key; cleanup exists only on explicit kill (`haku/x/dispatch/k8s_jobs.py:93-102`).
-
-The documented SQL source of truth can therefore lie, terminal states are reversible, and Secrets containing prompts and tokens accumulate after Job TTL cleanup.
-
-Consolidation:
-
-- define one explicit dispatcher-owned terminal-state machine;
-- reconcile Kubernetes Job conditions into it;
-- reject every terminal-state regression;
-- revoke keys and remove companion Secrets on every terminal path; and
-- owner-link or reconcile the Secret lifecycle.
-
-Required tests: timeout/no-result, eviction/start failure, normal-completion cleanup, and kill followed by a late result.
 
 ### C. Repository freshness is implemented at process startup instead of the wake boundary
 
@@ -149,29 +115,6 @@ Consolidation:
 
 Test refresh-versus-refresh and refresh-versus-reconnect interleavings.
 
-### H. Credential lint recreates the credential catalog but misses Haku's own formats
-
-Severity: high
-
-Owner:
-
-- actual generated credentials in `tf/gitops/haku-state/main.tf:29-31,99-101`
-- dispatcher credentials in `haku/x/dispatch/deploy/credentials.yaml`
-
-Recreation:
-
-- regex catalog in `haku/x/dispatch/prompt_lint.py:11-22`
-
-The lint calls itself a zero-false-negative deterministic layer, but it recognizes branded prefixes, JWTs, PEM, and age keys only. Haku's Git password, console token, and dispatcher secrets are opaque generated alphanumerics and match none of those patterns.
-
-The LLM classifier might still reject such a prompt, but that does not satisfy the asserted deterministic guarantee.
-
-Consolidation:
-
-- derive test vectors from the real credential generators/formats;
-- compare against known credential values where the trust boundary permits; and
-- either add a defensible opaque/high-entropy detector or narrow the stated guarantee.
-
 ### J. Calendar preview reinterprets the canonical date-time model incorrectly
 
 Severity: medium/high
@@ -257,10 +200,6 @@ Consolidation:
 - `haku/runtime/agent/agent.py:67-76` restates an older miniature `run.md` sequence and omits later base-adoption, response-reduction, approved-result-sweep, and run-manifest requirements. Keep only a pointer to the canonical procedure.
 - `haku/runtime/claude_web_env/run.md:86-98` and `bootstrap.sh:93-101` use the presence of `haku-state/items` as a readiness sentinel even though `haku/run.md:35-37` permits Haku to replace that working format. Use repository validity or a method-neutral completion marker.
 
-### Idempotency reconstruction
-
-`haku/x/dispatch/k8s_jobs.py:23-24` derives identity only from the caller's idempotency key, while the companion Job and Secret depend on prompt, zone, model, and budget. Existing DB rows are returned without payload comparison, and in a race the second request can replace the Secret while accepting the first request's already-created Job. Persist and compare a canonical request fingerprint; reject same-key/different-payload requests and make the Secret immutable once the Job exists.
-
 ### Preview adapters copying remote result contracts
 
 `haku/console/tools/grocy.py:45-79` hardcodes remote tool names and result shapes that are independently owned by `grocy_mcp/batch_tools.py`. Tana support similarly hardcodes `read_node` arguments and parses a markdown comment convention. Tests recreate fake servers instead of checking the real same-repository owner. Prefer structured MCP output schemas/shared models and contract tests against the actual implementation or pinned artifact.
@@ -268,14 +207,6 @@ Consolidation:
 ## Latent extension traps
 
 These are not currently failing the deployed configuration, but their propagation gaps will deterministically surface when the planned extension lands.
-
-### P. Dispatch zone abstraction carries only namespace and model names
-
-`haku/x/dispatch/config.py:26-32` models namespace and allowed models. The Job template globally hardcodes `HARNESS=claude` and `ANTHROPIC_*` authentication (`haku/x/dispatch/deploy/job-template.yaml:44-66`), while the classifier defines only the ZAI policy. The worker already has a Codex branch, and the planned OAI zone requires it.
-
-Adding OAI to `zones.yaml` can pass current parity tests while launching Claude with the wrong authentication and admission policy.
-
-Make zone configuration discriminated and complete: harness, wire protocol, credential environment, and policy ID. Render/classify/launch one contract case per configured zone.
 
 ### Q. Auto-approval and manual approval duplicate the transition into `RUNNING`
 

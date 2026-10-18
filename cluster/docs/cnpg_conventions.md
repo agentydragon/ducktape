@@ -113,8 +113,11 @@ Parked clusters (retained in Git; R2/R3 bind again on revival):
   `local-path-proxmox` when reviving.
 - `wayback-archive-db` (<../../loom/wayback/deploy/>): OVH-HA shape,
   retained in the parked Wayback package, outside the active Flux root.
-- `haku-dispatch-db` (`haku/x/dispatch/deploy/`): OVH-HA shape; parked through
-  `cluster/k8s/haku-dispatch.yaml` and not currently reconciled.
+
+The retired Haku dispatch database source has been removed. Its Flux owner remains
+suspended with pruning disabled and `deletionPolicy: Orphan` while any retained CNPG
+state receives a separate disposition review; this source cleanup does not delete live
+database resources or PVCs.
 
 ## TODO
 

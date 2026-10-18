@@ -70,11 +70,10 @@ concrete authoring seam.
   `image-pins` and Haku's `{image,static}-metadata.yaml` stay bot-owned. cdk8s owns
   references/composition. Zero hand-written YAML is not an appropriate target for them.
 - **Project-owned deployments:** `props/deploy` and `loom/wayback/deploy` retain raw
-  resources and suspended, unwired Flux declarations. Haku dispatch and managed-agent
-  packages have suspended nodes in the generated chart. Keep them in the adoption
-  inventory but convert as part of deliberate revival; do not reactivate to measure
-  coverage. Other raw packages (`devinfra/firecracker/deploy`,
-  `haku/x/zones/deploy`, `x/codex_pod_image/deploy`) need an owner/use decision;
+  resources and suspended, unwired Flux declarations. Haku's managed-agent package has a
+  suspended node in the generated chart. Keep it in the adoption inventory and convert as
+  part of deliberate revival; do not reactivate to measure coverage. Other raw packages
+  (`devinfra/firecracker/deploy`, `x/codex_pod_image/deploy`) need an owner/use decision;
   no active central node for them was found in this audit.
 - **Parked/vendor/example trees:** `cluster/parked`, vendored Browsertrix charts,
   archived experiments and documentation examples are outside the active conversion

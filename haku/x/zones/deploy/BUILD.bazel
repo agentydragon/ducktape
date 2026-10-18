@@ -1,9 +1,0 @@
-# Deployment manifests for the parked Haku worker-zone package.
-filegroup(
-    name = "manifests",
-    srcs = glob(
-        ["**"],
-        exclude = ["BUILD.bazel"],
-    ),
-    visibility = ["//cluster/validation:__pkg__"],
-)
