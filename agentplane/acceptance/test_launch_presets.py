@@ -73,8 +73,7 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     suspend_deadline = time.monotonic() + SANDBOX_READY_SECONDS
     while True:
         suspended = await client.sandbox(view.name)
-        if suspended.operating_mode is OperatingMode.SUSPENDED:
-            assert suspended.pod is None
+        if suspended.operating_mode is OperatingMode.SUSPENDED and suspended.pod is None:
             break
         if time.monotonic() >= suspend_deadline:
             raise TimeoutError(f"Sandbox {view.name} did not suspend within {SANDBOX_READY_SECONDS:g}s")
