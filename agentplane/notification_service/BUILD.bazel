@@ -1,5 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -184,6 +185,8 @@ py_test(
         "@agentplane_codex_cli_linux_x64//:files",  # keep: both pinned native harnesses
         "@claude_code_cli_linux_x64//:claude",  # keep: both pinned native harnesses
     ],
+    env = {"DOCKER_HOST": "tcp://127.0.0.1:2375"},
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [
         # keep: pinned native harness platforms
