@@ -815,10 +815,11 @@ async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture, c
     await expect(page.get_by_text("list the test backup archive", exact=True)).to_be_visible()
     await expect(auto_allowed).to_have_count(0)
     await view.capture()
-    await all_actions.check()
+    await page.get_by_text("All actions", exact=True).click()
+    await expect(all_actions).to_be_checked()
     await expect(auto_allowed).to_be_visible()
     await view.capture(f"{capture_name}-all-actions")
-    await filtered.check()
+    await page.get_by_text("Not auto-allowed", exact=True).click()
     await expect(auto_allowed).to_have_count(0)
 
 
