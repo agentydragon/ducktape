@@ -515,3 +515,83 @@ describe("card decision buttons capability", () => {
     expect(container.textContent).toContain("open Review");
   });
 });
+
+describe("sandbox rendering", () => {
+  const action = (name: string) => ({ group: "sandbox", name });
+  const info = {
+    name: "waiting-sandbox",
+    template: "python",
+    phase: "Pending",
+    conditions: [{ type: "Ready", status: "False", reason: "ContainersNotReady", message: "Image pulling" }],
+  };
+  const result = (value: unknown): CallToolResult => ({ content: [], structuredContent: value, isError: false });
+
+  it.each([
+    ["create", { name: "new-sandbox", template: "python" }, "Create sandbox", "Template: python"],
+    ["get", { name: "waiting-sandbox" }, "Inspect sandbox", "No additional arguments."],
+    ["dispose", { name: "disposed-sandbox" }, "Dispose sandbox", "No additional arguments."],
+    ["list", {}, "List sandboxes", "No arguments."],
+    [
+      "exec",
+      { name: "script-sandbox", script: 'echo "$HOME"', timeout_seconds: 60, max_output_bytes: 0, cwd: "/workspace" },
+      "Run script in sandbox",
+      "Output limit 0 bytes per stream",
+    ],
+  ])("renders %s without authorizing compact decisions", async (name, args, label, body) => {
+    expect((await mount(renderActionLabel(action(name), args))).textContent).toContain(label);
+    expect((await mount(renderPaneOpened(action(name), args))).textContent).toContain(body);
+    expect(actionOffersCardDecisionButtons(action(name), args)).toBe(false);
+    expect(renderDetailsArguments(action(name), { ...args, hidden: true })).toBeNull();
+  });
+
+  it("shows readiness conditions and empty lists", async () => {
+    const node = await mount(renderDetailsResult(action("get"), result(info)));
+    expect(node.textContent).toContain("ContainersNotReady");
+    expect(node.textContent).toContain("Image pulling");
+    expect((await mount(renderDetailsResult(action("create"), result(info)))).textContent).toContain("Pending");
+    expect((await mount(renderDetailsResult(action("list"), result({ sandboxes: [] })))).textContent).toContain(
+      "No sandboxes."
+    );
+    expect((await mount(renderDetailsResult(action("list"), result({ sandboxes: [info] })))).textContent).toContain(
+      "waiting-sandbox"
+    );
+  });
+
+  it.each([true, false])("distinguishes disposal existed=%s", async (existed) => {
+    expect(
+      (await mount(renderDetailsResult(action("dispose"), result({ name: "box", existed })))).textContent
+    ).toContain(existed ? "disposed" : "already absent");
+  });
+
+  it.each([
+    [{ kind: "exited", exit_code: 2 }, "Exit 2"],
+    [{ kind: "killed", signal: 9 }, "Killed by signal 9"],
+    [{ kind: "timed_out" }, "Timed out"],
+  ])("preserves execution outcomes and truncation", async (exit, label) => {
+    const node = await mount(
+      renderDetailsResult(
+        action("exec"),
+        result({
+          exit,
+          stdout: { truncated_text: "", total_bytes: 123 },
+          stderr: "error",
+          duration_seconds: 1.5,
+        })
+      )
+    );
+    expect(node.textContent).toContain(label);
+    expect(node.textContent).toContain("truncated by the server; 123 total bytes");
+    expect(node.textContent).toContain("error");
+  });
+
+  it("highlights pod argv without treating literal shell characters as operators", async () => {
+    const node = await mount(
+      renderPaneCollapsed(
+        { group: "kubernetes_admin", name: "pods_exec" },
+        { name: "pod", command: ["printf", "%s", "$HOME", "a'b", ""] }
+      )
+    );
+    expect(node.textContent).toBe("printf %s '$HOME' 'a'\\''b' ''");
+    expect(node.querySelector(".agentplane-tok-string")).not.toBeNull();
+  });
+});

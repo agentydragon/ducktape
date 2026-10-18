@@ -19,6 +19,7 @@ ts_library(
         ":kubernetes_admin",
         ":result_entry",
         ":ssh",
+        ":sandbox",
         ":tana",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -185,5 +186,20 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions:testing",
+    ],
+)
+
+ts_library(
+    name = "sandbox",
+    srcs = ["sandbox.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/app/frontend:command_view",
     ],
 )

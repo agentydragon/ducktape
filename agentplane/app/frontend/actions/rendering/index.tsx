@@ -76,6 +76,21 @@ import {
 } from "./kubernetes_admin/resources_list";
 import { renderResultPreview, type ResultPreview } from "./result_entry";
 import { execArgumentsPreview, execCollapsedPreview, execLabel, execResultPreview } from "./ssh/exec";
+import {
+  sandboxExecLabel,
+  sandboxExecArguments,
+  sandboxExecResult,
+  sandboxCreateLabel,
+  sandboxCreateArguments,
+  sandboxInfoResult,
+  sandboxGetLabel,
+  sandboxDisposeLabel,
+  sandboxNamedArguments,
+  sandboxListLabel,
+  sandboxListArguments,
+  sandboxListResult,
+  sandboxDisposeResult,
+} from "./sandbox";
 import { calendarNodeArgumentsPreview, calendarNodeLabel } from "./tana";
 
 type ActionIdentity = ActionRequestView["action"];
@@ -275,6 +290,51 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
           label: calendarNodeLabel,
           pane: { opened: calendarNodeArgumentsPreview },
           details: { arguments: calendarNodeArgumentsPreview },
+        },
+      ],
+    ]),
+  ],
+  [
+    "sandbox",
+    new Map<string, ActionPresentation>([
+      [
+        "exec",
+        {
+          label: sandboxExecLabel,
+          pane: { opened: sandboxExecArguments },
+          details: { arguments: sandboxExecArguments, result: sandboxExecResult },
+        },
+      ],
+      [
+        "create",
+        {
+          label: sandboxCreateLabel,
+          pane: { opened: sandboxCreateArguments },
+          details: { arguments: sandboxCreateArguments, result: sandboxInfoResult },
+        },
+      ],
+      [
+        "get",
+        {
+          label: sandboxGetLabel,
+          pane: { opened: sandboxNamedArguments },
+          details: { arguments: sandboxNamedArguments, result: sandboxInfoResult },
+        },
+      ],
+      [
+        "dispose",
+        {
+          label: sandboxDisposeLabel,
+          pane: { opened: sandboxNamedArguments },
+          details: { arguments: sandboxNamedArguments, result: sandboxDisposeResult },
+        },
+      ],
+      [
+        "list",
+        {
+          label: sandboxListLabel,
+          pane: { opened: sandboxListArguments },
+          details: { arguments: sandboxListArguments, result: sandboxListResult },
         },
       ],
     ]),

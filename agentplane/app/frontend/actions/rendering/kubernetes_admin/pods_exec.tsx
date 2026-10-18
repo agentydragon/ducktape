@@ -2,6 +2,8 @@ import { Code, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
+import { CodeBlock, InlineCode } from "../../../code_block";
+
 import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { kubernetesTarget } from "./resource_common";
@@ -26,7 +28,7 @@ function commandText(args: PodsExecArguments): string {
 function CommandLine({ args }: { args: PodsExecArguments }): JSX.Element {
   return (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-      <Code>$ {commandText(args)}</Code>
+      <InlineCode text={commandText(args)} language="bash" />
     </Text>
   );
 }
@@ -46,7 +48,7 @@ function PodsExecLabel({ args }: { args: PodsExecArguments }): JSX.Element {
 function Opened({ args }: { args: PodsExecArguments }): JSX.Element {
   return (
     <Stack gap="xs">
-      <CommandLine args={args} />
+      <CodeBlock text={commandText(args)} language="bash" />
       {args.container && <Chip label="container" value={args.container} />}
     </Stack>
   );
