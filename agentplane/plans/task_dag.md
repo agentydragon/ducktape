@@ -1899,12 +1899,11 @@ facade to the browser through the app first; direct browser access is a later op
 **Drafted for operator review; the interface direction is approved.** The command and JSON contract
 is [the agent CLI plan](agent_cli.md): commands, output, credentials, errors and exit
 codes, pagination, waits, interruption, the Action Service changes it needs and the rollout order.
-The operator settled its [other decisions](agent_cli.md#settled-decisions) (2026-10-17).
-Question for review: whether [any exit code reflects a payload](agent_cli.md#decisions-for-review),
-recommended no. Approval replaces this node with the plan's rollout steps as nodes.
+The operator settled all of its [decisions](agent_cli.md#settled-decisions) (2026-10-17 and
+2026-10-18). Approval to build replaces this node with the plan's rollout steps as nodes.
 
-**Deliverable:** operator approval of the plan. This is design only; no CLI, prompt or API change is
-authorized.
+**Deliverable:** operator approval to build from the plan. This is design only; no CLI, prompt or
+API change is authorized.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 

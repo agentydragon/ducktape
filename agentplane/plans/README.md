@@ -23,7 +23,7 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   service with subscriptions and batched notices; tentative service-enforced PolicySet rules,
   remaining schema/API decisions and deferred agent lifecycle delegation
 - [Agent CLI](agent_cli.md) — proposed `agentplane` command, JSON and exit-code contract for
-  Actions, notifications and egress rules, with one open exit-code question
+  Actions, notifications and egress rules, awaiting approval to build
 - [Generated HTTP facades](grpc_http_facade.md) — proposed extension of the approved gRPC-Gateway
   direction to the browser, through the app first with a Dispatcher-reads spike, and direct browser
   access as a later option
