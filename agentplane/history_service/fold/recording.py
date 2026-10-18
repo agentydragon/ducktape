@@ -25,6 +25,7 @@ from agentplane.history_service.fold.views import (
     EntityKind,
     PayloadField,
     ThreadCommandEntityView,
+    ThreadControlsState,
     ThreadFeedErrorState,
     ThreadItemEntityView,
     ThreadOperationalState,
@@ -49,6 +50,37 @@ class ThreadFoldError(EventReplicationError):
     """A semantic observation could not advance the durable thread fold."""
 
 
+async def record_empty_thread_fold(session: AsyncSession, thread_id: UUID, *, projection_epoch: str) -> bool:
+    """Materialize an authenticated runner's empty prefix, without inventing an Event or its source."""
+    if await session.get(ThreadCheckpoint, thread_id) is not None:
+        return False
+    view = ThreadViewState(
+        controls=ThreadControlsState(
+            applied_model=None, applied_reasoning_effort=None, active_turn_id=None, harness_state=None
+        ),
+        operational=ThreadOperationalState(status="active", last_verified_cursor="0", feed_error=None),
+    )
+    session.add(
+        ThreadEntity(
+            thread_id=thread_id,
+            projection_epoch=projection_epoch,
+            entity_kind=EntityKind.VIEW_STATE,
+            entity_id="current",
+            entity_index=0,
+            cursor=0,
+            revision_cursor=0,
+            pending=False,
+            turn_id=None,
+            state=view.model_dump(mode="json"),
+        )
+    )
+    session.add(
+        ThreadCheckpoint(thread_id=thread_id, source_id=None, projection_epoch=projection_epoch, through_cursor=0)
+    )
+    await session.flush()
+    return True
+
+
 async def record_thread_fold(
     session: AsyncSession,
     thread_id: UUID,
@@ -65,6 +97,10 @@ async def record_thread_fold(
         state = fold.initial(source_id, projection_epoch)
         operational = None
     else:
+        if checkpoint.source_id is None:
+            if checkpoint.through_cursor != 0:
+                raise EventReplicationError("nonempty fold has no Event source")
+            checkpoint.source_id = source_id
         if checkpoint.source_id != source_id:
             raise EventReplicationError(
                 f"thread fold source changed at cursor {entries[0].cursor}", cursor=entries[0].cursor
@@ -184,6 +220,8 @@ async def _fold_state(
     if row is None:
         raise ValueError("thread checkpoint has no current controls")
     view = ThreadViewState.model_validate(row.state)
+    if checkpoint.source_id is None:
+        raise EventReplicationError("an Event source is required to advance the fold")
     return fold.ViewState(
         fold.Position(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor),
         fold.Controls(

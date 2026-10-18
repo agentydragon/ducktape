@@ -951,7 +951,7 @@ class ThreadEpochs extends Listeners {
     try {
       const scope = await threadScope(this.#threadId, resolving.signal);
       if (resolving.signal.aborted || this.#closed) return;
-      // The runner has recorded nothing for the whole of the server's hold: hold another read.
+      // No admitted view has materialized during the server's hold: hold another read.
       if (scope === null) return this.refresh();
       const suspended = this.#state.window?.suspended ? this.#state.window : null;
       if (suspended?.resumable && suspended.epoch === scope.projection_epoch) {

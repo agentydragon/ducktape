@@ -118,8 +118,15 @@ authority across opens, commands and resume remains under review in the
 
 A Thread is a view/fold of one durable logical Session's Event log, with its own
 operator-set presentation; it is not a second execution source. Its id is the client-minted public
-Session UUID submitted through Dispatcher `OpenSession`; the Thread projection appears after History
-records and folds the runner's Events. A suspend/resume on retained storage reuses that Session ID,
+Session UUID submitted through Dispatcher `OpenSession`. History materializes an empty Thread view
+once it retains the authenticated runner admission, even before any Event exists. A catalog entry
+or Dispatcher queue receipt alone does not establish that view. At cursor zero there is no Event
+source, native process or effective model/effort to infer. The first real Event binds the fold's
+source; later Events must keep that source. Opening the view never starts a native process.
+Without this empty admitted state, lazy startup deadlocks the composer: rendering waits for a
+native Event that cannot occur until the user can submit input. Nonempty history still requires
+its verified folded prefix; an empty view must never replace a stalled or existing projection.
+A suspend/resume on retained storage reuses that Session ID,
 native conversation, and Event sequence; a fresh harness process is an incarnation,
 not another Session. Runner restart tests verify the identical ID and contiguous
 Event prefix after crash and SIGTERM; the Sandbox suspend/resume acceptance exercises

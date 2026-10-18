@@ -19,6 +19,7 @@ exports_files([
     "0016_recovery_reason_null.py",
     "0017_session_sandbox.py",
     "0018_summary_idle_since.py",
+    "0019_empty_admitted_projection.py",
 ])
 
 py_library(
@@ -159,5 +160,11 @@ py_library(
 py_library(
     name = "0018_summary_idle_since",
     srcs = ["0018_summary_idle_since.py"],
+    deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0019_empty_admitted_projection",
+    srcs = ["0019_empty_admitted_projection.py"],
     deps = ["@pypi//alembic"],
 )

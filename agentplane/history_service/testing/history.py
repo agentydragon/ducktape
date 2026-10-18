@@ -131,7 +131,7 @@ class History:
         """
         async with self.sessions.begin() as session:
             checkpoint = await session.get(ThreadCheckpoint, session_id)
-            if checkpoint is None:
+            if checkpoint is None or checkpoint.source_id is None:
                 raise ValueError("fold the Session's first entries before seeding the rest")
             epoch = checkpoint.projection_epoch
             through = checkpoint.through_cursor

@@ -64,6 +64,13 @@ stored entry, for debugging. Why and what it drops:
 
 ## Thread fold
 
+A retained authenticated runner attachment can establish a view at cursor zero before any native
+Event. The empty view has no Event source or applied controls; the first real Event binds its
+source, and subsequent Events must match. A writer binding or catalog entry without an attachment
+does not establish a view. This lets the composer submit the first input without starting a
+harness merely to render the Thread. Existing/nonempty projections still require their verified
+Event prefix.
+
 Every replica folds every retained Session into the thread projection
 (`agentplane.history_service.fold`; `thread_*` tables, since a Thread is the projection of a
 Session: [layering](../docs/thread_layering.md#authorities-and-representations)), in epoch

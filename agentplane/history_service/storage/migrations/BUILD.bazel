@@ -22,6 +22,7 @@ filegroup(
         "//agentplane/history_service/storage/migrations/versions:0016_recovery_reason_null.py",
         "//agentplane/history_service/storage/migrations/versions:0017_session_sandbox.py",
         "//agentplane/history_service/storage/migrations/versions:0018_summary_idle_since.py",
+        "//agentplane/history_service/storage/migrations/versions:0019_empty_admitted_projection.py",
     ],
     visibility = ["//agentplane/history_service/storage:__pkg__"],
 )

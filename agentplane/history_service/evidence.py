@@ -123,6 +123,6 @@ async def _entity(
     if checkpoint.projection_epoch != projection_epoch:
         raise ThreadScopeResetError(session_id)
     entity = await session.get(ThreadEntity, (session_id, projection_epoch, key.entity_kind, key.entity_id))
-    if entity is None:
+    if entity is None or checkpoint.source_id is None:
         raise EvidenceNotFoundError(session_id)
     return entity.cursor, checkpoint.source_id

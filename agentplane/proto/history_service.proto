@@ -126,8 +126,9 @@ message SessionSummary {
   reserved "sandbox_namespace", "sandbox_name";
   // Committed raw history; the fold lags by `committed_cursor - folded_through`.
   uint64 committed_cursor = 4;
-  // Absent until the fold has materialized an entry. A stalled fold reports its error in the
-  // Thread's view state.
+  // Absent until the fold has materialized a view. An authenticated runner admission can
+  // materialize the empty prefix at zero before any native Event or effective controls.
+  // A stalled fold reports its error in the Thread's view state.
   optional string projection_epoch = 5;
   uint64 folded_through = 6;
   google.protobuf.Timestamp first_event_at = 7;

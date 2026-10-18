@@ -16,7 +16,12 @@ from agentplane.history_service.fold.lifecycle import project_lifecycle
 from agentplane.history_service.fold.model_activity import record_model_activity
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadHistorySummary
 from agentplane.history_service.fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
-from agentplane.history_service.fold.recording import EventReplicationError, record_thread_fold, set_operational
+from agentplane.history_service.fold.recording import (
+    EventReplicationError,
+    record_empty_thread_fold,
+    record_thread_fold,
+    set_operational,
+)
 from agentplane.history_service.settled_cursors import next_stored, settled_ranges
 from agentplane.history_service.storage.store import Store
 from agentplane.postgres.wakeups import notify
@@ -111,7 +116,15 @@ class HistoryProjector:
             if summary is None:
                 raise EventReplicationError("missing fold summary")
             if not page.entries:
-                if await project_lifecycle(session, thread_id, summary, page, through_cursor=after):
+                # Admission can precede every native Event. Only the authenticated retained
+                # attachment establishes this empty view; a catalog row alone proves no admission.
+                initialized = False
+                if after == 0 and page.HasField("feed_state") and page.feed_state.HasField("attached"):
+                    initialized = await record_empty_thread_fold(
+                        session, thread_id, projection_epoch=self._projection_epoch
+                    )
+                changed = await project_lifecycle(session, thread_id, summary, page, through_cursor=after)
+                if initialized or changed:
                     await notify(session, Channel.SUMMARIES)
                 return ProjectionProgress(after, page.last_cursor)
             source_id = page.entries[0].origin.source_id
