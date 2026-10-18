@@ -42,6 +42,8 @@ class ClaudeLauncher:
         command = scenarios.command(
             self.binary,
             model=model,
+            # Scripted scenarios exercise host approval and denial responses.
+            permission_mode="manual",
             system_prompt=scenarios.SYSTEM_PROMPT,
             session_name=scenarios.SESSION_NAME,
             tools=(*scenarios.TOOLS, "Agent", "SendMessage", "TaskOutput") if subagents else scenarios.TOOLS,

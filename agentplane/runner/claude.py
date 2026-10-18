@@ -82,6 +82,7 @@ class ClaudeAdapter(HarnessAdapter):
                 model=self.session.record.model,
                 session_name=SESSION_NAME,
                 tools=TOOLS,
+                permission_mode="bypassPermissions",
                 resume_id=resume_id,
                 session_id=None if resume_id else self._native_session_id,
                 replay_user_messages=True,

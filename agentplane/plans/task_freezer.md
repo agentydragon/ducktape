@@ -127,6 +127,14 @@ When executor heartbeat accumulation becomes material. Stable identity or bounde
 
 Operator has deferred this lane. Promote a specific feature with a concrete user need or observed defect, not the whole matrix. Preserve existing regression coverage.
 
+### `CLAUDE_PERMISSION_MODE_REVIEW` — reconsider native permission modes
+
+Operator-deferred, 2026-10-17. The selected policy is explicit `bypassPermissions` for deployed
+Claude harnesses.
+Revisit if we want native approval policy, such as `auto` mode's classifier; choose its intended
+allow/deny behavior and host approval interaction explicitly, and validate deployed tool use before
+changing the mode. This does not block the current unattended-execution rollout.
+
 ### `INPUT_DELIVERY` — remaining native queue and recovery evidence
 
 Pin only the native queue/interrupt/recovery gap needed for an adopted operation. Do not repeat the ordinary command path or invent receipts from static protocol declarations.

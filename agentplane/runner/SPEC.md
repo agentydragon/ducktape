@@ -311,7 +311,7 @@ session and a new transcript.
 - Codex reports no aggregated output for a shell command that outlived its first read, and keeps a
   streamed model connection open after an interrupt; neither changes the events above.
 - Native approval prompts, user dialogs, and hook callbacks never block a turn. Claude Code runs
-  with explicit `--permission-mode manual` and stdio approval, so its automatic classifier does not
+  with explicit `--permission-mode bypassPermissions`, so its automatic classifier does not
   decide tool permissions. The runner answers every `can_use_tool` request allow;
   `hook_callback` and any unrecognised control request get an
   error answer. Codex runs under `approval_policy: never`, so no approval request arrives; a server

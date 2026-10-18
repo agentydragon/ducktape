@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Literal
 
 from agentplane.native.claude import driver, wire
 
@@ -49,6 +49,7 @@ def command(
     system_prompt: str | None = None,
     session_name: str,
     tools: tuple[str, ...],
+    permission_mode: Literal["manual", "bypassPermissions"],
     resume_id: str | None = None,
     session_id: str | None = None,
     replay_user_messages: bool = False,
@@ -87,9 +88,9 @@ def command(
         "--output-format",
         "stream-json",
         "--verbose",
-        # Delegate approval to the stdio host instead of Claude's automatic classifier.
+        # Callers select their approval policy explicitly; do not inherit the CLI default.
         "--permission-mode",
-        "manual",
+        permission_mode,
         "--permission-prompt-tool",
         "stdio",
         "--include-partial-messages",
