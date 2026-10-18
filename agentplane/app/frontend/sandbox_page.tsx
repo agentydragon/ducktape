@@ -829,7 +829,10 @@ export function SandboxPage({
         <Tabs.Panel value="policy" pt="sm">
           <Stack gap="md">
             <PolicyBindingsSection sandbox={name} bindings={live.snapshot?.bindings ?? null} />
-            <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
+            <Stack gap="xs">
+              <Title order={5}>Action policy</Title>
+              <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
+            </Stack>
             <BoundPolicySection policy={live.snapshot?.bound_policy ?? null} />
           </Stack>
         </Tabs.Panel>
