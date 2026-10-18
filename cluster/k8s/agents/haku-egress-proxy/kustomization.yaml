@@ -4,19 +4,3 @@ resources:
   # cdk8s-generated (cluster/cdk8s/haku_egress_proxy.py, agents/namespaces.py,
   # egress_fences.py) -- see cluster/docs/cdk8s.md.
   - haku-egress-proxy.k8s.yaml
-  - claude-code-oauth-token.sops.yaml
-
-patches:
-  # CLEANUP(added 2026-08-29): the encrypted object keeps its historical inner name because the
-  # SOPS document MAC covers metadata values — see the note in claude-code-oauth-token.sops.yaml.
-  # Delete this patch once that file is re-encrypted under the rendered name below.
-  - target:
-      kind: Secret
-      name: haku-agent-sdk-oauth-token
-    patch: |-
-      - op: replace
-        path: /metadata/name
-        value: haku-claude-oauth-token
-      - op: replace
-        path: /metadata/namespace
-        value: haku-egress-proxy

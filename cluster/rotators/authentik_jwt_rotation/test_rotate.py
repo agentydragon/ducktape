@@ -77,9 +77,9 @@ def test_rotate_one_formats_raw_sops_file_after_encrypt(monkeypatch, tmp_path: P
 
 def test_write_k8s_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
     out = K8sSecretOutput(
-        path=tmp_path / "cluster/k8s/agents/haku-egress-proxy/openclaw-spike-kube-token.sops.yaml",
-        name="haku-openclaw-spike-kube-token",
-        namespace="haku-egress-proxy",
+        path=tmp_path / "cluster/k8s/agents/example/test-kube-token.sops.yaml",
+        name="test-kube-token",
+        namespace="example",
     )
     calls: list[tuple[str, object]] = []
 

@@ -29,44 +29,16 @@ py_library(
 )
 
 py_library(
-    name = "haku_openclaw_spike_config",
-    srcs = ["haku_openclaw_spike_config.py"],
-    data = ["kube-client-config"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//cluster/cdk8s:config_format",
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:namespaces",
-        "//cluster/cdk8s:node_scheduling",
-        "//cluster/cdk8s:openclaw_gateway",
-        "//cluster/cdk8s:secret_ref",
-        "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/external_secrets:minted_secret",
-        "//cluster/cdk8s/forgejo_registry:pull_credentials",
-        "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/seaweedfs:bucket",
-        "//cluster/cdk8s/providers/seaweedfs:s3_credentials",
-        "//cluster/cdk8s/providers/seaweedfs:s3credentials",
-        "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
-        "//model_catalog:catalog",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "haku_openclaw_spike_backup",
     srcs = ["haku_openclaw_spike_backup.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s:artifact_generators",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:restic_backup",
+        "//cluster/cdk8s/providers/seaweedfs:bucket",
+        "//cluster/cdk8s/providers/seaweedfs:s3_credentials",
+        "//cluster/cdk8s/providers/seaweedfs:s3credentials",
+        "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
         "@pypi//cdk8s",
     ],
 )

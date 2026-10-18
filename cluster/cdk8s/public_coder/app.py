@@ -256,8 +256,7 @@ def _openclaw_container() -> k8s.Container:
             # Python is the other runtime that ignores the mounted system bundle: pip trusts only
             # its vendored certifi, and hermetic interpreters carry their own OpenSSL whose
             # compiled-in CA path is not Debian's. Without these, pip fetches fail TLS against the
-            # egress proxy even though pypi.org is allowlisted. Mirrors the same vars in
-            # haku-openclaw-spike.
+            # egress proxy even though pypi.org is allowlisted.
             _env("SSL_CERT_FILE", _CA_BUNDLE),
             _env("REQUESTS_CA_BUNDLE", _CA_BUNDLE),
             _env("PIP_CERT", _CA_BUNDLE),

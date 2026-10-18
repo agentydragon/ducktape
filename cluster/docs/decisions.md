@@ -466,18 +466,20 @@ vocabulary the `ducktape.org/parked` annotation already had.
 ### Haku OpenClaw spike retirement
 
 The Haku OpenClaw compatibility spike is decommissioned, including its namespace
-and PVCs. Its app and backup generators and manifests are retained under
-`cluster/cdk8s/parked/` and `cluster/parked/haku-openclaw-spike/`. Its dedicated Iron
-proxy was retained too, then deleted on 2026-10-13; unparking the spike needs a new one.
-Haku sandbox, the Haku CI mitmproxy, and public coder are not decommissioned.
+and PVCs. Its image, app manifests, and app generator were removed; the Restic
+recovery package and unchanged encrypted repository password remain under
+<../parked/haku-openclaw-spike/backup/README.md>. Its Bucket and S3Credentials
+retain policies, but no Flux owner applies them. Recovery also requires restoring
+the namespace and SeaweedFS cross-namespace grant. Its dedicated Iron proxy was
+deleted on 2026-10-13; Haku sandbox, Haku CI, and public coder are not decommissioned.
 
 The old app owner used `deletionPolicy: Orphan`; retirement first reconciled that
 same Flux Kustomization against an empty manifest set to prune its inventory.
 Live checks on 2026-10-02 at 20:03 UTC confirmed an empty inventory and deletion of
 the namespace, PVCs, backup Flux owner, and dedicated proxy Deployment. The follow-up
-removes the temporary empty owner/directory and the SeaweedFS tenant grant.
-Historical SeaweedFS/Restic backup storage retains its `Retain` policy; physical
-backing storage was not audited as part of these checks.
+removes the temporary empty owner/directory and the SeaweedFS tenant grant. The
+external SeaweedFS/Restic backup data was not touched; physical backing storage
+was not audited as part of these checks.
 
 ## Retire standalone agent workspaces and Claude compute (2026-10-02)
 

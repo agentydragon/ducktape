@@ -11,8 +11,9 @@ manifests depend on.
 - cert-manager creates `Secret/haku-egress-proxy-ca` in `haku-egress-proxy`.
 - The shared proxy mounts that Secret and builds mitmproxy's CA file from
   `tls.key` and `tls.crt`.
-- The spike's separate Iron listener has been retired. Its generator and revival
-  inputs live under `cluster/cdk8s/parked/` and `cluster/parked/haku-openclaw-spike/`.
+- The retired Haku OpenClaw spike's credential-substituting Iron listener and its
+  Claude OAuth token are removed. This shared CA and proxy remain for Haku sandbox
+  and Haku CI.
 - Reflector mirrors the Secret into `cert-manager`, which is trust-manager's
   source namespace in this cluster.
 - trust-manager writes `ConfigMap/haku-egress-proxy-ca-cert` into `haku-sandbox`

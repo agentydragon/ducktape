@@ -44,11 +44,20 @@ filegroup(
     name = "parked_generated_manifests",
     srcs = glob([
         "parked/**/*.k8s.yaml",
-        "parked/haku-openclaw-spike/**",
+        "parked/haku-openclaw-spike/backup/**",
         "parked/public-coder-agent/backup/kustomization.yaml",
         "parked/public-coder-agent/devbox/kustomization.yaml",
         "parked/public-coder-agent/sshpiper/kustomization.yaml",
     ]),
+    visibility = ["//cluster/cdk8s:__pkg__"],
+)
+
+filegroup(
+    name = "haku_openclaw_spike_backup_sources",
+    srcs = [
+        "parked/haku-openclaw-spike/backup/README.md",
+        "parked/haku-openclaw-spike/backup/repository.sops.yaml",
+    ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
 

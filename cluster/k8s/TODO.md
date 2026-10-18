@@ -114,9 +114,6 @@ working sets.
 Worth investigating before treating the new ceilings as correct, roughly in
 descending order of "that can't be right":
 
-- [ ] `haku-openclaw-spike` openclaw — investigate the provisional 16Gi limit;
-      an earlier VPA observation reported unusually high resident memory for a
-      single OpenClaw process. Most suspicious number in the sweep.
 - [ ] `forgejo` — 2Gi → 8Gi, VPA saw 3.24Gi. Git pack cache? Mirror sync?
 - [ ] `haku-console` server — 512Mi → 3Gi, VPA saw 1.29Gi for a static-file +
       API server.

@@ -1,6 +1,7 @@
-"""Shared OpenClaw gateway/config fragments used by every agent's openclaw.json[5]
-generator (haku_openclaw_spike_config.py, public_coder/app.py). They sit behind
-the same Authentik trusted-proxy outpost and differ in device-approval scopes and UI hostnames.
+"""Shared OpenClaw gateway/config fragments used by the public-coder OpenClaw generator.
+
+Its gateway sits behind an Authentik trusted-proxy outpost and uses the configured
+device-approval scope ceiling and UI hostname.
 """
 
 from __future__ import annotations

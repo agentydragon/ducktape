@@ -1418,6 +1418,7 @@ py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
+        "//cluster:haku_openclaw_spike_backup_sources",
         "//ssh_keys:atlas-host-ed25519.pub",
         "//ssh_keys:public-coder-agent-devbox.pub",
         "//ssh_keys:public-coder-devbox-host.pub",
@@ -1605,7 +1606,6 @@ py_library(
         "//cluster/cdk8s/parked:augur_evidence",
         "//cluster/cdk8s/parked:flux_kustomizations",
         "//cluster/cdk8s/parked:haku_openclaw_spike_backup",
-        "//cluster/cdk8s/parked:haku_openclaw_spike_config",
         "//cluster/cdk8s/plaid_mcp:app",
         "//cluster/cdk8s/plaid_mcp:db",
         "//cluster/cdk8s/plaid_mcp:pgweb",

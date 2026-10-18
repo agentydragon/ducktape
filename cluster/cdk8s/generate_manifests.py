@@ -137,7 +137,7 @@ from cluster.cdk8s.gaffer_private_source import (
     source as gaffer_private_source,
 )
 from cluster.cdk8s.gatus import app as gatus_app, sso as gatus_sso
-from cluster.cdk8s.generation import write_directory, write_generated_readme
+from cluster.cdk8s.generation import copy_source_file, write_directory, write_generated_readme
 from cluster.cdk8s.github_api_proxy import (
     flux_kustomizations as github_api_proxy_flux_kustomizations,
     proxy as github_api_proxy,
@@ -213,7 +213,6 @@ from cluster.cdk8s.parked import (
     augur_evidence as parked_augur_evidence,
     flux_kustomizations as parked_flux_kustomizations,
     haku_openclaw_spike_backup,
-    haku_openclaw_spike_config,
 )
 from cluster.cdk8s.plaid_mcp import (
     app as plaid_mcp_app,
@@ -927,10 +926,11 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     haku_openclaw_spike_backup_artifact = artifact("haku-openclaw-spike-backup", haku_openclaw_spike_backup.OUTPUT_DIR)
-    # Archived generators remain reproducible; neither directory is a Flux artifact.
+    # The retained Restic recovery package is reproducible and is not a Flux artifact.
     write_directory(
         root, haku_openclaw_spike_backup_artifact, haku_openclaw_spike_backup.chart, siblings=["repository.sops.yaml"]
     )
+    copy_source_file(root, haku_openclaw_spike_backup.OUTPUT_DIR, f"{haku_openclaw_spike_backup.OUTPUT_DIR}/README.md")
     authentik_db_backups_artifact = artifact("authentik-db-backups", authentik_db_backups.OUTPUT_DIR)
     authentik_db_backups.authentik_db_backups(
         flux_chart,
@@ -1572,19 +1572,6 @@ def generate_manifests(root: Path) -> None:
             siblings=["litellm-clients-sops-age-key.sops.yaml"],
         ),
         tofu_controller_kustomization,
-    )
-    haku_openclaw_spike_app_artifact = artifact(
-        "haku-openclaw-spike-app", haku_openclaw_spike_config.OUTPUT_DIR, haku_openclaw_spike_config.PINS_DIR
-    )
-    write_directory(
-        root,
-        haku_openclaw_spike_app_artifact,
-        haku_openclaw_spike_config.namespace_chart,
-        haku_openclaw_spike_config.chart,
-        haku_openclaw_spike_config.app_chart,
-        components=[posixpath.relpath(haku_openclaw_spike_config.PINS_DIR, haku_openclaw_spike_config.OUTPUT_DIR)],
-        generator_options=haku_openclaw_spike_config.GENERATOR_OPTIONS,
-        config_map_generator=[haku_openclaw_spike_config.write_kubeconfig_config_map(root)],
     )
     haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
     haku_workspaces.haku_workspaces(

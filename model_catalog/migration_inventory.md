@@ -26,8 +26,8 @@ Before deletion or renaming, check these as well as the obvious clients:
 - Hidden Codex recognition aliases and the public embedding compatibility alias.
 - OpenClaw durable memory: stored embedding identities can outlive a running agent.
   Pausing the app is not permission to delete/rebuild its index or change its model.
-- Parked Haku OpenClaw's native CLI model aliases, Gatus's selected Ollama probe,
-  inference/probe scripts, and live harness acceptance cases.
+- Gatus's selected Ollama probe, inference/probe scripts, and live harness acceptance
+  cases.
 - Nix wrapper JSON, binaries, imports, and credential provisioning. Moving a source
   file to `x/` alone does not stop deploying its generated outputs.
 - LiteLLM pricing/budget accounting and telemetry labels. Route cleanup must not
@@ -124,9 +124,6 @@ Reviewed 2026-10-10; no structural rewrite justified:
   that config; workload, egress, devbox and backup modules are not model rosters.
   Keep the renderer and embedding route identity. The current default is GPT-6
   Luna, not a capacity measurement; the stale “measured 5.6” comment is corrected.
-- `cluster/cdk8s/parked/haku_openclaw_spike_config.py` selects named Claude
-  subscription routes and renders native Claude CLI IDs intentionally, not LiteLLM
-  routing IDs. Retain its aliases, runtime/auth wiring and revival information.
 - `cluster/cdk8s/gatus/config.py` selects the named GPT-OSS 20B 128K route for its
   probe. It does not reconstruct route slugs or maintain a second model catalogue.
 - `model_catalog/policies.py` owns key lanes and fallback subsets;

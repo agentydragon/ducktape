@@ -149,15 +149,11 @@ py_test(
 py_test(
     name = "test_openclaw_models",
     srcs = ["test_openclaw_models.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":config",
         "//:conftest",
-        "//cluster/cdk8s/parked:haku_openclaw_spike_config",
         "//cluster/cdk8s/public_coder:config",
         "//model_catalog:catalog",
-        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

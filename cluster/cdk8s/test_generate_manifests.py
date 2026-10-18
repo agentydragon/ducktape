@@ -234,7 +234,9 @@ def test_cluster_diagnostics_kustomizations_are_read_only(
     assert not any(grants("kustomize.toolkit.fluxcd.io", "kustomizations", verb) for verb in writes)
 
 
-def test_haku_spike_stays_unwired(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:
+def test_haku_spike_is_retired_and_backup_recovery_survives(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
     active = [
         doc
         for path in generated.rglob("*.k8s.yaml")
@@ -267,13 +269,17 @@ def test_haku_spike_stays_unwired(generated: Path, parsed_yaml_documents: dict[P
     }
     assert ("haku-egress-proxy", "haku-egress-proxy") in deployments
     assert any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in active)
-    # Preserved snapshots remain reproducible outside the live manifest roots.
+    # Only the retained backup recovery package remains reproducible outside the live roots.
     archived = generated / "cluster/parked/haku-openclaw-spike"
-    app = parsed_yaml_documents[archived / "app/app.k8s.yaml"]
-    assert any(doc["kind"] == "PersistentVolumeClaim" for doc in app)
-    bucket = next(doc for doc in app if doc["kind"] == "Bucket")
+    assert not (archived / "app").exists()
+    assert not (archived / "app-image-pins").exists()
+    backup = parsed_yaml_documents[archived / "backup/backup.k8s.yaml"]
+    bucket = next(doc for doc in backup if doc["kind"] == "Bucket")
     assert bucket["spec"]["reclaimPolicy"] == "Retain"
-    assert (archived / "backup/backup.k8s.yaml").is_file()
+    credentials = next(doc for doc in backup if doc["kind"] == "S3Credentials")
+    assert credentials["spec"]["reclaimPolicy"] == "Retain"
+    assert (archived / "backup/repository.sops.yaml").is_file()
+    assert (archived / "backup/README.md").is_file()
 
 
 def test_retired_mitmproxy_stays_unwired(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:

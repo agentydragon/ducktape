@@ -1,9 +1,7 @@
-# The stable OpenClaw gateway package, shared by the public-coder image
-# (openclaw/) and Haku's spike image (haku/openclaw_spike/).
+# The stable OpenClaw gateway package for the public-coder image (openclaw/).
 #
-# Both images consume nix-openclaw's pinned npm-package gateway and source
-# metadata, with this directory's release-specific dist patch. The source pin
-# and patch are shared here rather than mirrored between image definitions.
+# It consumes nix-openclaw's pinned npm-package gateway and source metadata,
+# with this directory's release-specific dist patch.
 #
 # Gotcha: use the npm-package path. nix-openclaw's own stable uses it too; its
 # from-source pnpm build is unexercised and lacks fetcherVersion-4 store steps

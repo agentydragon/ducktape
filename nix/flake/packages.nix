@@ -169,14 +169,6 @@ ducktapePkgs
   };
   # The homepage (Hakyll-rendered, static-web-server). Recipe in website/default.nix.
   website-image = import ../../website { inherit pkgs; };
-  # Haku's Claude-backed OpenClaw spike. Same Nix build mechanism as
-  # openclaw-image; both images use the gateway and source metadata pinned by
-  # the shared nix-openclaw input in flake.lock.
-  # Build: nix build .#haku-openclaw-spike-image
-  # Load:  docker load < result
-  haku-openclaw-spike-image = import ../../haku/openclaw_spike {
-    inherit nix-openclaw pkgs ruffLatest;
-  };
   # Parked full-NixOS container image for the Haku Managed Agents self-hosted
   # worker (Runtime B). Kept as a manual build output with its recipe beside
   # the component; automatic build/publish and Attic caching are disabled.
