@@ -155,7 +155,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
       </Table.Tbody>
       <Table.Caption>
         The unexpired bindings whose subject is this ServiceAccount, by namespace and name. A binding is the grant: it
-        allows while it exists and its sets parse. kubectl edits them; this page only shows them.
+        allows while it exists and its sets parse. This table only shows them.
       </Table.Caption>
     </Table>
   );
