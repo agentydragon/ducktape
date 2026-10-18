@@ -142,11 +142,11 @@ push was `b23d44f899151ae7a32913c3cb53f6457d072eaa`, with `Ready=True` and
 `repository up-to-date`. All four testing/staging service/delivery Kustomizations
 were Ready. Staging templates contained:
 
-| Runner | Image tag |
-| --- | --- |
+| Runner   | Image tag                      |
+| -------- | ------------------------------ |
 | Standard | `devel-20261018034344-810a431` |
 | Ducktape | `devel-20261018035032-810a431` |
-| VM | `devel-20261018034555-810a431` |
+| VM       | `devel-20261018034555-810a431` |
 
 The two previously failing Claude tool cases passed on this standard runner:
 **2 passed, 4 deselected in 359.05 seconds**. They exercised bound-policy access,
