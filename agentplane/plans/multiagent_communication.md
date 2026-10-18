@@ -82,7 +82,8 @@ independent overlapping grants remain.
 
 **`allSandboxes` target agreed with the operator, 2026-10-17:** a rule may target every Sandbox in the
 namespace of the PolicySet holding it, never the whole cluster; the Sandbox Controller likewise
-reconciles a single namespace. A Sandbox in another namespace needs a direct target. The target
+reconciles a single namespace. A Sandbox in another namespace would need a direct target, which the
+[draft schema](#draft-schema-for-the-first-session-access-rule) leaves out for v1. The target
 covers later Sandboxes without membership data, and the backends match it on the recorded Sandbox
 namespace, so it keeps working after a Sandbox is deleted. It grants only the operations its rule
 lists: read-any does not imply send-any.
@@ -331,6 +332,67 @@ Independent overlapping grants still apply. Reuse the shared watch `Freshness` h
 a view after three missed resync cycles as Actions and egress do, and select the resync period
 during implementation; no global replica-acknowledgement barrier is required for v1.
 
+### Draft schema for the first Session-access rule
+
+**Drafted on the agreed pieces above for the operator's review; nothing here is selected until
+then.** Names follow the existing rule types: snake_case `type`, camelCase fields, targets named
+explicitly and never selected. The rule is a new branch of the `PolicySet` rule union, and its one
+operation for now is `append_inbox`:
+
+```yaml
+type: session_access
+operations: [append_inbox]
+targets:
+  sandboxes: # direct, in the PolicySet's namespace
+    - name: coordinator
+    - name: dev-1
+      uid: 3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1 # optional: this incarnation only
+  sandboxCollections: [developers] # memberships in the PolicySet's namespace
+  allSandboxes: true # every Sandbox in the PolicySet's namespace
+```
+
+At least one target field is required, and the fields combine additively. A membership is one CR per
+Sandbox and collection, in the Sandbox's namespace; a collection has no CR of its own:
+
+```yaml
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: SandboxCollectionMembership
+metadata:
+  name: dev-1-developers
+  namespace: agentplane
+spec:
+  collection: developers
+  sandbox:
+    name: dev-1
+    uid: 3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1 # optional
+```
+
+- **Match.** A send to Sandbox S is allowed when a rule of a set bound to the caller lists
+  `append_inbox` and either lists S in `sandboxes`, names a collection with a membership naming S,
+  or sets `allSandboxes`. A `uid` that is given must equal S's current UID. An empty collection
+  grants nothing. A reference without `uid` follows a deleted and recreated Sandbox of that name; a
+  UID-pinned one does not, and app launches write the pinned form.
+- **Bindings.** Resolution reuses `subject_bindings`: a set holding a `session_access` rule that does
+  not parse grants nothing, and the reader reports that in its own condition on each binding that
+  names the set. A `PolicyBinding` names its subject by namespace and name and pins no ServiceAccount
+  UID, so a replaced same-name ServiceAccount keeps its grants.
+- **Administration.** Membership writes go to the operator, GitOps and the app's ServiceAccount
+  through ordinary RBAC. No Sandbox or agent ServiceAccount gets them, and a send grant carries
+  none. The Notification service gets a namespaced Role with `get`, `list` and `watch` on
+  `policysets`, `policybindings` and `sandboxcollectionmemberships`, and `patch` on
+  `policybindings/status`, as the Action Service and egress hold for policy. The Role lands before
+  the code that uses it.
+- **Freshness.** The Notification service takes a `policy_resync_seconds` setting, default 300 as in
+  the Action Service, and refuses sends as unavailable before its first sync and when any watched
+  kind is more than three resyncs old (15 minutes at the default).
+- **Namespace.** The Notification service serves the one namespace its `namespace` setting names and
+  rejects a destination elsewhere (`Service.resolve_destination`). V1 direct targets and memberships
+  are therefore same-namespace, with no `namespace` field. It can be added without changing existing
+  rules when a service serves a second namespace.
+
+**Question for review:** should a direct target be able to name another namespace in v1?
+Recommended no, as above.
+
 ### Alternatives if the tentative direction needs revision
 
 Both native RBAC and service-enforced rules can use PolicySets/Bindings for assignment. The
@@ -513,6 +575,11 @@ state. Sends to an existing inbox skip it, and a Session History has not yet rec
 its first push. History reads resolve a Session to its recorded Sandbox because History owns that
 record. The operator accepts this for v1 and may revisit addressing with the planned Notification
 Service refactors.
+
+**Recipient states, drafted for the operator's review:** a send to a suspended or offline Sandbox is
+accepted and noticed per `spec.wakeOnSend`. A send to a Sandbox that no longer exists, or whose UID
+differs from a given one, is refused and never retargeted, as `Service.resolve_destination` already
+does for subscriptions.
 
 Store the peer message with authenticated sender-SA provenance and the qualified destination.
 The inbox/messaging service prepares a platform-generated

@@ -317,9 +317,12 @@ implementation.
 
 ### `SESSION_ACCESS_RULES_DESIGN` — Session-access rule and membership schema
 
-**Decision; the wildcard question is settled and the concrete schema remains for review. Gates
-`SESSION_ACCESS_RULES`, `THREAD_READ_POLICY_DESIGN` and `AGENT_MESSAGING_DESIGN`.** Draft the concrete
-rule/member-reference schema for review, including administrative RBAC and freshness
+**Decision; the wildcard question is settled and [the schema draft](multiagent_communication.md#draft-schema-for-the-first-session-access-rule)
+(2026-10-18 UTC) awaits the operator's review. Gates `SESSION_ACCESS_RULES`, `THREAD_READ_POLICY_DESIGN`
+and `AGENT_MESSAGING_DESIGN`.** Question for review: should a direct target be able to name another
+namespace in v1? Recommended no, since the Notification service rejects a destination outside its own
+namespace; the field can be added later. Approval unblocks `SESSION_ACCESS_RULES`. The draft covers the
+concrete rule/member-reference schema, including administrative RBAC and freshness
 settings under the agreed [policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness),
 without requiring an auth-engine migration. Prefer Kubernetes resources for grants and explicit
 collection membership, with separate CRs for individual Sandbox-to-collection enrollments so Flux
@@ -348,7 +351,8 @@ Connection representation/storage changes are outside this work.
 Sandboxes and explicit collections, for permissions like "send messages to any Sandbox" and "read from any
 Session"; a Session's scope is its Sandbox, so both are one target form. It matches every Sandbox in the
 namespace of the PolicySet holding the rule, never the whole cluster: a Sandbox Controller reconciles one
-namespace (`--namespace`), and a Sandbox in another namespace needs a direct target. It covers Sandboxes
+namespace (`--namespace`), and a Sandbox in another namespace would need a direct target, which the draft
+leaves out for v1. It covers Sandboxes
 created later and needs no membership data, and History matches it on the recorded namespace, so a reader
 of every history is unaffected by `HISTORY_ACCESS_AFTER_DELETION`. Operations stay independent (read-any
 does not imply send-any) and only whoever writes PolicySets can grant it. The namespace match is the
@@ -523,8 +527,9 @@ The [sender-facing receipt contract](multiagent_communication.md#sender-facing-r
 selected: the sender queries a message it sent for notice coverage and acknowledgement, and not found
 means no record. Read receipts and notice delivery stage are not v1.
 OAuth-bound SAs can be senders; v1 does not provide inboxes for externally running agents.
-Distinguish accepted, noticed, admitted, handled and task-success evidence. Define retention, limits,
-deduplication and offline/deleted-recipient behavior. Reading a transcript grants neither send nor ack.
+Distinguish accepted, noticed, admitted, handled and task-success evidence. Retention, limits,
+deduplication and recipient states follow the existing inbox, as [the peer message path](multiagent_communication.md#peer-message-path)
+drafts; the one new limit is at most 128 unacknowledged messages per sender and inbox. Reading a transcript grants neither send nor ack.
 
 V1 retains notice batching in Notifications and wake/delivery in Dispatcher. A Sandbox's existing
 `spec.wakeOnSend` policy applies to any admitted message, including mixed-source notices; a suspended
