@@ -8,7 +8,7 @@ import { followStream, type StreamConnection } from "../live_stream";
 import { ActionCall } from "./call";
 import { parseCallToolResult } from "./call_tool_result";
 import { actionHistory, listActionGroups, type ActionRequestView } from "./client";
-import { renderActionCall, renderDetailsResult } from "./rendering/index";
+import { renderActionCall, renderDetailsResult, renderNativeDetailsResult } from "./rendering/index";
 import { stateLabel } from "./requests";
 
 /** The stored result: its pretty rendering unless it has none or the action is switched to Raw, and
@@ -43,12 +43,14 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
   const hasResult = result !== null && result !== undefined;
   const hasExecutionError = executionError !== null && executionError !== undefined;
   const decisionState = request.state === "allowed" || request.state === "denied";
-  // An MCP group's result is its stored CallToolResult, the same authority the Action Service answers
-  // MCP callers by (`agentplane/action_service/tool_results.py`), drawn by the Action's own widget or
-  // as the tool answered. Anything else, a sandbox group's own models or a group this page cannot
-  // place, has no rendering but its JSON.
-  const call = mcp && result !== null && result !== undefined ? parseCallToolResult(result) : null;
-  const prettyResult = call === null ? null : renderDetailsResult(request.action, call);
+  const call = mcp && hasResult ? parseCallToolResult(result) : null;
+  const prettyResult = mcp
+    ? call === null
+      ? null
+      : renderDetailsResult(request.action, call)
+    : hasResult
+      ? renderNativeDetailsResult(request.action, result)
+      : null;
   const combinedCall = renderActionCall(request.action, request.arguments, call ?? undefined);
   return (
     <Paper withBorder p="md">
@@ -198,11 +200,7 @@ export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX
         </Text>
       )}
       {error && <Text c="red">{error}</Text>}
-      {executors.error && (
-        <Alert color="orange">
-          Results show as their stored JSON: the Action groups could not be loaded. {executors.error}
-        </Alert>
-      )}
+      {executors.error && <Alert color="orange">Action group metadata could not be loaded. {executors.error}</Alert>}
       {loading && <Text role="status">Loading actions…</Text>}
       {!loading && !error && decided.length === 0 && <Text c="dimmed">No decided requests yet.</Text>}
       {decided.map((request) => (

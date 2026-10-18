@@ -9,6 +9,7 @@ import {
   renderActionLabel,
   renderDetailsArguments,
   renderDetailsResult,
+  renderNativeDetailsResult,
   renderPaneCollapsed,
   renderPaneOpened,
   shouldRenderPaneRequestTitle,
@@ -545,21 +546,21 @@ describe("sandbox rendering", () => {
   });
 
   it("shows readiness conditions and empty lists", async () => {
-    const node = await mount(renderDetailsResult(action("get"), result(info)));
+    const node = await mount(renderNativeDetailsResult(action("get"), result(info)));
     expect(node.textContent).toContain("ContainersNotReady");
     expect(node.textContent).toContain("Image pulling");
-    expect((await mount(renderDetailsResult(action("create"), result(info)))).textContent).toContain("Pending");
-    expect((await mount(renderDetailsResult(action("list"), result({ sandboxes: [] })))).textContent).toContain(
+    expect((await mount(renderNativeDetailsResult(action("create"), result(info)))).textContent).toContain("Pending");
+    expect((await mount(renderNativeDetailsResult(action("list"), result({ sandboxes: [] })))).textContent).toContain(
       "No sandboxes."
     );
-    expect((await mount(renderDetailsResult(action("list"), result({ sandboxes: [info] })))).textContent).toContain(
-      "waiting-sandbox"
-    );
+    expect(
+      (await mount(renderNativeDetailsResult(action("list"), result({ sandboxes: [info] })))).textContent
+    ).toContain("waiting-sandbox");
   });
 
   it.each([true, false])("distinguishes disposal existed=%s", async (existed) => {
     expect(
-      (await mount(renderDetailsResult(action("dispose"), result({ name: "box", existed })))).textContent
+      (await mount(renderNativeDetailsResult(action("dispose"), result({ name: "box", existed })))).textContent
     ).toContain(existed ? "disposed" : "already absent");
   });
 
@@ -569,7 +570,7 @@ describe("sandbox rendering", () => {
     [{ kind: "timed_out" }, "Timed out"],
   ])("preserves execution outcomes and truncation", async (exit, label) => {
     const node = await mount(
-      renderDetailsResult(
+      renderNativeDetailsResult(
         action("exec"),
         result({
           exit,

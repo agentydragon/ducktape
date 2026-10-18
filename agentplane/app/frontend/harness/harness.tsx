@@ -3215,7 +3215,7 @@ const visualHarness = {
     ACTIONS[2]!.action = action;
     ACTIONS[2]!.arguments = args;
     ACTIONS[2]!.title = `Review ${action.name} result`;
-    ACTIONS[2]!.execution!.result = { content: [], structuredContent: result, isError: false };
+    ACTIONS[2]!.execution!.result = result;
   },
   longPendingAction(): void {
     ACTIONS[1]!.arguments = {

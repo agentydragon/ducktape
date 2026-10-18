@@ -108,6 +108,7 @@ interface ActionPresentation {
   details?: {
     arguments?: ArgumentsPreview | null;
     result?: ResultPreview | null;
+    nativeResult?: ResultPreview;
   };
   /** Card decision buttons are a capability of their own: a custom view does not grant them. The Action decides per
       invocation, from the complete arguments, whether what the compact card shows is enough to decide on. */
@@ -302,7 +303,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
         {
           label: sandboxExecLabel,
           pane: { opened: sandboxExecArguments },
-          details: { arguments: sandboxExecArguments, result: sandboxExecResult },
+          details: { arguments: sandboxExecArguments, nativeResult: sandboxExecResult },
         },
       ],
       [
@@ -310,7 +311,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
         {
           label: sandboxCreateLabel,
           pane: { opened: sandboxCreateArguments },
-          details: { arguments: sandboxCreateArguments, result: sandboxInfoResult },
+          details: { arguments: sandboxCreateArguments, nativeResult: sandboxInfoResult },
         },
       ],
       [
@@ -318,7 +319,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
         {
           label: sandboxGetLabel,
           pane: { opened: sandboxNamedArguments },
-          details: { arguments: sandboxNamedArguments, result: sandboxInfoResult },
+          details: { arguments: sandboxNamedArguments, nativeResult: sandboxInfoResult },
         },
       ],
       [
@@ -326,7 +327,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
         {
           label: sandboxDisposeLabel,
           pane: { opened: sandboxNamedArguments },
-          details: { arguments: sandboxNamedArguments, result: sandboxDisposeResult },
+          details: { arguments: sandboxNamedArguments, nativeResult: sandboxDisposeResult },
         },
       ],
       [
@@ -334,7 +335,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
         {
           label: sandboxListLabel,
           pane: { opened: sandboxListArguments },
-          details: { arguments: sandboxListArguments, result: sandboxListResult },
+          details: { arguments: sandboxListArguments, nativeResult: sandboxListResult },
         },
       ],
     ]),
@@ -428,4 +429,10 @@ export function renderDetailsResult(action: ActionIdentity, result: CallToolResu
 /** Whether this invocation gets card decision buttons; independent of the presentation chosen. */
 export function actionOffersCardDecisionButtons(action: ActionIdentity, args: unknown): boolean {
   return presentation(action)?.offersCardDecisionButtons?.(args) ?? false;
+}
+
+/** Native executors store their result models directly, without an MCP envelope. */
+export function renderNativeDetailsResult(action: ActionIdentity, value: unknown): ReactNode | null {
+  const preview = presentation(action)?.details?.nativeResult;
+  return preview ? renderResultPreview(preview, value) : null;
 }
