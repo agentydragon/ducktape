@@ -105,14 +105,15 @@ class SessionFollow:
                 runner = await self._gateway.control.runner()
                 status = await runner.GetStatus(runner_pb2.GetStatusRequest())
                 session = next(row for row in status.sessions if row.session_id == session_id)
-                if not session.busy:
-                    summaries = await runner.ListSessions(runner_pb2.ListSessionsRequest())
-                    summary = next(row for row in summaries.sessions if row.session_id == session_id)
-                    if (
-                        summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
-                        and self._cursor >= summary.last_cursor
-                    ):
-                        raise StreamClosedError
+                if session.busy:
+                    # Activation can finish after publishing its final Event, so completion
+                    # need not produce another ingress wakeup.
+                    await asyncio.sleep(0.01)
+                    continue
+                summaries = await runner.ListSessions(runner_pb2.ListSessionsRequest())
+                summary = next(row for row in summaries.sessions if row.session_id == session_id)
+                if summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED and self._cursor >= summary.last_cursor:
+                    raise StreamClosedError
             await ingress.wait_beyond(session_id, self._cursor)
         entry = page[0]
         event = entry.event
