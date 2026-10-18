@@ -246,7 +246,7 @@ Session inventory; its harness and turn fields are last observed History values.
 removing a runner Pod does not clear projected Threads, and the app does not claim their harnesses
 are still running. Archived Threads stay hidden unless the operator chooses **Show archived**.
 
-The egress tab's decisions are their own stream, `/live/sandboxes/{name}/egress/decisions`: the
+The Egress log tab's decisions are their own stream, `/live/sandboxes/{name}/egress/decisions`: the
 proxy announces each commit of decisions on its admin port's `/decisions/changes`, and every frame
 re-reads `/decisions` from it. Runner availability affects operations that need a live Session and
 whether the page can open a new one; it does not determine whether a retained History Thread appears

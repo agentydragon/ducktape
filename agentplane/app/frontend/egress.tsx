@@ -434,7 +434,7 @@ function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null 
 }
 
 /** What recently left the sandbox, or was refused, as the egress proxy reports it. */
-export function EgressSection({ name }: { name: string }): JSX.Element {
+export function EgressLog({ name }: { name: string }): JSX.Element {
   const decisions = useEgressDecisions(name);
   return (
     <Stack gap="xs">

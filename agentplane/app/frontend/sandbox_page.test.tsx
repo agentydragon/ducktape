@@ -76,7 +76,7 @@ const mutableSnapshot = live.snapshot as SandboxSnapshot;
 const readyPod = readySandbox.pod;
 const readyStatus = readySandbox.status;
 
-/** The Egress panel stays mounted behind its tab and follows a stream that these tests never feed. */
+/** The Egress log panel stays mounted behind its tab and follows a stream that these tests never feed. */
 class SilentEventSource extends EventTarget {
   static readonly CLOSED = 2;
   readyState = 1;
