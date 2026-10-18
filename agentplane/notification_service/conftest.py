@@ -42,7 +42,7 @@ database_template, db_url = migrated_database_fixtures(RUNNER, drivername="postg
 
 
 @pytest.fixture
-def sandbox_service_db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+def history_db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     return database_clones.clone(service_database_template, drivername="postgresql+asyncpg")
 
 

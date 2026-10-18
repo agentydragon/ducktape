@@ -48,7 +48,6 @@ py_test(
         ":event_log",
         "//:conftest",
         "//agentplane/app:conftest",
-        "//agentplane/app/testing:retained_history",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/threads:models",
         "//agentplane/app/threads:summaries",

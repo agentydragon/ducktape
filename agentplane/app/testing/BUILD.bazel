@@ -40,11 +40,13 @@ py_library(
     deps = [
         ":history",
         "//agentplane/app:operator_sessions",
+        "//agentplane/app/threads:models",
         "//agentplane/app/threads:store",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -178,16 +180,6 @@ py_library(
         "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "retained_history",
-    srcs = ["retained_history.py"],
-    visibility = ["//agentplane/app:__subpackages__"],
-    deps = [
-        "//agentplane/app/threads:models",
-        "@pypi//sqlalchemy",
     ],
 )
 

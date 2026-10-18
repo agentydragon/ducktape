@@ -1,4 +1,4 @@
-"""Production service-backed archive reads and retained identity compatibility."""
+"""Production service-backed archive reads and persisted Thread identity."""
 
 from __future__ import annotations
 
@@ -13,8 +13,7 @@ import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.testing.retained_history import seed_retained_session
-from agentplane.app.testing.thread_test_support import event_entry
+from agentplane.app.testing.thread_test_support import event_entry, seed_thread
 from agentplane.app.threads.events.event_log import EventLogStore, SessionAdmissionError
 from agentplane.app.threads.models import Thread
 from agentplane.app.threads.summaries import Summaries
@@ -45,7 +44,7 @@ def remote(engine: AsyncEngine, reader: AsyncMock) -> EventLogStore:
 
 
 async def test_remote_history_reads_its_own_committed_prefix(engine: AsyncEngine) -> None:
-    thread_id = await seed_retained_session(engine)
+    thread_id = await seed_thread(engine)
     entry = event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7))
 
     class Reader:
@@ -229,10 +228,10 @@ async def test_a_session_the_history_service_has_not_recorded_opens_with_empty_h
         await remote.events(thread_id, limit=10)
 
 
-async def test_public_session_open_preserves_retained_identity(
+async def test_public_session_open_reuses_existing_thread(
     engine: AsyncEngine, reader: AsyncMock, remote: EventLogStore
 ) -> None:
-    public_id = await seed_retained_session(engine)
+    public_id = await seed_thread(engine)
     assert await remote.open(str(public_id)) == public_id
     reader.read_session_observations.assert_not_awaited()
     async with async_sessionmaker(engine)() as session:
@@ -242,13 +241,13 @@ async def test_public_session_open_preserves_retained_identity(
 
 
 async def test_open_refuses_a_runner_session_id(engine: AsyncEngine, remote: EventLogStore) -> None:
-    await seed_retained_session(engine)
+    await seed_thread(engine)
     with pytest.raises(SessionAdmissionError, match="canonical"):
-        await remote.open("s-retained")
+        await remote.open("s-runner")
 
 
 async def test_a_thread_exists_by_its_public_identity(engine: AsyncEngine, remote: EventLogStore) -> None:
-    public_id = await seed_retained_session(engine)
+    public_id = await seed_thread(engine)
     assert await remote.exists(public_id)
     assert not await remote.exists(uuid4())
 

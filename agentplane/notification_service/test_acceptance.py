@@ -99,7 +99,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
-    sandbox_service_db_url: str,
+    history_db_url: str,
     dispatcher_db_url: str,
 ) -> None:
     caplog.set_level(logging.INFO, logger=__name__)
@@ -135,7 +135,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
             max_wait_seconds=30,
             reader_accounts=frozenset({delegate}),
         )
-        history_wakeups = create_wakeups(make_url(sandbox_service_db_url))
+        history_wakeups = create_wakeups(make_url(history_db_url))
         token_file = tmp_path / "delegate-token"
         token_file.write_text(delegate_token)
         gateway = await stack.enter_async_context(
@@ -173,8 +173,8 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
             httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=action_api), base_url="http://actions.test"
             ) as action_http,
-            ingest(sandbox_service_db_url, runner),
-            history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
+            ingest(history_db_url, runner),
+            history_service(history_db_url, tmp_path / "history-token") as history,
             history_wakeups.listener.listen(),
         ):
             source = ActionServiceClient(action_http, token_file)
