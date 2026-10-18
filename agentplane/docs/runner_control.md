@@ -407,9 +407,6 @@ becomes ready after its native conversation preparation/reconciliation, without 
 | Teardown sealing               | `Quiesce`, repeated until journals are acknowledged |
 | Dispatcher command delivery    | Matching per-operation Runner RPC                   |
 
-The VM experiment's runtime acceptance drives the guest runner directly through a port-forward and
-moves with the selected VM control path.
-
 ## Prior art and alternatives
 
 Two harnesses already ship a dial-out control channel, and the choices above borrow from both:

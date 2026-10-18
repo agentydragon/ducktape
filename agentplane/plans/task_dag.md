@@ -671,7 +671,6 @@ flowchart LR
     VM_GUEST_MEMORY --> VM_GUEST_BUDGET_DERIVE
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
     VM_GUEST_MEMORY --> LOCAL_BAZEL
-    SANDBOX_VM_ISOLATION --> KUBEVIRT_EXPERIMENT_RETIRE[Blocked: delete the KubeVirt experiment]
 ```
 
 ### `VM_HARNESS_RESOURCE_LIMITS` — accept per-harness resource limits on the VM guest
@@ -709,15 +708,6 @@ not a Cartesian product of every component crash and lifecycle operation.
 **Blocked on integrated lifecycle.** Publish the selectable VM environment and measured resource
 limits and cross-Sandbox security guarantees, with no implied existing-Sandbox conversion or live
 migration. Component evidence, not absence of every imaginable failure, establishes the delivered contract.
-
-### `KUBEVIRT_EXPERIMENT_RETIRE` — delete the KubeVirt experiment
-
-**Blocked on the VM capstone.** Once the production provider covers it, move anything still needed
-(the acceptance driver, if it becomes the VM lifecycle test) into production code, then delete
-`cluster/cdk8s/agentplane/kubevirt_experiment/`, its launcher policy (production's is
-`launcher_relay.py`) and the manifests it generates. Review stale draft #8843 for any still-useful
-status mapping or validation before closing it unmerged; production VM creation and halted image
-replacement already exist, so they are not prerequisites to implement again.
 
 ### `VM_RAM_SUSPEND` — suspend a VM to disk with its RAM
 
@@ -1640,8 +1630,7 @@ optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; th
 `agentplane/README.md` showing exactly the deployed services and the traffic between them in
 `cluster/cdk8s/agentplane`. Known now: the test-only `PostgresListener.wait_until_disconnected`
 (`connected` turns false before the termination callback runs, so its tests cannot wait on
-`connected` instead); egress and app test support each build a throwaway CA;
-`cluster/cdk8s/agentplane/kubevirt_experiment` is an experiment outside `x/`. Findings are fixed in
+`connected` instead); egress and app test support each build a throwaway CA. Findings are fixed in
 PRs of their own; this node leaves with the last of them.
 
 ## 10. Runner ingress and control split

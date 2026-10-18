@@ -23,6 +23,8 @@ lost.
 - A launcher is admitted only when KubeVirt's controller creates it for a live VMI of a live
   VirtualMachine controlled by one of our Sandboxes, and the same Sandbox controls the ServiceAccount.
   Each link is read live and UID-checked: labels and annotations never select an identity.
+  Owner references are caller-supplied, so the chain authenticates the launcher, not who may write
+  VirtualMachines, VMIs and Pods in the namespace; direct writes there stay restricted by RBAC.
 - Relay tokens are short-lived projected tokens that the relay reopens per request, so rotation needs
   no relay restart. Pod deletion is not instantaneous revocation.
 - The config and trust disks are ConfigMap disks, snapshots taken at boot. A CA or launch-config
@@ -107,7 +109,7 @@ and resource budget. No separate per-tool budget or kill boundary is part of the
   a limit equal to guest RAM is not isolation. `agentplane-testing`'s 4Gi container limit caps a guest at
   about 1.7Gi. Guests need KVM-capable nodes (`kubevirt.io/schedulable`); do not fall back to
   software emulation.
-- A cold start on the prototype guest took two minutes to pull the image, four to scan and format
+- A cold start on an early guest took two minutes to pull the image, four to scan and format
   its blank disks and three to build a Java trust store one certificate at a time (the trust disk now
   supplies the PKCS#12 store). Per-boot work proportional to disk size or certificate count shows up
   directly as startup latency. So does the guest closure: a node pulls the whole qcow2 before the
