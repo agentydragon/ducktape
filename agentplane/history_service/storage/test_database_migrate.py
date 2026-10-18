@@ -93,7 +93,8 @@ def test_sandbox_of_a_bound_session_is_its_writers_account(db_url: str) -> None:
                 {"id": bound},
             )
             connection.execute(text("INSERT INTO session_history (id, last_cursor) VALUES (:id, 0)"), {"id": unbound})
-        RUNNER.apply(db_url)
+        # Later migrations already ran before the stamp; exercise only the Sandbox backfill.
+        RUNNER.apply(db_url, "0017_session_sandbox")
         with engine.connect() as connection:
             rows = {
                 row.id: (row.sandbox_namespace, row.sandbox_name)
