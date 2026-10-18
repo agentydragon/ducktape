@@ -3221,6 +3221,17 @@ const visualHarness = {
     ACTIONS[2]!.title = `Review ${action.name} result`;
     ACTIONS[2]!.execution!.result = result;
   },
+  showActionReceipt(action: ActionRequestView["action"], args: ActionRequestView["arguments"], result: unknown): void {
+    const receipt = ACTIONS[2]!;
+    ACTIONS.splice(0, ACTIONS.length, {
+      ...receipt,
+      action,
+      arguments: args,
+      title: "Long action text",
+      description: null,
+      execution: { ...receipt.execution!, result },
+    });
+  },
   longPendingAction(): void {
     ACTIONS[1]!.arguments = {
       host: "test-archive-host",

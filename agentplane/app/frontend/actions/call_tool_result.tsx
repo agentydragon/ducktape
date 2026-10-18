@@ -2,7 +2,8 @@ import { Anchor, Badge, Code, Stack, Text } from "@mantine/core";
 import { type JSX, useMemo } from "react";
 import { z } from "zod";
 
-import { HighlightedText, JsonView, looksLikeJson } from "../json_view";
+import { looksLikeJson } from "../json_view";
+import { ActionJson, ActionText } from "./payload";
 import { parsedJson } from "../parsed_json";
 
 /** One block of a `CallToolResult`'s `content`, in the MCP wire shape of the kinds this view
@@ -114,7 +115,7 @@ export function CallToolResultView({ result }: { result: CallToolResult }): JSX.
           <Text size="xs" c="dimmed" mb={4}>
             Structured content
           </Text>
-          <JsonView value={structured} />
+          <ActionJson value={structured} />
         </div>
       )}
     </Stack>
@@ -163,7 +164,7 @@ function ContentBlockView({ block }: { block: ContentBlock }): JSX.Element {
         </div>
       );
     case "unrecognized":
-      return <JsonView value={block.block} />;
+      return <ActionJson value={block.block} />;
   }
 }
 
@@ -171,7 +172,11 @@ function ContentBlockView({ block }: { block: ContentBlock }): JSX.Element {
  * answer, and otherwise as the text itself. */
 function TextBlock({ text }: { text: string }): JSX.Element {
   const structure = useMemo(() => jsonStructure(text), [text]);
-  return structure === undefined ? <HighlightedText text={text} /> : <JsonView value={structure} />;
+  return structure === undefined ? (
+    <ActionText text={text} language={looksLikeJson(text) ? "json" : undefined} />
+  ) : (
+    <ActionJson value={structure} />
+  );
 }
 
 /** Whether `text` says nothing but `value`: its JSON, or the string itself. */

@@ -5,7 +5,7 @@ import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRigh
 import { type JSX, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
-import { JsonView } from "../json_view";
+import { ActionJson } from "./payload";
 import { ResizeHandle, usePaneSize } from "../resize_handle";
 import {
   actionOffersCardDecisionButtons,
@@ -130,7 +130,7 @@ function PendingActionList({
                     Authenticated external caller
                   </Text>
                 )}
-                {openedPreview ?? <JsonView value={request.arguments} />}
+                {openedPreview ?? <ActionJson value={request.arguments} />}
                 <Group justify="space-between" wrap="nowrap" gap="xs">
                   {decision ?? (
                     <Text size="xs" c="dimmed">

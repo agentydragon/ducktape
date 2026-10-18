@@ -2,7 +2,7 @@ import { Anchor, Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { CodeBlock } from "../../code_block";
+import { ActionText } from "../payload";
 import { Chip } from "./chips";
 import {
   defineCallPreview,
@@ -61,7 +61,7 @@ function DraftDetails({ args }: { args: DraftArguments }): JSX.Element {
       {args.cc && args.cc.length > 0 && <Chip label="Cc" value={args.cc.join(", ")} />}
       {args.bcc && args.bcc.length > 0 && <Chip label="Bcc" value={args.bcc.join(", ")} />}
       {args.thread_id && <Chip label="Reply thread" value={args.thread_id} />}
-      <CodeBlock text={args.body} />
+      <ActionText text={args.body} />
     </Stack>
   );
 }
@@ -179,7 +179,7 @@ function DraftCall({ args, result }: CallPreviewProps<DraftArguments, DraftCallR
       <Chip label="To" value={recipients(args)} />
       {args.cc && args.cc.length > 0 && <Chip label="Cc" value={args.cc.join(", ")} />}
       {args.bcc && args.bcc.length > 0 && <Chip label="Bcc" value={args.bcc.join(", ")} />}
-      <CodeBlock text={args.body} />
+      <ActionText text={args.body} />
       {threadHref && (
         <Anchor href={threadHref} target="_blank" rel="noreferrer">
           Reply in Gmail thread

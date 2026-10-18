@@ -2,7 +2,9 @@ import { type JSX, type ReactNode, useEffect, useRef, useState } from "react";
 import { Alert, Badge, Button, Code, Paper, SegmentedControl, Stack, Text } from "@mantine/core";
 
 import { displayableError } from "../client";
-import { JsonView } from "../json_view";
+import { ClampedBlock, lineCount } from "../clamped_block";
+import { OUTPUT_MAX_HEIGHT_REM } from "../command_view";
+import { ActionJson } from "./payload";
 import { useOptionalStreamStatus } from "../stream_status";
 import { followStream, type StreamConnection } from "../live_stream";
 import { ActionCall } from "./call";
@@ -27,7 +29,7 @@ function ExecutionResult({
       <Text size="sm" fw={600} mb={4}>
         Result
       </Text>
-      {pretty === null || raw ? <JsonView value={result} /> : pretty}
+      {pretty === null || raw ? <ActionJson value={result} /> : pretty}
     </div>
   );
 }
@@ -76,7 +78,15 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
           prettyResult={prettyResult !== null}
           combinedCall={combinedCall}
         />
-        {decision?.decision_note && <Text size="sm">{decision.decision_note}</Text>}
+        {decision?.decision_note && (
+          <ClampedBlock
+            maxHeightRem={OUTPUT_MAX_HEIGHT_REM}
+            lines={lineCount(decision.decision_note)}
+            label="Decision note"
+          >
+            <Text size="sm">{decision.decision_note}</Text>
+          </ClampedBlock>
+        )}
         {policySet && (
           <Text size="xs" c="dimmed">
             Auto-approved via policy <Code>{policySet}</Code>
@@ -92,7 +102,7 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
                 <Text size="sm" fw={600} mb={4}>
                   Execution error
                 </Text>
-                <JsonView value={executionError} />
+                <ActionJson value={executionError} />
               </div>
             )}
             {!decisionState && (

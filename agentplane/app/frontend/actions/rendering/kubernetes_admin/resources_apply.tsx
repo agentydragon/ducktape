@@ -2,7 +2,7 @@ import { Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { CodeBlock } from "../../../code_block";
+import { ActionText } from "../../payload";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
 const resourceApplyArguments = z.strictObject({ resource: z.string().min(1) });
@@ -20,7 +20,7 @@ function ApplyLabel(): JSX.Element {
 }
 
 function Manifest({ args }: { args: z.infer<typeof resourceApplyArguments> }): JSX.Element {
-  return <CodeBlock text={args.resource} language="yaml" />;
+  return <ActionText text={args.resource} language="yaml" />;
 }
 
 export const resourcesApplyCollapsed: ArgumentsPreview = definePreview(resourceApplyArguments, Collapsed);
