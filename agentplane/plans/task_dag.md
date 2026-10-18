@@ -1201,7 +1201,7 @@ flowchart TD
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
-    IDLE_SUSPEND_UI_DRIVE[In progress with operator: drive auto-suspend and send-to-resume in staging]
+    IDLE_SUSPEND_UI_DRIVE[Ready for operator: drive auto-suspend and send-to-resume in staging]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
 
@@ -1480,9 +1480,7 @@ rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` be
 
 ### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
 
-**In progress with the operator (2026-10-17 PDT).** The operator reports a basic Codex
-message works and is waiting for the five-minute idle timeout to observe suspension and
-send-to-wake; those two steps are not yet accepted. Runner-owned lifecycle rollout acceptance is
+**Ready for the operator (2026-10-17 PDT).** Runner-owned lifecycle rollout acceptance is
 complete; see the [rollout record](../docs/harness_lifecycle_rollout_20261017.md).
 Drive the approved send-to-start behavior after explicit harness shutdown/resume controls are removed;
 the ownership decision is settled. The rest of this node stands.
@@ -1732,7 +1730,7 @@ flowchart LR
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     RUNNER_STORE_SESSION_IDENTITY[Candidate: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
-    IDLE_SUSPEND_UI_DRIVE[In progress with operator: drive auto-suspend and send-to-resume in staging, section 7]
+    IDLE_SUSPEND_UI_DRIVE[Ready for operator: drive auto-suspend and send-to-resume in staging, section 7]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
