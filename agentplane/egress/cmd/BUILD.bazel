@@ -21,6 +21,7 @@ go_library(
         "//agentplane/egress/rules",
         "//agentplane/egress/upstream",
         "//agentplane/workload_auth/go/auth",
+        "@com_github_caarlos0_env_v11//:env",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",
         "@io_k8s_client_go//rest",

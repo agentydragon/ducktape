@@ -14,9 +14,12 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
+	"k8s.io/apimachinery/pkg/util/cache"
 )
 
 var (
@@ -29,18 +32,30 @@ var (
 // DefaultTTL is how long a pin answers admissions without a new lookup.
 const DefaultTTL = 30 * time.Second
 
+// maxPins bounds the pins held; the least recently used goes first.
+const maxPins = 10000
+
 // Pin is the address a host was resolved to, valid for the dials made while it is fresh.
 type Pin struct {
-	Host       string
-	Port       int
-	Address    netip.Addr
-	ResolvedAt time.Time
+	Host    string
+	Port    int
+	Address netip.Addr
 }
 
 type pinKey struct {
 	host string
 	port int
 }
+
+// flight names the lookup that admissions of the same host and port, under the same `internal`,
+// wait on together.
+func (k pinKey) flight(internal bool) string {
+	return net.JoinHostPort(k.host, strconv.Itoa(k.port)) + "/" + strconv.FormatBool(internal)
+}
+
+type clock func() time.Time
+
+func (c clock) Now() time.Time { return c() }
 
 // Lookup returns every address a name resolves to.
 type Lookup func(ctx context.Context, host string) ([]netip.Addr, error)
@@ -57,8 +72,8 @@ type Resolver struct {
 	lookup Lookup
 	now    func() time.Time
 
-	mu   sync.Mutex
-	pins map[pinKey]Pin
+	pins    *cache.LRUExpireCache
+	flights singleflight.Group
 }
 
 type Option func(*Resolver)
@@ -75,12 +90,11 @@ func WithClock(now func() time.Time) Option { return func(r *Resolver) { r.now =
 // NewResolver admits, besides globally reachable addresses, the ones inside `exempt`: networks an
 // admitted host may resolve into although they are not globally reachable.
 func NewResolver(exempt []netip.Prefix, options ...Option) *Resolver {
-	r := &Resolver{
-		exempt: exempt, ttl: DefaultTTL, lookup: systemLookup, now: time.Now, pins: map[pinKey]Pin{},
-	}
+	r := &Resolver{exempt: exempt, ttl: DefaultTTL, lookup: systemLookup, now: time.Now}
 	for _, option := range options {
 		option(r)
 	}
+	r.pins = cache.NewLRUExpireCacheWithClock(maxPins, clock(r.now))
 	return r
 }
 
@@ -93,22 +107,59 @@ func NewResolver(exempt []netip.Prefix, options ...Option) *Resolver {
 // proxy dials from has no IPv6 route.
 func (r *Resolver) Pin(ctx context.Context, host string, port int, internal bool) (Pin, error) {
 	key := pinKey{host: strings.ToLower(host), port: port}
-	if pin, ok := r.fresh(key); ok {
-		// The cache is keyed by host and port, not by who admitted it, so a private address
-		// pinned for a rule that declared its host internal must not be served to one that did
-		// not: the check runs again against the address already held.
-		if !Reachable(pin.Address, r.exempt, internal) {
-			return Pin{}, fmt.Errorf("%w: %s is pinned to %s", ErrAddressForbidden, host, pin.Address)
-		}
-		return pin, nil
+	if pin, found, err := r.held(key, internal); found || err != nil {
+		return pin, err
 	}
-	addresses, err := r.resolve(ctx, host)
+	for {
+		lookup := r.flights.DoChan(key.flight(internal), func() (any, error) {
+			// An admission that arrived while the flight before it was finishing finds its pin.
+			if pin, found, err := r.held(key, internal); found || err != nil {
+				return pin, err
+			}
+			return r.resolveAndPin(ctx, key, internal)
+		})
+		select {
+		case result := <-lookup:
+			// The admission that led the lookup was cancelled; this one was not.
+			if errors.Is(result.Err, context.Canceled) && ctx.Err() == nil {
+				continue
+			}
+			if result.Err != nil {
+				return Pin{}, result.Err
+			}
+			return result.Val.(Pin), nil
+		case <-ctx.Done():
+			return Pin{}, ctx.Err()
+		}
+	}
+}
+
+// held returns the pin held for the key, if it is still fresh and reachable for `internal`.
+func (r *Resolver) held(key pinKey, internal bool) (Pin, bool, error) {
+	value, found := r.pins.Get(key)
+	if !found {
+		return Pin{}, false, nil
+	}
+	pin := value.(Pin)
+	// The cache is keyed by host and port, not by who admitted it, so a private address pinned for
+	// a rule that declared its host internal must not be served to one that did not: the check
+	// runs again against the address already held.
+	if !Reachable(pin.Address, r.exempt, internal) {
+		return Pin{}, true, fmt.Errorf("%w: %s is pinned to %s", ErrAddressForbidden, key.host, pin.Address)
+	}
+	return pin, true, nil
+}
+
+// resolveAndPin resolves the host once for every admission waiting on it, and holds the pin only
+// when every address is reachable.
+func (r *Resolver) resolveAndPin(ctx context.Context, key pinKey, internal bool) (Pin, error) {
+	addresses, err := r.resolve(ctx, key.host)
 	if err != nil {
 		return Pin{}, err
 	}
 	for _, address := range addresses {
 		if !Reachable(address, r.exempt, internal) {
-			return Pin{}, fmt.Errorf("%w: %s resolves to %s", ErrAddressForbidden, host, address)
+			return Pin{}, fmt.Errorf("%w: %s resolves to %s", ErrAddressForbidden, key.host, address)
 		}
 	}
 	chosen := addresses[0]
@@ -118,27 +169,10 @@ func (r *Resolver) Pin(ctx context.Context, host string, port int, internal bool
 			break
 		}
 	}
-	now := r.now()
-	pin := Pin{Host: key.host, Port: port, Address: chosen, ResolvedAt: now}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for kept, held := range r.pins {
-		if !r.alive(held, now) {
-			delete(r.pins, kept)
-		}
-	}
-	r.pins[key] = pin
+	pin := Pin{Host: key.host, Port: key.port, Address: chosen}
+	r.pins.Add(key, pin, r.ttl)
 	return pin, nil
 }
-
-func (r *Resolver) fresh(key pinKey) (Pin, bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	pin, ok := r.pins[key]
-	return pin, ok && r.alive(pin, r.now())
-}
-
-func (r *Resolver) alive(pin Pin, now time.Time) bool { return now.Before(pin.ResolvedAt.Add(r.ttl)) }
 
 // resolve returns the host's distinct addresses in answer order. A literal is checked, never
 // looked up.
