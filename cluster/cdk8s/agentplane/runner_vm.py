@@ -102,7 +102,7 @@ class RunnerVmTemplate(Construct):
                 "agentplane-config": VirtualMachineSpecTemplateSpecVolumes(
                     name="config", config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=_CONFIG_MAP_NAME)
                 ),
-                # Holds `ca-certificates.crt` and `ca-certificates.p12`, the names vm.nix copies.
+                # Holds `ca-certificates.crt` and `ca-certificates.p12`, the names vm.nix links.
                 "agentplane-trust": VirtualMachineSpecTemplateSpecVolumes(
                     name="trust",
                     config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=env.egress.ca_secret_name),

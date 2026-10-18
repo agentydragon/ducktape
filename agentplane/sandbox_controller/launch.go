@@ -21,7 +21,7 @@ const (
 	LaunchMountPath = "/run/agentplane/sandbox"
 	// LaunchFile is the key of the Sandbox's launch ConfigMap that the runner reads
 	// (agentplane/runner/sandbox_launch.py). A VM guest finds the same file on the disk of serial
-	// LaunchDiskSerial, which agentplane/runner/vm.nix copies.
+	// LaunchDiskSerial, which agentplane/runner/vm.nix links into /run/agentplane.
 	LaunchFile       = "launch.json"
 	LaunchDiskSerial = "agentplane-launch"
 

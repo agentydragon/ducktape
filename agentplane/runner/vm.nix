@@ -8,6 +8,9 @@
 # KubeVirt's virtiofsd runs as uid/gid 107 with no capabilities: every file the guest writes on
 # /state lands as 107:107 and chown fails, so only guest root and a user whose uid and gid are both
 # 107 can write there. The runner runs as root; harness children run as that 107 user.
+#
+# The runner's configuration, launch file and CA bundle arrive on three read-only KubeVirt ConfigMap
+# disks, mounted under /run/agentplane and linked to the paths the runner reads.
 {
   lib,
   pkgs,
@@ -16,13 +19,19 @@
   ...
 }:
 let
-  configDevice = "/dev/disk/by-id/virtio-agentplane-config";
-  launchDevice = "/dev/disk/by-id/virtio-agentplane-launch";
-  trustDevice = "/dev/disk/by-id/virtio-agentplane-trust";
   workspaceDevice = "/dev/disk/by-id/virtio-workspace";
   workspaceDir = "/state/workspaces";
   runtimeDir = "/run/agentplane";
-  sourceDir = "${runtimeDir}/config-source";
+  # The runner reads these files from runtimeDir (agentplane/runner/guest_config.py). Each lives on
+  # the KubeVirt ConfigMap disk of serial `agentplane-<disk>`, mounted at `${runtimeDir}/<disk>`.
+  seedDiskOf = {
+    "config.json" = "config";
+    "kubeconfig" = "config";
+    "launch.json" = "launch";
+    "ca-certificates.crt" = "trust";
+    "ca-certificates.p12" = "trust";
+  };
+  seedDisks = lib.unique (lib.attrValues seedDiskOf);
   # virtiofsd's identity (above); agentplane/runner/guest_config.py runs harnesses as it.
   agentUser = "agent";
   agentId = 107;
@@ -54,17 +63,13 @@ let
           $out/bin/codex
       '';
 
-  # Serial console login, selected per environment by the guest config (`console_autologin`): a root
-  # shell without a prompt where set, the ordinary login prompt otherwise. The guest has no account
-  # passwords, so without autologin an attach stops at the prompt.
-  consoleGetty = pkgs.writeShellScript "agentplane-console-getty" ''
-    set -euo pipefail
-    autologin=()
-    if ${pkgs.jq}/bin/jq -e '.console_autologin == true' "${runtimeDir}/config.json" >/dev/null; then
-      autologin=(--autologin root)
-    fi
-    exec ${pkgs.util-linux}/sbin/agetty "''${autologin[@]}" --keep-baud 115200,57600,38400,9600 ttyS0 "''${TERM:-vt220}"
-  '';
+  # An ExecCondition that passes where the guest config's `console_autologin` (unset is false)
+  # equals `autologin`. jq exits 1 otherwise, which skips the unit without failing it; an unreadable
+  # config (exit 2 or 5) skips both console units. It prints nothing, which the console, a tty
+  # for these units, would show.
+  consoleAutologinIs =
+    autologin:
+    "${pkgs.jq}/bin/jq 'if (.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeDir}/config.json";
 
   # TODO: Package repo-owned code run in the VM as a Bazel-built binary (Python, Go, Rust,
   # etc.) and consume that artifact here instead of embedding a raw script with a shebang.
@@ -117,14 +122,43 @@ in
   # the VMI serial log and `virtctl console` read, without a guest exec.
   services.journald.console = "/dev/ttyS0";
 
+  # Serial console login, selected per environment by the guest config's `console_autologin`: the
+  # ordinary login prompt where unset, a root shell without a prompt where set. The guest has no
+  # account passwords, so without autologin an attach stops at the prompt.
   systemd.services."serial-getty@ttyS0" = {
     overrideStrategy = "asDropin";
-    after = [ "agentplane-config.service" ];
-    wants = [ "agentplane-config.service" ];
-    serviceConfig.ExecStart = [
-      ""
-      "${consoleGetty}"
+    unitConfig.RequiresMountsFor = [ "${runtimeDir}/config" ];
+    serviceConfig.ExecCondition = consoleAutologinIs false;
+  };
+  # serial-getty@.service for ttyS0 with agetty's autologin.
+  systemd.services.agentplane-console-autologin = {
+    description = "Serial console root shell on ttyS0";
+    wantedBy = [ "getty.target" ];
+    before = [ "getty.target" ];
+    bindsTo = [ "dev-ttyS0.device" ];
+    after = [
+      "dev-ttyS0.device"
+      "systemd-user-sessions.service"
+      "getty-pre.target"
     ];
+    unitConfig = {
+      IgnoreOnIsolate = true;
+      RequiresMountsFor = [ "${runtimeDir}/config" ];
+    };
+    serviceConfig = {
+      ExecCondition = consoleAutologinIs true;
+      ExecStart = "${pkgs.util-linux}/sbin/agetty --login-program ${pkgs.shadow}/bin/login --autologin root --keep-baud 115200,57600,38400,9600 ttyS0 $TERM";
+      Type = "idle";
+      Restart = "always";
+      UtmpIdentifier = "ttyS0";
+      StandardInput = "tty";
+      StandardOutput = "tty";
+      TTYPath = "/dev/ttyS0";
+      TTYReset = true;
+      TTYVHangup = true;
+      IgnoreSIGPIPE = false;
+      SendSIGHUP = true;
+    };
   };
 
   users.groups.${agentUser}.gid = agentId;
@@ -141,28 +175,49 @@ in
   # satisfy host defaults.
   users.allowNoPasswordLogin = true;
 
-  # The KubeVirt filesystem named `state` is the virtiofs tag.
-  fileSystems."/state" = {
-    device = "state";
-    fsType = "virtiofs";
-    noCheck = true;
-    options = [
-      "noatime"
-      "nodev"
-      "nosuid"
-    ];
-  };
-  fileSystems.${workspaceDir} = {
-    device = workspaceDevice;
-    fsType = "ext4";
-    options = [
-      "noatime"
-      "nodev"
-      "nosuid"
-    ];
-    autoFormat = false;
-    autoResize = false;
-  };
+  fileSystems = {
+    # The KubeVirt filesystem named `state` is the virtiofs tag.
+    "/state" = {
+      device = "state";
+      fsType = "virtiofs";
+      noCheck = true;
+      options = [
+        "noatime"
+        "nodev"
+        "nosuid"
+      ];
+    };
+    ${workspaceDir} = {
+      device = workspaceDevice;
+      fsType = "ext4";
+      options = [
+        "noatime"
+        "nodev"
+        "nosuid"
+      ];
+      autoFormat = false;
+      autoResize = false;
+    };
+  }
+  # KubeVirt builds a ConfigMap disk as an ISO 9660 image with Rock Ridge names. `nofail` leaves a
+  # missing disk to the runner, which requires its mount, rather than to local-fs.target.
+  // lib.listToAttrs (
+    map (
+      disk:
+      lib.nameValuePair "${runtimeDir}/${disk}" {
+        device = "/dev/disk/by-id/virtio-agentplane-${disk}";
+        fsType = "iso9660";
+        noCheck = true;
+        options = [
+          "ro"
+          "nosuid"
+          "nodev"
+          "noexec"
+          "nofail"
+        ];
+      }
+    ) seedDisks
+  );
 
   # Ownership, the setgid mode and inherited harness access are persistent tmpfiles policy rather
   # than imperative chown/chmod/setfacl commands. The service below reapplies it after the mount.
@@ -172,63 +227,11 @@ in
     "a+ ${workspaceDir} - - - - d:user:${toString agentId}:rwx,d:group:${toString agentId}:rwx"
     "d ${workspaceDir}/.home 0700 ${agentUser} ${agentUser} -"
     "z ${workspaceDir}/.home 0700 ${agentUser} ${agentUser} -"
-  ];
-
-  systemd.services.agentplane-config = {
-    description = "Read the Agentplane public configuration, launch and trust disks";
-    wantedBy = [ "local-fs.target" ];
-    before = [
-      "agentplane-runner.service"
-      "local-fs.target"
-    ];
-    after = [
-      "systemd-remount-fs.service"
-      "systemd-udev-trigger.service"
-    ];
-    path = [
-      pkgs.coreutils
-      pkgs.util-linux
-    ];
-    unitConfig.DefaultDependencies = false;
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      UMask = "0022";
-    };
-    script = ''
-      set -euo pipefail
-      install -d -m0755 "${runtimeDir}" "${sourceDir}"
-      cleanup() {
-        if mountpoint -q "${sourceDir}"; then umount "${sourceDir}"; fi
-      }
-      trap cleanup EXIT
-      copy_disk() {
-        local device="$1" mounted=0
-        shift
-        for _ in $(seq 1 60); do
-          if [ -b "$device" ] && mount -o ro,nosuid,nodev,noexec "$device" "${sourceDir}" 2>/dev/null; then
-            mounted=1
-            break
-          fi
-          sleep 1
-        done
-        if [ "$mounted" -ne 1 ]; then
-          echo "KubeVirt read-only Agentplane disk missing at $device" >&2
-          return 1
-        fi
-        for file in "$@"; do
-          test -s "${sourceDir}/$file" || { echo "Agentplane disk is missing $file" >&2; return 1; }
-          install -m0644 "${sourceDir}/$file" "${runtimeDir}/$file"
-        done
-        umount "${sourceDir}"
-      }
-      copy_disk "${configDevice}" config.json kubeconfig
-      copy_disk "${launchDevice}" launch.json
-      copy_disk "${trustDevice}" ca-certificates.crt ca-certificates.p12
-      rmdir "${sourceDir}"
-      trap - EXIT
-    '';
-  };
+    "d ${runtimeDir} 0755 root root -"
+  ]
+  ++ lib.mapAttrsToList (
+    file: disk: "L ${runtimeDir}/${file} - - - - ${runtimeDir}/${disk}/${file}"
+  ) seedDiskOf;
 
   systemd.services.agentplane-workspace-prepare = {
     description = "Format the Agentplane workspace disk when it is blank";
@@ -271,19 +274,16 @@ in
   systemd.services.agentplane-runner = {
     description = "Agentplane native harness runner";
     wantedBy = [ "multi-user.target" ];
-    requires = [
-      "agentplane-config.service"
-      "agentplane-workspace.service"
-    ];
+    requires = [ "agentplane-workspace.service" ];
     after = [
-      "agentplane-config.service"
       "agentplane-workspace.service"
       "network.target"
     ];
     unitConfig.RequiresMountsFor = [
       "/state"
       workspaceDir
-    ];
+    ]
+    ++ map (disk: "${runtimeDir}/${disk}") seedDisks;
     path = [
       agentplaneRunner
       pkgs.coreutils

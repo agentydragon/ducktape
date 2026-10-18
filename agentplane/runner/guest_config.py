@@ -18,7 +18,7 @@ from agentplane.runner.main import async_main
 from agentplane.runner.sandbox_launch import SandboxLaunch
 
 CONFIG_PATH = Path("/run/agentplane/config.json")
-# The Sandbox's own launch file, copied from its disk by vm.nix like the public config.
+# The Sandbox's own launch file, linked to its disk by vm.nix like the public config.
 LAUNCH_PATH = Path("/run/agentplane/launch.json")
 WORKSPACE_DEVICE = Path("/dev/disk/by-id/virtio-workspace")
 # KubeVirt's virtiofsd identity, the only non-root one that can write the state PVC (vm.nix).

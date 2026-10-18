@@ -52,6 +52,10 @@ lost.
 - The state PVC reaches the guest over virtiofs at `/state`, laid out as in a runner Pod. KubeVirt's
   `virtiofsd` is uid/gid 107 with no capabilities, so only guest root and a user with uid and gid 107
   can write there; the runner runs as root and harnesses as 107. Upstream has no rootful alternative.
+- The config, launch and trust ConfigMap disks are read-only ISO 9660 images, mounted at
+  `/run/agentplane/<disk>`, and `systemd-tmpfiles` links the files the runner reads into
+  `/run/agentplane`. A file keeps its ConfigMap's mode, which must stay world-readable: harnesses
+  run as uid 107 and read the CA bundle and kubeconfig.
 - The deployed `runner-vm` template declares a Sandbox-owned `RawDiskImage` workspace with ext4.
   Its claim survives stop/start and replacement of the VM object. The Pod runner uses a
   Sandbox-owned `DirectoryTree` workspace. Custom VM templates may still declare generic
