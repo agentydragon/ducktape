@@ -2,8 +2,8 @@ import { Badge, Code, Group, Stack, Table, Text } from "@mantine/core";
 import { z } from "zod";
 
 import { CommandCallView, OutputBlock } from "../../command_view";
-import { definePreview } from "./entry";
-import { defineResultPreview } from "./result_entry";
+import { definePreview, type ArgumentsPreview } from "./entry";
+import { defineResultPreview, type ResultPreview } from "./result_entry";
 
 const named = z.strictObject({ name: z.string().min(1) });
 const create = named.extend({ template: z.string() });
@@ -15,12 +15,12 @@ const exec = named.extend({
 });
 const empty = z.strictObject({});
 
-export const sandboxExecLabel = definePreview(exec, ({ args }) => (
+export const sandboxExecLabel: ArgumentsPreview = definePreview(exec, ({ args }) => (
   <Text size="sm" fw={600}>
     Run script in sandbox <Code>{args.name}</Code>
   </Text>
 ));
-export const sandboxExecArguments = definePreview(exec, ({ args }) => (
+export const sandboxExecArguments: ArgumentsPreview = definePreview(exec, ({ args }) => (
   <CommandCallView
     command={args.script}
     notes={[
@@ -30,37 +30,37 @@ export const sandboxExecArguments = definePreview(exec, ({ args }) => (
     ]}
   />
 ));
-export const sandboxCreateLabel = definePreview(create, ({ args }) => (
+export const sandboxCreateLabel: ArgumentsPreview = definePreview(create, ({ args }) => (
   <Text size="sm" fw={600}>
     Create sandbox <Code>{args.name}</Code>
   </Text>
 ));
-export const sandboxCreateArguments = definePreview(create, ({ args }) => (
+export const sandboxCreateArguments: ArgumentsPreview = definePreview(create, ({ args }) => (
   <Text size="sm">
     Template: <Code>{args.template}</Code>
   </Text>
 ));
-export const sandboxGetLabel = definePreview(named, ({ args }) => (
+export const sandboxGetLabel: ArgumentsPreview = definePreview(named, ({ args }) => (
   <Text size="sm" fw={600}>
     Inspect sandbox <Code>{args.name}</Code>
   </Text>
 ));
-export const sandboxDisposeLabel = definePreview(named, ({ args }) => (
+export const sandboxDisposeLabel: ArgumentsPreview = definePreview(named, ({ args }) => (
   <Text size="sm" fw={600}>
     Dispose sandbox <Code>{args.name}</Code>
   </Text>
 ));
-export const sandboxNamedArguments = definePreview(named, () => (
+export const sandboxNamedArguments: ArgumentsPreview = definePreview(named, () => (
   <Text size="sm" c="dimmed">
     No additional arguments.
   </Text>
 ));
-export const sandboxListLabel = definePreview(empty, () => (
+export const sandboxListLabel: ArgumentsPreview = definePreview(empty, () => (
   <Text size="sm" fw={600}>
     List sandboxes
   </Text>
 ));
-export const sandboxListArguments = definePreview(empty, () => (
+export const sandboxListArguments: ArgumentsPreview = definePreview(empty, () => (
   <Text size="sm" c="dimmed">
     No arguments.
   </Text>
@@ -135,19 +135,24 @@ function SandboxInfo({ value }: { value: z.infer<typeof info> }) {
     </Stack>
   );
 }
-export const sandboxInfoResult = defineResultPreview(info, ({ result }) => <SandboxInfo value={result} />);
-export const sandboxListResult = defineResultPreview(z.strictObject({ sandboxes: z.array(info) }), ({ result }) => (
-  <Stack gap="md">
-    {result.sandboxes.length === 0 ? (
-      <Text size="sm" c="dimmed">
-        No sandboxes.
-      </Text>
-    ) : (
-      result.sandboxes.map((value) => <SandboxInfo key={value.name} value={value} />)
-    )}
-  </Stack>
+export const sandboxInfoResult: ResultPreview = defineResultPreview(info, ({ result }) => (
+  <SandboxInfo value={result} />
 ));
-export const sandboxDisposeResult = defineResultPreview(
+export const sandboxListResult: ResultPreview = defineResultPreview(
+  z.strictObject({ sandboxes: z.array(info) }),
+  ({ result }) => (
+    <Stack gap="md">
+      {result.sandboxes.length === 0 ? (
+        <Text size="sm" c="dimmed">
+          No sandboxes.
+        </Text>
+      ) : (
+        result.sandboxes.map((value) => <SandboxInfo key={value.name} value={value} />)
+      )}
+    </Stack>
+  )
+);
+export const sandboxDisposeResult: ResultPreview = defineResultPreview(
   z.strictObject({ name: z.string(), existed: z.boolean() }),
   ({ result }) => (
     <Text size="sm">
@@ -169,7 +174,7 @@ const execution = z.strictObject({
   stderr: stream,
   duration_seconds: z.number().nonnegative(),
 });
-export const sandboxExecResult = defineResultPreview(execution, ({ result }) => (
+export const sandboxExecResult: ResultPreview = defineResultPreview(execution, ({ result }) => (
   <Stack gap="xs">
     <Group gap="xs">
       <Badge color={result.exit.kind === "exited" && result.exit.exit_code === 0 ? "green" : "red"}>
