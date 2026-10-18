@@ -927,8 +927,11 @@ def generate_manifests(root: Path) -> None:
     )
     haku_openclaw_spike_backup_artifact = artifact("haku-openclaw-spike-backup", haku_openclaw_spike_backup.OUTPUT_DIR)
     # The retained Restic recovery package is reproducible and is not a Flux artifact.
+    repository_sops = copy_source_file(
+        root, haku_openclaw_spike_backup.OUTPUT_DIR, f"{haku_openclaw_spike_backup.OUTPUT_DIR}/repository.sops.yaml"
+    )
     write_directory(
-        root, haku_openclaw_spike_backup_artifact, haku_openclaw_spike_backup.chart, siblings=["repository.sops.yaml"]
+        root, haku_openclaw_spike_backup_artifact, haku_openclaw_spike_backup.chart, siblings=[repository_sops]
     )
     copy_source_file(root, haku_openclaw_spike_backup.OUTPUT_DIR, f"{haku_openclaw_spike_backup.OUTPUT_DIR}/README.md")
     authentik_db_backups_artifact = artifact("authentik-db-backups", authentik_db_backups.OUTPUT_DIR)
