@@ -525,7 +525,7 @@ describe("sandbox rendering", () => {
     phase: "Pending",
     conditions: [{ type: "Ready", status: "False", reason: "ContainersNotReady", message: "Image pulling" }],
   };
-  const result = (value: unknown): CallToolResult => ({ content: [], structuredContent: value, isError: false });
+  const result = (value: unknown): unknown => value;
 
   it.each([
     ["create", { name: "new-sandbox", template: "python" }, "Create sandbox", "Template: python"],

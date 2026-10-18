@@ -285,3 +285,17 @@ describe("ActionHistory", () => {
     expect(container.textContent).toContain("test group listing outage");
   });
 });
+
+it("renders native sandbox results and keeps the original payload available through Raw", async () => {
+  const row = request("succeeded", 1);
+  row.action = { group: "sandbox", name: "dispose" };
+  row.arguments = { name: "absent-sandbox" };
+  row.execution!.result = { name: "absent-sandbox", existed: false };
+  const container = await renderHistory([row], [group("sandbox", "sandbox")]);
+  expect(container.textContent).toContain("already absent");
+  const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+  expect(raw).not.toBeNull();
+  await act(async () => raw?.click());
+  expect(container.textContent).toContain('"existed"');
+  expect(container.textContent).not.toContain("already absent");
+});
