@@ -847,6 +847,10 @@ async def test_empty_runner_can_reserve_before_bootstrap_finishes_and_quiesce_it
             continue_bootstrap.touch()
             await asyncio.wait_for(draining, timeout=10)
             await gateway.control.wait_for_facts(
+                Facts(bootstrap=Facts.BOOTSTRAP_SUCCEEDED, quiesce_stage=Facts.QUIESCE_STAGE_FLUSHING)
+            )
+            acknowledge_sealed_sessions(empty)
+            await gateway.control.wait_for_facts(
                 Facts(bootstrap=Facts.BOOTSTRAP_SUCCEEDED, quiesce_stage=Facts.QUIESCE_STAGE_QUIESCED)
             )
             assert completed.exists()
