@@ -752,6 +752,19 @@ ts_library(
 )
 
 ts_library(
+    name = "policy_bindings",
+    srcs = ["policy_bindings.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":egress",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "system",
     srcs = ["system.tsx"],
     tsconfig = TSCONFIG,
@@ -854,6 +867,7 @@ ts_library(
         ":live",
         ":mark_glyph",
         ":notification_status",
+        ":policy_bindings",
         ":raw_switch",
         ":sandbox_console",
         ":sandbox_status",

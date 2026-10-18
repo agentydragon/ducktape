@@ -52,6 +52,7 @@ import { durationLabel } from "./format_time";
 import { TimeAgo } from "./time_ago";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
+import { PolicyBindingsSection } from "./policy_bindings";
 import { RawSwitch } from "./raw_switch";
 import { SandboxConsole } from "./sandbox_console";
 import {
@@ -823,10 +824,11 @@ export function SandboxPage({
           {vmConsoleAvailable && <Tabs.Tab value="console">Console</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value="egress" pt="sm">
-          <EgressSection name={name} bindings={live.snapshot?.bindings ?? null} />
+          <EgressSection name={name} />
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">
           <Stack gap="md">
+            <PolicyBindingsSection sandbox={name} bindings={live.snapshot?.bindings ?? null} />
             <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
             <BoundPolicySection policy={live.snapshot?.bound_policy ?? null} />
           </Stack>

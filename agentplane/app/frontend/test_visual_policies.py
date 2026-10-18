@@ -712,8 +712,8 @@ async def test_sandbox_form_public_coder_preset_layout(view: VisualPage, app: Ag
 
 
 @DESKTOP_AND_MOBILE
-async def test_sandbox_egress_pick_updates_options(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_app("/sandboxes/ready-sandbox?tab=egress&rules=ready-sandbox-github-public")
+async def test_sandbox_policy_grant_pick_updates_options(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/sandboxes/ready-sandbox?tab=policy&rules=ready-sandbox-github-public")
     await view.check(context="fixture ready")
     page = view.page
     await _open_select(page, label="Grant policy sets", available="pypi")
