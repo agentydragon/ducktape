@@ -17,8 +17,7 @@ asynchronously outside the artifact.
 The shared `all-images` automation owns the tags in `image-pins/` through Flux Setters
 markers. The runner-owned lifecycle promotion and deployed acceptance are complete;
 all service and runner image families have their markers restored. No staging starts
-hold remains. Release evidence and retained-state checks are in the
-[rollout record](../../../agentplane/docs/harness_lifecycle_rollout_20261017.md).
+hold remains. See the [lifecycle contract](../../../agentplane/docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle).
 
 The `agentplane-staging` and `agentplane-staging-delivery` Flux Kustomizations consume
 this Component from the repo source. A template update affects future Sandbox

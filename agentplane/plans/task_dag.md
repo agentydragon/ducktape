@@ -1166,7 +1166,7 @@ flowchart TD
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
-    IDLE_SUSPEND_UI_DRIVE[Ready for operator: drive auto-suspend and send-to-resume in staging]
+    IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
 
@@ -1443,30 +1443,21 @@ test. Once a guest root filesystem is an `oci_image` target, `RUNNER_LAYERING_VM
 candidate runtime, CI can build a guest without Attic, and a runtime experiment becomes an additive target
 rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` before adding image weight to that environment.
 
-### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
+### `IDLE_SUSPEND_UI_DRIVE` — finish the VM staging UI drive
 
-**Ready for the operator (2026-10-17 PDT).** Runner-owned lifecycle rollout acceptance is
-complete; see the [rollout record](../docs/harness_lifecycle_rollout_20261017.md).
-Drive the approved send-to-start behavior after explicit harness shutdown/resume controls are removed;
-the ownership decision is settled. The rest of this node stands.
+**Partially accepted by the operator (2026-10-17 PDT); remaining VM drive belongs to the operator.**
+The operator test-drove the five-minute idle suspension and message-to-wake successfully with Codex;
+see [UI acceptance](../docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle).
+Do not repeat that accepted path as a rollout gate. The report does not identify a VM test.
 
-**Operator, 2026-10-15 UTC: assigned to the operator, not dispatchable to a worker.** A human drives the
-whole loop through the staging web app on a real Session and reports what the UI actually does: the
-Sandbox goes idle, suspends on its own, and a message typed into the composer reaches that stopped
-Session and brings it back end to end. The idle trigger is `spec.idleSuspendAfter`, set in the Sandboxes list; the suspended composer
-and per-Sandbox wake-on-message policy are recorded as implemented and deployed, so this is acceptance of
-the pair **as experienced**, not a re-run of their unit coverage or the composer's own rollout checks.
+The remaining check is the same experience through the staging web app with a VM Sandbox: idle
+suspension, composer message, wake and delivery, and preservation of the expected context/workspace.
+Record only observed gaps and what survived; VM-local disks and processes are lost on suspension,
+while retained state/workspace volumes survive. No claim of a completed VM UI drive follows from
+the automated Pod/VM lifecycle coverage.
 
-Worth recording during the drive, because automated coverage does not produce it: how long the idle wait
-looks from the UI, what the Session and Sandbox render while suspended, whether the default-off wake
-policy is legible (queued versus "resume it yourself"), what the user is told afterward and what survived,
-and any point where the only way forward is `kubectl`. Log a deployment-specific gap as a node rather than
-fixing it mid-drive. Cover a VM Sandbox as well as a Pod one: a VM keeps its state PVC across stop/start
-and loses guest-local disks, so it is where a resume that looks successful can still lose something the
-user expected back.
-
-Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage), and `VM_RAM_SUSPEND` for the
-"resume with the memory it had" version of the same experience.
+Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage), and `VM_RAM_SUSPEND` for
+resuming with memory retained.
 
 ### `AGENT_RESUME_NOTICE` — tell agents when their Sandbox was suspended and resumed
 
@@ -1695,7 +1686,7 @@ flowchart LR
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     RUNNER_STORE_SESSION_IDENTITY[Candidate: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
-    IDLE_SUSPEND_UI_DRIVE[Ready for operator: drive auto-suspend and send-to-resume in staging, section 7]
+    IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive, section 7]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]

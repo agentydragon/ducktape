@@ -679,28 +679,19 @@ than assuming every image shares a build SHA.
    unchanged archived history and retained storage. Testing's follow-up model turns prove context
    recall on both harnesses. Check exact-turn rejection and process/Session status. Keep the rollout
    incomplete until behavior is observed, not just Flux or Deployment readiness. Record the actual
-   deployed revisions as Flux continues managing the pins. The separate `IDLE_SUSPEND_UI_DRIVE` node follows
-   lifecycle rollout and remains assigned to the operator for the human staging UI drive.
+   deployed revisions as Flux continues managing the pins. The human staging UI drive follows
+   lifecycle rollout; record operator-reported acceptance separately from automated coverage.
 
-**Rollout checkpoint, 2026-10-17 PDT:** implementation #10950 and promotion #10961 are merged.
-Testing and staging have the coordinated service and runner/template release; staging's old service
-Pods are gone. Flux Image Automation manages the restored image setters and its reconciliation
-reported the repository up to date. No service scale-to-zero or Flux suspension was applied.
+**Lifecycle rollout accepted (2026-10-17 PDT).** Implementation #10950, promotion #10961
+and explicit Claude `bypassPermissions` #10965 are deployed. Flux Image Automation owns all service
+and runner image pins; the temporary starts/wake hold is released. Deployed acceptance covered
+Pod/VM context retention, dormant/ready status, retained staging history and volume identities,
+and the two Claude tool cases after the permission change.
 
-Deployed launch-preset acceptance passed. The Pod suspend/resume case passed for both Claude and
-Codex, and the VM case passed for Codex, including native context recall, dormant/ready status,
-unchanged history prefixes and retained PVC/PV identities. A retained staging Codex Session resumed
-and reconciled on the new Ducktape runner, settled an unchanged-setting command as a no-op, and
-returned to its original archived/suspended state without a model turn. All 184 preexisting history
-entries matched their pre-cutover hash; all four staging Sandbox UIDs and eight Sandbox PVC/PV
-identities were preserved. After the initial egress run passed four cases and exposed native
-permission denials in two Claude tool cases, #10965 selected explicit `bypassPermissions`.
-Its exact-head CI passed all 1,463 tests. The released wheel reached all three runner image
-families through Flux Image Automation, and both previously failing deployed Claude cases passed.
-Native initialization reported bypass mode in a UID 1000 process. The temporary wake-policy hold
-was restored; staging starts may resume. The separate operator-owned `IDLE_SUSPEND_UI_DRIVE`
-remains ready for the human staging UI drive. Exact revisions, evidence and failed-attempt
-limitations are in the [rollout record](harness_lifecycle_rollout_20261017.md).
+**Operator UI acceptance (2026-10-17 PDT):** the operator reports a basic Codex message worked,
+then test-drove idle suspension after the five-minute interval and successfully sent a message to
+wake the Sandbox. This is acceptance of the tested staging UI path; it does not establish a
+separate VM UI drive.
 
 Keep previous image revisions and a tested persistent-format rollback policy. Before new work is
 accepted, revert the coordinated release if necessary. After new writes, reconcile/preserve them;
