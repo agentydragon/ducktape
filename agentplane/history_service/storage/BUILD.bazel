@@ -54,6 +54,7 @@ py_test(
         "//agentplane/history_service:channels",
         "//agentplane/history_service:conftest",
         "//agentplane/history_service/testing:delta_spans",
+        "//agentplane/history_service/testing:sessions",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:history_service_pb2",

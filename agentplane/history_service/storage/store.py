@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.storage.db import (
     SessionEvent,
+    SessionEventRemovedRange,
     SessionEventSettledRange,
     SessionEventSettlement,
     SessionHistory,
@@ -71,7 +72,7 @@ _SETTLEMENT_SPAN_LIMIT = 20_000
 class ObservationPage:
     last_cursor: int
     observations: list[tuple[int, str]]
-    # Settled cursor ranges intersecting the page's window.
+    # Settled and removed cursor ranges intersecting the page's window.
     settled: list[tuple[int, int]]
 
 
@@ -154,8 +155,8 @@ class Store:
                 payload = entry.SerializeToString(deterministic=True)
                 if cursor <= row.last_cursor:
                     existing = await session.get(SessionEvent, (session_id, cursor))
-                    if existing is None and await _settled_range(session, session_id, cursor) is not None:
-                        continue  # a settled delta; its exact payload is no longer stored to compare
+                    if existing is None and await _is_unstored(session, session_id, cursor):
+                        continue  # settled or removed; its exact payload is no longer stored to compare
                     if existing is None or existing.payload != payload:
                         raise HistoryConflictError(f"conflicting entry at {cursor}")
                     continue
@@ -308,10 +309,22 @@ class Store:
                 )
                 .order_by(SessionEventSettlement.completion_cursor)
             )
+            # A short page reaches the end of the prefix, where the last cursors may be removed ones.
+            removal_window_end = through if len(rows) == limit else history.last_cursor
+            removed = await session.execute(
+                select(SessionEventRemovedRange.first_cursor, SessionEventRemovedRange.last_cursor)
+                .where(
+                    SessionEventRemovedRange.session_id == session_id,
+                    SessionEventRemovedRange.first_cursor <= removal_window_end,
+                    SessionEventRemovedRange.last_cursor > after_cursor,
+                )
+                .order_by(SessionEventRemovedRange.first_cursor)
+            )
             page = history_service_pb2.ReadSessionEventsResponse(
                 last_cursor=history.last_cursor,
                 entries=[event_log_pb2.EventEntry.FromString(row.payload) for row in rows],
                 settlements=[history_service_pb2.SettledDeltas.FromString(payload) for payload in settlements],
+                removed=[history_service_pb2.CursorRange(first=first, last=last) for first, last in removed],
             )
             if history.feed_state is not None:
                 page.feed_state.ParseFromString(history.feed_state)
@@ -351,22 +364,23 @@ class Store:
             ]
             if after_cursor is None:
                 observations.reverse()
-            # The window runs from the requested bound to the far end of what was returned.
+            # The window runs from the requested bound to the far end of what was returned, or for a
+            # short page forward to the end of the prefix, where the last cursors may be removed ones.
             if after_cursor is not None:
-                low, high = after_cursor + 1, observations[-1][0] if observations else after_cursor
+                low, high = after_cursor + 1, observations[-1][0] if len(observations) == limit else history.last_cursor
             else:
                 high = history.last_cursor if before_cursor is None else min(history.last_cursor, before_cursor - 1)
                 low = observations[0][0] if observations else high + 1
-            ranges = await session.execute(
-                select(SessionEventSettledRange.first_cursor, SessionEventSettledRange.last_cursor)
-                .where(
-                    SessionEventSettledRange.session_id == session_id,
-                    SessionEventSettledRange.first_cursor <= high,
-                    SessionEventSettledRange.last_cursor >= low,
+            ranges = [
+                (first, last)
+                for table in (SessionEventSettledRange, SessionEventRemovedRange)
+                for first, last in await session.execute(
+                    select(table.first_cursor, table.last_cursor).where(
+                        table.session_id == session_id, table.first_cursor <= high, table.last_cursor >= low
+                    )
                 )
-                .order_by(SessionEventSettledRange.first_cursor)
-            )
-            return ObservationPage(history.last_cursor, observations, [(first, last) for first, last in ranges])
+            ]
+            return ObservationPage(history.last_cursor, observations, sorted(ranges))
 
 
 def _checkpoint(row: SessionHistory) -> Checkpoint:
@@ -376,14 +390,18 @@ def _checkpoint(row: SessionHistory) -> Checkpoint:
     )
 
 
-async def _settled_range(session: AsyncSession, session_id: UUID, cursor: int) -> SessionEventSettledRange | None:
-    candidate = await session.scalar(
-        select(SessionEventSettledRange)
-        .where(SessionEventSettledRange.session_id == session_id, SessionEventSettledRange.first_cursor <= cursor)
-        .order_by(SessionEventSettledRange.first_cursor.desc())
-        .limit(1)
-    )
-    return candidate if candidate is not None and candidate.last_cursor >= cursor else None
+async def _is_unstored(session: AsyncSession, session_id: UUID, cursor: int) -> bool:
+    """Whether a settlement or a cleanup deleted the entry at `cursor`."""
+    for table in (SessionEventSettledRange, SessionEventRemovedRange):
+        last_cursor = await session.scalar(
+            select(table.last_cursor)
+            .where(table.session_id == session_id, table.first_cursor <= cursor)
+            .order_by(table.first_cursor.desc())
+            .limit(1)
+        )
+        if last_cursor is not None and last_cursor >= cursor:
+            return True
+    return False
 
 
 async def settlement_for(

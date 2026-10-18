@@ -27,7 +27,7 @@ from agentplane.history_service.fold.views import EntityKind
 from agentplane.history_service.fold_runner import FOLD_EPOCH, HEALTH_SERVICE, FoldBacklog, FoldRunner
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
-from agentplane.history_service.testing.sessions import retained_session
+from agentplane.history_service.testing.sessions import remove_entries, retained_session
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, history_service_pb2, runner_pb2
 
 PAGE_SIZE = 8
@@ -232,6 +232,32 @@ async def test_replicas_split_sessions_by_lease(engine: AsyncEngine, history: St
             )
             == PAGE_SIZE
         )
+
+
+async def test_the_fold_passes_over_removed_cursors_including_those_ending_the_history(
+    engine: AsyncEngine, history: Store
+) -> None:
+    entries = [entry(cursor, harness_started=event_pb2.HarnessStarted()) for cursor in range(1, 7)]
+    session_id = await retained_session(history, entries)
+    await remove_entries(engine, session_id, {2, 5, 6})
+    folder = FoldRunner(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
+
+    # The entries are folded first; the removed cursors after the last of them take a cycle of their own.
+    assert await folder.cycle() == FoldBacklog(sessions=1, behind=1, events_behind=2)
+    assert await folder.cycle() == FoldBacklog(sessions=1, behind=0, events_behind=0)
+
+    async with async_sessionmaker(engine)() as session:
+        checkpoint = await session.get(ThreadCheckpoint, session_id)
+        view_state = await session.get(ThreadEntity, (session_id, FOLD_EPOCH, EntityKind.VIEW_STATE, "current"))
+        assert checkpoint is not None
+        assert view_state is not None
+        assert (checkpoint.through_cursor, view_state.cursor, view_state.revision_cursor) == (6, 6, 6)
+        lifecycle = await session.scalars(
+            select(ThreadEntity.cursor).where(
+                ThreadEntity.thread_id == session_id, ThreadEntity.entity_kind == EntityKind.LIFECYCLE
+            )
+        )
+        assert set(lifecycle) == {1, 3, 4}
 
 
 async def folded_rows(session: AsyncSession, session_id: UUID) -> list[tuple[object, ...]]:

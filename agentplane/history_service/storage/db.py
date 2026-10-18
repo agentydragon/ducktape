@@ -97,3 +97,17 @@ class SessionEventSettledRange(Base):
     first_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     last_cursor: Mapped[int] = mapped_column(BigInteger)
     completion_cursor: Mapped[int] = mapped_column(BigInteger)
+
+
+class SessionEventRemovedRange(Base):
+    """A run of runner cursors a cleanup deleted from `session_event`, with no content kept.
+
+    Ranges never overlap each other, a settled range or a retained `session_event` row.
+    """
+
+    __tablename__ = "session_event_removed_range"
+    __table_args__ = (CheckConstraint("first_cursor <= last_cursor", name="removed_range_ordered"),)
+
+    session_id: Mapped[UUID] = mapped_column(ForeignKey("session_history.id"), primary_key=True)
+    first_cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    last_cursor: Mapped[int] = mapped_column(BigInteger)

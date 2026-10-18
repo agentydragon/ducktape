@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import delete, func, or_, select, tuple_
+from sqlalchemy import delete, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,8 +31,8 @@ from agentplane.history_service.fold.views import (
     ThreadOperationalState,
     ThreadViewState,
 )
-from agentplane.history_service.settled_cursors import settled_ranges
-from agentplane.proto import event_log_pb2, history_service_pb2
+from agentplane.history_service.settled_cursors import unstored_ranges
+from agentplane.proto import history_service_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -85,9 +85,8 @@ async def record_thread_fold(
     session: AsyncSession,
     thread_id: UUID,
     source_id: str,
-    entries: Sequence[event_log_pb2.EventEntry],
+    page: history_service_pb2.ReadSessionEventsResponse,
     *,
-    settlements: Sequence[history_service_pb2.SettledDeltas],
     projection_epoch: str,
 ) -> None:
     checkpoint = await session.scalar(
@@ -103,20 +102,15 @@ async def record_thread_fold(
             checkpoint.source_id = source_id
         if checkpoint.source_id != source_id:
             raise EventReplicationError(
-                f"thread fold source changed at cursor {entries[0].cursor}", cursor=entries[0].cursor
+                f"thread fold source changed at cursor {page.entries[0].cursor}", cursor=page.entries[0].cursor
             )
         if checkpoint.projection_epoch != projection_epoch:
             raise ThreadFoldError(
                 f"thread fold epoch {checkpoint.projection_epoch!r} must be reset for {projection_epoch!r}",
-                cursor=entries[0].cursor,
+                cursor=page.entries[0].cursor,
             )
         state, operational = await _fold_state(session, checkpoint)
-    batch = fold.EventBatch(
-        source_id,
-        state.position.through_cursor,
-        tuple(entries),
-        settled_ranges(cursor_range for settlement in settlements for cursor_range in settlement.ranges),
-    )
+    batch = fold.EventBatch(source_id, state.position.through_cursor, tuple(page.entries), unstored_ranges(page))
     result = fold.advance(state, batch, await _prior_entities(session, thread_id, batch))
     await write_payloads(session, thread_id, result.payload_writes)
     # Numbered here rather than in the fold, which reports upserts without saying which are new.
@@ -152,7 +146,7 @@ async def record_thread_fold(
             await session.execute(
                 insert(ThreadNativeLink).values(**values, source_sequence=source_sequence).on_conflict_do_nothing()
             )
-    await forget_settled(session, thread_id, result.state.position.projection_epoch, settlements)
+    await forget_settled(session, thread_id, result.state.position.projection_epoch, page.settlements)
     checkpoint_values = {
         "source_id": result.state.position.source_id,
         "projection_epoch": result.state.position.projection_epoch,
@@ -162,6 +156,28 @@ async def record_thread_fold(
         insert(ThreadCheckpoint)
         .values(thread_id=thread_id, **checkpoint_values)
         .on_conflict_do_update(index_elements=[ThreadCheckpoint.thread_id], set_=checkpoint_values)
+    )
+
+
+async def skip_removed_suffix(session: AsyncSession, thread_id: UUID, through_cursor: int) -> None:
+    """Advance the fold over trailing cursors a cleanup deleted from stored history.
+
+    They hold no entry to fold, but the fold is behind until its checkpoint and current view
+    reach the end of the committed prefix.
+    """
+    checkpoint = await session.get(ThreadCheckpoint, thread_id, with_for_update=True)
+    if checkpoint is None or checkpoint.source_id is None:
+        raise EventReplicationError("an Event source is required to advance the fold")
+    checkpoint.through_cursor = through_cursor
+    await session.execute(
+        update(ThreadEntity)
+        .where(
+            ThreadEntity.thread_id == thread_id,
+            ThreadEntity.projection_epoch == checkpoint.projection_epoch,
+            ThreadEntity.entity_kind == EntityKind.VIEW_STATE,
+            ThreadEntity.entity_id == "current",
+        )
+        .values(cursor=through_cursor, revision_cursor=through_cursor)
     )
 
 

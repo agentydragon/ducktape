@@ -139,8 +139,11 @@ class Service:
     async def read_history(self, session_id: str, *, after_cursor: int, limit: int) -> list[event_log_pb2.EventEntry]:
         """Entries after `after_cursor` as the History Service has committed them."""
         page = await self.history.read_session_events(session_id, after_cursor=after_cursor, limit=limit)
-        # Settlement drops streamed deltas only; a missing cursor nothing settled could be a receipt.
-        settled = [(span.first, span.last) for settlement in page.settlements for span in settlement.ranges]
+        # Settlement and cleanups drop only deltas and stop records; any other missing cursor could be a receipt.
+        settled = [
+            *((span.first, span.last) for settlement in page.settlements for span in settlement.ranges),
+            *((span.first, span.last) for span in page.removed),
+        ]
         previous = after_cursor
         for entry in page.entries:
             if not all(

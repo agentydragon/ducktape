@@ -23,6 +23,8 @@ filegroup(
         "//agentplane/history_service/storage/migrations/versions:0017_session_sandbox.py",
         "//agentplane/history_service/storage/migrations/versions:0018_summary_idle_since.py",
         "//agentplane/history_service/storage/migrations/versions:0019_empty_admitted_projection.py",
+        "//agentplane/history_service/storage/migrations/versions:0020_removed_ranges.py",
+        "//agentplane/history_service/storage/migrations/versions:0021_drop_harness_stop_records.py",
     ],
     visibility = ["//agentplane/history_service/storage:__pkg__"],
 )

@@ -21,8 +21,9 @@ from agentplane.history_service.fold.recording import (
     record_empty_thread_fold,
     record_thread_fold,
     set_operational,
+    skip_removed_suffix,
 )
-from agentplane.history_service.settled_cursors import next_stored, settled_ranges
+from agentplane.history_service.settled_cursors import next_stored, unstored_ranges
 from agentplane.history_service.storage.store import Store
 from agentplane.postgres.wakeups import notify
 
@@ -86,11 +87,11 @@ class HistoryProjector:
             raise ConnectionError("stored history ends before the fold checkpoint")
         if len(page.entries) > self._page_size:
             raise EventReplicationError("invalid stored history page")
-        # Cursors a settlement removed are covered by its ranges, not missing.
-        settled = settled_ranges(cursor_range for settlement in page.settlements for cursor_range in settlement.ranges)
+        # Cursors a settlement or a cleanup removed are covered by their ranges, not missing.
+        unstored = unstored_ranges(page)
         expected = after
         for entry in page.entries:
-            expected = next_stored(expected, settled)
+            expected = next_stored(expected, unstored)
             if (
                 entry.cursor != expected
                 or entry.cursor > page.last_cursor
@@ -98,7 +99,10 @@ class HistoryProjector:
                 or not entry.origin.source_id
             ):
                 raise EventReplicationError("invalid stored history page")
-        if not page.entries and after < page.last_cursor:
+        # An empty page short of the committed prefix is valid only when a cleanup removed every
+        # cursor in between; a fold with no entry yet has no source to carry over them.
+        removed_suffix = not page.entries and after < page.last_cursor
+        if removed_suffix and (after == 0 or next_stored(after, unstored) <= page.last_cursor):
             raise EventReplicationError("stored history omitted entries from its committed prefix")
         async with self._sessions.begin() as session:
             # Serializes with other writes under this sandbox lease, including a
@@ -123,21 +127,17 @@ class HistoryProjector:
                     initialized = await record_empty_thread_fold(
                         session, thread_id, projection_epoch=self._projection_epoch
                     )
-                changed = await project_lifecycle(session, thread_id, summary, page, through_cursor=after)
-                if initialized or changed:
+                through = page.last_cursor if removed_suffix else after
+                if removed_suffix:
+                    await skip_removed_suffix(session, thread_id, through)
+                changed = await project_lifecycle(session, thread_id, summary, page, through_cursor=through)
+                if initialized or changed or removed_suffix:
                     await notify(session, Channel.SUMMARIES)
-                return ProjectionProgress(after, page.last_cursor)
+                return ProjectionProgress(through, page.last_cursor)
             source_id = page.entries[0].origin.source_id
             if any(entry.origin.source_id != source_id for entry in page.entries):
                 raise EventReplicationError("mixed source identities in projection page")
-            await record_thread_fold(
-                session,
-                thread_id,
-                source_id,
-                page.entries,
-                settlements=page.settlements,
-                projection_epoch=self._projection_epoch,
-            )
+            await record_thread_fold(session, thread_id, source_id, page, projection_epoch=self._projection_epoch)
             await record_model_activity(session, thread_id, page.entries)
             for entry in page.entries:
                 at = entry.event.at.ToDatetime(tzinfo=UTC)

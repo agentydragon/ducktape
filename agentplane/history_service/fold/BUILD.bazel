@@ -104,7 +104,6 @@ py_library(
         ":rows",
         ":views",
         "//agentplane/history_service:settled_cursors",
-        "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:history_service_pb2",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",

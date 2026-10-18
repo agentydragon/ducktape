@@ -62,6 +62,17 @@ journal keeps every entry. On by default; setting `ingress.settle_deltas` to fal
 stored entry, for debugging. Why and what it drops:
 [delta settlement ADR](../docs/adr_delta_settlement.md).
 
+## Removed ranges
+
+A cleanup migration that deletes entries from `session_event` records their cursors in
+`session_event_removed_range` and keeps nothing of their content, so a reader can tell a removed
+cursor from a missing one. Read pages report the ranges (`removed`) that intersect them, and
+observation pages fold them into `settled`; readers treat both as covered, and the fold treats
+them as cursors with no entry. Deviation from a settlement: a removed range may end the committed
+prefix, so a page that returns fewer entries than its limit reports the ranges up to
+`last_cursor`, and the fold advances its checkpoint over such a suffix. A runner replaying a
+journal that still holds a removed entry is accepted without storing it again.
+
 ## Thread fold
 
 A retained authenticated runner attachment can establish a view at cursor zero before any native

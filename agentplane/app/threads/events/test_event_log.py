@@ -135,6 +135,26 @@ async def test_service_read_walks_over_settled_ranges(engine: AsyncEngine) -> No
     assert observed.entry["cursor"] == "6"
 
 
+async def test_service_read_walks_over_removed_cursors_including_the_last(engine: AsyncEngine) -> None:
+    class Reader:
+        async def read_session_events(
+            self, session_id: str, *, after_cursor: int = 0, limit: int = 128
+        ) -> history_service_pb2.ReadSessionEventsResponse:
+            entries = [event_entry(cursor) for cursor in (1, 2) if cursor > after_cursor][:limit]
+            return history_service_pb2.ReadSessionEventsResponse(
+                last_cursor=4, entries=entries, removed=[history_service_pb2.CursorRange(first=3, last=4)]
+            )
+
+        async def read_session_observations(
+            self, session_id: str, *, limit: int
+        ) -> history_service_pb2.ReadSessionObservationsResponse:
+            return history_service_pb2.ReadSessionObservationsResponse(last_cursor=4)
+
+    remote = store_over(engine, Reader())
+    assert [entry.cursor for entry in await remote.events(THREAD, limit=10)] == [1, 2]
+    assert await remote.observation_entry(THREAD, 4) is None
+
+
 @pytest.mark.parametrize("case", ["gap", "beyond_watermark", "resume_ahead"])
 async def test_service_read_rejects_invalid_pages(engine: AsyncEngine, case: str) -> None:
     class Reader:
@@ -205,6 +225,29 @@ async def test_service_observation_pages_treat_settled_ranges_as_covered(
     )
     page = await remote.observations(THREAD, before_cursor=before, after_cursor=after, limit=2)
     assert [row.cursor for row in page.observations] == [str(cursor) for cursor in cursors]
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "cursors", "newer"), [(None, None, [1, 2], None), (None, 0, [1, 2], None), (None, 2, [], None)]
+)
+async def test_service_observation_pages_treat_removed_cursors_ending_the_history_as_covered(
+    reader: AsyncMock,
+    remote: EventLogStore,
+    before: int | None,
+    after: int | None,
+    cursors: list[int],
+    newer: str | None,
+) -> None:
+    reader.read_session_observations.return_value = history_service_pb2.ReadSessionObservationsResponse(
+        last_cursor=7,
+        observations=[history_service_pb2.SessionObservation(cursor=cursor, kind="native") for cursor in cursors],
+        settled=[history_service_pb2.CursorRange(first=3, last=7)],
+    )
+    page = await remote.observations(THREAD, before_cursor=before, after_cursor=after, limit=3)
+    assert ([row.cursor for row in page.observations], page.next_after_cursor) == (
+        [str(cursor) for cursor in cursors],
+        newer,
+    )
 
 
 async def test_service_observation_page_rejects_missing_entries(reader: AsyncMock, remote: EventLogStore) -> None:

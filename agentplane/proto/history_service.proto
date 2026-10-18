@@ -37,8 +37,9 @@ message ReadSessionEventsRequest {
 
 message ReadSessionEventsResponse {
   uint64 last_cursor = 1;
-  // Runner entries in ascending cursor order. A cursor missing between them, or between
-  // after_cursor and the first of them, is covered by a range of one of `settlements`.
+  // Runner entries in ascending cursor order. A cursor missing between them, between
+  // after_cursor and the first of them, or after the last of them when the page returns fewer
+  // entries than its limit, is covered by a range of one of `settlements` or of `removed`.
   repeated .agentplane.proto.event_log.EventEntry entries = 2;
   // Absent for imported history without a retained runner attachment.
   SessionFeedState feed_state = 3;
@@ -46,6 +47,10 @@ message ReadSessionEventsResponse {
   // before the last returned entry, including ranges below after_cursor that a reader may have
   // read before they were settled.
   repeated SettledDeltas settlements = 4;
+  // Every range of cursors deliberately deleted from stored history (an operator's cleanup, not a
+  // settlement) that intersects the window after after_cursor, which ends at the last returned
+  // entry, or at last_cursor when the page returns fewer entries than its limit.
+  repeated CursorRange removed = 5;
 }
 
 message CursorRange {
@@ -94,7 +99,8 @@ message SessionObservation {
 message ReadSessionObservationsResponse {
   uint64 last_cursor = 1;
   repeated SessionObservation observations = 2;
-  // Settled cursor ranges intersecting the window; they account for cursors with no observation.
+  // Settled and removed cursor ranges intersecting the window; they account for cursors with no
+  // observation.
   repeated CursorRange settled = 3;
 }
 

@@ -184,7 +184,7 @@ class EventBatch:
     source_id: str
     after_cursor: int
     entries: tuple[event_log_pb2.EventEntry, ...]
-    # Cursor ranges whose settled deltas history no longer stores; the entries skip them.
+    # Cursor ranges history no longer stores, settled deltas and removed records; the entries skip them.
     settled: tuple[tuple[int, int], ...]
 
 

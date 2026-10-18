@@ -108,8 +108,11 @@ py_library(
     name = "sessions",
     srcs = ["sessions.py"],
     deps = [
+        "//agentplane/history_service/storage:db",
         "//agentplane/history_service/storage:store",
         "//agentplane/proto:event_log_pb2",
+        "@pypi//more_itertools",
         "@pypi//protobuf",
+        "@pypi//sqlalchemy",
     ],
 )

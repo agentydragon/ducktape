@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
-from agentplane.history_service.settled_cursors import next_stored, settled_ranges
+from agentplane.history_service.settled_cursors import next_stored, unstored_ranges
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.thread_reads import ThreadScopeResetError
 from agentplane.proto import history_service_pb2
@@ -100,8 +100,7 @@ class EvidenceReader:
                 continue
             page = await self._history.read_page(session_id, after_cursor=sequence - 1, limit=1)
             # Settlement may remove a linked delta frame before the fold forgets the link.
-            settled = settled_ranges(span for settlement in page.settlements for span in settlement.ranges)
-            if next_stored(sequence - 1, settled) != sequence:
+            if next_stored(sequence - 1, unstored_ranges(page)) != sequence:
                 continue
             entry = page.entries[0] if page.entries else None
             if entry is not None and (entry.cursor != sequence or entry.origin.source_id != source_id):

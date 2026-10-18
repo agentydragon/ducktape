@@ -16,7 +16,7 @@ from agentplane.app.threads.models import Thread
 from agentplane.app.threads.summaries import FeedSnapshot, Summaries
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.settled_cursors import next_stored, settled_ranges
+from agentplane.history_service.settled_cursors import next_stored, settled_ranges, unstored_ranges
 from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2
 
@@ -101,18 +101,18 @@ class EventLogStore:
                 through = page.last_cursor
             if page.last_cursor < through or cursor > page.last_cursor:
                 raise ConnectionError("History Service regressed behind the reader's cursor")
-            settled = settled_ranges(span for settlement in page.settlements for span in settlement.ranges)
+            unstored = unstored_ranges(page)
             cursors = [entry.cursor for entry in page.entries]
             if (
                 len(cursors) > requested
                 or any(
-                    following != next_stored(previous, settled) for previous, following in pairwise([cursor, *cursors])
+                    following != next_stored(previous, unstored) for previous, following in pairwise([cursor, *cursors])
                 )
                 or (cursors and cursors[-1] > page.last_cursor)
             ):
                 raise ConnectionError("History Service page is not contiguous or exceeds its watermark")
             if not page.entries:
-                if cursor < through:
+                if next_stored(cursor, unstored) <= through:
                     raise ConnectionError("History Service omitted entries from a published prefix")
                 break
             result.extend(entry for entry in page.entries if entry.cursor <= through)
@@ -134,16 +134,16 @@ class EventLogStore:
             str(thread_id), before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
         )
         observations = page.observations
-        # Service history is an immutable prefix whose only gaps are the settled ranges the page
-        # reports. Boundaries need no app raw lookups and refer to the watermark captured by this
-        # response. Cursor 1 and the head are never settled: a settled range lies strictly between
-        # an item's start and its completion.
+        # Service history is an immutable prefix whose only gaps are the settled and removed ranges
+        # the page reports. Boundaries need no app raw lookups and refer to the watermark captured by
+        # this response. Cursor 1 is never missing, and a settled range lies strictly between an
+        # item's start and its completion; a removed range may end at the head.
         cursors = [row.cursor for row in observations]
         settled = settled_ranges(page.settled)
         if after_cursor is not None:
             walk = [after_cursor, *cursors]
             within = not cursors or cursors[-1] <= page.last_cursor
-            short_ok = (cursors[-1] if cursors else after_cursor) >= page.last_cursor
+            short_ok = next_stored(walk[-1], settled) > page.last_cursor
         else:
             end = page.last_cursor if before_cursor is None else min(page.last_cursor, max(0, before_cursor - 1))
             walk = cursors
@@ -159,7 +159,7 @@ class EventLogStore:
             observations=[ArchivedObservation(cursor=str(row.cursor), kind=row.kind) for row in observations],
             next_before_cursor=str(observations[0].cursor) if observations and observations[0].cursor > 1 else None,
             next_after_cursor=str(observations[-1].cursor)
-            if observations and observations[-1].cursor < page.last_cursor
+            if observations and next_stored(observations[-1].cursor, settled) <= page.last_cursor
             else None,
         )
 
@@ -173,9 +173,8 @@ class EventLogStore:
                 raise ConnectionError("Requested observation is not committed in History Service yet")
             return None
         page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor - 1, limit=1)
-        settled = settled_ranges(span for settlement in page.settlements for span in settlement.ranges)
-        if next_stored(cursor - 1, settled) != cursor:
-            return None  # a settled delta, no longer stored
+        if next_stored(cursor - 1, unstored_ranges(page)) != cursor:
+            return None  # a settled delta or a cleaned-up record, no longer stored
         if len(page.entries) != 1 or page.entries[0].cursor != cursor:
             raise ConnectionError("History Service returned an entry outside the requested committed position")
         entry = page.entries[0]

@@ -17,6 +17,7 @@ from agentplane.history_service.storage.store import (
     WriterMismatchError,
 )
 from agentplane.history_service.testing.delta_spans import claude_text
+from agentplane.history_service.testing.sessions import remove_entries
 from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2, runner_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -318,6 +319,36 @@ async def test_an_item_without_native_frames_completes_unsettled(engine: AsyncEn
     assert await store.append(session_id, span) == 3
     page = await store.read_page(session_id)
     assert (len(page.entries), settled(page)) == (3, [])
+
+
+def removed(page: history_service_pb2.ReadSessionEventsResponse) -> list[tuple[int, int]]:
+    return [(cursor_range.first, cursor_range.last) for cursor_range in page.removed]
+
+
+async def test_removed_cursors_are_reported_where_a_page_reaches_them(engine: AsyncEngine) -> None:
+    store = Store(engine)
+    session_id = uuid4()
+    await opened(store, session_id)
+    entries = [entry(cursor) for cursor in range(1, 6)]
+    await store.append(session_id, entries)
+    await remove_entries(engine, session_id, {3, 5})
+    for after, limit, expected_cursors, expected_removed in (
+        (0, 10, [1, 2, 4], [(3, 3), (5, 5)]),
+        (0, 2, [1, 2], []),
+        (2, 1, [4], [(3, 3)]),
+        (4, 1, [], [(5, 5)]),
+        (5, 1, [], []),
+    ):
+        page = await store.read_page(session_id, after_cursor=after, limit=limit)
+        assert ([item.cursor for item in page.entries], removed(page)) == (expected_cursors, expected_removed)
+    # A runner replaying its journal sends the removed entries again; they are no longer stored to compare.
+    assert await store.append(session_id, entries) == 5
+    assert [item.cursor for item in (await store.read_page(session_id)).entries] == [1, 2, 4]
+    assert await store.read_observations(session_id, after_cursor=0) == ObservationPage(
+        5, [(1, "harness_started"), (2, "harness_started"), (4, "harness_started")], [(3, 3), (5, 5)]
+    )
+    assert (await store.read_observations(session_id, after_cursor=0, limit=3)).settled == [(3, 3)]
+    assert (await store.read_observations(session_id, limit=2)).settled == [(3, 3), (5, 5)]
 
 
 async def test_default_store_keeps_every_entry(engine: AsyncEngine) -> None:
