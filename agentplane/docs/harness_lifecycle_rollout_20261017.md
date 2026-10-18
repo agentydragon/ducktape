@@ -86,10 +86,12 @@ All four Sandboxes were suspended again.
 
 The rollout hold temporarily changed `public-coder-2`'s `wakeOnSend` from `true`
 to `false`, fenced to UID `9daaf99f-38a3-4e2a-9fac-93a45d9c3003`.
-Restore its original value after acceptance and before releasing the starts hold;
-its desired `running: true` with idle suspension is otherwise unchanged.
+Its original `true` value was restored after acceptance with UID and old-value
+checks. Desired `running: true` and the idle suspension generation were unchanged.
+All four Sandboxes remained suspended, with no runner Pods or VM instances. A final
+PVC inventory matched every pre-cutover UID, PV binding and owner UID.
 
-## Remaining acceptance
+## Egress acceptance and permission correction
 
 The bounded egress rerun completed with **four cases passing and two failing** in
 788.66 seconds. All three Codex cases passed: bound-policy reachability and
@@ -114,16 +116,55 @@ regression and exact-head CI passing. The bounded deployed run now returned both
 whole-turn timeout failures without manual interruption.
 
 The operator selected explicit `bypassPermissions` for deployed harnesses in
-#10965. Pod harnesses run as UID/GID 1000; VM harness children drop to UID/GID 107.
+#10965, merged as `a9505163b20e6c6e322693b0367610043ffa4bf5`.
+Pod harnesses run as UID/GID 1000; VM harness children drop to UID/GID 107.
 The earlier claim that deployed harnesses needed manual mode because they ran
 as root was incorrect. Native scripted scenarios retain manual mode to exercise
 host approval/denial responses. `CLAUDE_PERMISSION_MODE_REVIEW` defers revisiting
 native approval or classifier policy until explicitly wanted.
 
-Keep rollout acceptance and the staging starts/wake hold open until the selected
-mode reaches the released wheel and all runner image families, its deployed
-initialization reports `bypassPermissions`, and the two failed Claude tool cases
-pass. Do not report the previous full egress suite as passing.
+The first bypass-mode CI head exposed root execution in the RBE integration
+tests: native Claude rejected the mode before handshake. Test execution now uses
+UID/GID 1000 with writable non-root workspaces; database-backed native tests use
+their VM-local Docker TCP endpoint. The separate cross-UID supervisor coverage
+retains its privileged test contract. Exact head
+`62a863165f1937894963ce2f08be1bb4a9f2ed2b` passed all 1,463 tests, including the
+eleven integration targets changed to run non-root. Devel CI passed as well.
+[BuildBuddy invocation](https://app.buildbuddy.io/invocation/05dbf478-9a8f-5ed8-a253-e855d767d984).
+
+The selected mode was released in wheel `agentplane-runner-f58ebdd3e329`,
+from merge `a9505163b20e6c6e322693b0367610043ffa4bf5`, SHA256
+`f58ebdd3e329a3f734aa636b94161759d26a17ae07fcdfe075333253b0209d18`.
+Normal artifact synchronization pinned it in
+`810a43155b51984ffcd7aad3daed4ae37d33da19`. All three image build/smoke/publish
+jobs succeeded. Flux Image Automation propagated the pins; its final observed
+push was `b23d44f899151ae7a32913c3cb53f6457d072eaa`, with `Ready=True` and
+`repository up-to-date`. All four testing/staging service/delivery Kustomizations
+were Ready. Staging templates contained:
+
+| Runner | Image tag |
+| --- | --- |
+| Standard | `devel-20261018034344-810a431` |
+| Ducktape | `devel-20261018035032-810a431` |
+| VM | `devel-20261018034555-810a431` |
+
+The two previously failing Claude tool cases passed on this standard runner:
+**2 passed, 4 deselected in 359.05 seconds**. They exercised bound-policy access,
+public Git refs, GitHub bot credential substitution, denial of an unlisted host,
+and granting policy to an already running Sandbox.
+[BuildBuddy invocation](https://app.buildbuddy.io/invocation/77b93c8d-230c-4419-9e7f-8229c1102d75).
+The actual Pod image digest was
+`sha256:e86fbb21bd3cfb4f2346b5f564de90e0680e616dc3488aa3f46a70be1e4f292b`.
+Its native process reported UID 1000 in `/proc`, and native init reported
+`permissionMode: bypassPermissions`, Claude Code 2.1.296. Fixture cleanup left
+no testing Sandboxes. The other four egress cases passed on the earlier lifecycle
+release; the complete six-case suite was not rerun on this wheel.
+
+**Lifecycle rollout acceptance is complete.** The temporary wake hold is restored,
+staging starts may resume, and Flux continues owning image pins. The retained-state
+canary and Pod/VM context acceptance above ran on the initial lifecycle release;
+the final permission correction received exact-head CI and the two deployed Claude
+checks described here.
 
 The operator's staging auto-suspend/send-to-resume UI drive remains separate.
 Idle Claude reaping is v2. Historical stop-frame/receipt cleanup remains tracked

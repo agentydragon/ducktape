@@ -1,10 +1,10 @@
 # Runner delivery boundaries and harness identity
 
-Status: **approved direction, implementation planning and lifecycle rollout acceptance.** This note records current code paths, approved direction, alternatives
+Status: **approved direction, implementation planning; harness lifecycle deployed and accepted.** This note records current code paths, approved direction, alternatives
 and remaining questions. The operator approved gRPC for internal APIs, a generated HTTP/JSON facade,
 and an ergonomic CLI, adopted incrementally by service and interface. The selected HTTP/JSON
 facade is gRPC-Gateway. Harness lifecycle ownership is approved below (operator, 2026-10-17); its
-implementation is merged and rollout acceptance is in progress. The separate lifecycle rollout was
+implementation and rollout acceptance are complete. The separate lifecycle rollout was
 authorized by the operator; this note does not otherwise authorize runtime/API cutover or
 otherwise authorize changes to behavior, schemas, database ownership, identity mappings or caller
 permissions. Keep the existing security
@@ -693,12 +693,14 @@ unchanged history prefixes and retained PVC/PV identities. A retained staging Co
 and reconciled on the new Ducktape runner, settled an unchanged-setting command as a no-op, and
 returned to its original archived/suspended state without a model turn. All 184 preexisting history
 entries matched their pre-cutover hash; all four staging Sandbox UIDs and eight Sandbox PVC/PV
-identities were preserved. The bounded egress rerun passed all three Codex cases and Claude model
-ingress, but both Claude tool cases hit the whole-turn deadline; native automatic permission denials
-were observed. The operator selected explicit `bypassPermissions` in #10965; its release and deployed
-Claude tool acceptance remain open. Keep those
-failures distinct from completed lifecycle checks. Exact revisions, evidence and failed-attempt limitations are in the
-[rollout record](../debug/harness_lifecycle_rollout_20261017.md).
+identities were preserved. After the initial egress run passed four cases and exposed native
+permission denials in two Claude tool cases, #10965 selected explicit `bypassPermissions`.
+Its exact-head CI passed all 1,463 tests. The released wheel reached all three runner image
+families through Flux Image Automation, and both previously failing deployed Claude cases passed.
+Native initialization reported bypass mode in a UID 1000 process. The temporary wake-policy hold
+was restored; staging starts may resume. The separate operator-owned `IDLE_SUSPEND_UI_DRIVE`
+remains ready for the human staging UI drive. Exact revisions, evidence and failed-attempt
+limitations are in the [rollout record](harness_lifecycle_rollout_20261017.md).
 
 Keep previous image revisions and a tested persistent-format rollback policy. Before new work is
 accepted, revert the coordinated release if necessary. After new writes, reconcile/preserve them;

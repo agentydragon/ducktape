@@ -362,3 +362,19 @@ remain regression obligations when those boundaries change; review existing cove
 
 Compound-disaster tests without a credible operational requirement are intentionally omitted.
 A lack of production failure anecdotes is not a reason to reopen correct, tested behavior.
+
+### `RUNNER_IDLE_HARNESS_REAP` — the runner reaps and restarts idle harness processes
+
+**V2, deferred by the operator (2026-10-17).** Runner-owned lifecycle is deployed and
+accepted. Revisit when idle-process memory measurements justify reclaiming it; define
+eligibility and background-work protection before implementation. An idle
+Claude process, one per main Session, can hold more RAM than an idle Codex app server that hosts many
+agents. With runner-owned process lifecycle, it can reap an idle
+process and start it again when input arrives, with no caller-visible kill or restart. Open: what counts
+as idle for a process (not `idle_since` alone, which is display and delivery timing), the threshold, and
+that a reap must not end a turn, a background process or a Session another caller is waiting on. Measure
+idle RAM per harness first.
+The current runtime still uses one process per Session for both harnesses; Codex multiplexing is a
+demonstrated capability, not a placement change in v1. Reaping must account for native children and
+background work ([child evidence](../native/docs/child_sessions.md),
+[background work](../docs/background_work.md)), which the current busy signal does not track.

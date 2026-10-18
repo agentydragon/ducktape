@@ -603,7 +603,7 @@ does not grant history read, messaging, credentials or execution of another prin
 
 **Placement decision remains open; lifecycle ownership approved (operator, 2026-10-17).** The runner
 owns harness processes. Provisional process and Session diagnostics, including a frontend Sandbox-page
-view, are selected in `HARNESS_LIFECYCLE_OWNERSHIP`; their exact shape may change. No public process
+view, are selected in the [lifecycle contract](../docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle); their exact shape may change. No public process
 kill/restart API is introduced. Decide placement/store policy separately; expose a store API only if
 its public need is selected.
 Use the merged Codex multi-thread test and Claude's separate-store single-root characterization
@@ -1155,8 +1155,6 @@ flowchart TD
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
-    RUNNER_IDLE_HARNESS_REAP[Deferred v2: reclaim idle harness processes]
-    HARNESS_LIFECYCLE_OWNERSHIP --> RUNNER_IDLE_HARNESS_REAP
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
@@ -1168,8 +1166,7 @@ flowchart TD
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
-    IDLE_SUSPEND_UI_DRIVE[Blocked: drive auto-suspend and send-to-resume in staging, after harness lifecycle rollout]
-    HARNESS_LIFECYCLE_OWNERSHIP[In flight: accept runner-owned harness lifecycle rollout, section 13] --> IDLE_SUSPEND_UI_DRIVE
+    IDLE_SUSPEND_UI_DRIVE[Ready for operator: drive auto-suspend and send-to-resume in staging]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
 
@@ -1448,7 +1445,8 @@ rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` be
 
 ### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
 
-**Blocked on `HARNESS_LIFECYCLE_OWNERSHIP` implementation and rollout (operator, 2026-10-17).**
+**Ready for the operator (2026-10-17 PDT).** Runner-owned lifecycle rollout acceptance is
+complete; see the [rollout record](../docs/harness_lifecycle_rollout_20261017.md).
 Drive the approved send-to-start behavior after explicit harness shutdown/resume controls are removed;
 the ownership decision is settled. The rest of this node stands.
 
@@ -1486,21 +1484,6 @@ background process, a terminal and workspace files, and a crash restart (no susp
 differently.
 
 Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage).
-
-### `RUNNER_IDLE_HARNESS_REAP` — the runner reaps and restarts idle harness processes
-
-**V2, deferred by the operator (2026-10-17); requires `HARNESS_LIFECYCLE_OWNERSHIP`, but does not
-block its v1 implementation or acceptance.** An idle
-Claude process, one per main Session, can hold more RAM than an idle Codex app server that hosts many
-agents. With runner-owned process lifecycle, it can reap an idle
-process and start it again when input arrives, with no caller-visible kill or restart. Open: what counts
-as idle for a process (not `idle_since` alone, which is display and delivery timing), the threshold, and
-that a reap must not end a turn, a background process or a Session another caller is waiting on. Measure
-idle RAM per harness first.
-The current runtime still uses one process per Session for both harnesses; Codex multiplexing is a
-demonstrated capability, not a placement change in v1. Reaping must account for native children and
-background work ([child evidence](../native/docs/child_sessions.md),
-[background work](../docs/background_work.md)), which the current busy signal does not track.
 
 ### `RUNNER_BUSY_TRACKING` — the runner counts terminals and background processes as busy
 
@@ -1671,7 +1654,7 @@ service caller contract. The separate destination-authority decision
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
-**Needs policy revision coordinated with `HARNESS_LIFECYCLE_OWNERSHIP`.** The runner proxy
+**Needs policy revision against the [implemented lifecycle contract](../docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle).** The runner proxy
 (`runner_gateway/gateway/proxy.go`) currently lets configured caller accounts invoke allowed Runner
 methods, except `Quiesce` (controller only). Review per-method policy for `OpenSession`,
 `SubmitInput`, model/effort changes and `InterruptTurn` against the Dispatcher-only command boundary.
@@ -1712,9 +1695,7 @@ flowchart LR
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     RUNNER_STORE_SESSION_IDENTITY[Candidate: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
-    HARNESS_LIFECYCLE_OWNERSHIP[In flight: accept runner-owned harness lifecycle rollout]
-    RUNNER_IDLE_HARNESS_REAP[Deferred v2: reclaim idle harness processes, section 7]
-    IDLE_SUSPEND_UI_DRIVE[Blocked: drive auto-suspend and send-to-resume in staging, section 7]
+    IDLE_SUSPEND_UI_DRIVE[Ready for operator: drive auto-suspend and send-to-resume in staging, section 7]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
@@ -1725,10 +1706,6 @@ flowchart LR
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
     HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
-    HARNESS_LIFECYCLE_OWNERSHIP --> IDLE_SUSPEND_UI_DRIVE
-    HARNESS_LIFECYCLE_OWNERSHIP -. coordinates Runner method caller policy .-> PROXY_START_METHODS_DISPATCHER_ONLY
-    HARNESS_LIFECYCLE_OWNERSHIP -. preserves private mapping decision gates .-> HARNESS_IDENTITY_DESIGN
-    HARNESS_LIFECYCLE_OWNERSHIP --> RUNNER_IDLE_HARNESS_REAP
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
     K3S_VM_IMAGE -. real VM path prerequisite .-> CNPG_FREE_K3S_INTEGRATION_TIER
 ```
@@ -1910,39 +1887,6 @@ reviewed; private runner mapping can be implemented independently. This decision
 Dispatcher/Gateway Go unification planning. A unified service may preserve today's wire first and
 consume the approved public address later. Neither
 design node authorizes runtime changes.
-
-### `HARNESS_LIFECYCLE_OWNERSHIP` — implement runner-owned harness lifecycle
-
-**In flight (this session, operator-authorized rollout acceptance, 2026-10-17).** Implementation
-#10950 and promotion #10961 are merged; live Pod/VM context retention and the retained-state staging
-canary passed. Egress passed four cases; both Claude tool cases timed out with native automatic
-permission denials observed. The operator selected explicit `bypassPermissions` in #10965;
-its release and deployed Claude tool acceptance remain open.
-See the owning design note's rollout checkpoint. The runner owns startup,
-native readiness and reconciliation after durable command admission. Keep explicit resume and stop
-RPCs absent; retain exact-turn interrupt with atomic active-turn validation and `FAILED_PRECONDITION`
-before admission on mismatch. Already admitted retries return the original admission; an admitted
-interrupt can never affect a successor turn. Do not add Session-wide cancellation or pause.
-
-The [approved lifecycle contract](../docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle)
-owns admission/failure/retry semantics and protocol deltas. Update proto and backend/client surfaces
-together and allow input to trigger readiness. The app has no harness shutdown/resume controls or
-backing endpoints. Sandbox suspend/resume controls and wake authorization remain distinct. The
-separate durable explicit-resume design is superseded; `DISPATCHER_PERSISTENCE_MODEL_DESIGN` is unaffected.
-Running Session setup and Sandbox bootstrap finish naturally during orderly quiesce and shutdown;
-do not abort initialization. Unexpected process loss remains interrupted and is never silently rerun.
-
-Expose provisional process topology and per-Session status on the frontend Sandbox page, with live,
-stale and unavailable states and no wake on read. Retained conversations are not automatically
-assigned to a process or ready merely because an app server opened their data folder. Status is
-introspection, not a client-side lifecycle or authorization contract; its shape may be revised.
-
-**Exit:** both-harness coverage for concurrent input/startup, startup failure, admitted-command
-recovery, retained context, exact-turn rejection and interrupt races, and send/quiesce behavior;
-atomic caller/proto changes and focused desktop/phone visual review. Follow the owning design
-note's testing-first rollout and staging promotion hold; preserve suspended staging Sandbox UIDs
-and retained volumes. Rollout acceptance remains unfinished. Idle Claude reaping is deferred to v2 and does not gate this work. Store counts,
-shared-store safety and native-ID allocation retain their separate decision gates.
 
 ### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping
 

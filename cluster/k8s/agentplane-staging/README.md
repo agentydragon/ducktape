@@ -12,31 +12,18 @@ is decrypted by the environment-level Flux consumer. The consumer explicitly che
 trust-manager-generated CA ConfigMap and Bundle because the ConfigMap is created
 asynchronously outside the artifact.
 
-## Harness lifecycle image promotion
+## Image automation
 
-The shared `all-images` automation writes new tags to `image-pins/` entries carrying a Flux Setters
-marker. The runner-owned lifecycle promotion restores these markers for the app and runner-gateway
-image pairs, the notification-service and history-service pairs, `runner`, `runner-ducktape`, and the
-runner VM image. Once the promotion merges, Flux Image Automation manages every image pin here.
+The shared `all-images` automation owns the tags in `image-pins/` through Flux Setters
+markers. The runner-owned lifecycle promotion and deployed acceptance are complete;
+all service and runner image families have their markers restored. No staging starts
+hold remains. Release evidence and retained-state checks are in the
+[rollout record](../../../agentplane/docs/harness_lifecycle_rollout_20261017.md).
 
-After testing has applied and accepted a release, record the exact tags from
-`cluster/k8s/agentplane-testing-image-pins/kustomization.yaml`. Keep new staging starts disabled and
-confirm the Runner Pod query returns no rows:
-
-```bash
-kubectl get pods -n agentplane-staging \
-  -l app.kubernetes.io/name=agentplane-runner \
-  --field-selector=status.phase=Running
-```
-
-Update the held `newTag` values in this directory to those tested tags and restore their Flux
-markers in the same promotion PR. The `agentplane-staging` and `agentplane-staging-delivery` Flux Kustomizations consume
-this Component from the repo source after the change reaches `devel`; no direct cluster apply is
-needed. With no running staging Sandboxes and starts held, use normal Deployment rollouts; no
-separate service stop or Flux suspension is needed. Update all runner templates, including the
-unused VM template, and verify the new service revisions and the absence of old service Pods before
-allowing starts. Keep the existing Sandbox objects and their UIDs and storage. Record the actual
-deployed revisions during staging acceptance, since Flux may publish newer tags after the merge.
+The `agentplane-staging` and `agentplane-staging-delivery` Flux Kustomizations consume
+this Component from the repo source. A template update affects future Sandbox
+incarnations; it does not upgrade a running Sandbox. Keep existing Sandbox UIDs and
+storage when suspending/resuming to adopt a new runner image.
 
 ## Action policies
 
