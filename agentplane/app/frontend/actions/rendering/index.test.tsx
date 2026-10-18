@@ -592,7 +592,7 @@ describe("sandbox rendering", () => {
         { name: "pod", command: ["printf", "%s", "$HOME", "a'b", ""] }
       )
     );
-    expect(node.textContent).toBe("printf '%s' '$HOME' 'a'\\''b' ''");
+    expect(node.querySelector(".agentplane-code-inline")?.textContent).toBe("printf '%s' '$HOME' 'a'\\''b' ''");
     expect(node.querySelector(".agentplane-tok-string")).not.toBeNull();
   });
 });
