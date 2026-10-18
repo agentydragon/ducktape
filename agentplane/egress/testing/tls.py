@@ -52,7 +52,7 @@ def make_ca(common_name: str) -> CertificateAuthority:
         .not_valid_before(not_before)
         .not_valid_after(not_after)
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-        # mitmproxy's leaves name their issuer by this identifier; OpenSSL refuses a chain without it.
+        # A leaf names its issuer by this identifier; OpenSSL refuses a chain without it.
         .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
         .add_extension(
             x509.KeyUsage(

@@ -1,4 +1,10 @@
-"""Image-coupled Alembic runner for the egress history-owned database."""
+"""Image-coupled Alembic runner for the egress history-owned database.
+
+CLEANUP(added 2026-10-17): Delete this module, `decision_tables.py` and `migrations/` with the Alembic
+handoff test fixtures in `history_migrations` and `history`, once the testing and staging history
+databases carry `egress_goose_version`. `MigrationSettings` goes earlier, with the Python Deployment
+settings in `cluster/cdk8s/agentplane/egress.py`.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +12,7 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from agentplane.egress.decision_store import Base
+from agentplane.egress.decision_tables import Base
 from util.db_migrations import MigrationRunner
 
 RUNNER = MigrationRunner(
@@ -20,11 +26,3 @@ class MigrationSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_EGRESS_")
 
     database_url: str
-
-
-def main() -> None:
-    RUNNER.apply(MigrationSettings().database_url)
-
-
-if __name__ == "__main__":
-    main()

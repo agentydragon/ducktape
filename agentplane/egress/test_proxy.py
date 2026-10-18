@@ -1,20 +1,18 @@
-"""End to end: a real client through the hosted mitmproxy to a scripted HTTPS upstream.
+"""Black-box tests of the built Go `egress-proxy` process.
 
-The proxy intercepts with a throwaway CA the client trusts, verifies the upstream's certificate
-against a second throwaway CA, takes its identity from the fake API server, and its policy from the
-informer over the same fake. Every assertion is on what the client and the upstream actually saw.
+A real client goes through the binary to a scripted upstream. The proxy intercepts with a throwaway
+CA the client trusts, verifies the upstream's certificate against a second throwaway CA, takes its
+identity and policy from the fake API server, and appends decisions to PostgreSQL. Every assertion
+is on what the client and the upstream actually saw.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
-import logging
-from collections.abc import AsyncIterator, Collection, Mapping
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import timedelta
-from ipaddress import ip_address, ip_network
+from ipaddress import ip_network
 from pathlib import Path
 
 import aiohttp
@@ -22,48 +20,13 @@ import grpc
 import pytest
 import pytest_bazel
 from aiohttp import web
-from kubernetes_asyncio.client import ApiClient
-from mitmproxy import connection, http
 from more_itertools import one
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.egress import rules_api
-from agentplane.egress.addon import DENIED_HEADER, PROJECTED_TOKEN_HEADER, EgressAddon
-from agentplane.egress.admin import create_admin_app
-from agentplane.egress.conftest import (
-    AUDIENCE,
-    GITHUB_POLICY,
-    PLACEHOLDER,
-    POD_A_IP,
-    POD_A_UID,
-    POD_B_UID,
-    PROJECTED_AUDIENCE,
-    PROJECTED_TOKEN_A,
-    PROJECTED_TOKEN_B,
-    RULES_HOST,
-    SANDBOX_A,
-    SANDBOX_B,
-    SCHEME,
-    SECRET_NAME,
-    SECRET_VALUE,
-    SUBJECT_A,
-    SUBJECT_B,
-    TOKEN_A,
-    TOKEN_B,
-    UPSTREAM_HOST,
-    informer,
-    seed,
-)
-from agentplane.egress.decision_log import DecisionLog
-from agentplane.egress.decisions import Phase
-from agentplane.egress.identity import ProjectedTokenVerifier, WorkloadIdentityVerifier
-from agentplane.egress.listener import serve
-from agentplane.egress.policy import DenyReason, Index
-from agentplane.egress.proxy import EgressProxyServer, write_interception_ca
-from agentplane.egress.resources import Rule, TargetMethod, placeholder_of
-from agentplane.egress.rules_api import RulesProjection, create_rules_app
+from agentplane.egress.conftest import AUDIENCE, GITHUB_POLICY, SANDBOX_A, SUBJECT_A, TOKEN_A, UPSTREAM_HOST, seed
+from agentplane.egress.resources import TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
-from agentplane.egress.testing.replica import kubeconfig, replica
+from agentplane.egress.testing.go_replica import go_replica, kubeconfig
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.egress.testing.tls import (
     CertificateAuthority,
@@ -73,30 +36,20 @@ from agentplane.egress.testing.tls import (
     server_tls_context,
     write_ca,
 )
-from agentplane.egress.upstream import Address, Network, Pin, UpstreamResolver
-from agentplane.kubernetes_watch import Freshness
-from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL, PolicySet
+from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.testing.fake_apiserver import (
     CREDENTIALS_NAMESPACE,
     CREDENTIALS_PLURAL,
     NAMESPACE,
     SANDBOX_NAMESPACE,
-    SANDBOXES_PLURAL,
     SECRETS_PLURAL,
     FakeApiServer,
-    TokenVerdict,
-    authenticated_workload_credential,
     credential,
     egress_policy_set,
     fake_apiserver,
-    pod_for,
     policy_binding,
-    projected_workload_credential,
-    sandbox,
     secret,
 )
-from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
-from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.net import pick_free_port
 
 
@@ -118,8 +71,6 @@ class RecordingUpstream:
         headers = {k.lower(): v for k, v in request.headers.items()}
         self.requests.append((request.method, request.path_qs, headers))
         self.bodies.append(await request.read())
-        if request.path == "/workload/requires-auth" and "authorization" not in headers:
-            return web.Response(status=401, text="authentication required")
         return web.Response(text="upstream ok")
 
 
@@ -142,455 +93,139 @@ async def recording_upstream(cert_path: Path, key_path: Path) -> AsyncIterator[R
         await runner.cleanup()
 
 
-@dataclass(frozen=True)
-class Response:
-    """What the client saw, read while the session that fetched it is still open.
-
-    Reading here is the point, not a convenience. Handing back aiohttp's own response would outlive
-    its session, and closing a session whose body is still unread aborts the connection instead of
-    ending it -- which leaves mitmproxy holding a flow whose client vanished mid-stream, and its
-    shutdown then never completes.
-    """
-
-    status: int
-    headers: Mapping[str, str]
-    body: bytes
-
-
-@dataclass
-class ProxyUnderTest:
-    server: EgressProxyServer
-    proxy_port: int
-    admin_port: int
-    interception_ca: CertificateAuthority
-    upstream_ca: CertificateAuthority
-    tmp_path: Path
-    index: Index
-    upstream: RecordingUpstream
-    addon: EgressAddon
-    fake: FakeApiServer
-    resolver: ServiceMappingResolver
-    agent_api_port: int
-
-    def url(self, path: str, *, tls: bool = True) -> str:
-        scheme = "https" if tls else "http"
-        port = self.upstream.port if tls else self.upstream.http_port
-        return f"{scheme}://{UPSTREAM_HOST}:{port}{path}"
-
-    async def get_rules(
-        self,
-        path: str,
-        *,
-        token: str | None = TOKEN_A,
-        headers: dict[str, str] | None = None,
-        body: bytes | None = None,
-        proxy_port: int | None = None,
-    ) -> Response:
-        """An ordinary HTTP request policy-routed through central to the agent API listener."""
-        await self.install_rules_route()
-        outgoing = {"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"} if headers is None else dict(headers)
-        if token is not None:
-            outgoing["Proxy-Authorization"] = f"Bearer {token}"
-        async with (
-            aiohttp.ClientSession() as session,
-            session.request(
-                "GET",
-                f"http://{RULES_HOST}{path}",
-                proxy=f"http://127.0.0.1:{proxy_port or self.proxy_port}",
-                headers=outgoing,
-                data=body,
-            ) as response,
-        ):
-            return Response(status=response.status, headers=dict(response.headers), body=await response.read())
-
-    async def install_rules_route(self) -> None:
-        if BASIC_POLICY in self.index.policy_sets:
-            return
-        self.fake.put(
-            CREDENTIALS_PLURAL,
-            authenticated_workload_credential(
-                WORKLOAD_CREDENTIAL,
-                targets=[{"header": "Authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"}],
-            ),
-        )
-        self.fake.put(
-            POLICY_SETS_PLURAL,
-            egress_policy_set(
-                BASIC_POLICY,
-                [
-                    {
-                        "hosts": [RULES_HOST],
-                        "methods": ["GET"],
-                        "paths": [rules_api.PATH],
-                        "clusterInternal": True,
-                        "credentialRef": {"name": WORKLOAD_CREDENTIAL},
-                    }
-                ],
-            ),
-        )
-        current = self.fake.objects[POLICY_BINDINGS_PLURAL][BINDING]
-        policy_sets = [*current["spec"]["policySets"]]
-        if BASIC_POLICY not in policy_sets:
-            policy_sets.append(BASIC_POLICY)
-        self.fake.put(
-            POLICY_BINDINGS_PLURAL, policy_binding(BINDING, subject=SUBJECT_A.model_dump(), policy_sets=policy_sets)
-        )
-        await self.index.wait_for(
-            lambda: (
-                WORKLOAD_CREDENTIAL in self.index.credentials
-                and BASIC_POLICY in self.index.policy_sets
-                and BASIC_POLICY in self.index.policy_bindings[BINDING].spec.policy_sets
-            )
-        )
-
-    def sidecar(self, token: str) -> SidecarProcess:
-        """A loopback sidecar relaying to this proxy with `token` as its hop bearer."""
-        token_file = self.tmp_path / f"sidecar-token-{token}"
-        token_file.write_text(token)
-        return SidecarProcess(proxy_host="127.0.0.1", proxy_port=self.proxy_port, token_file=token_file)
-
-    async def get(self, path: str, *, token: str | None = TOKEN_A, headers: dict[str, str] | None = None) -> Response:
-        async with (
-            aiohttp.ClientSession() as session,
-            session.get(
-                self.url(path),
-                proxy=f"http://127.0.0.1:{self.proxy_port}",
-                proxy_headers={"Proxy-Authorization": f"Bearer {token}"} if token is not None else None,
-                ssl=client_tls_context(self.interception_ca),
-                headers=headers,
-            ) as response,
-        ):
-            return Response(status=response.status, headers=dict(response.headers), body=await response.read())
-
-
-@pytest.fixture
-def exempt_networks() -> Collection[Network]:
-    """The scripted upstream listens on loopback, which the proxy refuses unless told otherwise."""
-    return (ip_network("127.0.0.0/8"), ip_network("::1/128"))
-
-
-class ServiceMappingResolver(UpstreamResolver):
-    """Map Service port 80 to a local targetPort only after production policy pins port 80."""
-
-    def __init__(self, *, agent_api_port: int, exempt: Collection[Network]) -> None:
-        super().__init__(exempt=exempt)
-        self.agent_api_port = agent_api_port
-        self.pin_calls: list[tuple[str, int, bool]] = []
-
-    async def pin(self, host: str, port: int, *, internal: bool = False) -> Pin:
-        self.pin_calls.append((host, port, internal))
-        return await super().pin(host, port, internal=internal)
-
-    async def _resolve(self, host: str, port: int) -> list[Address]:
-        if host.lower() == RULES_HOST:
-            return [ip_address("127.0.0.1")]
-        return await super()._resolve(host, port)
-
-    def _target(self, pin: Pin) -> tuple[str, int]:
-        if (pin.host, pin.port) == (RULES_HOST, 80):
-            return str(pin.address), self.agent_api_port
-        return super()._target(pin)
-
-
-@pytest.fixture
-async def proxy(
-    fake: FakeApiServer,
-    api_client: ApiClient,
+def replica_settings(
     tmp_path: Path,
-    exempt_networks: Collection[Network],
-    decision_log: DecisionLog,
-    workload_resolver: WorkloadPrincipalResolver,
-    verifier: WorkloadIdentityVerifier,
-    projected: ProjectedTokenVerifier,
-) -> AsyncIterator[ProxyUnderTest]:
-    interception_ca = make_ca("agentplane-egress-test-interception")
-    write_interception_ca(tmp_path / "confdir", *write_ca(interception_ca, tmp_path, "interception"))
-    upstream_ca = make_ca("agentplane-egress-test-upstream")
-    upstream_ca_cert, _ = write_ca(upstream_ca, tmp_path, "upstream")
-    index = Index(freshness=Freshness(stale_after_seconds=180))
-    informer_task = asyncio.create_task(informer(index, api_client).run())
-    try:
-        await index.wait_for(lambda: index.synced)
-        agent_api_port = pick_free_port()
-        agent_api = create_rules_app(WorkloadPrincipalAuthenticator(workload_resolver), RulesProjection(index))
-        resolver = ServiceMappingResolver(agent_api_port=agent_api_port, exempt=exempt_networks)
-        async with (
-            serve(agent_api, host="127.0.0.1", port=agent_api_port),
-            recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
-            EgressProxyServer(
-                addon := EgressAddon(
-                    index=index, verifier=verifier, decision_log=decision_log, resolver=resolver, projected=projected
-                ),
-                confdir=tmp_path / "confdir",
-                # The parameter the deployment uses, so every case here runs the shipped path: the
-                # proxy verifies its upstream against a bundle it was handed, not mitmproxy's own.
-                upstream_ca_file=upstream_ca_cert,
-            ) as server,
-            serve(create_admin_app(decision_log, index), "127.0.0.1", 0) as admin_port,
-        ):
-            yield ProxyUnderTest(
-                server=server,
-                proxy_port=server.listen_port,
-                admin_port=admin_port,
-                interception_ca=interception_ca,
-                upstream_ca=upstream_ca,
-                tmp_path=tmp_path,
-                index=index,
-                upstream=upstream,
-                addon=addon,
-                fake=fake,
-                resolver=resolver,
-                agent_api_port=agent_api_port,
-            )
-    finally:
-        informer_task.cancel()
-        await asyncio.gather(informer_task, return_exceptions=True)
+    name: str,
+    *,
+    api_port: int,
+    ca: tuple[Path, Path],
+    database_url: str,
+    upstream_ca_file: Path | None = None,
+) -> Settings:
+    """A replica process watching the fake API server on `api_port`, on ports of its own."""
+    cert, key = ca
+    return Settings(
+        _cli_parse_args=False,
+        rules_namespace=NAMESPACE,
+        allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
+        credentials_namespace=CREDENTIALS_NAMESPACE,
+        kubeconfig=kubeconfig(tmp_path / f"kube-{name}.yaml", api_port),
+        ca_cert=cert,
+        ca_key=key,
+        confdir=tmp_path / name,
+        listen_host="127.0.0.1",
+        listen_port=pick_free_port(),
+        admin_host="127.0.0.1",
+        admin_port=pick_free_port(),
+        agent_api_host="127.0.0.1",
+        agent_api_port=pick_free_port(),
+        token_audience=AUDIENCE,
+        upstream_ca_file=upstream_ca_file,
+        # The Go informer's watch period is whole seconds, two at the least.
+        resync_seconds=2,
+        database_url=database_url,
+        exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
+    )
 
 
 BINDING = f"{SANDBOX_A}-{GITHUB_POLICY}"
-WORKLOAD_CREDENTIAL = "agentplane-workload"
-WORKLOAD_PLACEHOLDER = placeholder_of(WORKLOAD_CREDENTIAL)
-WORKLOAD_POLICY = "first-party-workload"
-BASIC_POLICY = "basic"
+_CONTRACT_CREDENTIAL = "transport-contract"
+_CONTRACT_PATH = "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream"
 
 
-def first_rule(index: Index, policy_name: str) -> Rule:
-    policy_set = index.policy_sets[policy_name]
-    assert isinstance(policy_set, PolicySet)
-    return policy_set.rules[0].rule
-
-
-def denial(response: Response, reason: DenyReason) -> bool:
-    return response.status == 403 and response.headers[DENIED_HEADER] == f"denied; reason={reason}"
-
-
-async def gated_flow(
-    proxy: ProxyUnderTest, client: connection.Client, proxy_authorization: str | None
-) -> http.HTTPFlow:
-    """A plain-HTTP request on `client`'s connection to a path A's policy admits, through the request hook."""
-    flow = http.HTTPFlow(client, connection.Server(address=(UPSTREAM_HOST, 80)))
-    headers = http.Headers()
-    if proxy_authorization is not None:
-        headers["Proxy-Authorization"] = proxy_authorization
-    flow.request = http.Request.make("GET", f"http://{UPSTREAM_HOST}/public/context", headers=headers)
-    await proxy.addon.request(flow)
-    # Nothing dials here: end an admitted flow as a failed dial would, or the fixture's drain waits on it.
-    proxy.addon.error(flow)
-    return flow
-
-
-def refused_for(flow: http.HTTPFlow, reason: DenyReason) -> bool:
-    return flow.response is not None and flow.response.headers[DENIED_HEADER] == f"denied; reason={reason}"
-
-
-@pytest.mark.parametrize(
-    ("replacement", "reason"),
-    [("Basic malformed", DenyReason.TOKEN_MISSING), ("Bearer rejected", DenyReason.TOKEN_REJECTED)],
-)
-async def test_rejected_replacement_clears_authenticated_connection_context(
-    proxy: ProxyUnderTest, replacement: str, reason: DenyReason
-) -> None:
-    client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
-    admitted = await gated_flow(proxy, client, f"Bearer {TOKEN_A}")
-    assert admitted.response is None
-    assert "proxy-authorization" not in admitted.request.headers
-
-    rejected = await gated_flow(proxy, client, replacement)
-    assert refused_for(rejected, reason)
-    assert "proxy-authorization" not in rejected.request.headers
-
-    assert refused_for(await gated_flow(proxy, client, None), DenyReason.TOKEN_MISSING)
-
-
-async def test_connection_end_clears_authenticated_context(proxy: ProxyUnderTest) -> None:
-    client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
-    assert (await gated_flow(proxy, client, f"Bearer {TOKEN_A}")).response is None
-
-    proxy.addon.client_disconnected(client)
-
-    assert refused_for(await gated_flow(proxy, client, None), DenyReason.TOKEN_MISSING)
-
-
-async def bind_to_a(proxy: ProxyUnderTest, policy_name: str, credential_name: str) -> None:
-    """Bind A to `policy_name` beside its GitHub policy, and wait until the index holds the policy,
-    its credential and the binding."""
-    proxy.fake.put(
-        POLICY_BINDINGS_PLURAL,
-        policy_binding(BINDING, subject=SUBJECT_A.model_dump(), policy_sets=[GITHUB_POLICY, policy_name]),
-    )
-    await proxy.index.wait_for(
-        lambda: (
-            credential_name in proxy.index.credentials
-            and policy_name in proxy.index.policy_sets
-            and policy_name in proxy.index.policy_bindings[BINDING].spec.policy_sets
-        )
-    )
-
-
-async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest, *, bind_b: bool = False) -> None:
+def seed_transport_contract(fake: FakeApiServer) -> None:
+    """Sandbox A may reach the upstream's contract paths, substituting a BuildBuddy-style header."""
+    fake.put(SECRETS_PLURAL, secret(_CONTRACT_CREDENTIAL, {"key": "contract-secret"}))
     fake.put(
         CREDENTIALS_PLURAL,
-        authenticated_workload_credential(
-            WORKLOAD_CREDENTIAL,
-            targets=[{"header": "Authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"}],
+        credential(
+            _CONTRACT_CREDENTIAL,
+            secret_name=_CONTRACT_CREDENTIAL,
+            key="key",
+            targets=[{"header": "x-buildbuddy-api-key", "method": TargetMethod.WHOLE_VALUE}],
         ),
     )
     fake.put(
         POLICY_SETS_PLURAL,
         egress_policy_set(
-            WORKLOAD_POLICY,
+            _CONTRACT_CREDENTIAL,
             [
                 {
                     "hosts": [UPSTREAM_HOST],
-                    "methods": ["GET"],
-                    "paths": ["/workload/**"],
-                    "credentialRef": {"name": WORKLOAD_CREDENTIAL},
+                    "paths": ["/contract", "/contract-sse", "/contract-ws", _CONTRACT_PATH],
+                    "credentialRef": {"name": _CONTRACT_CREDENTIAL},
                 }
             ],
         ),
     )
-    await bind_to_a(proxy, WORKLOAD_POLICY, WORKLOAD_CREDENTIAL)
-    if bind_b:
-        # A faithful second Pod identity reaching the in-process listener from the same loopback
-        # address. Its distinct Pod UID and token still go through TokenReview and live ownership.
-        fake.pods[SANDBOX_B] = pod_for(fake, SANDBOX_B, pod_uid=POD_B_UID, ip=POD_A_IP)
-        fake.put(
-            POLICY_BINDINGS_PLURAL,
-            policy_binding(
-                f"{SANDBOX_B}-{WORKLOAD_POLICY}", subject=SUBJECT_B.model_dump(), policy_sets=[WORKLOAD_POLICY]
-            ),
+    fake.put(
+        POLICY_BINDINGS_PLURAL,
+        policy_binding(BINDING, subject=SUBJECT_A.model_dump(), policy_sets=[GITHUB_POLICY, _CONTRACT_CREDENTIAL]),
+    )
+
+
+@dataclass(frozen=True)
+class Egress:
+    """The running proxy and the scripted world around it."""
+
+    proxy_port: int
+    interception_ca: CertificateAuthority
+    upstream_ca: CertificateAuthority
+    upstream: RecordingUpstream
+    tmp_path: Path
+
+    def url(self, path: str) -> str:
+        return f"https://{UPSTREAM_HOST}:{self.upstream.port}{path}"
+
+
+@pytest.fixture
+async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
+    interception_ca = make_ca("agentplane-egress-test-interception")
+    upstream_ca = make_ca("agentplane-egress-test-upstream")
+    async with (
+        fake_apiserver() as api,
+        recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
+    ):
+        seed(api)
+        seed_transport_contract(api)
+        settings = replica_settings(
+            tmp_path,
+            "proxy",
+            api_port=api.port,
+            ca=write_ca(interception_ca, tmp_path, "interception"),
+            database_url=history_db_url,
+            upstream_ca_file=write_ca(upstream_ca, tmp_path, "upstream")[0],
         )
-        await proxy.index.wait_for(lambda: f"{SANDBOX_B}-{WORKLOAD_POLICY}" in proxy.index.policy_bindings)
-
-
-async def test_allowed_request_has_its_placeholder_substituted(proxy: ProxyUnderTest) -> None:
-    response = await proxy.get("/repos/o/r?ref=main", headers={"Authorization": f"Bearer {PLACEHOLDER}"})
-    assert (response.status, response.body) == (200, b"upstream ok")
-    method, path, headers = one(proxy.upstream.requests)
-    assert (method, path) == ("GET", "/repos/o/r?ref=main")
-    assert headers["authorization"] == f"Bearer {SECRET_VALUE}"
-    assert "proxy-authorization" not in headers
-
-
-async def test_authenticated_workload_source_uses_each_https_tunnels_own_token(
-    fake: FakeApiServer, proxy: ProxyUnderTest
-) -> None:
-    await install_workload_credential(fake, proxy, bind_b=True)
-
-    for token, suffix in ((TOKEN_A, "a"), (TOKEN_B, "b")):
-        async with (
-            proxy.sidecar(token) as sidecar,
-            aiohttp.ClientSession() as session,
-            session.get(
-                proxy.url(f"/workload/{suffix}"),
-                proxy=f"http://127.0.0.1:{sidecar.listen_port}",
-                ssl=client_tls_context(proxy.interception_ca),
-                headers={"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"},
-            ) as response,
-        ):
-            assert (response.status, await response.read()) == (200, b"upstream ok")
-
-    assert [headers["authorization"] for _, _, headers in proxy.upstream.requests] == [
-        f"Bearer {TOKEN_A}",
-        f"Bearer {TOKEN_B}",
-    ]
-    assert all("proxy-authorization" not in headers for _, _, headers in proxy.upstream.requests)
-
-    view = await proxy.get_rules(rules_api.PATH)
-    assert view.status == 200
-    assert WORKLOAD_PLACEHOLDER in view.body.decode()
-    assert all(token not in view.body.decode() for token in (TOKEN_A, TOKEN_B))
-
-    async with (
-        aiohttp.ClientSession(f"http://127.0.0.1:{proxy.admin_port}") as admin,
-        admin.get("/decisions") as listing,
-    ):
-        decisions = await listing.text()
-    assert all(value not in decisions for value in (TOKEN_A, TOKEN_B, WORKLOAD_PLACEHOLDER))
-
-
-async def test_authenticated_workload_source_uses_validated_context_for_plain_http(
-    fake: FakeApiServer, proxy: ProxyUnderTest
-) -> None:
-    await install_workload_credential(fake, proxy)
-
-    async with (
-        proxy.sidecar(TOKEN_A) as sidecar,
-        aiohttp.ClientSession() as session,
-        session.get(
-            proxy.url("/workload/http", tls=False),
-            proxy=f"http://127.0.0.1:{sidecar.listen_port}",
-            headers={"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"},
-        ) as response,
-    ):
-        assert (response.status, await response.read()) == (200, b"upstream ok")
-
-    _, _, headers = one(proxy.upstream.requests)
-    assert headers["authorization"] == f"Bearer {TOKEN_A}"
-    assert "proxy-authorization" not in headers
-
-
-async def test_authenticated_workload_source_does_not_apply_to_the_wrong_target(
-    fake: FakeApiServer, proxy: ProxyUnderTest
-) -> None:
-    await install_workload_credential(fake, proxy)
-
-    response = await proxy.get("/workload/requires-auth", headers={"X-Workload-Credential": WORKLOAD_PLACEHOLDER})
-
-    assert (response.status, response.body) == (401, b"authentication required")
-    _, _, headers = one(proxy.upstream.requests)
-    assert "authorization" not in headers
-    assert headers["x-workload-credential"] == WORKLOAD_PLACEHOLDER
-
-
-async def test_forged_proxy_authorization_never_becomes_dynamic_credential(
-    fake: FakeApiServer, proxy: ProxyUnderTest, caplog: pytest.LogCaptureFixture
-) -> None:
-    await install_workload_credential(fake, proxy)
-    forged = "forged-workload-bearer-value"
-    caplog.set_level(logging.INFO, logger="agentplane.egress.addon")
-
-    with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
-        await proxy.get("/workload/forged", token=forged, headers={"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"})
-
-    assert refused.value.status == 403
-    assert refused.value.headers is not None
-    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.TOKEN_REJECTED}"
-    assert proxy.upstream.requests == []
-    assert forged not in caplog.text
+        async with go_replica(settings, directory=tmp_path) as running:
+            yield Egress(
+                proxy_port=running.proxy_port,
+                interception_ca=interception_ca,
+                upstream_ca=upstream_ca,
+                upstream=upstream,
+                tmp_path=tmp_path,
+            )
 
 
 @asynccontextmanager
 async def recording_grpc_upstream(
-    keypair: tuple[bytes, bytes] | None,
+    keypair: tuple[bytes, bytes] | None, *, finished: asyncio.Event
 ) -> AsyncIterator[tuple[int, asyncio.Queue[tuple[tuple[str, str], ...]]]]:
-    """A gRPC server recording metadata on unary and bidirectional calls: TLS with a keypair, else plaintext."""
+    """A gRPC server recording the metadata of a bidirectional call: TLS with a keypair, else plaintext."""
     requests: asyncio.Queue[tuple[tuple[str, str], ...]] = asyncio.Queue()
-
-    async def call(request: bytes, context: grpc.aio.ServicerContext) -> bytes:
-        del request
-        metadata = context.invocation_metadata() or ()
-        await requests.put(tuple((str(item[0]), str(item[1])) for item in metadata))
-        return b"upstream ok"
 
     async def stream(request_iterator: AsyncIterator[bytes], context: grpc.aio.ServicerContext) -> AsyncIterator[bytes]:
         metadata = context.invocation_metadata() or ()
         await requests.put(tuple((str(item[0]), str(item[1])) for item in metadata))
-        async for request in request_iterator:
-            yield b"upstream:" + request
-        context.set_trailing_metadata((("buildbuddy-test-trailer", "ok"),))
+        try:
+            async for request in request_iterator:
+                yield b"upstream:" + request
+            context.set_trailing_metadata((("buildbuddy-test-trailer", "ok"),))
+        finally:
+            finished.set()
 
     server = grpc.aio.server()
     server.add_generic_rpc_handlers(
         (
-            grpc.method_handlers_generic_handler(
-                "build.bazel.remote.execution.v2.Capabilities",
-                {
-                    "GetCapabilities": grpc.unary_unary_rpc_method_handler(
-                        call, request_deserializer=lambda value: value, response_serializer=lambda value: value
-                    )
-                },
-            ),
             grpc.method_handlers_generic_handler(
                 "google.devtools.build.v1.PublishBuildEvent",
                 {
@@ -617,496 +252,20 @@ def read_keypair(cert_path: Path, key_path: Path) -> tuple[bytes, bytes]:
     return cert_path.read_bytes(), key_path.read_bytes()
 
 
-async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
-    fake: FakeApiServer, proxy: ProxyUnderTest, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Bazel's remote_header becomes ordinary HTTP/2 metadata at the intercepted proxy."""
-    credential_name = "buildbuddy-api-key"
-    credential_secret = "buildbuddy-api-key-secret"
-    policy_name = "buildbuddy-local-bazel"
-    placeholder = placeholder_of(credential_name)
-    fake.put(SECRETS_PLURAL, secret(credential_secret, {"api-key": "buildbuddy-secret"}))
-    fake.put(
-        CREDENTIALS_PLURAL,
-        credential(
-            credential_name,
-            secret_name=credential_secret,
-            key="api-key",
-            targets=[{"header": "x-buildbuddy-api-key", "method": TargetMethod.WHOLE_VALUE}],
-        ),
-    )
-    fake.put(
-        POLICY_SETS_PLURAL,
-        egress_policy_set(
-            policy_name,
-            [
-                {
-                    "hosts": [UPSTREAM_HOST],
-                    "methods": ["POST"],
-                    "paths": [
-                        "/api/v1/GetInvocation",
-                        "/build.bazel.remote.execution.v2.Capabilities/GetCapabilities",
-                        "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream",
-                    ],
-                    "credentialRef": {"name": credential_name},
-                }
-            ],
-        ),
-    )
-    await bind_to_a(proxy, policy_name, credential_name)
-
-    async with (
-        aiohttp.ClientSession() as session,
-        session.post(
-            proxy.url("/api/v1/GetInvocation"),
-            proxy=f"http://127.0.0.1:{proxy.proxy_port}",
-            proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
-            ssl=client_tls_context(proxy.interception_ca),
-            headers={"x-buildbuddy-api-key": placeholder},
-            json={"selector": {"invocation_id": "fake"}},
-        ) as http_response,
-    ):
-        assert (http_response.status, await http_response.text()) == (200, "upstream ok")
-    assert one(proxy.upstream.requests)[2]["x-buildbuddy-api-key"] == "buildbuddy-secret"
-
-    cert_path, key_path = issue_leaf(proxy.upstream_ca, UPSTREAM_HOST, proxy.tmp_path)
-    async with (
-        recording_grpc_upstream(read_keypair(cert_path, key_path)) as (port, requests),
-        proxy.sidecar(TOKEN_A) as sidecar,
-    ):
-        monkeypatch.setenv("https_proxy", f"http://127.0.0.1:{sidecar.listen_port}")
-        monkeypatch.setenv("no_proxy", "")
-        credentials = grpc.ssl_channel_credentials(root_certificates=proxy.interception_ca.cert_pem)
-        async with grpc.aio.secure_channel(f"{UPSTREAM_HOST}:{port}", credentials) as channel:
-            response = await channel.unary_unary(
-                "/build.bazel.remote.execution.v2.Capabilities/GetCapabilities",
-                request_serializer=lambda value: value,
-                response_deserializer=lambda value: value,
-            )(b"request", metadata=(("x-buildbuddy-api-key", placeholder),), timeout=10)
-            stream = channel.stream_stream(
-                "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream",
-                request_serializer=lambda value: value,
-                response_deserializer=lambda value: value,
-            )(metadata=(("x-buildbuddy-api-key", placeholder),), timeout=10)
-            await stream.write(b"one")
-            await stream.write(b"two")
-            await stream.done_writing()
-            streamed = [message async for message in stream]
-            trailers = dict(await stream.trailing_metadata() or ())
-            # The HTTP/2 channel is already open. Later streams still require a fresh Index.
-            proxy.index.freshness.at[CREDENTIALS_PLURAL] -= timedelta(seconds=181)
-            with pytest.raises(grpc.aio.AioRpcError):
-                await channel.unary_unary(
-                    "/build.bazel.remote.execution.v2.Capabilities/GetCapabilities",
-                    request_serializer=lambda value: value,
-                    response_deserializer=lambda value: value,
-                )(b"stale", metadata=(("x-buildbuddy-api-key", placeholder),), timeout=10)
-
-    assert response == b"upstream ok"
-    assert streamed == [b"upstream:one", b"upstream:two"]
-    assert trailers["buildbuddy-test-trailer"] == "ok"
-    assert requests.qsize() == 2
-    assert [dict(await requests.get())["x-buildbuddy-api-key"] for _ in range(2)] == [
-        "buildbuddy-secret",
-        "buildbuddy-secret",
-    ]
-
-
-async def test_plaintext_grpc_stream_metadata_placeholder_is_substituted(
-    fake: FakeApiServer, proxy: ProxyUnderTest, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """An interactive plaintext (h2c) stream through the sidecar's tunnel streams, with metadata substituted.
-
-    The runner control stream is a long-lived stream to an in-cluster plaintext gRPC listener
-    (agentplane/docs/runner_control.md); this pins that the proxy reads h2c inside the tunnel and
-    decides a non-JSON request from its headers.
-    """
-    credential_name = "runner-control-test"
-    credential_secret = "runner-control-test-secret"
-    policy_name = "runner-control-test"
-    # The recording upstream's bidirectional method; the name is incidental here.
-    path = "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream"
-    placeholder = placeholder_of(credential_name)
-    fake.put(SECRETS_PLURAL, secret(credential_secret, {"token": "runner-control-secret"}))
-    fake.put(
-        CREDENTIALS_PLURAL,
-        credential(
-            credential_name,
-            secret_name=credential_secret,
-            key="token",
-            targets=[{"header": "authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"}],
-        ),
-    )
-    fake.put(
-        POLICY_SETS_PLURAL,
-        egress_policy_set(
-            policy_name,
-            [
-                {
-                    "hosts": [UPSTREAM_HOST],
-                    "methods": ["POST"],
-                    "paths": [path],
-                    "credentialRef": {"name": credential_name},
-                }
-            ],
-        ),
-    )
-    await bind_to_a(proxy, policy_name, credential_name)
-
-    async with recording_grpc_upstream(None) as (port, requests), proxy.sidecar(TOKEN_A) as sidecar:
-        monkeypatch.setenv("grpc_proxy", f"http://127.0.0.1:{sidecar.listen_port}")
-        monkeypatch.setenv("no_proxy", "")
-        async with grpc.aio.insecure_channel(f"{UPSTREAM_HOST}:{port}") as channel:
-            stream = channel.stream_stream(
-                path, request_serializer=lambda value: value, response_deserializer=lambda value: value
-            )(metadata=(("authorization", f"Bearer {placeholder}"),), timeout=10)
-            # Each reply arrives while the request body is still open, as on the runner control stream; a
-            # proxy that waits for the whole body before deciding stalls here.
-            for message in (b"one", b"two"):
-                await stream.write(message)
-                assert await stream.read() == b"upstream:" + message
-            await stream.done_writing()
-            assert await stream.read() is grpc.aio.EOF
-
-    assert dict(await requests.get())["authorization"] == "Bearer runner-control-secret"
-
-
-async def test_allowed_request_without_placeholder_is_forwarded_as_is(proxy: ProxyUnderTest) -> None:
-    response = await proxy.get("/public/readme")
-    assert response.status == 200
-    _, _, headers = one(proxy.upstream.requests)
-    assert "authorization" not in headers
-
-
-async def test_inner_request_denied_by_rule_inside_an_admitted_tunnel(proxy: ProxyUnderTest) -> None:
-    response = await proxy.get("/private/x")
-    assert denial(response, DenyReason.NO_RULE)
-    assert response.body == b""
-    assert proxy.upstream.requests == []
-
-
-async def test_unresolved_placeholder_is_never_forwarded(proxy: ProxyUnderTest) -> None:
-    response = await proxy.get("/public/readme", headers={"Authorization": f"Bearer {PLACEHOLDER}"})
-    assert denial(response, DenyReason.PLACEHOLDER_UNRESOLVED)
-    assert proxy.upstream.requests == []
-
-
-@pytest.mark.parametrize(
-    ("token", "reason"), [("not-a-token", DenyReason.TOKEN_REJECTED), (None, DenyReason.TOKEN_MISSING)]
-)
-async def test_bad_or_missing_token_refused_at_connect(
-    proxy: ProxyUnderTest, token: str | None, reason: DenyReason
-) -> None:
-    with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
-        await proxy.get("/repos/o/r", token=token)
-    assert refused.value.status == 403
-    assert refused.value.headers is not None
-    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={reason}"
-    assert proxy.upstream.requests == []
-
-
-async def test_unbound_subject_refused(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
-    """A workload that authenticates and that no binding names reaches no rule."""
-    fake.put(SANDBOXES_PLURAL, sandbox("sb-c"))
-    fake.pods["sb-c"] = pod_for(fake, "sb-c", pod_uid="pod-c-uid", ip=POD_A_IP)
-    fake.tokens["token-c"] = TokenVerdict(
-        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:sb-c",
-        pod_name="sb-c",
-        pod_uid="pod-c-uid",
-        audiences=(AUDIENCE,),
-    )
-    with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
-        await proxy.get("/repos/o/r", token="token-c")
-    assert refused.value.headers is not None
-    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.NO_BINDING}"
-
-
-class TestUpstreamAddress:
-    @pytest.fixture
-    def exempt_networks(self) -> Collection[Network]:
-        return ()
-
-    @pytest.mark.parametrize("blanket", [False, True])
-    async def test_host_resolving_into_a_private_range_is_refused_at_connect(
-        self, proxy: ProxyUnderTest, fake: FakeApiServer, blanket: bool
-    ) -> None:
-        """Exact and blanket policies both leave the address gate enforced at CONNECT."""
-        if blanket:
-            fake.put(POLICY_SETS_PLURAL, egress_policy_set(GITHUB_POLICY, [{"hosts": ["*"]}]))
-            await proxy.index.wait_for(lambda: first_rule(proxy.index, GITHUB_POLICY).hosts == ["*"])
-        with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
-            await proxy.get("/repos/o/r")
-        assert refused.value.status == 403
-        assert refused.value.headers is not None
-        assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.ADDRESS_FORBIDDEN}"
-        assert proxy.upstream.requests == []
-
-
-async def test_rotated_secret_is_substituted_without_restart(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
-    fake.put(SECRETS_PLURAL, secret(SECRET_NAME, {"token": "real-secret-v2"}))
-    await proxy.index.wait_for(lambda: proxy.index.secrets[SECRET_NAME].data["token"] == "real-secret-v2")
-    response = await proxy.get("/repos/o/r", headers={"Authorization": f"Bearer {PLACEHOLDER}"})
-    assert response.status == 200
-    assert one(proxy.upstream.requests)[2]["authorization"] == "Bearer real-secret-v2"
-
-
-async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest, decision_log: DecisionLog) -> None:
-    await proxy.get("/repos/o/r", headers={"Authorization": f"Bearer {PLACEHOLDER}"})
-    await proxy.get("/private/x")
-    with pytest.raises(aiohttp.ClientHttpProxyError):
-        await proxy.get("/repos/o/r", token="not-a-token")
-    await decision_log.flush()
-    async with aiohttp.ClientSession(f"http://127.0.0.1:{proxy.admin_port}") as admin:
-        async with admin.get("/healthz") as health:
-            assert (health.status, (await health.json())["synced"]) == (200, True)
-        async with admin.get("/decisions", params=SUBJECT_A.model_dump()) as listing:
-            decisions = await listing.json()
-        async with admin.get("/decisions") as listing:
-            unidentified = await listing.json()
-    assert [(d["method"], d["outcome"], d["reason"], d["substituted"]) for d in decisions] == [
-        ("CONNECT", "allow", None, False),
-        ("GET", "allow", None, True),
-        ("CONNECT", "allow", None, False),
-        ("GET", "deny", "no-rule", False),
-    ]
-    assert [d["address"] for d in decisions] == ["127.0.0.1", "127.0.0.1", "127.0.0.1", None]
-    substituted = one(d for d in decisions if d["substituted"])
-    assert (substituted["binding"], substituted["policy"]) == (BINDING, GITHUB_POLICY)
-    assert [(d["method"], d["reason"]) for d in unidentified] == [("CONNECT", "token-rejected")]
-    assert all(SECRET_VALUE not in str(d) and PLACEHOLDER not in str(d) for d in decisions)
-
-
-async def test_a_workload_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest) -> None:
-    """The Service DNS request is forwarded to the separate destination listener."""
-    response = await proxy.get_rules(rules_api.PATH)
-
-    assert response.status == 200, response.body
-    assert proxy.upstream.requests == []
-    assert (RULES_HOST, 80, True) in proxy.resolver.pin_calls
-    view = json.loads(response.body)
-    assert view["subject"] == SUBJECT_A.model_dump()
-    credentials = [rule["credential"] for policy in view["policies"] for rule in policy["rules"]]
-    presented = one(c for c in credentials if c is not None and c["placeholder"] == PLACEHOLDER)
-    # The targets, not the placeholder alone: without the scheme a sandbox sends the placeholder
-    # bare and the upstream refuses the substituted value.
-    assert {"header": "Authorization", "method": "schemeToken", "scheme": SCHEME} in presented["targets"], view
-    assert SECRET_VALUE not in response.body.decode(), "the proxy handed the sandbox the real credential"
-
-
-async def test_a_workload_reads_rules_through_its_loopback_sidecar(proxy: ProxyUnderTest) -> None:
-    """Ordinary HTTP via loopback and central, then independent destination TokenReview."""
-    before = proxy.fake.token_reviews
-    async with proxy.sidecar(TOKEN_A) as sidecar:
-        response = await proxy.get_rules(rules_api.PATH, token=None, proxy_port=sidecar.listen_port)
-
-    assert response.status == 200, response.body
-    assert json.loads(response.body)["subject"] == SUBJECT_A.model_dump()
-    assert proxy.fake.token_reviews == before + 2, "central and API each validate independently"
-    assert proxy.resolver.pin_calls == [(RULES_HOST, 80, True)], "one forward, no recursion"
-    assert all(value not in response.body.decode() for value in (TOKEN_A, SECRET_VALUE))
-
-
-async def test_rules_identity_ignores_forged_request_headers_and_body(proxy: ProxyUnderTest) -> None:
-    response = await proxy.get_rules(
-        rules_api.PATH,
-        headers={
-            "Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}",
-            "X-Agentplane-Subject": SANDBOX_B,
-            "Content-Type": "application/json",
-        },
-        body=json.dumps(SUBJECT_B.model_dump()).encode(),
-    )
-
-    assert response.status == 200, response.body
-    assert json.loads(response.body)["subject"] == SUBJECT_A.model_dump()
-
-
-async def test_the_agent_view_needs_the_same_identity_every_request_does(proxy: ProxyUnderTest) -> None:
-    response = await proxy.get_rules(rules_api.PATH, token=None)
-
-    assert denial(response, DenyReason.TOKEN_MISSING)
-
-
-@pytest.mark.parametrize("authorization", [None, "Bearer forged-destination", f"Bearer {WORKLOAD_PLACEHOLDER}-wrong"])
-async def test_rules_destination_auth_is_required_after_the_authenticated_hop(
-    proxy: ProxyUnderTest, authorization: str | None
-) -> None:
-    response = await proxy.get_rules(
-        rules_api.PATH, headers={} if authorization is None else {"Authorization": authorization}
-    )
-
-    assert response.status == 401
-    assert json.loads(response.body) == {"detail": "invalid workload bearer"}
-
-
-async def test_rules_unbound_placeholder_is_not_forwarded(proxy: ProxyUnderTest) -> None:
-    await proxy.install_rules_route()
-    proxy.fake.put(
-        POLICY_SETS_PLURAL,
-        egress_policy_set(
-            BASIC_POLICY,
-            [{"hosts": [RULES_HOST], "methods": ["GET"], "paths": [rules_api.PATH], "clusterInternal": True}],
-        ),
-    )
-    await proxy.index.wait_for(lambda: first_rule(proxy.index, BASIC_POLICY).credential_ref is None)
-
-    response = await proxy.get_rules(rules_api.PATH)
-
-    assert denial(response, DenyReason.PLACEHOLDER_UNRESOLVED)
-    assert proxy.resolver.pin_calls == []
-
-
-@pytest.mark.parametrize(("decision_queue_size", "decision_flush_seconds"), [(1, 0.01)])
-async def test_database_outage_and_full_queue_do_not_block_authorized_egress(
-    proxy: ProxyUnderTest, decision_log: DecisionLog, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    async def unavailable(records) -> None:
-        entered.set()
-        await release.wait()
-        raise OSError("test database outage")
-
-    monkeypatch.setattr(decision_log.store, "append", unavailable)
-    response = await proxy.get("/public/first")
-    assert response.status == 200
-    await entered.wait()
-    # A second admitted request must reach upstream before the DB gate is released.
-    response = await proxy.get("/public/second")
-    assert response.status == 200
-    assert not release.is_set()
-    await decision_log.close()
-    assert decision_log.diagnostics.dropped_shutdown == 2
-    assert decision_log.diagnostics.dropped_overflow >= 2
-
-
-async def test_history_omits_secret_bearing_paths_queries_and_headers(
-    proxy: ProxyUnderTest, decision_log: DecisionLog, caplog: pytest.LogCaptureFixture
-) -> None:
-    caplog.set_level("INFO", logger="agentplane.egress.decision_log")
-    response = await proxy.get(
-        "/public/path-secret-test?token=query-secret-test", headers={"X-Test-Private": "header-secret-test"}
-    )
-    assert response.status == 200
-    await decision_log.flush()
-    rows = await decision_log.store.recent(SUBJECT_A)
-    assert len(rows) == 2
-    assert rows[0].connection_id == rows[1].connection_id
-    assert rows[0].producer_id == rows[1].producer_id
-    assert all(row.source_pod_uid == POD_A_UID for row in rows)
-    payload = " ".join(row.model_dump_json() for row in rows)
-    decision_messages = " ".join(
-        entry.getMessage() for entry in caplog.records if entry.name == "agentplane.egress.decision_log"
-    )
-    for private in ("path-secret-test", "query-secret-test", "header-secret-test", TOKEN_A, SECRET_VALUE, PLACEHOLDER):
-        assert private not in payload
-        assert private not in decision_messages
-
-
-@pytest.mark.parametrize("state", ["stale", "revoked", "draining"])
-async def test_existing_tls_connection_rechecks_every_admission(
-    proxy: ProxyUnderTest, state: str, decision_log: DecisionLog
-) -> None:
-    async with aiohttp.ClientSession() as session:
-        tls = client_tls_context(proxy.interception_ca)
-
-        async def get(path: str) -> int:
-            async with session.get(
-                proxy.url(path),
-                proxy=f"http://127.0.0.1:{proxy.proxy_port}",
-                proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
-                ssl=tls,
-            ) as response:
-                await response.read()
-                return response.status
-
-        assert await get("/public/before") == 200
-        match state:
-            case "stale":
-                proxy.index.freshness.at[CREDENTIALS_PLURAL] -= timedelta(seconds=181)
-            case "revoked":
-                proxy.index.policy_bindings.clear()
-            case "draining":
-                proxy.addon.begin_drain()
-        assert await get("/public/after") == (403 if state == "revoked" else 502)
-        assert len(proxy.upstream.requests) == 1
-        await decision_log.flush()
-        rows = await decision_log.store.recent(SUBJECT_A)
-        assert len({row.connection_id for row in rows}) == 1
-        assert sum(row.phase is Phase.CONNECT for row in rows) == 1
-
-
-async def test_one_tls_connection_carries_every_admitted_request(
-    proxy: ProxyUnderTest, decision_log: DecisionLog
-) -> None:
-    """Every admitted request on a kept-open tunnel is answered, however many came before it: Bazel's
-    downloader, pip, and curl given several URLs all send theirs down one."""
-    paths = [f"/public/{n}" for n in range(12)]
-    # One context for the session: aiohttp pools connections per context, and reuse is the point.
-    tls = client_tls_context(proxy.interception_ca)
-    async with aiohttp.ClientSession() as session:
-        for path in paths:
-            async with (
-                asyncio.timeout(10),
-                session.get(
-                    proxy.url(path),
-                    proxy=f"http://127.0.0.1:{proxy.proxy_port}",
-                    proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
-                    ssl=tls,
-                ) as response,
-            ):
-                assert (response.status, await response.read()) == (200, b"upstream ok")
-    assert [path for _, path, _ in proxy.upstream.requests] == paths
-    await decision_log.flush()
-    assert len({row.connection_id for row in await decision_log.store.recent(SUBJECT_A)}) == 1
-
-
-def replica_settings(tmp_path: Path, name: str, *, api_port: int, ca: tuple[Path, Path], database_url: str) -> Settings:
-    """A replica process watching the fake API server on `api_port`, on ports of its own."""
-    cert, key = ca
-    return Settings(
-        _cli_parse_args=False,
-        rules_namespace=NAMESPACE,
-        allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
-        credentials_namespace=CREDENTIALS_NAMESPACE,
-        kubeconfig=kubeconfig(tmp_path / f"kube-{name}.yaml", api_port),
-        ca_cert=cert,
-        ca_key=key,
-        confdir=tmp_path / name,
-        listen_host="127.0.0.1",
-        listen_port=pick_free_port(),
-        admin_host="127.0.0.1",
-        admin_port=pick_free_port(),
-        agent_api_host="127.0.0.1",
-        agent_api_port=pick_free_port(),
-        token_audience=AUDIENCE,
-        resync_seconds=1,
-        database_url=database_url,
-        exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
-    )
-
-
 async def test_health_reports_ready_only_once_the_tunnel_accepts(tmp_path: Path, history_db_url: str) -> None:
-    """Readiness gates every Service this Pod backs, and the tunnel is the one that carries traffic.
-
-    mitmproxy binds appreciably later than the admin server does, so an admin server started first
-    answered /healthz -- reporting the Pod ready, and a rollout's new endpoint live -- while the
-    tunnel port still refused connections. `replica` waits for that 200 and nothing else, so the
-    window showed up as an intermittent refused connection in the two-replica test below rather
-    than as itself.
-    """
+    """Readiness gates every Service this Pod backs, and the tunnel is the one that carries traffic."""
     ca = write_ca(make_ca("test-readiness-ca"), tmp_path, "readiness")
     async with fake_apiserver() as api:
         seed(api)
         settings = replica_settings(tmp_path, "readiness", api_port=api.port, ca=ca, database_url=history_db_url)
-        async with replica(settings) as running:
+        async with go_replica(settings, directory=tmp_path) as running:
             _, writer = await asyncio.open_connection("127.0.0.1", running.proxy_port)
             writer.close()
             await writer.wait_closed()
 
 
 async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
-    tmp_path: Path, history_db_url: str, decision_log: DecisionLog
+    tmp_path: Path, history_db_url: str
 ) -> None:
     ca = make_ca("test-replica-ca")
     cert, key = write_ca(ca, tmp_path, "replica")
@@ -1121,7 +280,11 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             replica_settings(tmp_path, f"replica-{i}", api_port=fake.port, ca=(cert, key), database_url=history_db_url)
             for i, fake in enumerate([first_api, second_api])
         ]
-        async with replica(settings[0]) as first, replica(settings[1]) as second, aiohttp.ClientSession() as client:
+        async with (
+            go_replica(settings[0], directory=tmp_path) as first,
+            go_replica(settings[1], directory=tmp_path) as second,
+            aiohttp.ClientSession() as client,
+        ):
 
             async def get(port: int, path: str, expected: int) -> None:
                 async with client.get(
@@ -1130,7 +293,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                     headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
                 ) as response:
                     await response.read()
-                    assert response.status == expected, response.headers.get(DENIED_HEADER)
+                    assert response.status == expected, dict(response.headers)
 
             await get(first.proxy_port, "first", 200)
             await get(second.proxy_port, "second", 200)
@@ -1152,180 +315,226 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             await get(second.proxy_port, "recovered-revocation", 403)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
-                    rows = await decision_log.store.recent(SUBJECT_A)
-                    assert len({row.producer_id for row in rows}) == 2
+                    # Either replica serves the history both wrote.
+                    async with client.get(
+                        f"http://127.0.0.1:{first.admin_port}/decisions", params=SUBJECT_A.model_dump()
+                    ) as response:
+                        rows = await response.json()
+                    producers = {row["producer_id"] for row in rows}
+                    assert len(producers) == 2
                     assert all(
-                        len({row.connection_id for row in rows if row.producer_id == producer}) == 1
-                        for producer in {row.producer_id for row in rows}
+                        len({row["connection_id"] for row in rows if row["producer_id"] == producer}) == 1
+                        for producer in producers
                     )
-                    assert any(row.reason is DenyReason.UNAVAILABLE for row in rows)
+                    assert any(row["reason"] == "unavailable" for row in rows)
 
 
-async def test_drain_closes_listener_but_completes_admitted_request(proxy: ProxyUnderTest) -> None:
-    pending = asyncio.create_task(proxy.get("/public/slow"))
-    await asyncio.wait_for(proxy.upstream.slow_started.wait(), 10)
-    draining = asyncio.create_task(proxy.server.drain())
-    await proxy.index.wait_for(lambda: proxy.index.draining)
-    try:
-        assert not draining.done()
-        async with (
-            aiohttp.ClientSession() as client,
-            client.get(f"http://127.0.0.1:{proxy.admin_port}/healthz") as response,
-        ):
-            assert response.status == 503
-        with pytest.raises(ConnectionRefusedError):
-            await asyncio.open_connection("127.0.0.1", proxy.proxy_port)
-        proxy.upstream.slow_release.set()
-        assert (await asyncio.wait_for(pending, 10)).status == 200
-        await asyncio.wait_for(draining, 10)
-        assert len(proxy.upstream.requests) == 1
-    finally:
-        proxy.upstream.slow_release.set()
-        await asyncio.gather(pending, draining, return_exceptions=True)
-
-
-PROJECTED_CREDENTIAL = "kubernetes-workload"
-PROJECTED_PLACEHOLDER = placeholder_of(PROJECTED_CREDENTIAL)
-PROJECTED_POLICY = "projected-workload"
-
-
-async def install_projected_credential(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
-    fake.put(
-        CREDENTIALS_PLURAL,
-        projected_workload_credential(
-            PROJECTED_CREDENTIAL,
-            audience=PROJECTED_AUDIENCE,
-            targets=[{"header": "Authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"}],
-        ),
-    )
-    fake.put(
-        POLICY_SETS_PLURAL,
-        egress_policy_set(
-            PROJECTED_POLICY,
-            [
-                {
-                    "hosts": [UPSTREAM_HOST],
-                    "methods": ["GET"],
-                    "paths": ["/projected/**"],
-                    "credentialRef": {"name": PROJECTED_CREDENTIAL},
-                }
-            ],
-        ),
-    )
-    await bind_to_a(proxy, PROJECTED_POLICY, PROJECTED_CREDENTIAL)
-
-
-async def _projected_get(proxy: ProxyUnderTest, path: str, offered: str | None) -> Response:
-    """A request presenting the placeholder, with the sidecar's projected-token header as given."""
-    proxy_headers = {"Proxy-Authorization": f"Bearer {TOKEN_A}"}
-    if offered is not None:
-        proxy_headers[PROJECTED_TOKEN_HEADER] = f"{PROJECTED_AUDIENCE} {offered}"
+async def test_go_proxy_finishes_an_admitted_request_after_sigterm(tmp_path: Path, history_db_url: str) -> None:
+    """Termination takes the Pod out of rotation at once, yet lets the request already admitted finish."""
+    ca = make_ca("test-sigterm-ca")
+    cert, key = write_ca(ca, tmp_path, "sigterm")
     async with (
-        aiohttp.ClientSession() as session,
-        session.get(
-            proxy.url(path),
-            proxy=f"http://127.0.0.1:{proxy.proxy_port}",
-            proxy_headers=proxy_headers,
-            ssl=client_tls_context(proxy.interception_ca),
-            headers={"Authorization": f"Bearer {PROJECTED_PLACEHOLDER}"},
+        fake_apiserver() as api,
+        recording_upstream(*issue_leaf(ca, UPSTREAM_HOST, tmp_path)) as upstream,
+        aiohttp.ClientSession() as client,
+    ):
+        seed(api)
+        settings = replica_settings(tmp_path, "sigterm", api_port=api.port, ca=(cert, key), database_url=history_db_url)
+        async with go_replica(settings, directory=tmp_path) as running:
+
+            async def slow_status() -> int:
+                async with client.get(
+                    f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/slow",
+                    proxy=f"http://127.0.0.1:{running.proxy_port}",
+                    headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                ) as response:
+                    await response.read()
+                    return response.status
+
+            pending = asyncio.create_task(slow_status())
+            await asyncio.wait_for(upstream.slow_started.wait(), 10)
+            running.terminate()
+            await running.health(503)
+            with pytest.raises(ConnectionRefusedError):
+                await asyncio.open_connection("127.0.0.1", running.proxy_port)
+            assert not pending.done()
+            upstream.slow_release.set()
+            assert await asyncio.wait_for(pending, 10) == 200
+    assert len(upstream.requests) == 1
+
+
+async def test_header_substitution(egress: Egress) -> None:
+    async with (
+        aiohttp.ClientSession() as client,
+        client.get(
+            egress.url("/contract"),
+            proxy=f"http://127.0.0.1:{egress.proxy_port}",
+            proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+            ssl=client_tls_context(egress.interception_ca),
+            headers={"x-buildbuddy-api-key": placeholder_of(_CONTRACT_CREDENTIAL)},
         ) as response,
     ):
-        return Response(status=response.status, headers=dict(response.headers), body=await response.read())
+        assert response.status == 200
+        await response.read()
+    assert one(egress.upstream.requests)[2]["x-buildbuddy-api-key"] == "contract-secret"
+    assert "proxy-authorization" not in one(egress.upstream.requests)[2]
 
 
-async def test_projected_token_is_substituted_and_never_forwarded(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
-    """The caller sends an inert placeholder and its own audience-scoped token; the upstream sees the
-    token and no trace of how it got there."""
-    await install_projected_credential(fake, proxy)
-    response = await _projected_get(proxy, "/projected/api", PROJECTED_TOKEN_A)
-    assert response.status == 200
-    _, _, headers = one(proxy.upstream.requests)
-    assert headers["authorization"] == f"Bearer {PROJECTED_TOKEN_A}"
-    assert PROJECTED_TOKEN_HEADER.lower() not in headers
-    assert "proxy-authorization" not in headers
+async def test_incremental_sse_and_websocket(egress: Egress) -> None:
+    finish = asyncio.Event()
 
+    async def sse(request: web.Request) -> web.StreamResponse:
+        response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+        await response.prepare(request)
+        await response.write(b"data: first\n\n")
+        await finish.wait()
+        await response.write_eof()
+        return response
 
-@pytest.mark.parametrize("offered", [PROJECTED_TOKEN_B, None], ids=["another-pods-token", "none-offered"])
-async def test_a_projected_placeholder_without_the_callers_own_token_is_refused(
-    fake: FakeApiServer, proxy: ProxyUnderTest, offered: str | None
-) -> None:
-    """The hop authenticates as Pod A, so a token belonging to Pod B is not A's to spend -- and the
-    proxy is the only route to that destination, which is what makes the check load-bearing."""
-    await install_projected_credential(fake, proxy)
-    response = await _projected_get(proxy, "/projected/api", offered)
-    assert denial(response, DenyReason.CREDENTIAL_UNAVAILABLE)
-    assert proxy.upstream.requests == []
+    async def websocket(request: web.Request) -> web.WebSocketResponse:
+        response = web.WebSocketResponse()
+        await response.prepare(request)
+        async for message in response:
+            assert message.type is aiohttp.WSMsgType.TEXT
+            await response.send_str(f"upstream:{message.data}")
+        return response
 
-
-async def test_matrix_json_login_through_real_proxy(
-    fake: FakeApiServer, proxy: ProxyUnderTest, caplog: pytest.LogCaptureFixture, decision_log: DecisionLog
-) -> None:
-    caplog.set_level("INFO", logger="agentplane.egress.decision_log")
-    name = "matrix-login"
-    login_path = "/_matrix/client/v3/login"
-    secret_value = 'matrix-secret"\\\n☃'
-    fake.put(SECRETS_PLURAL, secret("matrix-password", {"password": secret_value}))
-    fake.put(
-        CREDENTIALS_PLURAL,
-        credential(
-            name, secret_name="matrix-password", key="password", targets=[{"method": "jsonField", "field": "password"}]
-        ),
+    app = web.Application()
+    app.router.add_get("/contract-sse", sse)
+    app.router.add_get("/contract-ws", websocket)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(
+        runner,
+        "127.0.0.1",
+        0,
+        ssl_context=server_tls_context(*issue_leaf(egress.upstream_ca, UPSTREAM_HOST, egress.tmp_path)),
     )
-    fake.put(
-        POLICY_SETS_PLURAL,
-        egress_policy_set(
-            name,
-            [
-                {"hosts": [UPSTREAM_HOST], "methods": ["POST"], "paths": [login_path], "credentialRef": {"name": name}},
-                {"hosts": [UPSTREAM_HOST], "paths": ["/public/**"]},
-            ],
-        ),
-    )
-    fake.put(POLICY_BINDINGS_PLURAL, policy_binding(BINDING, subject=SUBJECT_A.model_dump(), policy_sets=[name]))
-    await proxy.index.wait_for(
-        lambda: (
-            name in proxy.index.credentials
-            and name in proxy.index.policy_sets
-            and proxy.index.policy_bindings[BINDING].spec.policy_sets == [name]
-            and "matrix-password" in proxy.index.secrets
-        )
-    )
-    payload = {
-        "type": "m.login.password",
-        "identifier": {"type": "m.id.user", "user": "@bot:test"},
-        "password": placeholder_of(name),
-    }
-    async with aiohttp.ClientSession() as session:
-        for path, data, expected in [
-            (login_path, json.dumps(payload).encode(), 200),
-            ("/public/not-login", json.dumps(payload).encode(), 403),
-            (login_path, b'{"password":"one","password":"two"}', 403),
-        ]:
-            async with session.post(
-                proxy.url(path),
-                proxy=f"http://127.0.0.1:{proxy.proxy_port}",
+    await site.start()
+    port = one(runner.addresses)[1]
+    try:
+        async with aiohttp.ClientSession() as client:
+            async with client.get(
+                f"https://{UPSTREAM_HOST}:{port}/contract-sse",
+                proxy=f"http://127.0.0.1:{egress.proxy_port}",
                 proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
-                ssl=client_tls_context(proxy.interception_ca),
-                headers={"Content-Type": "application/json"},
-                data=data,
+                ssl=client_tls_context(egress.interception_ca),
             ) as response:
-                assert response.status == expected
-                assert secret_value.encode() not in await response.read()
-    assert len(proxy.upstream.requests) == 1
-    body = one(proxy.upstream.bodies)
-    assert json.loads(body) == {**payload, "password": secret_value}
-    assert int(one(proxy.upstream.requests)[2]["content-length"]) == len(body)
-    assert secret_value not in caplog.text
-    assert json.dumps(secret_value) not in caplog.text
-    await decision_log.flush()
+                assert response.status == 200
+                async with asyncio.timeout(5):
+                    assert await response.content.readline() == b"data: first\n"
+                # The server is still waiting here: completion cannot explain the read.
+                assert not finish.is_set()
+                finish.set()
+                await response.read()
+            async with client.ws_connect(
+                f"https://{UPSTREAM_HOST}:{port}/contract-ws",
+                proxy=f"http://127.0.0.1:{egress.proxy_port}",
+                proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                ssl=client_tls_context(egress.interception_ca),
+            ) as websocket_client:
+                await websocket_client.send_str("first")
+                async with asyncio.timeout(5):
+                    assert (await websocket_client.receive()).data == "upstream:first"
+                await websocket_client.send_str("second")
+                async with asyncio.timeout(5):
+                    assert (await websocket_client.receive()).data == "upstream:second"
+    finally:
+        finish.set()
+        await runner.cleanup()
+
+
+async def test_denial_has_zero_upstream_tcp_accepts(egress: Egress) -> None:
+    accepted: list[asyncio.StreamWriter] = []
+    observed = asyncio.Event()
+
+    async def accept(_reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        accepted.append(writer)
+        observed.set()
+        writer.close()
+        await writer.wait_closed()
+
+    # Plain raw TCP sees accepts even if the proxy would fail its subsequent TLS
+    # handshake. Counting aiohttp handlers would miss this security boundary.
+    async with await asyncio.start_server(accept, "127.0.0.1", 0) as upstream:
+        port = upstream.sockets[0].getsockname()[1]
+        async with (
+            aiohttp.ClientSession() as client,
+            client.get(
+                f"https://{UPSTREAM_HOST}:{port}/not-admitted",
+                proxy=f"http://127.0.0.1:{egress.proxy_port}",
+                proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                ssl=client_tls_context(egress.interception_ca),
+            ) as response,
+        ):
+            assert response.status == 403
+            await response.read()
+        assert accepted == []
+        # Positive control proves the accept counter is attached to a live socket.
+        _, writer = await asyncio.open_connection("127.0.0.1", port)
+        async with asyncio.timeout(5):
+            await observed.wait()
+        writer.close()
+        await writer.wait_closed()
+        assert len(accepted) == 1
+
+
+@pytest.mark.parametrize("tls", [True, False], ids=["tls-h2", "h2c"])
+async def test_interactive_grpc_before_eof(egress: Egress, monkeypatch: pytest.MonkeyPatch, tls: bool) -> None:
+    keypair = read_keypair(*issue_leaf(egress.upstream_ca, UPSTREAM_HOST, egress.tmp_path)) if tls else None
+    token_file = egress.tmp_path / "contract-hop-token"
+    token_file.write_text(TOKEN_A)
+    finished = asyncio.Event()
     async with (
-        aiohttp.ClientSession(base_url=f"http://127.0.0.1:{proxy.admin_port}") as admin,
-        admin.get("/decisions", params=SUBJECT_A.model_dump()) as response,
+        recording_grpc_upstream(keypair, finished=finished) as (port, requests),
+        SidecarProcess(proxy_host="127.0.0.1", proxy_port=egress.proxy_port, token_file=token_file) as sidecar,
     ):
-        evidence = await response.text()
-    assert secret_value not in evidence
-    assert "@bot:test" not in evidence
-    assert any(decision["substituted"] for decision in json.loads(evidence))
+        monkeypatch.setenv("https_proxy" if tls else "grpc_proxy", f"http://127.0.0.1:{sidecar.listen_port}")
+        monkeypatch.setenv("no_proxy", "")
+        channel = (
+            grpc.aio.secure_channel(
+                f"{UPSTREAM_HOST}:{port}",
+                grpc.ssl_channel_credentials(root_certificates=egress.interception_ca.cert_pem),
+            )
+            if tls
+            else grpc.aio.insecure_channel(f"{UPSTREAM_HOST}:{port}")
+        )
+        async with channel:
+            call = channel.stream_stream(
+                _CONTRACT_PATH, request_serializer=lambda value: value, response_deserializer=lambda value: value
+            )(metadata=(("x-buildbuddy-api-key", placeholder_of(_CONTRACT_CREDENTIAL)),), timeout=10)
+            for message in (b"first", b"second"):
+                await call.write(message)
+                assert await call.read() == b"upstream:" + message
+            await call.done_writing()
+            assert await call.read() is grpc.aio.EOF
+            assert dict(await call.trailing_metadata() or ())["buildbuddy-test-trailer"] == "ok"
+            assert finished.is_set()
+            finished.clear()
+            deadline = channel.stream_stream(
+                _CONTRACT_PATH, request_serializer=lambda value: value, response_deserializer=lambda value: value
+            )(metadata=(("x-buildbuddy-api-key", placeholder_of(_CONTRACT_CREDENTIAL)),), timeout=1)
+            await deadline.write(b"before-deadline")
+            assert await deadline.read() == b"upstream:before-deadline"
+            with pytest.raises(grpc.aio.AioRpcError) as expired:
+                await deadline.read()
+            assert expired.value.code() is grpc.StatusCode.DEADLINE_EXCEEDED
+            async with asyncio.timeout(5):
+                await finished.wait()
+            finished.clear()
+            cancelled = channel.stream_stream(
+                _CONTRACT_PATH, request_serializer=lambda value: value, response_deserializer=lambda value: value
+            )(metadata=(("x-buildbuddy-api-key", placeholder_of(_CONTRACT_CREDENTIAL)),), timeout=10)
+            await cancelled.write(b"before-cancel")
+            assert await cancelled.read() == b"upstream:before-cancel"
+            assert cancelled.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await cancelled.read()
+            async with asyncio.timeout(5):
+                await finished.wait()
+    headers = dict(await requests.get())
+    assert headers["x-buildbuddy-api-key"] == "contract-secret"
+    assert "proxy-authorization" not in headers
 
 
 if __name__ == "__main__":

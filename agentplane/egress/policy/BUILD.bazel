@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "policy",
+    srcs = [
+        "effective.go",
+        "evaluate.go",
+        "index.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/policy",
+    visibility = ["//agentplane/egress:__subpackages__"],
+    deps = [
+        "//agentplane/egress/decision",
+        "//agentplane/egress/presentation",
+        "//agentplane/egress/resources",
+        "//agentplane/policy/api",
+    ],
+)
+
+go_test(
+    name = "policy_test",
+    srcs = [
+        "effective_test.go",
+        "evaluate_test.go",
+        "index_test.go",
+    ],
+    embed = [":policy"],
+    deps = [
+        "//agentplane/egress/decision",
+        "//agentplane/egress/presentation",
+        "//agentplane/egress/resources",
+        "//agentplane/policy/api",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
+)

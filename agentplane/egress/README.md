@@ -1,9 +1,10 @@
 # Agentplane egress proxy
 
-The central proxy of Agentplane's credentialless egress: a mitmproxy addon that proves each
+The central proxy of Agentplane's credentialless egress: a Go forward proxy that proves each
 caller's Pod-bound token, decides the request from the `egress` rules of `PolicySet`s a
 `PolicyBinding` grants it, and substitutes the real credential. What it guarantees is in <SPEC.md>. How the kinds compose into
-one decision is in <../docs/egress_composition.md>.
+one decision is in <../docs/egress_composition.md>. Transport choices and rejected alternatives are in
+<docs/design.md>.
 
 The rules API serves [`/llms.txt`](docs/agents/llms.txt) and its linked credential/refusal guide
 under `/docs/agents/`. Update the guide when credential presentation or refusal behavior changes.
@@ -14,28 +15,31 @@ bbr test //agentplane/egress/...
 
 ## Layout
 
-- `resources.py`: the boundary models of `Rule`, `EgressCredential`
-  and Secrets as read off the API server; the derivation of a credential's placeholder from its name.
-- `presentation.py`: one parse per declared target, shared by detection and substitution — where a
+One Go package per concern:
+
+- `cmd`: the `egress-proxy` entry point and its settings.
+- `proxy`: CONNECT tunnels intercepted with a forged leaf, and plain HTTP proxying, on `net/http`.
+  Every request passes identity, policy, credential and address checks before anything is dialed.
+- `identity`: the shared `workload_auth` resolver behind a proxied connection, translating a refused
+  bearer into the reason the client sees.
+- `policy`: the pure decision over an in-memory `Index` — subject bindings, the matching egress rule the
+  request's placeholder directs it to, substitution, binding resolution. No I/O.
+- `presentation`: one parse per declared target, shared by detection and substitution — where a
   credential's placeholder sits in a request, and how to put the real value there.
-- `policy.py`: the pure decision over an in-memory `Index` — subject bindings, the matching egress rule
-  the request's placeholder directs it to, substitution, binding resolution. No I/O.
-- `identity.py`: the shared `workload_auth` resolver behind a proxied connection, translating a
-  refused bearer into the `DenyReason` the client sees.
-- `upstream.py`: the admitted host resolved by the proxy, refused when it points anywhere not
-  globally reachable, and pinned so the dial goes to the address checked — through
-  `PinnedDialEventLoop`, the event loop the proxy must run on, which answers the dial's own lookup.
-- `informer.py`: list-and-watch of those kinds into each replica’s `Index`, and the `EgressReady`
-  condition on each `PolicyBinding`, through the shared `agentplane/policy_watch.py`.
-- `rules_api.py`: the agent-facing
-  `egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
-  independently authenticated FastAPI listener and shared `RulesProjection`; `addon.py` is the
-  ordinary egress-policy/substitution gate. `decisions.py` defines admission records;
-  `decision_log.py` queues them for `decision_store.py`. `admin.py` serves history, local
-  binding observations, readiness and liveness; `decisions_client.py` reads that history.
-  `listener.py` hosts both FastAPI apps under uvicorn in the proxy's event loop.
-- `proxy.py`: mitmproxy hosted in-process with the fail-closed options pinned; `main.py` the
-  entry point and its `Settings` (`--flags` and `AGENTPLANE_EGRESS_*`).
+- `resources`: the boundary types of `EgressCredential`, the egress rules of a `PolicySet`, and Secrets
+  as read off the API server; the derivation of a credential's placeholder from its name.
+- `upstream`: the admitted host resolved by the proxy, refused when it points anywhere not globally
+  reachable, and pinned so the dial goes to the address checked.
+- `informer`: list-and-watch of those kinds into each replica's `Index`, and the `EgressReady`
+  condition on each `PolicyBinding`.
+- `rules`: the agent-facing `egress.agentplane-staging.svc.cluster.local/v1/rules` API, on its own
+  independently authenticated listener.
+- `decision` and `history`: admission records, and their bounded best-effort write to the shared
+  PostgreSQL history; `admin` serves that history, a change stream, readiness and liveness.
+- `history_migrations`: the Goose schema of that history (below) and its migrator command.
+
+Also here:
+
 - `sidecar/`: the Go runtime behind image `agentplane-egress-sidecar`. It reads the Pod's
   projected token for every HTTP request or CONNECT and forwards it as `Proxy-Authorization`.
   It also hosts direct generic gRPC routes to Agentplane services, replacing authorization with
@@ -45,26 +49,32 @@ bbr test //agentplane/egress/...
 - `sidecar_config.py` and `platform_routes.py`: Python settings and route models cdk8s renders each
   Sandbox template's sidecar settings ConfigMap from. The process entry point and both forwarding
   paths live in Go; `platform_routes.py` does not serve traffic.
-- `testing/`: the fake API server and the throwaway CAs the tests run against.
+- `decisions_client.py` and `decisions.py`: the integration app's reader of the admin port's
+  `/decisions`.
+- `testing/`: the throwaway CAs and process launchers `test_proxy.py` runs the built binaries with.
+  It drives the real binaries against the fake API server (<../testing/fake_apiserver.py>) and a
+  PostgreSQL container; the package tests beside the code cover the decision itself.
 
 ## Running
 
-The proxy needs an interception CA (`--ca-cert`, `--ca-key`) that the runner containers trust
-and a writable `--confdir` where mitmproxy keeps it and the leaves it issues. Upstream
-certificates are verified against mitmproxy's bundled public roots, or against `--upstream-ca-file`
-when given; the deployment passes public roots plus the cluster CA, so a `clusterInternal` rule can
-reach the API server. Identity and egress policy come from
-the API server, in-cluster or through `--kubeconfig`.
+Settings are YAML keys of the file named by `AGENTPLANE_EGRESS_CONFIG_FILE`, `AGENTPLANE_EGRESS_*`
+environment variables, and `--kebab-case` flags, each overriding the one before; a key the binary
+does not know is refused (<cmd/config.go>). The proxy needs an interception CA (`ca_cert`,
+`ca_key`) that the runner containers trust; it signs a short-lived leaf per handshake. Upstream certificates are
+verified against the system roots, or against `upstream_ca_file` when given; the deployment passes
+public roots plus the cluster CA, so a `clusterInternal` rule can reach the API server. Identity and egress policy come from
+the API server, in-cluster or through `kubeconfig`.
 
-The image `//agentplane/egress:image` is published as `agentplane-egress`
-(<../../devinfra/ci/image_targets.json>); the Deployment, sidecar, and CA distribution are
-generated by `cluster/cdk8s/agentplane/egress.py`.
+The proxy is published as `agentplane-egress-proxy` and its history migrator as
+`agentplane-egress-history-migrate` (<../../devinfra/ci/image_targets.json>). The Deployment,
+sidecar, and CA distribution are generated by `cluster/cdk8s/agentplane/egress.py`, which still
+renders the Python image's flags: switching it to the Go images is pending.
 
 ## BuildBuddy clients
 
 BuildBuddy uses the same API-key header on its JSON-over-HTTP API and its gRPC services:
 `x-buildbuddy-api-key`. For a local Bazel or BuildBuddy client, declare that header as a whole-value
-target; gRPC metadata is exposed to the addon as the initial HTTP/2 request headers, so the existing
+target; gRPC metadata arrives at the proxy as the initial HTTP/2 request headers, so the existing
 target model substitutes it without a gRPC-specific credential kind.
 
 Interactive browser authentication is separate: BuildBuddy's login flow establishes HTTP-only
@@ -151,14 +161,14 @@ context; no rules-specific proxy dispatch or credential injection mode is involv
 
 Service port `80` targets the separate HTTP API listener on `8082`; port `8888` remains the forward
 proxy. Central resolves and dials the API like any other destination admitted by an egress policy.
-The FastAPI endpoint validates ordinary `Authorization` through `WorkloadPrincipalAuthenticator`,
+The endpoint validates ordinary `Authorization` through the same `workload_auth` resolver,
 reviewing the bearer itself rather than inheriting the tunnel's verdict: one proxied read is two
 TokenReviews, deliberately. The API sees central's
 source address, not the caller's Pod address; proxy-hop identity and caller metadata are not API
 identity authorities. Missing or forged destination auth fails closed.
 
-The API shares the central process's current enforcement `Index` through `RulesProjection`, which
-projects the subject the bearer proved and returns only the redacted field allowlist. Operator
+The API shares the central process's current enforcement `Index`, which projects the subject the
+bearer proved and returns only the redacted field allowlist. Operator
 `/decisions`, `/decisions/changes` and `/healthz` remain on the separate admin listener, not the rules API. Network policy
 admits the agent API from central egress only. Service target-port separation prevents recursion.
 The Service may select a different replica from the one that admitted the request. The answer is
@@ -189,20 +199,20 @@ the cluster. It costs a `pods` read in every `allowed_service_account_namespaces
 the rule above keeps at nothing. Without it the exposure is bounded (<SPEC.md> § Identity): one
 in-cluster workload borrowing another's egress rules, not a way past the egress policy. Restore it if that
 borrowing becomes a real concern — a compromised sidecar reading another Pod's projected token, or
-a namespace whose Pod specs are not ours — with a `pod_ip` on the principal, the check in
-`WorkloadIdentityVerifier.identify`, the peer-address read in the addon, and that `pods` read.
+a namespace whose Pod specs are not ours — with a pod IP on the principal, the check in `identity`,
+the peer-address read in `proxy`, and that `pods` read.
 
 ## Decision history
 
-`DecisionLog.record` puts an immutable `DecisionRecord` on a bounded `asyncio.Queue` (2,000 by
-default, `--decision-queue-size`) and returns; admission never awaits database IO. One writer task
-drains up to 100 records per batch (`--decision-batch-size`), waking at least once a minute when
-idle, and writes through an async SQLAlchemy/asyncpg engine with a pool of two connections, no
-overflow, and two-second pool, connect and command timeouts. A batch gets three attempts with
-exponential backoff (1–4 s); a retry reuses the batch's event IDs and decision timestamps, and the
-insert is `ON CONFLICT (event_id) DO NOTHING`. Records already past the retention window are dropped
-before the write and counted as expired. Shutdown flushes for `--decision-flush-seconds` (5 s by
-default) and counts what remains as shutdown loss.
+`history.Log.Record` puts an immutable `decision.Record` on a bounded queue (2,000 by default,
+`decision_queue_size`) and returns; admission never waits for the database, and a record that does
+not fit is counted and dropped. One writer drains up to 100 records per batch (`decision_batch_size`),
+waking at least once a minute when idle, over a pool of two connections whose operations, connection
+waits and connects are each bounded to two seconds. A batch gets three attempts with exponential
+backoff from one second; a retry reuses the batch's event IDs and decision timestamps, and the insert
+is `ON CONFLICT (event_id) DO NOTHING`. Records already past the retention window are dropped before
+the write and counted as expired. Shutdown flushes for five seconds and counts what remains as
+shutdown loss. The counters are served as `decisionHistory` by `/healthz`.
 
 After every batch or idle wake the writer deletes at most 1,000 expired rows, selected `FOR UPDATE
 SKIP LOCKED` on the `(decided_at, event_id)` index so concurrent replicas neither block nor
@@ -211,14 +221,15 @@ partition management, and event-ID idempotence stays global. Monitor database si
 `cleanup_failures`; sustained ingestion beyond cleanup capacity is the signal to revisit that.
 
 The API's `at` field is the `decided_at` column; `ingested_at` is the row's insertion timestamp.
-`DecisionStore.recent` takes the newest `--decision-history-size` rows (200 by default, at most
+`Store.Recent` takes the newest `decision_history_size` rows (200 by default, at most
 1,000) inside the retention window and returns them oldest first.
 
-The schema lives in `migrations/` with its own Alembic version table (`egress_alembic_version`);
-`database_migrate.py` serialises concurrent runs with a transaction-scoped advisory lock. Staging
-and testing each hold an `egress` database in their CNPG cluster and run the separately published
-`agentplane-egress-migrate` image as the proxy Pod's init container, so a failed migration keeps
-that Pod unready while the previous proxies keep enforcing.
+The schema is Goose SQL in `history_migrations/history/`. The migrator takes over a database created by
+the earlier Alembic history (`migrations/`, head `0002_service_account_subject`): it refuses an
+Alembic head other than that one, or a schema that differs from that baseline, and otherwise records
+`egress_goose_version` and leaves the rows and `egress_alembic_version` as they are. Staging and testing
+each hold an `egress` database in their CNPG cluster. The migrator runs as the proxy Pod's init
+container, so a failed migration keeps that Pod unready while the previous proxies keep enforcing.
 
 ## Open questions
 
@@ -230,20 +241,19 @@ that Pod unready while the previous proxies keep enforcing.
 
 ## Replica lifecycle
 
-`/healthz` and every CONNECT/HTTP admission share `Index.available`: all four watched kinds must be
-initially synced and have cycle timestamps no older than three configured resync periods
-(default 900 seconds). Negative clock ages also fail closed. DB health does not participate.
-`/livez` only proves the admin event loop answers; a recoverable watch outage does not cause a
-restart loop. Every request on an existing TLS/HTTP2 connection is gated again. After DNS I/O,
+`/healthz` and every CONNECT/HTTP admission share `Index` availability: all four watched kinds must be
+initially synced and have completed a watch cycle within three configured resync periods
+(`resync_seconds`, default 300, at least two). A negative clock age also fails closed. DB health does
+not participate. `/livez` only proves the admin listener answers; a recoverable watch outage does not
+cause a restart loop. Every request on an existing TLS/HTTP2 connection is gated again. After DNS I/O,
 a changed egress-policy decision denies that admission without forwarding or replay.
 Revocation is eventually observed independently by each watch, not globally linearizable.
 
-SIGTERM/SIGINT closes admission immediately and uses mitmproxy `Proxyserver.servers.update([])`
-to stop listeners without cancelling existing TCP handlers. Admitted HTTP responses drain until
-response/error, WebSockets until close, bounded by 20 seconds; then the master shuts down.
-The process closes the rules/admin APIs with five-second server grace periods and flushes the
-lossy decision queue for at most its configured budget (five seconds by default). Deployment
-termination grace must cover those budgets plus master shutdown (20 seconds).
+SIGTERM/SIGINT marks the index draining, so `/healthz` fails and the listener closes at once.
+Admitted requests (HTTP responses, WebSockets, gRPC streams) drain for up to 20 seconds, then
+the remaining tunnels are closed; idle tunnels close immediately. The rules and admin servers shut down
+within the same bound and the decision queue is flushed for at most five seconds.
+Deployment termination grace must cover those budgets.
 There is no transparent TCP/HTTP2 migration, request replay, or promise to finish an unbounded stream.
 Staging runs two replicas with `RollingUpdate` (`maxUnavailable: 0`, `maxSurge: 1`) and a
 PodDisruptionBudget of one available, so an image roll never takes a ready endpoint away before its
@@ -252,4 +262,4 @@ replacement is ready, and a voluntary eviction keeps one.
 Both replicas are pinned to the `hil-ovh` zone by node selector with no anti-affinity or topology
 spread, so they may share a node; the PDB limits voluntary evictions, not involuntary failures.
 Testing runs one replica with `Recreate`. Both use a 60-second
-termination grace, readiness on `/healthz` and event-loop liveness on `/livez`.
+termination grace, readiness on `/healthz` and liveness on `/livez`.

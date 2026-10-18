@@ -1,0 +1,65 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+go_library(
+    name = "cmd",
+    srcs = [
+        "config.go",
+        "main.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/cmd",
+    visibility = ["//agentplane/egress:__subpackages__"],
+    deps = [
+        "//agentplane/egress/admin",
+        "//agentplane/egress/docs",
+        "//agentplane/egress/history",
+        "//agentplane/egress/identity",
+        "//agentplane/egress/informer",
+        "//agentplane/egress/policy",
+        "//agentplane/egress/proxy",
+        "//agentplane/egress/rules",
+        "//agentplane/egress/upstream",
+        "//agentplane/workload_auth/go/auth",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_client_go//tools/clientcmd",
+        "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_binary(
+    name = "egress-proxy",
+    embed = [":cmd"],
+    pure = "on",
+    visibility = ["//agentplane/egress:__subpackages__"],
+)
+
+go_test(
+    name = "config_test",
+    srcs = ["config_test.go"],
+    embed = [":cmd"],
+)
+
+pkg_tar(
+    name = "binary_layer",
+    srcs = [":egress-proxy"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+)
+
+# The system CA bundle is the upstream trust when `upstream_ca_file` is unset.
+oci_image(
+    name = "image",
+    base = "@distroless_static_debian13_linux_amd64",
+    entrypoint = ["/usr/local/bin/egress-proxy"],
+    env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":binary_layer",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+    workdir = "/",
+)

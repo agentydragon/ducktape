@@ -1,5 +1,6 @@
 """An in-memory API server for informer tests: TokenReview, Pod reads, list/watch, creates,
-replacements and status patches.
+replacements and status patches. Lists and watches answer both the Python client and client-go's,
+including its WatchList protocol (`sendInitialEvents`).
 
 Objects are kept in wire shape, with a global `resourceVersion` counter the way the real server
 stamps them, so the informer's list-then-watch-from-version protocol is exercised for real: a watch
@@ -42,6 +43,25 @@ _NAMESPACE_OF = {
     POLICY_SETS_PLURAL: NAMESPACE,
     POLICY_BINDINGS_PLURAL: NAMESPACE,
 }
+
+
+# The kind each served plural holds. A list and a WatchList bookmark name it: client-go decodes a
+# list whose kind is not the one it asked for as some other type.
+_KIND_OF = {
+    SECRETS_PLURAL: "Secret",
+    SANDBOXES_PLURAL: SANDBOX_KIND,
+    CREDENTIALS_PLURAL: "EgressCredential",
+    POLICY_SETS_PLURAL: "PolicySet",
+    POLICY_BINDINGS_PLURAL: "PolicyBinding",
+    "serviceaccounts": "ServiceAccount",
+}
+
+
+def _api_version(request: web.Request) -> str:
+    """The `group/version` a custom-resource path names, `v1` for the core API."""
+    if "group" in request.match_info:
+        return f"{request.match_info['group']}/{request.match_info['version']}"
+    return "v1"
 
 
 @dataclass(frozen=True)
@@ -190,15 +210,16 @@ class FakeApiServer:
             return await self._watch(request, plural, selector)
         return web.json_response(
             {
-                "apiVersion": "v1",
-                "kind": "List",
+                "apiVersion": _api_version(request),
+                "kind": f"{_KIND_OF[plural]}List",
                 "metadata": {"resourceVersion": str(self._version)},
                 "items": [obj for obj in self.objects[plural].values() if _selected(selector, obj)],
             }
         )
 
     async def _watch(self, request: web.Request, plural: str, selector: str) -> web.StreamResponse:
-        since = int(request.query.get("resourceVersion", "0"))
+        since = int(request.query.get("resourceVersion") or "0")
+        initial_events = request.query.get("sendInitialEvents", "").lower() == "true"
         # The API server parses timeoutSeconds with strconv.ParseInt and answers 400 for anything
         # else, so a float reaches it as "300.0" and every watch fails. Refusing it here too keeps
         # the difference from hiding that.
@@ -221,9 +242,24 @@ class FakeApiServer:
         response.enable_chunked_encoding()
         await response.prepare(request)
         queue: asyncio.Queue[_Event | None] = asyncio.Queue()
-        for missed in self._events:
-            if missed.version > since:
-                queue.put_nowait(missed)
+        if initial_events:
+            # WatchList: the current objects, then a bookmark that says they are all of them.
+            for current in self.objects[plural].values():
+                if _selected(selector, current):
+                    queue.put_nowait(_Event(self._version, plural, "ADDED", current))
+            bookmark = {
+                "apiVersion": _api_version(request),
+                "kind": _KIND_OF[plural],
+                "metadata": {
+                    "resourceVersion": str(self._version),
+                    "annotations": {"k8s.io/initial-events-end": "true"},
+                },
+            }
+            queue.put_nowait(_Event(self._version, plural, "BOOKMARK", bookmark))
+        else:
+            for missed in self._events:
+                if missed.version > since:
+                    queue.put_nowait(missed)
         self._watchers.add(queue)
         try:
             while True:
@@ -240,7 +276,7 @@ class FakeApiServer:
                     continue
                 # As the real server does under a selector: an object that stopped matching is
                 # reported deleted, one that never matched is not reported at all.
-                event_type = event.type if _selected(selector, event.obj) else "DELETED"
+                event_type = event.type if event.type == "BOOKMARK" or _selected(selector, event.obj) else "DELETED"
                 await response.write((json.dumps({"type": event_type, "object": event.obj}) + "\n").encode())
         finally:
             self._watchers.discard(queue)

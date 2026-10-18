@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "presentation",
+    srcs = [
+        "json.go",
+        "presentation.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/presentation",
+    visibility = ["//agentplane/egress:__subpackages__"],
+    deps = [
+        "//agentplane/egress/resources",
+        "@com_github_go_json_experiment_json//jsontext",
+    ],
+)
+
+go_test(
+    name = "presentation_test",
+    srcs = ["presentation_test.go"],
+    embed = [":presentation"],
+    deps = ["//agentplane/egress/resources"],
+)

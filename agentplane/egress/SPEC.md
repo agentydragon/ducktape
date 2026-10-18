@@ -229,17 +229,16 @@ GitOps gates and live rollout acceptance remain separate operational requirement
   envelope — is inert and reaches the upstream unsubstituted. In particular, a URL-borne
   credential would travel through logs and referrers and is never substituted.
 - **Intercepted gRPC uses the same header target model.** A TLS gRPC client through the real
-  sidecar and hosted mitmproxy presents its initial metadata in `flow.request.headers`; a
-  `wholeValue` target on `x-buildbuddy-api-key` substitutes the placeholder before the upstream
-  sees it. The integration test covers both a unary Remote Execution-shaped call and a
-  bidirectional Build Event Service-shaped stream, including multiple messages and upstream
-  trailers (`test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted`). The client
-  trusts the interception CA, the proxy verifies the upstream TLS certificate, and neither leg
-  uses mTLS.
+  sidecar presents its initial metadata as HTTP/2 request headers; a `wholeValue` target on
+  `x-buildbuddy-api-key` substitutes the placeholder before the upstream sees it. The black-box
+  test (`test_interactive_grpc_before_eof`) drives a bidirectional Build Event Service-shaped
+  stream through the built proxy: several messages, upstream trailers, a client deadline and a
+  client cancel, each reaching the upstream. The client trusts the interception CA, the proxy
+  verifies the upstream TLS certificate, and neither leg uses mTLS.
 - **Only a JSON request body is held for the decision.** A request whose headers declare anything
   but an uncompressed `application/json` body is decided from its headers and its body streams to
   the upstream as it arrives, so an interactive stream such as plaintext gRPC inside a tunnel works
-  (`test_plaintext_grpc_stream_metadata_placeholder_is_substituted`). A refusal of such a request
+  (`test_interactive_grpc_before_eof[h2c]`). A refusal of such a request
   is sent once its body has been read.
 - This proves local Bazel, remote-cache/execution, BES, and BuildBuddy API clients whose credential
   is request metadata. It does **not** make `bb remote` credentialless: the CLI authenticates its

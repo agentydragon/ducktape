@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "admin",
+    srcs = ["admin.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/admin",
+    visibility = ["//agentplane/egress:__subpackages__"],
+    deps = [
+        "//agentplane/egress/decision",
+        "//agentplane/egress/history",
+        "//agentplane/egress/policy",
+    ],
+)
+
+go_test(
+    name = "admin_test",
+    srcs = ["admin_test.go"],
+    embed = [":admin"],
+    deps = [
+        "//agentplane/egress/decision",
+        "//agentplane/egress/history",
+        "//agentplane/egress/policy",
+        "@com_github_google_uuid//:uuid",
+    ],
+)

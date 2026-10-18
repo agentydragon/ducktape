@@ -1,77 +1,13 @@
-load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
-
-py_binary(
-    name = "main_bin",
-    main_module = "agentplane.egress.main",
-    deps = [":main"],
-)
-
-py_library(
-    name = "addon",
-    srcs = ["addon.py"],
-    deps = [
-        ":decision_log",
-        ":decisions",
-        ":identity",
-        ":policy",
-        ":presentation",
-        ":upstream",
-        "//agentplane:subjects",
-        "//agentplane/workload_auth:bearer",
-        "//agentplane/workload_auth:principal",
-        "@pypi//mitmproxy",
-    ],
-)
-
-py_library(
-    name = "admin",
-    srcs = ["admin.py"],
-    deps = [
-        ":decision_changes",
-        ":decision_log",
-        ":decisions",
-        ":policy",
-        "//agentplane:sse",
-        "//agentplane:subjects",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "decision_changes",
-    srcs = ["decision_changes.py"],
-    deps = [
-        ":decision_store",
-        "//agentplane/postgres:wakeups",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "listener",
-    srcs = ["listener.py"],
-    deps = [
-        "@pypi//fastapi",
-        "@pypi//more_itertools",
-        "@pypi//uvicorn",
-    ],
-)
 
 py_library(
     name = "decisions",
     srcs = ["decisions.py"],
-    deps = [
-        ":policy",
-        "//agentplane:subjects",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -83,87 +19,6 @@ py_library(
         "//agentplane:subjects",
         "@pypi//httpx",
         "@pypi//httpx_sse",
-    ],
-)
-
-py_library(
-    name = "identity",
-    srcs = ["identity.py"],
-    deps = [
-        ":policy",
-        "//agentplane/workload_auth:principal",
-    ],
-)
-
-py_library(
-    name = "informer",
-    srcs = ["informer.py"],
-    deps = [
-        ":policy",
-        ":resources",
-        "//agentplane:crd_group",
-        "//agentplane:policy_watch",
-        "//util:kubernetes",
-        "//util:kubernetes_watch",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_library(
-    name = "main",
-    srcs = ["main.py"],
-    # Also the cluster validation that parses the deployed flags through this Settings.
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = [
-        ":addon",
-        ":admin",
-        ":decision_log",
-        ":decision_store",
-        ":identity",
-        ":informer",
-        ":listener",
-        ":policy",
-        ":proxy",
-        ":rules_api",
-        ":settings",
-        ":upstream",
-        "//agentplane:background_task",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:service_process",
-        "//agentplane/workload_auth:http",
-        "//agentplane/workload_auth:principal",
-        "//util:kubernetes",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_library(
-    name = "policy",
-    srcs = ["policy.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/validation:__pkg__",
-    ],
-    deps = [
-        ":presentation",
-        ":resources",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:policy_sets",
-        "//agentplane:subjects",
-        "@pypi//more_itertools",
-    ],
-)
-
-py_library(
-    name = "proxy",
-    srcs = ["proxy.py"],
-    deps = [
-        ":addon",
-        ":upstream",
-        "@pypi//mitmproxy",
     ],
 )
 
@@ -189,74 +44,11 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":database_migrate",
-        ":decision_log",
-        ":decision_store",
-        ":identity",
-        ":informer",
-        ":policy",
         ":resources",
-        ":upstream",
         "//agentplane:policy_sets",
         "//agentplane:subjects",
         "//agentplane/testing:fake_apiserver",
-        "//agentplane/workload_auth:principal",
-        "//util:kubernetes",
         "//util/testing:postgres_fixtures",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
-    ],
-)
-
-py_test(
-    name = "test_identity",
-    size = "medium",
-    srcs = ["test_identity.py"],
-    deps = [
-        ":conftest",
-        ":identity",
-        ":policy",
-        "//:conftest",
-        "//agentplane/testing:fake_apiserver",
-        "//agentplane/workload_auth:principal",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_informer",
-    size = "medium",
-    srcs = ["test_informer.py"],
-    deps = [
-        ":conftest",
-        ":informer",
-        ":policy",
-        "//:conftest",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:policy_sets",
-        "//agentplane/testing:fake_apiserver",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_policy",
-    size = "medium",
-    srcs = ["test_policy.py"],
-    deps = [
-        ":conftest",
-        ":policy",
-        ":presentation",
-        ":resources",
-        "//:conftest",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:policy_sets",
-        "//agentplane:subjects",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -264,72 +56,30 @@ py_test(
     name = "test_proxy",
     size = "medium",
     srcs = ["test_proxy.py"],
-    data = ["//agentplane/egress/sidecar:egress-sidecar"],
+    data = [
+        "//agentplane/egress/cmd:egress-proxy",
+        "//agentplane/egress/history_migrations/cmd:egress-history-migrate",
+        "//agentplane/egress/sidecar:egress-sidecar",
+    ],
     requires_docker = True,
     deps = [
-        ":addon",
-        ":admin",
         ":conftest",
-        ":decision_log",
-        ":decisions",
-        ":identity",
-        ":listener",
-        ":policy",
-        ":proxy",
         ":resources",
-        ":rules_api",
         ":settings",
-        ":upstream",
         "//:conftest",
-        "//agentplane:kubernetes_watch",
         "//agentplane:policy_sets",
-        "//agentplane/egress/testing:replica",
+        "//agentplane/egress/testing:go_replica",
         "//agentplane/egress/testing:sidecar_process",
         "//agentplane/egress/testing:tls",
         "//agentplane/testing:fake_apiserver",
-        "//agentplane/workload_auth:http",
-        "//agentplane/workload_auth:principal",
         "//util:net",
         "@pypi//aiohttp",
         "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//mitmproxy",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
-)
-
-# The proxy image on debian slim as user 1000, with the system CA bundle the upstream leg verifies
-# against. Published as agentplane-egress (devinfra/ci/image_targets.json); the Deployment lives
-# in cluster/k8s/agentplane-staging.
-aspect_py_binary(
-    name = "egress_image_bin",
-    main = "main.py",
-    deps = [":main"],
-)
-
-egress_layers_oci_tars = shared_py_image_layers(
-    name = "egress_layers",
-    binary = ":egress_image_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-oci_image(
-    name = "image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("egress_image_bin"),
-    env = py_image_env(
-        binary_name = "egress_image_bin",
-        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
-    ),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = egress_layers_oci_tars + [
-        "//third_party/debian_slim:cacerts",
-    ],
-    user = "1000:1000",
 )
 
 pkg_tar(
@@ -383,131 +133,6 @@ py_test(
 )
 
 py_library(
-    name = "upstream",
-    srcs = ["upstream.py"],
-    deps = [
-        ":policy",
-        "@pypi//mitmproxy",
-        "@pypi//more_itertools",
-    ],
-)
-
-py_test(
-    name = "test_upstream",
-    size = "medium",
-    srcs = ["test_upstream.py"],
-    deps = [
-        ":conftest",
-        ":policy",
-        ":upstream",
-        "//:conftest",
-        "@pypi//mitmproxy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_admin",
-    size = "medium",
-    srcs = ["test_admin.py"],
-    deps = [
-        ":admin",
-        ":conftest",
-        ":decision_log",
-        ":decision_store",
-        ":policy",
-        "//:conftest",
-        "//agentplane:kubernetes_watch",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "agent_view",
-    srcs = ["agent_view.py"],
-    deps = [
-        ":policy",
-        ":resources",
-        "//agentplane:subjects",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_agent_view",
-    srcs = ["test_agent_view.py"],
-    deps = [
-        ":agent_view",
-        ":conftest",
-        ":policy",
-        ":resources",
-        "//:conftest",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:policy_sets",
-        "//agentplane:subjects",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "rules_api",
-    srcs = ["rules_api.py"],
-    data = glob(["docs/agents/**"]),
-    deps = [
-        ":agent_view",
-        ":policy",
-        "//agentplane:agent_docs",
-        "//agentplane:subjects",
-        "//agentplane/workload_auth:http",
-        "//agentplane/workload_auth:principal",
-        "@pypi//fastapi",
-    ],
-)
-
-py_test(
-    name = "test_rules_api",
-    srcs = ["test_rules_api.py"],
-    deps = [
-        ":conftest",
-        ":policy",
-        ":rules_api",
-        "//:conftest",
-        "//agentplane:kubernetes_watch",
-        "//agentplane/testing:agent_docs",
-        "//agentplane/testing:fake_apiserver",
-        "//agentplane/workload_auth:http",
-        "//agentplane/workload_auth:principal",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "presentation",
-    srcs = ["presentation.py"],
-    deps = [":resources"],
-)
-
-py_test(
-    name = "test_presentation",
-    srcs = ["test_presentation.py"],
-    deps = [
-        ":conftest",
-        ":presentation",
-        ":resources",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "database_migrate",
     srcs = ["database_migrate.py"],
     data = ["//agentplane/egress/migrations:files"],
@@ -516,97 +141,16 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
-        ":decision_store",
+        ":decision_tables",
         "//util:db_migrations",
         "@pypi//pydantic_settings",
     ],
 )
 
-py_test(
-    name = "test_decision_store",
-    size = "medium",
-    srcs = ["test_decision_store.py"],
-    requires_docker = True,
-    deps = [
-        ":admin",
-        ":conftest",
-        ":database_migrate",
-        ":decision_changes",
-        ":decision_log",
-        ":decision_store",
-        ":decisions",
-        ":policy",
-        "//:conftest",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:subjects",
-        "@pypi//alembic",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-aspect_py_binary(
-    name = "migration_image_bin",
-    main = "database_migrate.py",
-    deps = [":database_migrate"],
-)
-
-migration_layers_oci_tars = shared_py_image_layers(
-    name = "migration_layers",
-    binary = ":migration_image_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-oci_image(
-    name = "migration_image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("migration_image_bin"),
-    env = py_image_env(binary_name = "migration_image_bin"),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = migration_layers_oci_tars,
-    user = "1000:1000",
-    visibility = ["//visibility:public"],
-)
-
 py_library(
-    name = "decision_log",
-    srcs = ["decision_log.py"],
-    deps = [
-        ":decision_store",
-        ":decisions",
-        "@pypi//sqlalchemy",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
-    name = "decision_store",
-    srcs = ["decision_store.py"],
-    deps = [
-        ":decisions",
-        ":policy",
-        "//agentplane:subjects",
-        "//agentplane/postgres:wakeups",
-        "@pypi//asyncpg",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_main",
-    srcs = ["test_main.py"],
-    deps = [
-        ":conftest",
-        ":settings",
-        "//:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
+    name = "decision_tables",
+    srcs = ["decision_tables.py"],
+    deps = ["@pypi//sqlalchemy"],
 )
 
 py_library(

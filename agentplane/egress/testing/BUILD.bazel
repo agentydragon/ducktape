@@ -12,18 +12,6 @@ py_library(
 )
 
 py_library(
-    name = "replica",
-    srcs = ["replica.py"],
-    deps = [
-        "//agentplane/egress:main",
-        "//agentplane/egress:settings",
-        "//agentplane/egress:upstream",
-        "@pypi//aiohttp",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
     name = "sidecar_process",
     srcs = ["sidecar_process.py"],
     deps = [
@@ -32,5 +20,17 @@ py_library(
         "//util/bazel:runfiles",
         "@pypi//aiohttp",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "go_replica",
+    srcs = ["go_replica.py"],
+    deps = [
+        "//agentplane/egress:settings",
+        "//util/bazel:runfiles",
+        "@pypi//aiohttp",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )

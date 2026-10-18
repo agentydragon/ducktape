@@ -69,9 +69,12 @@ func TestResolveAndAuthorize(t *testing.T) {
 
 func TestRejectsInvalidWorkload(t *testing.T) {
 	for name, mutate := range map[string]func(*authenticationv1.TokenReview){
-		"unauthenticated":     func(r *authenticationv1.TokenReview) { r.Status.Authenticated = false },
-		"wrong audience":      func(r *authenticationv1.TokenReview) { r.Status.Audiences = []string{"gateway"} },
-		"user token":          func(r *authenticationv1.TokenReview) { r.Status.User.Username = "operator" },
+		"unauthenticated": func(r *authenticationv1.TokenReview) { r.Status.Authenticated = false },
+		"wrong audience":  func(r *authenticationv1.TokenReview) { r.Status.Audiences = []string{"gateway"} },
+		"user token":      func(r *authenticationv1.TokenReview) { r.Status.User.Username = "operator" },
+		"other namespace": func(r *authenticationv1.TokenReview) {
+			r.Status.User.Username = "system:serviceaccount:elsewhere:app"
+		},
 		"missing pod UID":     func(r *authenticationv1.TokenReview) { delete(r.Status.User.Extra, podUIDClaim) },
 		"multiple pod names":  func(r *authenticationv1.TokenReview) { r.Status.User.Extra[podNameClaim] = []string{"one", "two"} },
 		"missing account UID": func(r *authenticationv1.TokenReview) { r.Status.User.UID = "" },
@@ -94,8 +97,9 @@ func TestRejectsInvalidWorkload(t *testing.T) {
 }
 
 func TestMetadataAndReviewFailure(t *testing.T) {
+	cause := errors.New("api unavailable")
 	reviews := reviewFunc(func(context.Context, *authenticationv1.TokenReview) (*authenticationv1.TokenReview, error) {
-		return nil, errors.New("api unavailable")
+		return nil, cause
 	})
 	resolver, err := NewResolver(reviews, "dispatcher", []string{"agentplane-staging"})
 	if err != nil {
@@ -114,5 +118,23 @@ func TestMetadataAndReviewFailure(t *testing.T) {
 	_, err = resolver.Resolve(incoming("Bearer token"))
 	if status.Code(err) != codes.Unavailable {
 		t.Fatalf("got %v", err)
+	}
+	if _, err = resolver.ResolveToken(context.Background(), "token"); !errors.Is(err, ErrUnavailable) || !errors.Is(err, cause) {
+		t.Fatalf("a failed review is Unavailable and keeps its cause: %v", err)
+	}
+}
+
+func TestAResolverNeedsAReviewerAnAudienceAndANamespace(t *testing.T) {
+	reviews := reviewFunc(func(context.Context, *authenticationv1.TokenReview) (*authenticationv1.TokenReview, error) {
+		return accepted(), nil
+	})
+	if _, err := NewResolver(reviews, "dispatcher", nil); err == nil {
+		t.Fatal("a resolver that serves no namespace was built")
+	}
+	if _, err := NewResolver(reviews, "", []string{"agentplane-staging"}); err == nil {
+		t.Fatal("a resolver with no audience was built")
+	}
+	if _, err := NewResolver(nil, "dispatcher", []string{"agentplane-staging"}); err == nil {
+		t.Fatal("a resolver with no reviewer was built")
 	}
 }

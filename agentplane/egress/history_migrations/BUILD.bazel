@@ -1,0 +1,49 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/python:defs.bzl", "py_test")
+
+pkg_tar(
+    name = "binary_layer",
+    srcs = ["//agentplane/egress/history_migrations/cmd:egress-history-migrate"],
+    package_dir = "/usr/local/bin",
+)
+
+oci_image(
+    name = "image",
+    base = "@distroless_static_debian13_linux_amd64",
+    entrypoint = ["/usr/local/bin/egress-history-migrate"],
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":binary_layer"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+    workdir = "/",
+)
+
+go_library(
+    name = "history_migrations",
+    srcs = ["migrations.go"],
+    embedsrcs = glob(["history/*.sql"]),
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/history_migrations",
+    visibility = ["//agentplane/egress:__subpackages__"],
+    deps = ["//agentplane/postgres/goosehandoff"],
+)
+
+py_test(
+    name = "test_migrations",
+    size = "medium",
+    srcs = ["test_migrations.py"],
+    data = ["//agentplane/egress/history_migrations/cmd:egress-history-migrate"],
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//agentplane/egress:conftest",
+        "//agentplane/egress:database_migrate",
+        "//util/bazel:runfiles",
+        "//util/testing:postgres",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

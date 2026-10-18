@@ -96,11 +96,18 @@ func (r *Resolver) ResolveAuthorization(ctx context.Context, values []string) (P
 	if !strings.HasPrefix(value, "Bearer ") || strings.TrimSpace(value[7:]) == "" || strings.ContainsAny(value[7:], " \t\r\n") {
 		return Principal{}, ErrInvalidBearer
 	}
+	return r.ResolveToken(ctx, value[7:])
+}
+
+// ResolveToken reviews one bearer token, however the caller received it. It fails with
+// Unauthenticated when the token does not prove a workload this Resolver serves and with
+// Unavailable when the TokenReview could not be answered.
+func (r *Resolver) ResolveToken(ctx context.Context, token string) (Principal, error) {
 	review, err := r.reviews.Create(ctx, &authenticationv1.TokenReview{
-		Spec: authenticationv1.TokenReviewSpec{Token: value[7:], Audiences: []string{r.audience}},
+		Spec: authenticationv1.TokenReviewSpec{Token: token, Audiences: []string{r.audience}},
 	}, metav1.CreateOptions{})
 	if err != nil {
-		return Principal{}, ErrUnavailable
+		return Principal{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	if review == nil || !review.Status.Authenticated || !slices.Contains(review.Status.Audiences, r.audience) {
 		return Principal{}, ErrInvalidBearer

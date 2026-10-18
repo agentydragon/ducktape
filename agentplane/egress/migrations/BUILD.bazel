@@ -15,7 +15,7 @@ py_library(
     name = "env",
     srcs = ["env.py"],
     deps = [
-        "//agentplane/egress:decision_store",
+        "//agentplane/egress:decision_tables",
         "@pypi//alembic",
     ],
 )

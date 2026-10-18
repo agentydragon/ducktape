@@ -1,0 +1,37 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "rules",
+    srcs = [
+        "openapi.go",
+        "rules.go",
+        "view.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/rules",
+    visibility = ["//agentplane/egress:__subpackages__"],
+    deps = [
+        "//agentplane/egress/api",
+        "//agentplane/egress/decision",
+        "//agentplane/egress/identity",
+        "//agentplane/egress/policy",
+        "//agentplane/policy/api",
+        "@com_github_invopop_jsonschema//:jsonschema",
+    ],
+)
+
+go_test(
+    name = "rules_test",
+    srcs = ["rules_test.go"],
+    embed = [":rules"],
+    deps = [
+        "//agentplane/egress/api",
+        "//agentplane/egress/docs",
+        "//agentplane/egress/identity",
+        "//agentplane/egress/policy",
+        "//agentplane/egress/resources",
+        "//agentplane/policy/api",
+        "//agentplane/workload_auth/go/auth",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
+)

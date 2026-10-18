@@ -1,0 +1,45 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "proxy",
+    srcs = [
+        "gate.go",
+        "lifecycle.go",
+        "proxy.go",
+        "tunnel.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/proxy",
+    visibility = ["//agentplane/egress:__subpackages__"],
+    deps = [
+        "//agentplane/egress/decision",
+        "//agentplane/egress/identity",
+        "//agentplane/egress/policy",
+        "//agentplane/egress/presentation",
+        "//agentplane/egress/upstream",
+        "//agentplane/policy/api",
+        "//agentplane/workload_auth/go/auth",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_test(
+    name = "proxy_test",
+    srcs = [
+        "gate_test.go",
+        "proxy_test.go",
+    ],
+    embed = [":proxy"],
+    deps = [
+        "//agentplane/egress/decision",
+        "//agentplane/egress/identity",
+        "//agentplane/egress/policy",
+        "//agentplane/egress/resources",
+        "//agentplane/egress/upstream",
+        "//agentplane/policy/api",
+        "//agentplane/workload_auth/go/auth",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@org_golang_x_net//http2",
+    ],
+)

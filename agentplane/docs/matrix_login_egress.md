@@ -68,10 +68,10 @@ by the runtime/API models. Kubernetes admission enforces the corresponding struc
 
 - Only one declared **top-level JSON field name** per target; no JSONPath, nested traversal,
   regexes, string interpolation or arbitrary substring replacements.
-- The entire field value must equal the placeholder and be a string. Other fields and values
-  retain their JSON meaning. Formatting/escaping may change because the object is serialized.
+- The entire field value must equal the placeholder and be a string. Every other byte of the body
+  is forwarded as it arrived; only that value is replaced.
 - The replacement is JSON-encoded, including quotes, backslashes, control characters and Unicode.
-  Request framing is updated by mitmproxy. No real password appears in the response, rules view
+  The proxy updates the request's `Content-Length`. No real password appears in the response, rules view
   or decision evidence as a result of this feature; an upstream service's own response behavior
   remains the upstream's responsibility.
 - Body-target routes require an uncompressed UTF-8 `application/json` object of at most 64 KiB.
