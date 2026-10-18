@@ -276,7 +276,7 @@ def test_haku_spike_stays_unwired(generated: Path, parsed_yaml_documents: dict[P
     assert (archived / "backup/backup.k8s.yaml").is_file()
 
 
-def test_legacy_sandboxes_stay_unwired(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:
+def test_retired_mitmproxy_stays_unwired(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:
     active = [
         doc
         for path in generated.rglob("*.k8s.yaml")
@@ -284,12 +284,11 @@ def test_legacy_sandboxes_stay_unwired(generated: Path, parsed_yaml_documents: d
         for doc in parsed_yaml_documents[path]
         if isinstance(doc, dict)
     ]
-    retired_namespaces = {"agents-mitmproxy", "agent-workspaces"}
+    retired_namespaces = {"agents-mitmproxy"}
     assert not any(doc["metadata"].get("namespace") in retired_namespaces for doc in active)
     assert not any(doc["kind"] == "Namespace" and doc["metadata"]["name"] in retired_namespaces for doc in active)
     owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
     assert "agents-mitmproxy" not in owners
-    assert "agent-workspaces-app" not in owners
     for directory in retired_namespaces:
         assert not (generated / "cluster/generated/retired" / directory).exists()
     # Claude's shared roles, identities and credentials survive; ad-hoc compute does not.
@@ -313,14 +312,6 @@ def test_legacy_sandboxes_stay_unwired(generated: Path, parsed_yaml_documents: d
         "public-coder-agent-access",
         "claude-sandbox-secrets",
     } <= owners.keys()
-    archived = [
-        doc
-        for path in (generated / "cluster/parked/agent-workspaces").glob("*.k8s.yaml")
-        for doc in parsed_yaml_documents[path]
-        if isinstance(doc, dict)
-    ]
-    assert any(doc["kind"] == "SandboxWarmPool" and doc["spec"]["replicas"] == 1 for doc in archived)
-    assert not any(doc["kind"] == "ImagePolicy" and doc["metadata"]["name"] == "agent-workspace" for doc in active)
 
 
 def test_openclaw_cutover_waits_for_agentplane_credentials(

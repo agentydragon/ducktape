@@ -390,26 +390,26 @@ resource "litellm_key" "antigravity_clients" {
   }
 }
 
-# Disposable agent workspaces (cluster/k8s/agents/agent-sandbox/): operator-
-# codex workspace lane: the codex CLI's baked LiteLLM provider
+# Retain the Codex workspace key for future use with the agent-workspace image.
+# The standalone namespace currently has no template consumer. The baked LiteLLM provider
 # (cluster/images/agent-workspace/codex-config.toml) uses
 # the GPT-6 `chatgpt/oai-responses/*` Codex-account models, same allowlist as codex-pod.
 resource "litellm_key" "agent_workspaces_codex" {
   key_alias = "agent-workspaces-codex"
   models    = var.model_lanes.gpt6_oai_lane_models.allowed_models
   metadata = {
-    consumer = "agent-workspaces codex-lane sandboxes"
+    consumer = "retired standalone Codex workspaces; key retained for future use"
   }
 }
 
-# Reflected into agent-workspaces, where the codex-lane SandboxTemplate reads
-# it as LITELLM_API_KEY (the env_key named by the baked codex config).
+# The retained source Secret is reflected into agent-workspaces when that lane is restored;
+# its SandboxTemplate reads LITELLM_API_KEY (the env_key in the baked Codex config).
 resource "kubernetes_secret" "agent_workspaces_codex_key" {
   metadata {
     name      = "litellm-key-agent-workspaces-codex"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for the codex workspace lane (chatgpt/oai-responses/gpt-6-* models only); reflected into agent-workspaces for the codex SandboxTemplate"
+      description                                                     = "LiteLLM virtual key for a future Codex workspace lane (chatgpt/oai-responses/gpt-6-* models only); reflected into agent-workspaces if restored"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "agent-workspaces"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"

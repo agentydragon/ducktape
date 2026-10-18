@@ -481,17 +481,18 @@ backing storage was not audited as part of these checks.
 
 ## Retire standalone agent workspaces and Claude compute (2026-10-02)
 
-Park the standalone Codex namespace and Claude's shared mitmproxy, preserving
-rendered manifests, image pins and revival instructions under
-`cluster/parked/{agent-workspaces,agents-mitmproxy}` and retaining their generators.
-The mitmproxy, its generator and its injection policy were deleted on 2026-10-13;
-admitting Claude Pods again needs a new egress proxy.
-Existing Flux owners first reconciled empty directories to prune live resources.
-Live checks on 2026-10-02 at 21:57 UTC confirmed both owners Ready on the #8806
-merge (`93ee322b`), empty inventories, absent namespaces/Pods, and no workspace
-PVCs. The follow-up removes the verified-empty retirement owners and directories.
+The standalone Codex namespace and Claude's shared mitmproxy were retired. Existing Flux
+owners first reconciled empty directories to prune live resources. Live checks on
+2026-10-02 at 21:57 UTC confirmed both owners Ready on the #8806 merge (`93ee322b`),
+empty inventories, absent namespaces/Pods, and no workspace PVCs. The workspace
+generator, parked manifests, and image pin were later removed after those checks. The
+upstream `agent-sandbox` controller, `agent-workspace` image, `devinfra/ws` client,
+and LiteLLM key remain; no standalone workspace pool is deployed.
+
 The unclaimed Codex warm workspace's PVC data loss was explicitly operator-approved;
-physical backing storage was not audited or securely erased by these checks.
+these checks did not audit or securely erase backing storage. The mitmproxy, its
+generator and its injection policy were deleted on 2026-10-13; admitting Claude Pods
+again needs a new egress proxy.
 
 Keep `claude-sandbox` as an identity/credential home for external sessions, with a
 zero Pod quota and deny-all egress instead of an active compute lane. Shared agent

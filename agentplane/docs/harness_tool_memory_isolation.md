@@ -17,7 +17,7 @@ optional future product requirement might ask for an accidental runaway (`make -
 a large `sort`) to stop at the tool process without ending its harness. The current resource contract
 instead budgets and tears down the native harness together with its child tools.
 
-Constraints from the current workspace Pod (`cluster/cdk8s/agent_workspaces.py`): uid 1000,
+Constraints from the Agentplane runner Pod template (`cluster/cdk8s/agentplane/sandbox_pod.py`): uid 1000,
 `capabilities.drop: [ALL]`, no privilege escalation, RuntimeDefault seccomp. The container runtime
 therefore mounts `/sys/fs/cgroup` read-only; nothing in the container can create cgroups, write
 `memory.max`, or lower `oom_score_adj`. Raising one's own `oom_score_adj` and reading the cgroup's

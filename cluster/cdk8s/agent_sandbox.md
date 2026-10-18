@@ -14,5 +14,5 @@ URL and the patch's controller image. Renovate finds that image in the generated
 `patches.k8s.yaml`, but a bump belongs in `_VERSION`: the release URL has no Renovate
 manager, and an edit to the generated file alone fails `test_generate_manifests`.
 
-Workspaces built on the controller: `agent_workspaces.py`, usage in
-`cluster/k8s/agents/agent-sandbox/README.md`.
+Agentplane has a separate Sandbox API and controller, documented in
+<../../agentplane/sandbox_controller/README.md>.

@@ -13,7 +13,6 @@ from cluster.cdk8s import (
     agent_rbac_base,
     agent_sandbox,
     agent_shared_rbac,
-    agent_workspaces,
     agentplane_crds,
     aiquota,
     airlock,
@@ -1628,15 +1627,6 @@ def generate_manifests(root: Path) -> None:
         ),
         agentplane_testing_kustomization,
     )
-    agent_workspaces_app_artifact = artifact(
-        "agent-workspaces-app", agent_workspaces.OUTPUT_DIR, agent_workspaces.PINS_DIR
-    )
-    write_directory(
-        root,
-        agent_workspaces_app_artifact,
-        agent_workspaces.chart,
-        components=[posixpath.relpath(agent_workspaces.PINS_DIR, agent_workspaces.OUTPUT_DIR)],
-    )
     parked_flux_kustomizations.haku_dispatch(flux_chart, cnpg_kustomization, external_secrets_operator_kustomization)
     haku_console_artifact = artifact("haku-console", haku_charts.PATH)
     haku_console_kustomization = haku_charts.haku_console(
@@ -1828,7 +1818,6 @@ def generate_manifests(root: Path) -> None:
             plaid_mcp_artifact,
             public_coder_agent_access_artifact,
             activitywatch_artifact,
-            agent_workspaces_app_artifact,
             airlock_artifact,
             alloy_otlp_bearer_artifact,
             agent_shared_rbac_artifact,

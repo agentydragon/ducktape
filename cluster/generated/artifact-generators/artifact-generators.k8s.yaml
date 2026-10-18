@@ -367,13 +367,6 @@ spec:
       name: activitywatch
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/parked/agent-workspaces/**"
-          to: "@artifact/cluster/parked/agent-workspaces/"
-        - from: "@repo/cluster/parked/agent-workspaces/image-pins/**"
-          to: "@artifact/cluster/parked/agent-workspaces/image-pins/"
-      name: agent-workspaces-app
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/agents/airlock/**"
           to: "@artifact/cluster/k8s/agents/airlock/"
         - from: "@repo/cluster/k8s/agents/airlock/image-pins/**"

@@ -1,7 +1,5 @@
-# Agent workspace image: interactive disposable dev workspaces, shared by all
-# LLM-lane templates (cluster/cdk8s/agent_workspaces.py). Deliberately its own
-# image, not haku-zone-worker — workspaces are operator-facing and evolve
-# independently of the haku dispatch plane. Built by
+# Agent workspace image: disposable interactive workspaces for operator-driven
+# LLM tasks. Kept independent of the Haku dispatch plane. Built by
 # .github/workflows/agent-workspace-image.yml (Dockerfile, not Bazel oci_image:
 # the npm CLI installs need a package manager at build time).
 #
@@ -39,7 +37,7 @@ ENV IS_DEMO=1 \
 COPY --chown=workspace:workspace claude.json /home/workspace/.claude.json
 
 # Codex → LiteLLM provider config (codex lane; inert elsewhere — the env_key
-# it names is only set by the codex-lane SandboxTemplate).
+# it names is only set by a Codex SandboxTemplate).
 COPY --chown=workspace:workspace codex-config.toml /home/workspace/.codex/config.toml
 
 USER workspace
