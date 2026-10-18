@@ -1,0 +1,78 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "go.mod",
+    "go.sum",
+    "schema.patch",
+    "streaming.patch",
+])
+
+alias(
+    name = "schema",
+    actual = "@com_github_ironsh_iron_proxy//:proto/transform/v1/transform.proto",
+)
+
+alias(
+    name = "proxy",
+    actual = "@com_github_ironsh_iron_proxy//internal/proxy",
+)
+
+alias(
+    name = "transform",
+    actual = "@com_github_ironsh_iron_proxy//internal/transform",
+)
+
+alias(
+    name = "certcache",
+    actual = "@com_github_ironsh_iron_proxy//internal/certcache",
+)
+
+alias(
+    name = "dnsguard",
+    actual = "@com_github_ironsh_iron_proxy//internal/dnsguard",
+)
+
+alias(
+    name = "grpc_transform",
+    actual = "@com_github_ironsh_iron_proxy//internal/transform/grpc",
+)
+
+alias(
+    name = "http2",
+    actual = "@org_golang_x_net//http2",
+)
+
+# Upstream releases use CGO_ENABLED=0: pg_query.go is cgo-only while the PostgreSQL feature uses
+# wasilibs for parsing and the original module for its generated AST types.
+go_binary(
+    name = "binary",
+    embed = ["@com_github_ironsh_iron_proxy//cmd/iron-proxy:iron-proxy_lib"],
+    pure = "on",
+)
+
+alias(
+    name = "patched_proxy",
+    actual = "@com_github_ironsh_iron_proxy_patched//internal/proxy",
+)
+
+alias(
+    name = "patched_transform",
+    actual = "@com_github_ironsh_iron_proxy_patched//internal/transform",
+)
+
+alias(
+    name = "patched_certcache",
+    actual = "@com_github_ironsh_iron_proxy_patched//internal/certcache",
+)
+
+alias(
+    name = "patched_dnsguard",
+    actual = "@com_github_ironsh_iron_proxy_patched//internal/dnsguard",
+)
+
+alias(
+    name = "patched_http2",
+    actual = "@org_golang_x_net_patched//http2",
+)

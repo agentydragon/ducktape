@@ -1,0 +1,36 @@
+--- a/internal/proxy/proxy.go
++++ b/internal/proxy/proxy.go
+@@ -882,18 +882,31 @@
+ 			w.Header().Set("Content-Length", strconv.FormatInt(int64(n), 10))
+ 		}
+ 		w.WriteHeader(resp.StatusCode)
+-		if _, err := io.Copy(w, buf.StreamingReader()); err != nil {
++		_ = http.NewResponseController(w).Flush()
++		if _, err := io.Copy(flushingWriter{w}, buf.StreamingReader()); err != nil {
+ 			p.logger.Warn("response body copy error", slog.String("error", err.Error()))
+ 		}
+ 	} else {
+ 		// Synthetic responses (e.g. reject) with plain bodies.
+ 		w.WriteHeader(resp.StatusCode)
++		_ = http.NewResponseController(w).Flush()
+ 		if resp.Body != nil {
+-			if _, err := io.Copy(w, resp.Body); err != nil {
++			if _, err := io.Copy(flushingWriter{w}, resp.Body); err != nil {
+ 				p.logger.Warn("response body copy error", slog.String("error", err.Error()))
+ 			}
+ 		}
+ 	}
++}
++
++// flushingWriter preserves progress for small bidirectional response messages.
++type flushingWriter struct{ http.ResponseWriter }
++
++func (w flushingWriter) Write(data []byte) (int, error) {
++	n, err := w.ResponseWriter.Write(data)
++	if err == nil {
++		err = http.NewResponseController(w.ResponseWriter).Flush()
++	}
++	return n, err
+ }
+ 
+ // buildTransport creates the HTTP transport used for upstream requests.

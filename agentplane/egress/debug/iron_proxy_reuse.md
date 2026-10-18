@@ -1,0 +1,140 @@
+# iron-proxy reuse comparison
+
+2026-10-18. Compare Agentplane [PR #10816](https://github.com/agentydragon/ducktape/pull/10816)
+at `98438a446d502d86d76c348040d8a41547148a63` with iron-proxy
+[`7c6a6e9261f09aa4f4efdb0bc20bdbbfb306603d`](https://github.com/paradigmxyz/iron-proxy/tree/7c6a6e9261f09aa4f4efdb0bc20bdbbfb306603d).
+The executable experiment is [`../x/iron_proxy/`](../x/iron_proxy/README.md).
+It changes no deployed service or production proxy code.
+
+## Recommendation
+
+Reuse is feasible. Agentplane's Kubernetes policy does not require owning the whole transport:
+the existing iron-proxy gRPC transform can delegate to Agentplane's actual `policy.Index` and
+`auth.Resolver`. Its internal packages can also be imported directly through Bazel after exposing
+their generated targets; this experiment compiles them from an ordinary Agentplane package.
+There is no need to copy the proxy source or impersonate an iron-proxy Go package to do that.
+
+The pinned proxy is not a drop-in replacement. A small response-flush patch passes the interactive
+TLS HTTP/2 case that stock iron-proxy fails. That failure alone is therefore insufficient reason
+to own a separate proxy. More substantial seams remain around address admission, body handling,
+cleartext HTTP/2, trusted identity state, and draining.
+
+For a replacement candidate, prefer an in-process Agentplane transform plus narrow upstream
+transport/context hooks. The external gRPC adapter below is a working integration route, but adds
+an RPC, a secret-bearing interface, and server-side tunnel state. Keep #10816 as the current
+comparison baseline until those remaining transport requirements have executable acceptance.
+This experiment does not establish that a fork is cheaper to maintain, or that either proxy has
+better production throughput, latency, memory use, or security history.
+
+## Executed comparisons
+
+[BuildBuddy invocation `820cc08f`](https://app.buildbuddy.io/invocation/820cc08f-b1e2-4a5c-a893-ba7fabcea13b)
+passed all four test targets: the original and patched transport comparisons executed; the bridge
+and Agentplane's existing `//agentplane/egress/proxy:proxy_test` passed from cache. The bridge also
+executed successfully in [invocation `3fa68cd9`](https://app.buildbuddy.io/invocation/3fa68cd9-ea0a-4775-a5ae-237886edf3e5).
+The patch and the adapter are separate experiments; the patched transport was not combined with
+the bridge in these runs.
+
+| Scenario                                                                 | Pinned iron-proxy                        | With response-flush patch                              |
+| ------------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------ |
+| Direct Bazel import of proxy, transform, certificate cache and DNS guard | Compiles and runs                        | Compiles and runs                                      |
+| Ordinary HTTP forwarding                                                 | Pass                                     | Pass                                                   |
+| Finite TLS HTTP/2 response and gRPC trailers                             | Pass                                     | Pass                                                   |
+| Upstream flushes initial metadata and waits for a client message         | Client waits until bounded cancellation  | Metadata and an echoed frame arrive before request EOF |
+| Prior-knowledge h2c inside CONNECT                                       | Protocol refusal before upstream request | Same refusal                                           |
+| Reading a capped `BufferedBody`, then forwarding it                      | Silent truncation                        | Same truncation                                        |
+| Leaving that body unread by transforms                                   | Full original body streams               | Full original body streams                             |
+
+The stock streaming test first establishes that the upstream flushed headers; a timeout elsewhere
+does not satisfy the probe. The patched test exchanges a response frame while the request body is
+still open. Neither is a throughput benchmark. The tests deliberately assert the observed stock
+limitations, so a green characterization suite is not a claim of replacement parity.
+
+`bridge:bridge_test` also starts the actual pinned iron-proxy CLI as a separate process and checks:
+
+- CONNECT authentication reaches the real Agentplane resolver through iron-proxy's own gRPC client.
+- An inner HTTP/1.1 request inherits that identity without presenting the bearer again.
+- The real policy evaluator selects the credential and rewrites the exact header and JSON field;
+  the fixture upstream receives the real value and receives neither private hop header.
+- Revoking the controlled TokenReview result refuses the next request on that same tunnel, before
+  a second request reaches the upstream.
+
+This fixture uses plaintext HTTP/1.1 inside CONNECT and permits loopback only for its local upstream.
+It does not prove real Kubernetes token issuance/revocation, production network isolation, TLS
+bridge interoperability, or full protocol parity.
+
+## Reuse paths and remaining costs
+
+### Import packages into an Agentplane binary
+
+[`third_party/iron_proxy`](../../../third_party/iron_proxy/README.md) pins the source archive and
+isolates its dependency versions. Gazelle visibility directives expose the selected `internal/`
+packages. The tested build mode is `pure = "on"`, matching upstream's `CGO_ENABLED=0` releases;
+otherwise the PostgreSQL parser's C binding needs additional Bazel wiring.
+
+Importing the transport includes its configuration/control-plane, MCP, retry, and secret-provider
+dependencies even when those features are unused. This is a real compile dependency, not a claim
+that the features are enabled at runtime. Package extraction or upstream API changes could narrow
+that dependency surface. These internal packages are not a supported public Go API.
+
+The direct-import probe does not combine Agentplane's policy/auth libraries and Iron's isolated
+dependency graph in one binary. That embedding still needs a build/type-compatibility check and
+may require aligning shared dependency versions. The tested gRPC route avoids that type boundary.
+
+The public proxy constructor binds its own listeners and does not expose the bound addresses or
+accept prebound listeners; the probes obtain addresses from startup logs. Upstream trust uses the
+system root loader rather than an injected root pool. A reusable server/listener and transport API
+would make embedding cleaner.
+
+### Use the external gRPC transform
+
+The bridge reuses the existing evaluator and authentication resolver. It does not translate
+PolicySets into a second policy language. The schema is taken from the pinned archive and generated
+in Agentplane's Go graph; the Iron process uses its own generated types across the wire.
+
+CONNECT annotations carry a random lookup handle. The bearer stays in bridge memory and is reviewed
+again for each inner request. The handle is read only from this transform's own trace. Identity is
+not inferred from a source address, client header, or the initial CONNECT host.
+
+Costs that the prototype leaves open:
+
+- **Trusted interface:** allowed transform responses contain real credentials. The endpoint must be
+  authenticated and reachable only by trusted proxy instances; exposing it to a sandbox creates a
+  credential-redemption interface. The loopback test is not that production authorization boundary.
+- **State lifetime:** handles need bounded retention, expiry/close cleanup, and a replica-affinity
+  or shared-state decision. There is no tunnel-close callback in the tested transform contract.
+- **Projected audiences:** the prototype strips presented tokens but does not review/substitute
+  additional destination-audience tokens.
+- **Header presence:** Iron replaces headers only for a nonempty returned map. Empty-valued entries
+  are needed to clear the final private header without accidentally requesting no modification.
+- **Body handling:** `send_request_body: true` buffers all requests matching that transform. Its
+  cap silently truncates; it cannot be treated as a rejecting size limit. Bodyless and streaming
+  paths need a different configuration or a more expressive hook. An empty replacement body also
+  needs explicit presence semantics in the wire API.
+
+### Extend the transport
+
+[`streaming.patch`](../../../third_party/iron_proxy/streaming.patch) flushes response headers and
+each body write. The same test sources build against the original and patched dependencies in
+separate binaries. This establishes the TLS interactive case only; buffering/backpressure and
+high-throughput behavior have not been benchmarked.
+
+The patch does not provide h2c. It also does not integrate Agentplane's address admission:
+
+- Iron's guard checks a global CIDR deny list at dial time. Its defaults allow private RFC1918
+  addresses and do not express Agentplane's selected-rule `clusterInternal` distinction.
+- Agentplane rejects a host if any DNS answer is forbidden, rechecks policy after DNS I/O, and dials
+  the admitted address. A transform that resolves/checks a hostname before Iron independently dials
+  it is insufficient to preserve that contract.
+- Iron's `Options` does not accept a request-aware dial/round-tripper hook. A bounded extension
+  would need to carry an admission result to the actual dial, including reuse/coalescing behavior
+  and the separate WebSocket path.
+- Protected per-connection context and explicit drain/close hooks could remove the adapter's
+  annotation/state workaround. Their implementation cost has not been measured here.
+
+## Shared policy concern
+
+Agentplane's policy request has no scheme or port restriction. Its existing proxy tests permit
+real-credential substitution into plaintext HTTP. Transport reuse does not fix that policy gap;
+external credential-bearing routes need an explicit HTTPS/port contract with scoped internal
+exceptions before relying on credential confidentiality on the upstream leg.

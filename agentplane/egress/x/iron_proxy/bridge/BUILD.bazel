@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "bridge",
+    srcs = ["bridge.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/egress/decision",
+        "//agentplane/egress/identity",
+        "//agentplane/egress/policy",
+        "//agentplane/egress/x/iron_proxy/bridge/proto:transform_go_proto",
+        "//agentplane/policy/api",
+        "//agentplane/workload_auth/go/auth",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_protobuf//types/known/structpb",
+    ],
+)
+
+go_test(
+    name = "bridge_test",
+    srcs = ["bridge_test.go"],
+    data = ["@ducktape_iron_proxy//:binary"],  # keep: subprocess interoperability with the pinned proxy CLI
+    embed = [":bridge"],
+    deps = [
+        "//agentplane/egress/decision",
+        "//agentplane/egress/identity",
+        "//agentplane/egress/policy",
+        "//agentplane/egress/resources",
+        "//agentplane/egress/x/iron_proxy/bridge/proto:transform_go_proto",
+        "//agentplane/policy/api",
+        "//agentplane/workload_auth/go/auth",
+        "@io_bazel_rules_go//go/runfiles",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_protobuf//types/known/structpb",
+    ],
+)

@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "comparison_test",
+    srcs = [
+        "comparison_test.go",
+        "transport_test.go",
+    ],
+    pure = "on",
+    deps = [
+        "@ducktape_iron_proxy//:certcache",
+        "@ducktape_iron_proxy//:dnsguard",
+        "@ducktape_iron_proxy//:http2",
+        "@ducktape_iron_proxy//:proxy",
+        "@ducktape_iron_proxy//:transform",
+    ],
+)
+
+go_test(
+    name = "patched_comparison_test",
+    srcs = [
+        "comparison_test.go",
+        "transport_test.go",
+    ],
+    args = ["-iron-streaming-patch"],
+    pure = "on",
+    deps = [
+        "@ducktape_iron_proxy//:patched_certcache",
+        "@ducktape_iron_proxy//:patched_dnsguard",
+        "@ducktape_iron_proxy//:patched_http2",
+        "@ducktape_iron_proxy//:patched_proxy",
+        "@ducktape_iron_proxy//:patched_transform",
+    ],
+)

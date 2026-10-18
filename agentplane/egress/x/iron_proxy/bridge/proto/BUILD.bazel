@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+
+package(default_visibility = ["//agentplane/egress/x/iron_proxy:__subpackages__"])
+
+genrule(
+    name = "upstream_schema",
+    srcs = ["@ducktape_iron_proxy//:schema"],
+    outs = ["transform.proto"],
+    cmd = "cp $< $@",
+)
+
+proto_library(
+    name = "transform_proto",
+    srcs = ["transform.proto"],
+    deps = ["@protobuf//:struct_proto"],
+)
+
+go_proto_library(
+    name = "transform_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge/proto",
+    proto = ":transform_proto",
+    deps = ["@org_golang_google_protobuf//types/known/structpb"],
+)
