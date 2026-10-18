@@ -15,27 +15,6 @@ The current runner contracts remain in [Session layering](thread_layering.md), t
 [Runner Gateway README](../runner_gateway/README.md), and the
 [scripted harness capability index](../native/README.md#behavioral-coverage).
 
-## Generated HTTP/JSON facade spike
-
-The approved transport direction is internal gRPC plus a standard generated HTTP/JSON facade and
-an ergonomic CLI, introduced incrementally by service and interface. This direction does not select
-a production service migration, auth policy, or facade deployment boundary. The bounded Bazel proof
-is in [`agentplane/x/grpc_gateway`](../x/grpc_gateway/README.md); it uses the upstream grpc-gateway
-Bzlmod module's `go_proto_compiler` with `go_proto_library`, pinned to v2.28.0 by commit, and keeps
-generated Go in Bazel outputs.
-
-The proof uses a real in-process gRPC service behind the generated HTTP handler. Its checks cover
-ProtoJSON and query mapping, HTTP Authorization forwarding and actual service rejection, unary error
-mapping, terminal errors after a server stream has started, per-request `Grpc-Timeout`, and request
-cancellation reaching the stream. A stream that has emitted a response cannot change its HTTP
-status; grpc-gateway forwards a terminal error as an application/json error chunk. Reconnect,
-resume, cursors and durable subscriptions remain application-owned. Full-duplex client streaming
-stays on native gRPC. The fixture's token check is not an Agentplane authorization design.
-
-The spike is in [PR #10662](https://github.com/agentydragon/ducktape/pull/10662) and is not
-complete until the generated Bazel target passes on RBE. It does not add a production service,
-route, API, deployment or permission change.
-
 ## Current delivery and inventory facts
 
 The app and Notification service send Session openings and commands to the Session Dispatcher. It
