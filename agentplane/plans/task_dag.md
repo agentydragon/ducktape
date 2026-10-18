@@ -805,8 +805,6 @@ flowchart LR
     K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
     K3S_IMPORT_CONCURRENCY[Candidate: native containerd import and unpack concurrency]
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
-    EGRESS_RELAY_CONFIGMAP[Candidate: the KubeVirt experiment relay takes a settings file]
-    EGRESS_RELAY_RENAME -. same consumers .-> EGRESS_RELAY_CONFIGMAP
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
@@ -965,15 +963,6 @@ PostgreSQL-first sequencing or a custom parallel import/unpack scheduler to the 
 
 **TODO; operator request, 2026-10-16.** Rename the egress sidecar to "relay" across code,
 configuration, image names and docs. Update all consumers atomically.
-
-### `EGRESS_RELAY_CONFIGMAP` — the KubeVirt experiment relay takes a settings file
-
-**Candidate; no worker assigned; no prerequisites.** The Sandbox templates, the VM launcher relay and
-the public coder sidecar read their settings from a ConfigMap file, and the sidecar reads nothing else
-(#10942, #10943, #10944). The KubeVirt experiment policy
-(`cluster/cdk8s/agentplane/kubevirt_experiment/policy.py`) still sets `AGENTPLANE_EGRESS_SIDECAR_*`
-environment variables on a relay image that predates this, so a current image would refuse to start
-there. Give it a settings file before its image pin moves; delete this node then.
 
 ### `K3S_PYTHON_INITIALIZATION` — reduce Python process initialization cost
 
