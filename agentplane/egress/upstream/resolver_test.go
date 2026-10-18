@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -156,7 +157,7 @@ func TestAPinIsReusedWhileFreshAndNotAfter(t *testing.T) {
 	}
 }
 
-// Pins are served to concurrent admissions while others expire and are pruned.
+// Pins are served to concurrent admissions while others expire.
 func TestConcurrentAdmissionsGetThePinsTheirHostsResolveTo(t *testing.T) {
 	const hosts, workers, rounds = 20, 16, 50
 	var tick atomic.Int64
@@ -188,4 +189,73 @@ func TestConcurrentAdmissionsGetThePinsTheirHostsResolveTo(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// Admissions of one host that arrive together wait on a single lookup.
+func TestConcurrentFirstAdmissionsOfOneHostShareALookup(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var lookups atomic.Int32
+		release := make(chan struct{})
+		resolver := NewResolver(nil, WithLookup(func(context.Context, string) ([]netip.Addr, error) {
+			lookups.Add(1)
+			<-release
+			return addresses("140.82.121.4"), nil
+		}))
+		const admissions = 8
+		pins := make(chan Pin, admissions)
+		for range admissions {
+			go func() {
+				pin, err := resolver.Pin(t.Context(), "shared.test", 443, false)
+				if err != nil {
+					t.Error(err)
+				}
+				pins <- pin
+			}()
+		}
+		synctest.Wait()
+
+		close(release)
+
+		first := <-pins
+		for range admissions - 1 {
+			if pin := <-pins; pin != first {
+				t.Errorf("pin = %+v, want %+v", pin, first)
+			}
+		}
+		if got := lookups.Load(); got != 1 {
+			t.Errorf("%d lookups for %d admissions, want 1", got, admissions)
+		}
+	})
+}
+
+// An admission that leads the lookup and is then cancelled does not fail the ones waiting on it.
+func TestAWaitingAdmissionSurvivesTheCancelledOneThatLedTheLookup(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var lookups atomic.Int32
+		resolver := NewResolver(nil, WithLookup(func(ctx context.Context, _ string) ([]netip.Addr, error) {
+			if lookups.Add(1) == 1 {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}
+			return addresses("140.82.121.4"), nil
+		}))
+		leader, cancel := context.WithCancel(t.Context())
+		go func() { _, _ = resolver.Pin(leader, "shared.test", 443, false) }()
+		synctest.Wait()
+		waited := make(chan error, 1)
+		go func() {
+			_, err := resolver.Pin(t.Context(), "shared.test", 443, false)
+			waited <- err
+		}()
+		synctest.Wait()
+
+		cancel()
+
+		if err := <-waited; err != nil {
+			t.Errorf("waiting admission: %v", err)
+		}
+		if got := lookups.Load(); got != 2 {
+			t.Errorf("%d lookups, want the cancelled one and the retry", got)
+		}
+	})
 }
