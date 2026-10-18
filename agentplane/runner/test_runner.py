@@ -79,13 +79,10 @@ async def test_a_harness_that_dies_in_its_handshake_names_its_exit_and_stderr(
     session = await driver.attach("launch-failure-1", spec=spec)
     assert session.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
     await session.submit_input("launch-failure-1-input", "Start the failing harness.")
-    failed = await session.until(events.is_kind("harness_launch_failed"))
-    assert "exit_code=3" in failed.event.harness_launch_failed.reason
-    assert REFUSAL in failed.event.harness_launch_failed.reason
-    assert any(
-        entry.event.HasField("command_failed") and entry.event.command_failed.command_id == "launch-failure-1-input"
-        for entry in session.seen
-    )
+    failed = await session.until(events.is_kind("command_failed"))
+    assert failed.event.command_failed.command_id == "launch-failure-1-input"
+    assert "exit_code=3" in failed.event.command_failed.reason
+    assert REFUSAL in failed.event.command_failed.reason
     summaries = await driver.list_sessions()
     summary = next(item for item in summaries if item.session_id == "launch-failure-1")
     assert summary.launch_outcome == runner_pb2.LAUNCH_OUTCOME_FAILED

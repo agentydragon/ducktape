@@ -99,16 +99,27 @@ class SessionFollow:
         while not (page := ingress.since(session_id, self._cursor)):
             if (sealed := ingress.sealed.get(session_id)) is not None and self._cursor >= sealed:
                 raise SessionSealedError(sealed)
-            # The ingress may still lag the snapshot; what the snapshot covers is always read.
+            # Process exit can precede activation's command settlement. Read through the
+            # runner's current published cursor once that work finishes, even if ingress lags.
             if self._ended and self._cursor >= self.attached.last_cursor:
-                raise StreamClosedError
+                runner = await self._gateway.control.runner()
+                status = await runner.GetStatus(runner_pb2.GetStatusRequest())
+                session = next(row for row in status.sessions if row.session_id == session_id)
+                if not session.busy:
+                    summaries = await runner.ListSessions(runner_pb2.ListSessionsRequest())
+                    summary = next(row for row in summaries.sessions if row.session_id == session_id)
+                    if (
+                        summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+                        and self._cursor >= summary.last_cursor
+                    ):
+                        raise StreamClosedError
             await ingress.wait_beyond(session_id, self._cursor)
         entry = page[0]
         event = entry.event
-        if self._ended and entry.cursor > self.attached.last_cursor and event.HasField("harness_started"):
-            raise StreamClosedError
         self._cursor = entry.cursor
         self.seen.append(entry)
+        if entry.cursor > self.attached.last_cursor and event.HasField("harness_started"):
+            self._ended = False
         if entry.cursor > self.attached.last_cursor and event.HasField("harness_exited"):
             self._ended = True
         if event.HasField("setup_finished"):

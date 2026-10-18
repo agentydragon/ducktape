@@ -846,7 +846,9 @@ async def test_empty_runner_can_reserve_before_bootstrap_finishes_and_quiesce_it
             assert int(empty.facts().bootstrap) == Facts.BOOTSTRAP_RUNNING
             continue_bootstrap.touch()
             await asyncio.wait_for(draining, timeout=10)
-            await gateway.control.wait_for_facts(Facts(quiesce_stage=Facts.QUIESCE_STAGE_QUIESCED))
+            await gateway.control.wait_for_facts(
+                Facts(bootstrap=Facts.BOOTSTRAP_SUCCEEDED, quiesce_stage=Facts.QUIESCE_STAGE_QUIESCED)
+            )
             assert completed.exists()
             assert empty._initialization_task is not None
             assert empty._initialization_task.done()
