@@ -30,12 +30,18 @@ kubectl get pods -n agentplane-staging \
   --field-selector=status.phase=Running
 ```
 
-Update the held `newTag` values in this directory to those tested tags, without restoring the Flux
-markers yet. The `agentplane-staging` and `agentplane-staging-delivery` Flux Kustomizations consume
-this Component from the repo source after the change reaches `devel`; no direct cluster apply is
-needed. Keep the existing Sandbox objects and their UIDs and storage. Verify the staging rollout and
-the lifecycle acceptance before restoring the `:tag` markers on the held entries to resume automatic
-staging promotion.
+The temporary replica patch in `image-pins/kustomization.yaml` stops App, History,
+Notifications and Runner Gateway through GitOps. Land this step only after testing acceptance.
+Both `agentplane-staging` and `agentplane-staging-delivery` consume the Component; leave their
+reconciliation active. Wait until all four Deployments have zero replicas and their old Pods are
+gone. Controllers, databases, Sandbox objects, UIDs and retained storage stay in place.
+
+Then update the held `newTag` values to the accepted tags and remove the four replica overrides in
+the same change. The generated Deployments return to two replicas with the new image pins. Keep
+the Flux image markers absent until staging acceptance passes. The root applies core services and
+the queue migration before the delivery Kustomization starts Runner Gateway; app calls may be
+unavailable during this coordinated cutover. Verify the staging rollout and lifecycle acceptance
+before restoring the `:tag` markers to resume automatic staging promotion.
 
 ## Action policies
 
