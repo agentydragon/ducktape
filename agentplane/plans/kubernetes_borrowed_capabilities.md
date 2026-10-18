@@ -218,6 +218,27 @@ manifest.
 Option 3 pairs with moving only the Sandbox family, option 1 with moving the catalog as well, and
 option 4 only with C.
 
+## Records that outlive their Sandbox
+
+Where a record lives does not change what deleting its Sandbox does to it: on a second plane the
+Sandbox is still deleted, and whatever names it still dangles. What matters is each kind's lifetime
+and what a reference needs at read time.
+
+- Retained history is read through History's own record of the writing Sandbox: namespace, name
+  and, once kept, the UID. A grant matched on that record needs no Sandbox object, so direct and
+  `allSandboxes` archive grants keep working after deletion wherever their rules are stored. A rule
+  that names a Sandbox is a string in a `PolicySet`, not a reference the apiserver resolves
+  ([deleted-Sandbox history](task_dag.md#history_access_after_deletion--who-reads-a-sandboxs-history-once-it-is-deleted),
+  [archive apart from live objects](multiagent_communication.md#option-authorize-the-archive-apart-from-live-objects)).
+- What dangles are the kinds the Sandbox owns: membership CRs, bindings, Leases. Garbage collection
+  removes them with it, which is the intended result for a membership that covers live members only.
+- Keeping the Sandbox so its references stay valid costs a record family that never goes away. The
+  Dispatcher's delivery worker lists every Sandbox on each 10 s tick and acquires or renews a Lease
+  for each, suspended or not (`runner_gateway/dispatcher/delivery.go`), and each keeps its
+  ServiceAccount, `PolicyBinding` and an entry in the cache of every service that watches Sandboxes.
+  At the rate above, 1,000 retained Sandboxes write 100 times per second, so a retired state would
+  need the Dispatcher to skip it.
+
 ## Take
 
 Keep the records in the primary cluster's API for now. About 0.2 MB of records and no Session data
