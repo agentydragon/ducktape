@@ -25,13 +25,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/informer"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/proxy"
-	"github.com/agentydragon/ducktape/agentplane/egress/rules"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
-	egressrulespb "github.com/agentydragon/ducktape/agentplane/proto/egress_rules"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
 	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -226,27 +222,22 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer agentAPIListener.Close()
-	// The facade forwards over gRPC to the agent API listener itself, where the gRPC server is mounted,
-	// and outlives the termination signal so that reads admitted before it finish while draining.
-	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
-	defer stopFacade()
-	rulesFacade, err := facade.NewHandler(facadeContext, agentAPIListener.Addr().String(), egressrulespb.RegisterEgressRulesHandlerFromEndpoint)
-	if err != nil {
-		return err
-	}
 	adminListener, err := listen("admin", c.AdminHost, c.AdminPort)
 	if err != nil {
 		return err
 	}
 	defer adminListener.Close()
-	agentAPIServer := &http.Server{Handler: rules.New(rulesFacade, agentDocs), ReadHeaderTimeout: readHeaderTimeout}
+	// The facade outlives the termination signal so that reads admitted before it finish while draining.
+	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopFacade()
+	agentAPIServer, err := newAgentAPI(facadeContext, agentAPIListener.Addr().String(), verifier, index, agentDocs)
+	if err != nil {
+		return err
+	}
 	adminServer := &http.Server{
 		Handler:           admin.New(store, changes, decisions, index, time.Now),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
-	rulesGRPC := grpc.NewServer()
-	egressrulespb.RegisterEgressRulesServer(rulesGRPC, rules.NewService(verifier, index))
-	mountGRPC(agentAPIServer, rulesGRPC)
 	adminShutdown, err := mountAdminGRPC(adminServer, c, reviews.TokenReviews(), admin.ServiceOptions{
 		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index, Clock: time.Now,
 	})
