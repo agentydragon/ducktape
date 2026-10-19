@@ -282,11 +282,19 @@ async def test_action_presentations(
     await expect(page.get_by_role("radio", name="Not auto-allowed", exact=True)).to_be_checked()
     await expect(page.locator("[data-action-receipt]")).to_have_count(1)
     history = page.locator("[data-action-receipt]")
+    details = history.get_by_role("button", name="Receipt details", exact=True)
+    await expect(details).to_have_attribute("aria-expanded", "false")
+    await history.evaluate("element => element.scrollIntoView({block: 'end'})")
+    await wait_for_stable(page)
+    await view.capture(f"{capture_name}-history", target=history)
+
+    await details.click()
+    await expect(details).to_have_attribute("aria-expanded", "true")
     await history.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(history).to_contain_text(example.result_text)
     await expect(history.locator(".agentplane-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
-    await view.capture(f"{capture_name}-history", target=page.locator("[data-action-receipt]"))
+    await view.capture(f"{capture_name}-history-expanded", target=history)
 
 
 if __name__ == "__main__":

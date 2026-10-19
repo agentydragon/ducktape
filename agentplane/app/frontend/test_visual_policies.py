@@ -1026,9 +1026,14 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
     if kind == "email":
         editor = page.locator(".agentplane-code-block .cm-content").last
         await expect(editor).to_be_visible()
-        await expect(editor).to_contain_text("Long action content line 48")
+        await expect(editor).to_contain_text("Long action content line 1")
         await _focus(page, editor)
         await view.capture()
+        # CodeMirror virtualizes offscreen lines; bring the end into view before checking it.
+        await editor.evaluate("element => element.scrollIntoView({block: 'end'})")
+        await expect(editor.get_by_text("Long action content line 48", exact=True)).to_be_visible()
+        await wait_for_stable(page)
+        await view.capture(f"{capture_name}-end")
         return
     if kind == "text":
         await expect(page.get_by_role("button", name="Show all 48 lines", exact=True)).to_be_visible()
