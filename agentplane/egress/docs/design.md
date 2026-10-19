@@ -24,7 +24,6 @@ pinned.
 
 ## Test tiers
 
-A real kube-apiserver and etcd (envtest) check what the permissive fake API server cannot: CRD
-validation and list/watch/delete semantics. TokenReview stays a controlled dependency, so bound
-ServiceAccount token issuance, signatures and Pod replacement are covered only by the Kubernetes
-integration tier.
+A real kube-apiserver and etcd (envtest) check CRD validation and list/watch/delete semantics.
+The transport tests use real Pod-bound, audience-scoped ServiceAccount tokens and TokenReview.
+Scripted API servers remain for controlled replica watch faults and process lifecycle scenarios.

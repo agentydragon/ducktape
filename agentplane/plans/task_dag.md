@@ -847,6 +847,7 @@ flowchart LR
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     K3S_IMPORT_CONCURRENCY[Blocked: needs a runtime exposing the unpack limit]
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
+    EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
@@ -895,6 +896,17 @@ Notifications and Actions client examples, plus a bounded implementation/accepta
 routing, service discovery, effective access, injected identity, denials and supported Pod/VM clients.
 This node authorizes design work; runtime changes wait for
 the transport decision. No prerequisites on the other section 5 candidates.
+
+### `EGRESS_CREDENTIAL_TRANSPORT_DESIGN` — credential upstream schemes and ports
+
+**Decision; operator requested the audit/proposal, 2026-10-19.** Review the source inventory and
+alternatives in [the component proposal](../egress/plans/credential_transport.md). Select where
+substituted credentials may travel: external HTTPS/port restrictions and explicit internal
+HTTP/h2c exceptions. Keep private-address permission separate from plaintext permission.
+
+Exit: a reviewed transport-grant model and exception set, with bounded implementation/rollout
+acceptance. This node authorizes design only; it does not change enforcement or select a platform
+routing topology. `PLATFORM_SERVICE_ROUTING_DESIGN` remains a separate decision.
 
 ### `PLATFORM_SERVICE_ROUTING_DESIGN` — direct platform access versus central egress
 
