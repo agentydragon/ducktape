@@ -29,7 +29,9 @@ py_library(
     deps = [
         "//agentplane/egress:settings",
         "//util/bazel:runfiles",
-        "@pypi//aiohttp",
+        "@pypi//grpcio",
+        "@pypi//grpcio_health_checking",
+        "@pypi//protobuf",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
     ],

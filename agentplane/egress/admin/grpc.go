@@ -1,12 +1,17 @@
+// Package admin is the egress proxy's cluster-internal read side: recent decisions per subject, when
+// they change, and health.
 package admin
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
+	"github.com/agentydragon/ducktape/agentplane/egress/history"
+	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/proto/egress_admin"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
@@ -16,12 +21,29 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// Service is the HTTP admin API's reads as gRPC. It takes the same Decisions, Changes, HistoryHealth
-// and Index, so what the two serve is read from one place.
-//
-// Deviation from the HTTP API: the HTTP admin listener is fenced by network policy alone, while every
-// RPC here admits only the allowed callers, each proving a ServiceAccount by a bearer reviewed on
-// that call (agentplane/docs/grpc_services.md).
+// Decisions reads a subject's retained decisions; a nil subject selects the refusals that never
+// authenticated.
+type Decisions interface {
+	Recent(ctx context.Context, subject *decision.Subject) ([]decision.Record, error)
+}
+
+// Changes follows decision commits; see history.Changes.Follow.
+type Changes interface {
+	Follow(ctx context.Context, changed func() error) error
+}
+
+// HistoryHealth reports the decision writer's counters.
+type HistoryHealth interface {
+	Health() history.Health
+}
+
+// Index is read once per call, so the verdict and the ages it rests on agree.
+type Index interface {
+	Status(now time.Time) policy.Status
+}
+
+// Service is the admin gRPC API. Every RPC admits only the allowed callers, each proving a
+// ServiceAccount by a bearer reviewed on that call (agentplane/docs/grpc_services.md).
 type Service struct {
 	egressadminpb.UnimplementedEgressAdminServer
 	decisions     Decisions
@@ -77,23 +99,29 @@ func historyFailure(err error) error {
 	return errHistoryUnavailable
 }
 
-// GetHealth reports what `/healthz` does: its facts, and its verdict as `ready`.
+// GetHealth is ready only while the index is both complete and still moving. `synced` alone says only
+// that every kind has listed once, so a proxy whose watches had since wedged would go on reporting
+// ready while serving a frozen snapshot of the rules; the ages are the facts and `ready` the verdict.
 func (s *Service) GetHealth(ctx context.Context, _ *egressadminpb.GetHealthRequest) (*egressadminpb.GetHealthResponse, error) {
 	if _, err := s.resolver.RequireAccount(ctx, s.callers); err != nil {
 		return nil, err
 	}
-	body, ready := readHealth(s.index, s.historyHealth, s.clock())
+	index := s.index.Status(s.clock())
+	counters := s.historyHealth.Health()
+	ages := make(map[string]float64, len(index.Ages))
+	for kind, age := range index.Ages {
+		ages[string(kind)] = math.Round(age.Seconds()*10) / 10
+	}
 	return &egressadminpb.GetHealthResponse{
-		Ready: ready, Synced: body.Synced, Draining: body.Draining,
+		Ready: index.Available, Synced: index.Synced, Draining: index.Draining,
 		DecisionHistory: &egressadminpb.DecisionHistoryHealth{
-			Accepted: int64(body.DecisionHistory.Accepted), Acknowledged: int64(body.DecisionHistory.Acknowledged),
-			DroppedOverflow: int64(body.DecisionHistory.DroppedOverflow), DroppedUnavailable: int64(body.DecisionHistory.DroppedUnavailable),
-			DroppedExpired: int64(body.DecisionHistory.DroppedExpired), DroppedShutdown: int64(body.DecisionHistory.DroppedShutdown),
-			WriteFailures: int64(body.DecisionHistory.WriteFailures), CleanupFailures: int64(body.DecisionHistory.CleanupFailures),
-			Available: body.DecisionHistory.Available, Queued: int64(body.DecisionHistory.Queued),
-			WriterRunning: body.DecisionHistory.WriterRunning,
+			Accepted: int64(counters.Accepted), Acknowledged: int64(counters.Acknowledged),
+			DroppedOverflow: int64(counters.DroppedOverflow), DroppedUnavailable: int64(counters.DroppedUnavailable),
+			DroppedExpired: int64(counters.DroppedExpired), DroppedShutdown: int64(counters.DroppedShutdown),
+			WriteFailures: int64(counters.WriteFailures), CleanupFailures: int64(counters.CleanupFailures),
+			Available: counters.Available, Queued: int64(counters.Queued), WriterRunning: counters.WriterRunning,
 		},
-		StaleAfterSeconds: body.StaleAfterSeconds, RefreshedSecondsAgo: body.RefreshedSecondsAgo,
+		StaleAfterSeconds: index.StaleAfter.Seconds(), RefreshedSecondsAgo: ages,
 	}, nil
 }
 

@@ -234,10 +234,7 @@ func run(ctx context.Context, c config) error {
 	if err != nil {
 		return err
 	}
-	adminServer := &http.Server{
-		Handler:           admin.New(store, changes, decisions, index, time.Now),
-		ReadHeaderTimeout: readHeaderTimeout,
-	}
+	adminServer := &http.Server{Handler: http.NotFoundHandler(), ReadHeaderTimeout: readHeaderTimeout}
 	adminShutdown, err := mountAdminGRPC(adminServer, c, reviews.TokenReviews(), admin.ServiceOptions{
 		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index, Clock: time.Now,
 	})
@@ -250,7 +247,7 @@ func run(ctx context.Context, c config) error {
 	group.Go(func() error { return serving("proxy", egress.Serve(proxyListener)) })
 	group.Go(func() error { return serving("agent API", agentAPIServer.Serve(agentAPIListener)) })
 	// The admin listener is the readiness probe and readiness gates every Service this Pod backs, so
-	// it starts accepting last: /healthz answering means the listeners above are serving.
+	// it starts accepting last: the readiness check answering means the listeners above are serving.
 	group.Go(func() error { return serving("admin", adminServer.Serve(adminListener)) })
 	group.Go(func() error {
 		<-ctx.Done()

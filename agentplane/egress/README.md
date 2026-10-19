@@ -181,39 +181,37 @@ identity authorities. Missing or forged destination auth fails closed.
 
 The API shares the central process's current enforcement `Index`, which projects the subject the
 bearer proved and returns only the redacted field allowlist. Operator
-`/decisions`, `/decisions/changes` and `/healthz` remain on the separate admin listener, not the rules API. Network policy
-admits the agent API from central egress only. Service target-port separation prevents recursion.
+Operator decision and health reads are on the separate admin listener ([Admin gRPC API](#admin-grpc-api)), not the rules API.
+Network policy admits the agent API from central egress only. Service target-port separation prevents recursion.
 The Service may select a different replica from the one that admitted the request. The answer is
 an informational snapshot of the answering replica, not a global acknowledgement or admission promise.
 
 ## Admin gRPC API
 
-`EgressAdmin` (<../proto/egress_admin.proto>) serves the admin listener's reads as gRPC:
-`ListDecisions` is `/decisions`, `WatchDecisions` is `/decisions/changes` carrying state, the
-`ListDecisions` list on subscribing and again each time it differs, and `GetHealth` is `/healthz` with
-the same facts (`decisionHistory`, the refresh ages) and the status code as `ready`. All three read
-through the same `Decisions`, `Changes`, history counters and `Index` as the HTTP handlers.
+`EgressAdmin` (<../proto/egress_admin.proto>) serves the operator reads on the admin listener:
+`ListDecisions` lists a subject's recent decisions, `WatchDecisions` sends that list on subscribing and
+again each time it differs, and `GetHealth` carries the readiness verdict as `ready` with the facts it
+rests on (`decision_history`, the refresh ages). All three read through the same `Decisions`,
+`Changes`, history counters and `Index`.
 
 The standard `grpc.health.v1.Health` service is served on the same listener for Kubernetes' native `grpc` probes:
-the empty service is the verdict of `/healthz` and the service `livez` that of `/livez`, which stays
-`SERVING` while the process answers so a recoverable watch outage never restarts it. Like the HTTP
-probes it admits every caller, because the kubelet sends no bearer; `GetHealth` does not. `Watch` is
-not served.
+the empty service is readiness and the service `livez` liveness, which stays `SERVING` while the process
+answers so a recoverable watch outage never restarts it. It admits every caller, because the kubelet
+sends no bearer; `GetHealth` does not. `Watch` is not served.
 
-It shares the admin listener with the HTTP API: the listener takes cleartext HTTP/2 beside HTTP/1.1, and
-an HTTP/2 request of content type `application/grpc` goes to the gRPC server. The gRPC server is mounted
-on the HTTP server as a handler (`grpc.Server.ServeHTTP`), so the HTTP server's `Shutdown` is what stops
-it, after ending the open watches.
+The admin listener is an HTTP server that takes cleartext HTTP/2 and sends a request of content type
+`application/grpc` to the gRPC server; every other request is a 404. The gRPC server is mounted on the HTTP
+server as a handler (`grpc.Server.ServeHTTP`), so the HTTP server's `Shutdown` is what stops it, after
+ending the open watches.
 
-**Deviation:** the HTTP admin listener is fenced by network policy alone, while every `EgressAdmin`
-call admits only the ServiceAccounts in `admin_grpc_callers`, each proving itself by a bearer of
-audience `admin_grpc_audience` that is reviewed on every call, before anything is read
+Every `EgressAdmin` call admits only the ServiceAccounts in `admin_grpc_callers`, each proving itself by
+a bearer of audience `admin_grpc_audience` that is reviewed on every call, before anything is read
 (<../docs/grpc_services.md>). A watch is admitted once, so it ends after ten minutes and when the proxy
 drains; the caller subscribes again and is admitted afresh.
 
 The health service is always mounted. `EgressAdmin` is mounted only when `admin_grpc_audience` and
 `admin_grpc_callers` (`namespace/name` entries) are both set; without them the admin listener serves
-HTTP and health.
+health alone.
 
 ## Rules gRPC API
 
@@ -267,7 +265,7 @@ waits and connects are each bounded to two seconds. A batch gets three attempts 
 backoff from one second; a retry reuses the batch's event IDs and decision timestamps, and the insert
 is `ON CONFLICT (event_id) DO NOTHING`. Records already past the retention window are dropped before
 the write and counted as expired. Shutdown flushes for five seconds and counts what remains as
-shutdown loss. The counters are served as `decisionHistory` by `/healthz`.
+shutdown loss. `GetHealth` reports the counters as `decision_history`.
 
 After every batch or idle wake the writer deletes at most 1,000 expired rows, selected `FOR UPDATE
 SKIP LOCKED` on the `(decided_at, event_id)` index so concurrent replicas neither block nor
@@ -295,15 +293,15 @@ container, so a failed migration keeps that Pod unready while the previous proxi
 
 ## Replica lifecycle
 
-`/healthz` and every CONNECT/HTTP admission share `Index` availability: all four watched kinds must be
+Readiness (the empty health service and `GetHealth`'s `ready`) and every CONNECT/HTTP admission share `Index` availability: all four watched kinds must be
 initially synced and have completed a watch cycle within three configured resync periods
 (`resync_seconds`, default 300, at least two). A negative clock age also fails closed. DB health does
-not participate. `/livez` only proves the admin listener answers; a recoverable watch outage does not
+not participate. The `livez` health service only proves the admin listener answers; a recoverable watch outage does not
 cause a restart loop. Every request on an existing TLS/HTTP2 connection is gated again. After DNS I/O,
 a changed egress-policy decision denies that admission without forwarding or replay.
 Revocation is eventually observed independently by each watch, not globally linearizable.
 
-SIGTERM/SIGINT marks the index draining, so `/healthz` fails and the listener closes at once.
+SIGTERM/SIGINT marks the index draining, so readiness fails and the listener closes at once.
 Admitted requests (HTTP responses, WebSockets, gRPC streams) drain for up to 20 seconds, then
 the remaining tunnels are closed; idle tunnels close immediately. The rules and admin servers shut down
 within the same bound and the decision queue is flushed for at most five seconds.

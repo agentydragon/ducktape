@@ -114,9 +114,9 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
   per-listener thread copies. The scope read is a long poll held until the thread's first fold.
 - `system_status.py`: the System page's checks. `GET /system/status` probes, concurrently and each
-  within a 5-second budget, the gRPC health service of the Runner Gateway and History Service and
-  the `/healthz` of the Action Service, Notification Service and egress proxy
-  admin port, plus Electric's `/v1/health`; a probe that fails or times out is `down` with its
+  within a 5-second budget, the gRPC health service of the Runner Gateway, History Service and egress
+  proxy admin port, the `/healthz` of the Action Service and Notification Service,
+  plus Electric's `/v1/health`; a probe that fails or times out is `down` with its
   reason, never an error response. LLM ingress is not probed: the app's NetworkPolicy has no egress
   to it. The Kubernetes API is not probed either; the freshness of the live views shows it.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
@@ -273,7 +273,7 @@ A snapshot is not a delta, and there is no resumable id: a relist replaces a kin
 `resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. That leaves
 one failure to handle honestly -- a watch that has wedged looks exactly like a cluster where
 nothing is happening -- so every frame carries how long ago each kind last completed a cycle,
-against the same three-cycle bound the egress proxy's `/healthz` uses, and a page whose data has
+against the same three-cycle bound the egress proxy's readiness uses, and a page whose data has
 stopped moving says so rather than showing it as live: the browser's connection and that verdict
 both feed the one connection indicator in the topbar, a spinner whose tooltip names each stream
 that is not current and why. Every stream, and the server's watch behind it, retries by itself.

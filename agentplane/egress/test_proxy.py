@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from ipaddress import ip_network
 from pathlib import Path
 from typing import cast
+from uuid import UUID
 
 import aiohttp
 import grpc
@@ -24,6 +25,7 @@ import pytest_bazel
 from aiohttp import web
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
+from sqlalchemy import create_engine, text
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
@@ -41,6 +43,7 @@ from agentplane.egress.testing.tls import (
     write_ca,
 )
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
+from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import (
     CREDENTIALS_NAMESPACE,
     CREDENTIALS_PLURAL,
@@ -299,6 +302,26 @@ async def test_health_reports_ready_only_once_the_tunnel_accepts(
             await writer.wait_closed()
 
 
+# SQLAlchemy loads this URL dialect dynamically.
+# gazelle:include_dep @pypi//psycopg
+_SUBJECT_DECISIONS = text("""
+SELECT producer_id, connection_id, reason FROM egress_decision
+WHERE subject_namespace = :namespace AND subject_name = :name
+""")
+
+
+def _decisions_of(database_url: str, subject: ServiceAccountRef) -> list[tuple[UUID, str, str | None]]:
+    """The producer, connection and refusal reason of every decision the subject has in the shared history."""
+    with ExitStack() as stack:
+        engine = create_engine(database_url)
+        stack.callback(engine.dispose)
+        with engine.connect() as connection:
+            return [
+                (row.producer_id, row.connection_id, row.reason)
+                for row in connection.execute(_SUBJECT_DECISIONS, subject.model_dump())
+            ]
+
+
 async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
     tmp_path: Path, history_db_url: str, unused_tcp_port_factory: Callable[[], int]
 ) -> None:
@@ -345,28 +368,24 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             await get(second.proxy_port, "still-current", 200)
             second_api.watch_available = False
             second_api.close_watches()
-            await second.health(503)
+            await second.health(serving=False)
             before = len(upstream.requests)
             await get(second.proxy_port, "stale-existing-connection", 502)
             assert len(upstream.requests) == before
             second_api.watch_available = True
             second_api.delete(POLICY_BINDINGS_PLURAL, BINDING)
-            await second.health(200)
+            await second.health(serving=True)
             await get(second.proxy_port, "recovered-revocation", 403)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
-                    # Either replica serves the history both wrote.
-                    async with client.get(
-                        f"http://127.0.0.1:{first.admin_port}/decisions", params=SUBJECT_A.model_dump()
-                    ) as response:
-                        rows = await response.json()
-                    producers = {row["producer_id"] for row in rows}
+                    rows = await asyncio.to_thread(_decisions_of, history_db_url, SUBJECT_A)
+                    producers = {producer for producer, _, _ in rows}
                     assert len(producers) == 2
                     assert all(
-                        len({row["connection_id"] for row in rows if row["producer_id"] == producer}) == 1
+                        len({connection for row_producer, connection, _ in rows if row_producer == producer}) == 1
                         for producer in producers
                     )
-                    assert any(row["reason"] == "unavailable" for row in rows)
+                    assert any(reason == "unavailable" for _, _, reason in rows)
 
 
 async def test_go_proxy_finishes_an_admitted_request_after_sigterm(

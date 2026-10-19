@@ -72,6 +72,7 @@ py_test(
         "//:conftest",
         "//agentplane:crd_group",
         "//agentplane:policy_sets",
+        "//agentplane:subjects",
         "//agentplane/egress/testing:go_replica",
         "//agentplane/egress/testing:sidecar_process",
         "//agentplane/egress/testing:tls",
@@ -82,8 +83,10 @@ py_test(
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//more_itertools",
+        "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
         "@pypi//tenacity",
     ],
 )

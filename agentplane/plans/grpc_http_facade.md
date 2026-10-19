@@ -48,16 +48,16 @@ are the app's own logic.
 
 ## Services by transport today
 
-| Service                                           | Language | API today                                                                           | Facade                                                                  |
-| ------------------------------------------------- | -------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Runner Gateway: Dispatcher, control, Runner proxy | Go       | gRPC; Dispatcher has 10 RPCs, one watch                                             | Dispatcher reads for the browser. Control stream and proxy stay native. |
-| History Service                                   | Python   | gRPC, 9 RPCs, one watch that only says "changed"                                    | Reads, with its Go port                                                 |
-| Action Service                                    | Python   | HTTP, 39 routes, plus MCP and OAuth                                                 | Operator and workload surfaces, with its Go port                        |
-| Notification Service                              | Python   | HTTP, 15 routes                                                                     | Subscriptions, inboxes, operator streams                                |
-| Egress admin and rules API                        | Go       | gRPC `EgressAdmin` and `EgressRules`; hand-written HTTP decisions and probes remain | Rules route generated; the app switched, so the HTTP handlers go        |
-| Git index                                         | Python   | HTTP, 3 routes                                                                      | `/search`, when an agent needs it                                       |
-| LLM ingress                                       | Go       | Provider-native HTTP                                                                | None: it passes provider bodies through unchanged                       |
-| Integration app                                   | Python   | HTTP, 83 routes, SSE                                                                | Its own contract is a separate decision                                 |
+| Service                                           | Language | API today                                        | Facade                                                                  |
+| ------------------------------------------------- | -------- | ------------------------------------------------ | ----------------------------------------------------------------------- |
+| Runner Gateway: Dispatcher, control, Runner proxy | Go       | gRPC; Dispatcher has 10 RPCs, one watch          | Dispatcher reads for the browser. Control stream and proxy stay native. |
+| History Service                                   | Python   | gRPC, 9 RPCs, one watch that only says "changed" | Reads, with its Go port                                                 |
+| Action Service                                    | Python   | HTTP, 39 routes, plus MCP and OAuth              | Operator and workload surfaces, with its Go port                        |
+| Notification Service                              | Python   | HTTP, 15 routes                                  | Subscriptions, inboxes, operator streams                                |
+| Egress admin and rules API                        | Go       | gRPC `EgressAdmin` and `EgressRules`             | Rules route generated; nothing more                                     |
+| Git index                                         | Python   | HTTP, 3 routes                                   | `/search`, when an agent needs it                                       |
+| LLM ingress                                       | Go       | Provider-native HTTP                             | None: it passes provider bodies through unchanged                       |
+| Integration app                                   | Python   | HTTP, 83 routes, SSE                             | Its own contract is a separate decision                                 |
 
 ## Proposal
 

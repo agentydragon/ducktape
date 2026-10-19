@@ -9,15 +9,15 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// LivenessService is the service name of `/livez` in a health Check.
+// LivenessService is the service name of the liveness verdict in a health Check.
 const LivenessService = "livez"
 
 // Probes is the standard gRPC health service, for Kubernetes' native probes and for a caller that
-// wants the verdict alone. Like `/healthz` and `/livez` it admits every caller, because the kubelet
-// sends no bearer; GetHealth is the authenticated call that carries the facts.
+// wants the verdict alone. It admits every caller, because the kubelet sends no bearer; GetHealth is
+// the authenticated call that carries the facts.
 //
-// The empty service is `/healthz`: SERVING while the index is complete and still moving. The
-// `livez` service is `/livez`: SERVING while the process answers, whatever the index says, so a
+// The empty service is readiness: SERVING while the index is complete and still moving. The
+// `livez` service is liveness: SERVING while the process answers, whatever the index says, so a
 // recoverable watch outage never restarts it. Watch is not served.
 type Probes struct {
 	healthpb.UnimplementedHealthServer

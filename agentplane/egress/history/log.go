@@ -40,20 +40,20 @@ type LogConfig struct {
 	FlushTimeout time.Duration
 }
 
-// Health is the Log's counters, served as `decisionHistory` by the admin port.
+// Health is the Log's counters, reported by the admin service's `GetHealth`.
 type Health struct {
-	Accepted           int `json:"accepted"`
-	Acknowledged       int `json:"acknowledged"`
-	DroppedOverflow    int `json:"dropped_overflow"`
-	DroppedUnavailable int `json:"dropped_unavailable"`
-	DroppedExpired     int `json:"dropped_expired"`
-	DroppedShutdown    int `json:"dropped_shutdown"`
-	WriteFailures      int `json:"write_failures"`
-	CleanupFailures    int `json:"cleanup_failures"`
+	Accepted           int
+	Acknowledged       int
+	DroppedOverflow    int
+	DroppedUnavailable int
+	DroppedExpired     int
+	DroppedShutdown    int
+	WriteFailures      int
+	CleanupFailures    int
 	// Available is whether the latest write succeeded; nil before the first.
-	Available     *bool `json:"available"`
-	Queued        int   `json:"queued"`
-	WriterRunning bool  `json:"writer_running"`
+	Available     *bool
+	Queued        int
+	WriterRunning bool
 }
 
 // Log is bounded, best-effort persistence: admission records a decision without waiting for the

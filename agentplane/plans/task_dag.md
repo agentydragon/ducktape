@@ -1914,7 +1914,6 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 
 ```mermaid
 flowchart LR
-    EGRESS_ADMIN_HTTP_TEARDOWN[Caller audit: remove the hand-written egress admin HTTP]
     HISTORY_SERVICE_GO_PORT[Candidate: port the History Service to Go]
     HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
     NOTIFICATION_SERVICE_GO_PORT[Blocked: port the Notification Service to Go]
@@ -1925,17 +1924,6 @@ flowchart LR
     NOTIFICATION_SERVICE_SPLIT --> NOTIFICATION_SERVICE_GO_PORT
     HISTORY_SERVICE_GO_PORT -. sequencing choice: record the UID in Go if the port goes first .-> HISTORY_SANDBOX_UID
 ```
-
-### `EGRESS_ADMIN_HTTP_TEARDOWN` — remove the hand-written egress admin HTTP
-
-Inventory remaining HTTP callers first: where an HTTP caller remains, the generated facade (as the
-Dispatcher's and the rules route's, which the [agent CLI](agent_cli.md) plan's egress commands target)
-replaces the handler instead of leaving two interfaces.
-Then delete the `/decisions`, `/decisions/changes`, `/healthz` and `/livez` handlers after every caller's
-replacement image is pinned (removals follow their callers). Nothing imports `invopop/jsonschema` any more
-(the rules OpenAPI reflected with it), so its direct `require` in `third_party/go.mod` becomes
-`// indirect` and its `use_repo` entry in `MODULE.bazel` goes; both are graph-wide, so batch them with
-the next Go dependency change.
 
 ### `HISTORY_SERVICE_GO_PORT` — port the History Service to Go
 

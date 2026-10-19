@@ -3,7 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "admin",
     srcs = [
-        "admin.go",
         "grpc.go",
         "grpc_health.go",
     ],
@@ -27,7 +26,7 @@ go_library(
 go_test(
     name = "admin_test",
     srcs = [
-        "admin_test.go",
+        "fakes_test.go",
         "grpc_health_test.go",
         "grpc_test.go",
     ],

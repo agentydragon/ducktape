@@ -36,7 +36,10 @@ class Settings(YamlFileSettings):
     listen_host: str = Field(default="0.0.0.0", description="Proxy listener bind address.")
     listen_port: int = Field(default=8888, description="Proxy listener port the sidecars relay to.")
     admin_host: str = Field(default="0.0.0.0", description="Admin listener bind address.")
-    admin_port: int = Field(default=8081, description="Admin port serving /decisions and /healthz.")
+    admin_port: int = Field(
+        default=8081,
+        description="Admin port serving the gRPC health service and, when configured, the EgressAdmin API.",
+    )
     admin_grpc_audience: str | None = Field(
         default=None,
         min_length=1,

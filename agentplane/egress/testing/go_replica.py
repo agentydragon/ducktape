@@ -10,12 +10,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from textwrap import dedent
 
-import aiohttp
+import grpc
+from grpc_health.v1 import health_pb2, health_pb2_grpc
 from sqlalchemy.engine import make_url
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.egress.settings import Settings
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
+
+# The generated health stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
 
 _PROXY = get_required_path(own_repo_rlocation("agentplane/egress/cmd/egress-proxy_/egress-proxy"))
 _MIGRATOR = get_required_path(
@@ -25,17 +29,17 @@ _GRACE_SECONDS = 55
 
 
 async def expect_health(
-    admin_port: int, status: int, *, alive: Callable[[], bool], exit_description: Callable[[], str]
+    admin_port: int, serving: bool, *, alive: Callable[[], bool], exit_description: Callable[[], str]
 ) -> None:
-    """Until the admin listener on `admin_port` answers `/healthz` with `status`; fails at once if the proxy died."""
-    async with aiohttp.ClientSession() as client:
+    """Until the readiness verdict on the admin listener at `admin_port` is `serving`; fails at once if the proxy died."""
+    expected = health_pb2.HealthCheckResponse.SERVING if serving else health_pb2.HealthCheckResponse.NOT_SERVING
+    async with grpc.aio.insecure_channel(f"127.0.0.1:{admin_port}") as channel:
+        stub = health_pb2_grpc.HealthStub(channel)
         async for attempt in AsyncRetrying(stop=stop_after_delay(20), wait=wait_fixed(0.05), reraise=True):
             with attempt:
                 assert alive(), f"proxy exited with {exit_description()}"
-                async with client.get(f"http://127.0.0.1:{admin_port}/healthz") as response:
-                    assert response.status == status
-                    await response.read()
-                    return
+                assert (await stub.Check(health_pb2.HealthCheckRequest())).status == expected
+                return
     raise AssertionError("health retry exhausted")
 
 
@@ -71,10 +75,10 @@ class GoReplica:
     def terminate(self) -> None:
         self.process.terminate()
 
-    async def health(self, status: int) -> None:
+    async def health(self, *, serving: bool) -> None:
         await expect_health(
             self.admin_port,
-            status,
+            serving,
             alive=lambda: self.process.returncode is None,
             exit_description=lambda: f"{self.process.returncode}:\n{self.stderr.read_text()}",
         )
@@ -108,7 +112,7 @@ async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[Go
         )
     running = GoReplica(settings.listen_port, settings.admin_port, process, stderr)
     try:
-        await running.health(200)
+        await running.health(serving=True)
         yield running
     finally:
         if process.returncode is None:

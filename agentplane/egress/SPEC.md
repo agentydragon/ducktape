@@ -190,19 +190,15 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   raw exceptions, and Kubernetes object payloads are not recorded. An unauthenticated attempt has
   no claimed identity; a recorded Pod UID is a snapshot, not a reference to a live object.
 - Recent history is shared PostgreSQL state, not a per-replica ring. Replacing a proxy does not
-  remove committed history. `/decisions?namespace=<ns>&name=<name>` selects one subject and keeps
-  the list response and existing field names (`at` is decision time); omitting both selects the
+  remove committed history. `ListDecisions` selects one subject (`at` is decision time) or the
   requests that never authenticated. A lookup spans every workload that has run as that account.
-- `/decisions/changes` streams a payload-free `changed` frame when any replica commits decisions,
-  on subscribing, and after every quiet heartbeat. A reader re-reads `/decisions`, which stays the
-  authority; the stream ends when the proxy loses its database connection.
-- The `EgressAdmin` gRPC service, when enabled, serves the same reads with the same records and
-  window: `ListDecisions` for a subject or the unauthenticated, `WatchDecisions` for that list on
-  subscribing and again whenever it changes, and `GetHealth` for what `/healthz` reports. Unlike the
-  HTTP admin API, every call is admitted only for an allowed ServiceAccount proved by a bearer
-  reviewed on that call, and a watch ends after a bounded lease so a revoked caller stops reading.
-  The standard gRPC health service beside it reports the verdicts of `/healthz` (the empty service)
-  and `/livez` (`livez`) to any caller.
+- `WatchDecisions` sends that list on subscribing and again whenever it differs; a commit by
+  another subject sends nothing. It fails `UNAVAILABLE` when the proxy loses its database connection.
+- The `EgressAdmin` gRPC service, when enabled, serves `ListDecisions`, `WatchDecisions` and
+  `GetHealth`. Every call is admitted only for an allowed ServiceAccount proved by a bearer reviewed
+  on that call, and a watch ends after a bounded lease so a revoked caller stops reading. The
+  standard gRPC health service beside it reports readiness (the empty service) and liveness
+  (`livez`) to any caller.
 - Responses contain at most 200 recent records by default, ordered by decision time then event
   ID, oldest first within that window. This is not a global causal or insertion order.
 - Logging is diagnostic and best effort, not a mandatory lossless audit. A bounded asynchronous
@@ -212,12 +208,12 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   acknowledgement lost after commit can count as a failure but never inserts a duplicate. The
   counters describe producer knowledge: an event counted lost may still have been committed.
 - History is not tamper-evident auditing: the database owner can insert and delete records.
-- `/healthz` reports `decisionHistory`: accepted and acknowledged events (acknowledged counts
+- `GetHealth` reports `decision_history`: accepted and acknowledged events (acknowledged counts
   producer events, not newly inserted rows), loss by overflow, unavailability, expiry and shutdown,
   write and cleanup failures, queue depth, whether the writer is running, and `available`, the
   outcome of the last write attempt (`null` before one). Counters are per process and reset on
-  restart; none of it changes the enforcement verdict the status code reports. A failed history
-  read returns 503, never an empty success or a local fallback. A successful read may lag queued
+  restart; none of it changes the enforcement verdict `ready` reports. A failed history
+  read fails `UNAVAILABLE`, never an empty success or a local fallback. A successful read may lag queued
   admissions.
 - Retention defaults to seven days and is a visibility bound: queries exclude expired records, and
   bounded indexed cleanup deletes them eventually. Database outages delay physical cleanup, not

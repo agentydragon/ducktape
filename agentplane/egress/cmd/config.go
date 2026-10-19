@@ -18,9 +18,9 @@ const settingPrefix = "AGENTPLANE_EGRESS_"
 // AGENTPLANE_EGRESS_CONFIG_FILE, with AGENTPLANE_EGRESS_* environment overrides for scalar
 // settings. Lists and maps are file-only. Viper loads the settings.
 //
-// The admin listener also serves the admin API as gRPC when admin_grpc_audience, the audience of the
-// bearer its callers send, and admin_grpc_callers, the ServiceAccounts it admits as `namespace/name`,
-// are set; it serves only HTTP without them.
+// The admin listener serves the gRPC health service, and the admin API beside it when
+// admin_grpc_audience, the audience of the bearer its callers send, and admin_grpc_callers, the
+// ServiceAccounts it admits as `namespace/name`, are set.
 type config struct {
 	RulesNamespace                  string            `mapstructure:"rules_namespace"`
 	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`

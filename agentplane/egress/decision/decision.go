@@ -43,39 +43,38 @@ const (
 
 // Subject is the ServiceAccount a token proved.
 type Subject struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
+	Namespace string
+	Name      string
 }
 
-// Record is one admission as the proxy logs and persists it, and as the admin API serves it: the
-// JSON names are the wire contract the integration app reads. It is admission metadata captured
-// before forwarding, never evidence that the upstream completed. Paths are deliberately absent:
-// arbitrary path segments can contain secrets.
+// Record is one admission as the proxy logs and persists it, and as the admin API serves it. It is
+// admission metadata captured before forwarding, never evidence that the upstream completed. Paths
+// are deliberately absent: arbitrary path segments can contain secrets.
 type Record struct {
-	EventID uuid.UUID `json:"event_id"`
-	At      time.Time `json:"at"`
+	EventID uuid.UUID
+	At      time.Time
 	// ProducerID tells replicas apart; no Agentplane reader uses it.
-	ProducerID uuid.UUID `json:"producer_id"`
+	ProducerID uuid.UUID
 	// Subject is nil on a refusal that never authenticated.
-	Subject *Subject `json:"subject"`
+	Subject *Subject
 	// SourcePodUID and ConnectionID tell Pods and connections apart for operators querying the table.
-	SourcePodUID *string `json:"source_pod_uid"`
-	ConnectionID string  `json:"connection_id"`
-	Phase        Phase   `json:"phase"`
-	Method       string  `json:"method"`
-	Host         string  `json:"host"`
-	Port         int     `json:"port"`
-	Outcome      Outcome `json:"outcome"`
+	SourcePodUID *string
+	ConnectionID string
+	Phase        Phase
+	Method       string
+	Host         string
+	Port         int
+	Outcome      Outcome
 	// Reason is set on a deny.
-	Reason *Reason `json:"reason"`
+	Reason *Reason
 	// Binding, Policy and Rule name the rule that admitted the request.
-	Binding *string `json:"binding"`
-	Policy  *string `json:"policy"`
-	Rule    *int    `json:"rule"`
+	Binding *string
+	Policy  *string
+	Rule    *int
 	// Substituted is whether a credential replaced a placeholder.
-	Substituted bool `json:"substituted"`
+	Substituted bool
 	// Address is the address the host was pinned to, when admitted.
-	Address *string `json:"address"`
+	Address *string
 }
 
 // LogValue logs the fields an operator reads in a log line; the pointer fields would print as

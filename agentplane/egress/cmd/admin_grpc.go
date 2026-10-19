@@ -19,7 +19,8 @@ import (
 // reviewed when a watch opens, so this bounds how long a revoked token keeps reading.
 const adminWatchLease = 10 * time.Minute
 
-// adminGRPCEnabled is whether the admin listener also serves gRPC.
+// adminGRPCEnabled is whether the admin listener serves the EgressAdmin API; the standard health service
+// is served either way.
 func (c *config) adminGRPCEnabled() bool { return c.AdminGRPCAudience != "" }
 
 // validateAdminGRPC refuses a gRPC API half configured: an audience with nobody admitted, or callers

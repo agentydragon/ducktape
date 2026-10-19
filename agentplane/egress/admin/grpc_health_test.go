@@ -3,7 +3,9 @@ package admin
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/proto/egress_admin"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -11,7 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestGetHealthCarriesTheVerdictAndFactsOfHealthz(t *testing.T) {
+func TestGetHealthCarriesTheVerdictAndItsFacts(t *testing.T) {
 	available := true
 	counters := fakeHistory{
 		Accepted: 1, Acknowledged: 2, DroppedOverflow: 3, DroppedUnavailable: 4, DroppedExpired: 5, DroppedShutdown: 6,
@@ -35,6 +37,10 @@ func TestGetHealthCarriesTheVerdictAndFactsOfHealthz(t *testing.T) {
 			Synced: true, DecisionHistory: wantCounters, StaleAfterSeconds: 900,
 			RefreshedSecondsAgo: map[string]float64{"secrets": 1200},
 		}},
+		{"ages rounded to tenths", rounded(), fakeHistory{}, &egressadminpb.GetHealthResponse{
+			Ready: true, Synced: true, DecisionHistory: &egressadminpb.DecisionHistoryHealth{}, StaleAfterSeconds: 900,
+			RefreshedSecondsAgo: map[string]float64{"secrets": 1.2},
+		}},
 		// No write has succeeded or failed yet, which is not the same as the latest having failed.
 		{"draining before any write", drainingIndex(), fakeHistory{}, &egressadminpb.GetHealthResponse{
 			Synced: true, Draining: true, DecisionHistory: &egressadminpb.DecisionHistoryHealth{}, StaleAfterSeconds: 60,
@@ -52,6 +58,12 @@ func TestGetHealthCarriesTheVerdictAndFactsOfHealthz(t *testing.T) {
 			}
 		})
 	}
+}
+
+func rounded() fakeIndex {
+	index := healthyIndex()
+	index.Ages = map[policy.Kind]time.Duration{policy.Secrets: 1234 * time.Millisecond}
+	return index
 }
 
 func TestProbesReportReadinessAndLivenessSeparately(t *testing.T) {
