@@ -31,9 +31,11 @@ the schema, `tracks.csv`, `annotated.avi`, and `review.json` in the output direc
    the example JPEG as guidance. View a timeline overview, then inspect useful
    frames and crops at native resolution and pixel-preserving zoom to distinguish
    individual bodies, branch widths, tips, and junctions.
-2. Work in one conversation, preferably within one context window. Keep a saved
-   ID/color table and structured annotation file as you go. Use one persistent
-   ID for the same target across frames. Never recycle IDs for different targets.
+2. Work in one conversation; context compaction is allowed. Keep a saved
+   ID/color table, structured annotation file, unresolved identity decisions,
+   and review progress so you can continue after compaction or a CLI restart.
+   Use one persistent ID for the same target across frames. Never recycle IDs
+   for different targets.
 3. Choose clear neurons on an anchor frame. Save full-resolution pixel masks for
    each neuron's body and branches. Those masks must be disjoint within a neuron;
    their union is its segmented extent. Trace the full width and visible tips of

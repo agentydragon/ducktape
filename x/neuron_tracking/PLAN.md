@@ -6,8 +6,8 @@ Run Codex on the example clip with a prompt and the expected annotation schema.
 Use `gpt-6-luna` with `model_reasoning_effort="xhigh"`. Codex may obtain programs
 through Nix and write its own processing scripts during the run; prebuilt helpers
 are not a prerequisite.
-Keep one agent conversation for the clip, ideally entirely within one context
-window. The agent should segment every identifiable pixel of each neuron's body
+Keep one agent conversation for the clip; context compaction is allowed.
+The agent should segment every identifiable pixel of each neuron's body
 and branches, see exactly what those masks look like on the source images,
 correct them, and carry identities across frames.
 
@@ -59,7 +59,7 @@ The agent may request crops, zooms, or image alignment to help comparison.
 Classical tracking or segmentation can later propose masks if annotation is the
 bottleneck; its proposals go through the same visible correction loop.
 
-## One conversation and one context window
+## Conversation continuity
 
 Keep the timeline, identity decisions, corrections, and visual checks in one
 Codex session. Do not dispatch independent agents or start a fresh session per
@@ -68,13 +68,11 @@ run; these are the export source of truth even while the conversation is intact.
 
 Use contact sheets for orientation and selected full-resolution crops for
 annotation. Budget for repeat views, output tokens, and growing conversation
-history, not just a single image per source frame. Measure actual context use in
-the trial before attempting all neurons in all 73 frames. A prompt alone cannot
-guarantee that the harness will avoid automatic compaction: record whether it
-occurred, and do not report a compacted run as a single-context success.
-
-If the clip cannot fit, save partial results and report the limitation. A
-different continuation strategy is a separate experiment.
+history, not just a single image per source frame. Compaction is allowed and is
+not a failure condition. Persist unresolved identity decisions and review
+progress alongside the masks so the same conversation can continue after
+compaction or a resumed CLI process. Save partial results and identify missing
+coverage if a resource limit prevents completion.
 
 ## Processing during the run
 
@@ -127,8 +125,8 @@ annotations. Model self-review does not imply human verification.
 - [x] Select `gpt-6-luna` with `xhigh` reasoning; allow Nix and processing scripts
       created during execution.
 - [x] Supply the prompt, pixel-mask semantics, and machine-readable JSON Schema.
-- [ ] Run the prompt on the supplied clip, establishing the visual correction
-      loop on a clear frame and then processing all 73 frames in one conversation.
+- [x] Launch five independent runs on the supplied clip, each processing its
+      sequence in one conversation with a visual correction loop.
 - [ ] Review representative masks against the raw frames. Record missed branch
       pixels, background leakage, body/branch classification errors, identity
       switches, unresolved cases, token use, and context-window behavior. Measure
@@ -154,8 +152,8 @@ source images; no recall or identity-accuracy target has been demonstrated yet.
 
 The launch command is in `README.md`. The installed CLI is `codex-cli 0.162.1`;
 its model cache lists `gpt-6-luna`, `xhigh` reasoning, and image inputs. The CLI
-reports an existing ChatGPT login. These read-only checks do not prove that an
-annotation run will succeed; no run has been launched yet.
+reports an existing ChatGPT login. The five trials use that login and provider;
+their partial annotations do not yet establish complete or accurate tracking.
 
 Use the current Codex authentication/provider first. CLIProxyAPI is an available
 alternative if desired; keep endpoints and credentials in local configuration.

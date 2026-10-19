@@ -6,8 +6,13 @@ across frames, and inspect and correct its rendered masks before hand-off.
 
 The annotation prompt is in `annotate.md`, with mask semantics in
 `annotation_format.md` and the machine-readable format in
-`annotations.schema.json`. The sample has been inspected; the annotation prompt
-has not yet been run. Codex may use Nix and write its own processing scripts.
+`annotations.schema.json`. Five independent `gpt-6-luna` / `xhigh` trials have
+been launched; their local artifacts and native traces are under `runs/`.
+Results so far are partial annotations. Codex may use Nix and write its own
+processing scripts. Follow-up work is in `TODO.md`.
+
+Keep each run in one conversation. Context compaction is allowed; save identity
+decisions, annotation revisions, and review progress on disk for continuation.
 
 Keep local input media in `data/` and generated frames, annotations, overlays,
 videos, and session logs in `runs/`. Both directories and common media extensions
@@ -30,4 +35,5 @@ codex exec --model gpt-6-luna -c 'model_reasoning_effort="xhigh"' \
 
 Use a fresh output directory for each run. This uses the existing Codex login
 and provider, with the selected model and effort set for this invocation only.
-The command has not yet been exercised on an annotation run.
+Long runs need a durable process supervisor when their invoking agent's process
+lifetime is uncertain; unexpected SIGTERM exits occurred during the first trials.
