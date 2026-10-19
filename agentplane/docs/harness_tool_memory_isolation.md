@@ -9,6 +9,10 @@ Sandbox.
 
 ## Problem
 
+The [observed VM OOM incident](vm_sandboxes.md#guest-resource-controls) demonstrates accidental
+harness death during agent Nix work under the current VM setup. The VM boundary and existing
+per-harness budgets do not keep a tool's memory consumption from killing its own harness.
+
 The Agentplane runner, its native harness (Claude Code or Codex), and every command the agent runs share one container. When
 the container's memory cgroup hits `memory.max`, the kernel OOM-kills, and under cgroup v2 kubelet
 sets `memory.oom.group=1` on the container (upstream default since Kubernetes 1.28; our nodes run

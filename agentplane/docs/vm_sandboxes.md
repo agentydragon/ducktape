@@ -94,6 +94,19 @@ The delegated cgroups below provide resource containment and teardown, not secur
 a harness and its tool children. A native harness and the tools it starts share that harness's cgroup
 and resource budget. No separate per-tool budget or kill boundary is part of the current VM contract.
 
+**Observed failure:** on 2026-10-19, Nix work in staging `public-coder-1` exhausted the 1536 MiB
+guest and the guest kernel killed its Codex harness. The guest console recorded
+`Out of memory: Killed process 880 (codex)` at `07:30:08.730 UTC`; that PID matches the
+[`b46e0a6c-20d3-425a-83cd-f1d70568d2eb` Session](https://agentplane-staging.allegedly.works/#/threads/b46e0a6c-20d3-425a-83cd-f1d70568d2eb),
+whose journal recorded exit `137`, `stopped_by_runner=false`, then `PROCESS_LOST`. Three Nix
+processes killed in the same episode held about 981 MiB combined anonymous RSS. The deployed image
+`35879dd` allowed 3 GiB per harness and 4 GiB aggregate agent memory, both above guest RAM, so those
+limits could not preserve guest headroom. This demonstrates that agent work can accidentally kill
+its own harness even inside the VM. Budgets that fit guest RAM address guest exhaustion; keeping a
+harness alive when its tools exceed their budget also requires a separate tool memory/kill boundary.
+The subsequent conversation-recovery failure is addressed separately in
+[PR #11091](https://github.com/agentydragon/ducktape/pull/11091).
+
 - The runner service is a systemd unit with `MemoryHigh`/`MemoryMax`, `CPUQuota` and `TasksMax`, and
   delegates a subtree. `agentplane.runner.cgroups` puts agent work under an aggregate group and each
   native harness under its own, with memory, CPU, task and I/O limits and `memory.oom.group`.
