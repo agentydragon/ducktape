@@ -38,14 +38,7 @@ function CreatePullRequest({ args }: { args: z.infer<typeof createPullRequest> }
         </Code>{" "}
         pull request “{args.title}” from <Code>{args.head}</Code> into <Code>{args.base}</Code>.
       </Text>
-      {args.body && (
-        <Stack gap={4}>
-          <Text size="sm" fw={600}>
-            Description
-          </Text>
-          <TextBlock text={args.body} heading="Description" format="prose" clamp={false} />
-        </Stack>
-      )}
+      {args.body && <TextBlock text={args.body} heading="Description" format="prose" clamp={false} />}
       {args.draft === true && <Text size="sm">Create as a draft.</Text>}
       {args.maintainer_can_modify !== undefined && (
         <Text size="sm">
