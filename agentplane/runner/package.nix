@@ -22,8 +22,10 @@ pkgs.stdenvNoCC.mkDerivation {
   '';
 
   installPhase = ''
+    runHook preInstall
     install -Dm755 ${binary} $out/bin/agentplane-runner
     ln -s agentplane-runner $out/bin/agentplane-runner-vm
+    runHook postInstall
   '';
 
   meta = {
