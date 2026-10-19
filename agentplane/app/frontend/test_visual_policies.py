@@ -759,6 +759,7 @@ async def test_consent_reconnect_warning_desktop(reconnect_review: VisualPage) -
 
 
 async def _open_history_receipts(page: Page) -> None:
+    await expect(page.get_by_role("button", name="Receipt details", exact=True).first).to_be_attached()
     for control in await page.get_by_role("button", name="Receipt details", exact=True).all():
         if await control.get_attribute("aria-expanded") == "false":
             await control.click()
