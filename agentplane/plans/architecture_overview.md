@@ -209,9 +209,15 @@ and whether `allSandboxes` reaches histories with no recorded UID.
 ### Independent of these
 
 The Python and Go port order (operator, 2026-10-19 01:37), the generated HTTP facades, the agent CLI,
-the Dispatcher queue-versus-direct-admission comparison, whether the Dispatcher needs a Lease for a
-Sandbox with nothing queued and no wake allowed, or beside its Postgres fence at all, the Notification service split, and create and launch policy
-(`MULTIAGENT_MODEL` and the nodes after it), which follows messaging and reads.
+the Dispatcher queue-versus-direct-admission comparison, which Sandboxes the Dispatcher leases, the
+Notification service split, and create and launch policy (`MULTIAGENT_MODEL` and the nodes after
+it), which follows messaging and reads.
+
+The Dispatcher's loop is not polling: Sandbox changes arrive from its informer and queue changes from
+Postgres notifications, the listing reads the watch cache, and the 10 s tick is the Lease heartbeat
+(`delivery.go`). The open part is which Sandboxes hold a Lease at all: one with nothing queued and no
+wake allowed may need none, ownership could be taken when a command or a wakeable Sandbox appears,
+and whether the Lease is needed beside the Postgres fence was not checked.
 
 ## Dependencies
 
