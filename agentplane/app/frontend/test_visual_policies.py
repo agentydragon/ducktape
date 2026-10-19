@@ -847,7 +847,13 @@ async def test_action_history_automatic_paging(view: VisualPage, app: Agentplane
     await expect(page.get_by_text("End of action history.", exact=True)).to_be_attached()
     last_receipt = page.locator("[data-action-receipt]").last
     await last_receipt.scroll_into_view_if_needed()
-    await expect(last_receipt.locator(".agentplane-code-block-placeholder")).to_have_count(0)
+    await wait_for_stable(page)
+    result_sections = last_receipt.get_by_test_id("action-execution-outcome").locator(".agentplane-operation-section")
+    await expect(result_sections).to_have_count(1)
+    result_section = result_sections.first
+    await result_section.scroll_into_view_if_needed()
+    await expect(result_section.locator(".agentplane-code-block-placeholder")).to_have_count(0)
+    await expect(result_section.locator(".agentplane-code-block-container .cm-editor")).to_be_visible()
     await wait_for_stable(page)
     await _focus(page, page.get_by_text("End of action history.", exact=True))
     await view.capture(target=page.locator("#app"))
@@ -1031,7 +1037,7 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
     if kind in {"text", "json"}:
         block = page.get_by_test_id("action-execution-outcome").locator(".agentplane-clamped-block")
         expand_label: str | re.Pattern[str] = "Show more"
-        collapse_label = "Payload"
+        collapse_label: str | re.Pattern[str] = "Payload"
     elif kind == "email":
         block = page.locator(".agentplane-clamped-block:has([data-operation-heading])").filter(has_text="Message body")
         expand_label = "Show more"
