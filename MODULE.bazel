@@ -401,9 +401,10 @@ apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 
 # rules_distroless 0.9 moved source manifests and package lists into explicit
 # extension tags. Keep all images in one extension so they share a coherent
-# resolution graph. Bazel 8's facts API owns the repository-resolution cache;
-# the former per-image v1 lockfiles were removed because v0.9 no longer reads
-# that format.
+# resolution graph. The extension caches its resolution only in MODULE.bazel.lock,
+# which this repo does not use (.bazelrc), so every cold Bazel server re-downloads and
+# re-parses the Debian indexes. The former per-image v1 lockfiles were removed because
+# v0.9 no longer reads that format.
 apt.sources_list(
     architectures = ["amd64"],
     components = ["main"],

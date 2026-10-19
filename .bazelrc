@@ -60,6 +60,15 @@ build --nolegacy_external_runfiles
 # MODULE.bazel and don't use version ranges, the lockfile provides minimal benefit.
 common --lockfile_mode=off
 
+# Bazel cancels in-flight Skyframe computations when the heap is under pressure
+# (--skyframe_high_water_mark_*_gc_drops_per_invocation, 10 each by default), and a cancelled
+# module extension restarts from scratch. With the lockfile off, the rules_distroless `apt`
+# extension runs on every cold server: it parses ~350 MB of Debian indexes in 1-1.5 GB of
+# heap, and those allocations themselves trigger the pressure that restarts it, over and over,
+# until a graph-wide sweep runs out of heap (#11120). Never shed state.
+common --skyframe_high_water_mark_full_gc_drops_per_invocation=0
+common --skyframe_high_water_mark_minor_gc_drops_per_invocation=0
+
 # Lint + typecheck enabled by default on all builds.
 # Combines lint (ruff, ESLint, pytest-main), typecheck (mypy), and Rust checks (clippy, rustfmt).
 # Use Python 3.14 for mypy to parse Python 3.14 syntax (e.g., homeassistant).
