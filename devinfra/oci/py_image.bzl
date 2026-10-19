@@ -2,8 +2,8 @@
 
 Uses aspect_rules_py's py_image_layer for multi-layer OCI images
 (interpreter, site-packages, app code) on a debian-slim base with bash.
-The aspect py_binary launcher is a bash script that sets up a venv and
-exec's the Python interpreter, so the base image must provide /bin/bash.
+Supports both rules_python and Aspect launchers; the latter creates a venv
+at startup. The base image provides the shell their launchers require.
 """
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer")
@@ -15,10 +15,10 @@ _PY_IMAGE_ENV = {
 }
 
 def py_image_entrypoint(binary_name, binary_package = None):
-    """Compute entrypoint for an OCI image running an aspect py_binary.
+    """Compute entrypoint for an OCI image running a py_binary.
 
     Args:
-        binary_name: Name of the aspect_py_binary target (e.g., "critic_bin").
+        binary_name: Name of the py_binary target (e.g., "critic_bin").
         binary_package: Bazel package path. Defaults to calling BUILD's package.
 
     Returns:
@@ -27,17 +27,20 @@ def py_image_entrypoint(binary_name, binary_package = None):
     pkg = binary_package or native.package_name()
     return ["/{}/{}".format(pkg, binary_name)]
 
-def py_image_env(binary_name = None, binary_package = None, extra_env = {}):
+def py_image_env(binary_name = None, binary_package = None, extra_env = {}, aspect_venv = True):
     """Standard env dict for py_image_layer containers.
 
     When binary_name is provided, sets PATH and PYTHONPATH so that
     `python3` is findable and `import props` works from bare exec calls.
 
     Args:
-        binary_name: Name of the aspect_py_binary target. When set, adds
-            the venv bin/ to PATH and runfiles _main/ to PYTHONPATH.
+        binary_name: Name of the py_binary target. When set, adds its Python
+            interpreter to PATH and runfiles _main/ to PYTHONPATH.
         binary_package: Bazel package path. Defaults to calling BUILD's package.
         extra_env: Additional env vars to merge.
+        aspect_venv: Whether the binary uses Aspect's startup-created venv.
+            For rules_python, expose the hermetic interpreter directly; its
+            launcher supplies application dependency imports.
 
     Returns:
         Env dict for oci_image.
@@ -46,19 +49,19 @@ def py_image_env(binary_name = None, binary_package = None, extra_env = {}):
     if binary_name:
         pkg = binary_package or native.package_name()
 
-        # The aspect py_binary launcher creates the venv at runtime inside the
-        # runfiles directory as ".{binary_name}.venv".  Use that path so that
-        # subprocess exec calls inherit the correct python3 after the entrypoint
-        # has initialised the venv.
-        venv_bin = "/{}/{}.runfiles/.{}.venv/bin".format(pkg, binary_name, binary_name)
+        runfiles = "/{}/{}.runfiles".format(pkg, binary_name)
+        if aspect_venv:
+            python_bin = "{}/.{}.venv/bin".format(runfiles, binary_name)
+        else:
+            python_bin = "{}/{}/bin".format(runfiles, _PYTHON_RUNTIME_REPO)
         runfiles_main = "/{}/{}.runfiles/_main".format(pkg, binary_name)
-        env["PATH"] = "{}:/usr/local/bin:/usr/bin:/bin".format(venv_bin)
+        env["PATH"] = "{}:/usr/local/bin:/usr/bin:/bin".format(python_bin)
         env["PYTHONPATH"] = runfiles_main
     env.update(extra_env)
     return env
 
 # Keep this in sync with MODULE.bazel's default Python 3.14 toolchain. Bazel's runfiles
-# repository name is also embedded in aspect_rules_py launchers, so the alias below must
+# repository name is also embedded in the launchers, so the alias below must
 # preserve that exact component for rlocation().
 _PYTHON_RUNTIME_REPO = "rules_python++python+python_3_14_x86_64-unknown-linux-gnu"
 _PYTHON_RUNTIME_ROOT = "devinfra/oci/python_runtime/runtime_image_bin.runfiles"
@@ -67,14 +70,12 @@ _PYTHON_INTERPRETER_GROUP = "\\\\.runfiles/[^/]*python_?[0-9]+_[0-9]+(_[0-9]+)?_
 def shared_py_image_layers(name, binary, owner = "1000", group = "1000"):
     """Return OCI layers with the binary's interpreter resolved from the shared runtime tree.
 
-    aspect_rules_py embeds a binary-specific runfiles path in its launcher and creates its
-    venv alongside that launcher. Keep the per-binary runfiles tree and add a symlink at the
-    original interpreter-repository path; ship the Python toolchain files once from the
-    canonical runtime binary.
+    Keep each binary's runfiles tree and alias its interpreter repository to the shared
+    runtime tree, shipping the Python toolchain files once.
 
     Args:
         name: Name passed to py_image_layer, usually `<binary>_layers`.
-        binary: Local label of the aspect py_binary.
+        binary: Local label of the py_binary.
         owner: UID for image files.
         group: GID for image files.
 
