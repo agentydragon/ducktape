@@ -6,6 +6,7 @@ kubernetes_clients(
     name = "generated",
     api = "//agentplane/policy/api/v1alpha1",
     apply_configuration_types = [
+        "ActionPolicy",
         "CredentialRef",
         "PolicyBinding",
         "PolicyBindingSpec",

@@ -9,28 +9,91 @@ import (
 )
 
 type RoleRef struct {
+	// +kubebuilder:validation:Enum=Role;ClusterRole
 	Kind string `json:"kind"`
+	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 }
 
 // Rule is shared by policy consumers; each consumer handles its own Type.
+// +kubebuilder:validation:XValidation:rule="!has(self.hosts) || !self.hosts.exists(h, h == '*') || (!has(self.credentialRef) && (!has(self.clusterInternal) || !self.clusterInternal))",message="A blanket host rule cannot set clusterInternal or credentialRef."
+// +kubebuilder:validation:XValidation:rule="self.type == 'kubernetes_role_binding' ? (has(self.role) && has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : self.type == 'kubernetes_cluster_role_binding' ? (has(self.clusterRole) && !has(self.role) && !has(self.namespaces) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : self.type == 'egress' ? (has(self.hosts) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.policy)) : has(self.policy) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef)",message="Rule fields must match type."
 type Rule struct {
-	Type            string         `json:"type"`
-	Role            *RoleRef       `json:"role,omitempty"`
-	Namespaces      []string       `json:"namespaces,omitempty"`
-	ClusterRole     string         `json:"clusterRole,omitempty"`
-	Hosts           []string       `json:"hosts,omitempty"`
-	Methods         []string       `json:"methods,omitempty"`
-	Paths           []string       `json:"paths,omitempty"`
-	CredentialRef   *CredentialRef `json:"credentialRef,omitempty"`
-	ClusterInternal bool           `json:"clusterInternal,omitempty"`
+	// Type selects the consumer that handles this rule.
+	// +kubebuilder:validation:Enum=kubernetes_role_binding;kubernetes_cluster_role_binding;egress;action_auto_approve
+	Type string `json:"type"`
+	// Role names the Role or ClusterRole to bind; the named object must already exist.
+	Role *RoleRef `json:"role,omitempty"`
+	// Namespaces names the target namespaces explicitly, never by selection; labeling a namespace grants nothing.
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:MinLength=1
+	Namespaces []string `json:"namespaces,omitempty"`
+	// ClusterRole names the ClusterRole bound cluster-wide.
+	// +kubebuilder:validation:MinLength=1
+	ClusterRole string `json:"clusterRole,omitempty"`
+	// Hosts lists exact lowercase hostnames, `*.` subdomains, or `*` for any public destination. Blanket rules do
+	// not bypass authentication, bindings, method/path checks or address filtering.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=256
+	// +kubebuilder:validation:items:MaxLength=256
+	// +kubebuilder:validation:items:Pattern=^(\*|(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*)$
+	Hosts []string `json:"hosts,omitempty"`
+	// Methods lists admitted HTTP methods; omitted means any method.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:Enum=GET;HEAD;POST;PUT;PATCH;DELETE;OPTIONS;CONNECT;TRACE
+	Methods []string `json:"methods,omitempty"`
+	// Paths lists path patterns as the proxy matches them; omitted means any path.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:MinLength=1
+	Paths []string `json:"paths,omitempty"`
+	// CredentialRef names the EgressCredential that this rule lets a subject present, in the same namespace.
+	CredentialRef *CredentialRef `json:"credentialRef,omitempty"`
+	// ClusterInternal lifts private-address refusal for this rule's hosts only, never for loopback or link-local.
+	ClusterInternal bool `json:"clusterInternal,omitempty"`
+	// Policy configures the Action evaluator for an action_auto_approve rule.
+	Policy *ActionPolicy `json:"policy,omitempty"`
 }
 
+// CredentialRef names an EgressCredential in the PolicySet's namespace.
 type CredentialRef struct {
+	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 }
 
+// ActionPolicy selects an Action evaluator and its inputs.
+// +kubebuilder:validation:XValidation:rule="self.type == 'exact_actions' ? (!has(self.schema) && !has(self.owner) && !has(self.repository) && !has(self.entities)) : self.type == 'argument_schema' ? (has(self.schema) && !has(self.owner) && !has(self.repository) && !has(self.entities)) : self.type == 'github_repository' ? (!has(self.schema) && has(self.owner) && has(self.repository) && !has(self.entities)) : self.type == 'github_public_repository' ? (!has(self.schema) && !has(self.owner) && !has(self.repository) && !has(self.entities)) : !has(self.schema) && !has(self.owner) && !has(self.repository) && has(self.entities)",message="Action policy fields must match type."
+type ActionPolicy struct {
+	// Type selects how the evaluator matches an Action request.
+	// +kubebuilder:validation:Enum=exact_actions;argument_schema;github_repository;github_public_repository;home_assistant_entity_control
+	Type string `json:"type"`
+	// Actions lists Action names by ActionGroup key; the policy matches only these.
+	// +kubebuilder:validation:MinProperties=1
+	// +kubebuilder:validation:additionalProperties:MinItems=1
+	// +kubebuilder:validation:additionalProperties:items:MinLength=1
+	Actions map[string][]string `json:"actions"`
+	// Schema is a plain JSON Schema over the arguments; properties alone never implies presence, so use required.
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
+	Schema map[string]any `json:"schema,omitempty"`
+	// Owner is the GitHub repository owner.
+	// +kubebuilder:validation:MinLength=1
+	Owner string `json:"owner,omitempty"`
+	// Repository is the GitHub repository name.
+	// +kubebuilder:validation:MinLength=1
+	Repository string `json:"repository,omitempty"`
+	// Entities maps Home Assistant entity ids to the services allowed for each.
+	// +kubebuilder:validation:MinProperties=1
+	// +kubebuilder:validation:additionalProperties:MinItems=1
+	// +kubebuilder:validation:additionalProperties:items:MinLength=1
+	Entities map[string][]string `json:"entities,omitempty"`
+}
+
+// RuleSpec contains the reusable policy rules.
 type PolicySetSpec struct {
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=256
 	Rules []Rule `json:"rules"`
 }
 
@@ -43,11 +106,12 @@ type Status struct {
 
 // +genclient
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Namespaced,path=policysets,singular=policyset
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 type PolicySet struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              PolicySetSpec `json:"spec"`
-	Status            Status        `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

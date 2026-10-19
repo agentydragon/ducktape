@@ -1,7 +1,7 @@
 """Go-derived Agentplane CRDs, written by `bb run //agentplane/crds:generate_bin`.
 
-Sandbox, EgressCredential and PolicyBinding CRDs are generated from Go API types by controller-gen.
-PolicySet remains authored in `manifests/`. Flux packages the CRDs directly from
+Sandbox, EgressCredential, PolicySet and PolicyBinding CRDs are generated from Go API types by
+controller-gen. Flux packages the CRDs directly from
 `agentplane/crds/manifests` (`cluster/cdk8s/agentplane_crds.py`).
 """
 
@@ -32,7 +32,10 @@ EGRESS_CRDS = {"crd-egresscredentials.yaml": "agentplane.allegedly.works_egressc
 SANDBOX_GENERATED_CRDS = "_main/agentplane/sandboxes/api/generated_crds"
 EGRESS_GENERATED_CRDS = "_main/agentplane/egress/api/v1alpha1/generated_crds"
 POLICY_GENERATED_CRDS = "_main/agentplane/policy/api/v1alpha1/generated_crds"
-POLICY_CRDS = {"crd-policybindings.yaml": "agentplane.allegedly.works_policybindings.yaml"}
+POLICY_CRDS = {
+    "crd-policysets.yaml": "agentplane.allegedly.works_policysets.yaml",
+    "crd-policybindings.yaml": "agentplane.allegedly.works_policybindings.yaml",
+}
 
 
 def _generated_crd(generated: str) -> dict[str, Any]:

@@ -37,6 +37,7 @@ cluster/k8s/ssh-mcp/kustomization.yaml
 agentplane/crds/manifests/crd-sandboxes.yaml
 agentplane/crds/manifests/crd-sandboxtemplates.yaml
 agentplane/crds/manifests/crd-egresscredentials.yaml
+agentplane/crds/manifests/crd-policysets.yaml
 agentplane/crds/manifests/crd-policybindings.yaml
 
 # kubeconform schemas dumped from the Agentplane CRDs by `bb run //agentplane/crds:generate_bin`

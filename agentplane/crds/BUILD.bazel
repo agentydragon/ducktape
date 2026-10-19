@@ -1,8 +1,9 @@
-# Sandbox, EgressCredential and PolicyBinding CRDs derive from Go API types; PolicySet is authored here. The typed cdk8s Python constructs are generated from these first-party manifests,
+# Sandbox, EgressCredential, PolicySet and PolicyBinding CRDs derive from Go API types. The typed
+# cdk8s Python constructs are generated from these first-party manifests,
 # so importing directly from them is correct (see
 # devinfra/js/cdk8s_import.bzl's crd arg doc, which only warns against vendoring a copy of an
-# upstream CRD). See cluster/docs/cdk8s.md. `bb run :generate_bin` writes the Go-derived CRDs and
-# PolicyBinding CRD. Flux packages the CRDs from this same source directory for
+# upstream CRD). See cluster/docs/cdk8s.md. `bb run :generate_bin` writes the Go-derived CRDs.
+# Flux packages the CRDs from this same source directory for
 # application, so there is no checked-in manifest copy.
 
 # Each *_crds module below is generated at build time by cdk8s_import, not a pip
@@ -84,6 +85,19 @@ py_test(
 py_test(
     name = "test_sandbox_admission",
     srcs = ["test_sandbox_admission.py"],
+    data = [":crds"],
+    deps = [
+        "//:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_policyset_admission",
+    srcs = ["test_policyset_admission.py"],
     data = [":crds"],
     deps = [
         "//:conftest",
