@@ -1,0 +1,104 @@
+[
+  {
+    "kind": "LinstorCluster",
+    "namespace": null,
+    "name": "linstor-cluster",
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-10-19T02:52:20Z",
+          "message": "Resources applied",
+          "observedGeneration": 1,
+          "reason": "AsExpected",
+          "status": "True",
+          "type": "Applied"
+        },
+        {
+          "lastTransitionTime": "2026-10-19T03:38:20Z",
+          "message": "Controller 1.35.2 (API: 1.29.1, Git: 4f9bfb0a395cdd8ae0fc8d99876a286148c30f88) reachable at 'https://linstor-controller.piraeus-datastore.svc:3371'",
+          "observedGeneration": 1,
+          "reason": "AsExpected",
+          "status": "True",
+          "type": "Available"
+        },
+        {
+          "lastTransitionTime": "2026-10-19T03:52:42Z",
+          "message": "Properties applied",
+          "observedGeneration": 1,
+          "reason": "AsExpected",
+          "status": "True",
+          "type": "Configured"
+        }
+      ],
+      "storagePools": null
+    }
+  },
+  {
+    "kind": "LinstorSatellite",
+    "namespace": null,
+    "name": "ovh-ns102453",
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-10-19T02:52:20Z",
+          "message": "Resources applied",
+          "observedGeneration": 3,
+          "reason": "AsExpected",
+          "status": "True",
+          "type": "Applied"
+        },
+        {
+          "lastTransitionTime": "2026-10-19T03:40:04Z",
+          "message": "ONLINE",
+          "observedGeneration": 3,
+          "reason": "AsExpected",
+          "status": "True",
+          "type": "Available"
+        },
+        {
+          "lastTransitionTime": "2026-10-19T03:40:04Z",
+          "message": "Pools configured",
+          "observedGeneration": 3,
+          "reason": "AsExpected",
+          "status": "True",
+          "type": "Configured"
+        }
+      ],
+      "storagePools": null
+    }
+  },
+  {
+    "kind": "LinstorSatellite",
+    "namespace": null,
+    "name": "ovh-ns103656",
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-10-19T02:52:20Z",
+          "message": "Resources applied",
+          "observedGeneration": 3,
+          "reason": "AsExpected",
+          "status": "True",
+          "type": "Applied"
+        },
+        {
+          "lastTransitionTime": "2026-10-19T03:53:01Z",
+          "message": "ONLINE",
+          "observedGeneration": 3,
+          "reason": "AsExpected",
+          "status": "True",
+          "type": "Available"
+        },
+        {
+          "lastTransitionTime": "2026-10-19T03:53:01Z",
+          "message": "Pools configured",
+          "observedGeneration": 3,
+          "reason": "AsExpected",
+          "status": "True",
+          "type": "Configured"
+        }
+      ],
+      "storagePools": null
+    }
+  }
+]

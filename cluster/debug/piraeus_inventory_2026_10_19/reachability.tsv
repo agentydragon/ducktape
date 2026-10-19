@@ -1,0 +1,5 @@
+target	method	result
+iguana	SSH Nebula 10.42.0.31:22, 5s connect timeout	connection timed out; no live disk inventory
+rugged	SSH Nebula 10.42.0.30:22, 5s connect timeout	connection timed out; no live disk inventory
+atlas	SSH LAN 10.2.0.2:22, 5s connect timeout	connection timed out
+atlas	SSH Nebula 10.42.0.5:22, strict host-key check	authentication denied; no hypervisor capacity inventory

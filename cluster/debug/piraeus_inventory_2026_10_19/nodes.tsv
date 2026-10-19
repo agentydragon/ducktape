@@ -1,0 +1,11 @@
+node	ready	os	kernel	zone	media_label	drbd_canary
+iguana	Unknown	NixOS 26.05 (Yarara)	6.18.38	-	-	-
+optiplex	True	Talos (v1.14.0)	6.18.48-talos	home-lan	ssd	-
+ovh-ns1001419	True	Talos (v1.14.0)	6.18.48-talos	hil-ovh	ssd	-
+ovh-ns102453	True	Talos (v1.14.0)	6.18.48-talos	hil-ovh	hdd	true
+ovh-ns103656	True	Talos (v1.14.0)	6.18.48-talos	hil-ovh	hdd	true
+ovh-ns103711	True	Talos (v1.14.0)	6.18.48-talos	hil-ovh	hdd	-
+ovh-ns104952	True	Talos (v1.14.0)	6.18.48-talos	hil-ovh	ssd	-
+ovh-ns104963	True	Talos (v1.14.0)	6.18.48-talos	hil-ovh	ssd	-
+rugged	Unknown	NixOS 26.05 (Yarara)	7.2.8	-	-	-
+wyrm2	True	NixOS 26.05 (Yarara)	6.18.54	atlas	-	-

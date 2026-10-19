@@ -1,0 +1,150 @@
+{
+  "physical_volumes": [
+    {
+      "pv_name": "/dev/vdc",
+      "vg_name": "openebs-proxmox-ssd",
+      "pv_size": "536866717696",
+      "pv_free": "504495079424"
+    },
+    {
+      "pv_name": "/dev/vdg",
+      "vg_name": "openebs-proxmox-hdd",
+      "pv_size": "536866717696",
+      "pv_free": "72834088960"
+    }
+  ],
+  "volume_groups": [
+    {
+      "vg_name": "openebs-proxmox-hdd",
+      "vg_size": "536866717696",
+      "vg_free": "72834088960"
+    },
+    {
+      "vg_name": "openebs-proxmox-ssd",
+      "vg_size": "536866717696",
+      "vg_free": "504495079424"
+    }
+  ],
+  "logical_volumes": [
+    {
+      "vg_name": "openebs-proxmox-hdd",
+      "lv_name": "openebs-proxmox-hdd_thinpool",
+      "lv_size": "463126659072",
+      "segtype": "thin-pool",
+      "data_percent": "72.47",
+      "metadata_percent": "27.05",
+      "lv_attr": "twi-aotz--",
+      "matching_pvs": []
+    },
+    {
+      "vg_name": "openebs-proxmox-hdd",
+      "lv_name": "pvc-0552e5a0-9519-4d3f-a707-7e05d2fd61a7",
+      "lv_size": "375809638400",
+      "segtype": "thin",
+      "data_percent": "83.61",
+      "metadata_percent": "",
+      "lv_attr": "Vwi-aotz--",
+      "matching_pvs": ["pvc-0552e5a0-9519-4d3f-a707-7e05d2fd61a7"]
+    },
+    {
+      "vg_name": "openebs-proxmox-hdd",
+      "lv_name": "pvc-36ddc9d5-f556-4759-9863-3f8083138f6a",
+      "lv_size": "21474836480",
+      "segtype": "thin",
+      "data_percent": "99.80",
+      "metadata_percent": "",
+      "lv_attr": "Vwi-a-tz--",
+      "matching_pvs": ["pvc-36ddc9d5-f556-4759-9863-3f8083138f6a"]
+    },
+    {
+      "vg_name": "openebs-proxmox-ssd",
+      "lv_name": "openebs-lvmvg_thinpool",
+      "lv_size": "32212254720",
+      "segtype": "thin-pool",
+      "data_percent": "11.65",
+      "metadata_percent": "13.95",
+      "lv_attr": "twi-aotz--",
+      "matching_pvs": []
+    },
+    {
+      "vg_name": "openebs-proxmox-ssd",
+      "lv_name": "pvc-2ab68d88-2e05-4ac5-bb0a-34ebccf949e4",
+      "lv_size": "32212254720",
+      "segtype": "thin",
+      "data_percent": "2.00",
+      "metadata_percent": "",
+      "lv_attr": "Vwi-a-tz--",
+      "matching_pvs": []
+    },
+    {
+      "vg_name": "openebs-proxmox-ssd",
+      "lv_name": "pvc-4238eb1d-7747-4c44-ad18-f8f55349d655",
+      "lv_size": "1073741824",
+      "segtype": "thin",
+      "data_percent": "5.87",
+      "metadata_percent": "",
+      "lv_attr": "Vwi-a-tz--",
+      "matching_pvs": []
+    },
+    {
+      "vg_name": "openebs-proxmox-ssd",
+      "lv_name": "pvc-4e9ea2ee-a8e9-42d3-999f-13fef7e0cdf7",
+      "lv_size": "32212254720",
+      "segtype": "thin",
+      "data_percent": "2.00",
+      "metadata_percent": "",
+      "lv_attr": "Vwi-a-tz--",
+      "matching_pvs": []
+    },
+    {
+      "vg_name": "openebs-proxmox-ssd",
+      "lv_name": "pvc-5a2f4f97-c294-4e39-a91e-9c070f76e0b1",
+      "lv_size": "1073741824",
+      "segtype": "thin",
+      "data_percent": "4.82",
+      "metadata_percent": "",
+      "lv_attr": "Vwi-a-tz--",
+      "matching_pvs": []
+    },
+    {
+      "vg_name": "openebs-proxmox-ssd",
+      "lv_name": "pvc-a70ee00f-2cc7-4226-a790-c27db9fe7989",
+      "lv_size": "1073741824",
+      "segtype": "thin",
+      "data_percent": "4.80",
+      "metadata_percent": "",
+      "lv_attr": "Vwi-a-tz--",
+      "matching_pvs": []
+    },
+    {
+      "vg_name": "openebs-proxmox-ssd",
+      "lv_name": "pvc-ba47f069-0f9b-4897-96c5-6d8542d666e8",
+      "lv_size": "1073741824",
+      "segtype": "thin",
+      "data_percent": "5.40",
+      "metadata_percent": "",
+      "lv_attr": "Vwi-a-tz--",
+      "matching_pvs": []
+    },
+    {
+      "vg_name": "openebs-proxmox-ssd",
+      "lv_name": "pvc-ecd20a44-680c-4d9a-bf31-4781ad9749d1",
+      "lv_size": "53687091200",
+      "segtype": "thin",
+      "data_percent": "2.08",
+      "metadata_percent": "",
+      "lv_attr": "Vwi-a-tz--",
+      "matching_pvs": []
+    },
+    {
+      "vg_name": "openebs-proxmox-ssd",
+      "lv_name": "pvc-fb7ba339-7a0d-4b8b-9b18-e3c866209858",
+      "lv_size": "53687091200",
+      "segtype": "thin",
+      "data_percent": "2.08",
+      "metadata_percent": "",
+      "lv_attr": "Vwi-a-tz--",
+      "matching_pvs": []
+    }
+  ]
+}

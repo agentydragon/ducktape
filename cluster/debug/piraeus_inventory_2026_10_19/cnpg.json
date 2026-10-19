@@ -1,0 +1,170 @@
+[
+  {
+    "namespace": "agentplane-index",
+    "name": "agentplane-index-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "agentplane-index-db-2",
+    "storage_class": "local-path-ovh-ssd"
+  },
+  {
+    "namespace": "agentplane-staging",
+    "name": "postgres",
+    "instances": 2,
+    "ready": 2,
+    "primary": "postgres-2",
+    "storage_class": "local-path-ovh-ssd"
+  },
+  {
+    "namespace": "agentplane-testing",
+    "name": "postgres",
+    "instances": 1,
+    "ready": 1,
+    "primary": "postgres-1",
+    "storage_class": "local-path-ovh-ssd"
+  },
+  {
+    "namespace": "atuin",
+    "name": "atuin-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "atuin-db-4",
+    "storage_class": "local-path-ovh-ssd"
+  },
+  {
+    "namespace": "authentik",
+    "name": "authentik-db-ovh",
+    "instances": 2,
+    "ready": 2,
+    "primary": "authentik-db-ovh-4",
+    "storage_class": "local-path-ovh-ssd"
+  },
+  {
+    "namespace": "claude-session-sync",
+    "name": "claude-session-sync-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "claude-session-sync-db-1",
+    "storage_class": "local-path-ovh-hdd"
+  },
+  {
+    "namespace": "forgejo",
+    "name": "forgejo-db-ssd",
+    "instances": 2,
+    "ready": 2,
+    "primary": "forgejo-db-ssd-2",
+    "storage_class": "local-path-ovh-ssd"
+  },
+  {
+    "namespace": "gatus",
+    "name": "gatus-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "gatus-db-1",
+    "storage_class": "local-path-ovh"
+  },
+  {
+    "namespace": "haku-console",
+    "name": "haku-console-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "haku-console-db-4",
+    "storage_class": "local-path-ovh"
+  },
+  {
+    "namespace": "haku-mailbox",
+    "name": "haku-mailbox-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "haku-mailbox-db-2",
+    "storage_class": "local-path-ovh"
+  },
+  {
+    "namespace": "langfuse",
+    "name": "langfuse-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "langfuse-db-1",
+    "storage_class": "local-path-ovh-ssd"
+  },
+  {
+    "namespace": "litellm",
+    "name": "litellm-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "litellm-db-3",
+    "storage_class": "local-path-ovh"
+  },
+  {
+    "namespace": "matrix",
+    "name": "matrix-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "matrix-db-2",
+    "storage_class": "local-path-ovh"
+  },
+  {
+    "namespace": "mcp-oauth-state",
+    "name": "mcp-oauth-state-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "mcp-oauth-state-db-2",
+    "storage_class": "local-path-ovh-hdd"
+  },
+  {
+    "namespace": "monitoring",
+    "name": "grafana-db-ovh",
+    "instances": 2,
+    "ready": 2,
+    "primary": "grafana-db-ovh-5",
+    "storage_class": "local-path-ovh"
+  },
+  {
+    "namespace": "nix-cache",
+    "name": "attic-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "attic-db-2",
+    "storage_class": "local-path-ovh"
+  },
+  {
+    "namespace": "ntfy",
+    "name": "ntfy-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "ntfy-db-1",
+    "storage_class": "local-path-ovh-hdd"
+  },
+  {
+    "namespace": "plaid-mcp",
+    "name": "plaid-mcp-db",
+    "instances": 2,
+    "ready": 2,
+    "primary": "plaid-mcp-db-2",
+    "storage_class": "local-path-ovh"
+  },
+  {
+    "namespace": "seaweedfs",
+    "name": "seaweedfs-filer-db-ssd",
+    "instances": 2,
+    "ready": 2,
+    "primary": "seaweedfs-filer-db-ssd-2",
+    "storage_class": "local-path-ovh-ssd"
+  },
+  {
+    "namespace": "study-casino",
+    "name": "study-casino-db",
+    "instances": 3,
+    "ready": 3,
+    "primary": "study-casino-db-6",
+    "storage_class": "local-path-ovh-ssd"
+  },
+  {
+    "namespace": "tofu-state",
+    "name": "tofu-state-db-ovh",
+    "instances": 2,
+    "ready": 2,
+    "primary": "tofu-state-db-ovh-4",
+    "storage_class": "local-path-ovh-ssd"
+  }
+]

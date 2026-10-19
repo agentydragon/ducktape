@@ -1,0 +1,511 @@
+[
+  {
+    "node": "optiplex",
+    "disks": [
+      {
+        "device": "/dev/nvme0n1",
+        "bytes": 256060514304,
+        "model": "BC511 NVMe SK hynix 256GB",
+        "rotational": null,
+        "stable_id": "/dev/disk/by-id/nvme-BC511_NVMe_SK_hynix_256GB_AS9CN54631CA0CT13"
+      }
+    ],
+    "volumes": [
+      {
+        "device": "/dev/nvme0n1",
+        "type": "disk",
+        "filesystem": "gpt",
+        "parent": null,
+        "bytes": 256060514304,
+        "offset_bytes": 0,
+        "label": null
+      },
+      {
+        "device": "/dev/nvme0n1p1",
+        "type": "partition",
+        "filesystem": "vfat",
+        "parent": "/dev/nvme0n1",
+        "bytes": 2203058176,
+        "offset_bytes": 1048576,
+        "label": "EFI"
+      },
+      {
+        "device": "/dev/nvme0n1p2",
+        "type": "partition",
+        "filesystem": "talosmeta",
+        "parent": "/dev/nvme0n1",
+        "bytes": 1048576,
+        "offset_bytes": 2204106752,
+        "label": "META"
+      },
+      {
+        "device": "/dev/nvme0n1p3",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/nvme0n1",
+        "bytes": 104857600,
+        "offset_bytes": 2205155328,
+        "label": "STATE"
+      },
+      {
+        "device": "/dev/nvme0n1p4",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/nvme0n1",
+        "bytes": 253750149120,
+        "offset_bytes": 2310012928,
+        "label": "EPHEMERAL"
+      }
+    ]
+  },
+  {
+    "node": "ovh-ns1001419",
+    "disks": [
+      {
+        "device": "/dev/nvme0n1",
+        "bytes": 512110190592,
+        "model": "WDC CL SN720 SDAQNTW-512G-2000",
+        "rotational": null,
+        "stable_id": "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_190130800417"
+      },
+      {
+        "device": "/dev/nvme1n1",
+        "bytes": 512110190592,
+        "model": "WDC CL SN720 SDAQNTW-512G-2000",
+        "rotational": null,
+        "stable_id": "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_1951A3449505"
+      }
+    ],
+    "volumes": [
+      {
+        "device": "/dev/nvme0n1",
+        "type": "disk",
+        "filesystem": "gpt",
+        "parent": null,
+        "bytes": 512110190592,
+        "offset_bytes": 0,
+        "label": null
+      },
+      {
+        "device": "/dev/nvme0n1p1",
+        "type": "partition",
+        "filesystem": "vfat",
+        "parent": "/dev/nvme0n1",
+        "bytes": 2203058176,
+        "offset_bytes": 1048576,
+        "label": "EFI"
+      },
+      {
+        "device": "/dev/nvme0n1p2",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/nvme0n1",
+        "bytes": 104857600,
+        "offset_bytes": 2204106752,
+        "label": "STATE"
+      },
+      {
+        "device": "/dev/nvme0n1p4",
+        "type": "partition",
+        "filesystem": "talosmeta",
+        "parent": "/dev/nvme0n1",
+        "bytes": 1048576,
+        "offset_bytes": 4302307328,
+        "label": "META"
+      },
+      {
+        "device": "/dev/nvme0n1p5",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/nvme0n1",
+        "bytes": 507806482432,
+        "offset_bytes": 4303355904,
+        "label": "EPHEMERAL"
+      },
+      {
+        "device": "/dev/nvme1n1",
+        "type": "disk",
+        "filesystem": "xfs",
+        "parent": null,
+        "bytes": 512110190592,
+        "offset_bytes": 0,
+        "label": null
+      }
+    ]
+  },
+  {
+    "node": "ovh-ns102453",
+    "disks": [
+      {
+        "device": "/dev/sda",
+        "bytes": 4000787030016,
+        "model": "HGST HUS726T4TAL",
+        "rotational": true,
+        "stable_id": "/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V1HADBTH"
+      },
+      {
+        "device": "/dev/sdb",
+        "bytes": 4000787030016,
+        "model": "HGST HUS726T4TAL",
+        "rotational": true,
+        "stable_id": "/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V3H370PN"
+      }
+    ],
+    "volumes": [
+      {
+        "device": "/dev/sda",
+        "type": "disk",
+        "filesystem": "gpt",
+        "parent": null,
+        "bytes": 4000787030016,
+        "offset_bytes": 0,
+        "label": null
+      },
+      {
+        "device": "/dev/sda1",
+        "type": "partition",
+        "filesystem": "vfat",
+        "parent": "/dev/sda",
+        "bytes": 2203058176,
+        "offset_bytes": 1048576,
+        "label": "EFI"
+      },
+      {
+        "device": "/dev/sda2",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/sda",
+        "bytes": 104857600,
+        "offset_bytes": 2204106752,
+        "label": "STATE"
+      },
+      {
+        "device": "/dev/sda4",
+        "type": "partition",
+        "filesystem": "talosmeta",
+        "parent": "/dev/sda",
+        "bytes": 1048576,
+        "offset_bytes": 0,
+        "label": "META"
+      },
+      {
+        "device": "/dev/sda5",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/sda",
+        "bytes": 3996482797568,
+        "offset_bytes": 4303355904,
+        "label": "EPHEMERAL"
+      },
+      {
+        "device": "/dev/sdb",
+        "type": "disk",
+        "filesystem": "xfs",
+        "parent": null,
+        "bytes": 4000787030016,
+        "offset_bytes": 0,
+        "label": null
+      }
+    ]
+  },
+  {
+    "node": "ovh-ns103656",
+    "disks": [
+      {
+        "device": "/dev/sda",
+        "bytes": 2000398934016,
+        "model": "HGST HUS726020AL",
+        "rotational": true,
+        "stable_id": "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H5NGHA"
+      },
+      {
+        "device": "/dev/sdb",
+        "bytes": 2000398934016,
+        "model": "HGST HUS726020AL",
+        "rotational": true,
+        "stable_id": "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"
+      }
+    ],
+    "volumes": [
+      {
+        "device": "/dev/sda",
+        "type": "disk",
+        "filesystem": "gpt",
+        "parent": null,
+        "bytes": 2000398934016,
+        "offset_bytes": 0,
+        "label": null
+      },
+      {
+        "device": "/dev/sda1",
+        "type": "partition",
+        "filesystem": "vfat",
+        "parent": "/dev/sda",
+        "bytes": 2203058176,
+        "offset_bytes": 1048576,
+        "label": "EFI"
+      },
+      {
+        "device": "/dev/sda2",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/sda",
+        "bytes": 104857600,
+        "offset_bytes": 2204106752,
+        "label": "STATE"
+      },
+      {
+        "device": "/dev/sda4",
+        "type": "partition",
+        "filesystem": "talosmeta",
+        "parent": "/dev/sda",
+        "bytes": 1048576,
+        "offset_bytes": 4302307328,
+        "label": "META"
+      },
+      {
+        "device": "/dev/sda5",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/sda",
+        "bytes": 1996095488000,
+        "offset_bytes": 4303355904,
+        "label": "EPHEMERAL"
+      },
+      {
+        "device": "/dev/sdb",
+        "type": "disk",
+        "filesystem": "xfs",
+        "parent": null,
+        "bytes": 2000398934016,
+        "offset_bytes": 0,
+        "label": null
+      }
+    ]
+  },
+  {
+    "node": "ovh-ns103711",
+    "disks": [
+      {
+        "device": "/dev/sda",
+        "bytes": 2000398934016,
+        "model": "HGST HUS726020AL",
+        "rotational": true,
+        "stable_id": "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H61MEA"
+      },
+      {
+        "device": "/dev/sdb",
+        "bytes": 2000398934016,
+        "model": "HGST HUS726020AL",
+        "rotational": true,
+        "stable_id": "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H48V6A"
+      }
+    ],
+    "volumes": [
+      {
+        "device": "/dev/sda",
+        "type": "disk",
+        "filesystem": "gpt",
+        "parent": null,
+        "bytes": 2000398934016,
+        "offset_bytes": 0,
+        "label": null
+      },
+      {
+        "device": "/dev/sda1",
+        "type": "partition",
+        "filesystem": "vfat",
+        "parent": "/dev/sda",
+        "bytes": 2203058176,
+        "offset_bytes": 1048576,
+        "label": "EFI"
+      },
+      {
+        "device": "/dev/sda2",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/sda",
+        "bytes": 104857600,
+        "offset_bytes": 2204106752,
+        "label": "STATE"
+      },
+      {
+        "device": "/dev/sda4",
+        "type": "partition",
+        "filesystem": "talosmeta",
+        "parent": "/dev/sda",
+        "bytes": 1048576,
+        "offset_bytes": 4302307328,
+        "label": "META"
+      },
+      {
+        "device": "/dev/sda5",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/sda",
+        "bytes": 1996095488000,
+        "offset_bytes": 4303355904,
+        "label": "EPHEMERAL"
+      },
+      {
+        "device": "/dev/sdb",
+        "type": "disk",
+        "filesystem": "xfs",
+        "parent": null,
+        "bytes": 2000398934016,
+        "offset_bytes": 0,
+        "label": null
+      }
+    ]
+  },
+  {
+    "node": "ovh-ns104952",
+    "disks": [
+      {
+        "device": "/dev/nvme0n1",
+        "bytes": 450098159616,
+        "model": "INTEL SSDPE2MX450G7",
+        "rotational": null,
+        "stable_id": "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256006P450RGN"
+      },
+      {
+        "device": "/dev/nvme1n1",
+        "bytes": 450098159616,
+        "model": "INTEL SSDPE2MX450G7",
+        "rotational": null,
+        "stable_id": "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN"
+      }
+    ],
+    "volumes": [
+      {
+        "device": "/dev/nvme0n1",
+        "type": "disk",
+        "filesystem": "gpt",
+        "parent": null,
+        "bytes": 450098159616,
+        "offset_bytes": 0,
+        "label": null
+      },
+      {
+        "device": "/dev/nvme0n1p1",
+        "type": "partition",
+        "filesystem": "vfat",
+        "parent": "/dev/nvme0n1",
+        "bytes": 2203058176,
+        "offset_bytes": 1048576,
+        "label": "EFI"
+      },
+      {
+        "device": "/dev/nvme0n1p2",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/nvme0n1",
+        "bytes": 104857600,
+        "offset_bytes": 2204106752,
+        "label": "STATE"
+      },
+      {
+        "device": "/dev/nvme0n1p4",
+        "type": "partition",
+        "filesystem": "talosmeta",
+        "parent": "/dev/nvme0n1",
+        "bytes": 1048576,
+        "offset_bytes": 4302307328,
+        "label": "META"
+      },
+      {
+        "device": "/dev/nvme0n1p5",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/nvme0n1",
+        "bytes": 445794746368,
+        "offset_bytes": 4303355904,
+        "label": "EPHEMERAL"
+      },
+      {
+        "device": "/dev/nvme1n1",
+        "type": "disk",
+        "filesystem": "xfs",
+        "parent": null,
+        "bytes": 450098159616,
+        "offset_bytes": 0,
+        "label": null
+      }
+    ]
+  },
+  {
+    "node": "ovh-ns104963",
+    "disks": [
+      {
+        "device": "/dev/nvme0n1",
+        "bytes": 450098159616,
+        "model": "INTEL SSDPE2MX450G7",
+        "rotational": null,
+        "stable_id": "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256002V450RGN"
+      },
+      {
+        "device": "/dev/nvme1n1",
+        "bytes": 450098159616,
+        "model": "INTEL SSDPE2MX450G7",
+        "rotational": null,
+        "stable_id": "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U450RGN"
+      }
+    ],
+    "volumes": [
+      {
+        "device": "/dev/nvme0n1",
+        "type": "disk",
+        "filesystem": "gpt",
+        "parent": null,
+        "bytes": 450098159616,
+        "offset_bytes": 0,
+        "label": null
+      },
+      {
+        "device": "/dev/nvme0n1p1",
+        "type": "partition",
+        "filesystem": "vfat",
+        "parent": "/dev/nvme0n1",
+        "bytes": 2203058176,
+        "offset_bytes": 1048576,
+        "label": "EFI"
+      },
+      {
+        "device": "/dev/nvme0n1p2",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/nvme0n1",
+        "bytes": 104857600,
+        "offset_bytes": 2204106752,
+        "label": "STATE"
+      },
+      {
+        "device": "/dev/nvme0n1p4",
+        "type": "partition",
+        "filesystem": "talosmeta",
+        "parent": "/dev/nvme0n1",
+        "bytes": 1048576,
+        "offset_bytes": 4302307328,
+        "label": "META"
+      },
+      {
+        "device": "/dev/nvme0n1p5",
+        "type": "partition",
+        "filesystem": "xfs",
+        "parent": "/dev/nvme0n1",
+        "bytes": 445794746368,
+        "offset_bytes": 4303355904,
+        "label": "EPHEMERAL"
+      },
+      {
+        "device": "/dev/nvme1n1",
+        "type": "disk",
+        "filesystem": "xfs",
+        "parent": null,
+        "bytes": 450098159616,
+        "offset_bytes": 0,
+        "label": null
+      }
+    ]
+  }
+]

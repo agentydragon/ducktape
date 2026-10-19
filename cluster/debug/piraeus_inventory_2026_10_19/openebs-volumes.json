@@ -1,0 +1,18 @@
+[
+  {
+    "namespace": "openebs",
+    "name": "pvc-0552e5a0-9519-4d3f-a707-7e05d2fd61a7",
+    "volume": null,
+    "owner": null,
+    "node": "wyrm2",
+    "state": "Ready"
+  },
+  {
+    "namespace": "openebs",
+    "name": "pvc-36ddc9d5-f556-4759-9863-3f8083138f6a",
+    "volume": null,
+    "owner": null,
+    "node": "wyrm2",
+    "state": "Ready"
+  }
+]

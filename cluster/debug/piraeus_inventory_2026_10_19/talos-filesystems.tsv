@@ -1,0 +1,14 @@
+node	device	capacity_GB	used_GB	available_GB	used_percent	mount
+ovh-ns102453	/dev/sda5	3994.53	652.64	3341.89	16.34%	/var
+ovh-ns102453	/dev/sdb	3998.83	1612.86	2385.98	40.33%	/var/mnt/local-path-ovh-hdd
+ovh-ns103656	/dev/sda5	1995.12	527.83	1467.29	26.46%	/var
+ovh-ns103656	/dev/sdb	1999.42	1120.84	878.58	56.06%	/var/mnt/local-path-ovh-hdd
+ovh-ns103711	/dev/sda5	1995.12	385.36	1609.77	19.31%	/var
+ovh-ns103711	/dev/sdb	1999.42	1151.25	848.17	57.58%	/var/mnt/local-path-ovh-hdd
+ovh-ns104952	/dev/nvme0n1p5	445.58	185.68	259.90	41.67%	/var
+ovh-ns104952	/dev/nvme1n1	449.88	39.38	410.50	8.75%	/var/mnt/seaweedfs-data
+ovh-ns104963	/dev/nvme0n1p5	445.58	183.94	261.64	41.28%	/var
+ovh-ns104963	/dev/nvme1n1	449.88	39.18	410.69	8.71%	/var/mnt/seaweedfs-data
+ovh-ns1001419	/dev/nvme0n1p5	507.56	36.36	471.19	7.16%	/var
+ovh-ns1001419	/dev/nvme1n1	511.86	12.06	499.80	2.36%	/var/mnt/seaweedfs-data
+optiplex	/dev/nvme0n1p4	253.63	192.88	60.75	76.05%	/var

@@ -1,0 +1,13 @@
+{
+  "kubernetes_snapshot_utc": "2026-10-19T07:08:29Z",
+  "collection_completed_utc": "2026-10-19T07:16:18Z",
+  "source_revision": "882f2c3ce72148cd463aaa86256972e5aac6ec25",
+  "scope": "read-only Talos APIs, local host metadata, Kubernetes objects excluding Secrets, bounded authenticated SSH probes",
+  "talos_client": "1.14.2",
+  "talos_servers": "1.14.0",
+  "pv_count": 98,
+  "bound_pvs": 93,
+  "released_pvs": 5,
+  "raw_pod_specs": "private, not committed",
+  "filesystem_units": "Talos GB decimal rounded to 0.01 GB; wyrm2/LVM bytes"
+}

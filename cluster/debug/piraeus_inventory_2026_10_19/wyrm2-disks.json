@@ -1,0 +1,86 @@
+[
+  {
+    "device": "/dev/sda",
+    "bytes": 536870912000,
+    "guest_rotational": true,
+    "filesystem": null
+  },
+  {
+    "device": "/dev/sdb",
+    "bytes": 21474836480,
+    "guest_rotational": true,
+    "filesystem": "ext4"
+  },
+  {
+    "device": "/dev/sdc",
+    "bytes": 322122547200,
+    "guest_rotational": true,
+    "filesystem": "ext4"
+  },
+  {
+    "device": "/dev/vda",
+    "bytes": 536870912000,
+    "guest_rotational": true,
+    "filesystem": "ext4"
+  },
+  {
+    "device": "/dev/vdb",
+    "bytes": 536870912000,
+    "guest_rotational": true,
+    "filesystem": "ext4"
+  },
+  {
+    "device": "/dev/vdc",
+    "bytes": 536870912000,
+    "guest_rotational": true,
+    "filesystem": "LVM2_member"
+  },
+  {
+    "device": "/dev/vdd",
+    "bytes": 214748364800,
+    "guest_rotational": true,
+    "filesystem": "ext4"
+  },
+  {
+    "device": "/dev/vde",
+    "bytes": 322122547200,
+    "guest_rotational": true,
+    "filesystem": "ext4"
+  },
+  {
+    "device": "/dev/vdg",
+    "bytes": 536870912000,
+    "guest_rotational": true,
+    "filesystem": "LVM2_member"
+  },
+  {
+    "device": "/dev/vdh",
+    "bytes": 1099511627776,
+    "guest_rotational": true,
+    "filesystem": "ext4"
+  },
+  {
+    "device": "/dev/vdi",
+    "bytes": 1099511627776,
+    "guest_rotational": true,
+    "filesystem": "ext4"
+  },
+  {
+    "device": "/dev/vdj",
+    "bytes": 17179869184,
+    "guest_rotational": true,
+    "filesystem": "ext4"
+  },
+  {
+    "device": "/dev/vdk",
+    "bytes": 214748364800,
+    "guest_rotational": true,
+    "filesystem": "ext4"
+  },
+  {
+    "device": "/dev/vdl",
+    "bytes": 536870912000,
+    "guest_rotational": true,
+    "filesystem": "ext4"
+  }
+]
