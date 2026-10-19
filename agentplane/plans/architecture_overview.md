@@ -270,11 +270,14 @@ without the History Service records disappearing", but "I'm not sure if sandbox 
 involved". It need not be: History already records each Session's writer namespace and name on the
 first push ([History README](../history_service/README.md#which-sandbox-wrote-a-session)) and lacks
 only the UID and tags, and a purge can be a History call the app makes after removing the CR. The
-tags are the one bridge, since History "never routes to, reads or manages Sandboxes" ([service
-boundaries](../docs/service_boundaries.md)). Either they live in History's Sandbox entity from
-launch, written by the app at launch and on retag, read by Notification's send check, and imported
-when authored in git; or they live on the CR and History copies them when it goes, which needs
-History to read Sandboxes and hold a finalizer of its own, against that rule.
+tags are the one bridge. They stay on the CR, since "history should not be required for the tags
+feature": sending is checked against them with no History involved (23:27). History needs them only
+for read grants, and "never routes to, reads or manages Sandboxes" ([service
+boundaries](../docs/service_boundaries.md)). It could watch Sandboxes' tags and keep the last ones
+it saw once the CR goes, with no finalizer; the only gap is a tag edit made while History is down
+just before a delete, which an app retag fixes. That relaxes the rule to reading Sandbox tags.
+Without it, the app copies the tags into History when it archives, and a plain `kubectl delete`
+archives without them.
 
 ## Right under every direction
 
