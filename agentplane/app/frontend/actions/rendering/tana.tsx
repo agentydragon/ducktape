@@ -44,7 +44,7 @@ export const calendarNodeArgumentsPreview: ArgumentsPreview = definePreview(
 
 export const calendarNodePresentation: ActionPresentation = {
   label: calendarNodeLabel,
-  pane: { opened: calendarNodeArgumentsPreview },
+  pane: { collapsed: calendarNodeArgumentsPreview, opened: calendarNodeArgumentsPreview },
   details: { arguments: calendarNodeArgumentsPreview },
 };
 

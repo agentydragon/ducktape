@@ -87,10 +87,12 @@ describe("Action presentation slots", () => {
     const action = { group: "kubernetes_admin", name: "resources_get" };
     const args = { apiVersion: "apps/v1", kind: "Deployment", name: "web", namespace: "apps" };
     const label = await mount(renderActionLabel(action, args));
+    const collapsed = await mount(renderPaneCollapsed(action, args));
     const opened = await mount(renderPaneOpened(action, args));
     const details = await mount(renderDetailsArguments(action, args));
 
     expect(label.textContent).toContain("Get Deployment apps/web");
+    expect(collapsed.textContent).toContain("Read with API version apps/v1");
     expect(opened.textContent).toContain("Read with API version apps/v1");
     expect(details.textContent).toContain("Read with API version apps/v1");
     expect(details.textContent).not.toContain("Get Deployment");
@@ -116,20 +118,52 @@ describe("Action presentation slots", () => {
 
   it("puts list scope in Kubernetes action labels and leaves only filters in the pane", async () => {
     const listArgs = { apiVersion: "v1", kind: "Pod", namespace: "apps", labelSelector: "app=web" };
-    const listLabel = await mount(renderActionLabel({ group: "kubernetes_admin", name: "resources_list" }, listArgs));
-    const listPane = await mount(renderPaneOpened({ group: "kubernetes_admin", name: "resources_list" }, listArgs));
+    const listAction = { group: "kubernetes_admin", name: "resources_list" };
+    const listLabel = await mount(renderActionLabel(listAction, listArgs));
+    const listCollapsed = await mount(renderPaneCollapsed(listAction, listArgs));
+    const listPane = await mount(renderPaneOpened(listAction, listArgs));
     expect(listLabel.textContent).toContain("List Pod resources in namespace apps");
+    expect(listCollapsed.textContent).toContain("label selector app=web");
+    expect(listCollapsed.textContent).not.toContain("API version");
+    expect(listCollapsed.textContent).not.toContain("apps");
     expect(listPane.textContent).toContain("label selector app=web");
     expect(listPane.textContent).toContain("Using API version v1");
     expect(listPane.textContent).not.toContain("apps");
 
     const eventsArgs = { namespace: "apps", fieldSelector: "type=Warning" };
-    const eventsLabel = await mount(renderActionLabel({ group: "kubernetes_admin", name: "events_list" }, eventsArgs));
-    const eventsPane = await mount(renderPaneOpened({ group: "kubernetes_admin", name: "events_list" }, eventsArgs));
+    const eventsAction = { group: "kubernetes_admin", name: "events_list" };
+    const eventsLabel = await mount(renderActionLabel(eventsAction, eventsArgs));
+    const eventsCollapsed = await mount(renderPaneCollapsed(eventsAction, eventsArgs));
+    const eventsPane = await mount(renderPaneOpened(eventsAction, eventsArgs));
     expect(eventsLabel.textContent).toContain("List events in namespace apps");
+    expect(eventsCollapsed.textContent).toContain("Show events matching");
+    expect(eventsCollapsed.textContent).toContain("type=Warning");
+    expect(eventsCollapsed.textContent).not.toContain("apps");
     expect(eventsPane.textContent).toContain("Show events matching");
     expect(eventsPane.textContent).toContain("type=Warning");
     expect(eventsPane.textContent).not.toContain("apps");
+  });
+
+  it("shows calendar context and explicit delete grace in the collapsed pane", async () => {
+    const calendar = await mount(
+      renderPaneCollapsed(
+        { group: "tana", name: "get_or_create_calendar_node" },
+        { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" }
+      )
+    );
+    expect(calendar.textContent).toContain("week calendar node");
+    expect(calendar.textContent).toContain("2026-10-12");
+    expect(calendar.textContent).toContain("workspace-123");
+
+    const deletion = await mount(
+      renderPaneCollapsed(
+        { group: "kubernetes_admin", name: "resources_delete" },
+        { apiVersion: "v1", kind: "Pod", name: "web-0", namespace: "apps", gracePeriodSeconds: 0 }
+      )
+    );
+    expect(deletion.textContent).toContain("Use API version v1");
+    expect(deletion.textContent).toContain("request a 0s grace period");
+    expect(deletion.textContent).not.toContain("apps/web-0");
   });
 
   it("uses SSH's custom pane and full-details argument renderers", async () => {

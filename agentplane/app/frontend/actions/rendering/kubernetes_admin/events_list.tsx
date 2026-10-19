@@ -47,7 +47,7 @@ export const eventsListPane: ArgumentsPreview = definePreview(eventsListArgument
 
 export const eventsListPresentation: ActionPresentation = {
   label: eventsListLabel,
-  pane: { opened: eventsListPane },
+  pane: { collapsed: eventsListPane, opened: eventsListPane },
   details: { arguments: eventsListPane },
   offersCardDecisionButtons: offersCardDecisionButtonsEventsList,
 };

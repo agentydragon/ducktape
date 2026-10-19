@@ -188,8 +188,58 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
             ['"container": "sidecar-', '"previous": true', '"tail": -1'],
             "Previous logs",
         ),
+        (
+            "kubernetes_admin",
+            "resources_list",
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "namespace": "apps",
+                "fieldSelector": "status.phase=Running," + "x" * 48,
+                "labelSelector": "app=" + "demo-" + "d" * 56,
+            },
+            ["field selector status.phase=Running", "label selector app=demo-"],
+            "Matching resources where",
+        ),
+        (
+            "kubernetes_admin",
+            "events_list",
+            {"namespace": "apps", "fieldSelector": "type=Warning," + "reason-" * 8},
+            ["Show events matching", "type=Warning"],
+            "Show events matching",
+        ),
+        (
+            "kubernetes_admin",
+            "resources_get",
+            {"apiVersion": "apps/v1", "kind": "Deployment", "name": "web", "namespace": "apps"},
+            ["Read with API version apps/v1"],
+            "Read with API version apps/v1",
+        ),
+        (
+            "kubernetes_admin",
+            "resources_delete",
+            {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
+            ["Use API version v1", "request a 0s grace period"],
+            "Use API version v1",
+        ),
+        (
+            "tana",
+            "get_or_create_calendar_node",
+            {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
+            ["week calendar node", "2026-10-12", "workspace-123"],
+            "week calendar node",
+        ),
     ],
-    ids=["long-target-and-selectors", "gmail-query-limit", "previous-pod-logs"],
+    ids=[
+        "long-target-and-selectors",
+        "gmail-query-limit",
+        "previous-pod-logs",
+        "resource-list-selectors",
+        "event-field-selector",
+        "resource-get-version",
+        "resource-delete-grace-period",
+        "calendar-context",
+    ],
 )
 async def test_action_argument_layouts(
     view: VisualPage,
@@ -211,12 +261,14 @@ async def test_action_argument_layouts(
         await section.get_by_role("button", name=f"Expand {title}").click()
         for value in visible:
             await expect(section.get_by_text(value, exact=False)).to_be_visible()
-        await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
-        await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
+        if (group, name) not in {("kubernetes_admin", "resources_delete"), ("tana", "get_or_create_calendar_node")}:
+            await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+            await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     else:
         await expect(section.get_by_text(overview, exact=False)).to_be_visible()
-        await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
-        await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
+        if (group, name) not in {("kubernetes_admin", "resources_delete"), ("tana", "get_or_create_calendar_node")}:
+            await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+            await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     await view.capture(target=section)
 
 
