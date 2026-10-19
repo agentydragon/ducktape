@@ -1925,36 +1925,25 @@ flowchart LR
 
 ### `DISPATCHER_READS_FACADE` — Dispatcher reads as a generated browser API
 
-**In flight (the operator dispatched it in the delivery-facade thread, 2026-10-19 10:13 UTC; no PR
-yet).** Serve `GetDispatch`, `ListDispatches` and `WatchDispatches` as a generated HTTP/JSON facade from
-the Runner Gateway process, and replace `app/threads/dispatch_stream.py` and its route with the app's
-generic upstream proxy and a `fetch` stream client in the browser. This builds the machinery every other
-facade reuses. The page treats a command the Dispatcher no longer holds as `DELIVERY_STATE_UNKNOWN`, so the
-watch likely needs a marker that the current Dispatches have been sent; the node's design settles it. It
-lands as the Gateway code with its listener optional, then the manifests once that image is pinned, then
-the app and frontend change that deletes the old route. Exit evidence: missing, invalid and valid
-bearers behave as over gRPC; a stream arrives unbuffered through the app and ends on logout; the generated
-TypeScript types are chosen; one visual scene runs on the streaming stub.
-
-### `EGRESS_ADMIN_GRPC` — a gRPC interface beside the egress admin HTTP
-
 **In flight (the operator dispatched it in the delivery-facade thread, 2026-10-19 10:15 UTC; a worker is
-assigned).** Add a gRPC interface for the egress proxy's decisions list and stream and rules read, driven
-by the same readers as the hand-written HTTP handlers. The HTTP interface stays until
-`EGRESS_ADMIN_HTTP_TEARDOWN`. New listener and caller settings are optional until the image is pinned;
-manifests follow.
+assigned).** Add a gRPC copy of each egress HTTP API: the decisions list and stream on the admin listener,
+the rules API on the rules listener, and `healthz` and `livez` (the app probes `/healthz` today), each
+driven by the same readers and the same authentication as its hand-written HTTP handlers. Each copy serves
+on its HTTP API's existing listener, so no port or network-policy change (operator, 2026-10-19 10:48 UTC).
+The HTTP interfaces stay until `EGRESS_ADMIN_HTTP_TEARDOWN`. New caller settings are optional until the
+image is pinned; manifests follow.
 
 ### `EGRESS_ADMIN_APP_SWITCH` — the app reads egress admin over gRPC
 
-**Blocked on `EGRESS_ADMIN_GRPC` reaching the cluster (image pinned, listener configured).** Move the
-app's `DecisionsClient` and every other caller the inventory finds from the HTTP admin to the gRPC
-interface, adding the Python proto targets with it. Event-driven, as now: the decisions stream stays a
+**Blocked on `EGRESS_ADMIN_GRPC` reaching the cluster (image pinned, caller settings configured).** Move the
+app's `DecisionsClient`, its egress health probe and every other caller the inventory finds from the HTTP
+admin to the gRPC interface, adding the Python proto targets with it. Event-driven, as now: the decisions stream stays a
 stream.
 
 ### `EGRESS_ADMIN_HTTP_TEARDOWN` — remove the hand-written egress admin HTTP
 
 **Blocked on `EGRESS_ADMIN_APP_SWITCH` being rolled out.** Delete the `/decisions`, `/decisions/changes`,
-`/v1/rules` and OpenAPI handlers and the admin port setting, after every caller's image is pinned
+`/healthz`, `/livez`, `/v1/rules` and OpenAPI handlers, after every caller's image is pinned
 (removals follow their callers). Inventory callers first, including the rules route the
 [agent CLI](agent_cli.md) plan's egress commands target: where an HTTP caller remains, the generated facade
 from `DISPATCHER_READS_FACADE` replaces the handler instead of leaving two interfaces.
