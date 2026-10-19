@@ -1,8 +1,11 @@
 import { type JSX, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Badge, Button, Code, Paper, SegmentedControl, Stack, Text } from "@mantine/core";
+import { Alert, Anchor, Badge, Button, Code, Group, Paper, SegmentedControl, Stack, Text } from "@mantine/core";
 
-import { useSearchParams } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
 
+import { Disclosure, DisclosureBody } from "../disclosure";
+import { RawSwitch } from "../raw_switch";
+import { TimeAgo } from "../time_ago";
 import { displayableError } from "../client";
 import { ClampedBlock, lineCount } from "../clamped_block";
 import { OUTPUT_MAX_HEIGHT_REM } from "../command_view";
@@ -15,8 +18,11 @@ import { actionHistory, getAction, listActionGroups, type ActionRequestView } fr
 import {
   renderActionCall,
   renderActionOutcome,
+  renderActionLabel,
+  renderDetailsArguments,
   renderDetailsResult,
   renderNativeDetailsResult,
+  renderPaneCollapsed,
 } from "./rendering/index";
 import { stateLabel } from "./requests";
 
@@ -56,7 +62,16 @@ function ExecutionResult({
 
 /** A decided/terminal ActionRequest, kept as a durable receipt: the call as the operator saw it
  * when deciding, then the decision it is a record of and what came of it. */
-export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolean }): JSX.Element {
+export function ActionHistoryCard({
+  request,
+  mcp,
+  compact = false,
+}: {
+  request: ActionRequestView;
+  mcp: boolean;
+  compact?: boolean;
+}): JSX.Element {
+  const location = useLocation();
   const decision = request.decision;
   const policySet = decision?.policy_evidence?.matched.policy_set;
   const [raw, setRaw] = useState(false);
@@ -75,66 +90,149 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
       : undefined;
   const combinedCall = renderActionCall(request.action, request.arguments, call ?? undefined);
   const actionOutcome = call === null ? undefined : renderActionOutcome(request.action, call);
+  const toolError = request.state === "succeeded" && call?.isError === true;
+  const decisionLabel =
+    decision === null
+      ? undefined
+      : decision.verdict === "allow"
+        ? decision.operator === null
+          ? "Auto-allowed"
+          : "Allowed"
+        : "Denied";
+  const outcomeLabel = toolError
+    ? "Tool error"
+    : (actionOutcome?.label ??
+      (decisionState ? (decisionLabel ?? stateLabel(request.state)) : stateLabel(request.state)));
+  const failure =
+    ["failed", "cancelled", "execution_unknown"].includes(request.state) || toolError || actionOutcome?.failed === true;
+  const [receiptOpen, setReceiptOpen] = useState(failure);
+  useEffect(() => {
+    if (failure) setReceiptOpen(true);
+  }, [failure]);
+  function changeRaw(next: boolean): void {
+    setRaw(next);
+    if (next) setReceiptOpen(true);
+  }
+  const color = failure
+    ? "red"
+    : request.state === "succeeded"
+      ? "green"
+      : request.state === "denied"
+        ? "gray"
+        : "blue";
+  const status = (
+    <>
+      <Badge color={color} data-testid="action-execution-state">
+        {outcomeLabel}
+      </Badge>
+      {decision && !decisionState && (
+        <Badge color="gray" variant="light">
+          {decisionLabel}
+        </Badge>
+      )}
+    </>
+  );
+  const timestamp = (
+    <Text size="xs" c="dimmed">
+      {request.execution?.completed_at ? "Completed " : "Updated "}
+      <TimeAgo value={request.execution?.completed_at ?? request.updated_at} />
+    </Text>
+  );
+  const pretty =
+    call !== null ||
+    prettyResult !== undefined ||
+    renderDetailsArguments(request.action, request.arguments) !== undefined ||
+    combinedCall !== undefined;
+  const actionLabel = renderActionLabel(request.action, request.arguments);
+  const summary = renderPaneCollapsed(request.action, request.arguments);
+  const receipt = (
+    <Stack gap="sm">
+      <ActionCall
+        request={request}
+        status={status}
+        headerActions={timestamp}
+        raw={raw}
+        onRawChange={changeRaw}
+        prettyResult={call !== null || prettyResult !== undefined}
+        combinedCall={combinedCall}
+        detailsOnly={compact}
+      />
+      {decision?.decision_note && (
+        <ClampedBlock
+          maxHeightRem={OUTPUT_MAX_HEIGHT_REM}
+          lines={lineCount(decision.decision_note)}
+          label="Decision note"
+        >
+          <Text size="sm">{decision.decision_note}</Text>
+        </ClampedBlock>
+      )}
+      {policySet && (
+        <Text size="xs" c="dimmed">
+          Auto-approved via policy <Code>{policySet}</Code>
+        </Text>
+      )}
+      {(hasResult || hasExecutionError || !decisionState) && (
+        <Stack gap="xs" data-testid="action-execution-outcome">
+          {hasResult && !(combinedCall?.includesResult && !raw) && (
+            <ExecutionResult result={result} call={call} pretty={prettyResult} raw={raw} />
+          )}
+          {hasExecutionError && (
+            <div>
+              <Text size="sm" fw={600} mb={4}>
+                Execution error
+              </Text>
+              <ActionJson value={executionError} />
+            </div>
+          )}
+        </Stack>
+      )}
+    </Stack>
+  );
   return (
     <Paper withBorder p="md" data-action-receipt={request.id}>
-      <Stack gap="sm">
-        <ActionCall
-          request={request}
-          status={
-            <>
-              {decisionState && (
-                <Text size="xs" c="dimmed">
-                  {stateLabel(request.state)}
+      {compact ? (
+        <Stack gap="xs">
+          <Group justify="space-between" align="flex-start" gap="xs">
+            <div>
+              {actionLabel === undefined ? (
+                <Text fw={600}>
+                  {request.action.group} / {request.action.name}
                 </Text>
-              )}
-              {decision && (
-                <Badge color={decision.verdict === "allow" ? "green" : "red"}>
-                  {decision.verdict === "allow" ? "Allowed" : "Denied"}
-                </Badge>
-              )}
-              {actionOutcome && <Badge color={actionOutcome.failed ? "red" : "blue"}>{actionOutcome.label}</Badge>}
-            </>
-          }
-          raw={raw}
-          onRawChange={setRaw}
-          prettyResult={call !== null || prettyResult !== undefined}
-          combinedCall={combinedCall}
-        />
-        {decision?.decision_note && (
-          <ClampedBlock
-            maxHeightRem={OUTPUT_MAX_HEIGHT_REM}
-            lines={lineCount(decision.decision_note)}
-            label="Decision note"
-          >
-            <Text size="sm">{decision.decision_note}</Text>
-          </ClampedBlock>
-        )}
-        {policySet && (
-          <Text size="xs" c="dimmed">
-            Auto-approved via policy <Code>{policySet}</Code>
+              ) : actionLabel}
+            </div>
+            <Group gap="xs">
+              {status}
+              {pretty && <RawSwitch raw={raw} onChange={changeRaw} />}
+            </Group>
+          </Group>
+          <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+            {request.title}
           </Text>
-        )}
-        {(hasResult || hasExecutionError || (!decisionState && actionOutcome === undefined)) && (
-          <Stack gap="xs" data-testid="action-execution-outcome">
-            {hasResult && !(combinedCall?.includesResult && !raw) && (
-              <ExecutionResult result={result} call={call} pretty={prettyResult} raw={raw} />
-            )}
-            {hasExecutionError && (
-              <div>
-                <Text size="sm" fw={600} mb={4}>
-                  Execution error
-                </Text>
-                <ActionJson value={executionError} />
-              </div>
-            )}
-            {!decisionState && actionOutcome === undefined && (
-              <Text size="xs" c="dimmed" data-testid="action-execution-state">
-                {stateLabel(request.state)}
-              </Text>
-            )}
-          </Stack>
-        )}
-      </Stack>
+          {!raw && summary !== undefined && summary !== null && <div>{summary}</div>}
+          {request.external_grant && (
+            <Text size="xs" fw={600}>
+              Authenticated external caller at submission
+            </Text>
+          )}
+          <Group justify="space-between" gap="xs">
+            {timestamp}
+            <Anchor
+              component={Link}
+              to={`/actions/${request.id}`}
+              state={{ returnTo: location }}
+              size="xs"
+              aria-label={`View details for ${request.title}`}
+            >
+              View details
+            </Anchor>
+          </Group>
+          <Disclosure summary="Receipt details" open={receiptOpen} onOpenChange={setReceiptOpen} keepMounted>
+            <DisclosureBody>{receipt}</DisclosureBody>
+          </Disclosure>
+        </Stack>
+      ) : (
+        receipt
+      )}
     </Paper>
   );
 }
@@ -303,6 +401,7 @@ function ActionHistoryRequests({
       {decided.map((request) => (
         <ActionHistoryCard
           key={request.id}
+          compact
           request={request}
           mcp={executors.kinds?.get(request.action.group) === "mcp"}
         />

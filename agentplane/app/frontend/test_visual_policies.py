@@ -5,7 +5,7 @@ import re
 import pytest
 import pytest_asyncio
 import pytest_bazel
-from playwright.async_api import expect
+from playwright.async_api import Page, expect
 
 from agentplane.app.frontend.testing.visual_assertions import (
     _focus,
@@ -758,10 +758,29 @@ async def test_consent_reconnect_warning_desktop(reconnect_review: VisualPage) -
     await view.capture(target=view.page.locator("#app"))
 
 
+async def _open_history_receipts(page: Page) -> None:
+    for control in await page.get_by_role("button", name="Receipt details", exact=True).all():
+        if await control.get_attribute("aria-expanded") == "false":
+            await control.click()
+
+
+@DESKTOP_AND_MOBILE
+async def test_action_history_summaries(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.set_flag(Flag.PENDING_ACTIONS)
+    await app.mount_app("/actions")
+    page = view.page
+    summary = page.get_by_text("list the test backup archive", exact=True)
+    await expect(summary).to_be_visible()
+    await expect(page.get_by_role("link", name="View details for list the test backup archive")).to_be_visible()
+    await _focus(page, summary)
+    await view.capture(target=page.locator("#app"))
+
+
 @DESKTOP_AND_MOBILE
 async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
     await view.page.wait_for_selector('img[src^="data:image/"]', state="attached")
     await view.check(context="fixture ready")
@@ -776,6 +795,7 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
 async def test_gmail_draft_history_keeps_request_and_result_together(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.GMAIL_DRAFT_HISTORY)
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     page = view.page
     await expect(page.get_by_text("prepare the release email", exact=True)).to_be_visible()
     await expect(page.get_by_role("link", name="Release notes", exact=True)).to_be_visible()
@@ -790,6 +810,7 @@ async def test_gmail_draft_history_keeps_request_and_result_together(view: Visua
 async def test_action_history_diagram(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
     await view.page.wait_for_selector('img[src^="data:image/"]', state="attached")
     await view.check(context="fixture ready")
@@ -995,6 +1016,7 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
         result = {"content": []}
     await app.show_action_receipt(group, name, arguments, result)
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     page = view.page
     await expect(page.get_by_text("Long action text", exact=True)).to_be_visible()
     if kind == "email":

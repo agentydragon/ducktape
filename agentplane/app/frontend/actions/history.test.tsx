@@ -143,17 +143,33 @@ describe("ActionHistory", () => {
     expect(container.textContent).toContain("Execution error");
   });
 
-  it("places the execution state beneath its result", async () => {
+  it("puts the execution outcome in the summary separately from its permission decision", async () => {
     const container = await renderHistory([succeeded("test_sandbox", { ok: true })]);
-    const outcome = container.querySelector<HTMLElement>('[data-testid="action-execution-outcome"]');
-    const state = outcome?.querySelector('[data-testid="action-execution-state"]');
-
-    expect(outcome?.firstElementChild?.textContent).toContain("Result");
+    const state = container.querySelector('[data-testid="action-execution-state"]');
     expect(state?.textContent).toBe("succeeded");
-    expect(outcome?.lastElementChild).toBe(state);
+    expect(state?.closest('[data-testid="action-execution-outcome"]')).toBeNull();
+    expect(container.textContent).toContain("Allowed");
+    const summary = [...container.querySelectorAll("button")].find((node) => node.textContent === "Receipt details");
+    expect(summary?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector('a[href^="/actions/"]')).not.toBeNull();
+    expect(container.querySelector("time")?.getAttribute("datetime")).toBe("2026-09-05T12:00:02.000Z");
   });
 
-  it("shows the exact arguments open, as the pending card does", async () => {
+  it("opens failed receipts and makes tool errors visible even when dispatch succeeded", async () => {
+    const row = succeeded("test_mcp", { content: [{ type: "text", text: "permission rejected" }], isError: true });
+    const container = await renderHistory([row], [group("test_mcp", "mcp")]);
+    expect(container.querySelector('[data-testid="action-execution-state"]')?.textContent).toBe("Tool error");
+    const summary = [...container.querySelectorAll("button")].find((node) => node.textContent === "Receipt details");
+    expect(summary?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("shows a command failure in the summary while retaining its Allowed decision", async () => {
+    const container = await renderHistory([sshExec("succeeded", { exit_code: 7 })], [group("ssh", "mcp")]);
+    expect(container.querySelector('[data-testid="action-execution-state"]')?.textContent).toBe("Command exited 7");
+    expect(container.textContent).toContain("Allowed");
+  });
+
+  it("retains the exact arguments inside the receipt disclosure", async () => {
     const container = await renderHistory([request("succeeded", 1)]);
     expect(container.textContent).toContain("Exact arguments (unredacted)");
     const block = [...container.querySelectorAll(".agentplane-code-block")].find((node) =>
@@ -161,7 +177,11 @@ describe("ActionHistory", () => {
     );
     if (!block) throw new Error("missing the arguments");
     expect(block.closest("[data-clamped]")?.getAttribute("data-clamped")).toBe("false");
-    expect(block.closest("[hidden]")).toBeNull();
+    expect(
+      [...container.querySelectorAll("button")]
+        .find((node) => node.textContent === "Receipt details")
+        ?.getAttribute("aria-expanded")
+    ).toBe("false");
   });
 
   it("renders the auto-approving policy when the Decision carries policy evidence", async () => {
