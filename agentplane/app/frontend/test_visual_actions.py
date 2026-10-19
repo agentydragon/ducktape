@@ -311,7 +311,7 @@ async def test_action_presentations(
     await view.capture(f"{capture_name}-detail-result", target=receipt)
 
     await page.evaluate("window.location.hash = '/actions'")
-    await expect(page.get_by_role("heading", name="History", exact=True)).to_be_visible()
+    await expect(page.get_by_role("radio", name="Not auto-allowed", exact=True)).to_be_visible()
     await expect(page.locator("[data-action-receipt]")).to_have_count(1)
     await wait_for_stable(page)
     await view.capture(f"{capture_name}-history", target=page.locator("[data-action-receipt]"))
