@@ -351,8 +351,11 @@ if __name__ == "__main__":
     pytest_bazel.main()
 ```
 
-**pytest-asyncio auto mode** is configured via `conftest.py` hooks — do NOT add
-`@pytest.mark.asyncio` decorators.
+**pytest-asyncio auto mode** is configured via `conftest.py` hooks, so async tests
+need no `@pytest.mark.asyncio` decorator. Exception: a test using a session-scoped
+async fixture such as `playwright_driver` needs
+`@pytest.mark.asyncio(loop_scope="session")`; under auto mode alone it runs on a
+function loop, which for `playwright_driver` can hang browser startup.
 
 **No test skips for missing tools**: let the test fail. Tools come from Bazel runfiles
 or the RBE container image.
