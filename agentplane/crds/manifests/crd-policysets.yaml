@@ -1,301 +1,242 @@
-# A reusable, subject-free set of typed rules. On its own a set grants nothing; a PolicyBinding
-# attaches sets to a ServiceAccount. Each service reads only the rule types it enforces and reports
-# on each binding in its own status condition, so one set can carry rules for several services and
-# one binding grants them all. Rule types and their readers:
-#   kubernetes_role_binding, kubernetes_cluster_role_binding: the Policy Controller
-#     (agentplane/policy_controller/SPEC.md), which keeps native RoleBindings/ClusterRoleBindings.
-#   egress: the egress proxy (agentplane/egress/SPEC.md), which admits requests through it.
-#   action_auto_approve: the Action Service (agentplane/action_service/SPEC.md), which
-#     auto-approves a request its `policy` matches.
-# The kubeconform schema under cluster/schemas/ is dumped from this file by
-# `bb run //agentplane/crds:generate_bin`.
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: policysets.agentplane.allegedly.works
 spec:
   group: agentplane.allegedly.works
-  scope: Namespaced
   names:
     kind: PolicySet
     listKind: PolicySetList
     plural: policysets
     singular: policyset
+  scope: Namespaced
   versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-      additionalPrinterColumns:
-        - name: Age
-          type: date
-          jsonPath: .metadata.creationTimestamp
-      schema:
-        openAPIV3Schema:
-          type: object
-          required: [spec]
-          properties:
-            spec:
-              type: object
-              required: [rules]
-              properties:
-                rules:
-                  type: array
-                  minItems: 1
-                  maxItems: 256
-                  items:
-                    description: >-
-                      One typed rule: `type` selects the kind, and each kind admits exactly the
-                      fields its `oneOf` branch names. `kubernetes_role_binding` binds an existing
-                      Role or ClusterRole in each of `namespaces`; `kubernetes_cluster_role_binding`
-                      binds an existing ClusterRole cluster-wide; `egress` lets the subject reach
-                      `hosts` through the egress proxy. A request matching any one egress rule of a
-                      subject's sets is allowed. `action_auto_approve` auto-approves an Action request
-                      `policy` matches.
-                    type: object
-                    required: [type]
-                    x-kubernetes-validations:
-                      - rule: "!has(self.hosts) || !self.hosts.exists(h, h == '*') || (!has(self.credentialRef) && (!has(self.clusterInternal) || !self.clusterInternal))"
-                        message: A blanket host rule cannot set clusterInternal or credentialRef.
-                    properties:
-                      type:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object.
+
+              Servers should convert recognized schemas to the latest internal value,
+              and
+
+              may reject unrecognized values.
+
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents.
+
+              Servers may infer this from the endpoint the client submits requests
+              to.
+
+              Cannot be updated.
+
+              In CamelCase.
+
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: PolicySetSpec contains the reusable policy rules.
+            properties:
+              rules:
+                items:
+                  description: Rule is shared by policy consumers; each consumer handles
+                    its own Type.
+                  properties:
+                    clusterInternal:
+                      description: ClusterInternal lifts private-address refusal for
+                        this rule's hosts only, never for loopback or link-local.
+                      type: boolean
+                    clusterRole:
+                      description: ClusterRole names the ClusterRole bound cluster-wide.
+                      minLength: 1
+                      type: string
+                    credentialRef:
+                      description: CredentialRef names the EgressCredential that this
+                        rule lets a subject present, in the same namespace.
+                      properties:
+                        name:
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    hosts:
+                      description: 'Hosts lists exact lowercase hostnames, `*.` subdomains,
+                        or `*` for any public destination. Blanket rules do
+
+                        not bypass authentication, bindings, method/path checks or
+                        address filtering.'
+                      items:
+                        maxLength: 256
+                        pattern: ^(\*|(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*)$
                         type: string
+                      maxItems: 256
+                      minItems: 1
+                      type: array
+                    methods:
+                      description: Methods lists admitted HTTP methods; omitted means
+                        any method.
+                      items:
                         enum:
-                          - kubernetes_role_binding
-                          - kubernetes_cluster_role_binding
-                          - egress
-                          - action_auto_approve
-                      role:
-                        description: >-
-                          The role to bind. A `Role` must exist in each of `namespaces`; a rule
-                          never defines rules of its own.
-                        type: object
-                        required: [kind, name]
-                        properties:
-                          kind:
-                            type: string
-                            enum: [Role, ClusterRole]
-                          name:
-                            type: string
-                            minLength: 1
-                      namespaces:
-                        description: Named explicitly, never selected, so labeling a namespace grants nothing.
-                        type: array
-                        minItems: 1
-                        x-kubernetes-list-type: set
-                        items:
-                          type: string
-                          minLength: 1
-                      clusterRole:
-                        description: The ClusterRole bound cluster-wide.
+                        - GET
+                        - HEAD
+                        - POST
+                        - PUT
+                        - PATCH
+                        - DELETE
+                        - OPTIONS
+                        - CONNECT
+                        - TRACE
                         type: string
+                      minItems: 1
+                      type: array
+                    namespaces:
+                      description: Namespaces names the target namespaces explicitly,
+                        never by selection; labeling a namespace grants nothing.
+                      items:
                         minLength: 1
-                      hosts:
-                        description: >-
-                          Exact lowercase hostnames, or `*.` followed by a domain to match every
-                          subdomain of it (not the domain itself), or `*` for any public destination.
-                          Blanket rules cannot set credentialRef or clusterInternal; they do not
-                          bypass authentication, bindings, method/path checks or address filtering.
-                        type: array
-                        minItems: 1
-                        maxItems: 256
-                        items:
-                          type: string
-                          maxLength: 256
-                          pattern: '^(\*|(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*)$'
-                      methods:
-                        description: HTTP methods the rule admits; omitted means any method.
-                        type: array
-                        minItems: 1
-                        items:
-                          type: string
-                          enum: [GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS, CONNECT, TRACE]
-                      paths:
-                        description: Path patterns the rule admits, as the proxy matches them; omitted means any path.
-                        type: array
-                        minItems: 1
-                        items:
-                          type: string
+                        type: string
+                      minItems: 1
+                      type: array
+                      x-kubernetes-list-type: set
+                    paths:
+                      description: Paths lists path patterns as the proxy matches
+                        them; omitted means any path.
+                      items:
+                        minLength: 1
+                        type: string
+                      minItems: 1
+                      type: array
+                    policy:
+                      description: Policy configures the Action evaluator for an action_auto_approve
+                        rule.
+                      properties:
+                        actions:
+                          additionalProperties:
+                            items:
+                              minLength: 1
+                              type: string
+                            minItems: 1
+                            type: array
+                          description: Actions lists Action names by ActionGroup key;
+                            the policy matches only these.
+                          minProperties: 1
+                          type: object
+                        entities:
+                          additionalProperties:
+                            items:
+                              minLength: 1
+                              type: string
+                            minItems: 1
+                            type: array
+                          description: Entities maps Home Assistant entity ids to
+                            the services allowed for each.
+                          minProperties: 1
+                          type: object
+                        owner:
+                          description: Owner is the GitHub repository owner.
                           minLength: 1
-                      clusterInternal:
-                        description: >-
-                          Whether this rule's hosts are inside the cluster and meant to be; omitted
-                          means false. The proxy resolves every admitted host and refuses one that
-                          points at a private address, which is what stops an allowed name from
-                          reaching a Service, a Pod or a node, DNS rebinding included. Setting this
-                          lifts that refusal for this rule's hosts only, and never for loopback or
-                          link-local, which are the sandbox's own interfaces rather than the cluster.
-                        type: boolean
-                      credentialRef:
-                        description: >-
-                          The EgressCredential this rule lets a subject present, in the same
-                          namespace. The credential declares where it is substituted; this rule
-                          decides where it may go. A request that presents no placeholder is
-                          admitted by the rule and forwarded untouched.
-                        type: object
-                        required: [name]
-                        properties:
-                          name:
-                            type: string
-                            minLength: 1
-                      policy:
-                        description: >-
-                          The evaluator, shaped as an ActionPolicySet's `autoApproveIf` entry: `type`
-                          selects the kind, and each kind admits exactly the fields its `oneOf`
-                          branch names.
-                        type: object
-                        required: [type, actions]
-                        properties:
-                          type:
-                            description: >-
-                              The evaluator. `exact_actions` matches by Action name alone;
-                              `argument_schema` also requires the arguments to satisfy `schema`;
-                              `github_repository` requires a GitHub MCP call to target
-                              `owner`/`repository`; `github_public_repository` requires it to
-                              target a repository an unauthenticated GitHub lookup confirms public;
-                              `home_assistant_entity_control` requires a Home Assistant service call to
-                              target exactly one of `entities` with a service listed for it.
-                            type: string
-                            enum:
-                              - exact_actions
-                              - argument_schema
-                              - github_repository
-                              - github_public_repository
-                              - home_assistant_entity_control
-                          actions:
-                            description: Action names by ActionGroup key; the policy matches only these.
-                            type: object
-                            minProperties: 1
-                            additionalProperties:
-                              type: array
-                              minItems: 1
-                              items:
-                                type: string
-                                minLength: 1
-                          schema:
-                            description: >-
-                              A JSON Schema the arguments must satisfy, with plain JSON Schema
-                              semantics: `properties` alone never implies presence; use `required`.
-                            type: object
-                            x-kubernetes-preserve-unknown-fields: true
-                          owner:
-                            description: The GitHub repository owner.
-                            type: string
-                            minLength: 1
-                          repository:
-                            description: The GitHub repository name.
-                            type: string
-                            minLength: 1
-                          entities:
-                            description: >-
-                              Home Assistant entity ids, each with the services a call may use on it;
-                              nothing else is matched.
-                            type: object
-                            minProperties: 1
-                            additionalProperties:
-                              type: array
-                              minItems: 1
-                              items:
-                                type: string
-                                minLength: 1
-                        # The discriminated union. A structural schema declares every field once, above,
-                        # and lets a `oneOf` branch carry only value validations, so each branch pins
-                        # `type` and says which of the declared fields that kind requires and forbids.
-                        oneOf:
-                          - properties:
-                              type:
-                                enum: [exact_actions]
-                            not:
-                              anyOf:
-                                - required: [schema]
-                                - required: [owner]
-                                - required: [repository]
-                                - required: [entities]
-                          - properties:
-                              type:
-                                enum: [argument_schema]
-                            required: [schema]
-                            not:
-                              anyOf:
-                                - required: [owner]
-                                - required: [repository]
-                                - required: [entities]
-                          - properties:
-                              type:
-                                enum: [github_repository]
-                            required: [owner, repository]
-                            not:
-                              anyOf:
-                                - required: [schema]
-                                - required: [entities]
-                          - properties:
-                              type:
-                                enum: [github_public_repository]
-                            not:
-                              anyOf:
-                                - required: [schema]
-                                - required: [owner]
-                                - required: [repository]
-                                - required: [entities]
-                          - properties:
-                              type:
-                                enum: [home_assistant_entity_control]
-                            required: [entities]
-                            not:
-                              anyOf:
-                                - required: [schema]
-                                - required: [owner]
-                                - required: [repository]
-                    # The discriminated union, as in ActionPolicySet: fields are declared once above,
-                    # and each branch pins `type` and says which of them that kind requires and forbids.
-                    oneOf:
-                      - properties:
-                          type:
-                            enum: [kubernetes_role_binding]
-                        required: [role, namespaces]
-                        not:
-                          anyOf:
-                            - required: [clusterRole]
-                            - required: [hosts]
-                            - required: [methods]
-                            - required: [paths]
-                            - required: [clusterInternal]
-                            - required: [credentialRef]
-                            - required: [policy]
-                      - properties:
-                          type:
-                            enum: [kubernetes_cluster_role_binding]
-                        required: [clusterRole]
-                        not:
-                          anyOf:
-                            - required: [role]
-                            - required: [namespaces]
-                            - required: [hosts]
-                            - required: [methods]
-                            - required: [paths]
-                            - required: [clusterInternal]
-                            - required: [credentialRef]
-                            - required: [policy]
-                      - properties:
-                          type:
-                            enum: [egress]
-                        required: [hosts]
-                        not:
-                          anyOf:
-                            - required: [role]
-                            - required: [namespaces]
-                            - required: [clusterRole]
-                            - required: [policy]
-                      - properties:
-                          type:
-                            enum: [action_auto_approve]
-                        required: [policy]
-                        not:
-                          anyOf:
-                            - required: [role]
-                            - required: [namespaces]
-                            - required: [clusterRole]
-                            - required: [hosts]
-                            - required: [methods]
-                            - required: [paths]
-                            - required: [clusterInternal]
-                            - required: [credentialRef]
+                          type: string
+                        repository:
+                          description: Repository is the GitHub repository name.
+                          minLength: 1
+                          type: string
+                        schema:
+                          description: Schema is a plain JSON Schema over the arguments;
+                            properties alone never implies presence, so use required.
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                        type:
+                          description: Type selects how the evaluator matches an Action
+                            request.
+                          enum:
+                          - exact_actions
+                          - argument_schema
+                          - github_repository
+                          - github_public_repository
+                          - home_assistant_entity_control
+                          type: string
+                      required:
+                      - actions
+                      - type
+                      type: object
+                      x-kubernetes-validations:
+                      - message: Action policy fields must match type.
+                        rule: 'self.type == ''exact_actions'' ? (!has(self.schema)
+                          && !has(self.owner) && !has(self.repository) && !has(self.entities))
+                          : self.type == ''argument_schema'' ? (has(self.schema) &&
+                          !has(self.owner) && !has(self.repository) && !has(self.entities))
+                          : self.type == ''github_repository'' ? (!has(self.schema)
+                          && has(self.owner) && has(self.repository) && !has(self.entities))
+                          : self.type == ''github_public_repository'' ? (!has(self.schema)
+                          && !has(self.owner) && !has(self.repository) && !has(self.entities))
+                          : !has(self.schema) && !has(self.owner) && !has(self.repository)
+                          && has(self.entities)'
+                    role:
+                      description: Role names the Role or ClusterRole to bind; the
+                        named object must already exist.
+                      properties:
+                        kind:
+                          enum:
+                          - Role
+                          - ClusterRole
+                          type: string
+                        name:
+                          minLength: 1
+                          type: string
+                      required:
+                      - kind
+                      - name
+                      type: object
+                    type:
+                      description: Type selects the consumer that handles this rule.
+                      enum:
+                      - kubernetes_role_binding
+                      - kubernetes_cluster_role_binding
+                      - egress
+                      - action_auto_approve
+                      type: string
+                  required:
+                  - type
+                  type: object
+                  x-kubernetes-validations:
+                  - message: A blanket host rule cannot set clusterInternal or credentialRef.
+                    rule: '!has(self.hosts) || !self.hosts.exists(h, h == ''*'') ||
+                      (!has(self.credentialRef) && (!has(self.clusterInternal) ||
+                      !self.clusterInternal))'
+                  - message: Rule fields must match type.
+                    rule: 'self.type == ''kubernetes_role_binding'' ? (has(self.role)
+                      && has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts)
+                      && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal)
+                      && !has(self.credentialRef) && !has(self.policy)) : self.type
+                      == ''kubernetes_cluster_role_binding'' ? (has(self.clusterRole)
+                      && !has(self.role) && !has(self.namespaces) && !has(self.hosts)
+                      && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal)
+                      && !has(self.credentialRef) && !has(self.policy)) : self.type
+                      == ''egress'' ? (has(self.hosts) && !has(self.role) && !has(self.namespaces)
+                      && !has(self.clusterRole) && !has(self.policy)) : has(self.policy)
+                      && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole)
+                      && !has(self.hosts) && !has(self.methods) && !has(self.paths)
+                      && !has(self.clusterInternal) && !has(self.credentialRef)'
+                maxItems: 256
+                minItems: 1
+                type: array
+            required:
+            - rules
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
