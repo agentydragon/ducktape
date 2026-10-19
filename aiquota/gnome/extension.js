@@ -629,6 +629,8 @@ const QuotaIndicator = GObject.registerClass(
     _renderStreamStatus() {
       if (!this._statusRow) return;
       this._statusRow.visible = true;
+      if (this._streamStatus === "connected") this._statusRow._summaryLabel.add_style_class_name("quota-stream-live");
+      else this._statusRow._summaryLabel.remove_style_class_name("quota-stream-live");
       const label =
         this._streamStatus === "connected"
           ? "Quota stream live"
