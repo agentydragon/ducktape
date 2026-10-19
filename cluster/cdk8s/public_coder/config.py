@@ -5,9 +5,9 @@ from __future__ import annotations
 from cluster.cdk8s.openclaw_gateway import disabled_commands, session_memory_hook, trusted_proxy_gateway
 from cluster.cdk8s.public_coder.egress_proxy_url import PROXY_URL as _EGRESS_PROXY
 from model_catalog.catalog import (
-    ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
     ANTIGRAVITY_GEMINI_FLASH,
     ANTIGRAVITY_GEMINI_FLASH_LITE,
+    ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
     GEMINI_ROUTES,
