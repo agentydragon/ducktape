@@ -7,9 +7,10 @@ across frames, and inspect and correct its rendered masks before hand-off.
 The annotation prompt is in `annotate.md`, with mask semantics in
 `annotation_format.md` and the machine-readable format in
 `annotations.schema.json`. Five independent `gpt-6-luna` / `xhigh` trials have
-been launched; their local artifacts and native traces are under `runs/`.
-Results so far are partial annotations. Codex may use Nix and write its own
-processing scripts. Follow-up work is in `TODO.md`.
+finished; their local artifacts and native traces are under `runs/`.
+All produced partial annotations; see [the trial review](debug/first_trials.md).
+Codex may use Nix and write its own processing scripts. Follow-up work is in
+`TODO.md`.
 
 Keep each run in one conversation. Context compaction is allowed; save identity
 decisions, annotation revisions, and review progress on disk for continuation.
@@ -37,3 +38,5 @@ Use a fresh output directory for each run. This uses the existing Codex login
 and provider, with the selected model and effort set for this invocation only.
 Long runs need a durable process supervisor when their invoking agent's process
 lifetime is uncertain; unexpected SIGTERM exits occurred during the first trials.
+See [the abort investigation](debug/parallel_run_aborts.md) for the observed
+mitigation and the limits of the diagnosis.

@@ -14,6 +14,7 @@
       native Codex traces for ad hoc investigation.
 - [ ] Improve target coverage and tracking through pose changes. A full set of
       frame records does not establish a complete neuron census or correct IDs.
+      Keep unresolved candidate groups separate from individual neuron identities.
 - [ ] Strengthen visual review so drift and masks outside the specimen trigger
       corrections. Require native-resolution comparisons at difficult transitions
       and recheck changed annotations before export.
