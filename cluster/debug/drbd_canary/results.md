@@ -134,6 +134,11 @@ Reviewed deployment PR #11029 at exact green head
 preparation and recovery. Flux fetched that commit. Provider readiness, network
 checks and PVC acceptance remain separate live checks.
 
+The initial test Pods stopped during package installation: the broad `util-linux`
+package pulled ownership-sensitive helpers, and the fixtures deliberately drop
+all capabilities. Removed that unneeded package; the I/O exercises require only
+`fio` and `coreutils`. Reuse the existing PVCs when recreating those Pods.
+
 No Piraeus pool or test PVC has been created at this point. The 50Gi sparse probe
 is separate from the 1Gi block migration fixture: a full resync of the large
 logical device must not be attempted before its sparse-resync behavior is known.
