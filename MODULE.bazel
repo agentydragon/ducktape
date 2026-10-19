@@ -2025,6 +2025,7 @@ use_repo(
     "com_github_go_git_go_git_v5",
     "com_github_go_json_experiment_json",
     "com_github_go_logr_logr",
+    "com_github_go_viper_mapstructure_v2",
     "com_github_gobuffalo_flect",
     "com_github_google_uuid",
     "com_github_goretk_gore",

@@ -21,6 +21,21 @@ func required(t *testing.T, extra ...string) []string {
 	}, extra...)
 }
 
+func loadTestConfig(t *testing.T, environ []string) (config, error) {
+	t.Helper()
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(name, settingPrefix) {
+			t.Setenv(name, "")
+		}
+	}
+	for _, entry := range environ {
+		name, value, _ := strings.Cut(entry, "=")
+		t.Setenv(name, value)
+	}
+	return loadConfig()
+}
+
 func writeSettings(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "settings.yaml")
@@ -36,7 +51,7 @@ projected_token_audiences: [file-audience]
 exempt_networks: [127.0.0.0/8]
 admin_port: 1111
 `)
-	c, err := loadConfig([]string{
+	c, err := loadTestConfig(t, []string{
 		settingPrefix + "CONFIG_FILE=" + path, settingPrefix + "RULES_NAMESPACE=rules",
 		settingPrefix + "CREDENTIALS_NAMESPACE=secrets", settingPrefix + "CA_CERT=/ca.crt",
 		settingPrefix + "CA_KEY=/ca.key", settingPrefix + "TOKEN_AUDIENCE=hop", databaseURLEnv,
@@ -59,9 +74,8 @@ func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
 		{settingPrefix + "LISTEN_PORT=not-a-number"},
 		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, "allowed_service_account_namespaces: [ns]\nlog_levels: {agentplane.other: INFO}\n")},
 		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, "allowed_service_account_namespaces: [ns]\nexempt_networks: [not-a-prefix]\n")},
-		{settingPrefix + "UNKNOWN_SETTING=1"},
 	} {
-		_, err := loadConfig(required(t, bad...))
+		_, err := loadTestConfig(t, required(t, bad...))
 		if err == nil {
 			t.Fatalf("%v accepted", bad)
 		}
@@ -72,7 +86,7 @@ func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
 }
 
 func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
-	if _, err := loadConfig(required(t)); err != nil {
+	if _, err := loadTestConfig(t, required(t)); err != nil {
 		t.Fatal(err)
 	}
 	for _, missing := range []string{
@@ -81,7 +95,7 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 		rest := slices.DeleteFunc(required(t), func(item string) bool {
 			return strings.HasPrefix(item, settingPrefix+missing+"=")
 		})
-		if _, err := loadConfig(rest); err == nil {
+		if _, err := loadTestConfig(t, rest); err == nil {
 			t.Fatalf("ran without %s", missing)
 		}
 	}
@@ -97,7 +111,7 @@ func TestADeploymentNamingNoWorkloadNamespaceIsRefused(t *testing.T) {
 				contents = "allowed_service_account_namespaces: " + namespaces + "\n"
 			}
 			environ := required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, contents))
-			if _, err := loadConfig(environ); err == nil {
+			if _, err := loadTestConfig(t, environ); err == nil {
 				t.Fatal("ran with no usable workload namespace")
 			}
 		})

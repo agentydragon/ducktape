@@ -46,7 +46,7 @@ const (
 )
 
 func main() {
-	c, err := loadConfig(os.Environ())
+	c, err := loadConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "egress-proxy:", err)
 		os.Exit(2)
