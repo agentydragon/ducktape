@@ -33,11 +33,12 @@ from model_catalog.catalog import Provider, Route
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 _COMMON_HARNESS_REASONING_EFFORTS = frozenset(("low", "medium", "high"))
 
-# CLIProxyAPI live probe (2026-10-19): POST `/v1/messages` with adaptive thinking and
-# `max_tokens=1` returned 200 for `low`/`medium`/`high` on Sonnet 4.6 and both Gemini
-# routes. All three Opus probes returned 429 `Individual quota reached`, so those remain
-# unverified. Agentplane stores one effort list per model across both harnesses, so expose
-# their documented common values: low, medium, high.
+# CLIProxyAPI live probe (2026-10-19): 16 one-token `/v1/messages` requests with adaptive
+# thinking. Sonnet 4.6 (`low`/`medium`/`high`/`max`) and both Gemini routes
+# (`minimal`/`low`/`medium`/`high`) returned HTTP 200 at every route-declared effort. All
+# four Opus efforts returned 429 `Individual quota reached`, so those remain unverified.
+# Agentplane stores one effort list per model across both harnesses, so expose their common
+# values: low, medium, high.
 
 DUCKTAPE_PR_INSTRUCTIONS = Path(__file__).with_name("ducktape_pr_instructions.md").read_text(encoding="utf-8").strip()
 _PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(
