@@ -173,3 +173,17 @@ py_library(
         "//agentplane/runner:store",
     ],
 )
+
+py_library(
+    name = "process_fixtures",
+    srcs = ["process_fixtures.py"],
+    deps = [
+        ":gateway",
+        ":launches",
+        "//agentplane/native/claude/testing:messages",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/proto:runner_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+    ],
+)

@@ -18,6 +18,7 @@ from agentplane.runner.testing.fixtures import (
     spec,
     workspace,
 )
+from agentplane.runner.testing.process_fixtures import start_runner
 
 
 @pytest.fixture

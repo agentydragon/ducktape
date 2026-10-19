@@ -20,7 +20,7 @@ independently packaged under `/opt`. The runner integration test separately crea
 root under user and mount namespaces, keeps runner state outside it, and checks that a child cannot
 read a runner-only sentinel.
 
-The focused `//agentplane/runner:test_restart` scenario runs the pinned Codex binary from the sparse
+The focused `//agentplane/x/runner_layering_spike:test_sparse_root` scenario runs the pinned Codex binary from the sparse
 child root. A mocked model asks Codex to execute `/usr/local/bin/workload-tool` from the independent
 workload image; the test checks its output and the proof file it writes through the workspace mount.
 It then kills the native harness, resumes the same session, reads that file from the persistent
@@ -91,7 +91,7 @@ bbr build //agentplane/x/runner_layering_spike:local_vm_probe
 The full-turn, shell-tool, and resume evidence runs with:
 
 ```bash
-bbr test //agentplane/runner:test_restart --test_arg=-k --test_arg=sparse_child_root
+bbr test //agentplane/x/runner_layering_spike:test_sparse_root
 ```
 
 The local-only VMM probe uses the pinned kernel and host `/dev/kvm`:

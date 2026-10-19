@@ -1408,8 +1408,7 @@ in the RBE test; a local Firecracker guest boots the digest-pinned ELF kernel an
 read-only tools and harness SquashFS drives. #10789 added `workload-tool` in its own OCI tar
 layer and changed the mocked Codex shell call to run it before the harness exit, confirmed its
 workspace write survives resume, then asked the resumed harness to execute the same workload tool.
-The focused `bbr test //agentplane/runner:test_restart --test_arg=-k
---test_arg=sparse_child_root` passed in RBE; the marker remained readable from the persistent workspace
+The sparse-root scenario passed in RBE; the marker remained readable from the persistent workspace
 after the harness was killed and resumed, and the resumed Codex process emitted the tool's output
 again. Production VM layout selection and implementation remain open.
 The guest's Bash and pinned Codex `--version` probes pass; the same probe records a Claude 2.1.252

@@ -2,9 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_EXEC_PROPERTIES")
 load("//devinfra/cpio:defs.bzl", "cpio_archive")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -86,5 +87,50 @@ py_library(
     deps = [
         "//util/bazel:runfiles",
         "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "test_sparse_root",
+    size = "large",
+    srcs = ["test_sparse_root.py"],
+    data = [
+        ":child_exec",  # keep: the sparse-root Codex process fence
+        ":tools_rootfs",  # keep: independent tools image for sparse-root probe
+        "//agentplane/runner:main_bin",  # keep: the runner as its own process
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: pinned Codex and bwrap
+    ],
+    exec_properties = NATIVE_RUNNER_EXEC_PROPERTIES,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner/testing:driver",
+        "//agentplane/runner/testing:events",
+        "//agentplane/runner/testing:launches",
+        "//agentplane/runner/testing:process_fixtures",
+        "//agentplane/runner/testing:scripted_model",
+        "//util/bazel:runfiles",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//agentplane/runner/testing:driver",
+        "//agentplane/runner/testing:fixtures",
+        "//agentplane/runner/testing:gateway",
+        "//agentplane/runner/testing:process_fixtures",
+        "@pypi//pytest",
     ],
 )

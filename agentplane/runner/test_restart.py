@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import ctypes
-import errno
-import json
 import os
 import shlex
 import shutil
 import signal
-import tarfile
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -27,30 +22,12 @@ from agentplane.runner.store import StateOwner
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.driver import RunnerDriver
 from agentplane.runner.testing.gateway import Gateway
+from agentplane.runner.testing.process_fixtures import RunnerProcess, runner_environment, wait_for_exit
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
-
-
-@dataclass
-class RunnerProcess:
-    process: asyncio.subprocess.Process
-
-    async def crash(self, harness_pids: list[int]) -> None:
-        """The runner dies without logging anything; its harnesses see stdin close and exit on their
-        own, as they would when only the runner container is lost."""
-        os.killpg(self.process.pid, signal.SIGKILL)
-        await self.process.wait()
-        for pid in harness_pids:
-            await asyncio.wait_for(_exited(pid), timeout=10)
-
-    async def stop(self) -> None:
-        """SIGTERM, as a Pod's termination sends it; the runner stops its harnesses before exiting."""
-        if self.process.returncode is None:
-            self.process.send_signal(signal.SIGTERM)
-            await self.process.wait()
 
 
 async def _wait_for_session_ready(driver: RunnerDriver, session_id: str) -> None:
@@ -65,36 +42,6 @@ async def _wait_for_session_ready(driver: RunnerDriver, session_id: str) -> None
                 if session.execution_state == runner_pb2.SESSION_EXECUTION_STATE_READY:
                     return
             await asyncio.sleep(0.01)
-
-
-# Bazel's Python is built without os.pidfd_open; the syscall itself is on every kernel this runs on.
-_SYS_PIDFD_OPEN = 434
-
-
-def _pidfd_open(pid: int) -> int:
-    libc = ctypes.CDLL(None, use_errno=True)
-    fd = int(libc.syscall(_SYS_PIDFD_OPEN, pid, 0))
-    if fd < 0:
-        code = ctypes.get_errno()
-        # EINVAL: the pid survives only as a process group or session id, its leader already gone.
-        raise (ProcessLookupError if code in {errno.ESRCH, errno.EINVAL} else OSError)(code, os.strerror(code))
-    return fd
-
-
-async def _exited(pid: int) -> None:
-    """Wait for a process that is not our child: its pidfd becomes readable when it exits."""
-    try:
-        fd = _pidfd_open(pid)
-    except ProcessLookupError:
-        return
-    loop = asyncio.get_running_loop()
-    exited = loop.create_future()
-    loop.add_reader(fd, exited.set_result, None)
-    try:
-        await exited
-    finally:
-        loop.remove_reader(fd)
-        os.close(fd)
 
 
 async def test_runner_shutdown_waits_for_setup_to_finish(
@@ -193,75 +140,10 @@ async def test_runner_death_interrupts_bootstrap_without_rerunning_it(
     assert (state / "runs").read_text() == "run\n"
 
 
-def _runner_environment(home: Path) -> dict[str, str]:
-    return {
-        **launches.environment(home),
-        # The runner binary is a Bazel py_binary inside this test's runfiles tree and finds its
-        # own runfiles through these.
-        **{key: os.environ[key] for key in ("RUNFILES_DIR", "RUNFILES_MANIFEST_FILE") if key in os.environ},
-        "ANTHROPIC_AUTH_TOKEN": launches.TOKEN,
-        "OPENAI_API_KEY": launches.TOKEN,
-    }
-
-
-def _extract_oci_rootfs(rloc_file: str, destination: Path) -> None:
-    """Expand the layers from a Bazel OCI layout into a disposable child root."""
-    reference = get_required_path(own_repo_rlocation(rloc_file))
-    layout = get_required_path(reference.read_text().strip())
-    index = json.loads((layout / "index.json").read_text())
-    (descriptor,) = index["manifests"]
-    manifest_path = layout / "blobs" / descriptor["digest"].replace(":", "/")
-    manifest = json.loads(manifest_path.read_text())
-    for layer in manifest["layers"]:
-        layer_path = layout / "blobs" / layer["digest"].replace(":", "/")
-        with tarfile.open(layer_path, "r:*") as archive:
-            archive.extractall(destination, filter="data")
-
-
 @pytest.fixture
 def driver(gateway: Gateway) -> RunnerDriver:
     """Drives whichever runner process holds the newest connection to `gateway`."""
     return RunnerDriver(gateway)
-
-
-@pytest.fixture
-async def start_runner(
-    harness: runner_pb2.Harness, endpoint: AnthropicMessages | OpenAIResponses, tmp_path: Path, gateway: Gateway
-) -> AsyncIterator[Callable[..., Awaitable[RunnerProcess]]]:
-    """Start a runner process on the test's state directory; it returns once the runner is connected."""
-    started: list[RunnerProcess] = []
-
-    async def start(
-        *,
-        test_debug_checkpoint: tuple[str, str] | None = None,
-        bootstrap: str | None = None,
-        home: Path = tmp_path / "home",
-        codex_binary: Path | None = None,
-        harness_env: Sequence[str] = (),
-    ) -> RunnerProcess:
-        connections = gateway.control.connections
-        process = await asyncio.create_subprocess_exec(
-            *launches.runner_command(
-                harness,
-                endpoint.origin,
-                state_dir=tmp_path / "state",
-                gateway=gateway.endpoint,
-                test_debug_checkpoint=test_debug_checkpoint,
-                bootstrap=bootstrap,
-                codex_binary=codex_binary,
-                harness_env=harness_env,
-            ),
-            env=_runner_environment(home),
-            start_new_session=True,
-        )
-        runner = RunnerProcess(process)
-        started.append(runner)
-        await gateway.control.wait_connected(connections + 1)
-        return runner
-
-    yield start
-    for runner in started:
-        await runner.stop()
 
 
 @pytest.fixture
@@ -275,7 +157,7 @@ def contend(
         connections = gateway.control.connections
         contender = await asyncio.create_subprocess_exec(
             *launches.runner_command(harness, endpoint.origin, state_dir=state_dir, gateway=gateway.endpoint),
-            env=_runner_environment(tmp_path / "home"),
+            env=runner_environment(tmp_path / "home"),
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
         )
@@ -368,7 +250,7 @@ async def test_state_fence_survives_native_leader_exit_until_its_child_group_is_
         # graceful group SIGTERM, while this tool ignores it; the supervisor must then force-stop
         # the remaining group before its inherited lock can be released.
         os.killpg(process.process.pid, signal.SIGUSR1)
-        await asyncio.wait_for(_exited(tool_pid), timeout=10)
+        await asyncio.wait_for(wait_for_exit(tool_pid), timeout=10)
         # A successor can acquire the retained state only after the supervisor has dropped the
         # same inherited descriptor. This is stronger than waiting on its stdout-owning process.
         successor = await start_runner()
@@ -398,7 +280,7 @@ async def test_native_leader_exit_stops_background_tool(tmp_path: Path) -> None:
             # Only the leader dies: no stop/parent-death signal reaches its supervisor.
             os.kill(process.native_pid, signal.SIGKILL)
             async with asyncio.timeout(10):
-                await _exited(tool_pid)
+                await wait_for_exit(tool_pid)
                 assert await process.wait() == 128 + signal.SIGKILL
         finally:
             with suppress(ProcessLookupError):
@@ -513,126 +395,6 @@ async def test_a_session_that_never_took_a_turn_carries_on_after_its_runner_rest
     await model.reply(request, Text("FIRST_OK"))
     done = await second.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-
-
-@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
-async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
-    harness: runner_pb2.Harness,
-    model: ScriptedModel,
-    spec: runner_pb2.SessionSpec,
-    start_runner: Callable[..., Awaitable[RunnerProcess]],
-    driver: RunnerDriver,
-    tmp_path: Path,
-) -> None:
-    """Pinned Codex runs a workload-image tool and keeps workspace/session state across restart."""
-    child_spec = runner_pb2.SessionSpec()
-    child_spec.CopyFrom(spec)
-    child_spec.cwd = "/workspace"
-    child_root = tmp_path / "child-root"
-    codex = get_required_path(launches.CODEX_BINARY)
-    binary_dir = child_root / "opt/bin"
-    binary_dir.mkdir(parents=True)
-    shutil.copyfile(codex, binary_dir / "codex")
-    (binary_dir / "codex").chmod(0o555)
-    codex_bwrap = get_required_path("agentplane_codex_cli_linux_x64/codex-resources/bwrap")
-    resources_dir = child_root / "opt/codex-resources"
-    resources_dir.mkdir()
-    shutil.copyfile(codex_bwrap, resources_dir / "bwrap")
-    (resources_dir / "bwrap").chmod(0o555)
-    _extract_oci_rootfs("agentplane/x/runner_layering_spike/tools_rootfs.rloc", child_root)
-    assert (child_root / "usr/local/bin/workload-tool").is_file()
-
-    state_dir = tmp_path / "state"
-    state_dir.mkdir()
-    private_sentinel = state_dir / "runner-private-sentinel"
-    private_sentinel.write_text("runner-owned\n")
-    workload_proof = Path(spec.cwd) / "workload-image-proof.txt"
-    assert not workload_proof.exists()
-    child_exec = get_required_path(own_repo_rlocation("agentplane/x/runner_layering_spike/child_exec_/child_exec"))
-    first_runner = await start_runner(
-        codex_binary=child_exec,
-        harness_env=[
-            f"AGENTPLANE_CHILD_ROOT={child_root}",
-            f"AGENTPLANE_CHILD_WORKSPACE={spec.cwd}",
-            f"AGENTPLANE_PRIVATE_SENTINEL={private_sentinel}",
-        ],
-    )
-
-    session = await driver.attach("sparse-child-root", spec=child_spec)
-    await session.submit_input("input-1", "Reply with exactly: SPARSE_ROOT_TURN_OK")
-    request = await model.request()
-    await model.reply(request, Text("SPARSE_ROOT_TURN_OK"))
-    await session.until(events.turn_completed)
-    fences = [
-        entry
-        for entry in events.of_kind(session.seen, "harness_stderr")
-        if "runner-private state remains outside child root" in entry.event.harness_stderr.text
-    ]
-    assert len(fences) == 1
-    fence = fences[0]
-    assert fence.event.harness_stderr.text.strip() == "runner-layering: runner-private state remains outside child root"
-
-    await session.submit_input("input-2", "Run the tool installed by the workload image and report its output.")
-    request = await model.request()
-    await model.reply(request, ShellCall("workload-image-tool", "/usr/local/bin/workload-tool"))
-    tool_result = await model.request()
-    (output,) = tool_result.tool_outputs
-    stderr = "\n".join(entry.event.harness_stderr.text for entry in events.of_kind(session.seen, "harness_stderr"))
-    assert "WORKLOAD_IMAGE_TOOL_OK" in output.text, f"tool output: {output.text}\nharness stderr:\n{stderr}"
-    await model.reply(tool_result, Text("WORKLOAD_IMAGE_TOOL_DONE"))
-    tool_done = await session.until(events.turn_completed)
-    assert tool_done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-
-    (started,) = events.of_kind(session.seen, "harness_started")
-    os.kill(started.event.harness_started.pid, signal.SIGKILL)
-    exited = await session.until(events.is_kind("harness_exited"))
-    assert exited.cursor > fence.cursor
-    assert not exited.event.harness_exited.stopped_by_runner
-    assert first_runner.process.returncode is None, "a native child exit must not terminate the runner"
-    await session.drain_until_end()
-
-    second = await driver.attach("sparse-child-root", spec=child_spec, after_cursor=exited.cursor)
-    await second.submit_input("input-3", "Reply with exactly: SPARSE_ROOT_RESUME_OK")
-    resumed = await second.until(
-        lambda entry: events.is_kind("harness_started")(entry) and entry.event.harness_started.resumed
-    )
-    assert resumed.cursor > exited.cursor
-    assert workload_proof.read_text() == "WORKLOAD_IMAGE_TOOL_OK\n"
-    request = await model.request()
-    assert request.user_texts == [
-        "Reply with exactly: SPARSE_ROOT_TURN_OK",
-        "Run the tool installed by the workload image and report its output.",
-        "Reply with exactly: SPARSE_ROOT_RESUME_OK",
-    ]
-    assert request.assistant_texts == ["SPARSE_ROOT_TURN_OK", "WORKLOAD_IMAGE_TOOL_DONE"]
-    await model.reply(request, Text("SPARSE_ROOT_RESUME_OK"))
-    done = await second.until(events.turn_completed)
-    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-    assert private_sentinel.read_text() == "runner-owned\n"
-
-    await second.submit_input("input-4", "Run the workload image tool again and report its output.")
-    request = await model.request()
-    assert request.user_texts == [
-        "Reply with exactly: SPARSE_ROOT_TURN_OK",
-        "Run the tool installed by the workload image and report its output.",
-        "Reply with exactly: SPARSE_ROOT_RESUME_OK",
-        "Run the workload image tool again and report its output.",
-    ]
-    assert request.assistant_texts == ["SPARSE_ROOT_TURN_OK", "WORKLOAD_IMAGE_TOOL_DONE", "SPARSE_ROOT_RESUME_OK"]
-    resumed_call_id = "workload-image-tool-after-resume"
-    await model.reply(request, ShellCall(resumed_call_id, "/usr/local/bin/workload-tool"))
-    resumed_tool_result = await model.request()
-    (resumed_output,) = [output for output in resumed_tool_result.tool_outputs if output.call_id == resumed_call_id]
-    resumed_stderr = "\n".join(
-        entry.event.harness_stderr.text for entry in events.of_kind(second.seen, "harness_stderr")
-    )
-    assert "WORKLOAD_IMAGE_TOOL_OK" in resumed_output.text, (
-        f"resumed tool output: {resumed_output.text}\nharness stderr:\n{resumed_stderr}"
-    )
-    assert workload_proof.read_text() == "WORKLOAD_IMAGE_TOOL_OK\n"
-    await model.reply(resumed_tool_result, Text("WORKLOAD_IMAGE_TOOL_AFTER_RESUME_DONE"))
-    resumed_tool_done = await second.until(events.turn_completed)
-    assert resumed_tool_done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
 
 async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps_history(
