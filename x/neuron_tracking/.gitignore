@@ -1,0 +1,15 @@
+/data/
+/runs/
+
+# Source media and generated previews belong in the ignored directories above.
+*.[aA][vV][iI]
+*.[mM][pP]4
+*.[mM][oO][vV]
+*.[mM][kK][vV]
+*.[jJ][pP][gG]
+*.[jJ][pP][eE][gG]
+*.[pP][nN][gG]
+*.[tT][iI][fF]
+*.[tT][iI][fF][fF]
+*.[wW][eE][bB][pP]
+*.[gG][iI][fF]
