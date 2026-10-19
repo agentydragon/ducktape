@@ -354,8 +354,16 @@ async def test_go_proxy_finishes_an_admitted_request_after_sigterm(tmp_path: Pat
             await asyncio.wait_for(upstream.slow_started.wait(), 10)
             running.terminate()
             await running.health(503)
-            with pytest.raises(ConnectionRefusedError):
-                await asyncio.open_connection("127.0.0.1", running.proxy_port)
+            # The readiness endpoint turns 503 before the proxy listener finishes shutting down.
+            async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
+                with attempt:
+                    try:
+                        _, writer = await asyncio.open_connection("127.0.0.1", running.proxy_port)
+                    except ConnectionRefusedError:
+                        break
+                    writer.close()
+                    await writer.wait_closed()
+                    raise AssertionError("proxy listener still accepts connections while draining")
             assert not pending.done()
             upstream.slow_release.set()
             assert await asyncio.wait_for(pending, 10) == 200
