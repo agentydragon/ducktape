@@ -1,13 +1,14 @@
 # Generated HTTP facades for every service API, browser included
 
-Status: **proposed, 2026-10-18; the operator chose the app-fronted browser path for the first steps.**
-It extends the transport direction approved on 2026-10-15
+Status: **the operator chose the app-fronted browser path for the first steps (2026-10-19) and
+dispatched the Dispatcher reads and the egress admin gRPC interface.** It extends the transport
+direction approved on 2026-10-15
 ([API transports and agent workflows](../docs/runner_delivery_and_harness_design.md#api-transports-and-agent-workflows):
 gRPC between services, a gRPC-Gateway HTTP/JSON facade, an ergonomic CLI, adopted one service and
 interface at a time) from agents to the browser. Direct browser access to the facades stays open as a
-[later option](#direct-browser-access-later). This plan authorizes no proto, service, app or
-frontend change; on approval the contract graduates to a doc under `docs/` and the rollout becomes
-DAG nodes.
+[later option](#direct-browser-access-later). The rollout is the
+[transport tracks](task_dag.md#service-api-transport-tracks) in the task DAG; the contract below
+graduates to a doc under `docs/` as its first step lands.
 
 A service's API is its proto. Every RPC meant to be reached over HTTP carries a `google.api.http`
 rule, and gRPC-Gateway generates the JSON facade from it inside the service's own process. Agents
@@ -48,16 +49,16 @@ are the app's own logic.
 
 ## Services by transport today
 
-| Service                                           | Language | API today                                        | Facade                                                                  |
-| ------------------------------------------------- | -------- | ------------------------------------------------ | ----------------------------------------------------------------------- |
-| Runner Gateway: Dispatcher, control, Runner proxy | Go       | gRPC; Dispatcher has 10 RPCs, one watch          | Dispatcher reads for the browser. Control stream and proxy stay native. |
-| History Service                                   | Python   | gRPC, 9 RPCs, one watch that only says "changed" | Reads, with its Go port                                                 |
-| Action Service                                    | Python   | HTTP, 39 routes, plus MCP and OAuth              | Operator and workload surfaces, with its Go port                        |
-| Notification Service                              | Python   | HTTP, 15 routes                                  | Subscriptions, inboxes, operator streams                                |
-| Egress admin and rules API                        | Python   | HTTP: decisions list and stream, rules           | With the Go port                                                        |
-| Git index                                         | Python   | HTTP, 3 routes                                   | `/search`, when an agent needs it                                       |
-| LLM ingress                                       | Go       | Provider-native HTTP                             | None: it passes provider bodies through unchanged                       |
-| Integration app                                   | Python   | HTTP, 83 routes, SSE                             | Its own contract is a separate decision                                 |
+| Service                                           | Language | API today                                                           | Facade                                                                        |
+| ------------------------------------------------- | -------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Runner Gateway: Dispatcher, control, Runner proxy | Go       | gRPC; Dispatcher has 10 RPCs, one watch                             | Dispatcher reads for the browser. Control stream and proxy stay native.       |
+| History Service                                   | Python   | gRPC, 9 RPCs, one watch that only says "changed"                    | Reads, with its Go port                                                       |
+| Action Service                                    | Python   | HTTP, 39 routes, plus MCP and OAuth                                 | Operator and workload surfaces, with its Go port                              |
+| Notification Service                              | Python   | HTTP, 15 routes                                                     | Subscriptions, inboxes, operator streams                                      |
+| Egress admin and rules API                        | Go       | Hand-written `net/http`, no proto: decisions list and stream, rules | A proto and gRPC interface first; the app switches, then the HTTP handlers go |
+| Git index                                         | Python   | HTTP, 3 routes                                                      | `/search`, when an agent needs it                                             |
+| LLM ingress                                       | Go       | Provider-native HTTP                                                | None: it passes provider bodies through unchanged                             |
+| Integration app                                   | Python   | HTTP, 83 routes, SSE                                                | Its own contract is a separate decision                                       |
 
 ## Proposal
 
@@ -177,27 +178,15 @@ Each is a browser, provider or Kubernetes protocol, not an RPC.
 
 ## Rollout
 
-Each step is a separate, independently landable change, and none keeps a shim: a service's step
-deletes its hand-written routes, client methods and app relays in the same change, and updates the
-agent guides and [agent CLI](agent_cli.md) with them.
+The steps are the [transport tracks](task_dag.md#service-api-transport-tracks) in the task DAG. Each
+lands as separate, independently landable changes with no shim: a service's change deletes its
+hand-written routes, client methods and app relays, and updates the agent guides and the
+[agent CLI](agent_cli.md) plan with it. Manifests follow the pinned image.
 
-1. **Dispatcher reads, the spike.** Annotate `GetDispatch`, `ListDispatches` and `WatchDispatches`;
-   serve the facade from the Gateway process; add the app's upstream proxy and the fetch stream
-   client; move the dispatch-stream consumer to the generated client; delete
-   `app/threads/dispatch_stream.py` and its route. The Dispatcher is already Go with unary RPCs and a
-   stream that carries state, and it needs no port. The browser filters the stream to the commands it
-   asked about. Manifests (the Gateway's HTTP port, the app's upstream setting) follow the pinned
-   image. Exit evidence: missing, invalid and valid bearers behave as over gRPC; a stream arrives
-   unbuffered through the app and ends on logout; the generated TypeScript types are chosen; one
-   visual scene runs on the streaming stub.
-2. **Per service, with its Go port:** History reads, the Action Service's operator and workload
-   surfaces, the Notification Service, the Egress admin API. The order belongs to the Go rewrite.
-   Each adds protos and annotations, the facade, and the deletions above.
-3. **Dispatcher writes for the browser** wait for the app's Thread checks to have a home that is not a
-   hand-written route; that is the app-contract decision.
-
-Deferred, not asked: whether the app's own views (Threads, Sandboxes) become protos. The steps above
-do not need it, and an early answer would be hard to reverse.
+Not yet on the DAG: Dispatcher writes for the browser wait for the app's Thread checks to have a home
+that is not a hand-written route, which is the app-contract decision. Deferred, not asked: whether the
+app's own views (Threads, Sandboxes) become protos. The tracks do not need it, and an early answer would
+be hard to reverse.
 
 ## Direct browser access, later
 
