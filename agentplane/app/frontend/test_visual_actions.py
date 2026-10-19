@@ -273,6 +273,18 @@ async def test_action_presentations(
     await wait_for_stable(page)
     await view.capture(f"{capture_name}-sidebar-expanded", target=sidebar)
 
+    # Follow the actual review link so pending detail controls and argument composition are visible too.
+    await sidebar.get_by_role("link", name="Details", exact=True).click()
+    pending = page.locator(".agentplane-shell-main .mantine-Paper-root").filter(
+        has=page.get_by_role("button", name="Approve", exact=True)
+    )
+    await expect(pending).to_have_count(1)
+    await expect(pending).to_contain_text(example.label)
+    await expect(pending.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
+    await pending.evaluate("element => element.scrollIntoView({block: 'end'})")
+    await wait_for_stable(page)
+    await view.capture(f"{capture_name}-pending-detail", target=pending)
+
     # Native sandbox results are stored directly. MCP results use the actual wire envelope.
     result = (
         example.result
@@ -299,6 +311,7 @@ async def test_action_presentations(
     await view.capture(f"{capture_name}-detail-result", target=receipt)
 
     await page.evaluate("window.location.hash = '/actions'")
+    await expect(page.get_by_role("heading", name="History", exact=True)).to_be_visible()
     await expect(page.locator("[data-action-receipt]")).to_have_count(1)
     await wait_for_stable(page)
     await view.capture(f"{capture_name}-history", target=page.locator("[data-action-receipt]"))
