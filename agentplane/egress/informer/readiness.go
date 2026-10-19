@@ -2,16 +2,16 @@ package informer
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	policyapplyv1 "github.com/agentydragon/ducktape/agentplane/policy/client/applyconfigurations/api/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
+	metav1apply "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
 const (
@@ -77,16 +77,20 @@ func (i *Informer) applyEgressReady(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	patch := binding.PrepareConditionApply(egressReady(i.index.Resolve(binding.Spec.PolicySets)))
-	if patch == nil {
+	condition := binding.PrepareConditionApply(egressReady(i.index.Resolve(binding.Spec.PolicySets)))
+	if condition == nil {
 		return nil
 	}
-	body, err := json.Marshal(patch)
-	if err != nil {
-		return err
-	}
-	force := true
-	_, err = i.bindingsClient.Patch(ctx, name, types.ApplyPatchType, body, metav1.PatchOptions{FieldManager: FieldManager, Force: &force}, "status")
+	configuration := policyapplyv1.PolicyBinding(binding.Name, binding.Namespace).WithStatus(
+		policyapplyv1.Status().WithConditions(metav1apply.Condition().
+			WithType(condition.Type).
+			WithStatus(condition.Status).
+			WithObservedGeneration(condition.ObservedGeneration).
+			WithLastTransitionTime(condition.LastTransitionTime).
+			WithReason(condition.Reason).
+			WithMessage(condition.Message)),
+	)
+	_, err = i.bindingsClient.ApplyStatus(ctx, configuration, metav1.ApplyOptions{FieldManager: FieldManager, Force: true})
 	if apierrors.IsNotFound(err) {
 		return nil
 	}

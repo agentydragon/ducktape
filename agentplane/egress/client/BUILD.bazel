@@ -5,6 +5,14 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 kubernetes_clients(
     name = "generated",
     api = "//agentplane/egress/api/v1alpha1",
+    apply_configuration_types = [
+        "CredentialSource",
+        "EgressCredential",
+        "EgressCredentialSpec",
+        "ProjectedWorkloadTokenSource",
+        "SecretKeyRef",
+        "Target",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/client",
     input_base = "github.com/agentydragon/ducktape/agentplane/egress",
     kinds = ["EgressCredential"],

@@ -23,16 +23,16 @@ func TestPrepareConditionApply(t *testing.T) {
 		t.Errorf("a condition the binding already carries was applied again: %+v", patch)
 	}
 
-	patch := binding.PrepareConditionApply(metav1.Condition{Type: "EgressReady", Status: metav1.ConditionTrue, Reason: "Enforced", Message: "egress rules: 2"})
-	if patch == nil || patch.Name != "grant" || patch.Namespace != "rules" || len(patch.Status.Conditions) != 1 {
-		t.Fatalf("patch = %+v", patch)
+	condition := binding.PrepareConditionApply(metav1.Condition{Type: "EgressReady", Status: metav1.ConditionTrue, Reason: "Enforced", Message: "egress rules: 2"})
+	if condition == nil {
+		t.Fatal("changed condition was not returned")
 	}
-	if got := patch.Status.Conditions[0]; got.Type != "EgressReady" || got.Message != "egress rules: 2" || !got.LastTransitionTime.Equal(&transitioned) {
+	if got := *condition; got.Type != "EgressReady" || got.Message != "egress rules: 2" || got.ObservedGeneration != binding.Generation || !got.LastTransitionTime.Equal(&transitioned) {
 		t.Errorf("a changed message moved the transition time, or applied another condition: %+v", got)
 	}
 
-	patch = binding.PrepareConditionApply(metav1.Condition{Type: "EgressReady", Status: metav1.ConditionFalse, Reason: PolicySetUnavailable, Message: "missing PolicySets: late"})
-	if got := patch.Status.Conditions[0]; got.LastTransitionTime.Equal(&transitioned) {
+	condition = binding.PrepareConditionApply(metav1.Condition{Type: "EgressReady", Status: metav1.ConditionFalse, Reason: PolicySetUnavailable, Message: "missing PolicySets: late"})
+	if got := *condition; got.LastTransitionTime.Equal(&transitioned) || got.ObservedGeneration != binding.Generation {
 		t.Errorf("a changed status kept the old transition time: %+v", got)
 	}
 

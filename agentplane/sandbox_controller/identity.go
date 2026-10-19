@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	policyapplyv1 "github.com/agentydragon/ducktape/agentplane/policy/client/applyconfigurations/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -58,14 +59,11 @@ func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *sandboxapi.Sand
 	if len(sandbox.Spec.PolicySets) == 0 {
 		return nil, nil
 	}
-	return r.applyOwned(ctx, sandbox, map[string]any{
-		"apiVersion": policyapi.SchemeGroupVersion.String(), "kind": "PolicyBinding",
-		"metadata": map[string]any{"name": sandbox.Name, "namespace": sandbox.Namespace, "labels": map[string]string{sandboxapi.SandboxLabel: sandbox.Name}},
-		"spec": map[string]any{
-			"subject":    map[string]any{"namespace": sandbox.Namespace, "name": sandbox.Name},
-			"policySets": sandbox.Spec.PolicySets,
-		},
-	}, "PolicyBindingConflict")
+	return r.applyOwned(ctx, sandbox, policyapplyv1.PolicyBinding(sandbox.Name, sandbox.Namespace).
+		WithLabels(map[string]string{sandboxapi.SandboxLabel: sandbox.Name}).
+		WithSpec(policyapplyv1.PolicyBindingSpec().
+			WithSubject(policyapplyv1.ServiceAccountRef().WithNamespace(sandbox.Namespace).WithName(sandbox.Name)).
+			WithPolicySets(sandbox.Spec.PolicySets...)), "PolicyBindingConflict")
 }
 
 // owned is the metadata of an object named after the Sandbox and labeled with it.

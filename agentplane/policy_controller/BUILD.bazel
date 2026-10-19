@@ -15,6 +15,7 @@ go_library(
     ],
     deps = [
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/client:applyconfiguration_api",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",
         "@io_k8s_apimachinery//pkg/api/errors",
@@ -23,6 +24,7 @@ go_library(
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_client_go//applyconfigurations/meta/v1:meta",
         "@io_k8s_client_go//applyconfigurations/rbac/v1:rbac",
         "@io_k8s_sigs_controller_runtime//:controller-runtime",
         "@io_k8s_sigs_controller_runtime//pkg/client",
