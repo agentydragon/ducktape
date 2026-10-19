@@ -297,23 +297,20 @@ Candidates; each still needs the operator's go.
   in the [agent communication plan](multiagent_communication.md#target-collections-and-launch-enrollment).
   A label per collection lets watchers and `kubectl` select on it; a spec list keeps requesters
   writing spec. This takes the membership CR out of #10987.
-- **Drop a Sandbox's workspace without deleting the Sandbox.** The Sandbox owns
-  `<sandbox>-workspace`, and a missing one blocks the next start with `VolumeLayoutMismatch`
-  (`sandbox_controller/workspace.go`), so deleting the Sandbox is the only way to free its workspace,
-  and that takes the state PVC with the runner's journals and native resume files. A request in the
-  Sandbox's spec, acted on while it is suspended, would delete the claim and clear
-  `status.volumes.workspace`; the next start creates a fresh claim, so an agent such as Haku can
-  re-clone and resume. The operator: dropping the workspace "should still in principle let a harness
-  start and continue" (09:50). The catch: a Session's working directory is under the workspace
-  (`/state/workspaces/{session_id}/...` in the presets), and its one-time setup script, which
-  creates it, does not rerun under the same Session ID ([app README](../app/README.md)). D1 and D3
-  finish a Sandbox this way; D2 and D4 can keep one without its storage.
-
-## Configurable within sane options
-
-The operator: "one way to make things no-regret might also be to make the 'what lives where'
-configurable, or configurable within sane options" (02:19).
-
+- **Drop a Sandbox's workspace without deleting the Sandbox.** Deferred by the operator, "not needed
+  for this plan" (23:32). The Sandbox owns `<sandbox>-workspace`, and a missing one blocks the next
+  start with `VolumeLayoutMismatch` (`sandbox_controller/workspace.go`), so deleting the Sandbox is
+  the only way to free its workspace, and that takes the state PVC with the runner's journals and
+  native resume files. A request in the Sandbox's spec, acted on while it is suspended, would delete
+  the claim and clear `status.volumes.workspace`; the next start creates a fresh claim, so an agent
+  such as Haku can re-clone and resume. The operator: dropping the workspace "should still in
+  principle let a harness start and continue" (09:50). The catch: a Session's working directory is
+  under the workspace (`/state/workspaces/{session_id}/...` in the presets), and its one-time setup
+  script, which creates it, does not rerun under the same Session ID ([app
+  README](../app/README.md)). D1 and D3 finish a Sandbox this way; D2 and D4 can keep one without
+  its storage. ## Configurable within sane options The operator: "one way to make things no-regret
+  might also be to make the 'what lives where' configurable, or configurable within sane options"
+  (02:19).
 - **Which apiserver holds the records.** The outer cluster and an Agentplane-owned apiserver speak the
   same protocol, so each service could take a records connection apart from its cluster connection,
   both pointing at the cluster by default. Two things must first stop assuming one apiserver: the
@@ -445,6 +442,7 @@ Held until one is chosen:
 | 2026-10-19 10:43 | Retagging an archived Sandbox can wait, but must stay possible, from the app                        | No importer; tags stored once, matched at read time |
 | 2026-10-19 23:27 | Tags must not need History: sending checks them without it                                          | Tags stay on the Sandbox CR                         |
 | 2026-10-19 23:29 | History may read Sandbox tags                                                                       | History mirrors tags for read grants                |
+| 2026-10-19 23:32 | The workspace drop "can be deferred, not needed for this plan"                                      | Deferred                                            |
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control
