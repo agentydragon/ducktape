@@ -5,8 +5,8 @@ go 1.26.0
 require (
 	github.com/andybalholm/brotli v1.2.4
 	github.com/atotto/clipboard v0.1.4
-	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/bubbles v1.0.0
+	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/fsnotify/fsnotify v1.10.1
@@ -18,6 +18,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/joho/godotenv v1.5.1
 	github.com/klauspost/compress v1.20.0
+	github.com/libp2p/zeroconf/v2 v2.2.0
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/pion/ice/v4 v4.4.2
 	github.com/pion/interceptor v0.1.48
@@ -46,6 +47,7 @@ require (
 	github.com/dlclark/regexp2/v2 v2.5.1 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
+	github.com/miekg/dns v1.1.43 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pion/datachannel v1.6.2 // indirect

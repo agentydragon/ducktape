@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 import httpx
+import pytest
 import pytest_bazel
 
 from util.oci import OciImage, load_oci_image
@@ -14,7 +15,8 @@ CLIENT_KEY = "synthetic-model-client-key"
 MANAGEMENT_KEY = "synthetic-management-key"
 
 
-def test_image_serves_bundled_ui_and_preserves_key_authentication(tmp_path: Path) -> None:
+@pytest.mark.parametrize("oidc_enabled", [False, True])
+def test_image_serves_bundled_ui_and_preserves_key_authentication(tmp_path: Path, oidc_enabled: bool) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(
         "host: 0.0.0.0\n"
@@ -32,6 +34,10 @@ def test_image_serves_bundled_ui_and_preserves_key_authentication(tmp_path: Path
             volumes=[(str(tmp_path), "/config", "ro")],
         )
         .with_env("MANAGEMENT_PASSWORD", MANAGEMENT_KEY)
+        .with_env("MANAGEMENT_OIDC_ISSUER", "https://issuer.example" if oidc_enabled else "")
+        .with_env("MANAGEMENT_OIDC_CLIENT_ID", "management")
+        .with_env("MANAGEMENT_OIDC_REDIRECT_URL", "https://admin.example/v8/management/auth/oidc/callback")
+        .with_env("MANAGEMENT_OIDC_ALLOWED_SUBJECTS", "owner")
         .with_exposed_ports(8317) as container
     ):
         base_url = f"http://{container.get_container_host_ip()}:{container.get_exposed_port(8317)}"
@@ -39,7 +45,7 @@ def test_image_serves_bundled_ui_and_preserves_key_authentication(tmp_path: Path
             deadline = time.monotonic() + 15
             while True:
                 try:
-                    response = client.get("/v0/management/session")
+                    response = client.get("/v8/management/auth/session")
                     if response.status_code == 200:
                         break
                 except httpx.TransportError:
@@ -48,12 +54,11 @@ def test_image_serves_bundled_ui_and_preserves_key_authentication(tmp_path: Path
                     raise TimeoutError("CLIProxyAPI did not become ready; see undeclared container logs")
                 time.sleep(0.1)
 
-            assert response.json() == {"authenticated": False, "oidcEnabled": False}
+            assert response.json() == {"authenticated": False, "oidcEnabled": oidc_enabled}
             ui = client.get("/management.html")
             assert ui.status_code == 200
-            # Routes that only the patched management UI hardcodes: session discovery and the SSO sign-in target.
-            assert "/v0/management/session" in ui.text
-            assert "/v0/management/login" in ui.text
+            assert "oidc/login" in ui.text
+            assert "X-Management-CSRF" in ui.text
 
             assert client.get("/v1/models").status_code == 401
             models = client.get("/v1/models", headers={"Authorization": f"Bearer {CLIENT_KEY}"})
@@ -64,6 +69,10 @@ def test_image_serves_bundled_ui_and_preserves_key_authentication(tmp_path: Path
             config_response = client.get("/v0/management/config", headers={"Authorization": f"Bearer {MANAGEMENT_KEY}"})
             assert config_response.status_code == 200
             assert config_response.json()["debug"] is False
+            v8_config = client.get("/v8/management/config", headers={"Authorization": f"Bearer {MANAGEMENT_KEY}"})
+            assert v8_config.status_code == 200
+            callback = client.get("/v8/management/auth/oidc/callback?code=invalid&state=invalid")
+            assert callback.status_code == (400 if oidc_enabled else 404)
 
 
 if __name__ == "__main__":

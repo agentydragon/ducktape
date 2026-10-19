@@ -7,6 +7,7 @@ bazel_dep(name = "gazelle", version = "0.54.0", repo_name = "bazel_gazelle")
 bazel_dep(name = "rules_go", version = "0.63.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_oci", version = "2.3.0")
 bazel_dep(name = "rules_pkg", version = "1.3.0")
+bazel_dep(name = "rules_shell", version = "0.8.0")
 bazel_dep(name = "aspect_rules_js", version = "3.4.1")
 bazel_dep(name = "rules_nodejs", version = "6.7.5")
 
@@ -41,14 +42,22 @@ use_repo(npm, "npm_cli_proxy_webui")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# https://github.com/router-for-me/Cli-Proxy-API-Management-Center/pull/505
 http_archive(
     name = "cli_proxy_webui",
     build_file = "//:webui.BUILD.bazel",
-    patch_args = ["-p1"],
-    patches = ["//patches:frontend.patch"],
-    sha256 = "06531b11071292dfa61fa0713232371611a821e9505d48d6ef66407dec160a6e",
-    strip_prefix = "Cli-Proxy-API-Management-Center-ed5f1c48e11ba7335f1e8f676f228c280196af85",
-    urls = ["https://github.com/router-for-me/Cli-Proxy-API-Management-Center/archive/ed5f1c48e11ba7335f1e8f676f228c280196af85.tar.gz"],
+    sha256 = "bc2d4d9858a4a89ec80ce1b531b042b04e78d54c6e14b1deb09e027e10f4232a",
+    strip_prefix = "Cli-Proxy-API-Management-Center-69b6303eb935050788772285f30268ed81d0a91c",
+    urls = ["https://github.com/agentydragon/Cli-Proxy-API-Management-Center/archive/69b6303eb935050788772285f30268ed81d0a91c.tar.gz"],
+)
+
+# Run upstream's test suite with its declared Bun runtime.
+http_archive(
+    name = "cli_proxy_bun",
+    build_file_content = 'exports_files(["bun"])',
+    sha256 = "951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f",
+    strip_prefix = "bun-linux-x64",
+    urls = ["https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-x64.zip"],
 )
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
@@ -66,31 +75,28 @@ go_sdk.download(version = "1.26.4")
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps", isolate = True)
 go_deps.from_file(go_mod = "//:go.mod")
 go_deps.module(
-    path = "github.com/router-for-me/CLIProxyAPI/v7",
-    version = "v7.0.0-20260908173309-7fac6b15bcfe",
+    path = "github.com/router-for-me/CLIProxyAPI/v8",
+    version = "v8.0.0-20261019015532-0f5c54cd6a13",
 )
 
-# The pinned upstream CLIProxyAPI source archive's generated BUILD graph still
-# imports pion/stun/v3 even though its go.mod has moved to pion/stun/v4. Keep
-# the isolated go_deps repository visible alongside the v4 module used by the
-# newer WebRTC sources until the pinned source and BUILD graph stop referring
-# to the v3 label.
+# The v8 source imports stun/v3; our newer WebRTC dependencies also use stun/v4.
 go_deps.module(
     path = "github.com/pion/stun/v3",
     sum = "h1:uRXMTlGLf89WgItGNyZ6aR5jMTX0NBbybXADpQCzn+E=",
     version = "v3.1.7",
 )
+
+# https://github.com/router-for-me/CLIProxyAPI/pull/6761
 go_deps.archive_override(
     patch_strip = 1,
     patches = [
-        "//patches:management-oidc.patch",
         "//patches:bundled-panel.patch",
         "//patches:bazel.patch",
         "//patches:upstream-timing.patch",
     ],
-    path = "github.com/router-for-me/CLIProxyAPI/v7",
-    sha256 = "3f829041f62175a546750520d1c160cba1a7618d30f17618731e250c048d77e5",
-    strip_prefix = "CLIProxyAPI-7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974",
-    urls = ["https://github.com/router-for-me/CLIProxyAPI/archive/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974.tar.gz"],
+    path = "github.com/router-for-me/CLIProxyAPI/v8",
+    sha256 = "d6f1bcb5ee6ff76f72b4a5478747d13bbfc060fea95bc449084d24fc952b08e0",
+    strip_prefix = "CLIProxyAPI-0f5c54cd6a1393447484eee02149bf7fab2e4784",
+    urls = ["https://github.com/agentydragon/CLIProxyAPI/archive/0f5c54cd6a1393447484eee02149bf7fab2e4784.tar.gz"],
 )
-use_repo(go_deps, "com_github_router_for_me_cliproxyapi_v7")
+use_repo(go_deps, "com_github_router_for_me_cliproxyapi_v8")

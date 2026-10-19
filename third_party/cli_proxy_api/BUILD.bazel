@@ -2,12 +2,13 @@ load("@npm_cli_proxy_webui//:defs.bzl", "npm_link_all_packages")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 npm_link_all_packages(name = "node_modules")
 
 alias(
     name = "server",
-    actual = "@com_github_router_for_me_cliproxyapi_v7//cmd/server",
+    actual = "@com_github_router_for_me_cliproxyapi_v8//cmd/server",
     visibility = ["//visibility:public"],
 )
 
@@ -17,10 +18,24 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+sh_test(
+    name = "frontend_unit_tests",
+    size = "medium",
+    srcs = ["run_frontend_tests.sh"],
+    args = [
+        "$(rootpath @cli_proxy_bun//:bun)",
+        "$(rootpath @cli_proxy_webui//:package.json)",
+    ],
+    data = [
+        "@cli_proxy_bun//:bun",
+        "@cli_proxy_webui//:test_sources",
+    ],
+)
+
 test_suite(
     name = "frontend_tests",
     tests = [
-        "@cli_proxy_webui//:session_tests",
+        ":frontend_unit_tests",
         "@cli_proxy_webui//:typecheck",
     ],
     visibility = ["//visibility:public"],
@@ -30,10 +45,10 @@ test_suite(
     name = "tests",
     tests = [
         ":frontend_tests",
-        "@com_github_router_for_me_cliproxyapi_v7//internal/api/handlers/management:oidc_test",
-        "@com_github_router_for_me_cliproxyapi_v7//internal/api/middleware:middleware_test",
-        "@com_github_router_for_me_cliproxyapi_v7//internal/logging:upstream_timing_test",
-        "@com_github_router_for_me_cliproxyapi_v7//internal/managementasset:managementasset_test",
+        "@com_github_router_for_me_cliproxyapi_v8//internal/api/handlers/management:oidc_test",
+        "@com_github_router_for_me_cliproxyapi_v8//internal/api/middleware:middleware_test",
+        "@com_github_router_for_me_cliproxyapi_v8//internal/logging:upstream_timing_test",
+        "@com_github_router_for_me_cliproxyapi_v8//internal/managementasset:managementasset_test",
     ],
     visibility = ["//visibility:public"],
 )

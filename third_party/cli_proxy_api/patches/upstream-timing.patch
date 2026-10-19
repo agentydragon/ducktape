@@ -1,8 +1,8 @@
 diff --git a/internal/api/middleware/response_writer.go b/internal/api/middleware/response_writer.go
-index 315e4ee..2e1d730 100644
+index 0fe5b72b..65d32ab4 100644
 --- a/internal/api/middleware/response_writer.go
 +++ b/internal/api/middleware/response_writer.go
-@@ -48,6 +48,7 @@ type ResponseWriterWrapper struct {
+@@ -49,6 +49,7 @@ type ResponseWriterWrapper struct {
  	headers             map[string][]string        // headers stores the response headers.
  	logOnErrorOnly      bool                       // logOnErrorOnly enables logging only when an error response is detected.
  	firstChunkTimestamp time.Time                  // firstChunkTimestamp captures TTFB for streaming responses.
@@ -10,7 +10,7 @@ index 315e4ee..2e1d730 100644
  }
  
  // NewResponseWriterWrapper creates and initializes a new ResponseWriterWrapper.
-@@ -82,6 +83,9 @@ func (w *ResponseWriterWrapper) Write(data []byte) (int, error) {
+@@ -83,6 +84,9 @@ func (w *ResponseWriterWrapper) Write(data []byte) (int, error) {
  
  	// CRITICAL: Write to client first (zero latency)
  	n, err := w.ResponseWriter.Write(data)
@@ -20,7 +20,7 @@ index 315e4ee..2e1d730 100644
  
  	// THEN: Handle logging based on response type
  	if w.isStreaming && w.chunkChannel != nil {
-@@ -130,6 +134,9 @@ func (w *ResponseWriterWrapper) WriteString(data string) (int, error) {
+@@ -136,6 +140,9 @@ func (w *ResponseWriterWrapper) WriteString(data string) (int, error) {
  
  	// CRITICAL: Write to client first (zero latency)
  	n, err := w.ResponseWriter.WriteString(data)
@@ -30,7 +30,7 @@ index 315e4ee..2e1d730 100644
  
  	// THEN: Capture for logging
  	if w.isStreaming && w.chunkChannel != nil {
-@@ -759,3 +766,8 @@ func hasActionableError(c *gin.Context, statusCode int, apiErrors []*interfaces.
+@@ -765,3 +772,8 @@ func hasActionableError(c *gin.Context, statusCode int, apiErrors []*interfaces.
  	}
  	return statusCode >= http.StatusBadRequest
  }
@@ -40,7 +40,7 @@ index 315e4ee..2e1d730 100644
 +	return w.firstByteAt
 +}
 diff --git a/internal/api/middleware/response_writer_test.go b/internal/api/middleware/response_writer_test.go
-index b004175..7ad2daa 100644
+index c0929f02..fda723c5 100644
 --- a/internal/api/middleware/response_writer_test.go
 +++ b/internal/api/middleware/response_writer_test.go
 @@ -378,3 +378,28 @@ func TestFinalizeIncludes500InForceLog(t *testing.T) {
@@ -73,7 +73,7 @@ index b004175..7ad2daa 100644
 +	}
 +}
 diff --git a/internal/logging/gin_logger.go b/internal/logging/gin_logger.go
-index b09e55d..214bf19 100644
+index a63d4189..8ba2d4ae 100644
 --- a/internal/logging/gin_logger.go
 +++ b/internal/logging/gin_logger.go
 @@ -9,6 +9,7 @@ import (
@@ -96,7 +96,7 @@ index b09e55d..214bf19 100644
  )
  
  // GinLogrusLogger returns a Gin middleware handler that logs HTTP requests and responses
-@@ -88,6 +90,7 @@ func GinLogrusLogger() gin.HandlerFunc {
+@@ -93,6 +95,7 @@ func GinLogrusLogger() gin.HandlerFunc {
  		if creditsUsed(c) {
  			logLine += " [credits]"
  		}
@@ -104,7 +104,7 @@ index b09e55d..214bf19 100644
  		if errorMessage != "" {
  			logLine = logLine + " | " + errorMessage
  		}
-@@ -170,3 +173,97 @@ func creditsUsed(c *gin.Context) bool {
+@@ -175,3 +178,97 @@ func creditsUsed(c *gin.Context) bool {
  	flag, ok := val.(bool)
  	return ok && flag
  }
@@ -204,7 +204,7 @@ index b09e55d..214bf19 100644
 +}
 diff --git a/internal/logging/upstream_timing_test.go b/internal/logging/upstream_timing_test.go
 new file mode 100644
-index 0000000..232ac7f
+index 00000000..232ac7fc
 --- /dev/null
 +++ b/internal/logging/upstream_timing_test.go
 @@ -0,0 +1,82 @@
@@ -291,7 +291,7 @@ index 0000000..232ac7f
 +	}
 +}
 diff --git a/internal/runtime/executor/helps/logging_helpers.go b/internal/runtime/executor/helps/logging_helpers.go
-index 7f9b678..bb0ceba 100644
+index e1db2978..d0112628 100644
 --- a/internal/runtime/executor/helps/logging_helpers.go
 +++ b/internal/runtime/executor/helps/logging_helpers.go
 @@ -63,6 +63,7 @@ func requestLogCaptureEnabled(cfg *config.Config) bool {

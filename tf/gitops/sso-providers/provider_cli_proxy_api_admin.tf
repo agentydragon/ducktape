@@ -2,7 +2,7 @@
 # and recovers the Codex/Claude OAuth sessions backing OpenClaw's chatgpt/oai-responses/*
 # models. cluster/k8s/cli-proxy-api/README.md "Remote recovery" has the recovery flow.
 #
-# The patched backend owns the OIDC code exchange and browser session. Model API keys
+# The backend owns the OIDC code exchange and browser session. Model API keys
 # and the management key used by AIQuota remain independent of browser authentication.
 #
 # Scoped to the account owner only: this UI mints OAuth credentials against personal
@@ -25,9 +25,16 @@ resource "authentik_provider_oauth2" "cli_proxy_api_admin" {
     data.authentik_property_mapping_provider_scope.openid.id,
   ]
   allowed_redirect_uris = [
+    # Keep the running v7 pod's callback valid until the v8 image has rolled out.
+    # Remove this entry after that rollout; the v8 backend does not serve this path.
     {
       matching_mode     = "strict"
       url               = "https://cli-proxy-api-admin.allegedly.works/v0/management/callback"
+      redirect_uri_type = "authorization"
+    },
+    {
+      matching_mode     = "strict"
+      url               = "https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback"
       redirect_uri_type = "authorization"
     },
   ]
@@ -64,7 +71,7 @@ resource "kubernetes_secret" "cli_proxy_api_admin_oidc" {
     MANAGEMENT_OIDC_ISSUER           = "https://auth.allegedly.works/application/o/cli-proxy-api-admin/"
     MANAGEMENT_OIDC_CLIENT_ID        = authentik_provider_oauth2.cli_proxy_api_admin.client_id
     MANAGEMENT_OIDC_CLIENT_SECRET    = authentik_provider_oauth2.cli_proxy_api_admin.client_secret
-    MANAGEMENT_OIDC_REDIRECT_URL     = "https://cli-proxy-api-admin.allegedly.works/v0/management/callback"
+    MANAGEMENT_OIDC_REDIRECT_URL     = "https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback"
     MANAGEMENT_OIDC_ALLOWED_SUBJECTS = tostring(authentik_user.agentydragon.id)
   }
 }

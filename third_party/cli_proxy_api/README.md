@@ -1,6 +1,10 @@
 # CLIProxyAPI with management OIDC
 
-Builds pinned upstream backend and management UI sources with local patches. The
+Builds the backend and management UI from pinned commits of the open OIDC PRs:
+[CLIProxyAPI #6761](https://github.com/router-for-me/CLIProxyAPI/pull/6761) and
+[Management Center #505](https://github.com/router-for-me/Cli-Proxy-API-Management-Center/pull/505).
+Source archives come from the author forks; exact revisions and checksums are in
+`MODULE.bazel`. OIDC implementation and tests come directly from those commits. The
 backend uses `rules_go`; the frontend uses Vite through `rules_js`; `rules_oci`
 packages both into a Debian 13 distroless image with CA certificates and CGO runtime
 libraries. Go and npm dependencies are isolated from Ducktape's application graphs.
@@ -16,10 +20,6 @@ in <../../cluster/k8s/cli-proxy-api/README.md>.
 
 ## Patch ownership
 
-- `patches/management-oidc.patch`: optional native OIDC management login and its
-  security tests. Model API keys and explicit management keys remain supported.
-- `patches/frontend.patch`: browser-session discovery, SSO login, local logout,
-  and CSRF headers. Existing key login remains available.
 - `patches/bundled-panel.patch`: `MANAGEMENT_STATIC_READONLY=true` prevents panel
   downloads and replacement, including when the file is missing.
 - `patches/bazel.patch`: BUILD additions applied after Gazelle generates upstream
@@ -30,11 +30,8 @@ in <../../cluster/k8s/cli-proxy-api/README.md>.
   chunk, and the first byte back to the client. It works with `request-log` off, so the
   split reaches Loki from stdout without writing request bodies anywhere.
 
-These are downstream changes, not assumed upstream bug fixes. No exact upstream
-issue currently tracks the OIDC/session or read-only-panel behavior. Remove
-`management-oidc.patch` and `frontend.patch` together only after a released
-backend/UI pair provides equivalent OIDC, browser-session, CSRF, and logout
-behavior. Remove `bundled-panel.patch` when the upstream panel has an equivalent
+The OIDC source pins track open PRs, not released upstream support. Move both pins
+to upstream releases when those releases include the feature. Remove `bundled-panel.patch` when the upstream panel has an equivalent
 read-only/no-download contract or the deployment no longer requires it. Remove
 `bazel.patch` when the pinned upstream sources provide compatible BUILD metadata. Remove
 `upstream-timing.patch` when upstream logs per-request upstream timing to stdout.
@@ -53,7 +50,7 @@ Unset `MANAGEMENT_OIDC_ISSUER` preserves key authentication. To enable OIDC, set
 | `MANAGEMENT_OIDC_ISSUER`           | HTTPS OIDC issuer URL                                   |
 | `MANAGEMENT_OIDC_CLIENT_ID`        | Registered client ID                                    |
 | `MANAGEMENT_OIDC_CLIENT_SECRET`    | Confidential client secret, supplied from a Secret      |
-| `MANAGEMENT_OIDC_REDIRECT_URL`     | `https://<admin-host>/v0/management/callback`           |
+| `MANAGEMENT_OIDC_REDIRECT_URL`     | `https://<admin-host>/v8/management/auth/oidc/callback` |
 | `MANAGEMENT_OIDC_ALLOWED_SUBJECTS` | Comma-separated permitted `sub` values from that issuer |
 
 The authorization-code flow uses PKCE, state bound to a browser cookie, nonce, and
@@ -68,16 +65,18 @@ restart. Use one replica or sticky routing. Provider access/refresh tokens are n
 retained. Logout terminates the local session, not the identity-provider session.
 
 Cookie-authenticated management requests require `X-Management-CSRF: 1`, reject
-foreign origins, and reject cross-site fetches. This also covers legacy management
-GET operations that mutate state. Keep browser UI and management API on the same
+foreign origins, and reject cross-site fetches. Browser sessions authenticate only v8 management requests; legacy v0 requests
+require a management key. Keep browser UI and management API on the same
 origin. Explicit management keys continue to work without browser cookies.
 
 ## Updating upstream
 
-Update each source revision and checksum, then rebase its feature patches. Refresh
+Update each PR commit pin and checksum, then rebase the remaining downstream
+patches. Refresh
 `go.mod`/`go.sum` from the patched backend, retaining the build module name, and
 refresh the isolated pnpm lock with Bazel-managed pnpm when frontend dependencies
-change. **Gotcha:** `go.mod` omits modules that no package the Bazel targets reach
+change. Frontend unit tests run the upstream Bun suite with a checksum-pinned runtime;
+type checking and the Vite bundle still use Bazel-managed Node. **Gotcha:** `go.mod` omits modules that no package the Bazel targets reach
 imports (gin's optional `sonic`, `jsoniter` and `go_json` JSON backends and their
 transitive modules); do not restore them from upstream's `go.mod`. Recheck
 `patches/bazel.patch` against Gazelle's generated BUILD files.

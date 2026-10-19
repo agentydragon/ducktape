@@ -101,7 +101,7 @@ The confidential provider and reflected `cli-proxy-api-admin-oidc` Secret are ow
 by `tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf`. The provider uses
 `sub_mode = "user_id"`, so the backend allowlist contains the owner's numeric
 Authentik ID. Its strict callback is
-`https://cli-proxy-api-admin.allegedly.works/v0/management/callback`.
+`https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback`.
 
 Sessions last at most one hour or the ID token's remaining lifetime. Restarting the
 single replica revokes them. Logout clears the local session; it does not log the
@@ -114,9 +114,10 @@ The `cli-proxy-api.allegedly.works` hostname only routes `/v1` model requests.
 ## Patched image
 
 `@ducktape_cli_proxy_api//:image` builds the backend and bundled management UI;
-`//third_party/cli_proxy_api_tests:tests` checks the patches and boots the packaged
-container. Patches live in `third_party/cli_proxy_api/` for eventual upstream
-submission. CI publishes `git.allegedly.works/ducktape-ci/cli-proxy-api`; Flux tracks
+`//third_party/cli_proxy_api_tests:tests` runs upstream authentication tests and boots
+the packaged container. Backend and UI source pins use the open OIDC PRs linked in
+<../../../third_party/cli_proxy_api/README.md>; remaining patches add build glue, an
+immutable panel, and request timing. CI publishes `git.allegedly.works/ducktape-ci/cli-proxy-api`; Flux tracks
 its `devel-*` tags. The bundled UI is immutable and cannot be replaced by the
 upstream panel updater.
 
