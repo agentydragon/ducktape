@@ -200,6 +200,60 @@ func TestClaudeOutboundFramesKeepNativeNullableFields(t *testing.T) {
 	}
 }
 
+func TestClaudePermissionReplyPreservesInput(t *testing.T) {
+	for _, input := range []string{
+		`{"large":9007199254740993,"decimal":1.00,"exponent":1e3,"nested":[{"n":9007199254740995,"empty":null}]}`,
+		`null`,
+	} {
+		t.Run(input, func(t *testing.T) {
+			host := newAdapterTestHost()
+			adapter := claude.New(host, harness.LaunchConfig{Binary: "/bin/false"})
+			frame := json.RawMessage(`{"type":"control_request","request_id":"permission-1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":` + input + `}}`)
+			if err := adapter.OnFrame(context.Background(), frame, 1); err != nil {
+				t.Fatal(err)
+			}
+			if len(host.nativeWrites) != 1 {
+				t.Fatalf("expected one permission reply, got %d", len(host.nativeWrites))
+			}
+			var reply struct {
+				Type     string `json:"type"`
+				Response struct {
+					RequestID string `json:"request_id"`
+					Response  struct {
+						Behavior     string          `json:"behavior"`
+						UpdatedInput json.RawMessage `json:"updatedInput"`
+					} `json:"response"`
+				} `json:"response"`
+			}
+			if err := json.Unmarshal(host.nativeWrites[0], &reply); err != nil {
+				t.Fatal(err)
+			}
+			if reply.Type != "control_response" || reply.Response.RequestID != "permission-1" || reply.Response.Response.Behavior != "allow" {
+				t.Fatalf("unexpected permission reply: %s", host.nativeWrites[0])
+			}
+			if string(reply.Response.Response.UpdatedInput) != input {
+				t.Fatalf("permission reply changed tool input: got %s, want %s", reply.Response.Response.UpdatedInput, input)
+			}
+		})
+	}
+}
+
+func TestClaudePermissionReplyRejectsNonObjectInput(t *testing.T) {
+	for _, input := range []string{`[]`, `"text"`, `42`} {
+		t.Run(input, func(t *testing.T) {
+			host := newAdapterTestHost()
+			adapter := claude.New(host, harness.LaunchConfig{Binary: "/bin/false"})
+			frame := json.RawMessage(`{"type":"control_request","request_id":"permission-1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":` + input + `}}`)
+			if err := adapter.OnFrame(context.Background(), frame, 1); err == nil {
+				t.Fatal("non-object tool input accepted")
+			}
+			if len(host.nativeWrites) != 0 {
+				t.Fatalf("permission reply sent for invalid tool input: %s", host.nativeWrites)
+			}
+		})
+	}
+}
+
 func TestClaudeToolArgumentsPreserveNativePayload(t *testing.T) {
 	for _, input := range []string{`{ "large": 9007199254740993, "escaped": "\u0061", "text": "<&>" }`, `null`} {
 		t.Run(input, func(t *testing.T) {

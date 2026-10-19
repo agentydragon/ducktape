@@ -446,13 +446,13 @@ func (a *claudeAdapter) answerControlRequest(ctx context.Context, frame claudeWi
 	var response map[string]any
 	switch frame.Request.Subtype {
 	case "can_use_tool":
-		var toolInput map[string]any
+		var toolInput map[string]json.RawMessage
 		if len(frame.Request.Input) > 0 {
 			if err := json.Unmarshal(frame.Request.Input, &toolInput); err != nil {
 				return err
 			}
 		}
-		response = map[string]any{"subtype": "success", "request_id": frame.RequestID, "response": map[string]any{"behavior": "allow", "updatedInput": toolInput}, "error": nil}
+		response = map[string]any{"subtype": "success", "request_id": frame.RequestID, "response": map[string]any{"behavior": "allow", "updatedInput": frame.Request.Input}, "error": nil}
 	default:
 		response = map[string]any{
 			"subtype": "error", "request_id": frame.RequestID,
