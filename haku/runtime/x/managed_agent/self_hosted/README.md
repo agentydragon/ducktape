@@ -1,10 +1,9 @@
 # Managed Agents — self-hosted sandbox (Runtime B)
 
-> **Parked.** The Flux Kustomization is suspended and CI no longer builds or publishes
-> this worker image. The flake package remains available for deliberate manual builds.
-> Suspending Flux does not delete resources it applied previously; this change does not
-> remove any lingering cluster resources. See [`deploy/README.md`](deploy/README.md)
-> for the archived manifests and the conditions for reactivation.
+> **Unwired.** Flux does not register this worker, and CI does not build or publish
+> its image. The flake package remains available for deliberate manual builds.
+> See [`deploy/README.md`](deploy/README.md) for the retained manifests and
+> reactivation conditions.
 
 Runtime B from <../../../../plans/runtime_options.md>: Anthropic runs the agent loop;
 tool execution runs in a worker **you** run in `haku-sandbox` (self-hosted
@@ -42,7 +41,7 @@ migrated this to TF (`tf/gitops/haku-self-hosted-agent`, PR #2673) and it never
 applied for this reason, so it was reverted. Revisit only if the provider gains
 `self_hosted` (make `networking` optional / discriminated by `type`); an upstream
 issue is the path there. The provider can represent `type = "cloud"`, but the
-cloud agent's Anthropic resources are deleted and its Flux resource is suspended.
+cloud agent's Anthropic resources are deleted and its Flux registration is removed.
 
 Only the **environment / agent / deployment** are provisioned by `ant`. The
 formerly shared Anthropic vault and its MCP credentials were deleted on

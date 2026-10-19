@@ -54,28 +54,6 @@ def buildbuddy_executor(chart: Chart) -> Kustomization:
     )
 
 
-def haku_cloud_agent(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    tofu_controller: Kustomization,
-) -> Kustomization:
-    name = "haku-cloud-agent"
-    return flux_kustomization(
-        chart,
-        name,
-        # Decrypt the SOPS workspace API key in this dir;
-        # without this Flux applies the raw ENC[...] ciphertext and the runner gets a
-        # bogus key/token (401).
-        artifact,
-        annotations={"ducktape.org/parked": "true"},
-        suspend=True,
-        timeout="10m",
-        decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, tofu_controller),
-    )
-
-
 def docker_ci(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
@@ -134,34 +112,6 @@ def gecko_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> K
         # Keep this controller paused so Flux does not recreate the empty namespace.
         suspend=True,
         timeout="2m",
-    )
-
-
-def haku_managed_agent(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    haku_namespace: Kustomization,
-    haku_rbac: Kustomization,
-    haku_egress_proxy: Kustomization,
-) -> Kustomization:
-    name = "haku-managed-agent"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        annotations={"ducktape.org/parked": "true"},
-        suspend=True,
-        timeout="5m",
-        decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
-            external_secrets_operator,
-            haku_namespace,
-            haku_rbac,
-            # destructive-if-out-of-order: the haku-sandbox egress fence must precede sandbox pods.
-            haku_egress_proxy,
-        ),
     )
 
 

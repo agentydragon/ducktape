@@ -1,18 +1,13 @@
 # Runtime B deployment archive
 
 This directory preserves the self-hosted Managed Agent's Kubernetes manifests beside
-the Haku component that owns them. Runtime B is parked: the generated Flux Kustomization
-is suspended and marked `ducktape.org/parked: "true"`. The suspension prevents further
-reconciliation; it does not delete resources Flux applied before it was suspended. This
-change does not remove any lingering cluster resources.
-
-The suspended Kustomization still points here through the `haku-managed-agent`
-ExternalArtifact. This keeps the archived manifests available for deliberate revival.
+the Haku component that owns them. Runtime B is unwired: there is no Flux
+Kustomization, artifact registration, or source checkout for this deployment.
 The environment key remains SOPS-encrypted in `environment-key.sops.yaml`.
 
 ## Reactivation conditions
 
-Do not unsuspend this Kustomization as a standalone change. Reactivation requires an
+Reactivation requires an
 explicit decision to run Runtime B again, plus all of the following in the same reviewed
 plan:
 
@@ -25,8 +20,9 @@ plan:
    as `HAKU_MANAGED_AGENT_VAULT_ID`; the old shared vault and its credentials were
    deleted. Confirm the environment key, Forgejo clone credentials, and image-pull
    credentials are also valid.
-3. Remove the parked annotation, set `suspend: false`, and verify the Flux path,
-   decryption key, dependencies, and selected image before allowing reconciliation.
+3. Restore the Flux Kustomization, artifact registration, and source sparse-checkout
+   path. Verify the decryption key, dependencies, and selected image before allowing
+   reconciliation.
 4. Run a deployment smoke test and confirm the worker can execute and report a tool
    result before treating Runtime B as active.
 

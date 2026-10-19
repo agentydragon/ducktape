@@ -162,8 +162,6 @@ def chart(app: App) -> Chart:
             f"{PARKED_ROOT}/",
             "agentplane/crds/manifests/",
             "cluster/charts/browsertrix/",
-            "haku/runtime/x/managed_agent/self_hosted/deploy/",
-            "haku/runtime/x/managed_agent/anthropic_hosted/terraform/",
             "loom/wayback/deploy/",
             "props/deploy/",
             f"{TF_GITOPS_ROOT}/",

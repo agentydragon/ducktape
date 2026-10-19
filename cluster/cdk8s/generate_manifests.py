@@ -1124,10 +1124,6 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
         kyverno_kustomization,
     )
-    haku_cloud_agent_artifact = artifact("haku-cloud-agent", f"{PARKED_ROOT}/cloud-agent-tf")
-    parked_flux_kustomizations.haku_cloud_agent(
-        flux_chart, haku_cloud_agent_artifact, external_secrets_operator_kustomization, tofu_controller_kustomization
-    )
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images_module = terraform.gitops_module(forgejo_images.NAME)
     forgejo_images.forgejo_images(
@@ -1584,15 +1580,6 @@ def generate_manifests(root: Path) -> None:
         haku_egress_proxy_kustomization,
         external_secrets_operator_kustomization,
     )
-    haku_managed_agent_artifact = artifact("haku-managed-agent", "haku/runtime/x/managed_agent/self_hosted/deploy")
-    parked_flux_kustomizations.haku_managed_agent(
-        flux_chart,
-        haku_managed_agent_artifact,
-        external_secrets_operator_kustomization,
-        haku_namespace_kustomization,
-        haku_rbac_kustomization,
-        haku_egress_proxy_kustomization,
-    )
     agentplane_testing_artifact = artifact("agentplane-testing", testing.ENV.output_dir, testing.ENV.image_pins)
     agentplane_testing_kustomization = testing.agentplane_testing(
         flux_chart,
@@ -1802,7 +1789,6 @@ def generate_manifests(root: Path) -> None:
             claude_sandbox_secrets_artifact,
             forgejo_token_rotation_artifact,
             ha_mcp_artifact,
-            haku_managed_agent_artifact,
             kubectl_passthrough_mcp_artifact,
             loki_read_proxy_artifact,
             plaid_mcp_artifact,

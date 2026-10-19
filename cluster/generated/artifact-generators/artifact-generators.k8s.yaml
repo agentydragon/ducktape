@@ -335,11 +335,6 @@ spec:
       name: ha-mcp
       originRevision: "@repo"
     - copy:
-        - from: "@repo/haku/runtime/x/managed_agent/self_hosted/deploy/**"
-          to: "@artifact/haku/runtime/x/managed_agent/self_hosted/deploy/"
-      name: haku-managed-agent
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/agents/kubectl-passthrough-mcp/app/**"
           to: "@artifact/cluster/generated/agents/kubectl-passthrough-mcp/app/"
       name: kubectl-passthrough-mcp

@@ -2,8 +2,9 @@
 
 Status: **PARKED (2026-07-04).** The cloud control-plane objects
 (environment/agent/vault/static_bearer credential/deployment) were deleted at
-Anthropic by the operator on 2026-09-30, and `cluster/parked/cloud-agent-tf` is suspended
-(`suspend: true`). Resuming starts with the decision in
+Anthropic by the operator on 2026-09-30. Its Flux registration and artifact
+generation are removed; manifests remain in `cluster/parked/cloud-agent-tf`.
+Resuming requires restoring that wiring and starts with the decision in
 [Resuming](#resuming-recreate-via-the-provider-vs-retire-it) below. What follows
 describes the **v0 architecture as it was built**, before parking — historical
 until resumed:

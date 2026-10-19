@@ -169,8 +169,6 @@ spec:
     - cluster/parked/
     - agentplane/crds/manifests/
     - cluster/charts/browsertrix/
-    - haku/runtime/x/managed_agent/self_hosted/deploy/
-    - haku/runtime/x/managed_agent/anthropic_hosted/terraform/
     - loom/wayback/deploy/
     - props/deploy/
     - tf/gitops/
