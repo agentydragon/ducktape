@@ -117,7 +117,7 @@ async def async_main(settings: Settings) -> None:
         ApiClient(configuration=await kubernetes_configuration(settings.kubeconfig)) as api,
         httpx.AsyncClient(base_url=str(settings.action_federation.service_url), timeout=10) as actions_http,
         httpx.AsyncClient(base_url=str(settings.notifications_url), timeout=5) as notifications_http,
-        httpx.AsyncClient(base_url=str(settings.egress_admin_url), timeout=settings.egress_admin_timeout) as admin_http,
+        dial(f"{settings.egress_admin_url.host}:{settings.egress_admin_url.port}") as egress_channel,
         dial(settings.runner_gateway_target) as gateway_channel,
         dial(settings.session_dispatcher_target) as dispatcher_channel,
         dial(settings.history_service_target) as history_health_channel,
@@ -177,13 +177,15 @@ async def async_main(settings: Settings) -> None:
         session_openings = SessionOpenings(session_openings_client, event_logs, retry_interval_s=1)
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
 
-        decisions = DecisionsClient(admin_http)
+        decisions = DecisionsClient(
+            egress_channel, token_file=settings.egress_admin_token_file, request_timeout_s=settings.egress_admin_timeout
+        )
         system_probes = [
             grpc_health_probe("Runner Gateway", gateway_channel),
             grpc_health_probe("History Service", history_health_channel),
             http_health_probe("Action Service", actions_http, "/healthz"),
             http_health_probe("Notification Service", notifications_http, "/healthz"),
-            http_health_probe("Egress proxy", admin_http, "/healthz"),
+            grpc_health_probe("Egress proxy", egress_channel),
         ]
         electric = None
         if settings.electric_url is not None:
@@ -227,11 +229,7 @@ async def async_main(settings: Settings) -> None:
 
             # The SPA, mounted last so the API routes above it win; index.html answers the rest.
             app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
-        async with (
-            background(watch.run(), name="live-watch"),
-            background(history_watch.run(), name="history-watch"),
-            background(decisions.watch(retry_interval_s=1), name="egress-decisions-watch"),
-        ):
+        async with background(watch.run(), name="live-watch"), background(history_watch.run(), name="history-watch"):
             await serve_then_close(
                 AppServer(
                     uvicorn.Config(

@@ -251,8 +251,10 @@ removing a runner Pod does not clear projected Threads, and the app does not cla
 are still running. Archived Threads stay hidden unless the operator chooses **Show archived**.
 
 The Egress log tab's decisions are their own stream, `/live/sandboxes/{name}/egress/decisions`: the
-proxy announces each commit of decisions on its admin port's `/decisions/changes`, and every frame
-re-reads `/decisions` from it. Runner availability affects operations that need a live Session and
+app follows the proxy's authenticated `EgressAdmin.WatchDecisions` gRPC stream for the sandbox's
+ServiceAccount. Each message replaces the retained decisions; the app renews the stream when its
+authorization lease ends and reports outages in the browser stream. Its Egress system-status probe
+also uses gRPC health on the same admin endpoint. Runner availability affects operations that need a live Session and
 whether the page can open a new one; it does not determine whether a retained History Thread appears
 in the table. Session creation displays progress and prevents duplicate clicks while the request
 runs.

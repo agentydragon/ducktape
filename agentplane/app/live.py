@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import ExitStack
+from contextlib import ExitStack, aclosing, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -517,24 +517,53 @@ async def live_sandbox(
 
 @router.get("/sandboxes/{name}/egress/decisions", responses=_DECISIONS_FRAMES)
 async def live_egress_decisions(index: Index, decisions: Decisions, shutdown: Shutdown, name: str) -> StreamingResponse:
-    """What the egress proxy recently admitted or refused for the sandbox's account, pushed.
+    """Follow the proxy's subject-filtered snapshots; keep backend outages visible to the browser."""
 
-    The proxy keeps no copy per tab: it says when decisions were committed, and each frame re-reads
-    them from it. A proxy that cannot be asked is carried in the frame, not by ending the stream.
-    """
+    async def updates() -> AsyncIterator[bytes]:
+        while True:
+            sandbox = index.sandbox_view(name)
+            if sandbox is None:
+                yield frame(
+                    "snapshot",
+                    DecisionsSnapshot(
+                        watching=False, decisions=DecisionsUnavailable(detail=f"no sandbox {name}")
+                    ).model_dump(mode="json"),
+                )
+                changed = asyncio.Event()
+                with index.changes.subscribe(changed):
+                    if index.sandbox_view(name) is None:
+                        await changed.wait()
+                continue
+            try:
+                async with aclosing(decisions.watch(sandbox.service_account)) as snapshots:
+                    pending = asyncio.create_task(anext(snapshots))
+                    watching = False
+                    try:
+                        while True:
+                            done, _ = await asyncio.wait({pending}, timeout=HEALTH_INTERVAL_S)
+                            if not done:
+                                yield frame("health", DecisionsWatching(watching=watching).model_dump(mode="json"))
+                                continue
+                            try:
+                                recent = pending.result()
+                            except StopAsyncIteration:
+                                break  # The authorization lease ended; reconnect with a fresh token.
+                            watching = True
+                            yield frame(
+                                "snapshot", DecisionsSnapshot(watching=True, decisions=recent).model_dump(mode="json")
+                            )
+                            pending = asyncio.create_task(anext(snapshots))
+                    finally:
+                        pending.cancel()
+                        with suppress(asyncio.CancelledError, StopAsyncIteration, DecisionsUnavailableError):
+                            await pending
+            except DecisionsUnavailableError as error:
+                yield frame(
+                    "snapshot",
+                    DecisionsSnapshot(watching=False, decisions=DecisionsUnavailable(detail=str(error))).model_dump(
+                        mode="json"
+                    ),
+                )
+            await asyncio.sleep(1)
 
-    async def snapshot() -> DecisionsSnapshot:
-        sandbox = index.sandbox_view(name)
-        if sandbox is None:
-            return DecisionsSnapshot(
-                watching=decisions.watching, decisions=DecisionsUnavailable(detail=f"no sandbox {name}")
-            )
-        try:
-            recent = await decisions.recent(sandbox.service_account)
-        except DecisionsUnavailableError as error:
-            return DecisionsSnapshot(watching=decisions.watching, decisions=DecisionsUnavailable(detail=str(error)))
-        return DecisionsSnapshot(watching=decisions.watching, decisions=recent)
-
-    return sse_response(
-        shutdown.until(frames(snapshot, lambda: DecisionsWatching(watching=decisions.watching), decisions.changes))
-    )
+    return sse_response(shutdown.until(updates()))

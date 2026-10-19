@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
+import grpc
 import httpx
 import pytest
 from kubernetes_asyncio.client import CoreV1Api
@@ -38,12 +39,15 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.grpc.calls import dial
+from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.fixtures import service_database_template
 from agentplane.history_service.testing.history import History
 from agentplane.kubernetes_watch import Freshness
 from agentplane.postgres.wakeups import WakeupListener
+from agentplane.proto import egress_admin_pb2_grpc
 from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
@@ -329,13 +333,32 @@ def action_policy(custom_objects: FakeCustomObjectsApi) -> ActionPolicyInventory
 
 
 @pytest.fixture
-def egress_admin() -> FakeEgressAdmin:
-    return FakeEgressAdmin()
+async def _egress_admin_server() -> AsyncIterator[tuple[FakeEgressAdmin, str]]:
+    admin = FakeEgressAdmin()
+    server = grpc.aio.server()
+    egress_admin_pb2_grpc.add_EgressAdminServicer_to_server(admin, server)
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+        yield admin, f"127.0.0.1:{port}"
 
 
 @pytest.fixture
-def decisions(egress_admin: FakeEgressAdmin) -> DecisionsClient:
-    return DecisionsClient(httpx.AsyncClient(base_url="http://egress-admin.test", transport=egress_admin.transport()))
+def egress_admin(_egress_admin_server: tuple[FakeEgressAdmin, str]) -> FakeEgressAdmin:
+    return _egress_admin_server[0]
+
+
+@pytest.fixture
+def egress_token_file(tmp_path: Path) -> Path:
+    token_file = tmp_path / "egress-token"
+    token_file.write_text("fake-token")
+    return token_file
+
+
+@pytest.fixture
+async def decisions(
+    _egress_admin_server: tuple[FakeEgressAdmin, str], egress_token_file: Path
+) -> AsyncIterator[DecisionsClient]:
+    async with dial(_egress_admin_server[1]) as channel:
+        yield DecisionsClient(channel, token_file=egress_token_file, request_timeout_s=5)
 
 
 def _refusing(service: str) -> httpx.MockTransport:

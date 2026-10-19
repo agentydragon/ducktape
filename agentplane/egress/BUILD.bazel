@@ -15,10 +15,12 @@ py_library(
     srcs = ["decisions_client.py"],
     deps = [
         ":decisions",
-        "//agentplane:changes",
         "//agentplane:subjects",
-        "@pypi//httpx",
-        "@pypi//httpx_sse",
+        "//agentplane/grpc:calls",
+        "//agentplane/proto:egress_admin_pb2",
+        "//agentplane/proto:egress_admin_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
     ],
 )
 

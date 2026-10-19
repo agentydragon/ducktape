@@ -14,13 +14,11 @@ class Outcome(StrEnum):
 
 
 class Decision(BaseModel):
-    """One admission as a reader of the admin port's `/decisions` sees it; names only, never values.
+    """One admission shown in the browser; names only, never values.
 
     Paths are deliberately never captured: arbitrary path segments can contain secrets.
     """
 
-    # The admin port serves whole `decision.Record`s (agentplane/egress/decision), and a reader
-    # deployed apart from the proxy may meet fields a newer proxy added first; it keeps only these.
     model_config = ConfigDict(extra="ignore", frozen=True)
 
     at: datetime

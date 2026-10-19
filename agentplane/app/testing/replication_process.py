@@ -49,6 +49,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
@@ -265,7 +266,7 @@ async def _serve(
             history,
             history.new_client() as watch_client,
             history.new_client() as openings_client,
-            httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
+            dial("test-unused-decisions.invalid:8081") as decisions_channel,
             httpx.AsyncClient(
                 base_url=electric_url or "http://test-unused-electric.invalid", timeout=65
             ) as electric_http,
@@ -313,7 +314,9 @@ async def _serve(
                         harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
                     ),
                     egress,
-                    DecisionsClient(decisions_http),
+                    DecisionsClient(
+                        decisions_channel, token_file=Path(directory) / "egress-token", request_timeout_s=1
+                    ),
                     index,
                     action_policy,
                     electric=ElectricProxy(

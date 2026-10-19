@@ -1,80 +1,76 @@
-"""The proxy's recent decisions for one subject, read off its cluster-internal admin port.
-
-The proxy reads shared PostgreSQL history at `GET /decisions?namespace=<ns>&name=<name>`: a subject
-is a ServiceAccount, and the same name in two namespaces is two of them.
-Database read failures are explicit non-success responses, surfaced as DecisionsUnavailableError.
-`GET /decisions/changes` says when to read again; `watch` follows it.
-"""
-
-from __future__ import annotations
+"""Authenticated, subject-filtered decision snapshots from the proxy's admin gRPC service."""
 
 import asyncio
-import logging
+from collections.abc import AsyncIterator
+from datetime import UTC
+from pathlib import Path
 
-import httpx
-from httpx_sse import SSEError, aconnect_sse
+import grpc
 
-from agentplane.changes import ChangeSignal
-from agentplane.egress.decisions import Decision
+from agentplane.egress.decisions import Decision, Outcome
+from agentplane.grpc.calls import bearer
+from agentplane.proto import egress_admin_pb2 as pb, egress_admin_pb2_grpc as rpc
 from agentplane.subjects import ServiceAccountRef
 
-logger = logging.getLogger(__name__)
-
-# Seconds without a frame after which the change stream counts as dead: past the proxy's heartbeat.
-CHANGES_READ_TIMEOUT_S = 45
+# Generated messages use Timestamp methods and protobuf field-presence stubs.
+# gazelle:include_dep @pypi//protobuf
 
 
 class DecisionsUnavailableError(Exception):
-    """The proxy did not answer (not deployed yet, restarting, refused by network policy) or answered non-success."""
+    """The proxy could not supply the subject's decisions."""
 
-    def __init__(self, *, status_code: int | None, detail: str) -> None:
-        super().__init__(
-            f"the egress proxy did not answer: {detail}"
-            if status_code is None
-            else f"the egress proxy answered {status_code}: {detail}"
-        )
+
+def _decision(row: pb.Decision) -> Decision:
+    return Decision(
+        at=row.at.ToDatetime(tzinfo=UTC),
+        method=row.method,
+        host=row.host,
+        port=row.port,
+        outcome={pb.Decision.OUTCOME_ALLOW: Outcome.ALLOW, pb.Decision.OUTCOME_DENY: Outcome.DENY}[row.outcome],
+        reason=row.reason if row.HasField("reason") else None,
+        binding=row.binding if row.HasField("binding") else None,
+        policy=row.policy if row.HasField("policy") else None,
+        rule=row.rule if row.HasField("rule") else None,
+        substituted=row.substituted,
+        address=row.address if row.HasField("address") else None,
+    )
 
 
 class DecisionsClient:
-    def __init__(self, http: httpx.AsyncClient):
-        self._http = http
-        self.changes = ChangeSignal()
-        self.watching = False
+    def __init__(self, channel: grpc.aio.Channel, *, token_file: Path, request_timeout_s: float) -> None:
+        self._stub = rpc.EgressAdminStub(channel)
+        self._token_file = token_file
+        self._request_timeout_s = request_timeout_s
 
-    async def watch(self, *, retry_interval_s: float) -> None:
-        """Follows the proxy's change stream until cancelled, waking `changes` at each frame and when the
-        stream ends or fails, so a reader learns of a loss as promptly as of a change."""
-        while True:
-            try:
-                async with aconnect_sse(
-                    self._http, "GET", "/decisions/changes", timeout=httpx.Timeout(5, read=CHANGES_READ_TIMEOUT_S)
-                ) as event_source:
-                    event_source.response.raise_for_status()
-                    self.watching = True
-                    async for _ in event_source.aiter_sse():
-                        self.changes.notify()
-            except SSEError as error:
-                logger.warning("egress proxy change stream returned invalid SSE: %r", error)
-            except httpx.HTTPError as error:
-                logger.warning("egress proxy change stream failed: %r", error)
-            finally:
-                self.watching = False
-                self.changes.notify()
-            await asyncio.sleep(retry_interval_s)
+    async def watch(self, subject: ServiceAccountRef) -> AsyncIterator[list[Decision]]:
+        """The initial snapshot and each replacement, until the proxy's authorization lease ends.
 
-    async def recent(self, subject: ServiceAccountRef) -> list[Decision]:
+        Only the first snapshot has a deadline: a quiet subject need not produce another decision.
+        The caller reconnects on completion, reading the rotating projected token afresh.
+        """
+        call = None
         try:
-            response = await self._http.get("/decisions", params={"namespace": subject.namespace, "name": subject.name})
-        except httpx.HTTPError as error:
-            logger.warning("egress proxy decisions unavailable for %s/%s: %s", subject.namespace, subject.name, error)
-            raise DecisionsUnavailableError(status_code=None, detail=str(error)) from error
-        if not response.is_success:
-            logger.warning(
-                "egress proxy decisions failed for %s/%s: %s %s",
-                subject.namespace,
-                subject.name,
-                response.status_code,
-                response.text,
+            call = self._stub.WatchDecisions(
+                pb.WatchDecisionsRequest(
+                    filter=pb.DecisionFilter(subject=pb.Subject(namespace=subject.namespace, name=subject.name))
+                ),
+                metadata=await bearer(self._token_file),
             )
-            raise DecisionsUnavailableError(status_code=response.status_code, detail=response.text)
-        return [Decision.model_validate(item) for item in response.json()]
+            handshake: float | None = self._request_timeout_s
+            while True:
+                async with asyncio.timeout(handshake):
+                    snapshot = await call.read()
+                if snapshot is grpc.aio.EOF:
+                    return
+                assert isinstance(snapshot, pb.WatchDecisionsResponse)
+                handshake = None
+                yield [_decision(row) for row in snapshot.decisions]
+        except grpc.aio.AioRpcError as error:
+            raise DecisionsUnavailableError(f"{error.code().name}: {error.details()}") from error
+        except TimeoutError as error:
+            raise DecisionsUnavailableError(f"no initial snapshot within {self._request_timeout_s:g}s") from error
+        except OSError as error:
+            raise DecisionsUnavailableError(str(error)) from error
+        finally:
+            if call is not None:
+                call.cancel()

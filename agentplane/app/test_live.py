@@ -68,6 +68,7 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.egress.decisions import Outcome
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
@@ -478,7 +479,7 @@ async def _next_decisions(stream: AsyncIterator[str | bytes | memoryview]) -> De
             return DecisionsSnapshot.model_validate_json(frame.partition(b"data: ")[2])
 
 
-async def test_egress_decision_stream_rereads_when_the_proxy_reports_a_change(
+async def test_egress_decision_stream_receives_snapshots_and_recovers(
     seeded: LiveIndex, decisions: DecisionsClient, egress_admin: FakeEgressAdmin
 ) -> None:
     subject = (NAMESPACE, "runner-1")
@@ -490,39 +491,65 @@ async def test_egress_decision_stream_rereads_when_the_proxy_reports_a_change(
         async with asyncio.timeout(10):
             first = await _next_decisions(stream)
             assert isinstance(first.decisions, list)
-            assert [(d.method, d.host) for d in first.decisions] == [("GET", "api.github.com")]
-            assert not first.watching
+            assert first.watching
+            assert len(first.decisions) == 1
+            admitted = first.decisions[0]
+            assert (admitted.method, admitted.host) == ("GET", "api.github.com")
+            assert admitted.at == datetime(2026, 9, 2, 10, 0, 1, tzinfo=UTC)
+            assert admitted.outcome is Outcome.ALLOW
+            assert admitted.rule == 0
+            assert admitted.reason is None
 
             egress_admin.decisions[subject].append(decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "deny"))
-            decisions.changes.notify()
+            egress_admin.notify()
             second = await _next_decisions(stream)
             assert isinstance(second.decisions, list)
+            assert second.watching
             assert [d.host for d in second.decisions] == ["api.github.com", "pypi.org"]
+            assert second.decisions[1].outcome is Outcome.DENY
+            assert second.decisions[1].reason is None
 
             egress_admin.reachable = False
-            decisions.changes.notify()
-            assert isinstance((await _next_decisions(stream)).decisions, DecisionsUnavailable)
+            egress_admin.notify()
+            unavailable = await _next_decisions(stream)
+            assert not unavailable.watching
+            assert isinstance(unavailable.decisions, DecisionsUnavailable)
+
+            egress_admin.decisions[subject].append(decision("2026-09-02T10:00:03Z", "GET", "pypi.org", "allow"))
+            egress_admin.reachable = True
+            recovered = await _next_decisions(stream)
+            assert recovered.watching
+            assert isinstance(recovered.decisions, list)
+            assert [d.host for d in recovered.decisions] == ["api.github.com", "pypi.org", "pypi.org"]
     finally:
         drain.begin()
         async for _ in stream:
             pass
 
 
-async def test_watching_the_proxy_wakes_readers_whether_it_answers_or_not(
-    decisions: DecisionsClient, egress_admin: FakeEgressAdmin
+async def test_egress_decision_stream_reconnects_after_lease_with_rotated_token(
+    seeded: LiveIndex, decisions: DecisionsClient, egress_admin: FakeEgressAdmin, egress_token_file: Path
 ) -> None:
-    woken = asyncio.Event()
-    with decisions.changes.subscribe(woken):
-        for reachable in (True, False):
-            egress_admin.reachable = reachable
-            woken.clear()
-            task = asyncio.create_task(decisions.watch(retry_interval_s=0.01))
-            try:
-                async with asyncio.timeout(10):
-                    await woken.wait()
-            finally:
-                task.cancel()
-                await asyncio.wait([task])
+    subject = (NAMESPACE, "runner-1")
+    egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]
+    drain = Drain()
+    response = await live_egress_decisions(index=seeded, decisions=decisions, shutdown=drain, name="runner-1")
+    stream = aiter(response.body_iterator)
+    try:
+        async with asyncio.timeout(10):
+            first = await _next_decisions(stream)
+            assert first.watching
+            assert egress_admin.tokens == ["Bearer fake-token"]
+
+            await asyncio.to_thread(egress_token_file.write_text, "rotated-token")
+            egress_admin.expire_lease()
+            reconnected = await _next_decisions(stream)
+            assert reconnected.watching
+            assert egress_admin.tokens == ["Bearer fake-token", "Bearer rotated-token"]
+    finally:
+        drain.begin()
+        async for _ in stream:
+            pass
 
 
 async def test_egress_decision_stream_says_a_sandbox_is_missing(seeded: LiveIndex, decisions: DecisionsClient) -> None:
@@ -531,7 +558,9 @@ async def test_egress_decision_stream_says_a_sandbox_is_missing(seeded: LiveInde
     stream = aiter(response.body_iterator)
     try:
         async with asyncio.timeout(10):
-            assert isinstance((await _next_decisions(stream)).decisions, DecisionsUnavailable)
+            missing = await _next_decisions(stream)
+            assert not missing.watching
+            assert isinstance(missing.decisions, DecisionsUnavailable)
     finally:
         drain.begin()
         async for _ in stream:

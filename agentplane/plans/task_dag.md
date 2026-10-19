@@ -1915,8 +1915,8 @@ gets its facade with its Go port, from the same proto. Design, alternatives and 
 ```mermaid
 flowchart LR
     DISPATCHER_READS_FACADE[In flight: Dispatcher reads as a generated browser API]
-    EGRESS_ADMIN_GRPC[In flight: gRPC interface beside the egress admin HTTP]
-    EGRESS_ADMIN_APP_SWITCH[Blocked: the app reads egress admin over gRPC]
+    EGRESS_ADMIN_ACTIVATION[In flight: activate egress admin gRPC]
+    EGRESS_ADMIN_APP_SWITCH[In flight: the app reads egress admin over gRPC]
     EGRESS_ADMIN_HTTP_TEARDOWN[Blocked: remove the hand-written egress admin HTTP]
     HISTORY_SERVICE_GO_PORT[Candidate: port the History Service to Go]
     HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
@@ -1924,7 +1924,7 @@ flowchart LR
     ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
-    EGRESS_ADMIN_GRPC --> EGRESS_ADMIN_APP_SWITCH
+    EGRESS_ADMIN_ACTIVATION --> EGRESS_ADMIN_APP_SWITCH
     EGRESS_ADMIN_APP_SWITCH --> EGRESS_ADMIN_HTTP_TEARDOWN
     HISTORY_SERVICE_GO_PORT --> HISTORY_READS_FACADE
     DISPATCHER_READS_FACADE --> HISTORY_READS_FACADE
@@ -1948,22 +1948,23 @@ the app and frontend change that deletes the old route. Exit evidence: missing, 
 bearers behave as over gRPC; a stream arrives unbuffered through the app and ends on logout; the generated
 TypeScript types are chosen; one visual scene runs on the streaming stub.
 
-### `EGRESS_ADMIN_GRPC` — a gRPC interface beside the egress admin HTTP
+### `EGRESS_ADMIN_ACTIVATION` — activate egress admin gRPC
 
-**In flight (the operator dispatched it in the delivery-facade thread, 2026-10-19 10:15 UTC; a worker is
-assigned).** Add a gRPC copy of each egress HTTP API: the decisions list and stream on the admin listener,
-the rules API on the rules listener, and `healthz` and `livez` (the app probes `/healthz` today), each
-driven by the same readers and the same authentication as its hand-written HTTP handlers. Each copy serves
-on its HTTP API's existing listener, so no port or network-policy change (operator, 2026-10-19 10:48 UTC).
-The HTTP interfaces stay until `EGRESS_ADMIN_HTTP_TEARDOWN`. New caller settings are optional until the
-image is pinned; manifests follow.
+The decisions, rules and health gRPC implementations landed in
+[#11115](https://github.com/agentydragon/ducktape/pull/11115) and
+[#11117](https://github.com/agentydragon/ducktape/pull/11117). Remaining: pin an image containing
+both, enable the app-only admin audience/caller in testing and staging, and mount the app's
+projected audience token. This uses the existing listeners and network policies. Confirm readiness
+and successful caller authorization after Flux rolls the configuration.
 
 ### `EGRESS_ADMIN_APP_SWITCH` — the app reads egress admin over gRPC
 
-**Blocked on `EGRESS_ADMIN_GRPC` reaching the cluster (image pinned, caller settings configured).** Move the
-app's `DecisionsClient`, its egress health probe and every other caller the inventory finds from the HTTP
-admin to the gRPC interface, adding the Python proto targets with it. Event-driven, as now: the decisions
-stream stays a stream.
+**In flight (operator dispatched 2026-10-19).** Replace the app's HTTP decisions client and SSE
+change watcher with subject-filtered gRPC snapshots, and use standard gRPC health for its egress
+probe. Python proto targets and test callers move with the client. Merge after
+`EGRESS_ADMIN_ACTIVATION`; once the app image rolls, verify decisions streaming, backend outage
+reporting, and the system-status probe in testing and staging. The HTTP compatibility handlers
+remain for the separate teardown below.
 
 ### `EGRESS_ADMIN_HTTP_TEARDOWN` — remove the hand-written egress admin HTTP
 

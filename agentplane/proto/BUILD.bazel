@@ -196,6 +196,17 @@ proto_library(
     deps = ["@protobuf//:timestamp_proto"],
 )
 
+py_proto_library_with_mypy_stubs(
+    name = "egress_admin_pb2",
+    deps = [":egress_admin_proto"],
+)
+
+py_grpc_service_library(
+    name = "egress_admin_pb2_grpc",
+    proto = ":egress_admin_proto",
+    py_proto = ":egress_admin_pb2",
+)
+
 proto_library(
     name = "egress_rules_proto",
     srcs = ["egress_rules.proto"],

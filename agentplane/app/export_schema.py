@@ -82,7 +82,7 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
             harnesses={harness: ["schema-model"] for harness in Harness},
         ),
         EgressAccess(namespace="schema", custom_objects=cast(Any, None), action_policy=action_policy),
-        DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
+        DecisionsClient(channel, token_file=Path("/schema-unused-token"), request_timeout_s=1),
         live,
         action_policy,
         electric=ElectricProxy(

@@ -53,7 +53,12 @@ py_library(
 py_library(
     name = "egress_proxy",
     srcs = ["egress_proxy.py"],
-    deps = ["@pypi//httpx"],
+    deps = [
+        "//agentplane/proto:egress_admin_pb2",
+        "//agentplane/proto:egress_admin_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
 )
 
 py_library(
@@ -85,6 +90,7 @@ py_library(
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",
         "//agentplane/egress:decisions_client",
+        "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
         "//agentplane/runner:harness",
         "//agentplane/runner_gateway:client",

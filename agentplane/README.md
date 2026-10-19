@@ -90,7 +90,7 @@ flowchart LR
     app --> hs
     app --> notif
     app --> actions
-    app --> egress
+    app -->|gRPC| egress
     app --> electric
     app --> k8s
 

@@ -42,7 +42,9 @@ class AppSettingsConfig(YamlFileSettings):
         description="PolicySets every new Sandbox is bound to. The app creates, suspends, resumes and deletes "
         "Sandboxes through Kubernetes itself."
     )
-    egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
+    egress_admin_url: HttpEndpointUrl = Field(
+        description="The egress proxy's admin endpoint; its host and port serve gRPC."
+    )
     action_federation: ActionFederationSettings
 
     @field_serializer("default_policy_sets")
@@ -100,8 +102,9 @@ class Settings(AppSettingsConfig):
         default=None,
         description="Electric replicating the History Service fold; omit to serve the REST/SSE API without the frontend.",
     )
+    egress_admin_token_file: Path = Path("/var/run/secrets/agentplane-egress-admin/token")
     egress_admin_timeout: float = Field(
-        default=5, description="Seconds to wait for the proxy before showing rules only."
+        default=5, gt=0, description="Seconds to wait for the proxy's initial decision snapshot."
     )
     shutdown_timeout: int = Field(
         default=5,
