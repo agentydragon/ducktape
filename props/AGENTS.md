@@ -1,50 +1,22 @@
 @README.md
 
-# Agent Guide
+@testing/AGENTS.md
 
-## Component Docs
+Frontend conventions: <frontend/AGENTS.md>. Authoring agent-facing prompt templates (under
+<agents/>): <agents/AGENTS.md>. Do not `@`-transclude the runtime prompt templates
+(<agents/docs/>, <agents/critic_dev/authoring_agents.md.mako>); the critic and grader templates
+include what they need.
 
-- **Backend:** @backend/AGENTS.md
-- **Frontend:** @frontend/AGENTS.md
-- **Tests:** @testing/AGENTS.md
+## Database
 
-@docs/AGENTS.md
+- **Never run `props db recreate` without the user's explicit agreement**: it drops all data,
+  including expensively collected agent rollouts.
+- Every schema change, RLS policies and helper functions included, is an Alembic migration in
+  `db/migrations/versions/`; revision IDs are `YYYYMMDD000000`.
+- `DROP VIEW ... CASCADE` drops all dependents: list them from `pg_depend` first, recreate them in
+  dependency order, and re-grant permissions.
+- Agents get persistent roles `agent_{agent_run_id}` with deterministic HMAC passwords;
+  `current_agent_run_id()` derives the ID from the username for RLS
+  (<orchestration/agent_credentials.py>).
 
-Runtime agent prompt templates live in <agents/docs/> and
-<agents/critic_dev/authoring_agents.md.mako>. Do not `@`-transclude them here;
-the critic and grader prompt templates include the runtime docs they need.
-
-## Database Migrations (Alembic)
-
-**All schema changes must go through Alembic migrations.**
-
-- Migrations: `db/migrations/versions/`, config: `db/migrations/env.py`
-- Revision IDs: YYYYMMDD000000 format (e.g., `20251213000000`)
-- RLS policies: managed in `db/setup.py` via `enable_rls()` (not in migrations)
-- RLS helper functions: created in migrations (they're schema)
-
-**CASCADE WARNING:** `DROP VIEW ... CASCADE` drops all dependents. Before writing such a migration: query `pg_depend` to list ALL dependent views, recreate them in dependency order, and re-grant permissions.
-
-## Agent Database Roles
-
-Agents get persistent PostgreSQL roles with RLS-scoped access. Passwords are deterministic (HMAC-SHA256 of salt + agent_run_id).
-
-- Username pattern: `agent_{agent_run_id}`
-- `current_agent_run_id()` extracts ID from username for RLS policies
-- See `orchestration/agent_credentials.py`
-
-## MCP I/O vs DB Persistence Models
-
-Do not use MCP I/O types (`CriticSubmitPayload`, `ReportedIssue`, etc.) in database schemas. Two parallel hierarchies:
-
-- **MCP I/O Models** (`agents/critic/models.py`, `agents/grader/models.py`): API contract with rich types
-- **DB Persistence Models** (`db/snapshots.py`): stable storage format with primitives
-- **Conversion**: `agents/grader/persistence.py` bridges between them
-
-## Service Management
-
-**Never start services manually** (no raw `uvicorn`, no manual postgres). Use `docker compose` as described in README.md.
-
-## Database Safety
-
-**NEVER run `props db recreate` without the user's explicit agreement.** It drops ALL data including expensively-collected agent rollouts.
+Never start services by hand (raw `uvicorn`, manual postgres); use `docker compose` per README.

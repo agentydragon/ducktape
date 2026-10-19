@@ -1,34 +1,14 @@
 @README.md
 
-## Bazel Build
+## Bazel
 
-Each `ts_library` type-checks its source. `bbr build //props/frontend:bundle` checks the app dependency graph. ESLint runs via the workspace lint aspect.
+One `ts_library` per `.ts`/`.tsx` file in its sub-package's `BUILD.bazel`; `bbr build
+//props/frontend:bundle` checks the app graph. Sub-packages: `src/lib/` (utilities, API client,
+stores, links), `src/components/` (+ `stats/`), `src/pages/`; the parent holds app entry,
+bundler, dev server and test infra. `//props/frontend/src/lib:schema` generates
+`api/schema.d.ts`.
 
-**Adding a new component/page/lib file**:
-
-1. Create a React component or page in a `.tsx` file, or a non-UI module in a `.ts` file
-2. Add a `ts_library` target in the sub-package `BUILD.bazel`
-3. Declare `deps` on exactly the files it imports
-4. Add it as a `dep` of targets that import it
-
-**Sub-package structure**:
-
-| Package                    | Contains                                    |
-| -------------------------- | ------------------------------------------- |
-| `src/lib/`                 | Shared utilities, API client, stores, links |
-| `src/components/`          | Reusable UI components                      |
-| `src/components/stats/`    | Statistics-specific components              |
-| `src/pages/`               | Page-level components                       |
-| Parent (`props/frontend/`) | App entry, bundler, dev server, test infra  |
-
-**Schema generation**: `:schema` target in `//props/frontend/src/lib` generates `api/schema.d.ts`.
-
-## `@tabler/icons-react` imports (preventive)
-
-**Deviation** from the stock barrel import: `@tabler/icons-react`'s barrel
-(`import { IconX } from "@tabler/icons-react"`) makes esbuild peak ~8.7 GB and
-OOMs the default RBE VM — there is no per-action memory lever, only a blunt
-platform-global override that hurts CI concurrency. This bundle uses the same
-`spa_bundle` esbuild path, so if you add `@tabler` icons, import each by subpath
-(`@tabler/icons-react/dist/esm/icons/IconX.mjs`, default export) and add an
-ambient `declare module` for `tsc`.
+**Deviation — `@tabler/icons-react`:** never the barrel import; it makes esbuild peak ~8.7 GB and
+OOM the RBE VM (no per-action memory lever). Import each icon by subpath
+(`@tabler/icons-react/dist/esm/icons/IconX.mjs`, default export), as <src/lib/icons.tsx> does;
+<src/lib/tabler_icons.d.ts> declares the module for `tsc`.

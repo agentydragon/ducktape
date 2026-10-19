@@ -1,195 +1,67 @@
 # Props Ecosystem
 
-High-level architecture and shared infrastructure for the props evaluation system.
+Evaluation system for LLM code critics: critic agents report issues in frozen code
+**specimens**, grader agents match the reports against human-labeled canonical issues
+(recall/precision), and agents are ranked by fitness. Details: <docs/training_strategy.md>.
 
-## Directory Structure
+## Layout
 
-```
-props/
-├── .envrc                    # Devenv entry point for env vars
-├── compose.yaml              # Docker Compose for postgres, registry, backend
-├── core/                     # Core types and models
-│   ├── agent_types.py        # Agent type definitions and TypeConfig union
-│   ├── eval_api_models.py    # Request/response models for eval API
-│   ├── models/               # Data models (examples, true_positive, etc.)
-├── cli/                      # Command-line interface
-│   └── cmd_*.py              # Subcommand modules (db, snapshot, etc.)
-├── db/                       # Database layer
-│   ├── models.py             # SQLAlchemy ORM models
-│   ├── migrations/           # Alembic migration (single complete_schema)
-│   └── sync/                 # Specimen sync from filesystem to DB
-├── orchestration/            # Agent execution
-│   ├── agent_registry.py     # Container lifecycle, image pull, role creation
-│   └── agent_credentials.py  # Per-agent PostgreSQL role management
-├── backend/                  # Unified FastAPI server
-│   ├── app.py                # FastAPI app with lifespan
-│   ├── auth.py               # Auth middleware (postgres creds → RLS)
-│   └── routes/               # API endpoints
-│       ├── stats.py          # Dashboard stats API
-│       ├── runs.py           # Agent runs + validation API
-│       ├── ground_truth.py   # Snapshot/issue browsing API
-│       ├── llm.py            # LLM proxy (OpenAI-compatible)
-│       └── registry.py       # OCI registry proxy
-├── frontend/                 # React + Mantine dashboard UI
-├── agents/                   # Agent implementations
-│   ├── critic/               # Critic agent (finds issues in code)
-│   ├── grader/               # Grader agent (matches issues to ground truth)
-│   └── critic_dev/           # Meta-agents that develop critics
-│       ├── improve/          # Creates improved critic definitions
-│       └── optimize/         # Runs eval loops to select best critics
-├── specimens/                # Frozen code snapshots with labeled issues
-├── standards/                # Property definitions (issue taxonomies)
-├── testing/                  # Shared test fixtures and utilities
-├── docs/                     # Documentation
-└── prompts/                  # Mako prompt templates
-```
+- `core/`: agent types (`TypeConfig` union), eval API models, data models
+- `cli/`: `props` CLI (`db` subcommands)
+- `db/`: ORM models, Alembic migrations, specimen sync
+- `orchestration/`: container lifecycle, image pull, per-agent Postgres roles
+- `backend/`: FastAPI server — auth (Postgres creds → RLS), stats, runs, ground truth, LLM and
+  OCI registry proxies
+- `frontend/`: React + Mantine dashboard
+- `agents/`: in-container code — `critic/`, `grader/`, `critic_dev/{improve,optimize}`
+- `specimens/`: frozen code snapshots with labeled issues
+- `standards/`: property definitions (issue taxonomies)
+- `prompts/`: Mako prompt templates
+- `testing/`: shared test fixtures
 
-## Initial Setup
+## Setup
 
 ```bash
 cd props
-
-# 1. Allow direnv (generates PGPASSWORD, sets env vars)
-direnv allow
-
-# 2. Build and load backend image (includes frontend) and the LLM proxy image
-bazelisk run //props/backend:load
+direnv allow                                     # generates PGPASSWORD, sets env
+bazelisk run //props/backend:load                # backend (+ frontend) image
 bazelisk run //props/llm_proxy:load
-
-# 3. Start infrastructure (postgres, registry, backend+frontend, llm-proxy)
-docker compose up -d
-
-# 4. Initialize database (runs migrations, syncs specimens)
-# The backend will fail until this completes (missing tables).
-bazelisk run //props/cli -- db recreate
-
-# 5. Restart backend (picks up the now-initialized database)
+docker compose up -d                             # postgres, registry, backend, llm-proxy
+bazelisk run //props/cli -- db recreate          # migrations + specimen sync; backend fails until done
 docker compose restart backend
-
-# 6. Log in to registry proxy (uses Postgres admin creds, stored in Docker config)
-echo "$PGPASSWORD" | docker login localhost:8000 -u "$PGUSER" --password-stdin
-
-# 7. Push agent images to registry
-bazelisk run //props/agents/critic:push
-bazelisk run //props/agents/grader:push
-bazelisk run //props/agents/critic_dev/improve:push
-bazelisk run //props/agents/critic_dev/optimize:push
+echo "$PGPASSWORD" | docker login localhost:8000 -u "$PGUSER" --password-stdin   # registry proxy
+for a in critic grader critic_dev/improve critic_dev/optimize; do bazelisk run //props/agents/$a:push; done
 ```
 
-## Development
+Frontend hot reload: `docker compose up -d postgres registry`, then
+`bazelisk run //props/frontend:dev` (frontend `:5173`, backend `:8000`).
 
-```bash
-docker compose up -d            # Start infrastructure
-docker compose down             # Stop infrastructure
-docker compose logs -f postgres # View logs
-```
+Dashboard and API: <http://localhost:8000> (API reference: <docs/backend_api.md>). Postgres:
+`localhost:5433` (`psql` uses the devenv `PG*` vars). Registry, direct for debugging:
+`localhost:5000`.
 
-For frontend hot-reload during development, use `frontend:dev` instead of the
-compose backend (starts its own backend + esbuild watch):
+Database: `bazelisk run //props/cli -- db {recreate,backup,restore <file>}`; `recreate` drops all
+data.
 
-```bash
-docker compose up -d postgres registry     # Infra only (no backend)
-bazelisk run //props/frontend:dev          # Frontend :5173 + backend :8000
-```
+## Specimens
 
-### Service URLs
+`props/specimens/` (formerly a [separate repository](https://github.com/agentydragon/specimens)):
+per-snapshot directories whose `BUILD.bazel` (`specimen_targets()`) sets slug, code source and
+train/valid/test split, plus issue YAMLs (true and false positives). Direnv sets
+`ADGN_PROPS_SPECIMENS_ROOT`. Format: <specimens/docs/authoring_guide.md>.
 
-- Dashboard: <http://localhost:8000> (frontend + API, same origin)
-- Backend API: <http://localhost:8000/api/> — see <docs/backend_api.md> for endpoint reference
-- PostgreSQL: localhost:5433
-- Registry: localhost:5000 (direct, for debugging)
+## Cluster deployment
 
-## Database Management
+`props/deploy/` is the one Kustomize package (namespace, CNPG database, secrets, RBAC, app). It
+is parked: Flux registers it via `props/deploy/flux-kustomization.yaml` (`suspend: true`); to
+revive, restore that declaration to the root Flux bundle with `suspend: false`.
+`props/deploy/forgejo/` holds retired Terraform kept for state/cleanup provenance and is not in
+the package.
 
-```bash
-# psql access (uses PG* environment variables from devenv)
-psql
+The backend image (`//props/backend:image`) bundles backend, frontend assets and every specimen
+artifact at `/specimens/{slug}/`. `config.toml` (ConfigMap) enables `auto_migrate` and
+`auto_sync_specimens` on boot.
 
-# Recreate database from scratch (drops all data, runs migrations, syncs specimens)
-bazelisk run //props/cli -- db recreate
-
-# Backup and restore
-bazelisk run //props/cli -- db backup
-bazelisk run //props/cli -- db restore <backup_file>
-```
-
-## Specimens Dataset
-
-Specimens live in `props/specimens/` (previously a [separate repository](https://github.com/agentydragon/specimens)).
-
-Specimens are frozen code states with labeled issues (true positives and false positives) used for training and evaluating the LLM critic. The dataset includes:
-
-- Per-snapshot directories with `BUILD.bazel` (slug, split via `specimen_targets()`) and issue files (`.yaml`)
-- Each snapshot's `BUILD.bazel` defines the code source and train/valid/test split
-
-The `ADGN_PROPS_SPECIMENS_ROOT` environment variable is set automatically by direnv (`.envrc`) to
-`props/specimens/`. See <specimens/docs/authoring_guide.md> for the format spec.
-
-## Evaluation Workflow
-
-1. **Specimens** — frozen code snapshots with human-labeled canonical issues
-2. **Critiques** — agent-generated issue reports per specimen
-3. **Grading** — comparison against canonical issues (recall/precision)
-4. **Selection** — agents ranked by fitness scores
-
-Grading is automatic via snapshot graders. See <docs/training_strategy.md> for details.
-
-## Cluster Deployment
-
-Props has one canonical deployment package under `props/deploy/`. It is a Kustomize
-package containing the namespace, database, secrets, RBAC, and application resources.
-The retired Forgejo Terraform files remain under `props/deploy/forgejo/` for state
-and cleanup provenance, but are intentionally not included in this package. Flux
-registers that package through the parked declaration at
-`props/deploy/flux-kustomization.yaml`. To revive Props, restore that declaration to
-the root Flux bundle and set `suspend: false` there.
-
-### Components
-
-| Area       | Files in `props/deploy/`                                                    |
-| ---------- | --------------------------------------------------------------------------- |
-| Backend    | `deployment.yaml`, `service.yaml`, `llm-proxy-*.yaml`                       |
-| PostgreSQL | `postgres-cluster.yaml`                                                     |
-| Secrets    | `*.sops.yaml`, `forgejo-images-creds-eso.yaml`, `registry-pull-secret.yaml` |
-
-The package keeps its existing node placement and workload-level configuration.
-
-### OCI Image
-
-The backend OCI image (`//props/backend:image`) bundles:
-
-- Python backend + frontend assets
-- All specimen artifacts (code tars + data YAMLs) at `/specimens/{slug}/`
-
-Built by Bazel, pushed to GHCR by CI.
-
-### Startup Behavior
-
-Controlled by `PropsConfig` toggles in `config.toml` (mounted via ConfigMap):
-
-- `auto_migrate: true` — runs Alembic migrations on boot
-- `auto_sync_specimens: true` — scans `/specimens/` and syncs all specimens to PostgreSQL
-
-### PostgreSQL Backup
-
-A daily CronJob (`backup.enabled: true`) runs `pg_dump | gzip` to a PVC, with configurable retention (`backup.retention.days`). Manual trigger:
-
-```bash
-kubectl create job --from=cronjob/props-backup props-backup-test -n props
-```
-
-### Registry Proxy
-
-The registry proxy manifests remain in the dormant deployment package as revival
-scaffolding, but the Forgejo registry tenant's package content and upstream
-credential wiring were intentionally retired. Re-enabling this path requires
-restoring that integration deliberately.
-
-The remaining `props-registry-pull` Secret wiring is derived from the CNPG
-`props-db-app` credentials. The registry is configured with
-`REGISTRY_HTTP_RELATIVEURLS=true` so blob upload `Location` headers use relative
-URLs (required for external clients going through the Gateway API proxy).
-
-## GitHub Copilot Agent Setup
-
-See `.github/workflows/copilot-setup-steps.yml` for automated environment setup (env vars, network config). Uses `props-agents` Docker network (no HTTP proxy, unlike Claude hooks which use `host` network).
+The registry proxy manifests are revival scaffolding only: the Forgejo registry tenant's
+content and upstream credential wiring were retired and must be restored deliberately. The
+`props-registry-pull` Secret derives from the CNPG `props-db-app` credentials.

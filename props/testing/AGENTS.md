@@ -1,51 +1,24 @@
-# Testing Guide for Props Tests
+# Props test data
 
-## Core Principle
+Git fixtures in `testing/fixtures/testdata/specimens/test-fixtures/` are the single source of
+truth for test data. Never construct `Snapshot`/`TruePositive`/`FalsePositive`/`Example` ORM
+rows in tests: depend on `synced_db` and query them. Missing coverage → extend the git fixtures.
 
-**Git fixtures are the single source of truth for ALL test data.**
+| Specimen | Split | Use for                                                    |
+| -------- | ----- | ---------------------------------------------------------- |
+| `train1` | TRAIN | multi-file, duplication detection, RLS train (6 TPs, 1 FP) |
+| `valid1` | VALID | RLS valid split, warm-start validation                     |
+| `valid2` | VALID | warm-start with multiple validation examples               |
+| `test1`  | TEST  | RLS test split                                             |
 
-Never create synthetic ORM models (Snapshot, TruePositive, FalsePositive, Example) directly in
-tests. Depend on `synced_db` to seed the DB from the git-tracked fixtures in
-`testing/fixtures/testdata/specimens/`, and query examples/TPs/FPs from it.
+Fixtures in `testing/fixtures/` (use them; never hardcode `tp-001`/`occ-001`/`fp-001` or build
+scopes inline):
 
-## Available Git Fixtures
-
-Located in `testing/fixtures/testdata/specimens/`:
-
-- **test-fixtures/train1** (TRAIN split)
-  - Files: add.py, subtract.py, multiply.py, divide.py
-  - Issues: 6 TPs (tp-001 through tp-006), 1 FP (fp-001)
-  - Use for: Multi-file tests, duplication detection, RLS train split
-
-- **test-fixtures/valid1** (VALID split)
-  - Files: sample_subtract.py
-  - Issues: 1 TP (tp-001)
-  - Use for: RLS valid split, warm-start validation
-
-- **test-fixtures/valid2** (VALID split)
-  - Files: calculator.py
-  - Issues: 1 TP (tp-001)
-  - Use for: Warm-start with multiple validation examples
-
-- **test-fixtures/test1** (TEST split)
-  - Files: example_module.py
-  - Issues: 1 TP (tp-001)
-  - Use for: RLS test split verification
-
-## High-value fixtures (testing/fixtures/)
-
-- **Scopes** (scopes.py): `subtract_file_example`, `all_files_scope`.
-- **Ground truth** (ground_truth.py): `example_subtract_orm` (1 TP occurrence), `example_multi_tp_orm` (multi-TP), `tp_occurrence_single`, `fp_id`, `fp_occurrence_id`.
-- **Runs** (runs.py): `make_fake_critic_run`, `make_fake_grader_run`, `make_fake_grader_run_with_credit`; snapshot fixtures `test_snapshot`, `test_validation_snapshot`.
-- **E2E** (e2e_container.py): `e2e_stack` for Docker-based integration tests with full stack.
-- **Database** (db.py): `synced_db`, `synced_test_session` for DB fixtures.
-
-## Anti-patterns (do not)
-
-- Hardcode IDs like `tp-001`, `occ-001`, `fp-001`; use the fixtures above.
-- Build scopes inline; reuse scope fixtures to avoid drift.
-
-## Fixture guidance
-
-- If coverage is missing, extend the git fixtures rather than fabricating data in tests.
-- Prefer the single-field ID fixtures for clarity; tuple fixtures stay for iteration only.
+- `scopes.py`: `subtract_file_example`, `all_files_scope`
+- `ground_truth.py`: `example_subtract_orm`, `example_multi_tp_orm`, `tp_occurrence_single`,
+  `fp_id`, `fp_occurrence_id` (prefer these single-field ID fixtures; tuple fixtures are for
+  iteration only)
+- `runs.py`: `make_fake_{critic,grader}_run`, `make_fake_grader_run_with_credit`,
+  `test_snapshot`, `test_validation_snapshot`
+- `e2e_container.py`: `e2e_stack` (full Docker stack)
+- `db.py`: `synced_db`, `synced_test_session`
