@@ -209,11 +209,11 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
         FederatedOperatorActions(
             DirectFederationSettings(
                 service_url=AnyHttpUrl("http://test-actions.invalid"),
-                login_jwks_uri="http://login-keys.test.invalid/jwks",
+                login_jwks_uri="https://login-keys.test.invalid/jwks",
                 target=OperatorOidcSettings(
                     issuer="https://login.test.invalid/application/o/actions/",
                     audience="test-actions",
-                    jwks_uri="http://actions-keys.test.invalid/jwks",
+                    jwks_uri="https://actions-keys.test.invalid/jwks",
                 ),
                 scope="openid",
             ),
