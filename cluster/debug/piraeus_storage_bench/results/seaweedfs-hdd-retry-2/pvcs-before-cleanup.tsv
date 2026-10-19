@@ -1,0 +1,3 @@
+claim	pvc_uid	pv_name	phase	pv_uid	volume_handle	collection
+piraeus-storage-bench-db-1	04a12c01-3770-4b52-b0c4-08d5f63adf1f	pvc-04a12c01-3770-4b52-b0c4-08d5f63adf1f	Bound	98f52baf-d8a7-42ed-a736-5be1ad6a5579
+repo-seaweedfs	58384f15-cf50-4ec2-b874-b58875ded36c	pvc-58384f15-cf50-4ec2-b874-b58875ded36c	Bound	1d37fa25-2d58-4b89-8540-1c5f18421984	/buckets/pvc-58384f15-cf50-4ec2-b874-b58875ded36c	pvc-58384f15-cf50-4ec2-b874-b58875ded36c

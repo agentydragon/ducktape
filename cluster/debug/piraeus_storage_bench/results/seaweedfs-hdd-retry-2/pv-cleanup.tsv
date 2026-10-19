@@ -1,0 +1,2 @@
+claim	pvc_uid	pv_name	pv_uid	reclaim_policy
+repo-seaweedfs	58384f15-cf50-4ec2-b874-b58875ded36c	pvc-58384f15-cf50-4ec2-b874-b58875ded36c	1d37fa25-2d58-4b89-8540-1c5f18421984	Delete

@@ -30,6 +30,11 @@ direnv exec . sh cluster/debug/piraeus_storage_bench/seaweedfs_retry/run.sh
 direnv exec . sh cluster/debug/piraeus_storage_bench/seaweedfs_retry/cleanup.sh
 ```
 
+`PIRAEUS_BENCH_ATTEMPT` defaults to 1 and accepts only 1 or 2. Setting it to
+2 selects a separate namespace, private directory, evidence directory and CSV;
+the exact attempt-2 command and runtime notes are in
+[`results/seaweedfs-hdd-retry-2/README.md`](../results/seaweedfs-hdd-retry-2/README.md).
+
 `prepare.sh` refuses an existing namespace or PV reference, checks the target
 nodes and SeaweedFS/CSI readiness, creates private random credentials under
 `/tmp/piraeus-storage-seaweed-retry1-private`, then applies only the listed

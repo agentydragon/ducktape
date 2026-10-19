@@ -1,12 +1,20 @@
 #!/bin/sh
 set -eu
 
-namespace=piraeus-storage-bench-20261019-seaweed-retry1
-owner=seaweedfs-hdd-retry-1
+attempt=${PIRAEUS_BENCH_ATTEMPT:-1}
+case "$attempt" in
+  1 | 2) ;;
+  *)
+    echo "PIRAEUS_BENCH_ATTEMPT must be 1 or 2" >&2
+    exit 1
+    ;;
+esac
+namespace="piraeus-storage-bench-20261019-seaweed-retry$attempt"
+owner="seaweedfs-hdd-retry-$attempt"
 retry_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 root=$(CDPATH= cd -- "$retry_dir/.." && pwd)
-results="$root/results/seaweedfs-hdd-retry-1"
-private_dir=${PIRAEUS_BENCH_PRIVATE_DIR:-/tmp/piraeus-storage-seaweed-retry1-private}
+results="$root/results/seaweedfs-hdd-retry-$attempt"
+private_dir=${PIRAEUS_BENCH_PRIVATE_DIR:-/tmp/piraeus-storage-seaweed-retry$attempt-private}
 
 ns_json=$(kubectl get namespace "$namespace" --ignore-not-found -o json)
 if [ -z "$ns_json" ]; then

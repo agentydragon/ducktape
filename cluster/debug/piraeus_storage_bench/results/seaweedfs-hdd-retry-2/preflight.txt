@@ -1,0 +1,14 @@
+attempt=2
+preflight_at_utc=2026-10-19T06:36:37Z
+namespace_absent=true
+target_node=ovh-ns102453 Ready
+db_node=ovh-ns104952 Ready
+storage_class=seaweedfs-ovh
+media_selection=media-blind
+requested_repo_volume=1Gi
+The original failed Forgejo cell reused its direct-filesystem test PVC before the first app mount. This retry uses a new PVC and first app mount; success would not establish why the old attempt failed or that remount behavior changed.
+fixtures_applied_at_utc=2026-10-19T06:36:43Z
+namespace=piraeus-storage-bench-20261019-seaweed-retry2
+owner_label=seaweedfs-hdd-retry-2
+repo_claim=repo-seaweedfs
+repo_size=1Gi

@@ -1,0 +1,6 @@
+phase=before
+collection=pvc-58384f15-cf50-4ec2-b874-b58875ded36c
+volume_rows=12
+class=seaweedfs-ovh (media-blind)
+observed_disks=hdd
+collection_media=HDD only

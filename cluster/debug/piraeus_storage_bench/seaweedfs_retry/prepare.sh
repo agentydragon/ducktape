@@ -1,12 +1,20 @@
 #!/bin/sh
 set -eu
 
-namespace=piraeus-storage-bench-20261019-seaweed-retry1
-owner=seaweedfs-hdd-retry-1
-private_dir=${PIRAEUS_BENCH_PRIVATE_DIR:-/tmp/piraeus-storage-seaweed-retry1-private}
+attempt=${PIRAEUS_BENCH_ATTEMPT:-1}
+case "$attempt" in
+  1 | 2) ;;
+  *)
+    echo "PIRAEUS_BENCH_ATTEMPT must be 1 or 2" >&2
+    exit 1
+    ;;
+esac
+namespace="piraeus-storage-bench-20261019-seaweed-retry$attempt"
+owner="seaweedfs-hdd-retry-$attempt"
+private_dir=${PIRAEUS_BENCH_PRIVATE_DIR:-/tmp/piraeus-storage-seaweed-retry$attempt-private}
 retry_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 root=$(CDPATH= cd -- "$retry_dir/.." && pwd)
-results="$root/results/seaweedfs-hdd-retry-1"
+results="$root/results/seaweedfs-hdd-retry-$attempt"
 
 if kubectl get namespace "$namespace" >/dev/null 2>&1; then
   echo "namespace $namespace already exists; inspect ownership before continuing" >&2
@@ -33,7 +41,7 @@ kubectl get sc seaweedfs-ovh -o json | jq '{metadata:{name:.metadata.name,uid:.m
 kubectl -n seaweedfs get pods -o json | jq -r '[.items[] | select(.metadata.name | test("^(seaweedfs-(filer-[01]|master-[012]|volume-hdd-[012])|seaweedfs-s3-.*)$")) | [.metadata.name,.status.phase,([.status.containerStatuses[]|select(.ready)]|length)] | @tsv] | .[]' >"$results/provider-pods-before.tsv"
 kubectl -n seaweedfs-csi-system get pods -o json | jq -r '[.items[] | select(.spec.nodeName == "ovh-ns102453" and (.metadata.name | test("^seaweedfs-csi-driver-(mount|node)-"))) | [.metadata.name,.spec.nodeName,.status.phase,([.status.containerStatuses[]|select(.ready)]|length)] | @tsv] | .[]' >"$results/csi-pods-before.tsv"
 
-printf 'preflight_at_utc=%s\nnamespace_absent=true\n' "$(date -u +%FT%TZ)" >"$results/preflight.txt"
+printf 'attempt=%s\npreflight_at_utc=%s\nnamespace_absent=true\n' "$attempt" "$(date -u +%FT%TZ)" >"$results/preflight.txt"
 printf 'target_node=ovh-ns102453 Ready\ndb_node=ovh-ns104952 Ready\n' >>"$results/preflight.txt"
 printf 'storage_class=seaweedfs-ovh\nmedia_selection=media-blind\nrequested_repo_volume=1Gi\n' >>"$results/preflight.txt"
 printf 'The original failed Forgejo cell reused its direct-filesystem test PVC before the first app mount. This retry uses a new PVC and first app mount; success would not establish why the old attempt failed or that remount behavior changed.\n' >>"$results/preflight.txt"
@@ -46,7 +54,8 @@ kubectl create namespace "$namespace"
 kubectl label namespace "$namespace" "benchmark.ducktape.io/owner=$owner" pod-security.kubernetes.io/enforce=baseline --overwrite
 kubectl create secret generic piraeus-storage-bench-db-app --namespace "$namespace" --from-file=username="$private_dir/username" --from-file=password="$private_dir/password" --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic piraeus-storage-bench-forgejo-key --namespace "$namespace" --from-file=secretKey="$private_dir/forgejo-secret-key" --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -f "$retry_dir/fixtures.yaml"
+sed -e "s/piraeus-storage-bench-20261019-seaweed-retry1/$namespace/g" -e "s/seaweedfs-hdd-retry-1/$owner/g" "$retry_dir/fixtures.yaml" >"$private_dir/fixtures.yaml"
+kubectl apply -f "$private_dir/fixtures.yaml"
 kubectl create configmap piraeus-storage-bench-scripts --namespace "$namespace" --from-file=forgejo-bench.sh="$root/forgejo-bench.sh" --dry-run=client -o yaml | kubectl apply -f -
 
 printf 'fixtures_applied_at_utc=%s\nnamespace=%s\nowner_label=%s\nrepo_claim=repo-seaweedfs\nrepo_size=1Gi\n' "$(date -u +%FT%TZ)" "$namespace" "$owner" >>"$results/preflight.txt"

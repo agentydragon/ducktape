@@ -1,0 +1,61 @@
+captured_at_utc=2026-10-19T06:40:05Z
+{
+  "generation": 4,
+  "observedGeneration": 4,
+  "revision": "3",
+  "strategy": "Recreate",
+  "readyReplicas": 1,
+  "templateAnnotations": {
+    "checksum_config": "1d5cd2cad08b17133dfd89526fb78852c313e9d07aad78f18beeebf6ed70c6eb",
+    "reloader": {
+      "type": "SECRET",
+      "name": "forgejo-bench-inline-config",
+      "namespace": "piraeus-storage-bench-20261019-seaweed-retry2",
+      "observedAt": 1792391859
+    }
+  }
+}
+
+replicasets:
+2026-10-19T06:37:40Z	forgejo-bench-5546cb4865	3	1	1	5546cb4865
+2026-10-19T06:37:38Z	forgejo-bench-67569cfbd9	1	0	0	67569cfbd9
+2026-10-19T06:37:39Z	forgejo-bench-6b7c5dcbbf	2	0	0	6b7c5dcbbf
+2026-10-19T06:36:42Z	piraeus-storage-bench-valkey-797dd55786	1	1	1	797dd55786
+
+rollout-events:
+2026-10-19T06:37:38.792584Z	Deployment	forgejo-bench	PolicyViolation	policy require-gitops/block-direct-workload-changes fail: Direct resource creation/modification blocked. All changes must go through GitOps (commit to git repository). Resource: Deployment/forgejo-bench User: admin
+2026-10-19T06:37:38Z	Deployment	forgejo-bench	Reloaded	Changes detected in 'forgejo-bench-init' of type 'SECRET' in namespace 'piraeus-storage-bench-20261019-seaweed-retry2', Updated 'forgejo-bench' of type 'Deployment' in namespace 'piraeus-storage-bench-20261019-seaweed-retry2'
+2026-10-19T06:37:38Z	Deployment	forgejo-bench	ScalingReplicaSet	Scaled down replica set forgejo-bench-67569cfbd9 from 1 to 0
+2026-10-19T06:37:38Z	Deployment	forgejo-bench	ScalingReplicaSet	Scaled up replica set forgejo-bench-67569cfbd9 from 0 to 1
+2026-10-19T06:37:38Z	ReplicaSet	forgejo-bench-67569cfbd9	SuccessfulCreate	Created pod: forgejo-bench-67569cfbd9-grvjt
+2026-10-19T06:37:39.196728Z	Pod	forgejo-bench-6b7c5dcbbf-fk925	Scheduled	Successfully assigned piraeus-storage-bench-20261019-seaweed-retry2/forgejo-bench-6b7c5dcbbf-fk925 to ovh-ns102453
+2026-10-19T06:37:39.848525Z	Pod	forgejo-bench-67569cfbd9-grvjt	FailedScheduling	running PreBind plugin "VolumeBinding": binding volumes: pod does not exist any more: pod "forgejo-bench-67569cfbd9-grvjt" not found
+2026-10-19T06:37:39Z	Deployment	forgejo-bench	Reloaded	Changes detected in 'forgejo-bench' of type 'SECRET' in namespace 'piraeus-storage-bench-20261019-seaweed-retry2', Updated 'forgejo-bench' of type 'Deployment' in namespace 'piraeus-storage-bench-20261019-seaweed-retry2'
+2026-10-19T06:37:39Z	Deployment	forgejo-bench	Reloaded	Changes detected in 'forgejo-bench-inline-config' of type 'SECRET' in namespace 'piraeus-storage-bench-20261019-seaweed-retry2', Updated 'forgejo-bench' of type 'Deployment' in namespace 'piraeus-storage-bench-20261019-seaweed-retry2'
+2026-10-19T06:37:39Z	Deployment	forgejo-bench	ScalingReplicaSet	Scaled down replica set forgejo-bench-6b7c5dcbbf from 1 to 0
+2026-10-19T06:37:39Z	Deployment	forgejo-bench	ScalingReplicaSet	Scaled up replica set forgejo-bench-6b7c5dcbbf from 0 to 1
+2026-10-19T06:37:39Z	ReplicaSet	forgejo-bench-67569cfbd9	SuccessfulDelete	Deleted pod: forgejo-bench-67569cfbd9-grvjt
+2026-10-19T06:37:39Z	ReplicaSet	forgejo-bench-6b7c5dcbbf	SuccessfulCreate	Created pod: forgejo-bench-6b7c5dcbbf-fk925
+2026-10-19T06:37:39Z	ReplicaSet	forgejo-bench-6b7c5dcbbf	SuccessfulDelete	Deleted pod: forgejo-bench-6b7c5dcbbf-fk925
+2026-10-19T06:37:40.340620Z	Pod	forgejo-bench-5546cb4865-tp68h	Scheduled	Successfully assigned piraeus-storage-bench-20261019-seaweed-retry2/forgejo-bench-5546cb4865-tp68h to ovh-ns102453
+2026-10-19T06:37:40Z	Deployment	forgejo-bench	ScalingReplicaSet	Scaled up replica set forgejo-bench-5546cb4865 from 0 to 1
+2026-10-19T06:37:40Z	Pod	forgejo-bench-5546cb4865-tp68h	SuccessfulAttachVolume	AttachVolume.Attach succeeded for volume "pvc-58384f15-cf50-4ec2-b874-b58875ded36c"
+2026-10-19T06:37:40Z	ReplicaSet	forgejo-bench-5546cb4865	SuccessfulCreate	Created pod: forgejo-bench-5546cb4865-tp68h
+2026-10-19T06:37:42Z	Pod	forgejo-bench-5546cb4865-tp68h	Created	Container created
+2026-10-19T06:37:42Z	Pod	forgejo-bench-5546cb4865-tp68h	Pulled	Container image "code.forgejo.org/forgejo/forgejo:15.0.8-rootless@sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34" already present on machine and can be accessed by the pod
+2026-10-19T06:37:43Z	Pod	forgejo-bench-5546cb4865-tp68h	Started	Container started
+2026-10-19T06:37:44Z	Pod	forgejo-bench-5546cb4865-tp68h	Created	Container created
+2026-10-19T06:37:44Z	Pod	forgejo-bench-5546cb4865-tp68h	Pulled	Container image "code.forgejo.org/forgejo/forgejo:15.0.8-rootless@sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34" already present on machine and can be accessed by the pod
+2026-10-19T06:37:44Z	Pod	forgejo-bench-5546cb4865-tp68h	Started	Container started
+2026-10-19T06:37:47Z	Pod	forgejo-bench-5546cb4865-tp68h	Created	Container created
+2026-10-19T06:37:47Z	Pod	forgejo-bench-5546cb4865-tp68h	Pulled	Container image "code.forgejo.org/forgejo/forgejo:15.0.8-rootless@sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34" already present on machine and can be accessed by the pod
+2026-10-19T06:37:47Z	Pod	forgejo-bench-5546cb4865-tp68h	Started	Container started
+2026-10-19T06:37:49Z	Pod	forgejo-bench-5546cb4865-tp68h	Created	Container created
+2026-10-19T06:37:49Z	Pod	forgejo-bench-5546cb4865-tp68h	Pulled	Container image "code.forgejo.org/forgejo/forgejo:15.0.8-rootless@sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34" already present on machine and can be accessed by the pod
+2026-10-19T06:37:49Z	Pod	forgejo-bench-5546cb4865-tp68h	Started	Container started
+
+current-forgejo-pods:
+forgejo-bench-5546cb4865-tp68h	a3909733-9a13-4394-be21-501b98128d92	ovh-ns102453	Running	init-directories:0:Completed;init-app-ini:0:Completed;configure-gitea:0:Completed	forgejo:0:true	repo-seaweedfs
+
+repo-volume-attachments:
+csi-771a3ddbd7613fb702bb5a3d7a92764ef970cbb8e8fbd90762cc4808f0182db1	pvc-58384f15-cf50-4ec2-b874-b58875ded36c	ovh-ns102453	true

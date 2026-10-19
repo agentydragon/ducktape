@@ -1,12 +1,21 @@
 #!/bin/sh
 set -eu
 
-namespace=piraeus-storage-bench-20261019-seaweed-retry1
-private_dir=${PIRAEUS_BENCH_PRIVATE_DIR:-/tmp/piraeus-storage-seaweed-retry1-private}
+attempt=${PIRAEUS_BENCH_ATTEMPT:-1}
+case "$attempt" in
+  1 | 2) ;;
+  *)
+    echo "PIRAEUS_BENCH_ATTEMPT must be 1 or 2" >&2
+    exit 1
+    ;;
+esac
+namespace="piraeus-storage-bench-20261019-seaweed-retry$attempt"
+owner="seaweedfs-hdd-retry-$attempt"
+private_dir=${PIRAEUS_BENCH_PRIVATE_DIR:-/tmp/piraeus-storage-seaweed-retry$attempt-private}
 retry_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 root=$(CDPATH= cd -- "$retry_dir/.." && pwd)
-results="$root/results/seaweedfs-hdd-retry-1"
-csv="$root/results/forgejo-seaweedfs-ovh-retry-1.csv"
+results="$root/results/seaweedfs-hdd-retry-$attempt"
+csv="$root/results/forgejo-seaweedfs-ovh-retry-$attempt.csv"
 chart="$private_dir/helm/verify/forgejo-17.1.1.tgz"
 chart_digest=sha256:a99352bc5167aba8b58f0de386e777e7fe742bdd573daf82f38986239ff52128
 chart_archive_sha=26aa3120e020b67593ce6e2266c457ee925ff514f606563e184b09ed6581e18f
@@ -21,7 +30,7 @@ fi
 mkdir -m 700 -p "$private_dir" "$results" "$private_dir/helm/cache" "$private_dir/helm/config" "$private_dir/helm/data" "$private_dir/helm/verify"
 chmod 700 "$private_dir"
 owner_label=$(kubectl get namespace "$namespace" -o jsonpath='{.metadata.labels.benchmark\.ducktape\.io/owner}')
-if [ "$owner_label" != seaweedfs-hdd-retry-1 ]; then
+if [ "$owner_label" != "$owner" ]; then
   echo "refusing to operate without the expected namespace ownership label" >&2
   exit 1
 fi
@@ -82,7 +91,9 @@ if [ "$observed_chart_digest" != "$chart_digest" ]; then
   echo "unexpected Forgejo OCI chart digest $observed_chart_digest" >&2
   exit 1
 fi
-direnv exec . env HELM_CACHE_HOME="$private_dir/helm/cache" HELM_CONFIG_HOME="$private_dir/helm/config" HELM_DATA_HOME="$private_dir/helm/data" helm template forgejo-bench "$chart" --namespace "$namespace" --values "$retry_dir/forgejo-values.yaml" --set-string image.digest="$app_digest" --set-string gitea.config.database.NAME=bench_seaweedfs --set-string persistence.claimName=repo-seaweedfs >"$private_dir/forgejo-rendered.yaml"
+sed "s/piraeus-storage-bench-20261019-seaweed-retry1/$namespace/g" "$retry_dir/forgejo-values.yaml" >"$private_dir/forgejo-values.yaml"
+sed "s/piraeus-storage-bench-20261019-seaweed-retry1/$namespace/g" "$retry_dir/forgejo-job.yaml" >"$private_dir/forgejo-job.yaml"
+direnv exec . env HELM_CACHE_HOME="$private_dir/helm/cache" HELM_CONFIG_HOME="$private_dir/helm/config" HELM_DATA_HOME="$private_dir/helm/data" helm template forgejo-bench "$chart" --namespace "$namespace" --values "$private_dir/forgejo-values.yaml" --set-string image.digest="$app_digest" --set-string gitea.config.database.NAME=bench_seaweedfs --set-string persistence.claimName=repo-seaweedfs >"$private_dir/forgejo-rendered.yaml"
 app_ref="code.forgejo.org/forgejo/forgejo:15.0.8-rootless@$app_digest"
 if ! rg -F "$app_ref" "$private_dir/forgejo-rendered.yaml" >/dev/null; then
   rg -n 'image:' "$private_dir/forgejo-rendered.yaml" >&2
@@ -91,7 +102,7 @@ if ! rg -F "$app_ref" "$private_dir/forgejo-rendered.yaml" >/dev/null; then
 fi
 printf 'chart_oci_manifest_digest=%s\nchart_archive_sha256=%s\nforgejo_image=%s\npostgres_image=ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie@%s\nvalkey_image=docker.io/valkey/valkey@%s\n' "$chart_digest" "$chart_archive_sha" "$app_ref" "$db_digest" "$valkey_digest" >"$results/pinned-artifacts.txt"
 printf 'helm_install_started_at_utc=%s\n' "$(date -u +%FT%TZ)" >>"$results/pinned-artifacts.txt"
-direnv exec . env HELM_CACHE_HOME="$private_dir/helm/cache" HELM_CONFIG_HOME="$private_dir/helm/config" HELM_DATA_HOME="$private_dir/helm/data" helm upgrade --install forgejo-bench "$chart" --namespace "$namespace" --values "$retry_dir/forgejo-values.yaml" --set-string image.digest="$app_digest" --set-string gitea.config.database.NAME=bench_seaweedfs --set-string persistence.claimName=repo-seaweedfs >"$results/helm-install.txt"
+direnv exec . env HELM_CACHE_HOME="$private_dir/helm/cache" HELM_CONFIG_HOME="$private_dir/helm/config" HELM_DATA_HOME="$private_dir/helm/data" helm upgrade --install forgejo-bench "$chart" --namespace "$namespace" --values "$private_dir/forgejo-values.yaml" --set-string image.digest="$app_digest" --set-string gitea.config.database.NAME=bench_seaweedfs --set-string persistence.claimName=repo-seaweedfs >"$results/helm-install.txt"
 
 printf 'observed_at_utc\tpod\tphase\tnode\trestarts\tinit_status\tcontainer_status\twarning_events\n' >"$results/pod-startup.tsv"
 app_pod=
@@ -192,7 +203,7 @@ kubectl -n "$namespace" exec "$app_pod" -c forgejo -- /usr/local/bin/forgejo --v
 kubectl -n "$namespace" exec deployment/piraeus-storage-bench-valkey -- valkey-cli INFO server | rg '^valkey_version:' >>"$results/runtime.txt"
 
 collect_placement before
-kubectl apply -f "$retry_dir/forgejo-job.yaml"
+kubectl apply -f "$private_dir/forgejo-job.yaml"
 job_pod=
 deadline=$(($(date +%s) + 60))
 while [ "$(date +%s)" -lt "$deadline" ]; do
