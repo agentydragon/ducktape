@@ -122,6 +122,33 @@ py_library(
     ],
 )
 
+py_library(
+    name = "retention",
+    srcs = ["retention.py"],
+    deps = [
+        "@pypi//boto3",
+        "@pypi//botocore",
+        "@pypi//pygithub",
+    ],
+)
+
+py_binary(
+    name = "retention_bin",
+    main_module = "devinfra.pr_visuals.retention",
+    deps = [":retention"],
+)
+
+py_test(
+    name = "test_retention",
+    srcs = ["test_retention.py"],
+    deps = [
+        ":retention",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "test_check_run",
     srcs = ["test_check_run.py"],
