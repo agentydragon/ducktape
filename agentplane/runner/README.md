@@ -32,8 +32,12 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   isolation. The runner executes itself in an internal supervisor mode, which retains
   the state-owner descriptor until native work is fenced. A private liveness pipe
   detects parent death independently of the Go runtime's OS-thread lifetimes.
-- `go/adapter.go`, `go/claude.go` and `go/codex.go`: harness-specific launch and frame
-  translation. Unknown frames remain in raw history, and derived Events retain their sources.
+- `go/claude/` and `go/codex/`: harness-specific launch, frame translation and native
+  history readers. They depend on the shared adapter contract and recovery types in
+  `go/harness/`, independently of the runner runtime. Unknown frames remain in raw history,
+  and derived Events retain their sources.
+  Native argument payloads remain as received; runner-constructed projections use standard
+  JSON encoding rather than reproducing the former Python runner's formatting.
 - `go/config.go`, `go/guest.go` and `go/cli.go`: explicit child environment and launch
   configuration. `go/cmd/main.go` dispatches internal process modes before service startup.
   `agentplane-runner-vm` is a symlink to this same executable.
@@ -114,7 +118,7 @@ These are not physical power-loss tests.
 The adapters compare it with native continuation evidence and emit `ConversationReconciled`;
 the app only folds that neutral report.
 
-- `go/claude_history.go` walks the persisted main parent chain, correlates split assistant blocks,
+- `go/claude/history.go` walks the persisted main parent chain, correlates split assistant blocks,
   and removes what Claude's resume loader removes: messages with an unresolved tool call, then a
   message holding only thinking once no other entry of its message id is left, so thinking
   before a tool that never answered is not replayed even though the transcript holds it. Ordinary
@@ -123,7 +127,7 @@ the app only folds that neutral report.
   of its message was written, and thinking that would otherwise be absent is unknown when a native
   line of the turn could not be parsed. Compacted or missing history and unfinished live tool outcomes
   remain unknown. The reader is tested against Claude Code 2.1.252.
-- `go/codex_history.go` reads model `response_item` records, not the app-server's reconstructed
+- `go/codex/history.go` reads model `response_item` records, not the app-server's reconstructed
   turn-item projection, which can omit an unresolved call still sent to the model. In Codex
   0.157.0, `core/src/tasks/mod.rs` flushes the interrupted-turn marker before the terminal
   notification and then flushes that event; `core/src/context_manager/normalize.rs` supplies

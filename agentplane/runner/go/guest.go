@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
 )
 
 const (
@@ -98,8 +100,8 @@ func GuestConfiguration(path, launchPath string) (Config, Endpoint, Endpoint, er
 		StateDir:           guestStateDir,
 		Launch:             launch,
 		HarnessEnvironment: harnessEnvironment,
-		Claude:             &LaunchConfig{Binary: "/run/current-system/sw/bin/claude", BaseURL: llmBaseURL, Token: workloadToken},
-		Codex:              &LaunchConfig{Binary: "/run/current-system/sw/bin/codex", BaseURL: llmBaseURL + "/v1", Token: workloadToken},
+		Claude:             &harness.LaunchConfig{Binary: "/run/current-system/sw/bin/claude", BaseURL: llmBaseURL, Token: workloadToken},
+		Codex:              &harness.LaunchConfig{Binary: "/run/current-system/sw/bin/codex", BaseURL: llmBaseURL + "/v1", Token: workloadToken},
 		ProcessIsolation:   &AgentCgroups{Root: "/sys/fs/cgroup/system.slice/agentplane-runner.service/workloads", AgentUID: identity, AgentGID: group, BlockDevices: []string{guestWorkspaceDev}},
 		WorkspaceRoot:      guestWorkspaceDir,
 		InitializationCwd:  guestWorkspaceDir,

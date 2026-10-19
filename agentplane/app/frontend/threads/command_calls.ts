@@ -33,7 +33,7 @@ const claudeBash = z.strictObject({
   dangerouslyDisableSandbox: z.boolean().optional(),
 });
 
-// What `agentplane/runner/go/codex.go` records for a `commandExecution` item.
+// What `agentplane/runner/go/codex/adapter.go` records for a `commandExecution` item.
 const codexCommand = z.strictObject({
   command: z.string().min(1),
   cwd: z.string(),

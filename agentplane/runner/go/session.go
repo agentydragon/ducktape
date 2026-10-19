@@ -11,6 +11,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/go/claude"
+	"github.com/agentydragon/ducktape/agentplane/runner/go/codex"
+	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -21,8 +25,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
-
-const maxFrameLineBytes = 64 * 1024 * 1024
 
 // observation wraps one generated observation in the Event vocabulary. The generated
 // descriptor owns the mapping, avoiding a second list of observation field names.
@@ -44,12 +46,12 @@ type nativeWaiter struct {
 	result  chan nativeResult
 }
 type nativeResult struct {
-	receipt NativeReceipt
+	receipt harness.NativeReceipt
 	err     error
 }
 type matchedReply struct {
 	waiter  *nativeWaiter
-	receipt NativeReceipt
+	receipt harness.NativeReceipt
 }
 type interruptTargetKey struct{}
 
@@ -63,7 +65,7 @@ type Session struct {
 	writeMu                                                     sync.Mutex
 	shutdownMu                                                  sync.Mutex
 	process                                                     *Process
-	adapter                                                     Adapter
+	adapter                                                     harness.Adapter
 	processID                                                   string
 	processState                                                runnerpb.ProcessState
 	ready, resuming, stopping, sealing, tearingDown, activating bool
@@ -94,16 +96,16 @@ func newSession(r *Runner, id string, record *SessionRecord, journal *Journal) *
 	return s
 }
 
-func (s *Session) Session() SessionSnapshot {
+func (s *Session) Session() harness.SessionSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	native := ""
 	if s.record.NativeSessionID != nil {
 		native = *s.record.NativeSessionID
 	}
-	return SessionSnapshot{Directory: s.directory(), Cwd: s.record.CWD, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: s.record.TotalContextBudgetTokens, Resuming: s.resuming, ActiveTurnID: s.activeTurn, HarnessEnvironment: s.runner.config.HarnessEnvironment}
+	return harness.SessionSnapshot{Directory: s.directory(), Cwd: s.record.CWD, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: s.record.TotalContextBudgetTokens, Resuming: s.resuming, ActiveTurnID: s.activeTurn, HarnessEnvironment: s.runner.config.HarnessEnvironment}
 }
-func (s *Session) Journal() AdapterJournal { return s.journal }
+func (s *Session) Journal() harness.AdapterJournal { return s.journal }
 
 func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
 	e := entry.Event
@@ -207,7 +209,7 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 		if err != nil {
 			return err
 		}
-		if err := s.Emit(ctx, observation(UnknownReport(turn.TurnId, items, "the harness exited before continuation could be inspected")), nil); err != nil {
+		if err := s.Emit(ctx, observation(harness.UnknownReport(turn.TurnId, items, "the harness exited before continuation could be inspected")), nil); err != nil {
 			return err
 		}
 	} else if turn.Status == eventpb.TurnStatus_TURN_STATUS_INTERRUPTED && adapter != nil {
@@ -278,7 +280,7 @@ func (s *Session) ReasoningEffortChanged(ctx context.Context, id, effort string,
 	return err
 }
 
-func (s *Session) ConfirmUserMessage(ctx context.Context, c UserMessageConfirmation, sources []uint64) error {
+func (s *Session) ConfirmUserMessage(ctx context.Context, c harness.UserMessageConfirmation, sources []uint64) error {
 	if len(c.OriginCommandIDs) == 0 {
 		return errors.New("native confirmation has no originating command")
 	}
@@ -444,13 +446,13 @@ func (s *Session) startHarness(ctx context.Context) error {
 	s.resuming = s.record.NativeSessionID != nil && started
 	s.ready = false
 	s.processState = runnerpb.ProcessState_PROCESS_STATE_STARTING
-	harness := s.record.Harness
+	harnessKind := s.record.Harness
 	s.mu.Unlock()
-	var adapter Adapter
-	if harness == runnerpb.Harness_HARNESS_CLAUDE && s.runner.config.Claude != nil {
-		adapter = NewClaudeAdapter(s, *s.runner.config.Claude)
-	} else if harness == runnerpb.Harness_HARNESS_CODEX && s.runner.config.Codex != nil {
-		adapter = NewCodexAdapter(s, *s.runner.config.Codex)
+	var adapter harness.Adapter
+	if harnessKind == runnerpb.Harness_HARNESS_CLAUDE && s.runner.config.Claude != nil {
+		adapter = claude.New(s, *s.runner.config.Claude)
+	} else if harnessKind == runnerpb.Harness_HARNESS_CODEX && s.runner.config.Codex != nil {
+		adapter = codex.New(s, *s.runner.config.Codex)
 	} else {
 		return errors.New("this runner is not configured for the selected harness")
 	}
@@ -693,7 +695,7 @@ func (s *Session) SendNative(ctx context.Context, frame json.RawMessage) error {
 	return process.WriteLine(ctx, string(frame))
 }
 
-func (s *Session) RequestNative(ctx context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (NativeReceipt, error) {
+func (s *Session) RequestNative(ctx context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
 	waiter := &nativeWaiter{matches: match, result: make(chan nativeResult, 1)}
 	s.mu.Lock()
 	s.waiters = append(s.waiters, waiter)
@@ -709,7 +711,7 @@ func (s *Session) RequestNative(ctx context.Context, frame json.RawMessage, matc
 		}
 	}()
 	if err := s.SendNative(ctx, frame); err != nil {
-		return NativeReceipt{}, err
+		return harness.NativeReceipt{}, err
 	}
 	timer := time.NewTimer(60 * time.Second)
 	defer timer.Stop()
@@ -717,13 +719,13 @@ func (s *Session) RequestNative(ctx context.Context, frame json.RawMessage, matc
 	case reply := <-waiter.result:
 		return reply.receipt, reply.err
 	case <-ctx.Done():
-		return NativeReceipt{}, ctx.Err()
+		return harness.NativeReceipt{}, ctx.Err()
 	case <-timer.C:
-		return NativeReceipt{}, errors.New("native request did not receive its response within 60s")
+		return harness.NativeReceipt{}, errors.New("native request did not receive its response within 60s")
 	}
 }
 
-func (s *Session) receive(ctx context.Context, line []byte, adapter Adapter) error {
+func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adapter) error {
 	entry, err := s.recordEvent(ctx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: string(line)}), nil, nil, nil)
 	if err != nil {
 		return err
@@ -746,7 +748,7 @@ func (s *Session) receive(ctx context.Context, line []byte, adapter Adapter) err
 	waiting := s.waiters[:0]
 	for _, w := range s.waiters {
 		if w.matches(frame) {
-			s.replies = append(s.replies, matchedReply{w, NativeReceipt{Frame: frame, Sequence: entry.Origin.Sequence}})
+			s.replies = append(s.replies, matchedReply{w, harness.NativeReceipt{Frame: frame, Sequence: entry.Origin.Sequence}})
 		} else {
 			waiting = append(waiting, w)
 		}
@@ -766,7 +768,7 @@ func (s *Session) deliverReplies() {
 	}
 }
 
-func (s *Session) readStdout(process *Process, adapter Adapter) {
+func (s *Session) readStdout(process *Process, adapter harness.Adapter) {
 	defer s.readers.Done()
 	buffer := make([]byte, 64*1024)
 	var pending []byte
@@ -781,7 +783,7 @@ func (s *Session) readStdout(process *Process, adapter Adapter) {
 					if i < 0 {
 						break
 					}
-					if i > maxFrameLineBytes {
+					if i > harness.MaxFrameLineBytes {
 						return errors.New("native frame exceeded the 64 MiB limit")
 					}
 					line := append([]byte(nil), bytes.TrimRight(pending[:i], "\r")...)
@@ -796,7 +798,7 @@ func (s *Session) readStdout(process *Process, adapter Adapter) {
 				break
 			}
 			s.deliverReplies()
-			if len(pending) > maxFrameLineBytes {
+			if len(pending) > harness.MaxFrameLineBytes {
 				readErr = errors.New("native frame exceeded the 64 MiB limit")
 				break
 			}

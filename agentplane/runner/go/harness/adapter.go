@@ -1,14 +1,15 @@
-package runner
+package harness
 
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"sort"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 )
+
+// MaxFrameLineBytes bounds native frames and retained transcript lines.
+const MaxFrameLineBytes = 64 * 1024 * 1024
 
 // SessionSnapshot contains the session-owned values adapters need to construct native requests.
 // The host refreshes it from the durable Session record whenever it is called.
@@ -81,30 +82,4 @@ type Adapter interface {
 	ChangeModel(context.Context, string, string) error
 	ChangeReasoningEffort(context.Context, string, string) error
 	OnFrame(context.Context, json.RawMessage, uint64) error
-}
-
-func marshalNative(value any) (json.RawMessage, error) {
-	encoded, err := json.Marshal(value)
-	return json.RawMessage(encoded), err
-}
-
-func ensureDirectory(path string) error {
-	return os.MkdirAll(path, 0o700)
-}
-
-func copyEnvironment(source map[string]string) map[string]string {
-	result := make(map[string]string, len(source)+5)
-	for key, value := range source {
-		result[key] = value
-	}
-	return result
-}
-
-func sortedObservedItemIDs(items map[string]ObservedItem) []string {
-	ids := make([]string, 0, len(items))
-	for id := range items {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
 }

@@ -1,4 +1,4 @@
-package runner
+package claude
 
 import (
 	"bufio"
@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
@@ -96,7 +98,7 @@ type claudeMessageWithBlocks struct {
 }
 
 // readClaudeHistory returns the items Claude's resume loader keeps from its main transcript chain.
-func readClaudeHistory(directory, sessionID string) (map[string]ObservedItem, error) {
+func readClaudeHistory(directory, sessionID string) (map[string]harness.ObservedItem, error) {
 	paths, err := filepath.Glob(filepath.Join(directory, "projects", "*", sessionID+".jsonl"))
 	if err != nil {
 		return nil, err
@@ -113,7 +115,7 @@ func readClaudeHistory(directory, sessionID string) (map[string]ObservedItem, er
 	entries := make(map[string]claudeTranscriptEntry)
 	var leaf *claudeTranscriptEntry
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), maxFrameLineBytes)
+	scanner.Buffer(make([]byte, 64*1024), harness.MaxFrameLineBytes)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		var raw map[string]json.RawMessage
@@ -221,7 +223,7 @@ func readClaudeHistory(directory, sessionID string) (map[string]ObservedItem, er
 		}
 	}
 	answered := answeredMessageIDs(kept)
-	items := make(map[string]ObservedItem)
+	items := make(map[string]harness.ObservedItem)
 	for _, entry := range kept {
 		message := entry.Message
 		if holdsOnlyThinking(entry.Blocks) && (message.ID == nil || !answered[*message.ID]) {
@@ -235,20 +237,20 @@ func readClaudeHistory(directory, sessionID string) (map[string]ObservedItem, er
 					continue
 				}
 				itemID = fmt.Sprintf("%s#%d", *message.ID, entry.Offset+index)
-				items[itemID] = ObservedItem{ItemID: itemID, Kind: eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT, Text: block.Text}
+				items[itemID] = harness.ObservedItem{ItemID: itemID, Kind: eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT, Text: block.Text}
 			case "thinking":
 				if message.ID == nil {
 					continue
 				}
 				itemID = fmt.Sprintf("%s#%d", *message.ID, entry.Offset+index)
-				items[itemID] = ObservedItem{ItemID: itemID, Kind: eventpb.ItemKind_ITEM_KIND_REASONING, Text: block.Thinking}
+				items[itemID] = harness.ObservedItem{ItemID: itemID, Kind: eventpb.ItemKind_ITEM_KIND_REASONING, Text: block.Thinking}
 			case "tool_use":
 				arguments := string(block.Input)
-				if len(block.Input) == 0 || string(block.Input) == "null" {
+				if len(block.Input) == 0 {
 					arguments = "{}"
 				}
 				itemID = block.ID
-				items[itemID] = ObservedItem{ItemID: itemID, Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, Arguments: arguments}
+				items[itemID] = harness.ObservedItem{ItemID: itemID, Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, Arguments: arguments}
 			case "tool_result":
 				if _, ok := items[block.ToolUseID]; !ok {
 					continue

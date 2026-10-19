@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
 )
 
 type environmentFlags []string
@@ -121,13 +123,13 @@ func CLI(ctx context.Context, args []string) error {
 		if anthropicURL == "" || environ["ANTHROPIC_AUTH_TOKEN"] == "" {
 			return errors.New("claude-binary requires anthropic-base-url and ANTHROPIC_AUTH_TOKEN")
 		}
-		config.Claude = &LaunchConfig{Binary: claudeBinary, BaseURL: anthropicURL, Token: environ["ANTHROPIC_AUTH_TOKEN"]}
+		config.Claude = &harness.LaunchConfig{Binary: claudeBinary, BaseURL: anthropicURL, Token: environ["ANTHROPIC_AUTH_TOKEN"]}
 	}
 	if codexBinary != "" {
 		if openaiURL == "" || environ["OPENAI_API_KEY"] == "" {
 			return errors.New("codex-binary requires openai-base-url and OPENAI_API_KEY")
 		}
-		config.Codex = &LaunchConfig{Binary: codexBinary, BaseURL: openaiURL, Token: environ["OPENAI_API_KEY"]}
+		config.Codex = &harness.LaunchConfig{Binary: codexBinary, BaseURL: openaiURL, Token: environ["OPENAI_API_KEY"]}
 	}
 	if (checkpoint.Name == "") != (checkpoint.CommandID == "") {
 		return errors.New("both test debug checkpoint options must be set together")

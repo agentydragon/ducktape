@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	controlpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 	"google.golang.org/grpc/codes"
@@ -344,7 +346,7 @@ func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string
 		StateDir:      filepath.Join(t.TempDir(), "state"),
 		Launch:        SandboxLaunch{Sandbox: SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap},
 		WorkspaceRoot: workspace, InitializationCwd: workspace,
-		Claude:     &LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test-token"},
+		Claude:     &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test-token"},
 		HTTPClient: http.DefaultClient,
 	}
 }

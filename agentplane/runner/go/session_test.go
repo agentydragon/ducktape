@@ -7,12 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 )
 
 type frameTestAdapter struct {
-	Adapter
+	harness.Adapter
 	onFrame func(context.Context, json.RawMessage, uint64) error
 }
 

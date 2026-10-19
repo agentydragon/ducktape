@@ -1,4 +1,4 @@
-package runner
+package codex
 
 import (
 	"bufio"
@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
@@ -33,7 +35,7 @@ type codexPayload struct {
 
 // readCodexHistory extracts continuation items from Codex's model-facing rollout, which differs
 // from the app-server thread projection. A nil map means the transcript cannot establish a view.
-func readCodexHistory(directory, sessionID string, observed map[string]ObservedItem) (map[string]ObservedItem, error) {
+func readCodexHistory(directory, sessionID string, observed map[string]harness.ObservedItem) (map[string]harness.ObservedItem, error) {
 	paths := make([]string, 0, 1)
 	sessionsDir := filepath.Join(directory, "sessions")
 	err := filepath.WalkDir(sessionsDir, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -65,7 +67,7 @@ func readCodexHistory(directory, sessionID string, observed map[string]ObservedI
 	calls := make(map[string]bool)
 	outputs := make(map[string]string)
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), maxFrameLineBytes)
+	scanner.Buffer(make([]byte, 64*1024), harness.MaxFrameLineBytes)
 	for scanner.Scan() {
 		var record codexHistoryRecord
 		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
@@ -121,7 +123,7 @@ func readCodexHistory(directory, sessionID string, observed map[string]ObservedI
 		return nil, err
 	}
 
-	recovered := make(map[string]ObservedItem)
+	recovered := make(map[string]harness.ObservedItem)
 	for itemID, item := range observed {
 		switch item.Kind {
 		case eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT:

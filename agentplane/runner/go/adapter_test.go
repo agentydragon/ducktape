@@ -8,12 +8,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/go/claude"
+	"github.com/agentydragon/ducktape/agentplane/runner/go/codex"
+	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 )
 
 type adapterTestJournal struct {
-	items  map[string]ObservedItem
+	items  map[string]harness.ObservedItem
 	events []*eventlogpb.EventEntry
 	seen   map[string]bool
 	blocks map[string]int
@@ -21,11 +25,11 @@ type adapterTestJournal struct {
 
 func newAdapterTestJournal() *adapterTestJournal {
 	return &adapterTestJournal{
-		items: make(map[string]ObservedItem), seen: make(map[string]bool), blocks: make(map[string]int),
+		items: make(map[string]harness.ObservedItem), seen: make(map[string]bool), blocks: make(map[string]int),
 	}
 }
 
-func (j *adapterTestJournal) ObservedItems(context.Context, string) (map[string]ObservedItem, error) {
+func (j *adapterTestJournal) ObservedItems(context.Context, string) (map[string]harness.ObservedItem, error) {
 	return j.items, nil
 }
 
@@ -54,7 +58,7 @@ func (j *adapterTestJournal) NextAdapterBlock(_ context.Context, adapterID, mess
 }
 
 type adapterTestHost struct {
-	session       SessionSnapshot
+	session       harness.SessionSnapshot
 	journal       *adapterTestJournal
 	nativeWrites  []json.RawMessage
 	events        []*eventpb.Event
@@ -65,26 +69,26 @@ type adapterTestHost struct {
 }
 
 type adapterTestConfirmation struct {
-	value   UserMessageConfirmation
+	value   harness.UserMessageConfirmation
 	sources []uint64
 }
 
 func newAdapterTestHost() *adapterTestHost {
 	return &adapterTestHost{
-		session: SessionSnapshot{Directory: "/tmp/session", Cwd: "/workspace", Model: "test-model", ActiveTurnID: "turn-root", NativeSessionID: "thread-root", Resuming: true},
+		session: harness.SessionSnapshot{Directory: "/tmp/session", Cwd: "/workspace", Model: "test-model", ActiveTurnID: "turn-root", NativeSessionID: "thread-root", Resuming: true},
 		journal: newAdapterTestJournal(),
 	}
 }
 
-func (h *adapterTestHost) Session() SessionSnapshot { return h.session }
-func (h *adapterTestHost) Journal() AdapterJournal  { return h.journal }
+func (h *adapterTestHost) Session() harness.SessionSnapshot { return h.session }
+func (h *adapterTestHost) Journal() harness.AdapterJournal  { return h.journal }
 func (h *adapterTestHost) SendNative(_ context.Context, frame json.RawMessage) error {
 	h.nativeWrites = append(h.nativeWrites, append(json.RawMessage(nil), frame...))
 	return nil
 }
 
-func (h *adapterTestHost) RequestNative(context.Context, json.RawMessage, func(json.RawMessage) bool) (NativeReceipt, error) {
-	return NativeReceipt{}, errors.New("unexpected native request in adapter test")
+func (h *adapterTestHost) RequestNative(context.Context, json.RawMessage, func(json.RawMessage) bool) (harness.NativeReceipt, error) {
+	return harness.NativeReceipt{}, errors.New("unexpected native request in adapter test")
 }
 
 func (h *adapterTestHost) Emit(_ context.Context, event *eventpb.Event, sources []uint64) error {
@@ -99,7 +103,7 @@ func (h *adapterTestHost) Emit(_ context.Context, event *eventpb.Event, sources 
 	return nil
 }
 
-func (h *adapterTestHost) ConfirmUserMessage(_ context.Context, value UserMessageConfirmation, sources []uint64) error {
+func (h *adapterTestHost) ConfirmUserMessage(_ context.Context, value harness.UserMessageConfirmation, sources []uint64) error {
 	h.confirmations = append(h.confirmations, adapterTestConfirmation{value: value, sources: append([]uint64(nil), sources...)})
 	return nil
 }
@@ -128,14 +132,14 @@ type adapterHandshakeHost struct {
 	requests []json.RawMessage
 }
 
-func (h *adapterHandshakeHost) RequestNative(_ context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (NativeReceipt, error) {
+func (h *adapterHandshakeHost) RequestNative(_ context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
 	h.requests = append(h.requests, append(json.RawMessage(nil), frame...))
 	var request struct {
 		ID     string `json:"id"`
 		Method string `json:"method"`
 	}
 	if err := json.Unmarshal(frame, &request); err != nil {
-		return NativeReceipt{}, err
+		return harness.NativeReceipt{}, err
 	}
 	var response any
 	switch request.Method {
@@ -144,23 +148,23 @@ func (h *adapterHandshakeHost) RequestNative(_ context.Context, frame json.RawMe
 	case "thread/start":
 		response = map[string]any{"id": request.ID, "result": map[string]any{"thread": map[string]string{"id": "thread-created"}}}
 	default:
-		return NativeReceipt{}, errors.New("unexpected Codex request " + request.Method)
+		return harness.NativeReceipt{}, errors.New("unexpected Codex request " + request.Method)
 	}
 	encoded, err := json.Marshal(response)
 	if err != nil {
-		return NativeReceipt{}, err
+		return harness.NativeReceipt{}, err
 	}
 	raw := json.RawMessage(encoded)
 	if !match(raw) {
-		return NativeReceipt{}, errors.New("test Codex response did not match request")
+		return harness.NativeReceipt{}, errors.New("test Codex response did not match request")
 	}
-	return NativeReceipt{Frame: raw, Sequence: uint64(len(h.requests))}, nil
+	return harness.NativeReceipt{Frame: raw, Sequence: uint64(len(h.requests))}, nil
 }
 
 func TestClaudeOutboundFramesKeepNativeNullableFields(t *testing.T) {
 	ctx := context.Background()
 	host := newAdapterTestHost()
-	adapter := NewClaudeAdapter(host, LaunchConfig{Binary: "/bin/false"}).(*claudeAdapter)
+	adapter := claude.New(host, harness.LaunchConfig{Binary: "/bin/false"})
 	if err := adapter.Submit(ctx, "input-1", "hello"); err != nil {
 		t.Fatal(err)
 	}
@@ -182,9 +186,43 @@ func TestClaudeOutboundFramesKeepNativeNullableFields(t *testing.T) {
 	if value, ok := response["error"]; !ok || value != nil {
 		t.Fatalf("Claude success response omitted its null error field: %s", host.nativeWrites[1])
 	}
-	requestID := nativeRequestID()
-	if !strings.HasPrefix(requestID, "capture-") {
-		t.Fatalf("Claude request ID did not match the native driver prefix: %q", requestID)
+	if err := adapter.Interrupt(ctx, "turn-root"); err != nil {
+		t.Fatal(err)
+	}
+	var control struct {
+		RequestID string `json:"request_id"`
+	}
+	if err := json.Unmarshal(host.nativeWrites[2], &control); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(control.RequestID, "capture-") {
+		t.Fatalf("Claude request ID did not match the native driver prefix: %q", control.RequestID)
+	}
+}
+
+func TestClaudeToolArgumentsPreserveNativePayload(t *testing.T) {
+	for _, input := range []string{`{ "large": 9007199254740993, "escaped": "\u0061", "text": "<&>" }`, `null`} {
+		t.Run(input, func(t *testing.T) {
+			host := newAdapterTestHost()
+			adapter := claude.New(host, harness.LaunchConfig{Binary: "/bin/false"})
+			frame := json.RawMessage(`{"type":"assistant","message":{"id":"message-1","content":[{"type":"tool_use","id":"tool-1","name":"Bash","input":` + input + `}]}}`)
+			original := append(json.RawMessage(nil), frame...)
+			if err := adapter.OnFrame(context.Background(), frame, 1); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(frame, original) {
+				t.Fatal("adapter changed the received frame")
+			}
+			for _, event := range host.events {
+				if arguments := event.GetToolArguments(); arguments != nil {
+					if arguments.ArgumentsJson != input {
+						t.Fatalf("native tool arguments changed: got %s, want %s", arguments.ArgumentsJson, input)
+					}
+					return
+				}
+			}
+			t.Fatal("native tool arguments were not projected")
+		})
 	}
 }
 
@@ -193,7 +231,7 @@ func TestCodexHandshakeAndServerReplyKeepNativeNullableFields(t *testing.T) {
 	base := newAdapterTestHost()
 	base.session.Resuming = false
 	host := &adapterHandshakeHost{adapterTestHost: base}
-	adapter := NewCodexAdapter(host, LaunchConfig{Binary: "codex"})
+	adapter := codex.New(host, harness.LaunchConfig{Binary: "codex"})
 	threadID, err := adapter.Handshake(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +262,7 @@ func TestCodexHandshakeAndServerReplyKeepNativeNullableFields(t *testing.T) {
 func TestClaudeChildFramesStayOutsideRootTurnAndInputCohort(t *testing.T) {
 	ctx := context.Background()
 	host := newAdapterTestHost()
-	adapter := NewClaudeAdapter(host, LaunchConfig{Binary: "/bin/false"}).(*claudeAdapter)
+	adapter := claude.New(host, harness.LaunchConfig{Binary: "/bin/false"})
 	if err := adapter.Submit(ctx, "input-1", "ROOT_INPUT"); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +311,7 @@ func TestClaudeChildFramesStayOutsideRootTurnAndInputCohort(t *testing.T) {
 func TestCodexIgnoresChildFramesAndKeepsUnknownItemFields(t *testing.T) {
 	ctx := context.Background()
 	host := newAdapterTestHost()
-	adapter := NewCodexAdapter(host, LaunchConfig{Binary: "codex"}).(*codexAdapter)
+	adapter := codex.New(host, harness.LaunchConfig{Binary: "codex"})
 	childFrame := json.RawMessage(`{"method":"item/completed","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"agentMessage","id":"child-item","text":"CHILD_ONLY"}}}`)
 	childBefore := append(json.RawMessage(nil), childFrame...)
 	if err := adapter.OnFrame(ctx, childFrame, 1); err != nil {
@@ -314,7 +352,7 @@ func uint64Bytes(values []uint64) []byte {
 func TestClaudeCancellationSettlesOnlyPendingInputOnce(t *testing.T) {
 	ctx := context.Background()
 	host := newAdapterTestHost()
-	adapter := NewClaudeAdapter(host, LaunchConfig{Binary: "/bin/false"})
+	adapter := claude.New(host, harness.LaunchConfig{Binary: "/bin/false"})
 	if err := adapter.Submit(ctx, "input-1", "hello"); err != nil {
 		t.Fatal(err)
 	}

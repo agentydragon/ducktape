@@ -1,13 +1,18 @@
-package runner
+package codex
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"
@@ -36,8 +41,8 @@ type codexTurnStart struct {
 }
 
 type codexAdapter struct {
-	host   AdapterHost
-	launch LaunchConfig
+	host   harness.AdapterHost
+	launch harness.LaunchConfig
 
 	mu                   sync.Mutex
 	threadID             string
@@ -48,8 +53,8 @@ type codexAdapter struct {
 	turnStarts           map[string]codexTurnStart
 }
 
-// NewCodexAdapter creates an adapter bound to one runner-owned Session.
-func NewCodexAdapter(host AdapterHost, launch LaunchConfig) Adapter {
+// New creates an adapter bound to one runner-owned Session.
+func New(host harness.AdapterHost, launch harness.LaunchConfig) harness.Adapter {
 	snapshot := host.Session()
 	threadID := ""
 	if snapshot.Resuming {
@@ -114,10 +119,11 @@ func (a *codexAdapter) Command() ([]string, error) {
 
 func (a *codexAdapter) Environment() (map[string]string, error) {
 	codexHome := filepath.Join(a.host.Session().Directory, "codex")
-	if err := ensureDirectory(codexHome); err != nil {
+	if err := os.MkdirAll(codexHome, 0o700); err != nil {
 		return nil, err
 	}
-	environment := copyEnvironment(a.host.Session().HarnessEnvironment)
+	environment := make(map[string]string)
+	maps.Copy(environment, a.host.Session().HarnessEnvironment)
 	environment["CODEX_HOME"] = codexHome
 	environment["OPENAI_API_KEY"] = a.launch.Token
 	environment["OPENAI_BASE_URL"] = a.launch.BaseURL
@@ -220,23 +226,23 @@ func (a *codexAdapter) Reconcile(ctx context.Context, turnID string, _ bool) (*e
 	a.mu.Unlock()
 	recovered, err := readCodexHistory(filepath.Join(a.host.Session().Directory, "codex"), threadID, observed)
 	if err != nil {
-		return UnknownReport(turnID, observed, "cannot inspect native continuation: "+err.Error()), nil
+		return harness.UnknownReport(turnID, observed, "cannot inspect native continuation: "+err.Error()), nil
 	}
 	if recovered == nil {
-		return UnknownReport(turnID, observed, "native continuation evidence is unavailable or unsupported"), nil
+		return harness.UnknownReport(turnID, observed, "native continuation evidence is unavailable or unsupported"), nil
 	}
 	report := &eventpb.ConversationReconciled{TurnId: turnID}
-	for _, itemID := range sortedObservedItemIDs(observed) {
+	for _, itemID := range slices.Sorted(maps.Keys(observed)) {
 		item := observed[itemID]
 		if item.Kind == eventpb.ItemKind_ITEM_KIND_TOOL_CALL && item.ToolName != "commandExecution" {
-			report.Items = append(report.Items, UnknownItem(item.ItemID, fmt.Sprintf("the adapter does not match %s items to saved function calls", item.ToolName)))
+			report.Items = append(report.Items, harness.UnknownItem(item.ItemID, fmt.Sprintf("the adapter does not match %s items to saved function calls", item.ToolName)))
 			continue
 		}
 		recoveredItem, ok := recovered[itemID]
 		if !ok {
-			report.Items = append(report.Items, CompareItem(item, nil))
+			report.Items = append(report.Items, harness.CompareItem(item, nil))
 		} else {
-			report.Items = append(report.Items, CompareItem(item, &recoveredItem))
+			report.Items = append(report.Items, harness.CompareItem(item, &recoveredItem))
 		}
 	}
 	return report, nil
@@ -470,7 +476,7 @@ func (a *codexAdapter) onResponse(ctx context.Context, frame codexWireFrame, req
 			return err
 		}
 	}
-	return a.host.ConfirmUserMessage(ctx, UserMessageConfirmation{
+	return a.host.ConfirmUserMessage(ctx, harness.UserMessageConfirmation{
 		HarnessMessageID: result.Turn.ID, Text: start.text, OriginCommandIDs: []string{start.commandID}, TurnID: result.Turn.ID,
 	}, sources)
 }
@@ -496,16 +502,16 @@ func (a *codexAdapter) projectItemStarted(ctx context.Context, raw json.RawMessa
 		if err := a.emit(ctx, &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: item.ID, Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, ToolName: item.Type}}, sources); err != nil {
 			return err
 		}
-		var arguments string
+		var arguments any
 		if item.Type == "commandExecution" {
-			arguments = pythonJSON(map[string]any{"command": item.Command, "cwd": item.Cwd})
+			arguments = map[string]any{"command": item.Command, "cwd": item.Cwd}
 		} else {
-			arguments = pythonJSON(struct {
+			arguments = struct {
 				AgentThreadID string `json:"agentThreadId"`
 				AgentPath     string `json:"agentPath"`
-			}{AgentThreadID: item.AgentThreadID, AgentPath: item.AgentPath})
+			}{AgentThreadID: item.AgentThreadID, AgentPath: item.AgentPath}
 		}
-		return a.emit(ctx, &eventpb.Event_ToolArguments{ToolArguments: &eventpb.ToolArguments{ItemId: item.ID, ArgumentsJson: arguments}}, sources)
+		return a.toolArguments(ctx, item.ID, arguments, sources)
 	case "unknown":
 		if err := a.emit(ctx, &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: item.ID, Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, ToolName: item.WireType}}, sources); err != nil {
 			return err
@@ -516,7 +522,7 @@ func (a *codexAdapter) projectItemStarted(ctx context.Context, raw json.RawMessa
 				arguments[key] = value
 			}
 		}
-		return a.emit(ctx, &eventpb.Event_ToolArguments{ToolArguments: &eventpb.ToolArguments{ItemId: item.ID, ArgumentsJson: pythonRawJSON(arguments)}}, sources)
+		return a.toolArguments(ctx, item.ID, arguments, sources)
 	}
 	return nil
 }
@@ -558,9 +564,21 @@ func (a *codexAdapter) projectItemCompleted(ctx context.Context, raw json.RawMes
 		}
 		status := ""
 		_ = json.Unmarshal(outcome["status"], &status)
-		return a.itemCompletedTool(ctx, item.ID, pythonRawJSON(outcome), status == "completed", sources)
+		output, err := json.Marshal(outcome)
+		if err != nil {
+			return err
+		}
+		return a.itemCompletedTool(ctx, item.ID, string(output), status == "completed", sources)
 	}
 	return nil
+}
+
+func (a *codexAdapter) toolArguments(ctx context.Context, itemID string, value any, sources []uint64) error {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return a.emit(ctx, &eventpb.Event_ToolArguments{ToolArguments: &eventpb.ToolArguments{ItemId: itemID, ArgumentsJson: string(encoded)}}, sources)
 }
 
 func (a *codexAdapter) itemCompletedText(ctx context.Context, itemID, text string, sources []uint64) error {
@@ -582,7 +600,7 @@ func (a *codexAdapter) answerServerRequest(ctx context.Context, frame codexWireF
 }
 
 func (a *codexAdapter) request(ctx context.Context, requestID string, request any) (codexWireFrame, uint64, error) {
-	frame, err := marshalNative(request)
+	frame, err := json.Marshal(request)
 	if err != nil {
 		return codexWireFrame{}, 0, err
 	}
@@ -608,7 +626,7 @@ func (a *codexAdapter) nextID() (string, error) {
 }
 
 func (a *codexAdapter) send(ctx context.Context, value any) error {
-	frame, err := marshalNative(value)
+	frame, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
@@ -752,51 +770,4 @@ func codexResponseError(frame codexWireFrame) error {
 	return nil
 }
 
-func pythonJSON(value any) string {
-	var output strings.Builder
-	encoder := json.NewEncoder(&output)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(value); err != nil {
-		return "{}"
-	}
-	encoded := strings.TrimSuffix(output.String(), "\n")
-	return pythonSpacing(encoded)
-}
-
-func pythonRawJSON(value map[string]json.RawMessage) string {
-	var output strings.Builder
-	encoder := json.NewEncoder(&output)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(value); err != nil {
-		return "{}"
-	}
-	encoded := strings.TrimSuffix(output.String(), "\n")
-	return pythonSpacing(encoded)
-}
-
-func pythonSpacing(encoded string) string {
-	var result strings.Builder
-	inString := false
-	escaped := false
-	for _, char := range encoded {
-		result.WriteRune(char)
-		if inString {
-			if escaped {
-				escaped = false
-			} else if char == '\\' {
-				escaped = true
-			} else if char == '"' {
-				inString = false
-			}
-			continue
-		}
-		if char == '"' {
-			inString = true
-		} else if char == ':' || char == ',' {
-			result.WriteByte(' ')
-		}
-	}
-	return result.String()
-}
-
-var _ Adapter = (*codexAdapter)(nil)
+var _ harness.Adapter = (*codexAdapter)(nil)

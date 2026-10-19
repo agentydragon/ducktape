@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "harness",
+    srcs = [
+        "adapter.go",
+        "recovery.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/go/harness",
+    visibility = ["//agentplane/runner:__subpackages__"],
+    deps = [
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+    ],
+)

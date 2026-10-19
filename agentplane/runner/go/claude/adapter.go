@@ -1,13 +1,18 @@
-package runner
+package claude
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"
@@ -41,8 +46,8 @@ type claudeChange struct {
 }
 
 type claudeAdapter struct {
-	host   AdapterHost
-	launch LaunchConfig
+	host   harness.AdapterHost
+	launch harness.LaunchConfig
 
 	mu              sync.Mutex
 	nativeSessionID string
@@ -56,8 +61,8 @@ type claudeAdapter struct {
 	adapterID       string
 }
 
-// NewClaudeAdapter creates an adapter bound to one runner-owned Session.
-func NewClaudeAdapter(host AdapterHost, launch LaunchConfig) Adapter {
+// New creates an adapter bound to one runner-owned Session.
+func New(host harness.AdapterHost, launch harness.LaunchConfig) harness.Adapter {
 	snapshot := host.Session()
 	nativeID := snapshot.NativeSessionID
 	if nativeID == "" {
@@ -105,10 +110,11 @@ func (a *claudeAdapter) Command() ([]string, error) {
 func (a *claudeAdapter) Environment() (map[string]string, error) {
 	session := a.host.Session()
 	configDir := filepath.Join(session.Directory, "claude")
-	if err := ensureDirectory(configDir); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return nil, err
 	}
-	environment := copyEnvironment(session.HarnessEnvironment)
+	environment := make(map[string]string)
+	maps.Copy(environment, session.HarnessEnvironment)
 	environment["ANTHROPIC_AUTH_TOKEN"] = a.launch.Token
 	environment["ANTHROPIC_BASE_URL"] = a.launch.BaseURL
 	environment["CLAUDE_CONFIG_DIR"] = configDir
@@ -127,7 +133,7 @@ func (a *claudeAdapter) Handshake(ctx context.Context) (string, error) {
 		initialize["appendSystemPrompt"] = instructions
 	}
 	request := map[string]any{"type": "control_request", "request_id": requestID, "request": initialize}
-	frame, err := marshalNative(request)
+	frame, err := json.Marshal(request)
 	if err != nil {
 		return "", err
 	}
@@ -159,7 +165,7 @@ func (a *claudeAdapter) Reconcile(ctx context.Context, turnID string, resumed bo
 	if err != nil {
 		return nil, err
 	}
-	var recovered map[string]ObservedItem
+	var recovered map[string]harness.ObservedItem
 	undetermined := make(map[string]bool)
 	if resumed {
 		a.mu.Lock()
@@ -167,14 +173,14 @@ func (a *claudeAdapter) Reconcile(ctx context.Context, turnID string, resumed bo
 		a.mu.Unlock()
 		recovered, err = readClaudeHistory(filepath.Join(a.host.Session().Directory, "claude"), nativeID)
 		if err != nil {
-			return UnknownReport(turnID, observed, "cannot inspect native continuation: "+err.Error()), nil
+			return harness.UnknownReport(turnID, observed, "cannot inspect native continuation: "+err.Error()), nil
 		}
 	} else {
 		answered, unparsed, err := a.answeredMessages(ctx, turnID)
 		if err != nil {
 			return nil, err
 		}
-		recovered = make(map[string]ObservedItem)
+		recovered = make(map[string]harness.ObservedItem)
 		for itemID, item := range observed {
 			messageID := itemID
 			if separator := strings.LastIndexByte(itemID, '#'); separator >= 0 {
@@ -190,19 +196,19 @@ func (a *claudeAdapter) Reconcile(ctx context.Context, turnID string, resumed bo
 	}
 
 	report := &eventpb.ConversationReconciled{TurnId: turnID}
-	for _, itemID := range sortedObservedItemIDs(observed) {
+	for _, itemID := range slices.Sorted(maps.Keys(observed)) {
 		item := observed[itemID]
 		switch {
 		case !resumed && item.Kind == eventpb.ItemKind_ITEM_KIND_TOOL_CALL && !item.Completed:
-			report.Items = append(report.Items, UnknownItem(item.ItemID, "Claude does not report whether it keeps a tool call interrupted before its result"))
+			report.Items = append(report.Items, harness.UnknownItem(item.ItemID, "Claude does not report whether it keeps a tool call interrupted before its result"))
 		case undetermined[item.ItemID]:
-			report.Items = append(report.Items, UnknownItem(item.ItemID, "a native line of this turn could not be parsed, so whether another block of this message survived is unknown"))
+			report.Items = append(report.Items, harness.UnknownItem(item.ItemID, "a native line of this turn could not be parsed, so whether another block of this message survived is unknown"))
 		default:
 			recoveredItem, ok := recovered[item.ItemID]
 			if !ok {
-				report.Items = append(report.Items, CompareItem(item, nil))
+				report.Items = append(report.Items, harness.CompareItem(item, nil))
 			} else {
-				report.Items = append(report.Items, CompareItem(item, &recoveredItem))
+				report.Items = append(report.Items, harness.CompareItem(item, &recoveredItem))
 			}
 		}
 	}
@@ -251,7 +257,7 @@ func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) erro
 		}
 	}
 	messageUUID := uuid.NewString()
-	frame, err := marshalNative(map[string]any{
+	frame, err := json.Marshal(map[string]any{
 		"type": "user", "message": map[string]string{"role": "user", "content": text}, "parent_tool_use_id": nil, "uuid": messageUUID,
 	})
 	if err != nil {
@@ -313,7 +319,7 @@ func (a *claudeAdapter) ChangeReasoningEffort(ctx context.Context, commandID, ef
 }
 
 func (a *claudeAdapter) requestAndTranslate(ctx context.Context, requestID string, request any) error {
-	frame, err := marshalNative(request)
+	frame, err := json.Marshal(request)
 	if err != nil {
 		return err
 	}
@@ -508,7 +514,7 @@ func (a *claudeAdapter) confirmMessageStart(ctx context.Context, messageUUID str
 		return err
 	}
 	sources := startedSequences(started, sourceSequence)
-	return a.host.ConfirmUserMessage(ctx, UserMessageConfirmation{
+	return a.host.ConfirmUserMessage(ctx, harness.UserMessageConfirmation{
 		HarnessMessageID: messageUUID, Text: joinTexts(confirmed), OriginCommandIDs: commandIDs(confirmed), TurnID: turnID,
 	}, sources)
 }
@@ -546,7 +552,10 @@ func (a *claudeAdapter) handleAssistant(ctx context.Context, frame claudeWireFra
 				return err
 			}
 		case "tool_use":
-			arguments := canonicalJSON(block.Input)
+			arguments := string(block.Input)
+			if len(block.Input) == 0 {
+				arguments = "{}"
+			}
 			if err := a.emit(ctx, &eventpb.Event_ToolArguments{ToolArguments: &eventpb.ToolArguments{ItemId: itemID, ArgumentsJson: arguments}}, sources); err != nil {
 				return err
 			}
@@ -617,7 +626,7 @@ func (a *claudeAdapter) confirmReplayedUserMessage(ctx context.Context, frame cl
 	if err != nil {
 		return err
 	}
-	return a.host.ConfirmUserMessage(ctx, UserMessageConfirmation{
+	return a.host.ConfirmUserMessage(ctx, harness.UserMessageConfirmation{
 		HarnessMessageID: frame.UUID, Text: text, OriginCommandIDs: commandIDs(confirmed), TurnID: turnID,
 	}, startedSequences(started, sourceSequence))
 }
@@ -644,7 +653,7 @@ func (a *claudeAdapter) confirmToolResultInputs(ctx context.Context, sources []u
 	for _, input := range started {
 		causal = append(causal, input.sequence)
 	}
-	return a.host.ConfirmUserMessage(ctx, UserMessageConfirmation{
+	return a.host.ConfirmUserMessage(ctx, harness.UserMessageConfirmation{
 		HarnessMessageID: toolResult.messageID, Text: joinTexts(confirmed), OriginCommandIDs: commandIDs(confirmed), TurnID: turnID,
 	}, causal)
 }
@@ -725,7 +734,7 @@ func (a *claudeAdapter) emit(ctx context.Context, observation any, sources []uin
 }
 
 func (a *claudeAdapter) send(ctx context.Context, value any) error {
-	frame, err := marshalNative(value)
+	frame, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
@@ -834,17 +843,6 @@ func newTurnID() string {
 	return "turn-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 }
 
-func canonicalJSON(raw json.RawMessage) string {
-	if len(raw) == 0 || string(raw) == "null" {
-		return "{}"
-	}
-	var value any
-	if json.Unmarshal(raw, &value) != nil {
-		return string(raw)
-	}
-	return pythonJSON(value)
-}
-
 func joinTexts(inputs []claudePendingInput) string {
 	texts := make([]string, 0, len(inputs))
 	for _, input := range inputs {
@@ -883,4 +881,4 @@ func hasString(inputs map[string]claudePendingInput, key string) bool {
 	return ok
 }
 
-var _ Adapter = (*claudeAdapter)(nil)
+var _ harness.Adapter = (*claudeAdapter)(nil)

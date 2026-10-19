@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 )
 
@@ -52,7 +54,7 @@ type Config struct {
 	StateDir                         string
 	Launch                           SandboxLaunch
 	HarnessEnvironment               map[string]string
-	Claude, Codex                    *LaunchConfig
+	Claude, Codex                    *harness.LaunchConfig
 	ProcessIsolation                 *AgentCgroups
 	WorkspaceRoot, InitializationCwd string
 	DebugCheckpoint                  *DebugCheckpointConfig
