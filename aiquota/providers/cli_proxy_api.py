@@ -14,9 +14,9 @@ def _management_headers(key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"}
 
 
-def _select_auth_index(payload: object, provider: str) -> str | None:
+def _select_auth_index(payload: object, provider: str) -> str:
     if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
-        return None
+        raise ValueError("invalid CLIProxyAPI /auth-files response")
     candidates = [
         entry
         for entry in payload["files"]
@@ -26,8 +26,12 @@ def _select_auth_index(payload: object, provider: str) -> str | None:
         and not entry.get("unavailable", False)
         and entry.get("auth_index")
     ]
-    if len(candidates) != 1:
-        return None
+    if not candidates:
+        raise ValueError(f"no available {provider.capitalize()} auth file found (0 eligible matches)")
+    if len(candidates) > 1:
+        raise ValueError(
+            f"multiple available {provider.capitalize()} auth files found ({len(candidates)} eligible matches)"
+        )
     return str(candidates[0]["auth_index"])
 
 
@@ -50,9 +54,11 @@ async def _fetch_usage_via_management(
         f"{base_url}{MANAGEMENT_AUTH_FILES_PATH}", headers=_management_headers(cli_proxy_api_key)
     )
     auth_files_response.raise_for_status()
-    auth_index = _select_auth_index(auth_files_response.json(), provider)
-    if not auth_index:
-        raise ValueError(f"expected exactly one available {provider.capitalize()} auth file")
+    try:
+        auth_files_payload = auth_files_response.json()
+    except ValueError as error:
+        raise ValueError("invalid CLIProxyAPI /auth-files response") from error
+    auth_index = _select_auth_index(auth_files_payload, provider)
 
     api_call_response = await client.post(
         f"{base_url}{MANAGEMENT_API_CALL_PATH}",

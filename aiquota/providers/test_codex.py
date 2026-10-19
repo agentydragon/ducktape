@@ -334,7 +334,15 @@ async def test_management_api_uses_runtime_codex_auth_index() -> None:
     with respx.mock(assert_all_called=False) as mock:
         auth_files = mock.get("http://cliproxy.test/v0/management" + MANAGEMENT_AUTH_FILES_PATH).mock(
             return_value=httpx.Response(
-                200, json={"files": [{"provider": "codex", "auth_index": "codex-auth", "disabled": False}]}
+                200,
+                json={
+                    "files": [
+                        {"provider": "claude", "auth_index": "other-provider-auth"},
+                        {"provider": "codex", "auth_index": "disabled-auth", "disabled": True},
+                        {"provider": "codex", "auth_index": "unavailable-auth", "unavailable": True},
+                        {"provider": "codex", "auth_index": "codex-auth", "disabled": False},
+                    ]
+                },
             )
         )
         api_call = mock.post("http://cliproxy.test/v0/management" + MANAGEMENT_API_CALL_PATH).mock(
@@ -411,6 +419,58 @@ async def test_management_api_rejects_multiple_codex_auth_files() -> None:
         output = await _management_provider().fetch()
 
     assert isinstance(output.result, FetchError)
+    assert "multiple available Codex auth files" in output.result.error
+    assert "2 eligible matches" in output.result.error
+    assert "codex-a" not in output.result.error
+    assert "codex-b" not in output.result.error
+    assert api_call.call_count == 0
+
+
+async def test_management_api_reports_no_available_codex_auth_files() -> None:
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get("http://cliproxy.test/v0/management" + MANAGEMENT_AUTH_FILES_PATH).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "files": [
+                        {"provider": "codex", "auth_index": "disabled-auth", "disabled": True},
+                        {"provider": "codex", "auth_index": "unavailable-auth", "unavailable": True},
+                        {"provider": "claude", "auth_index": "other-provider-auth"},
+                    ]
+                },
+            )
+        )
+        api_call = mock.post("http://cliproxy.test/v0/management" + MANAGEMENT_API_CALL_PATH).mock(
+            side_effect=AssertionError("must not make a provider call without an eligible auth file")
+        )
+
+        output = await _management_provider().fetch()
+
+    assert isinstance(output.result, FetchError)
+    assert "no available Codex auth file" in output.result.error
+    assert "0 eligible matches" in output.result.error
+    assert "disabled-auth" not in output.result.error
+    assert "unavailable-auth" not in output.result.error
+    assert api_call.call_count == 0
+
+
+@pytest.mark.parametrize(
+    "auth_files_response",
+    [httpx.Response(200, json={"files": {"provider": "codex"}}), httpx.Response(200, content=b"not-json")],
+)
+async def test_management_api_rejects_malformed_codex_auth_file_responses(auth_files_response: httpx.Response) -> None:
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get("http://cliproxy.test/v0/management" + MANAGEMENT_AUTH_FILES_PATH).mock(
+            return_value=auth_files_response
+        )
+        api_call = mock.post("http://cliproxy.test/v0/management" + MANAGEMENT_API_CALL_PATH).mock(
+            side_effect=AssertionError("must reject an invalid auth-files response")
+        )
+
+        output = await _management_provider().fetch()
+
+    assert isinstance(output.result, FetchError)
+    assert "invalid CLIProxyAPI /auth-files response" in output.result.error
     assert api_call.call_count == 0
 
 
