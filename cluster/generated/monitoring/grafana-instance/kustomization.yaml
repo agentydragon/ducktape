@@ -19,6 +19,10 @@ configMapGenerator:
     namespace: monitoring
     files:
       - cluster-storage-io.json
+  - name: s3-operations-dashboard
+    namespace: monitoring
+    files:
+      - s3-operations.json
   - name: cluster-disk-usage-dashboard
     namespace: monitoring
     files:

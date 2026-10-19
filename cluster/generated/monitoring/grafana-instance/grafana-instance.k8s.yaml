@@ -369,6 +369,22 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
+  name: s3-operations
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: s3-operations.json
+    name: s3-operations-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_MIMIR
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
   name: cluster-disk-usage
   namespace: monitoring
 spec:

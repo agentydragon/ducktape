@@ -1,0 +1,520 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Reading this dashboard",
+      "type": "text",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Choose a bucket to filter request/error rates, p95s, and per-bucket traffic. `seaweedfs-s3` is internal; `public-s3` is public. Missing request series are not proof of zero traffic; check scrape status.\n\nRequest duration includes full response transfer; TTFB is time to first byte. Both percentiles use a rolling five-minute window. In-flight gauges have no bucket label and stay gateway-wide."
+      }
+    },
+    {
+      "id": 2,
+      "title": "S3 metrics scrape status",
+      "description": "Each pod shows its current scrape state: 1 = Up, 0 = Down. An expected service without any target series is added as 2 = Not collected and labeled `not-scraped`. These values describe collection, not traffic.",
+      "type": "stat",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "max by (service, pod) (up{namespace=\"seaweedfs\", service=~\"^(public-s3|seaweedfs-s3)$\"}) or on (service) label_replace(label_replace(vector(2), \"service\", \"public-s3\", \"\", \"\"), \"collection\", \"not-scraped\", \"\", \"\") or on (service) label_replace(label_replace(vector(2), \"service\", \"seaweedfs-s3\", \"\", \"\"), \"collection\", \"not-scraped\", \"\", \"\")",
+          "instant": true,
+          "legendFormat": "{{service}} / {{pod}} {{collection}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "text": "Down"
+                },
+                "1": {
+                  "color": "green",
+                  "text": "Up"
+                },
+                "2": {
+                  "color": "orange",
+                  "text": "Not collected"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "id": 3,
+      "title": "S3 requests/s",
+      "description": "Request counter rate by S3 service and operation. The Bucket selector applies.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum by (service, type) (rate(SeaweedFS_s3_request_total{namespace=\"seaweedfs\", service=~\"^(public-s3|seaweedfs-s3)$\", bucket=~\"$bucket\"}[5m]))",
+          "legendFormat": "{{service}} / {{type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "HTTP 5xx requests/s",
+      "description": "Rate of S3 requests whose response code is 5xx, grouped by service and operation. A real zero is allowed when there are no recent errors. The Bucket selector applies.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum by (service, type) (rate(SeaweedFS_s3_request_total{namespace=\"seaweedfs\", service=~\"^(public-s3|seaweedfs-s3)$\", bucket=~\"$bucket\", code=~\"5..\"}[5m])) or on (service, type) (0 * sum by (service, type) (rate(SeaweedFS_s3_request_total{namespace=\"seaweedfs\", service=~\"^(public-s3|seaweedfs-s3)$\", bucket=~\"$bucket\"}[5m])))",
+          "legendFormat": "{{service}} / {{type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 3,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Request duration p95",
+      "description": "95th percentile of full S3 request processing duration in seconds. This includes response transfer time; large object downloads can dominate it. The Bucket selector applies.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (service, type, le) (rate(SeaweedFS_s3_request_seconds_bucket{namespace=\"seaweedfs\", service=~\"^(public-s3|seaweedfs-s3)$\", bucket=~\"$bucket\"}[5m])))",
+          "legendFormat": "{{service}} / {{type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Time to first byte p95",
+      "description": "95th percentile time to first byte, converted from the exporter's millisecond buckets to seconds. Compare with full request duration above. The Bucket selector applies.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (service, type, le) (rate(SeaweedFS_s3_time_to_first_byte_millisecond_bucket{namespace=\"seaweedfs\", service=~\"^(public-s3|seaweedfs-s3)$\", bucket=~\"$bucket\"}[5m]))) / 1000",
+          "legendFormat": "{{service}} / {{type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "S3 bytes received by bucket",
+      "description": "S3 client-to-gateway bytes per second, grouped by service and bucket. The Bucket selector applies.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum by (service, bucket) (rate(SeaweedFS_s3_bucket_traffic_received_bytes_total{namespace=\"seaweedfs\", service=~\"^(public-s3|seaweedfs-s3)$\", bucket=~\"$bucket\"}[5m]))",
+          "legendFormat": "{{service}} / {{bucket}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "S3 bytes sent by bucket",
+      "description": "S3 gateway-to-client bytes per second, grouped by service and bucket. The Bucket selector applies.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum by (service, bucket) (rate(SeaweedFS_s3_bucket_traffic_sent_bytes_total{namespace=\"seaweedfs\", service=~\"^(public-s3|seaweedfs-s3)$\", bucket=~\"$bucket\"}[5m]))",
+          "legendFormat": "{{service}} / {{bucket}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "S3 requests in flight",
+      "description": "Current in-flight requests grouped by service and operation. This gauge has no bucket label and is gateway-wide; the Bucket selector does not affect it.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 34
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum by (service, type) (SeaweedFS_s3_in_flight_requests{namespace=\"seaweedfs\", service=~\"^(public-s3|seaweedfs-s3)$\"})",
+          "legendFormat": "{{service}} / {{type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "S3 uploads in flight",
+      "description": "Current upload count grouped by service. This gauge has no bucket label and is gateway-wide; the Bucket selector does not affect it.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 34
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum by (service) (SeaweedFS_s3_in_flight_upload_count{namespace=\"seaweedfs\", service=~\"^(public-s3|seaweedfs-s3)$\"})",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "S3 upload bytes in flight",
+      "description": "Current bytes being uploaded, grouped by service. This gauge has no bucket label and is gateway-wide; the Bucket selector does not affect it.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum by (service) (SeaweedFS_s3_in_flight_upload_bytes{namespace=\"seaweedfs\", service=~\"^(public-s3|seaweedfs-s3)$\"})",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["cluster", "seaweedfs", "s3", "operations"],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "text": "All buckets",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "mimir"
+        },
+        "definition": "label_values(SeaweedFS_s3_request_total{namespace=\"seaweedfs\"}, bucket)",
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "Bucket",
+        "name": "bucket",
+        "options": [
+          {
+            "selected": true,
+            "text": "All buckets",
+            "value": "$__all"
+          }
+        ],
+        "query": "label_values(SeaweedFS_s3_request_total{namespace=\"seaweedfs\"}, bucket)",
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "S3 Operations",
+  "uid": "s3-operations",
+  "version": 1,
+  "weekStart": ""
+}
