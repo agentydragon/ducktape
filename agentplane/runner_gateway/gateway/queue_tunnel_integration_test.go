@@ -159,7 +159,7 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte("app-token"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	hub := dispatcher.NewWatchHub(dsn)
+	hub := dispatcher.NewWatchHub(integrationDatabase.URL)
 	hubDone := make(chan error, 1)
 	go func() { hubDone <- hub.Run(ctx) }()
 	for !hub.Connected() {
