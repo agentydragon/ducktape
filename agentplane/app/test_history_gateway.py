@@ -214,7 +214,9 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
         native_session_id = active.native_session_id
         assert native_session_id
         assert len(status.processes) == 1
-        await runner.kill_harness(session_id)
+        # This exercises orderly runner shutdown and recovery. Killing the harness
+        # directly is a process-loss failure, which is reported as FAILED.
+        await runner.restart()
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
         ):

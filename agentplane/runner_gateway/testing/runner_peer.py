@@ -75,7 +75,7 @@ class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
         try:
             return await invoke(await runner.control(), request)
         except grpc.aio.AioRpcError as error:
-            await context.abort(error.code(), error.details())
+            await context.abort(error.code(), error.details() or "")
             raise AssertionError("gRPC abort returned")
 
     @override

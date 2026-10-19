@@ -1001,7 +1001,7 @@ func (s *Session) stop(ctx context.Context, seal bool) error {
 	s.stopping = true
 	s.processState = runnerpb.ProcessState_PROCESS_STATE_STOPPING
 	s.mu.Unlock()
-	if seal && process != nil && process.Running() && adapter != nil && turn != "" {
+	if process != nil && process.Running() && adapter != nil && turn != "" {
 		interruptCtx := context.WithValue(ctx, interruptTargetKey{}, turn)
 		if err := adapter.Interrupt(interruptCtx, turn); err != nil && !errors.Is(err, errStaleInterrupt) {
 			slog.Warn("teardown interrupt failed", "session", s.id, "error", err)

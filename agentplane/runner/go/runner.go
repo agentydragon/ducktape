@@ -487,7 +487,7 @@ func (r *Runner) OpenSession(_ context.Context, request *controlpb.OpenSessionRe
 			return nil, rpcError(err)
 		}
 		if !proto.Equal(s.attached().Spec, spec) {
-			return nil, status.Error(codes.AlreadyExists, "session exists with a different spec")
+			return nil, status.Errorf(codes.AlreadyExists, "session %s exists with a different spec", request.GetSessionId())
 		}
 		if request.SetupScript != nil {
 			hash := sha256.Sum256([]byte(*request.SetupScript))

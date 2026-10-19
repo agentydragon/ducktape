@@ -329,7 +329,7 @@ class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
                     async with self._changed:
                         self._changed.notify_all()
         except grpc.aio.AioRpcError as error:
-            await context.abort(error.code(), error.details())
+            await context.abort(error.code(), error.details() or "")
 
 
 @dataclass(frozen=True)

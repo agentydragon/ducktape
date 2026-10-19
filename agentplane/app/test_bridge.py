@@ -199,7 +199,9 @@ async def test_new_session_always_uses_dispatcher_over_grpc(tmp_path: Path, brid
 
 async def _runner_session(runner: RunningRunner, thread_id: str | UUID) -> runner_pb2.SessionStatus:
     status = await (await runner.control()).GetStatus(runner_pb2.GetStatusRequest())
-    return next(session for session in status.sessions if session.session_id == str(thread_id))
+    return cast(
+        runner_pb2.SessionStatus, next(session for session in status.sessions if session.session_id == str(thread_id))
+    )
 
 
 @dataclass(frozen=True)
@@ -1463,8 +1465,15 @@ async def test_open_and_input_reply_before_archive_catches_up(
         opened_cursor = runner_session.last_cursor
         assert opened_cursor == 0
         assert await event_logs.exists(thread_id)
-        assert await store.get_thread(thread_id) is None
-        assert await store.list_threads() == []
+        thread_view = await store.get_thread(thread_id)
+        assert thread_view is not None
+        assert thread_view.id == thread_id
+        assert thread_view.last_cursor == 0
+        assert thread_view.harness_state == "HARNESS_STATE_STOPPED"
+        assert thread_view.feed_status == "active"
+        listed_threads = await store.list_threads()
+        assert [thread.id for thread in listed_threads] == [thread_id]
+        assert listed_threads[0].last_cursor == 0
         assert await event_logs.last_cursor(thread_id) == 0
 
         # Commands and runner receipts continue while History ingress is deliberately backpressured.

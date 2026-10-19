@@ -3,7 +3,7 @@
 import pytest
 
 from agentplane.runner.testing.driver import RunnerDriver
-from agentplane.runner.testing.fixtures import endpoint, gateway, harness, model, spec, workspace
+from agentplane.runner.testing.fixtures import endpoint, gateway, harness, model, runner_gateway, spec, workspace
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.process_fixtures import start_runner
 

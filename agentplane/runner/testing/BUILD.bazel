@@ -178,5 +178,7 @@ py_library(
         "//agentplane/proto:runner_pb2",
         "//agentplane/sandboxes:guest_config",
         "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",  # keep: mypy follows the generated Runner control stub
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
