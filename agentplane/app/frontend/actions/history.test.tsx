@@ -2,9 +2,10 @@
 
 import { act } from "react";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ActionGroupView, ActionRequestView, ActionState } from "./client";
+import { TestIntersectionObserver } from "../test_intersection_observer.js";
 import { ActionHistory } from "./history";
 import { stateLabel } from "./requests";
 import {
@@ -19,26 +20,11 @@ import {
   unmountLast,
 } from "./testing";
 
-let showNextPage: () => Promise<void>;
-beforeEach(() => {
-  const BaseObserver = globalThis.IntersectionObserver;
-  vi.stubGlobal(
-    "IntersectionObserver",
-    class extends BaseObserver {
-      constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
-        super(callback, options);
-        this.notify = async () => {
-          await act(async () => callback([{ isIntersecting: true } as IntersectionObserverEntry], this));
-        };
-      }
-      private readonly notify: () => Promise<void>;
-      override observe(target: Element): void {
-        if (target.matches('[data-testid="action-history-sentinel"]')) showNextPage = this.notify;
-        else super.observe(target);
-      }
-    }
-  );
-});
+async function showNextPage(container: HTMLElement): Promise<void> {
+  const sentinel = container.querySelector('[data-testid="action-history-sentinel"]');
+  if (!sentinel) throw new Error("missing history sentinel");
+  await act(async () => TestIntersectionObserver.intersect(sentinel, true));
+}
 
 /** The history view over one page of `rows`, reading `groups` (a failure, when a `Response`) as the
  * Action groups; resolves once the page has loaded. */
@@ -219,8 +205,8 @@ describe("ActionHistory", () => {
     );
     await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
     await send([]);
-    await vi.waitFor(() => expect(showNextPage).toBeDefined());
-    await showNextPage();
+    expect(container.querySelector('[data-testid="action-history-sentinel"]')).not.toBeNull();
+    await showNextPage(container);
     await vi.waitFor(() => expect(container.textContent).toContain("succeeded"));
     expect(sent.filter(({ query }) => query.get("cursor") === "page2")).toHaveLength(1);
     expect(container.textContent).toContain("End of action history.");
@@ -256,7 +242,7 @@ describe("ActionHistory", () => {
         .filter(({ path }) => path === "/actions/history")
         .every(({ query }) => query.get("include_auto_allowed") === "false")
     ).toBe(true);
-    await showNextPage();
+    await showNextPage(container);
     await vi.waitFor(() => expect(container.textContent).toContain("cancelled"));
     const all = container.querySelector<HTMLInputElement>('input[value="all"]')!;
     await act(async () => all.click());
@@ -286,7 +272,7 @@ describe("ActionHistory", () => {
       </MemoryRouter>
     );
     await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
-    await showNextPage();
+    await showNextPage(container);
     await vi.waitFor(() => expect(container.textContent).toContain("running"));
     await send([]);
     await vi.waitFor(() => expect(container.textContent).toContain("succeeded"));
@@ -309,7 +295,7 @@ describe("ActionHistory", () => {
       </MemoryRouter>
     );
     await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
-    await showNextPage();
+    await showNextPage(container);
     await vi.waitFor(() => expect(container.textContent).toContain("Retry loading older actions"));
     expect(sent.filter(({ query }) => query.has("cursor"))).toHaveLength(1);
     fail = false;
