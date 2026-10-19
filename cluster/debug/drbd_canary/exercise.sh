@@ -5,12 +5,17 @@ set -eu
 exercise=${1:?usage: exercise.sh seed|verify|fsync|stream TARGET}
 target=${2:?usage: exercise.sh seed|verify|fsync|stream TARGET}
 case "$target" in
-  /dev/canary | /data/payload.bin) ;;
+  /dev/canary | /dev/sparse | /data/payload.bin) ;;
   *)
     echo "refusing a target outside the disposable canary fixtures: $target" >&2
     exit 2
     ;;
 esac
+
+if [ "$target" = /dev/sparse ] && [ "$exercise" != seed ] && [ "$exercise" != verify ]; then
+  echo "refusing non-probe exercise on the 50Gi sparse volume: $exercise" >&2
+  exit 2
+fi
 
 case "$exercise" in
   seed)

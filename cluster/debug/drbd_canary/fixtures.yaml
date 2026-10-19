@@ -16,6 +16,19 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sparse
+spec:
+  storageClassName: local-canary
+  volumeMode: Block
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
       storage: 50Gi
 ---
 apiVersion: v1
@@ -89,6 +102,69 @@ spec:
     - name: data
       persistentVolumeClaim:
         claimName: block
+    - name: exercises
+      configMap:
+        name: exercises
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sparse
+  labels:
+    app.kubernetes.io/name: drbd-canary-tests
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    storage.allegedly.works/drbd-canary: "true"
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                  - ovh-ns102453
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: io
+      image: alpine:3.24.2
+      command:
+        - /bin/sh
+        - -ec
+        - apk add --no-cache fio coreutils util-linux && exec sleep infinity
+      readinessProbe:
+        exec:
+          command:
+            - fio
+            - --version
+        periodSeconds: 2
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: "1"
+          memory: 512Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      volumeDevices:
+        - name: data
+          devicePath: /dev/sparse
+      volumeMounts:
+        - name: exercises
+          mountPath: /exercises
+          readOnly: true
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: sparse
     - name: exercises
       configMap:
         name: exercises

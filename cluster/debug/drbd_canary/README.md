@@ -18,22 +18,36 @@ bb run //cluster/debug/drbd_canary:config_paths_bin -- BEFORE.yaml AFTER.yaml
 
 ```bash
 kubectl apply -k cluster/debug/drbd_canary
-kubectl -n drbd-canary-tests wait pod/block pod/filesystem --for=condition=Ready --timeout=180s
+kubectl -n drbd-canary-tests wait pod/block pod/sparse pod/filesystem --for=condition=Ready --timeout=180s
 kubectl -n drbd-canary-tests exec block -- fio --version
+kubectl -n drbd-canary-tests exec sparse -- fio --version
 kubectl -n drbd-canary-tests exec filesystem -- fio --version
 ```
 
-The two Pods prefer `ovh-ns102453` but can run on either prepared canary worker.
-Record their actual nodes, PVC UIDs, PV names, and CSI handles before testing.
-The block claim is logically 50Gi; its exercises write only 64Mi. The filesystem
-claim is 4Gi. Never exceed the shared-filesystem physical-allocation budgets.
-Runtime package versions are logged by `apk`; capture them alongside fio output.
+All three Pods prefer `ovh-ns102453` but can run on either prepared canary
+worker. Record their actual nodes, PVC UIDs, PV names, and CSI handles before
+testing. The `block` claim is 1Gi and is the raw-volume migration, fill, and
+resize target; the `filesystem` claim is 4Gi and remains the filesystem-mode
+target.
+
+The separate `sparse` claim is a 50Gi raw Block volume for sparse creation and a
+small write probe only. Its `seed` and `verify` exercises touch only the first
+64Mi; the exercise script rejects `fsync` and `stream` for this target. Do not
+move this volume during the initial migration tests: a full initial
+resynchronization could allocate more than the 20Gi per-node physical budget.
+Do not attempt a 50Gi resync until sparse-resynchronization behavior has been
+established and its physical-allocation budget explicitly reviewed. Monitor the
+shared filesystems throughout and stop before the documented budget or existing
+operational headroom is exhausted. Runtime package versions are logged by `apk`;
+capture them alongside fio output.
 
 ```bash
 kubectl -n drbd-canary-tests exec block -- sh /exercises/exercise.sh seed /dev/canary
+kubectl -n drbd-canary-tests exec sparse -- sh /exercises/exercise.sh seed /dev/sparse
 kubectl -n drbd-canary-tests exec filesystem -- sh /exercises/exercise.sh seed /data/payload.bin
 kubectl -n drbd-canary-tests exec block -- sh /exercises/exercise.sh fsync /dev/canary
 kubectl -n drbd-canary-tests exec filesystem -- sh /exercises/exercise.sh fsync /data/payload.bin
+kubectl -n drbd-canary-tests exec sparse -- sh /exercises/exercise.sh verify /dev/sparse
 ```
 
 `seed` writes and reads back CRC-protected blocks. `fsync` measures synchronous
