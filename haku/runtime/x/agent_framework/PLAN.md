@@ -1,8 +1,8 @@
-# haku/runtime/agent — experimental deployment plan
+# haku/runtime/x/agent_framework — experimental deployment plan
 
 Status: **experimental Runtime C, not the primary live Haku runtime.** Haku
 currently runs through the manually configured Claude Code web home in
-<../claude_web_env/>. The Runtime C implementation pieces here are
+<../../claude_web_env/>. The Runtime C implementation pieces here are
 feature-complete and green — agent (`:scan`), supervisor (`:serve`, warm
 session, `/wake`, scheduler), unit tests, Valkey durable history
 (`RedisHistoryProvider`), `SummarizationStrategy` compaction, and startup
@@ -36,7 +36,7 @@ container `tools`.
 
 Haku already has a k8s identity: the `haku-k8s` machine principal maps to group `haku`,
 which holds a **full-CRUD `haku-sandbox` Role** plus cluster-diagnostics read (see
-<../../../cluster/docs/agent_rbac.md>). The sandbox Role pattern includes `pods/exec` and
+<../../../../cluster/docs/agent_rbac.md>). The sandbox Role pattern includes `pods/exec` and
 `pods/attach` (verify the `haku-sandbox` Role lists it), so exec into the sidecar (same
 namespace) is **already within Haku's perimeter — no new RBAC**. The loop authenticates
 with the `haku-k8s` JWT, building its kubeconfig via `devinfra/k8s/kubeconfig.py` (the
@@ -52,7 +52,7 @@ and set `HOME=/workspace` (or `GIT_CONFIG`) on the tools container — a small
 
 ## Images
 
-- **loop** (`//haku/runtime/agent:image`, **buildable here**): a `rules_py` `oci_image` on
+- **loop** (`//haku/runtime/x/agent_framework:image`, **buildable here**): a `rules_py` `oci_image` on
   `@debian_*_slim`, like `haku/console` — the `:serve` `py_image_layer`, no apt, no baked
   manual (cloned at startup); entrypoint runs `:serve`.
 - **tools** (CI-only): the apt manifest is written (<trixie_haku_agent.yaml>); its lock
@@ -65,8 +65,8 @@ Turnkey tools-image wiring where apt resolves — add to MODULE.bazel's `apt` ex
 ```starlark
 apt.install(
     name = "trixie_haku_agent",
-    lock = "//haku/runtime/agent:trixie_haku_agent.lock.json",
-    manifest = "//haku/runtime/agent:trixie_haku_agent.yaml",
+    lock = "//haku/runtime/x/agent_framework:trixie_haku_agent.lock.json",
+    manifest = "//haku/runtime/x/agent_framework:trixie_haku_agent.yaml",
 )
 ```
 
@@ -75,7 +75,7 @@ Then `bazel run @trixie_haku_agent//:lock`, add an `oci_image` modeled on
 `"@trixie_haku_agent//:flat"` apt layer, a kubectl static binary, fastmcp; command `sleep
 infinity`), and `bbr build` then GHCR push plus Flux.
 
-## k8s wiring (`cluster/k8s/haku/runtime/agent/`) — operator-owned
+## k8s wiring (`cluster/k8s/haku/runtime/x/agent_framework/`) — operator-owned
 
 - **Deployment** `haku-agent` in `haku-sandbox`: two containers (loop, tools) sharing an
   `emptyDir` at `/workspace`, non-root, behind `haku-egress-proxy`.

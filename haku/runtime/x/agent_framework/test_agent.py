@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest_bazel
 from agent_framework import InMemoryHistoryProvider
 
-from haku.runtime.agent.agent import _run_command, aclose_history, build_history_provider, build_mcp_tools
-from haku.runtime.agent.config import Settings
+from haku.runtime.x.agent_framework.agent import _run_command, aclose_history, build_history_provider, build_mcp_tools
+from haku.runtime.x.agent_framework.config import Settings
 
 
 def _settings(*, console_token: str | None = None, redis_url: str | None = None) -> Settings:

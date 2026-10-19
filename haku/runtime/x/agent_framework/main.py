@@ -8,9 +8,9 @@ session id, so each run resumes the warm thread rather than re-reading everythin
 import asyncio
 import logging
 
-from haku.runtime.agent.agent import run_scan
-from haku.runtime.agent.bootstrap import bootstrap
-from haku.runtime.agent.config import Settings
+from haku.runtime.x.agent_framework.agent import run_scan
+from haku.runtime.x.agent_framework.bootstrap import bootstrap
+from haku.runtime.x.agent_framework.config import Settings
 
 logger = logging.getLogger(__name__)
 

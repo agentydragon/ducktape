@@ -12,7 +12,7 @@
 # how each reaches its vault. The Anthropic-hosted Terraform root historically
 # managed the shared vault; those cloud objects and credentials were deleted in
 # 2026-09. Reactivation must provision a fresh vault and credentials. (Runtime C,
-# haku/runtime/agent, is env-driven via
+# haku/runtime/x/agent_framework, is env-driven via
 # HAKU_MODEL — a separate architecture, not covered here.)
 model: claude-sonnet-5
 # Every toolset -> permission policy: mcp toolsets keyed by MCP server name, the

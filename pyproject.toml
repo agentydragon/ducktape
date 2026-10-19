@@ -215,7 +215,7 @@ dependencies = [
     "agent-framework-openai>=1.14.3",
     "agent-framework-anthropic>=1.0.0b260910",
     "agent-framework-claude>=1.0.0b260910",
-    # haku/runtime/agent — durable session history (RedisHistoryProvider) over Valkey. Pinned to
+    # haku/runtime/x/agent_framework — durable session history (RedisHistoryProvider) over Valkey. Pinned to
     # Keep Redis aligned with the framework beta family; these releases require
     # the newer core floor and are updated together above.
     "agent-framework-redis==1.0.0b260910",

@@ -156,7 +156,7 @@ src/anthropic/lib/tools/_beta_session_runner.py:235` bridges a tool's string
   `(no output)` — no 400, no deadlock. The TS SDK guards it too.
 
 Why not just bump the **Bazel** lockfile to a guarded `anthropic`: we can't.
-`agent-framework-anthropic` (used by `haku/runtime/agent`) hard-pins
+`agent-framework-anthropic` (used by `haku/runtime/x/agent_framework`) hard-pins
 `anthropic<0.80.1,>=0.80.0` on **every** release through the latest
 (`1.0.0b260618`, checked 2026-06-25) — and the Managed Agents worker lib
 (`anthropic.lib.environments`) only landed ~0.111. So the worker's `anthropic`

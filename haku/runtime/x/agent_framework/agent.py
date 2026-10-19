@@ -31,7 +31,7 @@ from agent_framework import (
 from agent_framework.openai import OpenAIChatCompletionClient
 from agent_framework_redis import RedisHistoryProvider
 
-from haku.runtime.agent.config import Settings
+from haku.runtime.x.agent_framework.config import Settings
 
 # Tail tool output so a chatty command can't blow the context window.
 _MAX_TOOL_OUTPUT = 20_000

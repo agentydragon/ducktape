@@ -22,9 +22,15 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 
-from haku.runtime.agent.agent import WAKE, aclose_history, build_agent, build_history_provider, build_mcp_tools
-from haku.runtime.agent.bootstrap import bootstrap
-from haku.runtime.agent.config import Settings
+from haku.runtime.x.agent_framework.agent import (
+    WAKE,
+    aclose_history,
+    build_agent,
+    build_history_provider,
+    build_mcp_tools,
+)
+from haku.runtime.x.agent_framework.bootstrap import bootstrap
+from haku.runtime.x.agent_framework.config import Settings
 
 logger = logging.getLogger(__name__)
 

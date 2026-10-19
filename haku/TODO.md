@@ -200,7 +200,7 @@ the runtimes differ in where the sandbox runs — see
 
 ## Later (post-v0)
 
-- **In-cluster runtime** — realized as `runtime/agent` (Runtime C, MAF
+- **In-cluster runtime** — realized as `runtime/x/agent_framework` (Runtime C, MAF
   self-hosted loop) and `runtime/x/managed_agent/self_hosted` (Runtime B, Managed
   Agents self-hosted worker; remaining wiring in its per-runtime TODO above). The
   old `haku-scanner` image + CronJob idea is superseded.

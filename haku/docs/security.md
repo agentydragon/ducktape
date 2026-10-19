@@ -178,7 +178,7 @@ Source of truth: <../../cluster/cdk8s/haku/namespace.py>.
 Every Haku proposal/decision is a git commit; LLM calls route through LiteLLM
 (attribution, budget, kill-switch) with Langfuse traces; capability invocations log in
 `haku-console`.
-Source of truth: <../runtime/agent/config.py> (LiteLLM routing) + <../console/README.md>
+Source of truth: <../runtime/x/agent_framework/config.py> (LiteLLM routing) + <../console/README.md>
 (capability audit).
 
 ### Mailbox perimeter

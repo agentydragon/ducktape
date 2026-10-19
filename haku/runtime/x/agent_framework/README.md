@@ -1,13 +1,13 @@
-# haku/runtime/agent — Haku's Agent Framework runtime
+# haku/runtime/x/agent_framework — Haku's Agent Framework runtime
 
-Runtime C (<../../plans/runtime_options.md>): experimental provider-agnostic, self-hosted agent
-loop on **Microsoft Agent Framework**. Not the live runtime (that is <../claude_web_env/>).
+Runtime C (<../../../plans/runtime_options.md>): experimental provider-agnostic, self-hosted agent
+loop on **Microsoft Agent Framework**. Not the live runtime (that is <../../claude_web_env/>).
 Separate from `haku/console/`: different image, dependencies, and git write identity. Deployment
 plan: <PLAN.md>.
 
 - **Model** via in-cluster LiteLLM (OpenAI-compatible); provider is the `HAKU_MODEL` config knob.
   Only LiteLLM holds provider keys.
-- **Tools**: `run_command` shell (the Pod is the trust boundary, <../../PLAN.md>) plus
+- **Tools**: `run_command` shell (the Pod is the trust boundary, <../../../PLAN.md>) plus
   haku-console's `/mcp` catalog when `HAKU_CONSOLE_TOKEN` is set (that endpoint is now retired in
   the console). Bearer auth rides a pre-built `http_client` because `MCPStreamableHTTPTool`
   ignores `headers=`.
@@ -28,5 +28,5 @@ disables). No `oci_image` or k8s wiring yet.
 Config: `HAKU_*` env, defined in `config.py`.
 
 ```bash
-bbr build //haku/runtime/agent:scan
+bbr build //haku/runtime/x/agent_framework:scan
 ```

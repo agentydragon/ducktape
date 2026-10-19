@@ -42,7 +42,7 @@ Owner:
 Recreation:
 
 - Runtime B clone/pull in `haku/runtime/x/managed_agent/self_hosted/entrypoint.sh:17-34`, followed by a long-lived poller at `:41-45`
-- Runtime C bootstrap in FastAPI lifespan at `haku/runtime/agent/supervisor.py:51-64`, while `wake()` at `:42-48` only calls the already-created agent
+- Runtime C bootstrap in FastAPI lifespan at `haku/runtime/x/agent_framework/supervisor.py:51-64`, while `wake()` at `:42-48` only calls the already-created agent
 
 The canonical procedure requires fresh operator state, intake, and ducktape base before orientation. Both long-lived runtimes instead synchronize once per process. A scheduled fresh session does not rerun the pod entrypoint or lifespan.
 
@@ -183,10 +183,10 @@ Owner:
 
 Recreation:
 
-- `HAKU_DUCKTAPE_CLONE_DEPTH=1` default in `haku/runtime/agent/config.py:21-25`
-- configured clone in `haku/runtime/agent/bootstrap.py:54-57`
+- `HAKU_DUCKTAPE_CLONE_DEPTH=1` default in `haku/runtime/x/agent_framework/config.py:21-25`
+- configured clone in `haku/runtime/x/agent_framework/bootstrap.py:54-57`
 
-Runtime B's bring-up history already records depth one breaking this exact revision-range operation. Runtime C repeats it. `haku/runtime/agent/test_bootstrap.py:18-34` calls the clone helper without the configured depth, accidentally testing its unrelated full-clone default.
+Runtime B's bring-up history already records depth one breaking this exact revision-range operation. Runtime C repeats it. `haku/runtime/x/agent_framework/test_bootstrap.py:18-34` calls the clone helper without the configured depth, accidentally testing its unrelated full-clone default.
 
 Consolidation:
 
@@ -197,7 +197,7 @@ Consolidation:
 
 ### Source and prompt duplication
 
-- `haku/runtime/agent/agent.py:67-76` restates an older miniature `run.md` sequence and omits later base-adoption, response-reduction, approved-result-sweep, and run-manifest requirements. Keep only a pointer to the canonical procedure.
+- `haku/runtime/x/agent_framework/agent.py:67-76` restates an older miniature `run.md` sequence and omits later base-adoption, response-reduction, approved-result-sweep, and run-manifest requirements. Keep only a pointer to the canonical procedure.
 - `haku/runtime/claude_web_env/run.md:86-98` and `bootstrap.sh:93-101` use the presence of `haku-state/items` as a readiness sentinel even though `haku/run.md:35-37` permits Haku to replace that working format. Use repository validity or a method-neutral completion marker.
 
 ### Preview adapters copying remote result contracts
