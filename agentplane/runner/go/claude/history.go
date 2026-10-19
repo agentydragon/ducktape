@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+	"github.com/anthropics/anthropic-sdk-go"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
@@ -27,54 +27,14 @@ type claudeMessage struct {
 	ID      *string         `json:"id"`
 }
 
-type claudeBlock struct {
-	Type      string          `json:"type"`
-	Text      string          `json:"text"`
-	Thinking  string          `json:"thinking"`
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	Input     json.RawMessage `json:"input"`
-	ToolUseID string          `json:"tool_use_id"`
-	Content   json.RawMessage `json:"content"`
-	IsError   bool            `json:"is_error"`
-}
-
-func (block claudeBlock) resultText() (string, error) {
-	var content string
-	if json.Unmarshal(block.Content, &content) == nil {
-		return content, nil
-	}
-	var blocks []claudeBlock
-	if err := json.Unmarshal(block.Content, &blocks); err != nil {
-		return "", err
-	}
-	var result strings.Builder
-	for _, child := range blocks {
-		if child.Type == "text" {
-			result.WriteString(child.Text)
-		}
-	}
-	return result.String(), nil
-}
-
-func claudeBlocks(content json.RawMessage) ([]claudeBlock, error) {
-	var text string
-	if json.Unmarshal(content, &text) == nil {
-		return []claudeBlock{{Type: "text", Text: text}}, nil
-	}
-	var blocks []claudeBlock
-	if err := json.Unmarshal(content, &blocks); err != nil {
-		return nil, err
-	}
-	return blocks, nil
-}
-
-func holdsOnlyThinking(blocks []claudeBlock) bool {
+func holdsOnlyThinking(blocks []anthropic.ContentBlockUnion) bool {
 	if len(blocks) == 0 {
 		return false
 	}
 	for _, block := range blocks {
-		if block.Type != "thinking" && block.Type != "redacted_thinking" {
+		switch block.AsAny().(type) {
+		case anthropic.ThinkingBlock, anthropic.RedactedThinkingBlock:
+		default:
 			return false
 		}
 	}
@@ -93,7 +53,7 @@ func answeredMessageIDs(messages []claudeMessageWithBlocks) map[string]bool {
 
 type claudeMessageWithBlocks struct {
 	Message claudeMessage
-	Blocks  []claudeBlock
+	Blocks  []anthropic.ContentBlockUnion
 	Offset  int
 }
 
@@ -176,14 +136,15 @@ func readClaudeHistory(directory, sessionID string) (map[string]harness.Observed
 		if entry.Message == nil {
 			continue
 		}
-		blocks, err := claudeBlocks(entry.Message.Content)
+		if entry.Message.Role != "user" {
+			continue
+		}
+		results, err := claudeToolResults(entry.Message.Content)
 		if err != nil {
 			return nil, err
 		}
-		for _, block := range blocks {
-			if block.Type == "tool_result" {
-				resolved[block.ToolUseID] = true
-			}
+		for _, result := range results {
+			resolved[result.ToolUseID] = true
 		}
 	}
 
@@ -192,6 +153,10 @@ func readClaudeHistory(directory, sessionID string) (map[string]harness.Observed
 	for i := len(chain) - 1; i >= 0; i-- {
 		entry := chain[i]
 		if entry.Message == nil {
+			continue
+		}
+		if entry.Message.Role == "user" {
+			kept = append(kept, claudeMessageWithBlocks{Message: *entry.Message})
 			continue
 		}
 		blocks, err := claudeBlocks(entry.Message.Content)
@@ -208,8 +173,8 @@ func readClaudeHistory(directory, sessionID string) (map[string]harness.Observed
 		}
 		calls := make([]string, 0)
 		for _, block := range blocks {
-			if block.Type == "tool_use" {
-				calls = append(calls, block.ID)
+			if tool, ok := block.AsAny().(anthropic.ToolUseBlock); ok {
+				calls = append(calls, tool.ID)
 			}
 		}
 		allUnresolved := len(calls) > 0
@@ -229,40 +194,44 @@ func readClaudeHistory(directory, sessionID string) (map[string]harness.Observed
 		if holdsOnlyThinking(entry.Blocks) && (message.ID == nil || !answered[*message.ID]) {
 			continue
 		}
+		if message.Role == "user" {
+			results, err := claudeToolResults(message.Content)
+			if err != nil {
+				return nil, err
+			}
+			for _, result := range results {
+				item, ok := items[result.ToolUseID]
+				if !ok {
+					continue
+				}
+				output, err := result.resultText()
+				if err != nil {
+					return nil, err
+				}
+				item.Output, item.Completed = output, true
+				items[result.ToolUseID] = item
+			}
+			continue
+		}
 		for index, block := range entry.Blocks {
 			itemID := ""
-			switch block.Type {
-			case "text":
+			switch block := block.AsAny().(type) {
+			case anthropic.TextBlock:
 				if message.Role != "assistant" || message.ID == nil {
 					continue
 				}
 				itemID = fmt.Sprintf("%s#%d", *message.ID, entry.Offset+index)
 				items[itemID] = harness.ObservedItem{ItemID: itemID, Kind: eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT, Text: block.Text}
-			case "thinking":
+			case anthropic.ThinkingBlock:
 				if message.ID == nil {
 					continue
 				}
 				itemID = fmt.Sprintf("%s#%d", *message.ID, entry.Offset+index)
 				items[itemID] = harness.ObservedItem{ItemID: itemID, Kind: eventpb.ItemKind_ITEM_KIND_REASONING, Text: block.Thinking}
-			case "tool_use":
-				arguments := string(block.Input)
-				if len(block.Input) == 0 {
-					arguments = "{}"
-				}
+			case anthropic.ToolUseBlock:
+				arguments := block.JSON.Input.Raw()
 				itemID = block.ID
 				items[itemID] = harness.ObservedItem{ItemID: itemID, Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, Arguments: arguments}
-			case "tool_result":
-				if _, ok := items[block.ToolUseID]; !ok {
-					continue
-				}
-				output, err := block.resultText()
-				if err != nil {
-					return nil, err
-				}
-				item := items[block.ToolUseID]
-				item.Output = output
-				item.Completed = true
-				items[block.ToolUseID] = item
 			}
 		}
 	}

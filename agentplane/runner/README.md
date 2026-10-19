@@ -56,6 +56,13 @@ never reconstructed from decoded models. Codex rollout history is a separate for
 and still has a dedicated reader. Schema export and JavaScript code generation are
 build dependencies only.
 
+Claude stream events and assistant content blocks use the Anthropic Go SDK's
+discriminated unions. Consumed variants are checked with strict JSON decoding
+because the SDK's response decoder tolerates malformed fields. Tool inputs use
+the SDK's raw-field metadata to preserve whitespace, numeric tokens and explicit
+`null`. Claude Code control frames and user tool results have separate local wire
+types.
+
 The integration fixtures launch this executable and drive its public control and ingress
 protocols. `test_turns.py`, `test_subagents.py`, and `test_restart.py` exercise the real
 native harnesses; App, History, Gateway, and Notification integration tests use the

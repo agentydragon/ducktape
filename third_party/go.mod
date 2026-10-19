@@ -2,6 +2,9 @@ module github.com/agentydragon/ducktape
 
 go 1.26.2
 
+// Direct dependencies for the runner's Claude protocol projection
+require github.com/anthropics/anthropic-sdk-go v1.23.0
+
 // Direct dependencies for skills/.../genkit (20q eval)
 require (
 	github.com/docker/docker v28.5.2+incompatible
