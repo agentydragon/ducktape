@@ -15,9 +15,11 @@ from matplotlib.lines import Line2D
 matplotlib.use("Agg")
 
 HISTORICAL_ARM = "seaweedfs-ssd-2026-07-11"
+SECOND_SEAWEED_ARM = "seaweedfs-ovh-retry-2"
 ARMS = {
     "local-path-ovh-hdd": ("Local-path HDD", "#596675"),
     "seaweedfs-ovh": ("SeaweedFS HDD", "#bd6600"),
+    SECOND_SEAWEED_ARM: ("SeaweedFS HDD · retry 2", "#d79430"),
     "piraeus-file-thin-one": ("Piraeus HDD · 1 copy", "#2368b5"),
     "piraeus-file-thin-two-protocol-c": ("Piraeus HDD · 2 copies (C)", "#00866a"),
     HISTORICAL_ARM: ("SeaweedFS SSD · Jul 11", "#884da7"),
@@ -63,11 +65,13 @@ def read_samples(
     return samples
 
 
-def panel(ax: Axes, samples: Samples, operation: str, title: str, *, labels: bool) -> None:
+def panel(
+    ax: Axes, samples: Samples, operation: str, title: str, *, labels: bool, arms: dict[str, tuple[str, str]]
+) -> None:
     largest = max(value for (arm, op), values in samples.items() if op == operation for value in values)
-    historical_y = tuple(ARMS).index(HISTORICAL_ARM)
+    historical_y = tuple(arms).index(HISTORICAL_ARM)
     ax.axhspan(historical_y - 0.5, historical_y + 0.55, color="#f5f0fa", zorder=0)
-    for y, (arm, (_label, color)) in enumerate(ARMS.items()):
+    for y, (arm, (_label, color)) in enumerate(arms.items()):
         values = sorted(samples.get((arm, operation), []))
         if not values:
             ax.text(0.04, y, "No samples (init EIO)", transform=ax.get_yaxis_transform(), va="center", color="#815500")
@@ -90,8 +94,8 @@ def panel(ax: Axes, samples: Samples, operation: str, title: str, *, labels: boo
             clip_on=False,
         )
         ax.text(0.99, y, f"{middle:.3f}", transform=ax.get_yaxis_transform(), ha="right", va="center", fontsize=9)
-    ax.set(title=title, xlim=(0, largest * 1.30), ylim=(len(ARMS) - 0.45, -0.55), xlabel="Seconds · lower is faster")
-    ax.set_yticks(range(len(ARMS)), [label for label, _ in ARMS.values()])
+    ax.set(title=title, xlim=(0, largest * 1.30), ylim=(len(arms) - 0.45, -0.55), xlabel="Seconds · lower is faster")
+    ax.set_yticks(range(len(arms)), [label for label, _ in arms.values()])
     ax.tick_params(axis="y", length=0, pad=10, labelleft=labels)
     ax.grid(axis="x", color="#e1e5e9", linewidth=0.7)
     ax.set_axisbelow(True)
@@ -106,7 +110,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True, help="Destination SVG")
     parser.add_argument("--preview", type=Path, help="Optional PNG for visual inspection")
     args = parser.parse_args()
-    current_targets = {arm: arm for arm in ARMS if arm != HISTORICAL_ARM}
+    current_targets = {arm: arm for arm in ARMS if arm not in {HISTORICAL_ARM, SECOND_SEAWEED_ARM}}
     historical_targets = {"seaweedfs-ssd": HISTORICAL_ARM}
     direct = read_samples(
         [args.results_dir / "direct-filesystem.csv"],
@@ -115,12 +119,22 @@ def main() -> None:
         forgejo=False,
         targets=current_targets,
     )
+    second_retry = args.results_dir / "forgejo-seaweedfs-ovh-retry-2.csv"
     forgejo = read_samples(
-        sorted(args.results_dir.glob("forgejo-*.csv")),
+        sorted(path for path in args.results_dir.glob("forgejo-*.csv") if path != second_retry),
         {op for op, _ in FORGEJO_PANELS},
         20,
         forgejo=True,
         targets=current_targets,
+    )
+    forgejo.update(
+        read_samples(
+            [second_retry],
+            {op for op, _ in FORGEJO_PANELS},
+            20,
+            forgejo=True,
+            targets={"seaweedfs-ovh": SECOND_SEAWEED_ARM},
+        )
     )
     direct.update(
         read_samples(
@@ -152,9 +166,13 @@ def main() -> None:
     )
     fig.text(0.15, 0.845, "FILESYSTEM WORKLOADS  ·  5 samples per arm", weight="bold", fontsize=11)
     fig.text(0.15, 0.445, "FORGEJO WORKLOADS  ·  20 samples per successful arm", weight="bold", fontsize=11)
-    for row, (samples, panels) in enumerate(((direct, DIRECT_PANELS), (forgejo, FORGEJO_PANELS))):
+    direct_arms = {arm: metadata for arm, metadata in ARMS.items() if arm != SECOND_SEAWEED_ARM}
+    forgejo_arms = ARMS | {"seaweedfs-ovh": ("SeaweedFS HDD · retry 1", ARMS["seaweedfs-ovh"][1])}
+    for row, (samples, panels, arms) in enumerate(
+        ((direct, DIRECT_PANELS, direct_arms), (forgejo, FORGEJO_PANELS, forgejo_arms))
+    ):
         for column, (operation, title) in enumerate(panels):
-            panel(fig.add_subplot(grid[row, column]), samples, operation, title, labels=column == 0)
+            panel(fig.add_subplot(grid[row, column]), samples, operation, title, labels=column == 0, arms=arms)
     notes = fig.add_subplot(grid[0, 3])
     notes.axis("off")
     notes.legend(
@@ -177,7 +195,7 @@ def main() -> None:
     notes.text(
         0.04,
         0.50,
-        "Independent linear scales.\n\nShaded: Jul 11 SSD reference.\nOther rows: Oct 19 HDD.\n\nHDD SeaweedFS Forgejo:\nfresh-PVC retry; first init failed.",
+        "Independent linear scales.\n\nShaded: Jul 11 SSD reference.\nOther rows: Oct 19 HDD.\n\nHDD SeaweedFS Forgejo:\nseparate fresh-PVC retries 1 / 2.\nOriginal init failed.",
         va="top",
         linespacing=1.6,
         fontsize=10,

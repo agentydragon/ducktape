@@ -17,9 +17,9 @@ RWO volume, not RWX, and this is not an HA or failover-tested result.
 Dots show all recorded samples; diamonds and the values at right show medians.
 Each panel has its own linear scale. The shaded SeaweedFS SSD row is a historical
 reference from **2026-07-11**; the other rows are the fresh **2026-10-19 HDD** run,
-including its SeaweedFS filesystem control. SeaweedFS Forgejo samples come from a
-successful fresh-PVC retry later that morning; the original initialization failure
-is retained below.
+including its SeaweedFS filesystem control. SeaweedFS Forgejo samples come from two
+separate fresh-PVC retries later that morning, shown as distinct rows; the original
+initialization failure is retained below. The direct filesystem cells were not rerun.
 
 The historical row reads the preserved
 [`direct-storage-ssd-control.csv`](../results/rook_ceph_forgejo_2026_07_11/direct-storage-ssd-control.csv)
@@ -44,15 +44,17 @@ has five samples.
 
 The end-to-end workload used a single disposable Forgejo instance and 20 samples per
 operation. Values are median seconds from the raw CSVs. SeaweedFS uses the separate
-[`forgejo-seaweedfs-ovh-retry-1.csv`](results/forgejo-seaweedfs-ovh-retry-1.csv)
-run; the other three cells come from the initial batch.
+[`forgejo-seaweedfs-ovh-retry-1.csv`](results/forgejo-seaweedfs-ovh-retry-1.csv) and
+[`forgejo-seaweedfs-ovh-retry-2.csv`](results/forgejo-seaweedfs-ovh-retry-2.csv)
+runs; the other three cells come from the initial batch.
 
 | Storage arm                                  | version | contents read | contents write | tiny `git push` |
 | -------------------------------------------- | ------: | ------------: | -------------: | --------------: |
 | local-path-ovh-hdd                           |   0.378 |         0.415 |          0.752 |           1.140 |
 | Piraeus FILE_THIN HDD, one copy              |   0.350 |         0.376 |          0.777 |           1.115 |
 | Piraeus FILE_THIN HDD, two protocol-C copies |   0.348 |         0.368 |          0.840 |           1.130 |
-| seaweedfs-ovh, fresh-PVC retry               |   0.355 |         0.413 |          2.290 |           1.595 |
+| seaweedfs-ovh, fresh-PVC retry 1             |   0.355 |         0.413 |          2.290 |           1.595 |
+| seaweedfs-ovh, fresh-PVC retry 2             |   0.407 |         0.494 |          2.448 |           1.715 |
 
 In this run, the Piraeus one-copy Git metadata and the Forgejo app timings were close to
 the local-path control. The two-copy arm raised the direct `dd conv=fsync` batch median
@@ -62,12 +64,14 @@ their sample ranges overlap. The `/api/v1/version` values (0.348–0.378 seconds
 app baseline was similar, and the small end-to-end differences do not establish a
 causal ranking.
 
-The SeaweedFS HDD retry completed all 80 samples with successful statuses. Its
-contents-write median was 2.290 seconds and tiny-push median was 1.595 seconds.
-It used a newly initialized database and cache on the same database node, and ran
-later than the other cells; this is an exploratory comparison across runs.
+Both SeaweedFS HDD retries completed all 80 samples with successful statuses.
+Contents-write medians were 2.290 and 2.448 seconds; tiny-push medians were 1.595
+and 1.715 seconds. Each used a newly initialized database and cache on the same
+database node, and ran later than the other cells. The second run also had higher
+version/read baselines (0.407/0.494 versus 0.355/0.413 seconds), so the differences
+between retries cannot be attributed solely to storage.
 
-These are exploratory medians from one measured pass per cell, not a capacity test. Other cluster workloads
+These are exploratory medians from separate measured passes, not a capacity test. Other cluster workloads
 were not isolated, so shared load could contribute to the observed ranges. The direct
 `dd` batch explicitly calls `fsync` once per 4 KiB file; report it as the wall time of
 that fsync-calling workload, not as proof of equivalent crash or power-loss durability
@@ -163,6 +167,22 @@ The [retry method](seaweedfs_retry/README.md),
 record the separate attempt. Its
 [cleanup proof](results/seaweedfs-hdd-retry-1/cleanup-proof.txt) records removal
 of its namespace, two PVs and volume attachments through normal reclaim.
+
+A second fresh-PVC retry ran at 06:38–06:41 UTC with the same image IDs, node
+placement, fixture and workload. It again produced 20 samples per operation, all
+successful (60 status-200 and 20 status-201 rows). Its collection was HDD-only
+before and after timing, with placement `001`. During startup, Stakater Reloader
+reacted to the chart-created configuration Secrets and replaced a Pending Pod
+under the Deployment's `Recreate` strategy. The accepted Pod completed all init
+containers with zero restarts and was the sole active Forgejo writer. Events show
+only its successful PVC attachment; absence of an earlier attachment event does
+not establish that the previous Pod never mounted the PVC. This remains a fresh
+PVC trial rather than a controlled reproduction of the original remount failure.
+See [runtime](results/seaweedfs-hdd-retry-2/runtime.txt),
+[startup replacement](results/seaweedfs-hdd-retry-2/pod-replacement.txt),
+[HDD placement](results/seaweedfs-hdd-retry-2/media-check-after.txt), and
+[cleanup](results/seaweedfs-hdd-retry-2/cleanup-proof.txt) evidence. Both successful
+retries remain separate in the plot; their samples are not pooled.
 
 ## Plot regeneration
 
