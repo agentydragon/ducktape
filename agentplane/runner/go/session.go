@@ -1,0 +1,1105 @@
+package runner
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"sync"
+	"time"
+
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+)
+
+const maxFrameLineBytes = 64 * 1024 * 1024
+
+// observation wraps one generated observation in the Event vocabulary. The generated
+// descriptor owns the mapping, avoiding a second list of observation field names.
+func observation(value proto.Message) *eventpb.Event {
+	e := &eventpb.Event{}
+	d := e.ProtoReflect().Descriptor().Fields()
+	for i := 0; i < d.Len(); i++ {
+		f := d.Get(i)
+		if f.ContainingOneof() != nil && f.Message() != nil && f.Message().FullName() == value.ProtoReflect().Descriptor().FullName() {
+			e.ProtoReflect().Set(f, protoreflect.ValueOfMessage(value.ProtoReflect()))
+			return e
+		}
+	}
+	panic(fmt.Sprintf("%T is not a runner observation", value))
+}
+
+type nativeWaiter struct {
+	matches func(json.RawMessage) bool
+	result  chan nativeResult
+}
+type nativeResult struct {
+	receipt NativeReceipt
+	err     error
+}
+type matchedReply struct {
+	waiter  *nativeWaiter
+	receipt NativeReceipt
+}
+type interruptTargetKey struct{}
+
+type Session struct {
+	runner                                                      *Runner
+	id                                                          string
+	record                                                      *SessionRecord
+	journal                                                     *Journal
+	mu                                                          sync.Mutex
+	admitMu                                                     sync.Mutex
+	writeMu                                                     sync.Mutex
+	shutdownMu                                                  sync.Mutex
+	process                                                     *Process
+	adapter                                                     Adapter
+	processID                                                   string
+	processState                                                runnerpb.ProcessState
+	ready, resuming, stopping, sealing, tearingDown, activating bool
+	activeTurn                                                  string
+	setup                                                       runnerpb.SetupState
+	launch                                                      runnerpb.LaunchOutcome
+	failure                                                     *uint64
+	setupDone                                                   chan struct{}
+	activationDone                                              chan struct{}
+	activationCancel                                            context.CancelFunc
+	readers                                                     sync.WaitGroup
+	work                                                        sync.WaitGroup
+	pending                                                     map[string]bool
+	dispatched                                                  map[string]bool
+	interrupts                                                  map[string]string
+	waiters                                                     []*nativeWaiter
+	replies                                                     []matchedReply
+	kick                                                        chan struct{}
+}
+
+func newSession(r *Runner, id string, record *SessionRecord, journal *Journal) *Session {
+	s := &Session{runner: r, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, interrupts: map[string]string{}, kick: make(chan struct{}, 1), launch: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED}
+	if record.SetupScriptSHA256 != nil {
+		s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
+	}
+	s.activeTurn = journal.RecoveryState().ActiveTurnID
+	s.sealing = journal.SealState() != nil
+	return s
+}
+
+func (s *Session) Session() SessionSnapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	native := ""
+	if s.record.NativeSessionID != nil {
+		native = *s.record.NativeSessionID
+	}
+	return SessionSnapshot{Directory: s.directory(), Cwd: s.record.CWD, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: s.record.TotalContextBudgetTokens, Resuming: s.resuming, ActiveTurnID: s.activeTurn, HarnessEnvironment: s.runner.config.HarnessEnvironment}
+}
+func (s *Session) Journal() AdapterJournal { return s.journal }
+
+func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
+	e := entry.Event
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	failed := e.GetHarnessLaunchFailed() != nil || e.GetHarnessExited() != nil || e.GetSetupInterrupted() != nil || (e.GetSetupFinished() != nil && e.GetSetupFinished().ExitCode != 0)
+	if s.launch == runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING && (e.GetHarnessStarted() != nil || failed) {
+		s.launch = runnerpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED
+		if e.GetHarnessStarted() != nil {
+			s.launch = runnerpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED
+		}
+	}
+	if s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+		if f := e.GetSetupFinished(); f != nil {
+			s.setup = runnerpb.SetupState_SETUP_STATE_SUCCEEDED
+			if f.ExitCode != 0 {
+				s.setup = runnerpb.SetupState_SETUP_STATE_FAILED
+			}
+		}
+		if e.GetSetupInterrupted() != nil {
+			s.setup = runnerpb.SetupState_SETUP_STATE_INTERRUPTED
+		}
+	}
+	if e.GetHarnessLaunchFailed() != nil || e.GetSetupInterrupted() != nil || (e.GetSetupFinished() != nil && e.GetSetupFinished().ExitCode != 0) {
+		cursor := entry.Cursor
+		s.failure = &cursor
+	}
+	if e.GetHarnessStarted() != nil {
+		s.failure = nil
+	}
+	if e.GetHarnessExited() != nil {
+		s.ready = false
+		if !e.GetHarnessExited().StoppedByRunner {
+			cursor := entry.Cursor
+			s.failure = &cursor
+		}
+	}
+	if e.GetHarnessLost() != nil {
+		s.ready = false
+	}
+	if turn := e.GetTurnStarted(); turn != nil {
+		s.activeTurn = turn.TurnId
+	}
+	if e.GetTurnCompleted() != nil {
+		s.activeTurn = ""
+	}
+	for _, id := range ids {
+		delete(s.pending, id)
+		delete(s.dispatched, id)
+	}
+}
+
+func (s *Session) recordEvent(ctx context.Context, e *eventpb.Event, sources []uint64, ids []string, correlation map[string]string) (*eventlogpb.EventEntry, error) {
+	// Turn transitions share the final native-write gate with exact-turn controls.
+	// Once a successor is recorded, an interrupt cannot reach its stdin under the
+	// predecessor's identity.
+	if e.GetTurnStarted() != nil || e.GetTurnCompleted() != nil {
+		s.writeMu.Lock()
+		defer s.writeMu.Unlock()
+	}
+	entry, err := s.journal.Append(ctx, e, AppendOptions{Sources: sources, TerminalCommandIDs: ids, NativeCorrelation: correlation})
+	if err != nil {
+		return nil, err
+	}
+	s.apply(entry, ids)
+	s.runner.changed()
+	return entry, nil
+}
+
+func (s *Session) Emit(ctx context.Context, e *eventpb.Event, sources []uint64) error {
+	if turn := e.GetTurnCompleted(); turn != nil {
+		return s.completeTurn(ctx, turn, sources)
+	}
+	_, err := s.recordEvent(ctx, e, sources, nil, nil)
+	return err
+}
+
+func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted, sources []uint64) error {
+	if err := s.journal.CommitBatch(ctx); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	interrupt := s.interrupts[turn.TurnId]
+	delete(s.interrupts, turn.TurnId)
+	adapter := s.adapter
+	teardown := s.tearingDown
+	s.mu.Unlock()
+	ids := []string{}
+	if turn.Status == eventpb.TurnStatus_TURN_STATUS_INTERRUPTED {
+		turn.InterruptedByCommandId = interrupt
+		turn.EndedByTeardown = teardown && interrupt == ""
+		if interrupt != "" {
+			ids = append(ids, interrupt)
+		}
+	}
+	if _, err := s.recordEvent(ctx, observation(turn), sources, ids, map[string]string{"turn_id": turn.TurnId}); err != nil {
+		return err
+	}
+	if turn.Status == eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST {
+		items, err := s.journal.ObservedItems(ctx, turn.TurnId)
+		if err != nil {
+			return err
+		}
+		if err := s.Emit(ctx, observation(UnknownReport(turn.TurnId, items, "the harness exited before continuation could be inspected")), nil); err != nil {
+			return err
+		}
+	} else if turn.Status == eventpb.TurnStatus_TURN_STATUS_INTERRUPTED && adapter != nil {
+		report, err := adapter.Reconcile(ctx, turn.TurnId, false)
+		if err != nil {
+			return err
+		}
+		if err := s.Emit(ctx, observation(report), sources); err != nil {
+			return err
+		}
+	}
+	if interrupt != "" && turn.Status != eventpb.TurnStatus_TURN_STATUS_INTERRUPTED {
+		if err := s.NoopCommand(ctx, interrupt, "the turn completed before interruption took effect", sources); err != nil {
+			return err
+		}
+	}
+	s.wake()
+	return nil
+}
+
+func (s *Session) FailCommand(ctx context.Context, id, reason string, sources []uint64) error {
+	_, err := s.recordEvent(ctx, observation(&eventpb.CommandFailed{CommandId: id, Reason: reason}), sources, []string{id}, nil)
+	return err
+}
+
+func (s *Session) NoopCommand(ctx context.Context, id, reason string, sources []uint64) error {
+	_, err := s.recordEvent(ctx, observation(&eventpb.CommandNoop{CommandId: id, Reason: reason}), sources, []string{id}, nil)
+	return err
+}
+
+func (s *Session) ModelChanged(ctx context.Context, id, model string, sources []uint64) error {
+	command, err := s.journal.GetCommand(ctx, id)
+	if err != nil {
+		return err
+	}
+	if command != nil && command.TerminalCursor != nil {
+		return nil
+	}
+	s.mu.Lock()
+	previous := s.record.Model
+	s.record.Model = model
+	record := *s.record
+	s.mu.Unlock()
+	if err := s.runner.store.Write(s.id, record); err != nil {
+		return err
+	}
+	_, err = s.recordEvent(ctx, observation(&eventpb.ModelChanged{CommandId: id, PreviousModel: previous, Model: model}), sources, []string{id}, nil)
+	return err
+}
+
+func (s *Session) ReasoningEffortChanged(ctx context.Context, id, effort string, sources []uint64) error {
+	command, err := s.journal.GetCommand(ctx, id)
+	if err != nil {
+		return err
+	}
+	if command != nil && command.TerminalCursor != nil {
+		return nil
+	}
+	s.mu.Lock()
+	previous := s.record.ReasoningEffort
+	s.record.ReasoningEffort = effort
+	record := *s.record
+	s.mu.Unlock()
+	if err := s.runner.store.Write(s.id, record); err != nil {
+		return err
+	}
+	_, err = s.recordEvent(ctx, observation(&eventpb.ReasoningEffortChanged{CommandId: id, PreviousEffort: previous, Effort: effort}), sources, []string{id}, nil)
+	return err
+}
+
+func (s *Session) ConfirmUserMessage(ctx context.Context, c UserMessageConfirmation, sources []uint64) error {
+	if len(c.OriginCommandIDs) == 0 {
+		return errors.New("native confirmation has no originating command")
+	}
+	if err := s.checkpoint(ctx, "before-user-message-confirmed", c.OriginCommandIDs[0]); err != nil {
+		return err
+	}
+	_, err := s.recordEvent(ctx, observation(&eventpb.HarnessUserMessageConfirmed{HarnessMessageId: c.HarnessMessageID, Text: c.Text, OriginCommandIds: c.OriginCommandIDs, TurnId: c.TurnID}), sources, c.OriginCommandIDs, map[string]string{"harness_message_id": c.HarnessMessageID, "turn_id": c.TurnID})
+	if err != nil {
+		return err
+	}
+	return s.checkpoint(ctx, "after-terminal-outcome", c.OriginCommandIDs[0])
+}
+
+func (s *Session) checkpoint(ctx context.Context, name, id string) error {
+	configured := s.runner.config.DebugCheckpoint
+	if configured == nil || configured.Name != name || configured.CommandID != id {
+		return nil
+	}
+	reached, err := s.journal.ReachedCheckpoint(ctx, name, id)
+	if err != nil || reached {
+		return err
+	}
+	if err := s.Emit(ctx, observation(&eventpb.DebugCheckpoint{Name: name, CommandId: id}), nil); err != nil {
+		return err
+	}
+	if err := s.journal.CommitBatch(ctx); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (s *Session) wake() {
+	select {
+	case s.kick <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Session) admit(ctx context.Context, command *commandpb.Command, lameduck bool) (*eventlogpb.EventEntry, error) {
+	s.admitMu.Lock()
+	defer s.admitMu.Unlock()
+	old, err := s.journal.GetCommand(ctx, command.CommandId)
+	if err != nil {
+		return nil, err
+	}
+	if old == nil && lameduck && command.GetInterruptTurn() == nil {
+		return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
+	}
+	expected := ""
+	if v := command.GetInterruptTurn(); v != nil {
+		expected = v.TurnId
+	}
+	entry, _, err := s.journal.Admit(ctx, command, expected)
+	if err != nil {
+		return nil, err
+	}
+	if old != nil {
+		s.mu.Lock()
+		sealing := s.sealing
+		s.mu.Unlock()
+		if sealing {
+			return entry, nil
+		}
+	}
+	if old != nil && old.TerminalCursor != nil {
+		return entry, nil
+	}
+	s.mu.Lock()
+	s.pending[command.CommandId] = true
+	ready := s.ready
+	s.mu.Unlock()
+	if command.GetInterruptTurn() != nil {
+		if ready {
+			s.dispatchControl(command)
+		} else {
+			if err := s.NoopCommand(ctx, command.CommandId, "the harness is not ready to receive this interruption", nil); err != nil {
+				return nil, err
+			}
+		}
+	} else if !lameduck {
+		s.activate()
+		s.wake()
+	}
+	s.runner.changed()
+	return entry, nil
+}
+
+func (s *Session) activate() {
+	s.mu.Lock()
+	if s.activating || s.sealing || s.ready {
+		s.mu.Unlock()
+		return
+	}
+	s.activating = true
+	s.activationDone = make(chan struct{})
+	done := s.activationDone
+	ctx, cancel := context.WithCancel(s.runner.ctx)
+	s.activationCancel = cancel
+	s.work.Add(1)
+	s.mu.Unlock()
+	s.runner.changed()
+	go func() {
+		defer s.work.Done()
+		defer cancel()
+		err := s.ensureReady(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("session activation failed", "session", s.id, "error", err)
+			if failure := s.settleUndispatched(s.runner.ctx, "harness startup failed before this command was dispatched: "+err.Error()); failure != nil {
+				s.runner.fail(failure)
+			}
+			if failure := s.Emit(s.runner.ctx, observation(&eventpb.HarnessLaunchFailed{Reason: err.Error()}), nil); failure != nil {
+				s.runner.fail(failure)
+			}
+		}
+		s.mu.Lock()
+		s.activating = false
+		close(done)
+		s.mu.Unlock()
+		s.runner.changed()
+		s.wake()
+	}()
+}
+
+func (s *Session) ensureReady(ctx context.Context) error {
+	s.mu.Lock()
+	setupDone := s.setupDone
+	setup := s.setup
+	s.mu.Unlock()
+	if setupDone != nil {
+		select {
+		case <-setupDone:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	s.mu.Lock()
+	setup = s.setup
+	sealed := s.sealing
+	s.mu.Unlock()
+	if sealed {
+		return errors.New("the session is sealed")
+	}
+	if setup == runnerpb.SetupState_SETUP_STATE_FAILED || setup == runnerpb.SetupState_SETUP_STATE_INTERRUPTED || setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+		return errors.New("session setup failed or was interrupted; create a new session")
+	}
+	if err := s.runner.bootstrap(ctx); err != nil {
+		return err
+	}
+	return s.startHarness(ctx)
+}
+
+func (s *Session) startHarness(ctx context.Context) error {
+	started, err := s.journal.HasStartedTurn(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	if s.sealing {
+		s.mu.Unlock()
+		return errors.New("the session is sealed")
+	}
+	s.resuming = s.record.NativeSessionID != nil && started
+	s.ready = false
+	s.processState = runnerpb.ProcessState_PROCESS_STATE_STARTING
+	harness := s.record.Harness
+	s.mu.Unlock()
+	var adapter Adapter
+	if harness == runnerpb.Harness_HARNESS_CLAUDE && s.runner.config.Claude != nil {
+		adapter = NewClaudeAdapter(s, *s.runner.config.Claude)
+	} else if harness == runnerpb.Harness_HARNESS_CODEX && s.runner.config.Codex != nil {
+		adapter = NewCodexAdapter(s, *s.runner.config.Codex)
+	} else {
+		return errors.New("this runner is not configured for the selected harness")
+	}
+	command, err := adapter.Command()
+	if err != nil {
+		return err
+	}
+	env, err := adapter.Environment()
+	if err != nil {
+		return err
+	}
+	cwd, err := s.runner.ensureWorkspace(ctx, s.Session().Cwd)
+	if err != nil {
+		return err
+	}
+	process, err := NewProcess(ProcessConfig{Command: command, Dir: cwd, Env: env, StateOwnerFD: s.runner.owner.File(), ProcessIsolation: s.runner.config.ProcessIsolation})
+	if err != nil {
+		return err
+	}
+	if err := process.Start(ctx); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.process = process
+	s.adapter = adapter
+	s.processID = uuid.NewString()
+	s.stopping = false
+	s.mu.Unlock()
+	s.readers.Add(2)
+	go s.readStdout(process, adapter)
+	go s.readStderr(process)
+	native, err := adapter.Handshake(ctx)
+	if err == nil {
+		s.mu.Lock()
+		s.record.NativeSessionID = &native
+		record := *s.record
+		resuming := s.resuming
+		s.mu.Unlock()
+		err = s.runner.store.Write(s.id, record)
+		if err == nil {
+			err = s.Emit(ctx, observation(&eventpb.HarnessStarted{Resumed: resuming, Pid: int32(process.PID())}), nil)
+		}
+		if err == nil && resuming {
+			var turns []string
+			turns, err = s.journal.RecoveryTurns(ctx)
+			for _, turn := range turns {
+				if err != nil {
+					break
+				}
+				var report *eventpb.ConversationReconciled
+				report, err = adapter.Reconcile(ctx, turn, true)
+				if err == nil {
+					err = s.Emit(ctx, observation(report), nil)
+				}
+			}
+		}
+	}
+	if err != nil {
+		s.mu.Lock()
+		s.stopping = true
+		s.mu.Unlock()
+		stopErr := process.Stop(context.WithoutCancel(ctx), 5*time.Second)
+		s.readers.Wait()
+		return errors.Join(fmt.Errorf("harness startup failed: %w; %s", err, process.ExitDescription()), stopErr)
+	}
+	s.mu.Lock()
+	s.ready = true
+	s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
+	s.mu.Unlock()
+	s.runner.changed()
+	s.wake()
+	return nil
+}
+
+func (s *Session) commandLoop() {
+	defer s.work.Done()
+	for {
+		select {
+		case <-s.runner.ctx.Done():
+			return
+		case <-s.kick:
+		}
+		s.mu.Lock()
+		ready := s.ready && !s.sealing
+		s.mu.Unlock()
+		if !ready {
+			continue
+		}
+		commands, err := s.journal.PendingCommands(s.runner.ctx)
+		if err != nil {
+			s.runner.fail(err)
+			return
+		}
+		for _, command := range commands {
+			if command.GetInterruptTurn() != nil {
+				s.dispatchControl(command)
+				continue
+			}
+			if err := s.dispatch(s.runner.ctx, command); err != nil {
+				s.runner.fail(err)
+				return
+			}
+		}
+	}
+}
+
+func (s *Session) dispatchControl(command *commandpb.Command) {
+	s.work.Add(1)
+	go func() {
+		defer s.work.Done()
+		if err := s.dispatch(s.runner.ctx, command); err != nil {
+			s.runner.fail(err)
+		}
+	}()
+}
+
+func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
+	s.mu.Lock()
+	if s.dispatched[c.CommandId] || s.adapter == nil || !s.ready || (s.sealing && c.GetInterruptTurn() == nil) {
+		s.mu.Unlock()
+		return nil
+	}
+	s.dispatched[c.CommandId] = true
+	adapter := s.adapter
+	s.mu.Unlock()
+	stored, err := s.journal.GetCommand(ctx, c.CommandId)
+	if err != nil {
+		return err
+	}
+	if stored == nil || stored.TerminalCursor != nil {
+		return nil
+	}
+	if input := c.GetSubmitInput(); input != nil && input.Text == "" {
+		return s.FailCommand(ctx, c.CommandId, "submit_input.text is required", nil)
+	}
+	if model := c.GetChangeModel(); model != nil {
+		if model.Model == "" {
+			return s.FailCommand(ctx, c.CommandId, "change_model.model is required", nil)
+		}
+		snapshot := s.Session()
+		if model.Model == snapshot.Model {
+			return s.NoopCommand(ctx, c.CommandId, "the requested model is already active", nil)
+		}
+		budget, e := s.runner.config.ResolveModelConfig(ctx, s.record.Harness, model.Model)
+		if e != nil {
+			return s.FailCommand(ctx, c.CommandId, e.Error(), nil)
+		}
+		if !equalBudget(snapshot.TotalContextBudgetTokens, budget) {
+			return s.FailCommand(ctx, c.CommandId, "This model switch changes the configured context budget, which Agentplane currently sets only when the harness starts. Start a new session with the requested model as a workaround.", nil)
+		}
+	}
+	if effort := c.GetChangeReasoningEffort(); effort != nil {
+		if effort.Effort == "" {
+			return s.FailCommand(ctx, c.CommandId, "change_reasoning_effort.effort is required", nil)
+		}
+		if effort.Effort == s.Session().ReasoningEffort {
+			return s.NoopCommand(ctx, c.CommandId, "the requested reasoning effort is already active", nil)
+		}
+	}
+	if interrupt := c.GetInterruptTurn(); interrupt != nil {
+		if s.Session().ActiveTurnID != interrupt.TurnId {
+			return s.NoopCommand(ctx, c.CommandId, "the target turn is no longer active", nil)
+		}
+	}
+	s.admitMu.Lock()
+	s.mu.Lock()
+	sealing := s.sealing
+	s.mu.Unlock()
+	if sealing && c.GetInterruptTurn() == nil {
+		s.admitMu.Unlock()
+		return nil
+	}
+	correlation := map[string]string{}
+	if v := c.GetInterruptTurn(); v != nil {
+		correlation["turn_id"] = v.TurnId
+	}
+	planned, err := s.journal.DispatchPlanned(ctx, c.CommandId, correlation)
+	s.admitMu.Unlock()
+	if err != nil || !planned {
+		return err
+	}
+	switch {
+	case c.GetSubmitInput() != nil:
+		if err = s.checkpoint(ctx, "after-dispatch-planned", c.CommandId); err != nil {
+			return err
+		}
+		err = adapter.Submit(ctx, c.CommandId, c.GetSubmitInput().Text)
+	case c.GetChangeModel() != nil:
+		err = adapter.ChangeModel(ctx, c.CommandId, c.GetChangeModel().Model)
+	case c.GetChangeReasoningEffort() != nil:
+		err = adapter.ChangeReasoningEffort(ctx, c.CommandId, c.GetChangeReasoningEffort().Effort)
+	case c.GetInterruptTurn() != nil:
+		target := c.GetInterruptTurn().TurnId
+		s.mu.Lock()
+		active := s.activeTurn
+		if active == target {
+			s.interrupts[target] = c.CommandId
+		}
+		s.mu.Unlock()
+		if active != target {
+			return s.NoopCommand(ctx, c.CommandId, "the turn ended before interruption was sent", nil)
+		}
+		err = adapter.Interrupt(context.WithValue(ctx, interruptTargetKey{}, target), target)
+	default:
+		err = errors.New("unrecognized command operation")
+	}
+	if err != nil {
+		if errors.Is(err, errStaleInterrupt) {
+			return s.NoopCommand(ctx, c.CommandId, err.Error(), nil)
+		}
+		return s.FailCommand(ctx, c.CommandId, err.Error(), nil)
+	}
+	return nil
+}
+func equalBudget(a, b *int) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
+
+var errStaleInterrupt = errors.New("the target turn ended before interruption was sent")
+
+func (s *Session) SendNative(ctx context.Context, frame json.RawMessage) error {
+	if err := s.Emit(ctx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_TO_HARNESS, Line: string(frame)}), nil); err != nil {
+		return err
+	}
+	if err := s.journal.CommitBatch(ctx); err != nil {
+		return err
+	}
+	s.deliverReplies()
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	s.mu.Lock()
+	process := s.process
+	target, _ := ctx.Value(interruptTargetKey{}).(string)
+	active := s.activeTurn
+	s.mu.Unlock()
+	if target != "" && target != active {
+		return errStaleInterrupt
+	}
+	if process == nil || !process.Running() {
+		return errors.New("the harness is not running")
+	}
+	return process.WriteLine(ctx, string(frame))
+}
+
+func (s *Session) RequestNative(ctx context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (NativeReceipt, error) {
+	waiter := &nativeWaiter{matches: match, result: make(chan nativeResult, 1)}
+	s.mu.Lock()
+	s.waiters = append(s.waiters, waiter)
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for i, w := range s.waiters {
+			if w == waiter {
+				s.waiters = append(s.waiters[:i], s.waiters[i+1:]...)
+				break
+			}
+		}
+	}()
+	if err := s.SendNative(ctx, frame); err != nil {
+		return NativeReceipt{}, err
+	}
+	timer := time.NewTimer(60 * time.Second)
+	defer timer.Stop()
+	select {
+	case reply := <-waiter.result:
+		return reply.receipt, reply.err
+	case <-ctx.Done():
+		return NativeReceipt{}, ctx.Err()
+	case <-timer.C:
+		return NativeReceipt{}, errors.New("native request did not receive its response within 60s")
+	}
+}
+
+func (s *Session) receive(ctx context.Context, line []byte, adapter Adapter) error {
+	entry, err := s.recordEvent(ctx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: string(line)}), nil, nil, nil)
+	if err != nil {
+		return err
+	}
+	if !json.Valid(line) || len(bytes.TrimSpace(line)) == 0 || bytes.TrimSpace(line)[0] != '{' {
+		slog.Warn("non-object frame on harness stdout", "session", s.id, "sequence", entry.Origin.Sequence)
+		return nil
+	}
+	frame := append(json.RawMessage(nil), line...)
+	if err := adapter.OnFrame(ctx, frame, entry.Origin.Sequence); err != nil {
+		// Native protocols may acquire fields independently of the runner. Preserve the
+		// original frame and report the translation failure; storage failures stop us.
+		var storageErr *JournalStorageError
+		if errors.Is(err, context.Canceled) || errors.As(err, &storageErr) {
+			return err
+		}
+		slog.Error("native frame translation failed", "session", s.id, "sequence", entry.Origin.Sequence, "error", err)
+	}
+	s.mu.Lock()
+	waiting := s.waiters[:0]
+	for _, w := range s.waiters {
+		if w.matches(frame) {
+			s.replies = append(s.replies, matchedReply{w, NativeReceipt{Frame: frame, Sequence: entry.Origin.Sequence}})
+		} else {
+			waiting = append(waiting, w)
+		}
+	}
+	s.waiters = waiting
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Session) deliverReplies() {
+	s.mu.Lock()
+	replies := s.replies
+	s.replies = nil
+	s.mu.Unlock()
+	for _, reply := range replies {
+		reply.waiter.result <- nativeResult{receipt: reply.receipt}
+	}
+}
+
+func (s *Session) readStdout(process *Process, adapter Adapter) {
+	defer s.readers.Done()
+	buffer := make([]byte, 64*1024)
+	var pending []byte
+	var readErr error
+	for {
+		n, err := process.Stdout().Read(buffer)
+		if n > 0 {
+			pending = append(pending, buffer[:n]...)
+			if e := s.journal.WithBatch(s.runner.ctx, func(ctx context.Context) error {
+				for {
+					i := bytes.IndexByte(pending, '\n')
+					if i < 0 {
+						break
+					}
+					if i > maxFrameLineBytes {
+						return errors.New("native frame exceeded the 64 MiB limit")
+					}
+					line := append([]byte(nil), bytes.TrimRight(pending[:i], "\r")...)
+					pending = pending[i+1:]
+					if e := s.receive(ctx, line, adapter); e != nil {
+						return e
+					}
+				}
+				return nil
+			}); e != nil {
+				readErr = e
+				break
+			}
+			s.deliverReplies()
+			if len(pending) > maxFrameLineBytes {
+				readErr = errors.New("native frame exceeded the 64 MiB limit")
+				break
+			}
+		}
+		if err != nil {
+			if err == io.EOF && len(pending) > 0 {
+				if e := s.journal.WithBatch(s.runner.ctx, func(ctx context.Context) error { return s.receive(ctx, bytes.TrimRight(pending, "\r"), adapter) }); e != nil {
+					readErr = e
+				} else {
+					s.deliverReplies()
+				}
+			}
+			if err != io.EOF {
+				readErr = err
+			}
+			break
+		}
+	}
+	if readErr != nil {
+		s.runner.fail(readErr)
+		if err := process.Stop(context.Background(), 5*time.Second); err != nil {
+			s.runner.fail(err)
+		}
+	}
+	code, err := process.Wait(context.Background())
+	if err != nil {
+		s.runner.fail(err)
+	}
+	if err := s.harnessEnded(s.runner.ctx, code); err != nil {
+		s.runner.fail(err)
+	}
+}
+
+func (s *Session) readStderr(process *Process) {
+	defer s.readers.Done()
+	buffer := make([]byte, 4096)
+	for {
+		n, err := process.Stderr().Read(buffer)
+		if n > 0 {
+			if e := s.Emit(s.runner.ctx, observation(&eventpb.HarnessStderr{Text: string(bytes.ToValidUTF8(buffer[:n], []byte("�")))}), nil); e != nil {
+				s.runner.fail(e)
+				return
+			}
+		}
+		if err != nil {
+			if err != io.EOF {
+				s.runner.fail(err)
+			}
+			return
+		}
+	}
+}
+
+func (s *Session) harnessEnded(ctx context.Context, code int) error {
+	s.mu.Lock()
+	waiting := s.waiters
+	s.waiters = nil
+	for _, reply := range s.replies {
+		waiting = append(waiting, reply.waiter)
+	}
+	s.replies = nil
+	stopping := s.stopping
+	s.ready = false
+	s.processID = ""
+	s.processState = runnerpb.ProcessState_PROCESS_STATE_UNSPECIFIED
+	s.mu.Unlock()
+	for _, w := range waiting {
+		w.result <- nativeResult{err: fmt.Errorf("the harness exited with exit_code=%d", code)}
+	}
+	if err := s.Emit(ctx, observation(&eventpb.HarnessExited{ExitCode: int32(code), StoppedByRunner: stopping}), nil); err != nil {
+		return err
+	}
+	if turn := s.Session().ActiveTurnID; turn != "" {
+		return s.completeTurn(ctx, &eventpb.TurnCompleted{TurnId: turn, Status: eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST, Error: fmt.Sprintf("the harness exited with exit_code=%d during the turn", code)}, nil)
+	}
+	return nil
+}
+
+func (s *Session) load(ctx context.Context) error {
+	for cursor := uint64(0); ; {
+		s.mu.Lock()
+		needsPrefix := s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING || s.launch == runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING
+		s.mu.Unlock()
+		if !needsPrefix {
+			break
+		}
+		entries, err := s.journal.Since(ctx, cursor, 128)
+		if err != nil {
+			return err
+		}
+		if len(entries) == 0 {
+			break
+		}
+		for _, entry := range entries {
+			s.apply(entry, nil)
+			cursor = entry.Cursor
+			s.mu.Lock()
+			resolved := s.setup != runnerpb.SetupState_SETUP_STATE_RUNNING && s.launch != runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING
+			s.mu.Unlock()
+			if resolved {
+				break
+			}
+		}
+	}
+	// Prefix scanning recovers one-shot launch/setup outcomes only. Current turn state comes
+	// from the durable checkpoint and must not be replaced by an early historical prefix.
+	s.mu.Lock()
+	s.activeTurn = s.journal.RecoveryState().ActiveTurnID
+	s.mu.Unlock()
+	commands, err := s.journal.PendingCommands(ctx)
+	if err != nil {
+		return err
+	}
+	for _, c := range commands {
+		s.pending[c.CommandId] = true
+	}
+	return nil
+}
+
+func (s *Session) recover(ctx context.Context) error {
+	if s.journal.SealState() != nil {
+		return nil
+	}
+	s.mu.Lock()
+	setup := s.setup
+	s.mu.Unlock()
+	if setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+		if err := s.Emit(ctx, observation(&eventpb.SetupInterrupted{}), nil); err != nil {
+			return err
+		}
+	}
+	if s.journal.RecoveryState().HarnessRunning {
+		if err := s.Emit(ctx, observation(&eventpb.HarnessLost{}), nil); err != nil {
+			return err
+		}
+	}
+	if turn := s.Session().ActiveTurnID; turn != "" {
+		if err := s.completeTurn(ctx, &eventpb.TurnCompleted{TurnId: turn, Status: eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST, Error: "the runner restarted while the turn was active"}, nil); err != nil {
+			return err
+		}
+	}
+	commands, err := s.journal.PendingCommands(ctx)
+	if err != nil {
+		return err
+	}
+	for _, c := range commands {
+		if c.GetInterruptTurn() != nil {
+			if err := s.NoopCommand(ctx, c.CommandId, "the target turn is no longer active after the runner restarted", nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Session) settleUndispatched(ctx context.Context, reason string) error {
+	commands, err := s.journal.PendingCommands(ctx)
+	if err != nil {
+		return err
+	}
+	for _, command := range commands {
+		stored, err := s.journal.GetCommand(ctx, command.CommandId)
+		if err != nil {
+			return err
+		}
+		if stored != nil && !stored.DispatchPlanned {
+			if err := s.FailCommand(ctx, command.CommandId, reason, nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Session) stop(ctx context.Context, seal bool) error {
+	s.shutdownMu.Lock()
+	defer s.shutdownMu.Unlock()
+	s.admitMu.Lock()
+	s.mu.Lock()
+	if seal {
+		s.sealing = true
+		s.tearingDown = true
+	}
+	cancel := s.activationCancel
+	done := s.activationDone
+	setupDone := s.setupDone
+	s.mu.Unlock()
+	s.admitMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
+	if setupDone != nil {
+		<-setupDone
+	}
+	s.mu.Lock()
+	process := s.process
+	adapter := s.adapter
+	turn := s.activeTurn
+	s.stopping = true
+	s.processState = runnerpb.ProcessState_PROCESS_STATE_STOPPING
+	s.mu.Unlock()
+	if seal && process != nil && process.Running() && adapter != nil && turn != "" {
+		interruptCtx := context.WithValue(ctx, interruptTargetKey{}, turn)
+		if err := adapter.Interrupt(interruptCtx, turn); err != nil && !errors.Is(err, errStaleInterrupt) {
+			slog.Warn("teardown interrupt failed", "session", s.id, "error", err)
+		}
+		waitCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		for s.Session().ActiveTurnID == turn && process.Running() {
+			if err := s.journal.WaitBeyond(waitCtx, s.journal.RecoveryState().ThroughCursor); err != nil {
+				break
+			}
+		}
+		cancel()
+	}
+	if process != nil && process.Running() {
+		if err := process.Stop(ctx, 5*time.Second); err != nil {
+			return err
+		}
+	}
+	s.readers.Wait()
+	if seal {
+		if err := s.settleUndispatched(ctx, "the Sandbox was quiesced before this command was dispatched"); err != nil {
+			return err
+		}
+		uid, err := s.runner.store.RequireIncarnationUID()
+		if err != nil {
+			return err
+		}
+		_, err = s.journal.Seal(ctx, uid)
+		return err
+	}
+	return nil
+}
+
+func (s *Session) attached() *runnerpb.Attached {
+	state := s.journal.RecoveryState()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	harness := runnerpb.HarnessState_HARNESS_STATE_STOPPED
+	if s.process != nil && s.process.Running() {
+		harness = runnerpb.HarnessState_HARNESS_STATE_RUNNING
+	}
+	uid, known := s.runner.store.IncarnationUID()
+	var incarnation *string
+	if known {
+		incarnation = &uid
+	}
+	return &runnerpb.Attached{SessionId: s.id, Spec: s.record.Spec(), LastCursor: state.ThroughCursor, HarnessState: harness, ActiveTurnId: state.ActiveTurnID, SetupState: s.setup, LaunchOutcome: s.launch, IncarnationUid: incarnation}
+}
+
+func (s *Session) busy() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.activeTurn != "" || len(s.pending) > 0 || s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING || s.activating
+}
+
+func (s *Session) startSetup(script string) {
+	s.mu.Lock()
+	s.setupDone = make(chan struct{})
+	done := s.setupDone
+	s.mu.Unlock()
+	go func() {
+		defer close(done)
+		err := s.runner.bootstrap(s.runner.ctx)
+		if err == nil {
+			err = s.Emit(s.runner.ctx, observation(&eventpb.SetupStarted{}), nil)
+		}
+		if err == nil {
+			cwd, e := s.runner.ensureWorkspace(s.runner.ctx, s.Session().Cwd)
+			err = e
+			if err == nil {
+				var code int
+				code, err = s.runner.runScript(s.runner.ctx, script, cwd, func(stdout bool, data []byte) error {
+					out := &eventpb.SetupOutput{}
+					if stdout {
+						out.Stream = &eventpb.SetupOutput_Stdout{Stdout: data}
+					} else {
+						out.Stream = &eventpb.SetupOutput_Stderr{Stderr: data}
+					}
+					return s.Emit(s.runner.ctx, observation(out), nil)
+				})
+				if err == nil {
+					err = s.Emit(s.runner.ctx, observation(&eventpb.SetupFinished{ExitCode: int32(code)}), nil)
+				}
+			}
+		}
+		if err != nil {
+			slog.Error("session setup interrupted", "session", s.id, "error", err)
+			if e := s.Emit(s.runner.ctx, observation(&eventpb.SetupInterrupted{}), nil); e != nil {
+				s.runner.fail(e)
+			}
+		}
+		s.runner.changed()
+	}()
+}
+
+func (s *Session) directory() string {
+	directory, err := s.runner.store.Directory(s.id)
+	if err != nil {
+		panic(err)
+	}
+	return directory
+}

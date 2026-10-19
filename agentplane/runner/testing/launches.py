@@ -23,6 +23,7 @@ from util.bazel.runfiles import get_required_path
 CLAUDE_BINARY = "claude_code_cli_linux_x64/claude"
 CODEX_BINARY = "agentplane_codex_cli_linux_x64/bin/codex"
 RUNNER_BINARY = "_main/agentplane/runner/main_bin"
+GO_RUNNER_BINARY = "_main/agentplane/runner/go/cmd/agentplane-runner_/agentplane-runner"
 TOKEN = "test-key"
 PLATFORM_INSTRUCTIONS = "Test platform guidance."
 SANDBOX = SandboxIdentity(namespace="test-sandboxes", name="test-sandbox", uid="test-sandbox-uid")
@@ -84,6 +85,7 @@ def runner_command(
     bootstrap: str | None = None,
     codex_binary: Path | None = None,
     harness_env: Sequence[str] = (),
+    runner_binary: Path | None = None,
 ) -> list[str]:
     """The runner as its own process, configured like `config` is, dialing `gateway` for both its
     control stream and its ingress. The Sandbox's files go beside `state_dir`."""
@@ -92,7 +94,7 @@ def runner_command(
     platform_instructions_file = state_dir.parent / "platform-instructions.md"
     platform_instructions_file.write_text(PLATFORM_INSTRUCTIONS)
     command = [
-        str(get_required_path(RUNNER_BINARY)),
+        str(runner_binary or get_required_path(RUNNER_BINARY)),
         *("--state-dir", str(state_dir)),
         *("--launch-file", str(launch_file), "--platform-instructions-file", str(platform_instructions_file)),
         *("--control-target", gateway.target, "--control-bearer", gateway.bearer),

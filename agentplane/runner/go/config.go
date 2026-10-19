@@ -1,0 +1,126 @@
+// Package runner owns durable Sessions and supervises their native harnesses.
+package runner
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+)
+
+type SandboxIdentity struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	UID       string `json:"uid"`
+}
+
+type SandboxLaunch struct {
+	Sandbox              SandboxIdentity `json:"sandbox"`
+	Bootstrap            *string         `json:"bootstrap"`
+	PlatformInstructions string          `json:"-"`
+}
+
+func (l SandboxLaunch) Instructions(sessionID, task string) string {
+	destination, _ := json.Marshal(struct {
+		Destination SandboxIdentity `json:"destination_ref"`
+		SessionID   string          `json:"session_id"`
+	}{l.Sandbox, sessionID})
+	parts := []string{}
+	for _, part := range []string{l.PlatformInstructions, "Your explicit notification destination is:\n" + string(destination) + "\nUse these identifiers when addressing this session; they are not credentials.", task} {
+		if part = strings.TrimSpace(part); part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+type Endpoint struct {
+	Target string `json:"target"`
+	Bearer string `json:"bearer"`
+}
+type DebugCheckpointConfig struct{ Name, CommandID string }
+
+type Config struct {
+	StateDir                         string
+	Launch                           SandboxLaunch
+	HarnessEnvironment               map[string]string
+	Claude, Codex                    *LaunchConfig
+	ProcessIsolation                 *AgentCgroups
+	WorkspaceRoot, InitializationCwd string
+	DebugCheckpoint                  *DebugCheckpointConfig
+	HTTPClient                       *http.Client
+}
+
+func (c Config) ResolveModelConfig(ctx context.Context, harness runnerpb.Harness, model string) (*int, error) {
+	launch := c.Claude
+	if harness == runnerpb.Harness_HARNESS_CODEX {
+		launch = c.Codex
+	}
+	if launch == nil {
+		return nil, errors.New("the selected harness is not configured on this runner")
+	}
+	u, err := url.Parse(launch.BaseURL)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return nil, errors.New("model endpoint must be an absolute HTTP(S) URL")
+	}
+	u.Path, u.RawPath, u.Fragment = "/agentplane/model-config", "", ""
+	q := url.Values{}
+	q.Set("model", model)
+	u.RawQuery = q.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+launch.Token)
+	client := c.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("could not query the LLM proxy for model configuration: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("LLM proxy model-config lookup failed with HTTP %d", res.StatusCode)
+	}
+	var payload *struct {
+		Model  string `json:"model"`
+		Budget int    `json:"total_context_budget_tokens"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(res.Body, 65537))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, fmt.Errorf("LLM proxy returned malformed model configuration: %w", err)
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return nil, errors.New("LLM proxy returned trailing model configuration data")
+	}
+	if payload == nil {
+		return nil, nil
+	}
+	if payload.Model != model || payload.Budget <= 0 {
+		return nil, errors.New("LLM proxy returned invalid model configuration")
+	}
+	return &payload.Budget, nil
+}
+
+func DecodeStrict(data []byte, value any) error {
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.DisallowUnknownFields()
+	if err := d.Decode(value); err != nil {
+		return err
+	}
+	if err := d.Decode(new(any)); err != io.EOF {
+		return errors.New("unexpected trailing JSON data")
+	}
+	return nil
+}

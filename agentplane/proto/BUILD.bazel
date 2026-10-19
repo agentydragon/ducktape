@@ -258,6 +258,21 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "runner_ingress_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/runner_ingress",
+    proto = ":runner_ingress_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":event_log_go_proto",
+        ":runner_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "runner_control_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
