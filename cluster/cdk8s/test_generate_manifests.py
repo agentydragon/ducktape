@@ -123,24 +123,14 @@ def test_piraeus_storage_is_confined_to_the_retained_two_node_canary(
     [pool] = satellite["storagePools"]
     assert pool == {"name": "local-canary", "fileThinPool": {"directory": "/var/mnt/local-path-ovh-hdd/linstor-canary"}}
 
-    listeners = {
-        config["nodeSelector"]["kubernetes.io/hostname"]: config
-        for config in values["linstorSatelliteConfigurations"]
-        if "kubernetes.io/hostname" in config["nodeSelector"]
-    }
-    assert set(listeners) == {"ovh-ns102453", "ovh-ns103656"}
-    for node_name, address in (("ovh-ns102453", "10.42.0.15"), ("ovh-ns103656", "10.42.0.13")):
-        listener = listeners[node_name]
-        assert listener["nodeSelector"] == {**canary_selector, "kubernetes.io/hostname": node_name}
-        patches = {patch["target"]["name"]: patch["patch"] for patch in listener["patches"]}
-        satellite_config = patches["satellite-config"]
-        assert 'type = "ssl"' in satellite_config
-        assert f'bind_address = "{address}"' in satellite_config
-        assert "port = 3367" in satellite_config
-        metrics_config = patches["reactor-config"]
-        assert f'address = "{address}:9942"' in metrics_config
-        assert 'address = ":9942"' not in metrics_config
-        assert "0.0.0.0" not in metrics_config
+    assert len(values["linstorSatelliteConfigurations"]) == 1
+    assert satellite["nodeSelector"] == canary_selector
+    [reactor_patch] = satellite["patches"]
+    assert reactor_patch["target"] == {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}
+    assert 'address = "127.0.0.1:9942"' in reactor_patch["patch"]
+    assert "satellite-config" not in reactor_patch["patch"]
+    assert "bind_address" not in reactor_patch["patch"]
+    assert "3366" not in reactor_patch["patch"]
 
     [storage_class] = values["storageClasses"]
     assert storage_class["name"] == "local-canary"

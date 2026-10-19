@@ -166,10 +166,15 @@ PVC, verify:
   chart creates Issuers and Certificates in `piraeus-datastore`; cert-manager
   creates the private keys at runtime, so no keys are committed. Controller to
   Satellite traffic uses mutual TLS on port 3367, and CSI/controller API clients
-  use HTTPS with client certificates on port 3371. The controller still has its
-  plain HTTP API on port 3370 for its health probes. A NetworkPolicy selecting
-  only the operator's `app.kubernetes.io/component=linstor-controller` Pod label
-  admits ordinary Pod ingress only on TCP 3371, where LINSTOR mTLS authenticates
+  use HTTPS with client certificates on port 3371. The stock operator TLS patch
+  removes plaintext port 3366 and retains its 3367 listener binding: its
+  liveness probe connects to `localhost:3367` before checking certificate
+  rotation. Since Satellites use host networking, that authenticated mTLS
+  listener is bound on host interfaces, including public interfaces; this canary
+  does not override the stock binding. The controller still has its plain HTTP
+  API on port 3370 for health probes. A NetworkPolicy selecting only the
+  operator's `app.kubernetes.io/component=linstor-controller` Pod label admits
+  ordinary Pod ingress only on TCP 3371, where LINSTOR mTLS authenticates
   clients. Cilium's default local-host exemption lets kubelet probes reach 3370;
   host-local traffic remains outside this Pod policy. The controller itself does
   not use host networking.
@@ -179,15 +184,11 @@ PVC, verify:
   mesh. Piraeus documents that host networking reconfigures DRBD peer addresses;
   switching back to the pod network requires resetting paths or rebooting all
   involved nodes.
-- The host-networked Satellite control listener binds only its node's Nebula
-  address on TLS port 3367; the default plaintext port 3366 is removed by
-  Piraeus' internal-TLS patch. The DRBD Reactor Prometheus endpoint defaults to
-  unauthenticated HTTP on wildcard port 9942, so per-node configuration binds
-  that endpoint to the same Nebula address. Verify the `linstor_satellite.toml`
-  and `prometheus.toml` effective on each host-networked Pod, and confirm the
-  PodMonitor scrapes the Nebula address before relying on these metrics. These
-  explicit binds avoid exposing either listener through public host interfaces;
-  no host firewall policy is added here.
+- The DRBD Reactor Prometheus endpoint defaults to unauthenticated HTTP on
+  wildcard port 9942. The canary patches it to `127.0.0.1:9942`; monitoring is
+  disabled, so this endpoint is local-only and is not scraped. DRBD replication
+  still advertises the Nebula node addresses above. No host firewall policy is
+  added here.
 - The two `FILE_THIN` directories above, with capacity monitoring and no pool
   autodiscovery or disk preparation.
 - An opt-in `local-canary` StorageClass: `WaitForFirstConsumer`, one disk-backed
