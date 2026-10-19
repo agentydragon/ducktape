@@ -198,7 +198,9 @@ export function ActionHistoryCard({
                 <Text fw={600}>
                   {request.action.group} / {request.action.name}
                 </Text>
-              ) : actionLabel}
+              ) : (
+                actionLabel
+              )}
             </div>
             <Group gap="xs">
               {status}

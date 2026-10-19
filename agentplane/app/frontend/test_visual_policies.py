@@ -1075,6 +1075,7 @@ async def test_kubernetes_applied_manifest_receipt(view: VisualPage, app: Agentp
         },
     )
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     page = view.page
     await expect(page.get_by_text("Apply Kubernetes resource", exact=True)).to_be_visible()
     await expect(page.locator('[data-operation-heading="Manifest · ConfigMap apps/settings"]')).to_be_visible()
@@ -1109,6 +1110,7 @@ async def test_kubernetes_yaml_result_receipt(view: VisualPage, app: AgentplaneF
         },
     )
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     page = view.page
     await expect(page.locator('[data-operation-heading="Resource · ConfigMap apps/settings"]')).to_be_visible()
     await expect(page.get_by_text("Structured content", exact=True)).to_have_count(0)
@@ -1125,6 +1127,7 @@ async def test_kubernetes_delete_success_receipt(view: VisualPage, app: Agentpla
         {"content": [{"type": "text", "text": "Resource deleted successfully"}], "isError": False},
     )
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     page = view.page
     await expect(page.get_by_text("Delete Pod apps/web-0", exact=True)).to_be_visible()
     await expect(page.get_by_text("Deletion accepted", exact=True)).to_be_visible()

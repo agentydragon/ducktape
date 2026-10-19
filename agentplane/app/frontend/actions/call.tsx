@@ -124,22 +124,24 @@ export function ActionCall({
     <Stack gap="sm">
       <Stack gap={2}>
         {!detailsOnly && (
-        <Group justify="space-between" align="flex-start" gap="xs">
-          {actionLabel === undefined ? (
-            <Text fw={600} ff="monospace" style={{ overflowWrap: "anywhere" }}>
-              {request.action.group} / {request.action.name}
-            </Text>
-          ) : (
-            actionLabel
-          )}
-          <Group gap="xs" justify="flex-end" wrap="wrap">
-            {status}
-            {(prettyArguments !== undefined ||
-              prettyResult ||
-              (combinedCall !== undefined && combinedCall !== null)) && <RawSwitch raw={raw} onChange={onRawChange} />}
-            {headerActions}
+          <Group justify="space-between" align="flex-start" gap="xs">
+            {actionLabel === undefined ? (
+              <Text fw={600} ff="monospace" style={{ overflowWrap: "anywhere" }}>
+                {request.action.group} / {request.action.name}
+              </Text>
+            ) : (
+              actionLabel
+            )}
+            <Group gap="xs" justify="flex-end" wrap="wrap">
+              {status}
+              {(prettyArguments !== undefined ||
+                prettyResult ||
+                (combinedCall !== undefined && combinedCall !== null)) && (
+                <RawSwitch raw={raw} onChange={onRawChange} />
+              )}
+              {headerActions}
+            </Group>
           </Group>
-        </Group>
         )}
         {/* TODO: the caller's own framing renders verbatim as plain text; markdown rendering is a
             possible later addition. */}
