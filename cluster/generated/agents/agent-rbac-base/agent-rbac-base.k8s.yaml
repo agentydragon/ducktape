@@ -383,6 +383,7 @@ rules:
     resources:
       - clusters
       - backups
+      - scheduledbackups
     verbs:
       - get
       - list
