@@ -5,6 +5,7 @@
 # gazelle:exclude test_visual_policies.py
 # gazelle:exclude test_visual_navigation.py
 # gazelle:exclude test_visual_scenes.py
+# gazelle:exclude test_visual_operation_presentation.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
@@ -238,6 +239,16 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "operation_section",
+    srcs = ["operation_section.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":code_block",
+        "//:node_modules/@types/react",
+    ],
+)
+
+ts_library(
     name = "command_view",
     srcs = ["command_view.tsx"],
     tsconfig = TSCONFIG,
@@ -246,6 +257,7 @@ ts_library(
         ":code_block",
         ":disclosure",
         ":json_view",
+        ":operation_section",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -1284,6 +1296,7 @@ ts_library(
         "harness/disclosure_visual.tsx",
         "harness/harness.tsx",
         "harness/network.ts",
+        "harness/operation_presentation_visual.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -1307,6 +1320,7 @@ ts_library(
         "//:node_modules/react-dom",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions/rendering:index",
+        "//agentplane/app/frontend/actions:payload",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",
     ],
@@ -1378,6 +1392,12 @@ agentplane_visual_test(
     src = "test_visual_policies.py",
     shard_count = 2,
     title = "Agentplane: policies",
+)
+
+agentplane_visual_test(
+    name = "visual_operation_presentation",
+    src = "test_visual_operation_presentation.py",
+    title = "Agentplane: shared Action presentation",
 )
 
 agentplane_vitest_test(

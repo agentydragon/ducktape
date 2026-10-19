@@ -108,6 +108,16 @@ describe("ClampedBlock", () => {
     expect(control(container, "Show all")).toBeDefined();
   });
 
+  it("uses a semantic expansion label when the clipped content is not a counted text payload", async () => {
+    contentHeight(1000);
+    const container = await mount(
+      <ClampedBlock maxHeightRem={10} label="Payload" expandLabel="Show more">
+        test-content
+      </ClampedBlock>
+    );
+    expect(control(container, "Show more")).toBeDefined();
+  });
+
   it("returns nested output to its clipped preview with Show less", async () => {
     contentHeight(1000);
     const container = await mount(

@@ -29,6 +29,8 @@ export const sandboxExecArguments: ArgumentsPreview = definePreview(exec, ({ arg
       `Output limit ${args.max_output_bytes} bytes per stream`,
       ...(args.cwd == null ? [] : [`Working directory ${args.cwd}`]),
     ]}
+    releaseWhenFar
+    surface="framed"
   />
 ));
 export const sandboxCreateLabel: ArgumentsPreview = definePreview(create, ({ args }) => (
@@ -195,6 +197,8 @@ export const sandboxExecResult: ResultPreview = defineResultPreview(execution, (
           name={name}
           text={typeof value === "string" ? value : value.truncated_text}
           note={typeof value === "string" ? undefined : `truncated by the server; ${value.total_bytes} total bytes`}
+          releaseWhenFar
+          surface="framed"
         />
       );
     })}

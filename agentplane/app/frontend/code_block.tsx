@@ -12,7 +12,7 @@ import { nix } from "@replit/codemirror-lang-nix";
 import { EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, highlightSpecialChars, WidgetType } from "@codemirror/view";
 import { highlightCode, type Tag, tagHighlighter, tags } from "@lezer/highlight";
-import { type JSX, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type JSX, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import "./code_block.css";
 
@@ -20,6 +20,7 @@ export type Language =
   "bash" | "go" | "javascript" | "json" | "nix" | "protobuf" | "python" | "rust" | "typescript" | "yaml";
 
 export type CodeBlockSurface = "framed" | "plain";
+export type CodeBlockFont = "monospace" | "prose";
 
 // Reuse CodeMirror language support instead of translating another highlighter's HTML into
 // decorations. JSON/YAML/Nix use language packages; the remaining curated grammars are the
@@ -215,7 +216,7 @@ const CODE_BLOCK_THEME = EditorView.theme({
     fontSize: "var(--mantine-font-size-sm)",
   },
   ".cm-content": {
-    fontFamily: "var(--mantine-font-family-monospace)",
+    fontFamily: "var(--agentplane-code-font-family, var(--mantine-font-family-monospace))",
     padding: "var(--agentplane-code-surface-padding)",
   },
   ".cm-scroller": { fontFamily: "inherit" },
@@ -256,31 +257,57 @@ const MUTED_CODE_THEME = EditorView.theme({
 });
 
 const MOUNT_MARGIN_PX = 600;
+const UNMOUNT_MARGIN_PX = 1600;
 const PLACEHOLDER_LINE_REM = 1.25;
 
-function useNearViewport(): { ref: (node: HTMLDivElement | null) => void; near: boolean } {
+function useNearViewport(releaseWhenFar: boolean): {
+  ref: (node: HTMLDivElement | null) => void;
+  near: boolean;
+  measuredHeight: number | undefined;
+} {
   const [near, setNear] = useState(typeof IntersectionObserver === "undefined");
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
+  const [measuredHeight, setMeasuredHeight] = useState<number>();
   const observerRef = useRef<IntersectionObserver | null>(null);
   useEffect(() => () => observerRef.current?.disconnect(), []);
-  const ref = useCallback(
-    (node: HTMLDivElement | null) => {
-      observerRef.current?.disconnect();
-      observerRef.current = null;
-      if (!node || near) return;
-      const observer = new IntersectionObserver(
-        (entries) => {
-          if (!entries.some((entry) => entry.isIntersecting)) return;
-          observer.disconnect();
+  const ref = useCallback((node: HTMLDivElement | null) => setElement(node), []);
+
+  useEffect(() => {
+    if (!element || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries.at(-1);
+        if (entry === undefined) return;
+        if (entry.isIntersecting) {
           setNear(true);
-        },
-        { rootMargin: `${MOUNT_MARGIN_PX}px` }
-      );
-      observer.observe(node);
-      observerRef.current = observer;
-    },
-    [near]
-  );
-  return { ref, near };
+          if (!releaseWhenFar) {
+            observer.disconnect();
+            if (observerRef.current === observer) observerRef.current = null;
+          }
+        } else if (releaseWhenFar) {
+          setNear(false);
+        }
+      },
+      { rootMargin: `${releaseWhenFar ? UNMOUNT_MARGIN_PX : MOUNT_MARGIN_PX}px` }
+    );
+    observer.observe(element);
+    observerRef.current = observer;
+    return () => {
+      observer.disconnect();
+      if (observerRef.current === observer) observerRef.current = null;
+    };
+  }, [element, releaseWhenFar]);
+
+  useLayoutEffect(() => {
+    if (!releaseWhenFar || !element || !near) return;
+    const measure = () => setMeasuredHeight(element.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element, near, releaseWhenFar]);
+
+  return { ref, near, measuredHeight };
 }
 
 function MountedCodeBlock({
@@ -289,12 +316,14 @@ function MountedCodeBlock({
   streamingCursorOffset,
   presentation,
   surface,
+  font,
 }: {
   text: string;
   language?: Language;
   streamingCursorOffset?: number;
   presentation: "block" | "label" | "muted";
   surface: CodeBlockSurface;
+  font: CodeBlockFont;
 }): JSX.Element {
   const extensions = useMemo(() => {
     const result: Extension[] = [
@@ -316,7 +345,7 @@ function MountedCodeBlock({
 
   return (
     <CodeMirror
-      className={`agentplane-code-block agentplane-code-block-${presentation}${presentation === "block" ? ` agentplane-code-surface-${surface}` : ""}`}
+      className={`agentplane-code-block agentplane-code-block-${presentation}${presentation === "block" ? ` agentplane-code-surface-${surface}${font === "prose" ? " agentplane-code-font-prose" : ""}` : ""}`}
       value={text}
       theme="none"
       readOnly
@@ -336,6 +365,8 @@ export function CodeBlock({
   streamingCursorOffset,
   presentation = "block",
   surface = "framed",
+  font = "monospace",
+  releaseWhenFar = false,
 }: {
   text: string;
   language?: Language;
@@ -343,27 +374,47 @@ export function CodeBlock({
   presentation?: "block" | "label" | "muted";
   /** Framed code owns its border and gutter; plain code uses spacing from its surrounding surface. */
   surface?: CodeBlockSurface;
+  /** Use proportional text for prose while retaining exact CodeMirror selection and Unicode markers. */
+  font?: CodeBlockFont;
+  /** Unmount the editor after it is far outside the viewport; used for paged Action history. */
+  releaseWhenFar?: boolean;
 }): JSX.Element {
-  const { ref, near } = useNearViewport();
+  const { ref, near, measuredHeight } = useNearViewport(releaseWhenFar);
   const surfaceClass = presentation === "block" ? ` agentplane-code-surface-${surface}` : "";
+  const fontClass = presentation === "block" && font === "prose" ? " agentplane-code-font-prose" : "";
   if (!near) {
     const lineCount = Math.max(1, text.split("\n").length);
     return (
       <div
         ref={ref}
-        className={`agentplane-code-block-placeholder${presentation !== "block" ? ` agentplane-code-block-placeholder-${presentation}` : ""}${surfaceClass}`}
-        style={{ height: `${lineCount * PLACEHOLDER_LINE_REM}rem` }}
+        className={`agentplane-code-block-placeholder${presentation !== "block" ? ` agentplane-code-block-placeholder-${presentation}` : ""}${surfaceClass}${fontClass}`}
+        style={{ height: measuredHeight ?? `${lineCount * PLACEHOLDER_LINE_REM}rem` }}
+      />
+    );
+  }
+  if (!releaseWhenFar) {
+    return (
+      <MountedCodeBlock
+        text={text}
+        language={language}
+        streamingCursorOffset={streamingCursorOffset}
+        presentation={presentation}
+        surface={surface}
+        font={font}
       />
     );
   }
   return (
-    <MountedCodeBlock
-      text={text}
-      language={language}
-      streamingCursorOffset={streamingCursorOffset}
-      presentation={presentation}
-      surface={surface}
-    />
+    <div ref={ref} className={`agentplane-code-block-container${fontClass}`}>
+      <MountedCodeBlock
+        text={text}
+        language={language}
+        streamingCursorOffset={streamingCursorOffset}
+        presentation={presentation}
+        surface={surface}
+        font={font}
+      />
+    </div>
   );
 }
 

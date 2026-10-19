@@ -121,7 +121,7 @@ export function ActionCall({
     providedCombinedCall === undefined ? renderActionCall(request.action, request.arguments) : providedCombinedCall;
   const showCombinedCall = combinedCall !== undefined && combinedCall !== null && combinedCall.content != null;
   return (
-    <Stack gap="sm">
+    <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="sm">
       <Stack gap={2}>
         {!detailsOnly && (
           <Group justify="space-between" align="flex-start" gap="xs">

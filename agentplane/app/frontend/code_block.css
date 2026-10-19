@@ -95,7 +95,12 @@
   --agentplane-code-surface-padding: 0;
 }
 
+.agentplane-code-font-prose {
+  --agentplane-code-font-family: var(--mantine-font-family);
+}
+
 .agentplane-code-block-placeholder {
+  box-sizing: border-box;
   background-color: var(--agentplane-code-surface-background, transparent);
   border: var(--agentplane-code-surface-border, 0);
   border-radius: var(--agentplane-code-surface-radius, 0);

@@ -1,11 +1,13 @@
-import { Code, Stack, Text } from "@mantine/core";
+import { Code, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
-import { CodeBlock, InlineCode } from "../../../code_block";
+import { InlineCode } from "../../../code_block";
+import { argvText, CommandCallView, OutputBlock } from "../../../command_view";
 
 import { definePreview, type ArgumentsPreview } from "../entry";
+import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";
 import { kubernetesTarget } from "./resource_common";
 
 const podsExecArguments = z.strictObject({
@@ -17,18 +19,10 @@ const podsExecArguments = z.strictObject({
 
 type PodsExecArguments = z.infer<typeof podsExecArguments>;
 
-function shellQuote(arg: string): string {
-  return /^[A-Za-z0-9_./:=,@+-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`;
-}
-
-function commandText(args: PodsExecArguments): string {
-  return args.command.map(shellQuote).join(" ");
-}
-
 function CommandLine({ args }: { args: PodsExecArguments }): JSX.Element {
   return (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-      <InlineCode text={commandText(args)} language="bash" />
+      <InlineCode text={argvText(args.command)} />
     </Text>
   );
 }
@@ -47,16 +41,20 @@ function PodsExecLabel({ args }: { args: PodsExecArguments }): JSX.Element {
 
 function Opened({ args }: { args: PodsExecArguments }): JSX.Element {
   return (
-    <Stack gap="xs">
-      <CodeBlock text={commandText(args)} language="bash" />
-      {args.container && (
-        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          In container <Code>{args.container}</Code>.
-        </Text>
-      )}
-    </Stack>
+    <CommandCallView
+      argv={args.command}
+      notes={args.container === undefined ? [] : [`Container ${args.container}`]}
+      releaseWhenFar
+      surface="framed"
+    />
   );
 }
+
+function PodExecOutput({ result }: ResultPreviewProps<string>): JSX.Element {
+  return <OutputBlock name="Output" text={result} raw releaseWhenFar surface="framed" />;
+}
+
+const podExecOutput: ResultPreview = defineResultPreview(z.string(), PodExecOutput);
 
 /** These are action-owned DOM renderers; the target is already in the action title. */
 export const podsExecCollapsed: ArgumentsPreview = definePreview(podsExecArguments, Collapsed);
@@ -89,5 +87,5 @@ export const podsDeletePresentation: ActionPresentation = {
 export const podsExecPresentation: ActionPresentation = {
   label: podsExecLabel,
   pane: { collapsed: podsExecCollapsed, opened: podsExecPane },
-  details: { arguments: podsExecPane },
+  details: { arguments: podsExecPane, result: podExecOutput },
 };

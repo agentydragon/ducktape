@@ -5,33 +5,49 @@ import { Button, Stack, Text } from "@mantine/core";
 import { type JSX, useState } from "react";
 
 import { ClampedBlock, lineCount } from "./clamped_block";
-import { CodeBlock } from "./code_block";
+import { CodeBlock, type CodeBlockSurface } from "./code_block";
 import { Disclosure, DisclosureBody } from "./disclosure";
 import { HighlightedText } from "./json_view";
+import { OperationSection } from "./operation_section";
 
 export const COMMAND_MAX_HEIGHT_REM = 10;
 export const OUTPUT_MAX_HEIGHT_REM = 16;
 
 type Expansion = readonly [boolean, (expanded: boolean) => void];
 
+type CommandInput = { command: string; argv?: never } | { command?: never; argv: readonly string[] };
+
+function shellQuote(argument: string): string {
+  return /^[A-Za-z0-9_./:=,@+-]+$/.test(argument) ? argument : `'${argument.replaceAll("'", "'\\''")}'`;
+}
+
+/** A shell-safe display of argv that preserves each argument boundary without implying shell execution. */
+export function argvText(argv: readonly string[]): string {
+  return argv.map(shellQuote).join(" ");
+}
+
 /** The call as the reader judges it: what the model said it is for, where it runs, the exact
  * command, and the settings that change how it runs. */
-export function CommandCallView({
-  description,
-  target,
-  command,
-  notes,
-  expansion,
-}: {
-  description?: string;
-  /** Where the command runs, such as `user@host`. */
-  target?: string;
-  command: string;
-  notes: readonly string[];
-  expansion?: Expansion;
-}): JSX.Element {
-  return (
-    <Stack gap={0}>
+export function CommandCallView(
+  props: {
+    description?: string;
+    /** Where the command runs, such as `user@host` or `Pod namespace/name`. */
+    target?: string;
+    notes: readonly string[];
+    expansion?: Expansion;
+    /** Release CodeMirror's editor when this Action call is far outside the viewport. */
+    releaseWhenFar?: boolean;
+    /** Use the shared operation frame in Action hosts. Thread tool cards retain their own frame. */
+    surface?: CodeBlockSurface;
+  } & CommandInput
+): JSX.Element {
+  const { description, target, notes, expansion, releaseWhenFar = false, surface } = props;
+  const command = "command" in props ? props.command : undefined;
+  const argv = "argv" in props ? props.argv : undefined;
+  const commandText = command ?? (argv === undefined ? "" : argvText(argv));
+  const commandLabel = command === undefined ? "Arguments" : "Command";
+  const content = (
+    <Stack className="agentplane-command-call" gap={0}>
       {(description || target) && (
         <DisclosureBody>
           <Stack gap={4}>
@@ -42,11 +58,17 @@ export function CommandCallView({
       )}
       <ClampedBlock
         maxHeightRem={COMMAND_MAX_HEIGHT_REM}
-        lines={lineCount(command)}
-        label="Command"
+        lines={lineCount(commandText)}
+        label={commandLabel}
+        expandLabel="Show more"
         expansion={expansion}
       >
-        <CodeBlock text={command} language="bash" surface="plain" />
+        <CodeBlock
+          text={commandText}
+          language={command === undefined ? undefined : "bash"}
+          surface="plain"
+          releaseWhenFar={releaseWhenFar}
+        />
       </ClampedBlock>
       {notes.length > 0 && (
         <DisclosureBody>
@@ -61,6 +83,7 @@ export function CommandCallView({
       )}
     </Stack>
   );
+  return surface === undefined ? content : <OperationSection surface={surface}>{content}</OperationSection>;
 }
 
 /** What a command printed, as text, or as JSON when that is what it printed. `name` says which
@@ -72,6 +95,8 @@ export function OutputBlock({
   raw = false,
   expansion,
   disclosure,
+  releaseWhenFar = false,
+  surface,
 }: {
   name: string;
   note?: string;
@@ -81,6 +106,10 @@ export function OutputBlock({
   expansion?: Expansion;
   /** Retain the nested output disclosure while a tool row leaves the DOM. */
   disclosure?: Expansion;
+  /** Release CodeMirror's editor when this Action result is far outside the viewport. */
+  releaseWhenFar?: boolean;
+  /** Use the shared operation frame in Action hosts. Thread tool cards retain their own frame. */
+  surface?: CodeBlockSurface;
 }): JSX.Element {
   const localDisclosure = useState(true);
   const localExpansion = useState(false);
@@ -89,7 +118,7 @@ export function OutputBlock({
   const [open, setOpen] = disclosure ?? localDisclosure;
   const lines = lineCount(text);
 
-  return (
+  const content = (
     <Disclosure
       className="agentplane-output-disclosure"
       summary={
@@ -131,8 +160,9 @@ export function OutputBlock({
         stickyCollapse={false}
       >
         {/* Pretty output ends its last line with a final newline; Raw keeps that recorded newline. */}
-        <HighlightedText text={raw ? text : text.replace(/\n$/, "")} surface="plain" />
+        <HighlightedText text={raw ? text : text.replace(/\n$/, "")} surface="plain" releaseWhenFar={releaseWhenFar} />
       </ClampedBlock>
     </Disclosure>
   );
+  return surface === undefined ? content : <OperationSection surface={surface}>{content}</OperationSection>;
 }

@@ -146,7 +146,7 @@ export function ActionHistoryCard({
   const actionLabel = renderActionLabel(request.action, request.arguments);
   const summary = renderPaneCollapsed(request.action, request.arguments);
   const receipt = (
-    <Stack gap="sm">
+    <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="sm">
       <ActionCall
         request={request}
         status={status}

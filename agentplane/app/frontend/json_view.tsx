@@ -20,13 +20,15 @@ export function JsonView({ value, surface = "framed" }: { value: unknown; surfac
 export function HighlightedText({
   text,
   surface = "framed",
+  releaseWhenFar = false,
 }: {
   text: string;
   surface?: CodeBlockSurface;
+  releaseWhenFar?: boolean;
 }): JSX.Element {
   return looksLikeJson(text) ? (
-    <CodeBlock text={text} language="json" surface={surface} />
+    <CodeBlock text={text} language="json" surface={surface} releaseWhenFar={releaseWhenFar} />
   ) : (
-    <CodeBlock text={text} surface={surface} />
+    <CodeBlock text={text} surface={surface} releaseWhenFar={releaseWhenFar} />
   );
 }

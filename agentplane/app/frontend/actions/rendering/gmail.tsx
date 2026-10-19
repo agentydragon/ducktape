@@ -87,7 +87,7 @@ function DraftOpened({ args }: { args: DraftArguments }): JSX.Element {
       <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
         {args.subject || "(no subject)"}
       </Text>
-      <ActionText text={args.body} clamp={false} />
+      <ActionText text={args.body} heading="Message body" format="prose" clamp={false} />
     </Stack>
   );
 }
@@ -217,7 +217,7 @@ function DraftCall({ args, result }: CallPreviewProps<DraftArguments, DraftCallR
           Bcc {args.bcc.join(", ")}
         </Text>
       )}
-      <ActionText text={args.body} clamp={false} />
+      <ActionText text={args.body} heading="Message body" format="prose" />
       {threadHref && (
         <Anchor href={threadHref} target="_blank" rel="noreferrer">
           Reply in Gmail thread

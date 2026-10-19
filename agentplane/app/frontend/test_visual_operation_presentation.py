@@ -1,0 +1,114 @@
+"""Shared Action payload surfaces and bounded editor retention."""
+
+import pytest
+import pytest_bazel
+from playwright.async_api import expect
+
+from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE
+from agentplane.app.frontend.visual_app import AgentplaneFixture
+from util.testing.viewports import DESKTOP, Viewport
+from util.testing.visual_capture import VisualPage
+
+# gazelle:include_dep //util/testing:visual_fixtures
+# gazelle:include_dep //agentplane/app/frontend/testing:visual_fixtures
+pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
+pytestmark = pytest.mark.asyncio(loop_scope="session")
+
+
+@DESKTOP_AND_MOBILE
+async def test_action_payloads_share_operation_surfaces(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
+) -> None:
+    await app.mount_operation_presentation()
+    panel = view.page.locator("#operation-presentation-surface")
+    await expect(panel.get_by_text("Applied manifest", exact=True)).to_be_visible()
+    await expect(panel.get_by_role("button", name="Show all 24 lines")).to_be_visible()
+    await expect(panel.get_by_text("Recorded data", exact=True)).to_be_visible()
+    await expect(panel.get_by_text("hello from the selected container", exact=True)).to_be_visible()
+    await expect(panel.locator(".cm-agentplane-special-char")).to_contain_text("ZWSP")
+
+    sections = await panel.locator(".agentplane-operation-section").evaluate_all(
+        "elements => elements.map(element => {"
+        "const style = getComputedStyle(element);"
+        "const code = element.querySelector('.agentplane-code-block');"
+        "return {padding: style.paddingLeft, border: style.borderLeftWidth, codeBorder: code && getComputedStyle(code).borderLeftWidth};"
+        "})"
+    )
+    assert len(sections) == 5
+    assert all(section["padding"] != "0px" for section in sections)
+    assert [section["border"] for section in sections] == ["1px", "0px", "1px", "1px", "1px"]
+    assert all(section["codeBorder"] in (None, "0px") for section in sections)
+    await view.capture(target=panel, name=f"action_operation_surfaces_{viewport.width}")
+
+    output = panel.locator(".agentplane-output-disclosure")
+    toggle = output.get_by_role("button").first
+    editor = output.locator(".agentplane-code-block-container")
+    await expect(toggle).to_have_attribute("aria-expanded", "true")
+    await toggle.click()
+    await expect(toggle).to_have_attribute("aria-expanded", "false")
+    await expect(editor).to_have_count(0)
+    await expect(output.locator(".agentplane-code-block-placeholder")).to_be_attached()
+
+    await view.page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+    await expect(editor).to_have_count(0)
+    await view.page.evaluate("() => window.scrollTo(0, 0)")
+    await toggle.click()
+    await expect(toggle).to_have_attribute("aria-expanded", "true")
+    await expect(editor).to_be_attached()
+    lines = await editor.locator(".cm-line").all_text_contents()
+    assert lines == ["hello from the selected container", ""]
+    selected = await editor.locator(".cm-line").first.evaluate(
+        "line => {"
+        "const selection = window.getSelection();"
+        "const range = document.createRange();"
+        "range.selectNodeContents(line);"
+        "selection?.removeAllRanges();"
+        "selection?.addRange(range);"
+        "return selection?.toString();"
+        "}"
+    )
+    assert selected == "hello from the selected container"
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP], ids=["desktop"])
+async def test_action_code_releases_and_remounts_with_current_width(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
+) -> None:
+    await app.mount_operation_presentation()
+    page = view.page
+    sample = page.locator("#parked-code-section")
+    editor = sample.locator(".agentplane-code-block-container")
+    await sample.scroll_into_view_if_needed()
+    await expect(editor.locator(".agentplane-code-block")).to_be_attached()
+    initial_height = await editor.evaluate("element => element.getBoundingClientRect().height")
+
+    await page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+    placeholder = sample.locator(".agentplane-code-block-placeholder")
+    await expect(placeholder).to_be_attached()
+    parked_height = await placeholder.evaluate("element => element.getBoundingClientRect().height")
+    assert abs(parked_height - initial_height) <= 1
+
+    await page.set_viewport_size({"width": 360, "height": viewport.height})
+    await expect(placeholder).to_be_attached()
+    assert await placeholder.evaluate("element => element.getBoundingClientRect().height") == parked_height
+    await sample.scroll_into_view_if_needed()
+    await expect(editor.locator(".agentplane-code-block")).to_be_attached()
+    resized_height = await editor.evaluate("element => element.getBoundingClientRect().height")
+    assert resized_height > initial_height + 100
+
+    first_line = editor.locator(".cm-line").first
+    selected = await first_line.evaluate(
+        "line => {"
+        "const selection = window.getSelection();"
+        "const range = document.createRange();"
+        "range.selectNodeContents(line);"
+        "selection?.removeAllRanges();"
+        "selection?.addRange(range);"
+        "return selection?.toString();"
+        "}"
+    )
+    assert selected == await first_line.text_content()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

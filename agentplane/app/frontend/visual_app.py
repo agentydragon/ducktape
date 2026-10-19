@@ -111,6 +111,10 @@ class AgentplaneFixture:
         )
         await expect(self.page.locator("#app > *").first).to_be_attached()
 
+    async def mount_operation_presentation(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.mountOperationPresentation()")
+        await expect(self.page.locator("#operation-presentation-surface")).to_be_attached()
+
     async def age_outage(self, milliseconds: int) -> None:
         await self.page.evaluate("ms => window.agentplaneVisual.ageOutage(ms)", milliseconds)
 

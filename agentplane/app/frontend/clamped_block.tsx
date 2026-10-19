@@ -21,6 +21,7 @@ export function ClampedBlock({
   maxHeightRem,
   lines,
   label = "Expanded content",
+  expandLabel,
   header,
   expansion,
   stickyCollapse = true,
@@ -30,6 +31,8 @@ export function ClampedBlock({
   lines?: number;
   /** Short context for the sticky collapse control while expanded. */
   label?: string;
+  /** Override the clipped-content action when a source line count is not meaningful. */
+  expandLabel?: string;
   /** Existing heading to turn into the sticky control row when the block opens. */
   header?: ReactNode;
   expansion?: readonly [boolean, (expanded: boolean) => void];
@@ -85,7 +88,7 @@ export function ClampedBlock({
             fontSize: "var(--mantine-font-size-xs)",
           }}
         >
-          {lines !== undefined && lines > 1 ? `Show all ${lines} lines` : "Show all"}
+          {expandLabel ?? (lines !== undefined && lines > 1 ? `Show all ${lines} lines` : "Show all")}
         </UnstyledButton>
       )}
     </div>

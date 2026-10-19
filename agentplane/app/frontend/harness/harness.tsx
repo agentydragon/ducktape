@@ -31,6 +31,7 @@ import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../..
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
 import { DisclosureVisual } from "./disclosure_visual";
+import { OperationPresentationVisual } from "./operation_presentation_visual";
 import { LocalCommands } from "../threads/local_commands";
 import { streamRegistry } from "../stream_status";
 import { ThemeProvider } from "../theme";
@@ -3188,6 +3189,9 @@ const visualHarness = {
   },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);
+  },
+  mountOperationPresentation(): void {
+    mount(<OperationPresentationVisual />);
   },
   addProvisioningSandbox,
   addSuspendedSandboxes,

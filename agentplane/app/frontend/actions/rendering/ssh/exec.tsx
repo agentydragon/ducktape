@@ -20,6 +20,8 @@ function ExecArguments({ args }: PreviewProps<SshExecArguments>): JSX.Element {
       target={`${args.user}@${args.host}`}
       command={args.command}
       notes={args.timeout_seconds == null ? [] : [`Timeout ${args.timeout_seconds} s`]}
+      releaseWhenFar
+      surface="framed"
     />
   );
 }
@@ -57,6 +59,8 @@ function ExecResult({ result }: ResultPreviewProps<SshExecResult>): JSX.Element 
           name="stdout"
           note={result.stdout_truncated ? "truncated by the server" : undefined}
           text={result.stdout}
+          releaseWhenFar
+          surface="framed"
         />
       )}
       {result.stderr !== "" && (
@@ -64,6 +68,8 @@ function ExecResult({ result }: ResultPreviewProps<SshExecResult>): JSX.Element 
           name="stderr"
           note={result.stderr_truncated ? "truncated by the server" : undefined}
           text={result.stderr}
+          releaseWhenFar
+          surface="framed"
         />
       )}
       {result.stdout === "" && result.stderr === "" && (
