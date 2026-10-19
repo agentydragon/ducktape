@@ -13,12 +13,12 @@ import (
 const settingPrefix = "AGENTPLANE_EGRESS_"
 
 // config is the proxy's deployment contract: each setting is a YAML key of the file named by
-// AGENTPLANE_EGRESS_CONFIG_FILE and the AGENTPLANE_EGRESS_* environment variable of the same name,
-// loaded by util/settings.
+// AGENTPLANE_EGRESS_CONFIG_FILE, with AGENTPLANE_EGRESS_* environment overrides for scalar
+// settings. Lists and maps are file-only. Settings are loaded by util/settings.
 type config struct {
 	RulesNamespace                  string            `yaml:"rules_namespace"`
 	CredentialsNamespace            string            `yaml:"credentials_namespace"`
-	AllowedServiceAccountNamespaces []string          `yaml:"allowed_service_account_namespaces"`
+	AllowedServiceAccountNamespaces []string          `env:"-" yaml:"allowed_service_account_namespaces"`
 	ListenHost                      string            `yaml:"listen_host"`
 	ListenPort                      int               `yaml:"listen_port"`
 	AdminHost                       string            `yaml:"admin_host"`
@@ -29,16 +29,16 @@ type config struct {
 	CAKey                           string            `yaml:"ca_key"`
 	UpstreamCAFile                  string            `yaml:"upstream_ca_file"`
 	TokenAudience                   string            `yaml:"token_audience"`
-	ProjectedTokenAudiences         []string          `yaml:"projected_token_audiences"`
+	ProjectedTokenAudiences         []string          `env:"-" yaml:"projected_token_audiences"`
 	Kubeconfig                      string            `yaml:"kubeconfig"`
-	LogLevels                       map[string]string `yaml:"log_levels"`
+	LogLevels                       map[string]string `env:"-" yaml:"log_levels"`
 	ResyncSeconds                   int               `yaml:"resync_seconds"`
 	DatabaseURL                     string            `yaml:"database_url"`
 	DecisionHistorySize             int               `yaml:"decision_history_size"`
 	DecisionRetentionDays           int               `yaml:"decision_retention_days"`
 	DecisionQueueSize               int               `yaml:"decision_queue_size"`
 	DecisionBatchSize               int               `yaml:"decision_batch_size"`
-	ExemptNetworks                  []netip.Prefix    `yaml:"exempt_networks"`
+	ExemptNetworks                  []netip.Prefix    `env:"-" yaml:"exempt_networks"`
 }
 
 func defaultConfig() config {
