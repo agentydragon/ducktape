@@ -23,9 +23,6 @@ _MIGRATOR = get_required_path(
 )
 _GRACE_SECONDS = 55
 
-# Keys of `Settings` only the Python proxy reads: the Go binary rejects keys it does not know.
-_PYTHON_ONLY = {"confdir", "decision_flush_seconds"}
-
 
 async def expect_health(
     admin_port: int, status: int, *, alive: Callable[[], bool], exit_description: Callable[[], str]
@@ -103,11 +100,7 @@ async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[Go
     assert migrator.returncode == 0, output.decode()
     config = directory / f"go-replica-{settings.listen_port}.yaml"
     config.touch(mode=0o600)
-    config.write_text(
-        json.dumps(
-            {**settings.model_dump(mode="json", exclude=_PYTHON_ONLY, exclude_none=True), "database_url": database_url}
-        )
-    )
+    config.write_text(json.dumps({**settings.model_dump(mode="json", exclude_none=True), "database_url": database_url}))
     stderr = config.with_suffix(".stderr")
     with stderr.open("wb") as log:
         process = await asyncio.create_subprocess_exec(

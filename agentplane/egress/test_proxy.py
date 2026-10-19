@@ -112,7 +112,6 @@ def replica_settings(
         kubeconfig=kubeconfig(tmp_path / f"kube-{name}.yaml", api_port),
         ca_cert=cert,
         ca_key=key,
-        confdir=tmp_path / name,
         listen_host="127.0.0.1",
         listen_port=pick_free_port(),
         admin_host="127.0.0.1",

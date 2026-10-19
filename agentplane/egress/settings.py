@@ -1,8 +1,6 @@
-"""Egress Proxy deployment settings and configuration file name.
+"""Deployment schema for the Go egress proxy's flags, environment and YAML file.
 
-CLEANUP(added 2026-10-17): Delete once `cluster/cdk8s/agentplane/egress.py` deploys the Go proxy. Until
-then it authors the flags of the pinned Python image, and `testing/go_replica.py` dumps it as the
-Go binary's settings file, which rejects a key the binary does not know.
+The black-box tests serialize this model into the Go binary's strict settings loader.
 """
 
 from __future__ import annotations
@@ -43,12 +41,11 @@ class Settings(YamlFileSettings):
     agent_api_port: int = Field(default=8082, description="Agent-facing HTTP port serving /v1/rules.")
     ca_cert: Path = Field(description="PEM certificate of the interception CA the runner containers trust.")
     ca_key: Path = Field(description="PEM private key of the interception CA.")
-    confdir: Path = Field(description="Writable directory mitmproxy keeps its CA and issued leaves in.")
     upstream_ca_file: Path | None = Field(
         default=None,
         description="PEM bundle this proxy verifies destinations against. Needs the cluster's own CA on "
         "top of the public roots for a `clusterInternal` rule to reach the API server, whose serving "
-        "certificate no public root signs. Unset falls back to mitmproxy's bundled roots, which reach "
+        "certificate no public root signs. Unset falls back to the image's system roots, which reach "
         "public hosts only.",
     )
     token_audience: str = Field(min_length=1, description="Audience of the sidecars' projected tokens.")
@@ -61,13 +58,12 @@ class Settings(YamlFileSettings):
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     log_levels: LogLevels
 
-    resync_seconds: int = Field(default=300, gt=0, description="Watch lifetime; every kind is relisted this often.")
+    resync_seconds: int = Field(default=300, ge=2, le=86400, description="Watch lifetime in whole seconds.")
     database_url: str = Field(repr=False, description="Shared diagnostic PostgreSQL database; migrated separately.")
     decision_history_size: int = Field(default=200, ge=1, le=1000)
     decision_retention_days: int = Field(default=7, ge=1, le=365)
     decision_queue_size: int = Field(default=2000, ge=1, le=100000)
     decision_batch_size: int = Field(default=100, ge=1, le=1000)
-    decision_flush_seconds: float = Field(default=5, gt=0, le=20)
     exempt_networks: list[IPv4Network | IPv6Network] = Field(
         default_factory=list,
         description="Networks an admitted host may resolve into although they are not globally reachable.",

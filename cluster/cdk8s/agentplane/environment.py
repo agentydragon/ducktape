@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from enum import StrEnum
 
 from cdk8s import Duration
 from cdk8s_plus_34 import DeploymentStrategy
@@ -50,20 +49,12 @@ class LlmIngressProps:
     log_llm_requests: bool = False
 
 
-class EgressRuntime(StrEnum):
-    """CLEANUP: remove the Python variant after the testing-first Go cutover reaches staging."""
-
-    PYTHON = "python"
-    GO = "go"
-
-
 @dataclass(frozen=True)
 class EgressProps:
     # The interception CA's Secret/Bundle/ConfigMap name; the runner SandboxTemplate
     # mounts the ConfigMap by the same name.
     ca_secret_name: str
     credentials_namespace: str
-    runtime: EgressRuntime
     # Static relay clients outside the runner namespace; admission is not an egress grant.
     external_workload_namespaces: tuple[str, ...] = ()
 

@@ -53,7 +53,7 @@ from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
-from cluster.cdk8s.agentplane.environment import EgressRuntime, Environment
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -75,10 +75,8 @@ from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "egress"
-_PROXY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress"
-_MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-migrate"
-_GO_PROXY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy"
-_GO_MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate"
+_PROXY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy"
+_MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate"
 _LABELS = {"app.kubernetes.io/name": NAME}
 PROXY_PORT = 8888
 # The API server's own ServiceAccount token audience (Talos `--api-audiences`, equal to
@@ -656,10 +654,7 @@ class Egress(Construct):
         settings = SettingsFile(
             self,
             "settings",
-            metadata=ApiObjectMetadata(
-                name=f"{NAME}-go-settings" if env.egress.runtime == EgressRuntime.GO else f"{NAME}-settings",
-                namespace=env.namespace,
-            ),
+            metadata=ApiObjectMetadata(name=f"{NAME}-go-settings", namespace=env.namespace),
             model=Settings,
             content={
                 "allowed_service_account_namespaces": [env.namespace, *env.egress.external_workload_namespaces],
@@ -808,32 +803,24 @@ class Egress(Construct):
             name="upstream-ca",
         )
 
-        args: dict[str, object] = {
-            "rules_namespace": self.env.namespace,
-            "credentials_namespace": self.env.egress.credentials_namespace,
-            "listen_port": self.proxy.pod_port,
-            "admin_port": self.admin.pod_port,
-            "agent_api_port": self.agent_api.pod_port,
-            "ca_cert": "/etc/agentplane-egress/ca/tls.crt",
-            "ca_key": "/etc/agentplane-egress/ca/tls.key",
-        }
-        match self.env.egress.runtime:
-            case EgressRuntime.GO:
-                image, migrate_image = _GO_PROXY_IMAGE, _GO_MIGRATE_IMAGE
-                migrate_env = {"DATABASE_URL": self.database_url}
-            case EgressRuntime.PYTHON:
-                image, migrate_image = _PROXY_IMAGE, _MIGRATE_IMAGE
-                migrate_env = {env_name(Settings, "database_url"): self.database_url}
-                args["confdir"] = "/var/lib/agentplane-egress"
-        args.update(upstream_ca_file=f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}", token_audience=WORKLOAD_TOKEN_AUDIENCE)
-
         workload = add_service_workload(
             self,
             self.env,
             serves=[self.agent_api, self.proxy],
             container="proxy",
-            image=f"{image}:{_PLACEHOLDER_TAG}",
-            args=cli_args(Settings, **args),
+            image=f"{_PROXY_IMAGE}:{_PLACEHOLDER_TAG}",
+            args=cli_args(
+                Settings,
+                rules_namespace=self.env.namespace,
+                credentials_namespace=self.env.egress.credentials_namespace,
+                listen_port=self.proxy.pod_port,
+                admin_port=self.admin.pod_port,
+                agent_api_port=self.agent_api.pod_port,
+                ca_cert="/etc/agentplane-egress/ca/tls.crt",
+                ca_key="/etc/agentplane-egress/ca/tls.key",
+                upstream_ca_file=f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}",
+                token_audience=WORKLOAD_TOKEN_AUDIENCE,
+            ),
             env_variables={env_name(Settings, "database_url"): self.database_url, **self.container_env},
             extra_ports=[self.admin.container_port()],
             readiness=http_probe("/healthz", port=self.admin.pod_port, initial_delay_seconds=3, period_seconds=10),
@@ -844,9 +831,9 @@ class Egress(Construct):
             ),
             termination_grace=Duration.seconds(60),
             migrate=migrate_init_container(
-                f"{migrate_image}:{_PLACEHOLDER_TAG}",
+                f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
                 name="migrate",
-                env_variables={**migrate_env, **self.migrate_env},
+                env_variables={"DATABASE_URL": self.database_url, **self.migrate_env},
                 image_pull_policy=self.migrate_pull_policy,
                 memory_limit=self.migrate_memory_limit,
             ),
@@ -857,10 +844,6 @@ class Egress(Construct):
         )
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
-        if self.env.egress.runtime == EgressRuntime.PYTHON:
-            workload.container.mount(
-                "/var/lib/agentplane-egress", Volume.from_empty_dir(self, "confdir-volume", "confdir")
-            )
         settings.mount_into(workload.container, env=Settings.config_file_env)
         return workload
 
