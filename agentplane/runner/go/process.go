@@ -103,16 +103,6 @@ func (p *Process) Start(ctx context.Context) error {
 	if err != nil {
 		return p.cleanupFailedStart(fmt.Errorf("create native stdin pipe: %w", err))
 	}
-	if err := unix.SetNonblock(int(stdinWriter.Fd()), true); err != nil {
-		_ = stdinReader.Close()
-		_ = stdinWriter.Close()
-		return p.cleanupFailedStart(fmt.Errorf("make native stdin cancellable: %w", err))
-	}
-	if err := unix.SetNonblock(int(stdinReader.Fd()), false); err != nil {
-		_ = stdinReader.Close()
-		_ = stdinWriter.Close()
-		return p.cleanupFailedStart(fmt.Errorf("make native stdin blocking: %w", err))
-	}
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		_ = stdinReader.Close()
@@ -260,8 +250,7 @@ func (p *Process) Write(ctx context.Context, data []byte) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	// Writes are serialized with each other; CloseStdin marks the stream closed
-	// before waiting for an in-flight nonblocking write to leave its poll loop.
+	// Writes are serialized; closing the pollable pipe interrupts any pending write.
 	return writeProcessInput(ctx, p, stdin, data)
 }
 
@@ -285,10 +274,6 @@ func (p *Process) CloseStdin() error {
 	p.stdinClosed = true
 	p.mu.Unlock()
 
-	// A writer only holds writeMu across nonblocking writes and short poll intervals.
-	// Marking stdin closed first makes it leave its loop before this closes the FD.
-	p.writeMu.Lock()
-	defer p.writeMu.Unlock()
 	if wasClosed {
 		return nil
 	}
@@ -524,39 +509,36 @@ func environment(values map[string]string) []string {
 func writeProcessInput(ctx context.Context, p *Process, stdin *os.File, data []byte) error {
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
-	for len(data) != 0 {
-		p.mu.Lock()
-		closed := p.stdinClosed
-		p.mu.Unlock()
-		if closed {
-			return errors.New("native harness stdin is closed")
+	p.mu.Lock()
+	closed := p.stdinClosed
+	p.mu.Unlock()
+	if closed {
+		return errors.New("native harness stdin is closed")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	deadline, _ := ctx.Deadline()
+	if err := stdin.SetWriteDeadline(deadline); err != nil {
+		return err
+	}
+	cancelled := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = stdin.SetWriteDeadline(time.Now())
+		close(cancelled)
+	})
+	defer func() {
+		// A cancellation callback must finish before the next writer resets the deadline.
+		if !stop() {
+			<-cancelled
 		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		fd := int(stdin.Fd())
-		n, err := unix.Write(fd, data)
-		if err == unix.EINTR {
-			continue
-		}
-		if err == unix.EAGAIN || err == unix.EWOULDBLOCK {
-			poll := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLOUT}}
-			_, pollErr := unix.Poll(poll, 50)
-			if pollErr == unix.EINTR {
-				continue
-			}
-			if pollErr != nil {
-				return fmt.Errorf("wait to write native stdin: %w", pollErr)
-			}
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("write native stdin: %w", err)
-		}
-		if n == 0 {
-			return io.ErrShortWrite
-		}
-		data = data[n:]
+	}()
+	_, err := stdin.Write(data)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err != nil {
+		return fmt.Errorf("write native stdin: %w", err)
 	}
 	return nil
 }

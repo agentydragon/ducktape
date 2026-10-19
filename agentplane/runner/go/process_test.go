@@ -140,7 +140,7 @@ func TestProcessStartFailureCompletesWait(t *testing.T) {
 	}
 }
 
-func TestCloseStdinUnblocksPendingWrite(t *testing.T) {
+func TestInputCancellationAndCloseUnblockPendingWrites(t *testing.T) {
 	process, err := NewProcess(ProcessConfig{Command: []string{"/bin/sleep", "60"}})
 	if err != nil {
 		t.Fatal(err)
@@ -157,11 +157,30 @@ func TestCloseStdinUnblocksPendingWrite(t *testing.T) {
 		_, _ = process.Wait(cleanupCtx)
 	}()
 	writeDone := make(chan error, 1)
+	writeCtx, cancelWrite := context.WithCancel(context.Background())
+	defer cancelWrite()
 	go func() {
-		writeDone <- process.Write(context.Background(), make([]byte, 8*1024*1024))
+		writeDone <- process.Write(writeCtx, make([]byte, 8*1024*1024))
 	}()
 	// The harness never reads stdin, so this write must block once the pipe fills.
 	time.Sleep(50 * time.Millisecond)
+	cancelWrite()
+	select {
+	case err := <-writeDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("pending write after cancellation = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending input write did not observe context cancellation")
+	}
+	go func() {
+		writeDone <- process.Write(context.Background(), make([]byte, 8*1024*1024))
+	}()
+	select {
+	case err := <-writeDone:
+		t.Fatalf("previous cancellation prevented a new write: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
 	closed := make(chan error, 1)
 	go func() { closed <- process.CloseStdin() }()
 	select {
