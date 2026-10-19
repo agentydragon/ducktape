@@ -232,8 +232,8 @@ def seaweed(scope: Construct) -> Seaweed:
                 # any single-node outage. Tolerate the CP taint matching volume + s3.
                 replicas=3,
                 # Raft log, snapshots, term/vote and TopologyId must survive Pod replacement.
-                # Adoption on the existing StatefulSet requires the migration in
-                # cluster/docs/runbooks/seaweedfs_master_persistence.md before rolling any Pod.
+                # Existing masters were migrated in October 2026; historical note:
+                # cluster/docs/lessons_learned/2026_10_19_seaweedfs_master_persistence.md.
                 persistence=SeaweedSpecMasterPersistence(
                     enabled=True,
                     storage_class_name="local-path-ovh-ssd",
