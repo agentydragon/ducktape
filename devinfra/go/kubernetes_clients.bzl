@@ -2,36 +2,22 @@
 
 load("@bazel_skylib//lib:shell.bzl", "shell")
 load("@io_bazel_rules_go//go:def.bzl", "GoPath", "go_library", "go_path")
-
-_GO_TOOLCHAIN = "@io_bazel_rules_go//go:toolchain"
+load(":gopath_codegen.bzl", "GO_TOOLCHAIN", "run_gopath_codegen")
 
 def _generate_impl(ctx):
     gopath = ctx.attr.gopath[GoPath]
-    sdk = ctx.toolchains[_GO_TOOLCHAIN].sdk
     groups = {}
     outputs = []
     for package, paths in ctx.attr.packages.items():
         files = [ctx.actions.declare_file(ctx.label.name + "/" + path) for path in paths]
         groups[package] = depset(files)
         outputs.extend(files)
-    ctx.actions.run_shell(
-        inputs = depset(
-            direct = [gopath.gopath_file, sdk.root_file, sdk.go, sdk.package_list],
-            transitive = [sdk.headers, sdk.libs, sdk.srcs, sdk.tools],
-        ),
-        tools = [ctx.attr._client_gen[DefaultInfo].files_to_run, ctx.attr._lister_gen[DefaultInfo].files_to_run, ctx.attr._informer_gen[DefaultInfo].files_to_run, sdk.go],
+    run_gopath_codegen(
+        ctx = ctx,
+        gopath = gopath,
+        tools = [ctx.attr._client_gen[DefaultInfo].files_to_run, ctx.attr._lister_gen[DefaultInfo].files_to_run, ctx.attr._informer_gen[DefaultInfo].files_to_run],
         outputs = outputs,
         command = """
-set -euo pipefail
-GOROOT=$({go} env GOROOT)
-export GOROOT
-export PATH="$GOROOT/bin:/usr/bin:/bin"
-export CGO_ENABLED=0 GO111MODULE=off GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local GOWORK=off
-export GOARCH={goarch} GOOS={goos}
-export GOPATH="$PWD"/{gopath}
-GOCACHE=$(mktemp -d "${{TMPDIR:-/tmp}}/kubernetes-codegen.XXXXXX")
-trap 'rm -rf "$GOCACHE"' EXIT
-export GOCACHE
 OUT="$PWD"/{out}
 {client_gen} --go-header-file /dev/null --input-base {input_base} --input api/v1alpha1 \
     --output-dir "$OUT/clientset" --output-pkg {package}/clientset --clientset-name versioned --fake-clientset=false
@@ -39,10 +25,6 @@ OUT="$PWD"/{out}
 {informer_gen} --go-header-file /dev/null --output-dir "$OUT/informers" --output-pkg {package}/informers \
     --single-directory --versioned-clientset-package {package}/clientset/versioned --listers-package {package}/listers {input}
 """.format(
-            go = shell.quote(sdk.go.path),
-            goarch = shell.quote(sdk.goarch),
-            goos = shell.quote(sdk.goos),
-            gopath = shell.quote(gopath.gopath_file.path),
             out = shell.quote(ctx.bin_dir.path + "/" + ctx.label.package + "/" + ctx.label.name),
             client_gen = shell.quote(ctx.executable._client_gen.path),
             lister_gen = shell.quote(ctx.executable._lister_gen.path),
@@ -51,7 +33,6 @@ OUT="$PWD"/{out}
             input = shell.quote(ctx.attr.input_base + "/api/v1alpha1"),
             package = shell.quote(ctx.attr.importpath),
         ),
-        use_default_shell_env = False,
         mnemonic = "KubernetesClientGen",
         progress_message = "Generating Kubernetes clients and informers for %{label}",
     )
@@ -68,7 +49,7 @@ _generate = rule(
         "_lister_gen": attr.label(default = Label("@io_k8s_code_generator//cmd/lister-gen"), cfg = "exec", executable = True),
         "_informer_gen": attr.label(default = Label("@io_k8s_code_generator//cmd/informer-gen"), cfg = "exec", executable = True),
     },
-    toolchains = [_GO_TOOLCHAIN],
+    toolchains = [GO_TOOLCHAIN],
 )
 
 def kubernetes_clients(name, api, input_base, importpath, kinds):

@@ -1,4 +1,5 @@
 exports_files([
     "controller_gen.bzl",
+    "gopath_codegen.bzl",
     "kubernetes_clients.bzl",
 ])
