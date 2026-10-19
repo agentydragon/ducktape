@@ -665,10 +665,10 @@ def build_bundle(
                 assets = _classify_test_assets(test, baseline, baseline_source, target_dir)
         else:
             assets = [ReviewAsset(path=asset.path, label=asset.label) for asset in test.manifest.assets]
-        for asset in assets:
-            asset.candidate_sha256 = _share_png(target_dir / asset.path, output_root)
-            asset.baseline_sha256 = _share_png(target_dir / "baseline" / asset.path, output_root)
-            asset.diff_sha256 = _share_png(target_dir / "diff" / asset.path, output_root)
+        for review_asset in assets:
+            review_asset.candidate_sha256 = _share_png(target_dir / review_asset.path, output_root)
+            review_asset.baseline_sha256 = _share_png(target_dir / "baseline" / review_asset.path, output_root)
+            review_asset.diff_sha256 = _share_png(target_dir / "diff" / review_asset.path, output_root)
         review_test = ReviewTest(
             target_label=test.target_label,
             slug=test.slug,
