@@ -1,0 +1,121 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: piraeus-storage-bench-20261019-seaweed-retry1
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    benchmark.ducktape.io/owner: seaweedfs-hdd-retry-1
+  annotations:
+    description: Disposable single-writer SeaweedFS Forgejo benchmark retry.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: repo-seaweedfs
+  namespace: piraeus-storage-bench-20261019-seaweed-retry1
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: seaweedfs-ovh
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: piraeus-storage-bench-db
+  namespace: piraeus-storage-bench-20261019-seaweed-retry1
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie@sha256:51bc94428be3df3e234447278e33803544a93d27a57a4b6af737f218d6472d12
+  bootstrap:
+    initdb:
+      database: bench_seed
+      owner: bench
+      secret:
+        name: piraeus-storage-bench-db-app
+  affinity:
+    nodeSelector:
+      kubernetes.io/hostname: ovh-ns104952
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    storageClass: local-path-ovh-ssd
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: piraeus-bench-seaweedfs
+  namespace: piraeus-storage-bench-20261019-seaweed-retry1
+spec:
+  name: bench_seaweedfs
+  owner: bench
+  cluster:
+    name: piraeus-storage-bench-db
+  databaseReclaimPolicy: delete
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: piraeus-storage-bench-valkey
+  namespace: piraeus-storage-bench-20261019-seaweed-retry1
+  labels:
+    app.kubernetes.io/name: piraeus-storage-bench-valkey
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: piraeus-storage-bench-valkey
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: piraeus-storage-bench-valkey
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: ovh-ns104952
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      containers:
+        - name: valkey
+          image: docker.io/valkey/valkey@sha256:a0dbf4c1d5708782907c10e2c72deff317518518b5288a58416981d9db95d30b
+          args: ["--save", "", "--appendonly", "no"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: piraeus-storage-bench-valkey
+  namespace: piraeus-storage-bench-20261019-seaweed-retry1
+spec:
+  selector:
+    app.kubernetes.io/name: piraeus-storage-bench-valkey
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis

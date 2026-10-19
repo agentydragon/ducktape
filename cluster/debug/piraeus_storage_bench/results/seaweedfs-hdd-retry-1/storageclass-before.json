@@ -1,0 +1,20 @@
+{
+  "metadata": {
+    "name": "seaweedfs-ovh",
+    "uid": "a04562e3-ce73-4a2d-809a-f8f541948436"
+  },
+  "provisioner": "seaweedfs-csi-driver",
+  "volumeBindingMode": "WaitForFirstConsumer",
+  "reclaimPolicy": "Delete",
+  "parameters": {},
+  "allowedTopologies": [
+    {
+      "matchLabelExpressions": [
+        {
+          "key": "topology.kubernetes.io/zone",
+          "values": ["hil-ovh"]
+        }
+      ]
+    }
+  ]
+}

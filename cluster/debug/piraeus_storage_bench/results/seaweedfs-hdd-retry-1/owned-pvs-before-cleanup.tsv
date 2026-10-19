@@ -1,0 +1,3 @@
+claim	pvc_uid	pv_name	pv_uid	collection
+piraeus-storage-bench-db-1	62f4af30-8430-4e4b-af0d-9f029c98f190	pvc-62f4af30-8430-4e4b-af0d-9f029c98f190	318ec6af-3e2c-4a85-9433-db3eadbd08da
+repo-seaweedfs	5e6d05fb-db98-4118-9ea4-0eb9aa422ff0	pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0	0a16d1d8-ec29-40e7-8e54-3990aa81d34e	pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0

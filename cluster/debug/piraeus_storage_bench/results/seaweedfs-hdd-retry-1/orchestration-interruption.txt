@@ -1,0 +1,7 @@
+first_attempt_helm_install_started_at_utc=2026-10-19T06:24:07Z
+first_attempt_observed_error=Kubernetes cluster unreachable: Get https://api.allegedly.works:6443/version: dial tcp: lookup api.allegedly.works: device or resource busy
+app_resources_created=false
+helm_release_created=false
+repo_pvc_bound=false
+recovered_at_utc=2026-10-19T06:25:06Z
+recovery_check=Kubernetes /readyz ok; Seaweed provider Pods 10/10 Ready; StorageClass UID unchanged

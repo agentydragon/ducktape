@@ -1,0 +1,10 @@
+Release "forgejo-bench" does not exist. Installing it now.
+NAME: forgejo-bench
+LAST DEPLOYED: Sun Oct 18 23:25:12 2026
+NAMESPACE: piraeus-storage-bench-20261019-seaweed-retry1
+STATUS: deployed
+REVISION: 1
+NOTES:
+1. Get the application URL by running these commands:
+  echo "Visit http://127.0.0.1:3000 to use your application"
+  kubectl --namespace piraeus-storage-bench-20261019-seaweed-retry1 port-forward svc/forgejo-bench-http 3000:3000

@@ -1,0 +1,106 @@
+global:
+  imageRegistry: ""
+
+image:
+  registry: code.forgejo.org
+  repository: forgejo/forgejo
+  tag: 15.0.8-rootless
+  digest: sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34
+  rootless: true
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+nodeSelector:
+  kubernetes.io/hostname: ovh-ns102453
+
+strategy:
+  type: Recreate
+
+gitea:
+  admin:
+    existingSecret: piraeus-storage-bench-db-app
+    username: bench
+    email: bench@invalid.example
+    passwordMode: initialOnlyNoReset
+  config:
+    APP_NAME: Piraeus SeaweedFS storage benchmark retry
+    RUN_MODE: prod
+    server:
+      DOMAIN: forgejo-bench-http.piraeus-storage-bench-20261019-seaweed-retry1.svc.cluster.local
+      SSH_DOMAIN: forgejo-bench-ssh.piraeus-storage-bench-20261019-seaweed-retry1.svc.cluster.local
+      ROOT_URL: http://forgejo-bench-http.piraeus-storage-bench-20261019-seaweed-retry1.svc.cluster.local:3000/
+      HTTP_PORT: 3000
+      SSH_PORT: 2222
+      DISABLE_SSH: true
+      START_SSH_SERVER: false
+      LFS_START_SERVER: false
+    session:
+      PROVIDER: db
+    cache:
+      ENABLED: true
+      ADAPTER: redis
+      HOST: redis://piraeus-storage-bench-valkey.piraeus-storage-bench-20261019-seaweed-retry1.svc.cluster.local:6379/0
+    queue:
+      TYPE: redis
+      CONN_STR: redis://piraeus-storage-bench-valkey.piraeus-storage-bench-20261019-seaweed-retry1.svc.cluster.local:6379/0
+    actions:
+      ENABLED: false
+    metrics:
+      ENABLED: false
+    security:
+      INSTALL_LOCK: true
+    database:
+      DB_TYPE: postgres
+      HOST: piraeus-storage-bench-db-rw.piraeus-storage-bench-20261019-seaweed-retry1.svc.cluster.local:5432
+      NAME: bench_seaweedfs
+      USER: bench
+    storage:
+      STORAGE_TYPE: local
+  additionalConfigFromEnvs:
+    - name: FORGEJO__database__PASSWD
+      valueFrom:
+        secretKeyRef:
+          name: piraeus-storage-bench-db-app
+          key: password
+    - name: FORGEJO__security__SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: piraeus-storage-bench-forgejo-key
+          key: secretKey
+
+service:
+  http:
+    type: ClusterIP
+    port: 3000
+  ssh:
+    type: ClusterIP
+    port: 2222
+
+resources:
+  limits:
+    cpu: "4"
+    memory: 8Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+persistence:
+  enabled: true
+  create: false
+  claimName: repo-seaweedfs
+  accessModes:
+    - ReadWriteMany
+
+postgresql:
+  enabled: false
+postgresql-ha:
+  enabled: false
+redis-cluster:
+  enabled: false
+valkey-cluster:
+  enabled: false
+memcached:
+  enabled: false
+
+serviceAccount:
+  create: true

@@ -1,0 +1,4 @@
+observed_at_utc	pod	phase	node	restarts	init_status	container_status	warning_events
+2026-10-19T06:25:19Z	forgejo-bench-5d55cdc7db-rhv4f	Pending	ovh-ns102453	0	init-directories	0	PodInitializing			; init-app-ini	0	PodInitializing			; configure-gitea	0	PodInitializing				forgejo	0	PodInitializing
+2026-10-19T06:25:30Z	forgejo-bench-5d55cdc7db-rhv4f	Running	ovh-ns102453	0	init-directories	0				; init-app-ini	0				; configure-gitea	0					forgejo	0			2026-10-19T06:25:28Z
+2026-10-19T06:25:51Z	forgejo-bench-5d55cdc7db-rhv4f	Running	ovh-ns102453	0	init-directories	0				; init-app-ini	0				; configure-gitea	0					forgejo	0			2026-10-19T06:25:28Z

@@ -1,0 +1,27 @@
+app_started_at_utc=2026-10-19T06:25:52Z
+app_pod=forgejo-bench-5d55cdc7db-rhv4f
+app_pod_uid=c83e7756-a728-4acd-b060-304b15b13a12
+app_node=ovh-ns102453
+app_image_id=code.forgejo.org/forgejo/forgejo@sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34
+app_pvc=repo-seaweedfs
+pvc_uid=5e6d05fb-db98-4118-9ea4-0eb9aa422ff0
+pv_name=pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0
+pv_uid=0a16d1d8-ec29-40e7-8e54-3990aa81d34e
+volume_handle=/buckets/pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0
+collection=pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0
+piraeus-storage-bench-db-1	ovh-ns104952	postgres	ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie	ghcr.io/cloudnative-pg/postgresql@sha256:51bc94428be3df3e234447278e33803544a93d27a57a4b6af737f218d6472d12
+piraeus-storage-bench-valkey-797dd55786-lgvd7	ovh-ns104952	valkey	docker.io/valkey/valkey:9-alpine	docker.io/valkey/valkey@sha256:a0dbf4c1d5708782907c10e2c72deff317518518b5288a58416981d9db95d30b
+postgres_pod=piraeus-storage-bench-db-1
+postgres_node=ovh-ns104952
+postgres_image_id=ghcr.io/cloudnative-pg/postgresql@sha256:51bc94428be3df3e234447278e33803544a93d27a57a4b6af737f218d6472d12
+postgres_pvc=piraeus-storage-bench-db-1
+postgres_pv=pvc-62f4af30-8430-4e4b-af0d-9f029c98f190
+postgres_pv_uid=318ec6af-3e2c-4a85-9433-db3eadbd08da
+valkey_pod=piraeus-storage-bench-valkey-797dd55786-lgvd7
+valkey_node=ovh-ns104952
+valkey_image_id=docker.io/valkey/valkey@sha256:a0dbf4c1d5708782907c10e2c72deff317518518b5288a58416981d9db95d30b
+                                  1048576        91   1048485   0% /data
+forgejo version 15.0.8+gitea-1.22.0 (release name 15.0.8) built with GNU Make 4.4.1, go1.26.8 : bindata, timetzdata, sqlite, sqlite_unlock_notify
+valkey_version:9.1.2
+completed_at_utc=2026-10-19T06:27:56Z
+accepted_rows=80

@@ -1,0 +1,36 @@
+      DataNode seaweedfs-volume-hdd-0.seaweedfs-volume-hdd-peer.seaweedfs:8444 hdd(volume:349/400 active:349 free:51 remote:0) ssd(volume:0/0 active:0 free:0 remote:0)
+        Disk hdd(volume:349/400 active:349 free:51 remote:0) id:0
+          volume Id:1106, Size:83600, ReplicaPlacement:001, Collection:pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0, Version:3, Ttl:, FileCount:178, DeleteCount:176, DeletedByteCount:70514, ReadOnly:false, ModifiedAtSecond:1792391272
+      DataNode seaweedfs-volume-hdd-0.seaweedfs-volume-hdd-peer.seaweedfs:8444 hdd(volume:349/400 active:349 free:51 remote:0) ssd(volume:0/0 active:0 free:0 remote:0)
+        Disk hdd(volume:349/400 active:349 free:51 remote:0) id:0
+          volume Id:1107, Size:107248, ReplicaPlacement:001, Collection:pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0, Version:3, Ttl:, FileCount:180, DeleteCount:178, DeletedByteCount:75257, ReadOnly:false, ModifiedAtSecond:1792391272
+      DataNode seaweedfs-volume-hdd-0.seaweedfs-volume-hdd-peer.seaweedfs:8444 hdd(volume:349/400 active:349 free:51 remote:0) ssd(volume:0/0 active:0 free:0 remote:0)
+        Disk hdd(volume:349/400 active:349 free:51 remote:0) id:0
+          volume Id:1108, Size:95528, ReplicaPlacement:001, Collection:pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0, Version:3, Ttl:, FileCount:203, DeleteCount:199, DeletedByteCount:80143, ReadOnly:false, ModifiedAtSecond:1792391272
+      DataNode seaweedfs-volume-hdd-0.seaweedfs-volume-hdd-peer.seaweedfs:8444 hdd(volume:349/400 active:349 free:51 remote:0) ssd(volume:0/0 active:0 free:0 remote:0)
+        Disk hdd(volume:349/400 active:349 free:51 remote:0) id:0
+          volume Id:1109, Size:110120, ReplicaPlacement:001, Collection:pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0, Version:3, Ttl:, FileCount:188, DeleteCount:187, DeletedByteCount:77649, ReadOnly:false, ModifiedAtSecond:1792391272
+      DataNode seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 hdd(volume:348/400 active:348 free:52 remote:0) ssd(volume:0/0 active:0 free:0 remote:0)
+        Disk hdd(volume:348/400 active:348 free:52 remote:0) id:0
+          volume Id:1105, Size:74832, ReplicaPlacement:001, Collection:pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0, Version:3, Ttl:, FileCount:158, DeleteCount:157, DeletedByteCount:62378, ReadOnly:false, ModifiedAtSecond:1792391272
+      DataNode seaweedfs-volume-hdd-1.seaweedfs-volume-hdd-peer.seaweedfs:8444 hdd(volume:348/400 active:348 free:52 remote:0) ssd(volume:0/0 active:0 free:0 remote:0)
+        Disk hdd(volume:348/400 active:348 free:52 remote:0) id:0
+          volume Id:1110, Size:72584, ReplicaPlacement:001, Collection:pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0, Version:3, Ttl:, FileCount:177, DeleteCount:177, DeletedByteCount:61230, ReadOnly:false, ModifiedAtSecond:1792391272
+      DataNode seaweedfs-volume-hdd-2.seaweedfs-volume-hdd-peer.seaweedfs:8444 hdd(volume:307/400 active:307 free:93 remote:0) ssd(volume:0/0 active:0 free:0 remote:0)
+        Disk hdd(volume:307/400 active:307 free:93 remote:0) id:0
+          volume Id:1105, Size:74832, ReplicaPlacement:001, Collection:pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0, Version:3, Ttl:, FileCount:158, DeleteCount:157, DeletedByteCount:62378, ReadOnly:false, ModifiedAtSecond:1792391272
+      DataNode seaweedfs-volume-hdd-2.seaweedfs-volume-hdd-peer.seaweedfs:8444 hdd(volume:307/400 active:307 free:93 remote:0) ssd(volume:0/0 active:0 free:0 remote:0)
+        Disk hdd(volume:307/400 active:307 free:93 remote:0) id:0
+          volume Id:1106, Size:83600, ReplicaPlacement:001, Collection:pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0, Version:3, Ttl:, FileCount:178, DeleteCount:176, DeletedByteCount:70514, ReadOnly:false, ModifiedAtSecond:1792391272
+      DataNode seaweedfs-volume-hdd-2.seaweedfs-volume-hdd-peer.seaweedfs:8444 hdd(volume:307/400 active:307 free:93 remote:0) ssd(volume:0/0 active:0 free:0 remote:0)
+        Disk hdd(volume:307/400 active:307 free:93 remote:0) id:0
+          volume Id:1107, Size:107248, ReplicaPlacement:001, Collection:pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0, Version:3, Ttl:, FileCount:180, DeleteCount:178, DeletedByteCount:75257, ReadOnly:false, ModifiedAtSecond:1792391272
+      DataNode seaweedfs-volume-hdd-2.seaweedfs-volume-hdd-peer.seaweedfs:8444 hdd(volume:307/400 active:307 free:93 remote:0) ssd(volume:0/0 active:0 free:0 remote:0)
+        Disk hdd(volume:307/400 active:307 free:93 remote:0) id:0
+          volume Id:1108, Size:95528, ReplicaPlacement:001, Collection:pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0, Version:3, Ttl:, FileCount:203, DeleteCount:199, DeletedByteCount:80143, ReadOnly:false, ModifiedAtSecond:1792391272
+      DataNode seaweedfs-volume-hdd-2.seaweedfs-volume-hdd-peer.seaweedfs:8444 hdd(volume:307/400 active:307 free:93 remote:0) ssd(volume:0/0 active:0 free:0 remote:0)
+        Disk hdd(volume:307/400 active:307 free:93 remote:0) id:0
+          volume Id:1109, Size:110120, ReplicaPlacement:001, Collection:pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0, Version:3, Ttl:, FileCount:188, DeleteCount:187, DeletedByteCount:77649, ReadOnly:false, ModifiedAtSecond:1792391272
+      DataNode seaweedfs-volume-hdd-2.seaweedfs-volume-hdd-peer.seaweedfs:8444 hdd(volume:307/400 active:307 free:93 remote:0) ssd(volume:0/0 active:0 free:0 remote:0)
+        Disk hdd(volume:307/400 active:307 free:93 remote:0) id:0
+          volume Id:1110, Size:72584, ReplicaPlacement:001, Collection:pvc-5e6d05fb-db98-4118-9ea4-0eb9aa422ff0, Version:3, Ttl:, FileCount:177, DeleteCount:177, DeletedByteCount:61230, ReadOnly:false, ModifiedAtSecond:1792391272
