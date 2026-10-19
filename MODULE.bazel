@@ -1881,11 +1881,6 @@ go_deps.module(
     version = "v2.0.7",
 )
 go_deps.module(
-    path = "github.com/spf13/cast",
-    sum = "h1:cuNEagBQEHWN1FnbGEjCXL2szYEXqfJPbP2HNUaca9Y=",
-    version = "v1.7.1",
-)
-go_deps.module(
     path = "github.com/yosida95/uritemplate/v3",
     sum = "h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=",
     version = "v3.0.2",
@@ -2056,6 +2051,7 @@ use_repo(
     "com_github_sethvargo_go_retry",
     "com_github_spf13_cast",
     "com_github_spf13_cobra",
+    "com_github_spf13_viper",
     "com_github_tcm1911_r2g2",
     "com_github_testcontainers_testcontainers_go",
     "com_github_yosida95_uritemplate_v3",

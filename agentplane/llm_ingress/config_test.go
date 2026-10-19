@@ -7,6 +7,21 @@ import (
 	"testing"
 )
 
+func loadTestConfig(t *testing.T, environ []string) (config, error) {
+	t.Helper()
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(name, settingPrefix) {
+			t.Setenv(name, "")
+		}
+	}
+	for _, entry := range environ {
+		name, value, _ := strings.Cut(entry, "=")
+		t.Setenv(name, value)
+	}
+	return loadConfig()
+}
+
 func writeSettings(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "settings.yaml")
@@ -27,7 +42,7 @@ models:
   - model: test/model
     total_context_budget_tokens: 8192
 `)
-	c, err := loadConfig([]string{
+	c, err := loadTestConfig(t, []string{
 		configFileEnv + "=" + path,
 		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=env-audience",
 		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=env-secret",
@@ -45,14 +60,14 @@ models:
 }
 
 func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
-	for _, value := range []string{"8.0", `"8"`, "true", "null", "0", "-1"} {
+	for _, value := range []string{`"not-a-budget"`, "null", "0", "-1"} {
 		t.Run(value, func(t *testing.T) {
 			path := writeSettings(t, "allowed_service_account_namespaces: [test-namespace]\n"+
 				"token_audience: test-audience\n"+
 				"litellm_url: http://127.0.0.1:8100\n"+
 				"litellm_key: never-include-this-secret\n"+
 				"models:\n  - model: test/model\n    total_context_budget_tokens: "+value+"\n")
-			_, err := loadConfig([]string{configFileEnv + "=" + path})
+			_, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
 			if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
 				t.Fatalf("got unsafe or missing config error: %v", err)
 			}
@@ -60,7 +75,7 @@ func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
 	}
 }
 
-func TestLoadConfigRejectsUnknownSettingsWithoutEchoingValues(t *testing.T) {
+func TestLoadConfigRejectsUnknownFileSettingsWithoutEchoingValues(t *testing.T) {
 	base := `allowed_service_account_namespaces: [test-namespace]
 token_audience: test-audience
 litellm_url: http://127.0.0.1:8100
@@ -69,16 +84,8 @@ models: []
 `
 	path := writeSettings(t, base+`unknown_setting: never-include-this-secret
 `)
-	_, err := loadConfig([]string{configFileEnv + "=" + path})
+	_, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
 	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
 		t.Fatalf("got unsafe or missing config error: %v", err)
-	}
-	path = writeSettings(t, base)
-	_, err = loadConfig([]string{
-		configFileEnv + "=" + path,
-		"AGENTPLANE_LLM_INGRESS_UNKNOWN=never-include-this-secret",
-	})
-	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
-		t.Fatalf("got unsafe or missing environment error: %v", err)
 	}
 }

@@ -3,9 +3,9 @@ package main
 import (
 	"errors"
 	"net/url"
+	"os"
 
-	"github.com/agentydragon/ducktape/util/settings"
-	"gopkg.in/yaml.v3"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -13,42 +13,46 @@ const (
 	configFileEnv = settingPrefix + "CONFIG_FILE"
 )
 
-// modelBudget rejects YAML's float-to-int coercion for context limits.
-type modelBudget int
-
-func (budget *modelBudget) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.ScalarNode || node.ShortTag() != "!!int" {
-		return errors.New("context budget must be an integer")
-	}
-	return node.Decode((*int)(budget))
-}
-
 type modelConfig struct {
-	Model                    string      `json:"model" yaml:"model"`
-	TotalContextBudgetTokens modelBudget `json:"total_context_budget_tokens" yaml:"total_context_budget_tokens"`
+	Model                    string `json:"model" mapstructure:"model"`
+	TotalContextBudgetTokens int    `json:"total_context_budget_tokens" mapstructure:"total_context_budget_tokens"`
 }
 
 type config struct {
-	AllowedServiceAccountNamespaces []string          `env:"-" yaml:"allowed_service_account_namespaces"`
-	TokenAudience                   string            `yaml:"token_audience"`
-	LogLLMRequests                  bool              `yaml:"log_llm_requests"`
-	Models                          []modelConfig     `env:"-" yaml:"models"`
-	LiteLLMURL                      string            `env:"LITELLM_URL" yaml:"litellm_url"`
-	LiteLLMKey                      string            `env:"LITELLM_KEY" yaml:"litellm_key"`
-	LogLevels                       map[string]string `env:"-" yaml:"log_levels"`
-	Host                            string            `yaml:"host"`
-	Port                            int               `yaml:"port"`
-	Kubeconfig                      string            `yaml:"kubeconfig"`
+	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
+	TokenAudience                   string            `mapstructure:"token_audience"`
+	LogLLMRequests                  bool              `mapstructure:"log_llm_requests"`
+	Models                          []modelConfig     `mapstructure:"models"`
+	LiteLLMURL                      string            `mapstructure:"litellm_url"`
+	LiteLLMKey                      string            `mapstructure:"litellm_key"`
+	LogLevels                       map[string]string `mapstructure:"log_levels"`
+	Host                            string            `mapstructure:"host"`
+	Port                            int               `mapstructure:"port"`
+	Kubeconfig                      string            `mapstructure:"kubeconfig"`
 }
 
 func defaultConfig() config {
 	return config{Host: "0.0.0.0", Port: 8080, LogLevels: map[string]string{}}
 }
 
-func loadConfig(environ []string) (config, error) {
-	c, err := settings.Load(settingPrefix, defaultConfig(), environ)
-	if err != nil {
-		return config{}, err
+func loadConfig() (config, error) {
+	c := defaultConfig()
+	settings := viper.New()
+	settings.SetEnvPrefix("AGENTPLANE_LLM_INGRESS")
+	for _, key := range []string{
+		"token_audience", "log_llm_requests", "litellm_url", "litellm_key", "host", "port", "kubeconfig",
+	} {
+		settings.MustBindEnv(key)
+	}
+	if path := os.Getenv(configFileEnv); path != "" {
+		settings.SetConfigFile(path)
+		settings.SetConfigType("yaml")
+		if err := settings.ReadInConfig(); err != nil {
+			return config{}, errors.New("could not read ingress settings file")
+		}
+	}
+	if err := settings.UnmarshalExact(&c); err != nil {
+		return config{}, errors.New("invalid ingress settings")
 	}
 	if err := validateConfig(&c); err != nil {
 		return config{}, err
