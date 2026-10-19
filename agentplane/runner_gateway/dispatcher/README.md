@@ -38,8 +38,10 @@ The manual queue, replica and wake probes are documented in the
   gap or incomplete event fails active streams with `UNAVAILABLE`; terminal events have no durable replay,
   so a later read or watch is `NOT_FOUND`/empty.
 - **Retention**: a Sandbox's Dispatches are kept as long as it exists. Other policies may come later.
-- **Replica ownership**: a per-Sandbox Lease assigns delivery scheduling ownership. Its PostgreSQL
-  generation fences stale claims, settlements and recovery. The Runner Gateway's separate connection
+- **Replica ownership**: a per-Sandbox Lease assigns delivery scheduling ownership while the Sandbox
+  has a `QUEUED_IN_DISPATCHER` or `DELIVERING_TO_RUNNER` Dispatch or Session opening. Its PostgreSQL
+  generation fences stale claims, settlements and recovery. A Sandbox without such work is no longer
+  renewed and its Lease lapses; the next work reacquires it. The Runner Gateway's separate connection
   Lease still owns the runner stream; Dispatcher scheduling does not affect it. A new owner requeues
   only that Sandbox's in-flight work, preserving at-least-once redelivery with the same command IDs.
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
@@ -65,7 +67,8 @@ The manual queue, replica and wake probes are documented in the
   remains a follow-up.
 
 Delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandbox change (the `ListWatch` on
-Sandboxes) or a retry deadline. Each replica also renews its owned Leases every ten seconds.
+Sandboxes) or a retry deadline. Every ten seconds each replica also renews its owned Leases and retries
+the Sandboxes with pending work that it does not own.
 
 ## Deviations and gaps
 

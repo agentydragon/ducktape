@@ -533,6 +533,9 @@ func TestWorkerAcquiresNewSandboxWithoutRenewingExistingOwner(t *testing.T) {
 	worker := &DeliveryWorker{Store: store, Catalog: catalog, Leases: leases}
 	worker.init()
 	defer worker.queue.ShutDown()
+	if _, err := store.Enqueue(ctx, "existing-session", "sandbox-existing", sandboxUID, input("existing-input", "hello"), nil); err != nil {
+		t.Fatal(err)
+	}
 	if err := worker.reconcile(ctx, true); err != nil {
 		t.Fatal(err)
 	}
@@ -540,6 +543,9 @@ func TestWorkerAcquiresNewSandboxWithoutRenewingExistingOwner(t *testing.T) {
 		t.Fatalf("initial lease acquisitions = %d, want 1", leases.calls)
 	}
 	catalog.sandboxes = append(catalog.sandboxes, SandboxSnapshot{Name: "sandbox-new", UID: newUID})
+	if _, err := store.Enqueue(ctx, "new-session", "sandbox-new", newUID, input("new-input", "hello"), nil); err != nil {
+		t.Fatal(err)
+	}
 	if err := worker.reconcile(ctx, false); err != nil {
 		t.Fatal(err)
 	}
@@ -554,6 +560,93 @@ func TestWorkerAcquiresNewSandboxWithoutRenewingExistingOwner(t *testing.T) {
 	}
 	if leases.calls != 2 {
 		t.Fatalf("unchanged catalog renewed a lease: %d acquisitions", leases.calls)
+	}
+}
+
+func TestWorkerLeasesOnlySandboxesWithQueuedOrDeliveringWork(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+	const busyUID, idleUID = "00000000-0000-4000-8000-000000000081", "00000000-0000-4000-8000-000000000082"
+	catalog := &growingCatalog{sandboxes: []SandboxSnapshot{
+		{Name: "sandbox-lease-busy", UID: busyUID}, {Name: "sandbox-lease-idle", UID: idleUID},
+	}}
+	leases := &countingLease{testLease: testLease{store: store}}
+	worker := &DeliveryWorker{Store: store, Catalog: catalog, Leases: leases}
+	worker.init()
+	defer worker.queue.ShutDown()
+	reconcile := func(want int) {
+		t.Helper()
+		if err := worker.reconcile(ctx, true); err != nil {
+			t.Fatal(err)
+		}
+		if leases.calls != want {
+			t.Fatalf("lease acquisitions = %d, want %d", leases.calls, want)
+		}
+	}
+	owned := func(uid string) bool {
+		_, okay := worker.ownerFor(uid)
+		return okay
+	}
+	reconcile(0)
+	if _, err := store.Enqueue(ctx, "lease-busy-session", "sandbox-lease-busy", busyUID, input("lease-busy-input", "hello"), nil); err != nil {
+		t.Fatal(err)
+	}
+	reconcile(1)
+	if !owned(busyUID) || owned(idleUID) {
+		t.Fatalf("owned busy=%v idle=%v, want only the Sandbox with queued work", owned(busyUID), owned(idleUID))
+	}
+	owner, _ := worker.ownerFor(busyUID)
+	if row, err := store.Settle(ctx, "lease-busy-input", owner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
+		t.Fatalf("claim: %+v %v", row, err)
+	}
+	reconcile(2)
+	if !owned(busyUID) {
+		t.Fatal("a Sandbox with a delivering command lost its owner")
+	}
+	if row, err := store.Settle(ctx, "lease-busy-input", owner, []string{DeliveringState}, AdmittedState, "", nil); err != nil || row == nil {
+		t.Fatalf("settle: %+v %v", row, err)
+	}
+	reconcile(2)
+	if owned(busyUID) {
+		t.Fatal("a Sandbox with only settled work kept its owner")
+	}
+	if _, err := store.Enqueue(ctx, "lease-busy-session", "sandbox-lease-busy", busyUID, input("lease-busy-again", "hello"), nil); err != nil {
+		t.Fatal(err)
+	}
+	reconcile(3)
+	if !owned(busyUID) {
+		t.Fatal("new work did not reacquire the Sandbox")
+	}
+}
+
+// A dispatch claimed by an owner that died before settling is DELIVERING, and
+// neither Heads nor OpeningHeads lists it, yet its successor must still take
+// the Sandbox to requeue it.
+func TestWorkerAdoptsDeliveringWorkOfDeadOwner(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+	const uid = "00000000-0000-4000-8000-000000000083"
+	if _, err := store.Enqueue(ctx, "dead-owner-session", "sandbox-dead-owner", uid, input("dead-owner-input", "hello"), nil); err != nil {
+		t.Fatal(err)
+	}
+	dead, err := store.ClaimSandboxOwner(ctx, uid, "dead-lease", 1, "replica-dead", 0)
+	if err != nil || dead == nil {
+		t.Fatalf("dead owner: %+v %v", dead, err)
+	}
+	if row, err := store.Settle(ctx, "dead-owner-input", *dead, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
+		t.Fatalf("claim: %+v %v", row, err)
+	}
+	worker := &DeliveryWorker{
+		Store: store, Catalog: testCatalog{SandboxSnapshot{Name: "sandbox-dead-owner", UID: uid}},
+		Leases: testLease{store},
+	}
+	worker.init()
+	defer worker.queue.ShutDown()
+	if err := worker.reconcile(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if row, err := store.GetDispatch(ctx, "dead-owner-input"); err != nil || row.State != QueueState || row.Reason != "dispatcher_restarted" {
+		t.Fatalf("successor did not requeue the dead owner's command: %+v %v", row, err)
 	}
 }
 

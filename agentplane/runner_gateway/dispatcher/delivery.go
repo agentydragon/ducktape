@@ -202,7 +202,14 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 			}
 		}
 	}
+	pending, err := w.Store.SandboxesWithPendingWork(ctx)
+	if err != nil {
+		return err
+	}
 	for _, sandbox := range sandboxes {
+		if _, needed := pending[sandbox.UID]; !needed {
+			continue
+		}
 		if !renew {
 			if _, owned := w.ownerFor(sandbox.UID); owned {
 				continue
@@ -232,9 +239,13 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 			}
 		}
 	}
+	// A Sandbox without pending work is dropped here and no longer renewed, so its
+	// Lease lapses; the next work for it reacquires.
 	w.mu.Lock()
 	for uid := range w.owners {
-		if _, ok := liveUID[uid]; !ok {
+		_, live := liveUID[uid]
+		_, needed := pending[uid]
+		if !live || !needed {
 			delete(w.owners, uid)
 		}
 	}

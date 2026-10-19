@@ -442,6 +442,29 @@ func (s *Store) Heads(ctx context.Context) ([]*Dispatch, error) {
 	return result, rows.Err()
 }
 
+// SandboxesWithPendingWork lists the Sandboxes owning a QUEUED or DELIVERING
+// dispatch or opening, the only rows an owner changes. Unlike Heads, it counts
+// a DELIVERING row and the QUEUED rows blocked behind it, which a successor
+// must requeue after the previous owner dies.
+func (s *Store) SandboxesWithPendingWork(ctx context.Context) (map[string]struct{}, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT sandbox_uid::text FROM dispatch WHERE state = ANY($1)
+		UNION SELECT sandbox_uid::text FROM session_opening WHERE state = ANY($1)`,
+		pq.Array([]string{QueueState, DeliveringState}))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := map[string]struct{}{}
+	for rows.Next() {
+		var uid string
+		if err := rows.Scan(&uid); err != nil {
+			return nil, err
+		}
+		result[uid] = struct{}{}
+	}
+	return result, rows.Err()
+}
+
 func (s *Store) OwnershipGeneration(ctx context.Context, sandboxUID string) (int64, error) {
 	var generation int64
 	err := s.DB.QueryRowContext(ctx, "SELECT generation FROM sandbox_ownership WHERE sandbox_uid=$1", sandboxUID).Scan(&generation)
