@@ -7728,9 +7728,6 @@ metadata:
   name: claude-ai
   namespace: agentplane-staging
 spec:
-  subject:
-    namespace: agentplane-staging
-    name: claude-ai
   policySets:
     - basic
     - inference-experiments
@@ -7757,6 +7754,9 @@ spec:
     - tana-reads
     - grocy-sf-reads
     - ssh-reads
+  subject:
+    name: claude-ai
+    namespace: agentplane-staging
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
@@ -7766,9 +7766,6 @@ metadata:
   name: haku-agent
   namespace: agentplane-staging
 spec:
-  subject:
-    namespace: agentplane-staging
-    name: haku-agent
   policySets:
     - basic
     - inference-experiments
@@ -7794,6 +7791,9 @@ spec:
     - tana-reads
     - grocy-sf-reads
     - ssh-reads
+  subject:
+    name: haku-agent
+    namespace: agentplane-staging
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8010,11 +8010,11 @@ metadata:
   name: public-coder-openclaw-actions
   namespace: agentplane-staging
 spec:
-  subject:
-    namespace: public-coder-agent
-    name: openclaw
   policySets:
     - common-github-read
+  subject:
+    name: openclaw
+    namespace: public-coder-agent
 ---
 apiVersion: v1
 kind: Namespace
@@ -9521,13 +9521,13 @@ metadata:
   name: public-coder-openclaw
   namespace: agentplane-staging
 spec:
-  subject:
-    namespace: public-coder-agent
-    name: openclaw
   policySets:
     - public-coder-openclaw
     - inference-experiments
     - public-internet
+  subject:
+    name: openclaw
+    namespace: public-coder-agent
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
