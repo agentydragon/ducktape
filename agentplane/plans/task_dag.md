@@ -1067,10 +1067,9 @@ both names in `cluster/cdk8s/forgejo_registry/image_automation.py` with testing 
 `image-pins`, wait for the pins to land, then swap the Deployment to the Go image and its settings
 file under a new ConfigMap name, and the Alembic init container for the Go migrator (it takes over
 the Alembic-stamped database, see the [egress README](../egress/README.md#decision-history)). Testing
-first, then staging. The same change
-restores the `egress` and `egress_migrate` images the k3s fixture loads (its manual tests cannot start
-without a proxy until then), deletes `egress/settings.py` and `MigrationSettings`, and updates the
-README diagram.
+first, then staging. The k3s fixture already uses the Go proxy and Goose migrator through a local
+adapter; remove that adapter in the cutover, delete `egress/settings.py` and `MigrationSettings`,
+and update the README diagram.
 
 Exit: testing, then staging, serve a request with a substituted credential and a refusal through the
 Go proxy with the pinned Go image, and both history databases carry `egress_goose_version`. Left to

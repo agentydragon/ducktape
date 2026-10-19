@@ -19,7 +19,10 @@ for the failed real-k3s run and the capability checks required before removing t
 
 [`fixture_chart.py`](fixture_chart.py) constructs the chart directly
 with shared service constructs and explicit bare-k3s settings. It supplies fixture Secrets,
-headless Services, local-path storage and a test egress CA. One PostgreSQL 18 Deployment uses the
+headless Services, local-path storage and a test egress CA. The fixture runs the Go egress proxy
+and Goose history migrator ahead of the separate testing/staging cutover; its local adapter keeps
+the shared egress RBAC, policies, trust mounts and settings while selecting the Go images and flags.
+One PostgreSQL 18 Deployment uses the
 pinned published CNPG minimal image, an emptyDir data volume and
 [`postgres_entrypoint.sh`](postgres_entrypoint.sh) with [`bootstrap.sql`](bootstrap.sql) to create
 the service-owned databases. Unsupported Cilium, Gateway API, Kyverno, Prometheus, cert-manager and External

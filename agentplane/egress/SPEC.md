@@ -18,7 +18,8 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - The connection's source address is not checked. A token copied out of its Pod and presented from
   elsewhere in the cluster is accepted for as long as it is valid, and is refused the same rules as
   the Pod it was taken from.
-- A verdict is cached for at most the token's remaining life, bounded by a configured limit.
+- Every request reviews its hop bearer with the API server, including requests inside an existing
+  tunnel; an earlier successful review does not authorize a later request.
 
 ## Decision
 
@@ -210,7 +211,8 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - Retention defaults to seven days and is a visibility bound: queries exclude expired records, and
   bounded indexed cleanup deletes them eventually. Database outages delay physical cleanup, not
   the visible time window.
-- Schema changes are Alembic-managed and run separately from proxy startup. Runtime never creates
+- Schema changes are Goose-managed and run separately from proxy startup. The migrator preserves
+  existing history when taking over the verified Alembic baseline. Runtime never creates
   or migrates tables. Deployment gates each new Pod on its migration init container while the
   proxies it replaces keep enforcing, so a migration must stay compatible with them. Request
   admission remains independent of diagnostic DB availability.

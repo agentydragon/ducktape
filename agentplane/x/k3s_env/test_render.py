@@ -46,7 +46,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     for workload, migration in {
         "actions": "agentplane-action-service-migrate",
         "app": "agentplane-app-migrate",
-        "egress": "agentplane-egress-migrate",
+        "egress": "agentplane-egress-history-migrate",
         "history-service": "agentplane-history-migrate",
         "notifications": "agentplane-notification-service-migrate",
     }.items():
@@ -58,6 +58,17 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]["imagePullPolicy"]
         == "IfNotPresent"
     )
+    egress_pod = _resource(docs, "Deployment", "egress")["spec"]["template"]["spec"]
+    proxy = next(container for container in egress_pod["containers"] if container["name"] == "proxy")
+    assert proxy["image"] == fixture_chart.EGRESS_IMAGE
+    assert not any(arg.startswith("--confdir=") for arg in proxy["args"])
+    proxy_env = {entry["name"]: entry for entry in proxy["env"]}
+    egress_migrator = next(container for container in egress_pod["initContainers"] if container["name"] == "migrate")
+    assert egress_migrator["image"] == fixture_chart.EGRESS_MIGRATOR_IMAGE
+    migrator_env = {entry["name"]: entry for entry in egress_migrator["env"]}
+    assert migrator_env["DATABASE_URL"]["valueFrom"] == proxy_env["AGENTPLANE_EGRESS_DATABASE_URL"]["valueFrom"]
+    assert "AGENTPLANE_EGRESS_DATABASE_URL" not in migrator_env
+    assert proxy_env["PGSSLMODE"]["value"] == migrator_env["PGSSLMODE"]["value"] == "disable"
     for service in (doc for doc in docs if doc["kind"] == "Service"):
         assert service["spec"]["clusterIP"] == "None", service["metadata"]["name"]
         for port in service["spec"]["ports"]:

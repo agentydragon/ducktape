@@ -70,15 +70,13 @@ oci_image(
 ]
 
 # Bazel-built service images, loaded into k3s's containerd.
-# CLEANUP(added 2026-10-17): add `egress` and `egress_migrate` back, built from
-#   //agentplane/egress/cmd:image and //agentplane/egress/history_migrations:image, in the change that
-#   makes cluster/cdk8s/agentplane/egress.py deploy the Go proxy. Until then the fixture's egress
-#   Deployment has no image, and `running_stack` refuses with "lack OCI layouts".
 _IMAGES = {
     "action_service": "//agentplane/action_service:image",
     "action_service_migrate": "//agentplane/action_service:migration_image",
     "app": "//agentplane/app:image",
     "app_migrate": "//agentplane/app:migration_image",
+    "egress_proxy": "//agentplane/egress/cmd:image",
+    "egress_history_migrate": "//agentplane/egress/history_migrations:image",
     "egress_sidecar": "//agentplane/egress:sidecar_image",
     "history_migrate": "//agentplane/history_service/storage:migration_image",
     "history_service": "//agentplane/history_service:image",
@@ -236,6 +234,7 @@ py_library(
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:settings_file",
         "//cluster/cdk8s/agentplane:actions",
         "//cluster/cdk8s/agentplane:app",
         "//cluster/cdk8s/agentplane:chart",
@@ -252,6 +251,7 @@ py_library(
         "//cluster/cdk8s/agentplane:runner_sandbox",
         "//cluster/cdk8s/agentplane:sandbox_controller",
         "//cluster/cdk8s/agentplane:sandbox_pod",
+        "//cluster/cdk8s/agentplane:service_workload",
         "//cluster/cdk8s/agentplane:session_dispatcher",
         "//cluster/cdk8s/agentplane:testing",
         "//cluster/cdk8s/providers/agentplane:policy_set",
