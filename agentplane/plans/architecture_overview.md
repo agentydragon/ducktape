@@ -245,12 +245,13 @@ The operator's "archive" keeps the CR, which is D1's retiring. The precedent sug
 of archive, a move out of Kubernetes: the CR and state PVC go, History keeps the transcript, and an
 archive row keeps what grants need, such as the Sandbox's tags. The tags move with it and stay
 editable, since freezing them "would be a bit inconvenient" (10:24): at any moment they live in one
-place, the CR or the archive row, so nothing reconciles between the two, but the archive needs a tag
-write path held to the same writers, and tags authored in git need an importer, since Flux
-cannot write rows. Retired Sandboxes, which can resume, stay CRs and stay few. It is D2 with an
-explicit archive step. It needs no restore: the operator would not ask for "given just history
-records and no Sandbox or PVC anymore, make a new Sandbox and make it restore and continue that
-history" (09:53).
+place, the CR or the archive row, so nothing reconciles between the two. Editing them can wait, but
+a mistaken tag must stay fixable, from the app (10:43), so no importer is needed. Until the archive
+has that write path, two things keep it possible: the tags live once per archived Sandbox, never
+copied into each Session's rows, and grants match them at read time, not at archive time. Retired
+Sandboxes, which can resume, stay CRs and stay few. It is D2 with an explicit archive step. It needs
+no restore: the operator would not ask for "given just history records and no Sandbox or PVC
+anymore, make a new Sandbox and make it restore and continue that history" (09:53).
 
 ## Right under every direction
 
@@ -399,23 +400,24 @@ Held until one is chosen:
 
 ## What the operator has said
 
-| Date (UTC)       | Operator                                                                                            | Consequence                                        |
-| ---------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| 2026-10-17 03:30 | Sender receipts that tell "was this acked" from "did a notice cover this"                           | Receipts in v1                                     |
-| 2026-10-17 03:41 | OAuth callers get an SA through an Actions connection and send from an actions-sandbox              | No separate OAuth sender path                      |
-| 2026-10-17 04:12 | Messages come with the Sandbox; wake-on-send does not look it up from a Session                     | No Session-to-Sandbox registry                     |
-| 2026-10-17 05:58 | `allSandboxes` in v1, "under some kind of scope of the controller"                                  | Bounded to the PolicySet's namespace               |
-| 2026-10-17 10:56 | Keep read-permission decisions held "for now"                                                       | Read grants stay held                              |
-| 2026-10-18 22:39 | Agent traces and archives should not go into the control-plane etcd                                 | Per-Session data stays out of Kubernetes records   |
-| 2026-10-18 22:46 | Sending and reading transcripts are "really separate capabilities we probably don't need to bundle" | First `session_access` schema carries sending only |
-| 2026-10-18 23:19 | No need to name a different namespace                                                               | Direct targets are same-namespace                  |
-| 2026-10-18 23:33 | Collections keep covering Sandboxes no longer alive                                                 | Rules out live-members-only collections for reads  |
-| 2026-10-19 01:37 | Python and Go ports can be sequenced in any order relative to the other things                      | Ports are not part of this map                     |
-| 2026-10-19 02:14 | No definite pick yet on where data and objects live                                                 | No direction chosen                                |
-| 2026-10-19 09:42 | The workspace PVC "should be disposable without history disappearing"                               | A workspace drop is right under every direction    |
-| 2026-10-19 09:50 | Dropping the workspace "should still in principle let a harness start and continue"                 | The drop keeps the Sandbox resumable               |
-| 2026-10-19 09:53 | No restoring a Sandbox from history records alone                                                   | An archive need not be resumable                   |
-| 2026-10-19 10:24 | Freezing an archived Sandbox's collections "would be a bit inconvenient"                            | Archived Sandboxes' tags stay editable             |
+| Date (UTC)       | Operator                                                                                            | Consequence                                         |
+| ---------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| 2026-10-17 03:30 | Sender receipts that tell "was this acked" from "did a notice cover this"                           | Receipts in v1                                      |
+| 2026-10-17 03:41 | OAuth callers get an SA through an Actions connection and send from an actions-sandbox              | No separate OAuth sender path                       |
+| 2026-10-17 04:12 | Messages come with the Sandbox; wake-on-send does not look it up from a Session                     | No Session-to-Sandbox registry                      |
+| 2026-10-17 05:58 | `allSandboxes` in v1, "under some kind of scope of the controller"                                  | Bounded to the PolicySet's namespace                |
+| 2026-10-17 10:56 | Keep read-permission decisions held "for now"                                                       | Read grants stay held                               |
+| 2026-10-18 22:39 | Agent traces and archives should not go into the control-plane etcd                                 | Per-Session data stays out of Kubernetes records    |
+| 2026-10-18 22:46 | Sending and reading transcripts are "really separate capabilities we probably don't need to bundle" | First `session_access` schema carries sending only  |
+| 2026-10-18 23:19 | No need to name a different namespace                                                               | Direct targets are same-namespace                   |
+| 2026-10-18 23:33 | Collections keep covering Sandboxes no longer alive                                                 | Rules out live-members-only collections for reads   |
+| 2026-10-19 01:37 | Python and Go ports can be sequenced in any order relative to the other things                      | Ports are not part of this map                      |
+| 2026-10-19 02:14 | No definite pick yet on where data and objects live                                                 | No direction chosen                                 |
+| 2026-10-19 09:42 | The workspace PVC "should be disposable without history disappearing"                               | A workspace drop is right under every direction     |
+| 2026-10-19 09:50 | Dropping the workspace "should still in principle let a harness start and continue"                 | The drop keeps the Sandbox resumable                |
+| 2026-10-19 09:53 | No restoring a Sandbox from history records alone                                                   | An archive need not be resumable                    |
+| 2026-10-19 10:24 | Freezing an archived Sandbox's collections "would be a bit inconvenient"                            | Archived Sandboxes' tags stay editable              |
+| 2026-10-19 10:43 | Retagging an archived Sandbox can wait, but must stay possible, from the app                        | No importer; tags stored once, matched at read time |
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control
