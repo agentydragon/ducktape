@@ -31,19 +31,15 @@ free on the Trial plan for teams created on/after 2026-04-15) remain.
 - **Amount sign:** positive = money **out** of the account (purchases, debits,
   card charges); negative = money **in** (payments, refunds, deposits). Same
   convention on credit and depository accounts.
-- **`/transactions/get` vs `/transactions/sync`:** the mirror uses
-  `/transactions/sync` with one durable cursor per Item, applying added,
-  modified, and removed transactions before committing the next cursor.
-  `/transactions/get` remains the date-range API (`start_date`/`end_date` plus
-  `offset`/`count`) for callers that explicitly need a bounded query.
+- **`/transactions/get` vs `/transactions/sync`:** the mirror uses `/sync` with one durable
+  cursor per Item; `/get` (date range + `offset`/`count`) only for an explicitly bounded query.
 - **Cached vs live balances:** `/accounts/get` returns cached balances (Plaid
   refreshes 1–4×/day); `/accounts/balance/get` hits the bank live but is heavily
   rate-limited (5/min, 30/hour per Item).
 - **Pending → posted:** a `pending` transaction is later replaced by a posted one
   whose `pending_transaction_id` points back to the pending id.
-- **`ITEM_LOGIN_REQUIRED`:** when a bank login expires Plaid returns this error and
-  the Item must be repaired through the Plaid Link management UI. The UI launches
-  Plaid update mode for the existing Item.
+- **`ITEM_LOGIN_REQUIRED`:** an expired bank login; repair the Item via update mode in the Link
+  UI.
 
 ## Spend snapshot invalidation
 
@@ -64,14 +60,8 @@ PLAID_ENV=sandbox bb run //finance/plaid/db:sandbox_smoke_bin
 
 ## Real-account links
 
-Managed at `https://plaid-mcp.allegedly.works/` or `/link`. The UI creates new Items,
-requests additional consented products through Plaid update mode, repairs Items,
-syncs Items, and removes Items. Access tokens are stored as Kubernetes Secrets in
-the `plaid-mcp` namespace and are not written to Postgres.
-
-All Plaid Link flows use a single Plaid OAuth redirect URI:
-`https://plaid-mcp.allegedly.works/link/callback`. That URI must be allowlisted
-in the Plaid developer dashboard for production Link to work.
+Managed through the [Link management service](../link/README.md) (`ITEM_LOGIN_REQUIRED` repairs
+included).
 
 ## Rate limits
 
