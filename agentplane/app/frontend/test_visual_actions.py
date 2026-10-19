@@ -59,7 +59,7 @@ EXAMPLES = (
         "pods_delete",
         {"name": "web-0", "namespace": "apps"},
         "Pod deleted successfully",
-        "Pod deleted successfully",
+        "Deletion accepted",
     ),
     ActionExample(
         "kubernetes_admin",
