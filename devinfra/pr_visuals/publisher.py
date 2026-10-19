@@ -19,14 +19,14 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import Annotated, Any, Literal, Protocol, cast
 
 import boto3
 from botocore.exceptions import ClientError
 from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from more_itertools import one
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from devinfra.ci.invocation_ids import invocation_id
@@ -41,6 +41,8 @@ COMMENT_MARKER = "<!-- pr-visuals -->"
 COMMENT_BUDGET = 55_000
 COMMENT_OPEN_TARGETS = 2
 INLINE_ASSET_LIMIT = 3
+
+type ImageDigest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
 
 @dataclass(frozen=True)
@@ -105,41 +107,14 @@ def _baseline_pointer_key(slug: str) -> str:
     Devel-push publishes only contain targets Bazel actually re-executed
     (cache hits re-expose nothing), so a PR's base commit bundle routinely
     lacks untouched targets. The pointer bridges those gaps: it names the
-    newest devel commit whose immutable ``commits/<sha>/…`` bundle carries
+    newest devel commit whose immutable ``reviews/<sha>/…`` bundle carries
     the target, and PR runs fall back to it when the base bundle misses.
     """
-    return f"baselines/{slug}.json"
+    return f"baselines/reviews/{slug}.json"
 
 
 class BaselinePointer(BaseModel):
     commit_sha: str
-
-
-@dataclass(frozen=True)
-class ResolvedBaseline:
-    """Baseline bundle a candidate target is compared against."""
-
-    commit_sha: str
-    metadata: dict[str, Any]
-    # True when the PR's base commit bundle lacked this target and the
-    # devel-latest pointer supplied the baseline instead.
-    fallback: bool
-
-
-def _resolve_baseline(slug: str, base_sha: str | None, source: BaselineSource) -> ResolvedBaseline | None:
-    def metadata_at(sha: str) -> dict[str, Any] | None:
-        body = source.fetch(_baseline_key(sha, slug, "metadata.json"))
-        return None if body is None else cast(dict[str, Any], json.loads(body))
-
-    if base_sha is not None and (metadata := metadata_at(base_sha)) is not None:
-        return ResolvedBaseline(commit_sha=base_sha, metadata=metadata, fallback=False)
-    pointer_body = source.fetch(_baseline_pointer_key(slug))
-    if pointer_body is None:
-        return None
-    pointer = BaselinePointer.model_validate_json(pointer_body)
-    if (metadata := metadata_at(pointer.commit_sha)) is None:
-        return None
-    return ResolvedBaseline(commit_sha=pointer.commit_sha, metadata=metadata, fallback=True)
 
 
 class ClassificationCounts(BaseModel):
@@ -154,6 +129,9 @@ class ReviewAsset(BaseModel):
 
     path: str
     label: str
+    candidate_sha256: ImageDigest | None = None
+    baseline_sha256: ImageDigest | None = None
+    diff_sha256: ImageDigest | None = None
     classification: Literal["unchanged", "modified", "new", "removed"] | None = None
     changed_fraction: float | None = None
     changed_pixels: int | None = None
@@ -163,6 +141,41 @@ class ReviewAsset(BaseModel):
     # True on a modified/removed screenshot whose baseline image came from a commit other than the
     # PR's merge base (see ResolvedBaseline.fallback), so the diff may include devel drift.
     baseline_stale: bool | None = None
+
+
+class BaselineMetadata(BaseModel):
+    assets: list[ReviewAsset]
+
+
+@dataclass(frozen=True)
+class ResolvedBaseline:
+    commit_sha: str
+    metadata: BaselineMetadata
+    fallback: bool
+
+
+def _review_key(commit_sha: str, slug: str, *parts: str) -> str:
+    return "/".join(("reviews", commit_sha, "tests", slug, *parts))
+
+
+def _resolve_baseline(slug: str, base_sha: str | None, source: BaselineSource) -> ResolvedBaseline | None:
+    def metadata_at(sha: str) -> BaselineMetadata | None:
+        for key in (_review_key(sha, slug, "metadata.json"), _baseline_key(sha, slug, "metadata.json")):
+            if (body := source.fetch(key)) is not None:
+                return BaselineMetadata.model_validate_json(body)
+        return None
+
+    if base_sha is not None and (metadata := metadata_at(base_sha)) is not None:
+        return ResolvedBaseline(commit_sha=base_sha, metadata=metadata, fallback=False)
+    # Old publisher jobs can overlap the new wheel, so their pointers and commit
+    # bundles remain separate until no retained baseline needs the old layout.
+    for key in (_baseline_pointer_key(slug), f"baselines/{slug}.json"):
+        if (body := source.fetch(key)) is None:
+            continue
+        pointer = BaselinePointer.model_validate_json(body)
+        if (metadata := metadata_at(pointer.commit_sha)) is not None:
+            return ResolvedBaseline(commit_sha=pointer.commit_sha, metadata=metadata, fallback=True)
+    return None
 
 
 class ReviewTest(BaseModel):
@@ -469,32 +482,48 @@ def _ordered_assets(assets: list[ReviewAsset]) -> list[ReviewAsset]:
     )
 
 
-def _asset_url(asset_base: str, asset: ReviewAsset, variant: Literal["candidate", "baseline", "diff"]) -> str:
+def _image_key(digest: str) -> str:
+    return f"assets/{digest}.png"
+
+
+def _asset_url(
+    asset_base: str, asset: ReviewAsset, variant: Literal["candidate", "baseline", "diff"], *, shared_asset_base: str
+) -> str:
+    digest = {"candidate": asset.candidate_sha256, "baseline": asset.baseline_sha256, "diff": asset.diff_sha256}[
+        variant
+    ]
+    if digest is not None:
+        return f"{shared_asset_base}{_image_key(digest)}"
     prefix = {"candidate": "", "baseline": "baseline/", "diff": "diff/"}[variant]
     return f"{asset_base}{prefix}{urllib.parse.quote(asset.path, safe='/')}"
 
 
-def _asset_page_data(asset: ReviewAsset, *, asset_base: str, page_url: str) -> dict[str, Any]:
+def _asset_page_data(asset: ReviewAsset, *, asset_base: str, page_url: str, shared_asset_base: str) -> dict[str, Any]:
     path = urllib.parse.quote(asset.path, safe="/")
     return {
         **asset.model_dump(exclude_none=True),
-        "candidate_url": _asset_url(asset_base, asset, "candidate"),
-        "baseline_url": _asset_url(asset_base, asset, "baseline"),
-        "diff_url": _asset_url(asset_base, asset, "diff"),
+        "candidate_url": _asset_url(asset_base, asset, "candidate", shared_asset_base=shared_asset_base),
+        "baseline_url": _asset_url(asset_base, asset, "baseline", shared_asset_base=shared_asset_base),
+        "diff_url": _asset_url(asset_base, asset, "diff", shared_asset_base=shared_asset_base),
         "anchor_url": f"{page_url}#{path}",
     }
 
 
-def _review_test_page_data(test: ReviewTest, *, asset_base: str, page_url: str) -> dict[str, Any]:
+def _review_test_page_data(
+    test: ReviewTest, *, asset_base: str, page_url: str, shared_asset_base: str
+) -> dict[str, Any]:
     page = test.model_dump(exclude_none=True)
     page["assets"] = [
-        _asset_page_data(asset, asset_base=asset_base, page_url=page_url) for asset in _ordered_assets(test.assets)
+        _asset_page_data(asset, asset_base=asset_base, page_url=page_url, shared_asset_base=shared_asset_base)
+        for asset in _ordered_assets(test.assets)
     ]
     impact_key = _test_impact_key(test)
     page["sort_changed_count"] = -impact_key[1]
     page["sort_largest_change"] = -impact_key[0]
     if test.preview is not None:
-        page["preview"] = _asset_page_data(test.preview, asset_base=asset_base, page_url=page_url)
+        page["preview"] = _asset_page_data(
+            test.preview, asset_base=asset_base, page_url=page_url, shared_asset_base=shared_asset_base
+        )
     return page
 
 
@@ -522,14 +551,20 @@ def _classify_test_assets(
     baseline are ``new``; baseline assets absent from the candidate are
     ``removed``; the rest are compared by :func:`compare_pngs`.
     """
-    baseline_by_path = {asset["path"]: asset for asset in baseline.metadata["assets"]}
+    baseline_by_path = {asset.path: asset for asset in baseline.metadata.assets}
     baseline_dir = target_dir / "baseline"
     diff_dir = target_dir / "diff"
     enriched: list[ReviewAsset] = []
     stale = True if baseline.fallback else None
 
     def materialize_baseline(path: str) -> Path | None:
-        body = baseline_source.fetch(_baseline_key(baseline.commit_sha, test.slug, path))
+        asset = baseline_by_path[path]
+        key = (
+            _image_key(asset.candidate_sha256)
+            if asset.candidate_sha256 is not None
+            else _baseline_key(baseline.commit_sha, test.slug, path)
+        )
+        body = baseline_source.fetch(key)
         if body is None:
             return None
         baseline_dir.mkdir(parents=True, exist_ok=True)
@@ -572,11 +607,22 @@ def _classify_test_assets(
             continue
         if materialize_baseline(path) is not None:
             enriched.append(
-                ReviewAsset(
-                    path=path, label=baseline_asset.get("label", path), classification="removed", baseline_stale=stale
-                )
+                ReviewAsset(path=path, label=baseline_asset.label, classification="removed", baseline_stale=stale)
             )
     return enriched
+
+
+def _share_png(image: Path, output_root: Path) -> str | None:
+    if not image.is_file():
+        return None
+    digest = hashlib.sha256(image.read_bytes()).hexdigest()
+    destination = output_root / _image_key(digest)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        image.unlink()
+    else:
+        image.replace(destination)
+    return digest
 
 
 def build_bundle(
@@ -593,7 +639,7 @@ def build_bundle(
     if not tests:
         raise ValueError("cannot build a visual-review bundle without tests")
 
-    bundle = output_root / "commits" / commit_sha
+    bundle = output_root / "reviews" / commit_sha
     environment = _templates()
     bundle.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("gallery.css"), bundle / "gallery.css")
@@ -619,6 +665,10 @@ def build_bundle(
                 assets = _classify_test_assets(test, baseline, baseline_source, target_dir)
         else:
             assets = [ReviewAsset(path=asset.path, label=asset.label) for asset in test.manifest.assets]
+        for asset in assets:
+            asset.candidate_sha256 = _share_png(target_dir / asset.path, output_root)
+            asset.baseline_sha256 = _share_png(target_dir / "baseline" / asset.path, output_root)
+            asset.diff_sha256 = _share_png(target_dir / "diff" / asset.path, output_root)
         review_test = ReviewTest(
             target_label=test.target_label,
             slug=test.slug,
@@ -631,7 +681,7 @@ def build_bundle(
             preview=_pick_preview(assets) if base_sha else None,
         )
         (target_dir / "metadata.json").write_text(review_test.model_dump_json(indent=2, exclude_none=True) + "\n")
-        page = _review_test_page_data(review_test, asset_base="", page_url="")
+        page = _review_test_page_data(review_test, asset_base="", page_url="", shared_asset_base="../../../../")
         (target_dir / "index.html").write_text(
             environment.get_template("pr_visual_test.html.j2").render(
                 repository=repository,
@@ -647,7 +697,9 @@ def build_bundle(
     metadata = ReviewBundleMetadata(repository=repository, commit_sha=commit_sha, tests=review_tests)
     (bundle / "metadata.json").write_text(metadata.model_dump_json(indent=2, exclude_none=True) + "\n")
     page_tests = [
-        _review_test_page_data(test, asset_base=f"tests/{test.slug}/", page_url=f"tests/{test.slug}/index.html")
+        _review_test_page_data(
+            test, asset_base=f"tests/{test.slug}/", page_url=f"tests/{test.slug}/index.html", shared_asset_base="../../"
+        )
         for test in sorted(review_tests, key=_test_impact_key)
     ]
     (bundle / "index.html").write_text(
@@ -662,6 +714,34 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
     s3 = client or boto3.client("s3", endpoint_url=endpoint)
     prefix = key.strip("/")
     cache_control = "public,max-age=31536000,immutable"
+    metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
+    digests = {
+        digest
+        for test in metadata.tests
+        for asset in test.assets
+        for digest in (asset.candidate_sha256, asset.baseline_sha256, asset.diff_sha256)
+        if digest is not None
+    }
+    for digest in sorted(digests):
+        image_key = _image_key(digest)
+        try:
+            s3.head_object(Bucket=bucket, Key=image_key)
+            continue
+        except ClientError as error:
+            if not _is_not_found(error):
+                raise
+        try:
+            s3.put_object(
+                Bucket=bucket,
+                Key=image_key,
+                Body=(bundle.parent.parent / image_key).read_bytes(),
+                ContentType="image/png",
+                CacheControl=cache_control,
+                IfNoneMatch="*",
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") != "PreconditionFailed":
+                raise
     paths = sorted(
         bundle.rglob("*"), key=lambda path: (path.name == "index.html", path == bundle / "index.html", path.as_posix())
     )
@@ -676,7 +756,7 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
 
 
 def write_baseline_pointers(slugs: list[str], *, commit_sha: str, bucket: str, client: Any) -> None:
-    """Point ``baselines/<slug>.json`` at this commit for every published target.
+    """Point ``baselines/reviews/<slug>.json`` at this commit for every published target.
 
     Runs on devel pushes after the immutable bundle upload succeeds, so PR runs
     can fall back to the newest devel bundle carrying each target (see
@@ -720,6 +800,12 @@ def stale_baseline_note(test: ReviewTest) -> str:
 def _asset_comment_lines(
     asset: ReviewAsset, *, asset_base: str, gallery_url: str, test: ReviewTest, include_heading: bool = True
 ) -> list[str]:
+    urls = _asset_page_data(
+        asset,
+        asset_base=asset_base,
+        page_url=gallery_url,
+        shared_asset_base=urllib.parse.urljoin(asset_base, "../../../../"),
+    )
     anchor = html.escape(f"{gallery_url}#{urllib.parse.quote(asset.path, safe='/')}", quote=True)
     label = f'<a href="{anchor}">{html.escape(asset.label)}</a>'
     stale = f" · ⚠️ stale baseline ({stale_baseline_note(test)})" if asset.baseline_stale else ""
@@ -729,7 +815,7 @@ def _asset_comment_lines(
         diff = (
             "_(dimensions changed)_"
             if asset.dimension_changed
-            else _preview_img(_asset_url(asset_base, asset, "diff"), f"{asset.label} diff")
+            else _preview_img(urls["diff_url"], f"{asset.label} diff")
         )
         heading = (
             [f"<p><strong>{label}</strong> · {fraction:.1%} changed{stale}</p>", ""]
@@ -740,16 +826,16 @@ def _asset_comment_lines(
             *heading,
             "| Before | After | Diff |",
             "| --- | --- | --- |",
-            f"| {_preview_img(_asset_url(asset_base, asset, 'baseline'), f'{asset.label} baseline')} "
-            f"| {_preview_img(_asset_url(asset_base, asset, 'candidate'), f'{asset.label} candidate')} "
+            f"| {_preview_img(urls['baseline_url'], f'{asset.label} baseline')} "
+            f"| {_preview_img(urls['candidate_url'], f'{asset.label} candidate')} "
             f"| {diff} |",
         ]
     if asset.classification == "new":
         heading = [f"<p><strong>{label}</strong> · new</p>", ""] if include_heading else stale_heading
-        return [*heading, _preview_img(_asset_url(asset_base, asset, "candidate"), asset.label)]
+        return [*heading, _preview_img(urls["candidate_url"], asset.label)]
     if asset.classification == "removed":
         heading = [f"<p><strong>{label}</strong> · removed{stale}</p>", ""] if include_heading else stale_heading
-        return [*heading, _preview_img(_asset_url(asset_base, asset, "baseline"), f"{asset.label} baseline")]
+        return [*heading, _preview_img(urls["baseline_url"], f"{asset.label} baseline")]
     return []
 
 
@@ -1156,7 +1242,7 @@ def publish_only(args: argparse.Namespace, *, github_token: str, api_key: str, d
         bundle = build_bundle(
             tests, args.work_dir / "site", commit_sha=args.sha, repository=args.repository, base_sha=None
         )
-        upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"commits/{args.sha}", client=s3)
+        upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"reviews/{args.sha}", client=s3)
         print(f"Superseded run on {args.sha}: published {len(tests)} visual target(s); pointers left alone.")
     else:
         print(f"Superseded run on {args.sha}: no visual artifacts had arrived; nothing to publish.")
@@ -1240,7 +1326,7 @@ def main() -> None:
             base_sha=base_sha,
             baseline_source=baseline_source,
         )
-        upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"commits/{args.sha}", client=s3)
+        upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"reviews/{args.sha}", client=s3)
         if not base_sha:
             # Devel push: advance the mutable per-target fallback pointers now
             # that this commit's immutable bundle is fully uploaded.
@@ -1251,7 +1337,7 @@ def main() -> None:
             # superseded run's publish races its own Bazel invocation) able to
             # leave a pointer stale but never to move it somewhere wrong.
             write_baseline_pointers([test.slug for test in tests], commit_sha=args.sha, bucket=args.bucket, client=s3)
-        public_url = f"{args.public_base_url.rstrip('/')}/commits/{args.sha}/"
+        public_url = f"{args.public_base_url.rstrip('/')}/reviews/{args.sha}/"
         review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
         if base_sha:
             totals = _totals(review_tests)

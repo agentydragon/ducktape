@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import urllib.parse
@@ -7,7 +8,7 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NoReturn
+from typing import Any, NoReturn
 
 import pytest
 import pytest_bazel
@@ -22,6 +23,7 @@ from devinfra.pr_visuals.publisher import (
     ClassificationCounts,
     DownloadedVisualTest,
     ReviewAsset,
+    ReviewBundleMetadata,
     ReviewTest,
     build_bundle,
     diff_check,
@@ -454,11 +456,14 @@ def test_build_bundle_groups_tests_and_writes_target_pages(tmp_path: Path) -> No
 
     bundle = build_bundle([test], tmp_path / "site", commit_sha=sha, repository="agentydragon/ducktape")
 
-    assert bundle == tmp_path / "site" / "commits" / sha
+    assert bundle == tmp_path / "site" / "reviews" / sha
     assert "//example:visuals" in (bundle / "index.html").read_text()
     target_page = bundle / "tests" / target_slug("//example:visuals") / "index.html"
     assert 'id="screen.png"' in target_page.read_text()
-    assert (target_page.parent / "screen.png").read_bytes() == b"png"
+    digest = hashlib.sha256(b"png").hexdigest()
+    assert (tmp_path / "site" / "assets" / f"{digest}.png").read_bytes() == b"png"
+    assert f"../../../../assets/{digest}.png" in target_page.read_text()
+    assert not list(bundle.rglob("*.png"))
 
 
 def test_build_bundle_rejects_abbreviated_sha(tmp_path: Path) -> None:
@@ -755,7 +760,10 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
 
     assert [(lookup["head"], lookup["head_sha"]) for lookup in lookups] == [(PR_HEAD_REF, HEAD_SHA)] * 2
     assert [comment["pull_request"] for comment in publisher_run.comments] == [8733]
-    assert bucket.requested[0] == f"commits/{base_sha}/tests/{candidate.slug}/metadata.json"
+    assert bucket.requested[:2] == [
+        f"reviews/{base_sha}/tests/{candidate.slug}/metadata.json",
+        f"commits/{base_sha}/tests/{candidate.slug}/metadata.json",
+    ]
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
 
 
@@ -820,28 +828,77 @@ def test_a_failed_pr_lookup_fails_the_check_instead_of_leaving_it_in_progress(
     assert publisher_run.comments == [], "with no PR identified there is nowhere to comment"
 
 
-def test_upload_publishes_all_indexes_last(tmp_path: Path) -> None:
-    bundle = tmp_path / "bundle"
-    target = bundle / "tests" / "example"
-    target.mkdir(parents=True)
-    (target / "screen.png").write_bytes(b"png")
-    (target / "index.html").write_text("target")
-    (bundle / "metadata.json").write_text("{}")
-    (bundle / "index.html").write_text("root")
+class PublishedObjects:
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+        self.puts: list[str] = []
+        self.events: list[str] = []
 
-    class FakeS3:
-        def __init__(self) -> None:
-            self.keys: list[str] = []
+    def head_object(self, **kwargs: str) -> dict[str, int]:
+        key = kwargs["Key"]
+        if key not in self.objects:
+            raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
+        return {"ContentLength": len(self.objects[key])}
 
-        def upload_file(self, _path: Path, _bucket: str, key: str, **kwargs: dict[str, str]) -> None:
-            assert kwargs["ExtraArgs"]["CacheControl"].endswith("immutable")
-            self.keys.append(key)
+    def put_object(self, **kwargs: Any) -> None:
+        assert kwargs["IfNoneMatch"] == "*"
+        assert kwargs["ContentType"] == "image/png"
+        assert kwargs["CacheControl"].endswith("immutable")
+        key = kwargs["Key"]
+        assert key not in self.objects
+        self.puts.append(key)
+        self.objects[key] = kwargs["Body"]
+        self.events.append(key)
 
-    client = FakeS3()
-    upload_bundle(bundle, endpoint="https://s3.test", bucket="visuals", key="commits/sha", client=client)
-    first_index = next(index for index, key in enumerate(client.keys) if key.endswith("index.html"))
-    assert all(not key.endswith("index.html") for key in client.keys[:first_index])
-    assert client.keys[-1] == "commits/sha/index.html"
+    def upload_file(self, path: Path, bucket: str, key: str, **kwargs: dict[str, str]) -> None:
+        assert kwargs["ExtraArgs"]["CacheControl"].endswith("immutable")
+        self.objects[key] = path.read_bytes()
+        self.events.append(key)
+
+
+def test_upload_reuses_shared_images_and_publishes_indexes_last(tmp_path: Path) -> None:
+    source = _single_asset_test(tmp_path / "source")
+    client = PublishedObjects()
+    for sha in ("a" * 40, "b" * 40):
+        bundle = build_bundle([source], tmp_path / "site", commit_sha=sha, repository="r")
+        client.events.clear()
+        upload_bundle(bundle, endpoint="https://s3.test", bucket="visuals", key=f"reviews/{sha}", client=client)
+        if sha == "a" * 40:
+            assert client.events[0].startswith("assets/")
+        first_index = next(index for index, key in enumerate(client.events) if key.endswith("index.html"))
+        assert all(not key.endswith("index.html") for key in client.events[:first_index])
+        assert client.events[-1] == f"reviews/{sha}/index.html"
+    assert len(client.puts) == 1
+    assert client.objects[client.puts[0]] == (source.directory / "screen.png").read_bytes()
+    assert not any(key.startswith("commits/") for key in client.objects)
+
+
+@pytest.mark.parametrize(
+    ("stage", "code"), [("head", "AccessDenied"), ("put", "InternalError"), ("put", "PreconditionFailed")]
+)
+def test_shared_image_upload_errors_do_not_publish_broken_reviews(tmp_path: Path, stage: str, code: str) -> None:
+    source = _single_asset_test(tmp_path / "source")
+    bundle = build_bundle([source], tmp_path / "site", commit_sha="a" * 40, repository="r")
+
+    class RacingOrFailingS3(PublishedObjects):
+        def head_object(self, **kwargs: str) -> dict[str, int]:
+            if stage == "head":
+                raise ClientError({"Error": {"Code": code}}, "HeadObject")
+            return super().head_object(**kwargs)
+
+        def put_object(self, **kwargs: Any) -> None:
+            if code == "PreconditionFailed":
+                self.objects[kwargs["Key"]] = kwargs["Body"]
+            raise ClientError({"Error": {"Code": code}}, "PutObject")
+
+    client = RacingOrFailingS3()
+    if code == "PreconditionFailed":
+        upload_bundle(bundle, endpoint="https://s3.test", bucket="visuals", key="reviews/sha", client=client)
+        assert client.events[-1] == "reviews/sha/index.html"
+    else:
+        with pytest.raises(ClientError):
+            upload_bundle(bundle, endpoint="https://s3.test", bucket="visuals", key="reviews/sha", client=client)
+        assert not client.events
 
 
 def test_build_bundle_classifies_against_baseline(tmp_path: Path) -> None:
@@ -905,14 +962,34 @@ def test_build_bundle_classifies_against_baseline(tmp_path: Path) -> None:
     assert by_path["gone.png"]["classification"] == "removed"
     assert metadata["summary"] == {"modified": 1, "new": 1, "removed": 1, "unchanged": 1}
 
-    assert not (test_dir / "baseline" / "same.png").exists()
-    assert (test_dir / "baseline" / "changed.png").exists()
-    assert (test_dir / "baseline" / "gone.png").exists()
-    assert (test_dir / "diff" / "changed.png").exists()
-    assert not (test_dir / "diff" / "same.png").exists()
-    for candidate in ("same.png", "changed.png", "added.png"):
-        assert (test_dir / candidate).exists()
-    assert not (test_dir / "gone.png").exists()
+    site = tmp_path / "site"
+    assert by_path["same.png"].get("baseline_sha256") is None
+    assert (site / "assets" / f"{by_path['same.png']['candidate_sha256']}.png").read_bytes() == (
+        candidate_dir / "same.png"
+    ).read_bytes()
+    for path in ("changed.png", "gone.png"):
+        key = f"commits/{base_sha}/tests/{slug}/{path}"
+        assert (site / "assets" / f"{by_path[path]['baseline_sha256']}.png").read_bytes() == objects[key]
+    assert (site / "assets" / f"{by_path['changed.png']['diff_sha256']}.png").is_file()
+    assert by_path["gone.png"].get("candidate_sha256") is None
+    assert by_path["same.png"].get("diff_sha256") is None
+    assert not list(bundle.rglob("*.png"))
+    review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
+    comment = success_comment_body(
+        repository="r",
+        commit_sha=head_sha,
+        url=f"https://s3.test/visuals/reviews/{head_sha}/",
+        review_tests=review_tests,
+        base_sha=base_sha,
+    )
+    for path, variant in (
+        ("changed.png", "candidate"),
+        ("changed.png", "baseline"),
+        ("changed.png", "diff"),
+        ("gone.png", "baseline"),
+    ):
+        assert f"https://s3.test/visuals/assets/{by_path[path][f'{variant}_sha256']}.png" in comment
+    assert f"tests/{slug}/index.html#changed.png" in comment
 
 
 def _single_asset_test(directory: Path, label: str = "//ex:visuals") -> DownloadedVisualTest:
@@ -922,6 +999,54 @@ def _single_asset_test(directory: Path, label: str = "//ex:visuals") -> Download
         {"schema": "ducktape.visual-review.v1", "title": "Ex", "assets": [{"path": "screen.png", "label": "screen"}]}
     )
     return DownloadedVisualTest(label, target_slug(label), manifest, directory)
+
+
+@pytest.mark.parametrize("pointer_fallback", [False, True])
+def test_shared_images_are_reused_across_targets_and_new_baselines(tmp_path: Path, pointer_fallback: bool) -> None:
+    site = tmp_path / "site"
+    first = _single_asset_test(tmp_path / "first", label="//a:visual")
+    second = _single_asset_test(tmp_path / "second", label="//b:visual")
+    base_sha = "a" * 40
+    base = build_bundle([first, second], site, commit_sha=base_sha, repository="r")
+    metadata = ReviewBundleMetadata.model_validate_json((base / "metadata.json").read_text())
+    digest = metadata.tests[0].assets[0].candidate_sha256
+    assert digest == metadata.tests[1].assets[0].candidate_sha256
+    assert len(list((site / "assets").glob("*.png"))) == 1
+    objects = {path.relative_to(site).as_posix(): path.read_bytes() for path in site.rglob("*") if path.is_file()}
+    if pointer_fallback:
+        objects[f"baselines/reviews/{first.slug}.json"] = (
+            BaselinePointer(commit_sha=base_sha).model_dump_json().encode()
+        )
+        # An old publisher can keep writing this pointer during the wheel rollout.
+        objects[f"baselines/{first.slug}.json"] = BaselinePointer(commit_sha="e" * 40).model_dump_json().encode()
+        objects[f"commits/{'e' * 40}/tests/{first.slug}/metadata.json"] = json.dumps(
+            {"assets": [{"path": "screen.png", "label": "old"}]}
+        ).encode()
+        objects[f"commits/{'e' * 40}/tests/{first.slug}/screen.png"] = _png(
+            tmp_path / "old.png", (1, 1, 1, 255)
+        ).read_bytes()
+    # Keep the first target unchanged and change the second so its Before image
+    # must come from the shared pool rather than a per-commit PNG.
+    _png(second.directory / "screen.png", (20, 30, 40, 255))
+    if pointer_fallback:
+        objects[f"baselines/reviews/{second.slug}.json"] = (
+            BaselinePointer(commit_sha=base_sha).model_dump_json().encode()
+        )
+    head = build_bundle(
+        [first, second],
+        site,
+        commit_sha="b" * 40,
+        repository="r",
+        base_sha="c" * 40 if pointer_fallback else base_sha,
+        baseline_source=FakeBaselineSource(objects),
+    )
+    review = ReviewBundleMetadata.model_validate_json((head / "metadata.json").read_text())
+    assert review.tests[0].assets[0].classification == "unchanged"
+    assert review.tests[0].assets[0].candidate_sha256 == digest
+    assert review.tests[0].baseline_fallback == pointer_fallback
+    assert review.tests[1].assets[0].classification == "modified"
+    assert review.tests[1].assets[0].baseline_sha256 == digest
+    assert len(list((site / "assets").glob("*.png"))) == 3
 
 
 def test_build_bundle_falls_back_to_devel_pointer(tmp_path: Path) -> None:
@@ -991,7 +1116,7 @@ def test_write_baseline_pointers_puts_mutable_json() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     write_baseline_pointers(["slug-a", "slug-b"], commit_sha=sha, bucket="visuals", client=client)
 
-    assert [put["Key"] for put in client.puts] == ["baselines/slug-a.json", "baselines/slug-b.json"]
+    assert [put["Key"] for put in client.puts] == ["baselines/reviews/slug-a.json", "baselines/reviews/slug-b.json"]
     for put in client.puts:
         assert put["Bucket"] == "visuals"
         assert put["CacheControl"] == "no-cache"

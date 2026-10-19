@@ -10,7 +10,7 @@ invocation the commit has, falling back to IDs derived from the run's identity
 targets whose undeclared outputs contain a
 `visual-review.json` manifest (schema:
 `util/visual_review.py`), downloads the referenced PNGs, publishes an immutable
-bundle to `s3.allegedly.works/pr-visuals`, and upserts a review comment on the
+review bundle and shared PNGs to `s3.allegedly.works/pr-visuals`, and upserts a review comment on the
 PR. A cache-hit test still reports its undeclared outputs, so a bundle carries
 every visual target the run covered rather than only the ones it re-executed —
 which takes a download-mode flag to hold
@@ -139,10 +139,18 @@ advance the baseline pointers.
 PR runs compare each target's assets against a baseline bundle, resolved
 per target:
 
-1. `commits/<base_sha>/tests/<slug>/` — the PR's base commit, when that devel
+1. `reviews/<base_sha>/tests/<slug>/` — the PR's base commit, when that devel
    run published the target;
-2. otherwise the mutable pointer `baselines/<slug>.json`, naming the newest
-   devel commit whose immutable bundle carries the target.
+2. otherwise the retained `commits/<base_sha>/tests/<slug>/` bundle;
+3. otherwise `baselines/reviews/<slug>.json`, naming the newest devel commit
+   whose review bundle carries the target;
+4. otherwise the retained pointer `baselines/<slug>.json`.
+
+New metadata records the SHA-256 of candidate, Before, and diff PNGs. Baselines
+without a digest still resolve their candidate PNG from the retained commit
+bundle. The new review and pointer prefixes isolate overlapping publisher jobs
+that use different released wheels: old jobs continue to read and write the
+old layout, and existing gallery/image URLs remain available.
 
 Devel pushes publish the visual artifacts of every target the completed Bazel
 run re-executed, even when an unrelated target fails; a failed visual target
@@ -175,12 +183,25 @@ since that bundle holds no image for the target. If neither source carries the t
   otherwise. Neutral is deliberate — the check points reviewers at visual
   changes; it is not a merge gate.
 
+## Image storage
+
+Each distinct PNG is stored once at `assets/<sha256>.png`, shared across targets,
+commits, and candidate/Before/diff roles. Galleries and GitHub comments link to
+that object; review metadata records its digest. Review pages, styles, scripts,
+and metadata live at `reviews/<sha>/`.
+
+The publisher checks for existing images and uses `PutObject` with
+`If-None-Match: *` for missing ones, so concurrent publishers cannot replace
+an existing shared image. Every referenced image is uploaded before the review's
+metadata and pages; the aggregate gallery index is uploaded last. A failed image
+upload prevents review publication and baseline-pointer advancement.
+
 ## Retention
 
-Nothing is deleted: commit bundles are immutable and pointer files only ever
-advance. The bucket grows with devel history; garbage-collecting bundles that
-no pointer or open PR references is future work
-(<plans/generic_pr_visual_reviews.md>).
+Nothing is deleted. New publications reuse shared PNGs; existing commit bundles
+are retained without migration. Garbage collection and historical-review retention
+are separate work. Shared images must remain while any retained review metadata
+references them; their object age alone is not an expiration criterion.
 
 ## Released commands
 
