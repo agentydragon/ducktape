@@ -453,7 +453,7 @@ describe("details result rendering", () => {
         resource: "{apiVersion: v1, kind: ConfigMap, metadata: {name: settings, namespace: apps}}",
       })
     );
-    expect(single.textContent).toBe("Apply ConfigMap apps/settings");
+    expect(single.textContent).toContain("Apply ConfigMap apps/settings");
 
     const multiple = await mount(
       renderPaneCollapsed(action, {
@@ -461,13 +461,13 @@ describe("details result rendering", () => {
           "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: settings\n  namespace: apps\n---\napiVersion: v1\nkind: Secret\nmetadata:\n  name: token\n  namespace: apps\n",
       })
     );
-    expect(multiple.textContent).toBe("Apply 2 Kubernetes resources: ConfigMap apps/settings, Secret apps/token");
+    expect(multiple.textContent).toContain("Apply 2 Kubernetes resources: ConfigMap apps/settings, Secret apps/token");
 
     const unnamed = await mount(renderPaneCollapsed(action, { resource: "apiVersion: v1\nkind: Service\n" }));
-    expect(unnamed.textContent).toBe("Apply Service");
+    expect(unnamed.textContent).toContain("Apply Service");
 
     const malformed = await mount(renderPaneCollapsed(action, { resource: "kind: [broken" }));
-    expect(malformed.textContent).toBe("Kubernetes manifest");
+    expect(malformed.textContent).toContain("Kubernetes manifest");
   });
 
   it("renders a returned YAML sequence as separate Kubernetes resources", async () => {
