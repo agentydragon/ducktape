@@ -16,7 +16,7 @@ def _run_image(image: str, *, test_name: str, command: list[str], entrypoint: st
         .with_tmpfs_mount("/tmp", "rw,nosuid,size=32m,uid=1000,gid=1000,mode=1777")
     )
     if entrypoint is not None:
-        container.with_entrypoint(entrypoint)
+        container.with_kwargs(entrypoint=entrypoint)
 
     with container:
         wrapped = container.get_wrapped_container()
