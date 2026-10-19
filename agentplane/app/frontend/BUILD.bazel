@@ -259,6 +259,19 @@ ts_library(
 )
 
 ts_library(
+    name = "text_block",
+    srcs = ["text_block.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":clamped_block",
+        ":code_block",
+        ":operation_section",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "command_view",
     srcs = ["command_view.tsx"],
     tsconfig = TSCONFIG,
@@ -1319,6 +1332,7 @@ ts_library(
         ":live",
         ":stream_status",
         ":test_model_catalog",
+        ":text_block",
         ":theme",
         ":thread_notices",
         ":visual_rollouts",
@@ -1330,7 +1344,6 @@ ts_library(
         "//:node_modules/react-dom",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions/rendering:index",
-        "//agentplane/app/frontend/actions:payload",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",
     ],

@@ -1,11 +1,11 @@
 import { type JSX, useMemo } from "react";
 
-import { ClampedBlock, lineCount } from "../clamped_block";
-import { CodeBlock, type Language } from "../code_block";
-import { OperationSection } from "../operation_section";
-import { OUTPUT_MAX_HEIGHT_REM } from "../command_view";
+import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "./clamped_block";
+import { CodeBlock, type Language } from "./code_block";
+import { OperationSection } from "./operation_section";
 
-export function ActionText({
+/** Selectable text with optional syntax, a shared surface, and expansion for long content. */
+export function TextBlock({
   text,
   language,
   heading,
@@ -18,7 +18,7 @@ export function ActionText({
   heading?: string;
   /** Prose uses proportional type; payloads default to monospace even without a known grammar. */
   format?: "code" | "prose";
-  /** Keep long payloads folded in history; compact hosts can opt out when review requires all data. */
+  /** Fold long content by default; callers can opt out when the full text should be visible. */
   clamp?: boolean;
 }): JSX.Element {
   const content = (
@@ -39,7 +39,7 @@ export function ActionText({
     <OperationSection surface={format === "prose" ? "plain" : "framed"}>
       {clamp ? (
         <ClampedBlock
-          maxHeightRem={OUTPUT_MAX_HEIGHT_REM}
+          maxHeightRem={TEXT_MAX_HEIGHT_REM}
           lines={language === "yaml" ? lineCount(text) : undefined}
           label={heading ?? (format === "prose" ? "Text" : "Payload")}
           expandLabel={language === "yaml" ? undefined : "Show more"}
@@ -57,7 +57,7 @@ export function ActionText({
   );
 }
 
-export function ActionJson({
+export function JsonBlock({
   value,
   heading,
   clamp = true,
@@ -67,5 +67,5 @@ export function ActionJson({
   clamp?: boolean;
 }): JSX.Element {
   const text = useMemo(() => JSON.stringify(value, null, 2), [value]);
-  return <ActionText text={text} language="json" heading={heading} clamp={clamp} />;
+  return <TextBlock text={text} language="json" heading={heading} clamp={clamp} />;
 }

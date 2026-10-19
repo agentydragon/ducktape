@@ -3,6 +3,9 @@ import { type JSX, type ReactNode, useLayoutEffect, useState } from "react";
 
 import { Disclosure, DisclosureBody } from "./disclosure";
 
+/** Shared height limit for expandable text and output. */
+export const TEXT_MAX_HEIGHT_REM = 16;
+
 /** How many lines `text` has, a final newline ending its last line rather than starting another. */
 export function lineCount(text: string): number {
   return text.replace(/\n$/, "").split("\n").length;

@@ -47,16 +47,15 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":action_client",
-        ":payload",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:clamped_block",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:command_view",
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend/actions/rendering:index",
     ],
 )
@@ -92,7 +91,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":action_client",
-        ":payload",
         ":requests",
         ":sidebar_css",
         "//:node_modules/@mantine/core",
@@ -102,6 +100,7 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:resize_handle",
+        "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend/actions/rendering:index",
     ],
 )
@@ -179,7 +178,6 @@ ts_library(
         ":action_client",
         ":call",
         ":call_tool_result",
-        ":payload",
         ":requests",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -187,12 +185,12 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/app/frontend:clamped_block",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:command_view",
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend/actions/rendering:index",
     ],
@@ -203,7 +201,6 @@ ts_library(
     srcs = ["call_tool_result.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":payload",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -211,6 +208,7 @@ ts_library(
         "//:node_modules/zod",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:parsed_json",
+        "//agentplane/app/frontend:text_block",
     ],
 )
 
@@ -337,19 +335,5 @@ agentplane_vitest_test(
         ":notifications",
         ":types",
         "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "payload",
-    srcs = ["payload.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/app/frontend:clamped_block",
-        "//agentplane/app/frontend:code_block",
-        "//agentplane/app/frontend:command_view",
-        "//agentplane/app/frontend:operation_section",
     ],
 )

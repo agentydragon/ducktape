@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
-import { ActionJson } from "../../payload";
+import { JsonBlock } from "../../../text_block";
 import { kubernetesTarget } from "./resource_common";
 
 const podsLogArguments = z.strictObject({
@@ -35,7 +35,7 @@ function PodsLogCollapsed({ args }: { args: z.infer<typeof podsLogArguments> }):
 function PodsLogOpened({ args }: { args: z.infer<typeof podsLogArguments> }): JSX.Element {
   const hasOptions = args.container !== undefined || args.previous !== undefined || args.tail !== undefined;
   return hasOptions ? (
-    <ActionJson value={{ container: args.container, previous: args.previous, tail: args.tail }} clamp={false} />
+    <JsonBlock value={{ container: args.container, previous: args.previous, tail: args.tail }} clamp={false} />
   ) : (
     <></>
   );

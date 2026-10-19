@@ -3,10 +3,9 @@ import type { JSX, ReactNode } from "react";
 
 import { serviceAccountKey } from "../client";
 import { Disclosure, DisclosureBody } from "../disclosure";
-import { ClampedBlock, lineCount } from "../clamped_block";
-import { OUTPUT_MAX_HEIGHT_REM } from "../command_view";
-import { ActionJson } from "./payload";
 import { TimeAgo } from "../time_ago";
+import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../clamped_block";
+import { JsonBlock } from "../text_block";
 import { RawSwitch } from "../raw_switch";
 import type { ActionRequestView } from "./client";
 import {
@@ -147,7 +146,7 @@ export function ActionCall({
             possible later addition. */}
         {!detailsOnly && <Text size="sm">{request.title}</Text>}
         {request.description && (
-          <ClampedBlock maxHeightRem={OUTPUT_MAX_HEIGHT_REM} lines={lineCount(request.description)} label="Description">
+          <ClampedBlock maxHeightRem={TEXT_MAX_HEIGHT_REM} lines={lineCount(request.description)} label="Description">
             <Text size="xs" c="dimmed">
               {request.description}
             </Text>
@@ -180,7 +179,7 @@ export function ActionCall({
               <Text size="sm" fw={600} mb={4}>
                 Exact arguments (unredacted)
               </Text>
-              {prettyArguments === undefined || raw ? <ActionJson value={request.arguments} /> : prettyArguments}
+              {prettyArguments === undefined || raw ? <JsonBlock value={request.arguments} /> : prettyArguments}
             </>
           )}
         </div>

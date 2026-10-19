@@ -8,7 +8,7 @@ import type { JSX, ReactNode } from "react";
 
 import { type CallToolResult, toolContentRestatesValue, toolValue } from "../call_tool_result";
 import type { ActionRequestView } from "../client";
-import { ActionJson } from "../payload";
+import { JsonBlock } from "../../text_block";
 import { renderPreview } from "./entry";
 import type { ActionOutcome, ActionPresentation } from "./presentation";
 import { renderResultPreview } from "./result_entry";
@@ -141,7 +141,7 @@ function recordedDataFallback(value: unknown): JSX.Element {
       <Text size="xs" c="dimmed">
         Details shown as recorded data
       </Text>
-      <ActionJson value={value} />
+      <JsonBlock value={value} />
     </Stack>
   );
 }

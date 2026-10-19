@@ -3,7 +3,7 @@ import { Anchor, Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { ActionJson, ActionText } from "../payload";
+import { JsonBlock, TextBlock } from "../../text_block";
 import {
   defineCallPreview,
   definePreview,
@@ -87,7 +87,7 @@ function DraftOpened({ args }: { args: DraftArguments }): JSX.Element {
       <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
         {args.subject || "(no subject)"}
       </Text>
-      <ActionText text={args.body} heading="Message body" format="prose" clamp={false} />
+      <TextBlock text={args.body} heading="Message body" format="prose" clamp={false} />
     </Stack>
   );
 }
@@ -144,7 +144,7 @@ function ThreadSearchCollapsed({ args }: { args: ThreadSearchArguments }): JSX.E
 }
 
 function ThreadSearchOpened({ args }: { args: ThreadSearchArguments }): JSX.Element {
-  return <ActionJson value={args} clamp={false} />;
+  return <JsonBlock value={args} clamp={false} />;
 }
 
 export const gmailThreadSearchLabel: ArgumentsPreview = definePreview(threadSearchArguments, ThreadSearchLabel);
@@ -217,7 +217,7 @@ function DraftCall({ args, result }: CallPreviewProps<DraftArguments, DraftCallR
           Bcc {args.bcc.join(", ")}
         </Text>
       )}
-      <ActionText text={args.body} heading="Message body" format="prose" />
+      <TextBlock text={args.body} heading="Message body" format="prose" />
       {threadHref && (
         <Anchor href={threadHref} target="_blank" rel="noreferrer">
           Reply in Gmail thread

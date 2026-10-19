@@ -1,7 +1,7 @@
 import { Stack } from "@mantine/core";
 import type { JSX } from "react";
 
-import { ActionJson, ActionText } from "../actions/payload";
+import { JsonBlock, TextBlock } from "../text_block";
 import { CodeBlock } from "../code_block";
 import { CommandCallView, OutputBlock } from "../command_view";
 
@@ -31,8 +31,8 @@ export function OperationPresentationVisual(): JSX.Element {
         maw={760}
         mx="auto"
       >
-        <ActionText heading="Applied manifest" language="yaml" text={manifest} />
-        <ActionText
+        <TextBlock heading="Applied manifest" language="yaml" text={manifest} />
+        <TextBlock
           heading="Description"
           format="prose"
           text={
@@ -40,7 +40,7 @@ export function OperationPresentationVisual(): JSX.Element {
           }
           clamp={false}
         />
-        <ActionJson heading="Recorded data" value={{ phase: "Running", replicas: 2 }} clamp={false} />
+        <JsonBlock heading="Recorded data" value={{ phase: "Running", replicas: 2 }} clamp={false} />
         <CommandCallView
           target="Pod test-apps/demo-0"
           argv={["printf", "hello from argv", "line 2"]}

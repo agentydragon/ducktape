@@ -5,7 +5,7 @@ import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRigh
 import { type JSX, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
-import { ActionJson } from "./payload";
+import { JsonBlock } from "../text_block";
 import { ResizeHandle, usePaneSize } from "../resize_handle";
 import {
   actionOffersCardDecisionButtons,
@@ -135,7 +135,7 @@ function PendingActionList({
                     <Text size="xs" c="dimmed">
                       Details shown as recorded data
                     </Text>
-                    <ActionJson value={request.arguments} clamp={false} />
+                    <JsonBlock value={request.arguments} clamp={false} />
                   </>
                 ) : (
                   openedPreview

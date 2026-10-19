@@ -4,7 +4,7 @@ import { z } from "zod";
 import { parseAllDocuments } from "yaml";
 
 import { looksLikeJson } from "../json_view";
-import { ActionJson, ActionText } from "./payload";
+import { JsonBlock, TextBlock } from "../text_block";
 import { parsedJson } from "../parsed_json";
 
 /** One block of a `CallToolResult`'s `content`, in the MCP wire shape of the kinds this view
@@ -124,7 +124,7 @@ export function CallToolResultView({ result }: { result: CallToolResult }): JSX.
           <Text size="xs" c="dimmed" mb={4}>
             Structured content
           </Text>
-          <ActionJson value={structured} />
+          <JsonBlock value={structured} />
         </div>
       )}
     </Stack>
@@ -134,7 +134,7 @@ export function CallToolResultView({ result }: { result: CallToolResult }): JSX.
 function ContentBlockView({ block }: { block: ContentBlock }): JSX.Element {
   switch (block.type) {
     case "text":
-      return <TextBlock text={block.text} />;
+      return <ToolTextBlock text={block.text} />;
     case "image":
       return (
         <img
@@ -169,22 +169,22 @@ function ContentBlockView({ block }: { block: ContentBlock }): JSX.Element {
           <Text size="xs" c="dimmed" mb={4} style={{ overflowWrap: "anywhere" }}>
             {block.resource.uri}
           </Text>
-          <TextBlock text={block.resource.text} />
+          <ToolTextBlock text={block.resource.text} />
         </div>
       );
     case "unrecognized":
-      return <ActionJson value={block.block} />;
+      return <JsonBlock value={block.block} />;
   }
 }
 
 /** Text as the structure it serializes when it is a JSON object or array, which is how tools often
  * answer, and otherwise as the text itself. */
-function TextBlock({ text }: { text: string }): JSX.Element {
+function ToolTextBlock({ text }: { text: string }): JSX.Element {
   const structure = useMemo(() => jsonStructure(text), [text]);
   return structure === undefined ? (
-    <ActionText text={text} language={looksLikeJson(text) ? "json" : undefined} />
+    <TextBlock text={text} language={looksLikeJson(text) ? "json" : undefined} />
   ) : (
-    <ActionJson value={structure} />
+    <JsonBlock value={structure} />
   );
 }
 

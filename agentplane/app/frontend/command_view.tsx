@@ -4,14 +4,13 @@
 import { Button, Stack, Text } from "@mantine/core";
 import { type JSX, useState } from "react";
 
-import { ClampedBlock, lineCount } from "./clamped_block";
+import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "./clamped_block";
 import { CodeBlock, type CodeBlockSurface } from "./code_block";
 import { Disclosure, DisclosureBody } from "./disclosure";
 import { HighlightedText } from "./json_view";
 import { OperationSection } from "./operation_section";
 
 export const COMMAND_MAX_HEIGHT_REM = 10;
-export const OUTPUT_MAX_HEIGHT_REM = 16;
 
 type Expansion = readonly [boolean, (expanded: boolean) => void];
 
@@ -152,7 +151,7 @@ export function OutputBlock({
       keepMounted
     >
       <ClampedBlock
-        maxHeightRem={OUTPUT_MAX_HEIGHT_REM}
+        maxHeightRem={TEXT_MAX_HEIGHT_REM}
         lines={lines}
         label={name}
         expansion={previewExpansion}

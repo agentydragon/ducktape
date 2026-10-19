@@ -5,7 +5,7 @@ import type { ActionPresentation } from "../presentation";
 import { Code, Stack, Text } from "@mantine/core";
 
 import { definePreview, type ArgumentsPreview } from "../entry";
-import { ActionText } from "../../payload";
+import { TextBlock } from "../../../text_block";
 
 // Inline card decisions are limited to calls with no description; a compact preview never stands in
 // for reviewing authored text, which remains available in the full argument view.
@@ -43,7 +43,7 @@ function CreatePullRequest({ args }: { args: z.infer<typeof createPullRequest> }
           <Text size="sm" fw={600}>
             Description
           </Text>
-          <ActionText text={args.body} clamp={false} />
+          <TextBlock text={args.body} heading="Description" format="prose" clamp={false} />
         </Stack>
       )}
       {args.draft === true && <Text size="sm">Create as a draft.</Text>}

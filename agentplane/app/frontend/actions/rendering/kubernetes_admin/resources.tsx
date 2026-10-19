@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import { parseAllDocuments, stringify } from "yaml";
 import { z } from "zod";
 
-import { ActionText } from "../../payload";
+import { TextBlock } from "../../../text_block";
 import { defineResultPreview, type ResultPreview } from "../result_entry";
 import { kubernetesTarget } from "./resource_common";
 
@@ -98,7 +98,7 @@ export function KubernetesManifestText({ text }: { text: string }): JSX.Element 
 }
 
 function KubernetesYamlText({ heading, text }: { heading: string; text: string }): JSX.Element {
-  return <ActionText text={text} language="yaml" heading={heading} />;
+  return <TextBlock text={text} language="yaml" heading={heading} />;
 }
 
 function resourceTarget(resource: KubernetesResource): string {
