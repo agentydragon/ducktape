@@ -2212,20 +2212,24 @@ data:
             - low
             - medium
             - high
-            - max
         - model: antigravity/ant-messages/claude-sonnet-4-6
           display_name: Claude Sonnet 4.6 (Thinking) — Google Antigravity
           reasoning_efforts:
             - low
             - medium
             - high
-            - max
         - model: antigravity/ant-messages/gemini-3-flash
           display_name: Gemini 3 Flash — Google Antigravity
-          reasoning_efforts: []
+          reasoning_efforts:
+            - low
+            - medium
+            - high
         - model: antigravity/ant-messages/gemini-3.5-flash-lite
           display_name: Gemini 3.5 Flash-Lite — Google Antigravity
-          reasoning_efforts: []
+          reasoning_efforts:
+            - low
+            - medium
+            - high
         - model: chatgpt/oai-responses/gpt-6-astra
           display_name: GPT-6 Astra — ChatGPT
           reasoning_efforts:
