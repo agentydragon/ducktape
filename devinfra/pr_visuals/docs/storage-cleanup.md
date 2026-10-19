@@ -99,15 +99,15 @@ means a net size change is not exact accounting of this operation alone.
 The approved one-time cutoff was `2026-10-16T03:57:48Z`. No recurring expiry rule
 was installed and shared images were not deleted.
 
-| Observation | Result |
-| --- | --- |
-| Expired unprotected bundles deleted | 8,726 |
-| Deleted S3 objects / payload | 3,287,493 / 328.29 GB |
-| Remaining S3 objects / payload | 450,550 / 46.44 GB |
-| Protected original objects verified present | 69,549 |
-| Live baseline pointers and sample PNGs checked | 87 |
-| Collection storage before / after compaction | 378.05 GB / 49.44 GB |
-| Net collection-size reduction, before replica copies | 328.61 GB |
+| Observation                                          | Result                |
+| ---------------------------------------------------- | --------------------- |
+| Expired unprotected bundles deleted                  | 8,726                 |
+| Deleted S3 objects / payload                         | 3,287,493 / 328.29 GB |
+| Remaining S3 objects / payload                       | 450,550 / 46.44 GB    |
+| Protected original objects verified present          | 69,549                |
+| Live baseline pointers and sample PNGs checked       | 87                    |
+| Collection storage before / after compaction         | 378.05 GB / 49.44 GB  |
+| Net collection-size reduction, before replica copies | 328.61 GB             |
 
 Deletion completed without reported errors. The first compaction pass reclaimed
 only part of the deleted storage; a second pass explicitly selected the remaining
