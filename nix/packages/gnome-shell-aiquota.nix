@@ -27,12 +27,27 @@ python314Packages.buildPythonApplication {
       typer
     ]
     ++ [ claudeApi ];
-  pythonImportsCheck = [
-    "aiquota.cli"
-    "aiquota.desktop"
-  ];
+  pythonImportsCheck = [ "aiquota.cli" ];
   doCheck = false;
   dontUsePytestCheck = true;
+
+  preDistPhases = [ "aiquotaConsoleScriptsImportCheck" ];
+  aiquotaConsoleScriptsImportCheck = ''
+        export PYTHONPATH="$out/${python314Packages.python.sitePackages}:$PYTHONPATH"
+        (cd "$out" && ${python314Packages.python.interpreter} -c '
+    import importlib.metadata
+
+    entry_points = [
+        entry_point
+        for entry_point in importlib.metadata.distribution("aiquota").entry_points
+        if entry_point.group == "console_scripts"
+    ]
+    if not entry_points:
+        raise RuntimeError("aiquota wheel has no console-script entry points")
+    for entry_point in entry_points:
+        entry_point.load()
+    ')
+  '';
 
   nativeBuildInputs = [ pkgs.unzip ];
   postInstall = ''
