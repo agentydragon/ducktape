@@ -50,7 +50,7 @@ func defaultConfig() config {
 }
 
 func loadConfig(environ []string) (config, error) {
-	c, err := settings.Load(settings.Options{Prefix: settingPrefix}, defaultConfig(), environ)
+	c, err := settings.Load(settingPrefix, defaultConfig(), environ)
 	if err != nil {
 		return config{}, err
 	}
