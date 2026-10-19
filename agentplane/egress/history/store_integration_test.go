@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
@@ -12,18 +11,9 @@ import (
 	"github.com/google/uuid"
 )
 
-func testDatabaseURL(t *testing.T) string {
-	t.Helper()
-	url := os.Getenv("AGENTPLANE_TEST_DATABASE_URL")
-	if url == "" {
-		t.Fatal("AGENTPLANE_TEST_DATABASE_URL is required")
-	}
-	return url
-}
-
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := Open(testDatabaseURL(t))
+	db, err := Open(integrationDatabase.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +195,7 @@ func TestRetentionAndRecentLimit(t *testing.T) {
 
 func TestFollowWakesWhenAReplicaCommitsAndEndsWhenItsConnectionIsLost(t *testing.T) {
 	// A heartbeat far past the test: only a commit can be what wakes the second frame.
-	changes, err := NewChanges(testDatabaseURL(t), time.Hour)
+	changes, err := NewChanges(integrationDatabase.URL, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

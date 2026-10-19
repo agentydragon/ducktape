@@ -1,5 +1,4 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 go_library(
     name = "gateway",
@@ -85,16 +84,16 @@ go_test(
     ],
 )
 
-# The Python wrapper supplies the real migrated PostgreSQL database and selects
-# only the queue-to-tunnel test from this Go binary.
 go_test(
     name = "queue_tunnel_integration_test",
+    size = "medium",
     srcs = [
         "control_test.go",
         "queue_tunnel_integration_test.go",
+        "queue_tunnel_integration_testmain_test.go",
     ],
     embed = [":gateway"],
-    tags = ["manual"],
+    tags = ["requires_docker"],
     deps = [
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_log_go_proto",
@@ -102,9 +101,11 @@ go_test(
         "//agentplane/proto:runner_control_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner_gateway/dispatcher",
+        "//agentplane/runner_gateway/migrations",
         "//agentplane/sandbox_controller",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/lease",
+        "//agentplane/testing/postgres",
         "//agentplane/workload_auth/go/auth",
         "@com_github_lib_pq//:pq",
         "@io_k8s_api//authentication/v1:authentication",
@@ -125,33 +126,5 @@ go_test(
         "@org_golang_google_grpc//status",
         "@org_golang_google_grpc//test/bufconn",
         "@org_golang_google_protobuf//proto",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = ["//util/testing:postgres_fixtures"],
-)
-
-py_test(
-    name = "test_queue_tunnel_integration",
-    size = "medium",
-    srcs = ["test_queue_tunnel_integration.py"],
-    data = [
-        ":queue_tunnel_integration_test",
-        "//agentplane/runner_gateway/migrations/cmd:runner-gateway-queue-migrate",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/runner_gateway:conftest",
-        "//util/bazel:runfiles",
-        "//util/testing:postgres",
-        "@pypi//psycopg",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )

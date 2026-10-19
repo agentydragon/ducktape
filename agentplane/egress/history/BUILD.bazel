@@ -1,5 +1,4 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("//devinfra/python:defs.bzl", "py_test")
 
 go_library(
     name = "history",
@@ -32,39 +31,21 @@ go_test(
     ],
 )
 
-# Executed by the Python wrapper below so the repo's real PostgreSQL fixture
-# provides a migrated database. Running this Go test alone intentionally fails.
 go_test(
     name = "store_integration_test",
+    size = "medium",
     srcs = [
         "helpers_test.go",
         "store_integration_test.go",
+        "store_integration_testmain_test.go",
     ],
     embed = [":history"],
-    tags = ["manual"],
+    tags = ["requires_docker"],
     deps = [
         "//agentplane/egress/decision",
+        "//agentplane/egress/history_migrations",
+        "//agentplane/testing/postgres",
         "@com_github_google_uuid//:uuid",
         "@com_github_sethvargo_go_retry//:go-retry",
-    ],
-)
-
-py_test(
-    name = "test_store_integration",
-    size = "medium",
-    srcs = ["test_store_integration.py"],
-    data = [
-        ":store_integration_test",
-        "//agentplane/egress/history_migrations/cmd:egress-history-migrate",
-    ],
-    requires_docker = True,
-    deps = [
-        "//:conftest",
-        "//agentplane/egress:conftest",
-        "//util/bazel:runfiles",
-        "//util/testing:postgres",
-        "@pypi//psycopg",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )

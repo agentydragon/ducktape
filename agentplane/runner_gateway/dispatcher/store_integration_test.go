@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -75,11 +74,7 @@ func (r *rejectingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string
 
 func testStore(t *testing.T, cap int) *Store {
 	t.Helper()
-	url := os.Getenv("AGENTPLANE_TEST_DATABASE_URL")
-	if url == "" {
-		t.Fatal("AGENTPLANE_TEST_DATABASE_URL is required")
-	}
-	db, err := sql.Open("postgres", url)
+	db, err := sql.Open("postgres", integrationDatabase.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +261,7 @@ func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	// the rows are deleted in the same transaction and cannot be read afterward.
 	subscribers := make([]*watchSubscription, 0, 2)
 	for replica := range 2 {
-		hub := NewWatchHub(os.Getenv("AGENTPLANE_TEST_DATABASE_URL"))
+		hub := NewWatchHub(integrationDatabase.URL)
 		listenContext, cancel := context.WithCancel(ctx)
 		ended := make(chan error, 1)
 		go func() { ended <- hub.Run(listenContext) }()

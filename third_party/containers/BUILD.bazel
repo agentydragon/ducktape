@@ -9,6 +9,7 @@
 #     deps = ["//third_party/containers:postgres_18"]
 #     from third_party.containers import postgres_18
 
+load("@rules_oci//oci:defs.bzl", "oci_load")
 load("//devinfra/oci:defs.bzl", "oci_image_py")
 load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_library")
 
@@ -53,6 +54,24 @@ oci_image_py(
     testonly = True,
     image = "@ryuk_linux_amd64",
     tag = RYUK_TAG,
+    visibility = ["//visibility:public"],
+)
+
+# Go Testcontainers integration tests use the pinned images already carried in Bazel runfiles.
+# The Go library's Ryuk version matches RYUK_TAG.
+oci_load(
+    name = "postgres_18_load",
+    testonly = True,
+    image = "@postgres_18_linux_amd64",
+    repo_tags = ["postgres:18"],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "ryuk_014_load",
+    testonly = True,
+    image = "@ryuk_linux_amd64",
+    repo_tags = [RYUK_TAG],
     visibility = ["//visibility:public"],
 )
 

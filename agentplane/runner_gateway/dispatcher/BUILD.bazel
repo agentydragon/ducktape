@@ -1,5 +1,4 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 go_library(
     name = "dispatcher",
@@ -48,8 +47,6 @@ go_library(
     ],
 )
 
-# Executed by the Python wrapper below so the repo's real PostgreSQL fixture
-# provides a migrated database. Running this Go test alone intentionally fails.
 go_test(
     name = "sandbox_kubernetes_test",
     srcs = ["sandbox_kubernetes_test.go"],
@@ -68,14 +65,20 @@ go_test(
 
 go_test(
     name = "store_integration_test",
-    srcs = ["store_integration_test.go"],
+    size = "medium",
+    srcs = [
+        "store_integration_test.go",
+        "store_integration_testmain_test.go",
+    ],
     embed = [":dispatcher"],
-    tags = ["manual"],
+    tags = ["requires_docker"],
     deps = [
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:session_dispatcher_go_proto",
+        "//agentplane/runner_gateway/migrations",
+        "//agentplane/testing/postgres",
         "//agentplane/workload_auth/go/auth",
         "@com_github_lib_pq//:pq",
         "@io_k8s_api//authentication/v1:authentication",
@@ -87,33 +90,5 @@ go_test(
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = ["//util/testing:postgres_fixtures"],
-)
-
-py_test(
-    name = "test_store_integration",
-    size = "medium",
-    srcs = ["test_store_integration.py"],
-    data = [
-        ":store_integration_test",
-        "//agentplane/runner_gateway/migrations/cmd:runner-gateway-queue-migrate",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/runner_gateway:conftest",
-        "//util/bazel:runfiles",
-        "//util/testing:postgres",
-        "@pypi//psycopg",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )

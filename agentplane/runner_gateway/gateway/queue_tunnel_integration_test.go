@@ -62,17 +62,13 @@ func (l queueLease) StillOwns(ctx context.Context, owner dispatcher.Owner) (bool
 	return l.store.IsCurrentOwner(ctx, owner)
 }
 
-// This test runs via the PostgreSQL-backed Python wrapper below. It starts with
-// a committed queue row and ends with the runner's admission returned over the
-// real Gateway tunnel, without bypassing the Dispatcher worker.
+// This test starts with a committed queue row and ends with the runner's
+// admission returned over the real Gateway tunnel, without bypassing the
+// Dispatcher worker.
 func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
-	dsn := os.Getenv("AGENTPLANE_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Fatal("AGENTPLANE_TEST_DATABASE_URL is required")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open("postgres", integrationDatabase.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
