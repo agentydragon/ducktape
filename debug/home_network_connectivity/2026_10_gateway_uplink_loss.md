@@ -42,6 +42,20 @@ errors on home-hosted backends.
   Loss to the switch was ~0% throughout. A freshly renegotiated link starts clean, so only
   the long windows (21:51-22:15 at 1G against 20:55-21:45 at 2.5G) say anything about 1G.
 
+## Flux outage from `wyrm2` (2026-10-19)
+
+Flux `source-controller` was scheduled on `wyrm2`. From 21:10Z its clones of
+`agentydragon/ducktape` failed (`context deadline exceeded`, `connection reset by peer`,
+`TLS handshake timeout`, HTTP/2 `CANCEL`), so nothing merged after #11162 (21:29Z) reached the
+cluster. Comparison from the same minutes, not a loss measurement:
+
+- A shallow clone of the repo (88 MiB) took 10 s from an OVH node, and `image-automation-controller`
+  (on OVH) kept cloning and pushing `devel` (last push 21:30Z).
+- `github-graphql-rate-exporter-agentydragon` on `wyrm2` logged `ConnectTimeout` to `api.github.com`
+  1-5 times per 10 min from its start at 03:37Z; its twin on an OVH node logged none.
+
+`source-controller` is now pinned to `hil-ovh` in `gotk-components.yaml`.
+
 ## Next
 
 Keep the prober running and see whether the 22% state returns at 2.5G (the `HomeGatewayUplinkLoss`

@@ -2655,6 +2655,9 @@ spec:
           name: tmp
       nodeSelector:
         kubernetes.io/os: linux
+        # Fetches from GitHub; a home node's lossy uplink makes the clone time out and Flux
+        # cannot then pull the fix (debug/home_network_connectivity/2026_10_gateway_uplink_loss.md).
+        topology.kubernetes.io/zone: hil-ovh
       priorityClassName: system-cluster-critical
       securityContext:
         fsGroup: 1337
