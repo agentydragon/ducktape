@@ -4,12 +4,16 @@ import { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
-import { KubernetesManifestText, kubernetesResourcesResult } from "./resources";
+import { KubernetesManifestText, kubernetesResourceSummary, kubernetesResourcesResult } from "./resources";
 
 const resourceApplyArguments = z.strictObject({ resource: z.string().min(1) });
 
-function Collapsed(): JSX.Element {
-  return <Text size="sm">Kubernetes manifest</Text>;
+function Collapsed({ args }: { args: z.infer<typeof resourceApplyArguments> }): JSX.Element {
+  return (
+    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+      {kubernetesResourceSummary(args.resource) ?? "Kubernetes manifest"}
+    </Text>
+  );
 }
 
 function ApplyLabel(): JSX.Element {

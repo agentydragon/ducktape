@@ -38,6 +38,19 @@ export function kubernetesResources(value: unknown): KubernetesResource[] | unde
   return resources.length > 0 && resources.every(isKubernetesResource) ? resources : undefined;
 }
 
+/** A compact operation summary for a manifest; malformed or non-resource YAML has no inferred identity. */
+export function kubernetesResourceSummary(text: string): string | undefined {
+  const resources = parseKubernetesYaml(text);
+  if (resources === undefined) return undefined;
+
+  const identities = resources.map(resourceTarget);
+  if (identities.length === 1) return `Apply ${identities[0]}`;
+
+  const listed = identities.slice(0, 2).join(", ");
+  const remaining = identities.length - 2;
+  return `Apply ${identities.length} Kubernetes resources: ${listed}${remaining > 0 ? `, and ${remaining} more` : ""}`;
+}
+
 export const kubernetesResourcesSchema: z.ZodType<KubernetesResource[]> = z.unknown().transform((value, context) => {
   const resources = kubernetesResources(value);
   if (resources === undefined) {
@@ -92,7 +105,7 @@ function resourceTarget(resource: KubernetesResource): string {
   const metadata = resource.metadata;
   if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata)) return String(resource.kind);
   const fields = metadata as Record<string, unknown>;
-  const name = typeof fields.name === "string" ? fields.name : undefined;
-  const namespace = typeof fields.namespace === "string" ? fields.namespace : undefined;
+  const name = typeof fields.name === "string" && fields.name.length > 0 ? fields.name : undefined;
+  const namespace = typeof fields.namespace === "string" && fields.namespace.length > 0 ? fields.namespace : undefined;
   return name === undefined ? String(resource.kind) : kubernetesTarget(String(resource.kind), name, namespace);
 }
