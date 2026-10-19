@@ -1,6 +1,6 @@
 # Durable SSH-backed processes
 
-Status: **deferred** ([`SSHDURABLE`](../../../agentplane/plans/task_freezer.md#sshdurable--durable-ssh-backed-processes)). One-shot commands run through the independent
+Status: **deferred** ([`SSHDURABLE`](../../agentplane/plans/task_freezer.md#sshdurable--durable-ssh-backed-processes)). One-shot commands run through the independent
 `ssh-mcp` server (<../README.md>) behind the Agentplane MCP Executor; this plan is
 the follow-up for processes that must survive an SSH disconnect and be inspected or controlled later.
 

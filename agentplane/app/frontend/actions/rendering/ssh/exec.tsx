@@ -1,4 +1,4 @@
-// The `exec` tool of the SSH MCP server (x/ssh_mcp_server/server.py): the call as the operator decides
+// The `exec` tool of the SSH MCP server (ssh_mcp_server/server.py): the call as the operator decides
 // it, the target and the exact command, and what came back, the exit code and the output.
 import { Badge, Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";

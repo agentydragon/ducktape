@@ -159,6 +159,7 @@ known-first-party = [
     "mcp_infra",
     "openai_utils",
     "py_detectors",
+    "ssh_mcp_server",
     "sysrw",
     "tana",
     "tests",  # test packages (until colocated under main packages)

@@ -11,8 +11,8 @@ from ipaddress import IPv4Address
 
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from ssh_mcp_server.server import SshSettings
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from x.ssh_mcp_server.server import SshSettings
 
 NAME = "ssh-mcp"
 NAMESPACE = NAME

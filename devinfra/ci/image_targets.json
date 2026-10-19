@@ -220,8 +220,8 @@
       "registry": "forgejo"
     },
     "ssh-mcp": {
-      "target": "//x/ssh_mcp_server:image",
-      "test": "//x/ssh_mcp_server/...",
+      "target": "//ssh_mcp_server:image",
+      "test": "//ssh_mcp_server/...",
       "registry": "forgejo"
     },
     "google-mcp": {

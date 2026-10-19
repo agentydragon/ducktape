@@ -12,7 +12,7 @@ TSCONFIG = "//agentplane/app/frontend:tsconfig"
 js_openapi_zod(
     name = "ssh_action_schemas_generated",
     out = "schemas/ssh/exec.zod.ts",
-    generator = "//x/ssh_mcp_server:export_frontend_schema_bin",
+    generator = "//ssh_mcp_server:export_frontend_schema_bin",
     tsconfig = "//agentplane/app/frontend:tsconfig_generated",
 )
 

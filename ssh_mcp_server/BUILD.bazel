@@ -23,7 +23,7 @@ py_library(
 
 py_binary(
     name = "server_cli",
-    main_module = "x.ssh_mcp_server.server",
+    main_module = "ssh_mcp_server.server",
     deps = [":server"],
 )
 
@@ -38,7 +38,7 @@ py_library(
 
 py_binary(
     name = "export_frontend_schema_bin",
-    main_module = "x.ssh_mcp_server.export_frontend_schema",
+    main_module = "ssh_mcp_server.export_frontend_schema",
     deps = [":export_frontend_schema"],
 )
 

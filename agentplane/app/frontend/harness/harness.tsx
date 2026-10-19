@@ -750,7 +750,7 @@ let mapThread = (thread: ThreadView): ThreadView => thread;
 const DIAGRAM_PNG =
   "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgAQMAAABJtOi3AAAABlBMVEX///8ii+b/FUc9AAAAFElEQVR42mNg+A+ERBBEKmOgsnkA7b0/wU6R7xwAAAAASUVORK5CYII=";
 
-// What the ssh MCP server's `exec` (x/ssh_mcp_server/server.py) returns for a listing that names one
+// What the ssh MCP server's `exec` (ssh_mcp_server/server.py) returns for a listing that names one
 // missing path: ls exits 2, and its output runs past the lines the widget shows before "Show all".
 const SSH_EXEC_RESULT = {
   host: "test-archive-host",

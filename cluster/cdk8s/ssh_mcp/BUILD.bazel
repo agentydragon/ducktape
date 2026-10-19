@@ -21,8 +21,8 @@ py_library(
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:service_ref",
+        "//ssh_mcp_server:server",
         "//util/bazel:runfiles",
-        "//x/ssh_mcp_server:server",
     ],
 )
 

@@ -9,7 +9,7 @@ from typing import Any
 
 from fastmcp import Client
 
-from x.ssh_mcp_server.server import SshSettings, TargetConfig, build_mcp
+from ssh_mcp_server.server import SshSettings, TargetConfig, build_mcp
 
 
 async def _exec_schemas() -> tuple[dict[str, Any], dict[str, Any]]:

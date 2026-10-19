@@ -37,7 +37,7 @@ targets in `list_targets` with `available: false`; they do not remove the target
 server. Duplicate `(host, user)` tuples are rejected as invalid configuration.
 
 The HTTP MCP endpoint requires `Authorization: Bearer <SSH_MCP_BEARER_TOKEN>`. The standalone
-[deployment](../../cluster/k8s/ssh-mcp/README.md) uses one ESO-generated bearer
+[deployment](../cluster/k8s/ssh-mcp/README.md) uses one ESO-generated bearer
 shared only with the staging Action Service. The endpoint is cluster-internal and has no public route.
 
 Paramiko provides the SSH transport with strict reviewed `known_hosts`, disabled agent/key
