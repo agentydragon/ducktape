@@ -243,10 +243,14 @@ completed Workflows in Postgres or MySQL.
 
 The operator's "archive" keeps the CR, which is D1's retiring. The precedent suggests a second kind
 of archive, a move out of Kubernetes: the CR and state PVC go, History keeps the transcript, and an
-archive row keeps what grants need, such as the Sandbox's collections when it was archived. Retired
-Sandboxes, which can resume, stay CRs and stay few. It is D2 with an explicit archive step. It needs
-no restore: the operator would not ask for "given just history records and no Sandbox or PVC
-anymore, make a new Sandbox and make it restore and continue that history" (09:53).
+archive row keeps what grants need, such as the Sandbox's tags. The tags move with it and stay
+editable, since freezing them "would be a bit inconvenient" (10:24): at any moment they live in one
+place, the CR or the archive row, so nothing reconciles between the two, but the archive needs a tag
+write path held to the same writers, and tags authored in git need an importer, since Flux
+cannot write rows. Retired Sandboxes, which can resume, stay CRs and stay few. It is D2 with an
+explicit archive step. It needs no restore: the operator would not ask for "given just history
+records and no Sandbox or PVC anymore, make a new Sandbox and make it restore and continue that
+history" (09:53).
 
 ## Right under every direction
 
@@ -257,7 +261,7 @@ Candidates; each still needs the operator's go.
   is not part of this; only D2's reads might need it (`HISTORY_SESSION_KEY_DESIGN`).
 - **Collections as tags on the Sandbox.** The operator (09:58): a collection as "something like a
   tag on one or more Sandboxes that's just a string, without a UID identity or a k8s object backing
-  it, no Membership objects". A tag lives and dies with its Sandbox, an archive copies it by value,
+  it, no Membership objects". A tag lives and dies with its Sandbox, an archive takes it along,
   and a rule matches it the same way in every direction, as it does direct and `allSandboxes`
   targets; membership then picks no direction, and a recreated Sandbox has only the tags its
   manifest or preset gives it. Against the membership CRs, git cannot cleanly tag a Sandbox it did
@@ -411,6 +415,7 @@ Held until one is chosen:
 | 2026-10-19 09:42 | The workspace PVC "should be disposable without history disappearing"                               | A workspace drop is right under every direction    |
 | 2026-10-19 09:50 | Dropping the workspace "should still in principle let a harness start and continue"                 | The drop keeps the Sandbox resumable               |
 | 2026-10-19 09:53 | No restoring a Sandbox from history records alone                                                   | An archive need not be resumable                   |
+| 2026-10-19 10:24 | Freezing an archived Sandbox's collections "would be a bit inconvenient"                            | Archived Sandboxes' tags stay editable             |
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control
