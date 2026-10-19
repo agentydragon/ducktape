@@ -157,7 +157,7 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
 @pytest.mark.parametrize(
     ("group", "name", "arguments", "visible", "overview"),
     [
-        (
+        pytest.param(
             "kubernetes_admin",
             "pods_list_in_namespace",
             {
@@ -167,15 +167,17 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
             },
             ["test-namespace-", "label selector", "status.phase=Running"],
             "Matching pods where",
+            id="long-target-and-selectors",
         ),
-        (
+        pytest.param(
             "gmail",
             "threads_list",
             {"q": "from:deployments@example.com " + "query-" * 12, "maxResults": 23},
             ['"maxResults": 23', "from:deployments@example.com"],
             "from:deployments@example.com",
+            id="gmail-query-limit",
         ),
-        (
+        pytest.param(
             "kubernetes_admin",
             "pods_log",
             {
@@ -187,8 +189,9 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
             },
             ['"container": "sidecar-', '"previous": true', '"tail": -1'],
             "Previous logs",
+            id="previous-pod-logs",
         ),
-        (
+        pytest.param(
             "kubernetes_admin",
             "resources_list",
             {
@@ -200,38 +203,32 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
             },
             ["field selector status.phase=Running", "label selector app=demo-"],
             "Matching resources where",
+            id="resource-list-selectors",
         ),
-        (
+        pytest.param(
             "kubernetes_admin",
             "events_list",
             {"namespace": "apps", "fieldSelector": "type=Warning," + "reason-" * 8},
             ["Show events matching", "type=Warning"],
             "Show events matching",
+            id="event-field-selector",
         ),
-        (
+        pytest.param(
             "kubernetes_admin",
             "resources_delete",
             {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
             ["Use API version v1", "request a 0s grace period"],
             "Use API version v1",
+            id="resource-delete-grace-period",
         ),
-        (
+        pytest.param(
             "tana",
             "get_or_create_calendar_node",
             {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
             ["week calendar node", "2026-10-12", "workspace-123"],
             "week calendar node",
+            id="calendar-context",
         ),
-    ],
-    ids=[
-        "long-target-and-selectors",
-        "gmail-query-limit",
-        "previous-pod-logs",
-        "resource-list-selectors",
-        "event-field-selector",
-        "resource-get-version",
-        "resource-delete-grace-period",
-        "calendar-context",
     ],
 )
 async def test_action_argument_layouts(
@@ -323,34 +320,48 @@ async def test_sandbox_action_results(
 @pytest.mark.parametrize(
     ("group", "name", "arguments", "visible"),
     [
-        (
+        pytest.param(
             "kubernetes_admin",
             "resources_get",
             {"apiVersion": "apps/v1", "kind": "Deployment", "name": "web"},
             "Read with API version apps/v1",
+            id="resource-get",
         ),
-        (
+        pytest.param(
             "kubernetes_admin",
             "pods_list_in_namespace",
             {"namespace": "apps", "labelSelector": "app=web", "fieldSelector": "status.phase=Running"},
             "status.phase=Running",
+            id="pods-in-namespace",
         ),
-        (
+        pytest.param(
             "kubernetes_admin",
             "resources_list",
             {"apiVersion": "v1", "kind": "Pod", "namespace": "apps", "labelSelector": "app=web"},
             "app=web",
+            id="resource-list",
         ),
-        ("kubernetes_admin", "pods_get", {"name": "web-0", "namespace": "apps"}, "Get Pod apps/web-0"),
-        ("kubernetes_admin", "pods_log", {"name": "web-0", "previous": True, "tail": -1}, '"tail": -1'),
-        (
+        pytest.param(
+            "kubernetes_admin", "pods_get", {"name": "web-0", "namespace": "apps"}, "Get Pod apps/web-0", id="pod-get"
+        ),
+        pytest.param(
+            "kubernetes_admin", "pods_log", {"name": "web-0", "previous": True, "tail": -1}, '"tail": -1', id="pod-log"
+        ),
+        pytest.param(
             "kubernetes_admin",
             "resources_delete",
             {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
             "request a 0s grace period",
+            id="resource-delete",
         ),
-        ("kubernetes_admin", "events_list", {"namespace": "apps", "fieldSelector": "type=Warning"}, "type=Warning"),
-        (
+        pytest.param(
+            "kubernetes_admin",
+            "events_list",
+            {"namespace": "apps", "fieldSelector": "type=Warning"},
+            "type=Warning",
+            id="events-list",
+        ),
+        pytest.param(
             "github",
             "create_pull_request",
             {
@@ -362,26 +373,30 @@ async def test_sandbox_action_results(
                 "draft": True,
             },
             "Update docs",
+            id="github-pr",
         ),
-        (
+        pytest.param(
             "kubernetes_admin",
             "pods_exec",
             {"name": "web-0", "namespace": "apps", "container": "main", "command": ["printenv", "POD_NAME"]},
             "printenv POD_NAME",
+            id="pod-exec",
         ),
-        (
+        pytest.param(
             "gmail",
             "drafts_create",
             {"to": ["reviewer@example.com"], "subject": "Deployment review", "body": "Please review."},
             "reviewer@example.com",
+            id="gmail-draft",
         ),
-        (
+        pytest.param(
             "gmail",
             "threads_list",
             {"q": "from:deployments@example.com", "maxResults": 5},
             "from:deployments@example.com",
+            id="gmail-search",
         ),
-        (
+        pytest.param(
             "sandbox",
             "exec",
             {
@@ -392,40 +407,23 @@ async def test_sandbox_action_results(
                 "cwd": "/workspace",
             },
             "Working directory /workspace",
+            id="sandbox-exec",
         ),
-        ("sandbox", "create", {"name": "new-sandbox", "template": "python"}, "python"),
-        ("sandbox", "get", {"name": "inspected-sandbox"}, "No additional arguments."),
-        ("sandbox", "dispose", {"name": "disposed-sandbox"}, "No additional arguments."),
-        ("sandbox", "list", {}, "No arguments."),
-        ("grocy_sf", "products_list", {"detail": "full"}, "Full Product records"),
-        ("grocy_sf", "quantity_units_list", {}, "Quantity unit names"),
-        (
+        pytest.param("sandbox", "create", {"name": "new-sandbox", "template": "python"}, "python", id="sandbox-create"),
+        pytest.param("sandbox", "get", {"name": "inspected-sandbox"}, "No additional arguments.", id="sandbox-get"),
+        pytest.param(
+            "sandbox", "dispose", {"name": "disposed-sandbox"}, "No additional arguments.", id="sandbox-dispose"
+        ),
+        pytest.param("sandbox", "list", {}, "No arguments.", id="sandbox-list"),
+        pytest.param("grocy_sf", "products_list", {"detail": "full"}, "Full Product records", id="grocy-products"),
+        pytest.param("grocy_sf", "quantity_units_list", {}, "Quantity unit names", id="grocy-units"),
+        pytest.param(
             "tana",
             "get_or_create_calendar_node",
             {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
             "Granularity: week",
+            id="tana-calendar-node",
         ),
-    ],
-    ids=[
-        "resource-get",
-        "pods-in-namespace",
-        "resource-list",
-        "pod-get",
-        "pod-log",
-        "resource-delete",
-        "events-list",
-        "github-pr",
-        "pod-exec",
-        "gmail-draft",
-        "gmail-search",
-        "sandbox-exec",
-        "sandbox-create",
-        "sandbox-get",
-        "sandbox-dispose",
-        "sandbox-list",
-        "grocy-products",
-        "grocy-units",
-        "tana-calendar-node",
     ],
 )
 async def test_compact_action_summaries(
