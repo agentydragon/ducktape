@@ -61,7 +61,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     egress_pod = _resource(docs, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = next(container for container in egress_pod["containers"] if container["name"] == "proxy")
     assert proxy["image"] == fixture_chart.EGRESS_IMAGE
-    assert not any(arg.startswith("--confdir=") for arg in proxy["args"])
+    assert "args" not in proxy
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
     egress_migrator = next(container for container in egress_pod["initContainers"] if container["name"] == "migrate")
     assert egress_migrator["image"] == fixture_chart.EGRESS_MIGRATOR_IMAGE

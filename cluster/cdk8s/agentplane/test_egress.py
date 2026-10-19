@@ -75,7 +75,8 @@ def test_egress_uses_go_proxy_and_goose_migration(
     assert "PGSSLMODE" not in proxy_env
     assert "PGSSLMODE" not in migrator_env
     assert any(volume.get("configMap", {}).get("name") == "egress-go-settings" for volume in pod["volumes"])
-    assert not any(arg.startswith("--confdir=") for arg in proxy["args"])
+    assert "args" not in proxy
+    assert proxy_env["AGENTPLANE_EGRESS_RULES_NAMESPACE"]["value"] == namespace
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
     assert not {"confdir", "decision_flush_seconds"} & config.keys()
 
