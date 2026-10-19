@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
 
 const databaseURLEnv = settingPrefix + "DATABASE_URL=postgresql://user:never-print-this@db/egress"
@@ -113,6 +115,64 @@ func TestADeploymentNamingNoWorkloadNamespaceIsRefused(t *testing.T) {
 			environ := required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, contents))
 			if _, err := loadTestConfig(t, environ); err == nil {
 				t.Fatal("ran with no usable workload namespace")
+			}
+		})
+	}
+}
+
+func TestAdminGRPCIsOffUnlessItsPortIsSet(t *testing.T) {
+	c, err := loadConfig(required())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.AdminGRPCPort != nil {
+		t.Fatalf("admin gRPC listens on %d without being configured", *c.AdminGRPCPort)
+	}
+}
+
+func TestAdminGRPCLoadsFromTheFileAndTheEnvironment(t *testing.T) {
+	path := writeSettings(t, `admin_grpc_port: 9000
+admin_grpc_audience: file-audience
+admin_grpc_callers: [file-namespace/file-caller]
+`)
+	c, err := loadConfig(required(
+		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"ADMIN_GRPC_AUDIENCE=env-audience",
+		settingPrefix+`ADMIN_GRPC_CALLERS=["test-ns/test-app","test-ns/test-other"]`,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callers, err := c.adminGRPCCallers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.AdminGRPCPort == nil || *c.AdminGRPCPort != 9000 || c.AdminGRPCAudience != "env-audience" ||
+		!slices.Equal(callers, []auth.Account{{Namespace: "test-ns", Name: "test-app"}, {Namespace: "test-ns", Name: "test-other"}}) {
+		t.Fatalf("unexpected merged config: %+v", c)
+	}
+}
+
+func TestAdminGRPCIsAllOrNothing(t *testing.T) {
+	const port, audience, callers = "ADMIN_GRPC_PORT=9000", "ADMIN_GRPC_AUDIENCE=test-audience", `ADMIN_GRPC_CALLERS=["test-ns/test-app"]`
+	for name, settings := range map[string][]string{
+		"port alone":               {port},
+		"port without callers":     {port, audience},
+		"port without audience":    {port, callers},
+		"audience without port":    {audience, callers},
+		"callers without port":     {callers},
+		"port out of range":        {"ADMIN_GRPC_PORT=65536", audience, callers},
+		"caller without a slash":   {port, audience, `ADMIN_GRPC_CALLERS=["test-ns"]`},
+		"caller without namespace": {port, audience, `ADMIN_GRPC_CALLERS=["/test-app"]`},
+		"caller without a name":    {port, audience, `ADMIN_GRPC_CALLERS=["test-ns/"]`},
+		"caller with a deep path":  {port, audience, `ADMIN_GRPC_CALLERS=["test-ns/test-app/extra"]`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			prefixed := make([]string, len(settings))
+			for i, setting := range settings {
+				prefixed[i] = settingPrefix + setting
+			}
+			if _, err := loadConfig(required(prefixed...)); err == nil {
+				t.Fatal("accepted")
 			}
 		})
 	}

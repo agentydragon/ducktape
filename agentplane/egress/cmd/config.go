@@ -17,6 +17,10 @@ const settingPrefix = "AGENTPLANE_EGRESS_"
 // config is the proxy's deployment contract: each setting is a YAML key of the file named by
 // AGENTPLANE_EGRESS_CONFIG_FILE, with AGENTPLANE_EGRESS_* environment overrides for scalar
 // settings. Lists and maps are file-only. Viper loads the settings.
+//
+// The admin gRPC listener is off unless admin_grpc_port is set; it then needs admin_grpc_audience,
+// the audience of the bearer its callers send, and admin_grpc_callers, the ServiceAccounts it admits
+// as `namespace/name`.
 type config struct {
 	RulesNamespace                  string            `mapstructure:"rules_namespace"`
 	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
@@ -25,6 +29,10 @@ type config struct {
 	ListenPort                      int               `mapstructure:"listen_port"`
 	AdminHost                       string            `mapstructure:"admin_host"`
 	AdminPort                       int               `mapstructure:"admin_port"`
+	AdminGRPCHost                   string            `mapstructure:"admin_grpc_host"`
+	AdminGRPCPort                   *int              `mapstructure:"admin_grpc_port"`
+	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
+	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
 	AgentAPIHost                    string            `mapstructure:"agent_api_host"`
 	AgentAPIPort                    int               `mapstructure:"agent_api_port"`
 	CACert                          string            `mapstructure:"ca_cert"`
@@ -45,7 +53,7 @@ type config struct {
 
 func defaultConfig() config {
 	return config{
-		ListenHost: "0.0.0.0", ListenPort: 8888, AdminHost: "0.0.0.0", AdminPort: 8081,
+		ListenHost: "0.0.0.0", ListenPort: 8888, AdminHost: "0.0.0.0", AdminPort: 8081, AdminGRPCHost: "0.0.0.0",
 		AgentAPIHost: "0.0.0.0", AgentAPIPort: 8082, ResyncSeconds: 300, DecisionHistorySize: 200,
 		DecisionRetentionDays: 7, DecisionQueueSize: 2000, DecisionBatchSize: 100,
 	}
@@ -119,7 +127,7 @@ func (c *config) validate() error {
 	if slices.Contains(c.ProjectedTokenAudiences, "") {
 		return errors.New("projected_token_audiences must not contain an empty audience")
 	}
-	for _, limit := range []bounded{
+	limits := []bounded{
 		{"listen_port", c.ListenPort, 0, 65535},
 		{"admin_port", c.AdminPort, 0, 65535},
 		{"agent_api_port", c.AgentAPIPort, 0, 65535},
@@ -129,10 +137,17 @@ func (c *config) validate() error {
 		{"decision_retention_days", c.DecisionRetentionDays, 1, 365},
 		{"decision_queue_size", c.DecisionQueueSize, 1, 100000},
 		{"decision_batch_size", c.DecisionBatchSize, 1, 1000},
-	} {
+	}
+	if c.AdminGRPCPort != nil {
+		limits = append(limits, bounded{"admin_grpc_port", *c.AdminGRPCPort, 0, 65535})
+	}
+	for _, limit := range limits {
 		if limit.value < limit.lo || limit.value > limit.hi {
 			return fmt.Errorf("%s must be between %d and %d", limit.name, limit.lo, limit.hi)
 		}
+	}
+	if err := c.validateAdminGRPC(); err != nil {
+		return err
 	}
 	for logger, level := range c.LogLevels {
 		if logger != "root" {

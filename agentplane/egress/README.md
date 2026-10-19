@@ -36,7 +36,8 @@ One Go package per concern:
 - `rules`: the agent-facing `egress.agentplane-staging.svc.cluster.local/v1/rules` API, on its own
   independently authenticated listener.
 - `decision` and `history`: admission records, and their bounded best-effort write to the shared
-  PostgreSQL history; `admin` serves that history, a change stream, readiness and liveness.
+  PostgreSQL history; `admin` serves that history, a change stream, readiness and liveness, and the
+  history reads again as the gRPC `EgressAdmin` service.
 - `history_migrations`: the Goose schema of that history (below) and its migrator command.
 
 Also here:
@@ -183,6 +184,23 @@ bearer proved and returns only the redacted field allowlist. Operator
 admits the agent API from central egress only. Service target-port separation prevents recursion.
 The Service may select a different replica from the one that admitted the request. The answer is
 an informational snapshot of the answering replica, not a global acknowledgement or admission promise.
+
+## Admin gRPC API
+
+`EgressAdmin` (<../proto/egress_admin.proto>) serves the admin listener's decision reads as gRPC:
+`ListDecisions` is `/decisions`, and `WatchDecisions` is `/decisions/changes` carrying state, the
+`ListDecisions` list on subscribing and again each time it differs. Both read through the same
+`Decisions` and `Changes` as the HTTP handlers. `/healthz` and `/livez` stay HTTP; the rules API stays
+HTTP.
+
+**Deviation:** the HTTP admin listener is fenced by network policy alone, while the gRPC listener
+admits only the ServiceAccounts in `admin_grpc_callers`, each proving itself by a bearer of audience
+`admin_grpc_audience` that is reviewed on every call, before the history is read
+(<../docs/grpc_services.md>). A watch is admitted once, so it ends after ten minutes and when the proxy
+drains; the caller subscribes again and is admitted afresh.
+
+The listener is off unless `admin_grpc_port` is set, and then needs `admin_grpc_audience` and
+`admin_grpc_callers` (`namespace/name` entries) too; `admin_grpc_host` defaults to `0.0.0.0`.
 
 ## ServiceAccount permissions
 

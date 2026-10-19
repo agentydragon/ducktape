@@ -140,9 +140,10 @@ func listen(name, host string, port int) (net.Listener, error) {
 	return listener, nil
 }
 
-// serving treats a server shut down on purpose as done and anything else as the failure it is.
+// serving treats a server shut down on purpose as done and anything else as the failure it is. A
+// gRPC server's Serve returns nil once it has been stopped.
 func serving(name string, err error) error {
-	if errors.Is(err, http.ErrServerClosed) {
+	if err == nil || errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
 	return fmt.Errorf("%s listener: %w", name, err)
@@ -237,24 +238,48 @@ func run(ctx context.Context, c config) error {
 		Handler:           admin.New(store, changes, decisions, index, time.Now),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
+	// The admin HTTP server stops last: it is the readiness probe.
+	servers := []shutdowner{agentAPIServer}
+	// Both are nil unless admin_grpc_port is set.
+	var adminGRPCServer *adminGRPC
+	var adminGRPCListener net.Listener
+	if c.AdminGRPCPort != nil {
+		if adminGRPCServer, err = newAdminGRPC(c, reviews.TokenReviews(), store, changes); err != nil {
+			return err
+		}
+		if adminGRPCListener, err = listen("admin gRPC", c.AdminGRPCHost, *c.AdminGRPCPort); err != nil {
+			return err
+		}
+		defer adminGRPCListener.Close()
+		servers = append(servers, adminGRPCServer)
+	}
+	servers = append(servers, adminServer)
 
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error { watcher.Run(ctx); return nil })
 	group.Go(func() error { return serving("proxy", egress.Serve(proxyListener)) })
 	group.Go(func() error { return serving("agent API", agentAPIServer.Serve(agentAPIListener)) })
+	if adminGRPCServer != nil {
+		group.Go(func() error { return serving("admin gRPC", adminGRPCServer.server.Serve(adminGRPCListener)) })
+	}
 	// The admin listener is the readiness probe and readiness gates every Service this Pod backs, so
 	// it starts accepting last: /healthz answering means the listeners above are serving.
 	group.Go(func() error { return serving("admin", adminServer.Serve(adminListener)) })
 	group.Go(func() error {
 		<-ctx.Done()
-		return drain(egress, index, agentAPIServer, adminServer)
+		return drain(egress, index, servers)
 	})
 	return group.Wait()
 }
 
+// shutdowner is a server that stops accepting and lets admitted requests finish until ctx ends.
+type shutdowner interface {
+	Shutdown(ctx context.Context) error
+}
+
 // drain marks the proxy unready, lets admitted requests finish, then stops the other listeners. The
 // admin listener outlives the proxy's drain so the kubelet can see the Pod go unready.
-func drain(egress *proxy.Proxy, index *policy.Index, agentAPIServer, adminServer *http.Server) error {
+func drain(egress *proxy.Proxy, index *policy.Index, servers []shutdowner) error {
 	slog.Info("draining")
 	index.MarkDraining()
 	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
@@ -262,5 +287,9 @@ func drain(egress *proxy.Proxy, index *policy.Index, agentAPIServer, adminServer
 	if err := egress.Drain(ctx); err != nil {
 		slog.Warn("drain deadline reached; closing remaining connections", "error", err)
 	}
-	return errors.Join(agentAPIServer.Shutdown(ctx), adminServer.Shutdown(ctx))
+	failures := make([]error, len(servers))
+	for i, server := range servers {
+		failures[i] = server.Shutdown(ctx)
+	}
+	return errors.Join(failures...)
 }
