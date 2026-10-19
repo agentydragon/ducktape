@@ -1,7 +1,6 @@
 """Run Python modules as subprocesses under Bazel's rules_python.
 
-Provides subprocess.run / asyncio.create_subprocess_exec wrappers for spawning
-Python module subprocesses.
+Provides helpers for spawning Python module subprocesses.
 
 In a Bazel venv (bootstrap_impl=script), subprocesses automatically get
 correct sys.path via the venv's _bazel_site_init — no PYTHONPATH needed.
@@ -11,7 +10,6 @@ subprocesses can find Nix-managed packages.
 
 from __future__ import annotations
 
-import asyncio
 import functools
 import os
 import subprocess
@@ -108,18 +106,3 @@ def run_python_module(
     """
     cmd: list[str | os.PathLike[str]] = [sys.executable, "-m", module, *args]
     return subprocess.run(cmd, env=python_env(inherit=inherit_env), **kwargs)  # noqa: PLW1510  check forwarded via kwargs
-
-
-async def async_run_python_module(
-    module: str, *args: str | os.PathLike[str], inherit_env: bool = True, **kwargs: Any
-) -> asyncio.subprocess.Process:
-    """Async variant of :func:`run_python_module`.
-
-    Returns an :class:`asyncio.subprocess.Process` (not awaited to completion).
-    Caller is responsible for awaiting ``process.wait()`` or
-    ``process.communicate()``.
-
-    All *kwargs* are forwarded to :func:`asyncio.create_subprocess_exec`.
-    """
-    cmd: list[str] = [sys.executable, "-m", module, *(str(a) for a in args)]
-    return await asyncio.create_subprocess_exec(*cmd, env=python_env(inherit=inherit_env), **kwargs)
