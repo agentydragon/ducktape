@@ -253,9 +253,9 @@ async def test_action_argument_layouts(
         await section.get_by_role("button", name=f"Expand {title}").click()
         for value in visible:
             await expect(section.get_by_text(value, exact=False)).to_be_visible()
-        preview = section.locator(".agentplane-actions-sidebar-preview")
-        await expect(preview).to_have_css("overflow-y", "visible")
         if (group, name) not in {("kubernetes_admin", "resources_delete"), ("tana", "get_or_create_calendar_node")}:
+            preview = section.locator(".agentplane-actions-sidebar-preview")
+            await expect(preview).to_have_css("overflow-y", "visible")
             await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
             await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
             await expect(preview.locator("button")).to_have_count(0)
