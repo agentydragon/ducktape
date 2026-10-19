@@ -494,6 +494,7 @@ app_layers_oci_tars = shared_py_image_layers(
     binary = ":main_bin",
     group = "1000",
     owner = "1000",
+    preserve_symlinks = True,
 )
 
 py_image_bytecode_layer(

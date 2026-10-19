@@ -67,7 +67,7 @@ _PYTHON_RUNTIME_REPO = "rules_python++python+python_3_14_x86_64-unknown-linux-gn
 _PYTHON_RUNTIME_ROOT = "devinfra/oci/python_runtime/runtime_image_bin.runfiles"
 _PYTHON_INTERPRETER_GROUP = "\\\\.runfiles/[^/]*python_?[0-9]+_[0-9]+(_[0-9]+)?_[a-z0-9_]+[_-](unknown|apple|pc)[_-][^/]*/"
 
-def shared_py_image_layers(name, binary, owner = "1000", group = "1000"):
+def shared_py_image_layers(name, binary, owner = "1000", group = "1000", preserve_symlinks = False):
     """Return OCI layers with the binary's interpreter resolved from the shared runtime tree.
 
     Keep each binary's runfiles tree and alias its interpreter repository to the shared
@@ -78,6 +78,7 @@ def shared_py_image_layers(name, binary, owner = "1000", group = "1000"):
         binary: Local label of the py_binary.
         owner: UID for image files.
         group: GID for image files.
+        preserve_symlinks: Retain build-time symlinks used by rules_python's script bootstrap.
 
     Returns:
         Ordered labels for shared interpreter, binary default/packages, and the runfiles alias.
@@ -88,6 +89,7 @@ def shared_py_image_layers(name, binary, owner = "1000", group = "1000"):
         group = group,
         owner = owner,
         layer_groups = {"binary_interpreter": _PYTHON_INTERPRETER_GROUP},
+        preserve_symlinks = preserve_symlinks,
     )
 
     pkg = native.package_name()

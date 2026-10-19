@@ -1,0 +1,36 @@
+--- a/py/private/py_image_layer.bzl
++++ b/py/private/py_image_layer.bzl
+@@ -115,6 +115,7 @@
+         platform = None,
+         owner = None,
+         group = None,
++        preserve_symlinks = False,
+         **kwargs):
+     """Produce a separate tar output for each layer of a python app
+ 
+@@ -146,6 +147,7 @@
+         platform: The platform to use for the transition. Default is None. See: https://github.com/bazel-contrib/bazel-lib/blob/main/docs/transitions.md#platform_transition_binary-target_platform
+         owner: An owner uid for the uncompressed files. See mtree_mutate: https://github.com/bazel-contrib/bazel-lib/blob/main/docs/tar.md#mutating-the-tar-contents
+         group: A group uid for the uncompressed files. See mtree_mutate: https://github.com/bazel-contrib/bazel-lib/blob/main/docs/tar.md#mutating-the-tar-contents
++        preserve_symlinks: Preserve build-time symlinks in the binary runfiles.
+         tar_args: Additional arguments to pass to the tar rule. Default is `[]`. See: https://github.com/bazel-contrib/bazel-lib/blob/main/docs/tar.md#tar_rule-args
+         **kwargs: attribute that apply to all targets expanded by the macro
+ 
+@@ -158,7 +160,7 @@
+     # Produce the manifest for a tar file of our py_binary, but don't tar it up yet, so we can split
+     # into fine-grained layers for better pull, push and remote cache performance.
+     manifest_name = name + ".manifest"
+-    if owner:
++    if owner or preserve_symlinks:
+         mtree_spec(
+             name = manifest_name + ".preprocessed",
+             srcs = [binary],
+@@ -167,6 +169,8 @@
+         mtree_mutate(
+             name = manifest_name,
+             mtree = name + ".manifest.preprocessed",
++            srcs = [binary] if preserve_symlinks else None,
++            preserve_symlinks = preserve_symlinks,
+             owner = owner,
+             group = group,
+         )

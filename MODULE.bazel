@@ -208,6 +208,14 @@ register_toolchains("@tf_toolchains//:all")
 # Python OCI image layering (aspect_rules_py)
 bazel_dep(name = "aspect_rules_py", version = "1.12.1")
 
+# rules_python's script bootstrap includes build-time venv symlinks; retain them
+# using tar.bzl's existing support instead of dereferencing outside the runfiles tree.
+single_version_override(
+    module_name = "aspect_rules_py",
+    patch_strip = 1,
+    patches = ["//patches:aspect_rules_py_image_symlinks.patch"],
+)
+
 # Container images (rules_oci)
 bazel_dep(name = "rules_oci", version = "2.3.0")
 bazel_dep(name = "rules_distroless", version = "0.9.4")
