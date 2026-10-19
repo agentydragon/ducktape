@@ -94,8 +94,9 @@ separate per-message send grant. See
 When a notification is delivered, the service submits a command to Dispatcher. Dispatcher checks
 its caller account, resolves the Sandbox and stores its UID with the opening or command; its worker
 checks that the watched Sandbox still has that UID and that it owns the Sandbox's delivery Lease
-before continuing. The Go `ProxyRunner` sends the Sandbox name and UID to the proxy with expected-identity metadata. The proxy authenticates its caller and resolves the live
-Sandbox name to a UID; it can also require exact UID and owner headers when a caller supplies them.
+before continuing. The Go `ProxyRunner` sends the Sandbox name and UID to the proxy with
+expected-identity metadata. The proxy authenticates its caller and requires exact Sandbox UID and
+owner metadata, then resolves and checks the live Sandbox and ready Pod.
 The control Service routes by the holder of that UID. This is a sequence of checks across separate
 requests, so the reviewed contract should say where identity is bound and where it is revalidated,
 including replacement between the Dispatcher check and proxy resolution. See
@@ -110,12 +111,10 @@ The current path has different authority at each step:
 | Notification subscription and worker | Caller/source access; configured namespace; live Sandbox UID and owner; live membership at creation. The worker rechecks UID and owner before sending.                                                                              | A source-read subscription is not a durable grant to send or wake after owner/grant revocation. Its Dispatcher request carries the Sandbox name and Session ID, not the stored UID.                                                    |
 | App command and diagnostics          | The app resolves a retained Thread from History; live diagnostic reads carry expected UID and owner.                                                                                                                                | Retained association and a live preflight do not authorize a future command after replacement or revocation. App and Notification need the same reviewed send contract.                                                                |
 | Dispatcher admission and wake        | Authenticated service-account allowlist; a separate wake-caller allowlist. It resolves the requested name in its watch, persists that UID with queued work, compares UID before delivery, and UID-guards the Kubernetes wake patch. | The caller does not supply the expected UID. Current admission can bind a same-name replacement. V0 delegates user checks to App/Notification; generalized per-destination grants and queued-work revocation need a separate decision. |
-| Gateway proxy and runner             | Proxy authenticates an allowed service account and routes to the connection holder. UID and owner headers are optional; when supplied, the proxy checks the exact Sandbox and ready Pod. Runner rejects an unknown Session.         | The Go Dispatcher carries the watched UID into proxy calls, rejecting a same-name replacement. Proxy's broad caller list is not a per-destination send grant; runner membership cannot be checked while offline.                       |
+| Gateway proxy and runner             | Proxy authenticates an allowed service account and routes to the connection holder. UID and owner headers are required; the proxy checks the exact Sandbox and ready Pod. Runner rejects an unknown Session.                        | The Go Dispatcher carries the watched UID into proxy calls, rejecting a same-name replacement. Proxy's broad caller list is not a per-destination send grant; runner membership cannot be checked while offline.                       |
 
-The removed Gateway lifecycle wrappers had a partial registry that could not validate Sessions
-opened directly by Dispatcher. Current app resume and live inventory both call the Runner through the
-identity-fenced per-Sandbox proxy. The historical database table remains until the registry-free
-Gateway image has rolled out and a separate data-drop gate.
+Current app resume and live inventory both call the Runner through the identity-fenced per-Sandbox
+proxy. The Gateway Session wrappers, registry and separate database are retired.
 
 **Approved public destination (operator, 2026-10-15):** every submission names the exact
 `(Sandbox UID, Agentplane Session ID)`. Store, native-ID and process routing are runner-private;
@@ -202,129 +201,22 @@ implemented and its negative cases are covered.
 
 ## Delivery service and persistence alternatives
 
-Dispatcher and Gateway currently have sequential but different responsibilities. Dispatcher owns
-sender-facing durable admission, ordering, retries, delivery status and its optional guarded wake
-path. Gateway owns the runner connection and the control proxy. Keeping the deployments separate
-preserves those failure, scaling and credential boundaries but adds a service hop and two sets of
-configuration. A proposed merge must say whether it means one API, one process/deployment, or one
-state owner; those are different changes. Evaluate whether joining queue ownership to the Gateway's
-connection lifecycle complicates replica routing, rollout, authorization or independent recovery.
-Do not merge merely because every queued delivery eventually calls the proxy.
+The Go Runner Gateway combines Dispatcher admission and delivery with runner connections and the
+control proxy in one process and Deployment. Dispatcher owns durable admission, ordering, retries,
+delivery status and guarded wake; the connection role owns the reverse stream and proxy. The stable
+`agentplane-session-dispatcher` and `agentplane-runner-gateway` Services retain their token audiences.
+One gRPC listener serves distinct authenticated Dispatcher, Runner proxy and runner `Connect`
+surfaces. App and Notification may submit to Dispatcher v0, with a narrower wake allowlist;
+`Quiesce` is controller-only, and runner `Connect` requires runner-audience and Pod/ServiceAccount
+proof. Tightening the proxy's other method permissions remains separate work.
 
-The delivery worker is the only current queued sender to the Gateway's proxy, but the Gateway has
-other live interlocutors. App and Notification call the per-Sandbox proxy for UID-fenced
-`Runner.ListSessions`; the Sandbox Controller calls `Runner.Quiesce` there. Runners establish an
-authenticated `RunnerControl.Connect` stream to a separate Gateway listener through the egress
-sidecar. The holder writes each Sandbox's connection Lease and the EndpointSlice behind its
-`<sandbox>-control` Service; all Gateway replicas watch the Leases. Runner journal ingress goes to
-History, not Gateway. The app's explicit resume uses the per-Sandbox proxy. The Python Gateway's
-Session wrappers, registry runtime and database have been retired.
-
-**History prerequisite, checked on the 2026-10-15 tree:** neither Dispatcher nor Gateway has a
-runtime History Service client, History RPC call or History configuration edge. Their entry points,
-settings, cdk8s constructs and production call paths use Kubernetes, their own state, and runner
-control. Old Gateway migration comments mention History, but do not call it. The runner separately
-pushes journals to History ingress and waits for its seal acknowledgement during Quiesce; app and
-Notification also read History. Those are not Dispatcher or Gateway service dependencies. Recheck
-both services' runtime wiring before any unification rollout; if a new History dependency appears,
-resolve it first under the operator's gate.
-
-**Approved topology direction:** run the existing Dispatcher queue API and workers with
-the Gateway connection holder and proxy in one deployment, keeping the sender API, per-Sandbox proxy
-and runner Connect as distinct authenticated surfaces. Keep the Dispatcher queue database, per-Sandbox
-delivery Lease and database-generation fence separate from the Gateway connection Lease and
-EndpointSlice. A worker may own queued work on replica A while replica B holds that runner's stream;
-the per-Sandbox control Service still routes the call to B. Co-location alone cannot safely replace
-that routing with an in-process call or remove the queue. The Python Gateway registry and its database
-are retired; the Dispatcher queue and retained History remain separate state owners.
-
-One deployment could remove a deployment and some duplicated configuration. A local fast path could
-avoid a service hop only when the queue owner also holds that runner connection, and would need the
-same identity and method policy as the proxy. The shared deployment also couples worker failure and runner stream
-reconnection, combines the Kubernetes permissions for queue wake and connection record writing in
-one Pod identity, and requires careful listener, token-audience, network-policy and rollout changes.
-The current Gateway accepts controller/read callers that must not gain command-submission authority;
-v0 Dispatcher service trust must remain limited to App and Notification. A truly unified API or state
-owner would require additional decisions beyond co-location. Measure the saved hop/operational cost
-and test multi-replica owner/holder mismatch and crash recovery before choosing a deployment merge.
-
-### Approved implementation direction: one Go delivery service
-
-**Approved Go scope, not a rollout approval.** The target is one Go service and Deployment with
-distinct authenticated Dispatcher sender, per-Sandbox Runner proxy, and runner `Connect` surfaces;
-the exact listener count remains an implementation choice.
-It keeps the existing PostgreSQL Dispatcher queue. The Python Gateway-specific Session RPCs and
-registry runtime are removed separately; Go must not recreate them. A Gateway-only Go rewrite followed by a Python co-location
-would require two protocol/runtime cutovers; a Python merged entry point would be thrown away by a
-later Go rewrite. A single Go target avoids those intermediate deployments, but ports substantially
-more than the originally discussed Gateway-only rewrite: Dispatcher SQL transactions, wakeups,
-per-Sandbox ownership and recovery, as well as Gateway's tunnel and connection records. The operator
-has approved that expanded language scope. This topology work has no dependency on the
-separate direct-admission question; this candidate retains the current queue.
-
-The repository already has `rules_go`, Go gRPC generation for runner/control messages and a Go
-Sandbox Controller using Kubernetes clients. The Go service generates Dispatcher and Sandbox destination protobuf libraries through Bazel and
-uses an explicit PostgreSQL transaction mapping. Preserve the existing
-`session_dispatcher` rows and idempotency keys (`dispatch`, `session_opening`, `sandbox_ownership`,
-`wake_attempt`). Keep the Dispatcher database role and run only additive migrations if the Go
-implementation truly needs them; an applied migration is immutable. Do not add Gateway database
-configuration or a Gateway registry migration to the Go service. Preserve the per-Sandbox Runner
-proxy for live inventory/diagnostics, Dispatcher delivery and controller quiesce. Native preparation
-belongs to runner command execution. Do not port removed Gateway Session wrappers or registry.
-The Gateway table and database resources retain their separate rollout-gated retirement.
-
-Keep the current `agentplane-session-dispatcher` and `agentplane-runner-gateway` Service names and
-token audiences as two logical front doors to the unified Pods. Expose Dispatcher, the per-Sandbox Runner proxy and runner-control services on one gRPC listener;
-retain their distinct authentication and method-level allowlists:
-App and Notification alone may submit to Dispatcher v0, the existing narrower wake allowlist still
-applies, controller alone may Quiesce, and runner `Connect` still requires its runner audience and
-Pod/ServiceAccount proof. The current Gateway proxy admits its configured callers for non-Quiesce
-Runner methods; tightening that policy is separate from co-location. Network ingress permits the union of the required callers; service authentication and
-authorization keep Dispatcher admission, proxy methods and runner connections distinct. A combined
-ServiceAccount needs the union of the two current
-Kubernetes permissions, with a reviewed namespace-bounded RBAC and network-policy diff. Local
-in-process shortcuts are optional, not part of the required merger: a Dispatcher worker on replica A
-must still reach a connection held by replica B through `<sandbox>-control`. Keep separate delivery
-ownership Leases and database generation fencing, connection Leases and EndpointSlices, and the
-current lost-reply/idempotent-retry behavior.
-
-The two stable Service names also let already-running Pod/VM egress sidecars reconnect after a brief
-cutover outage without requiring a new baked-in runner endpoint. Preserve the runner `Connect` wire
-contract and audience for this cutover; confirm the pinned VM runner wheel and saved
-SandboxTemplates still dial the retained name. If a protocol change proves necessary, it is a
-separate incompatible runner-image/template migration with an explicit retirement inventory before
-the old endpoint can disappear. A Service alias is routing to the new owner, not a second legacy
-implementation. Per-Sandbox control Services and EndpointSlices remain because replicas can differ.
-
-Build the Go Gateway tunnel/auth/connection role and Go Dispatcher queue role with a shared proto/auth
-foundation; test each against the current wire and stored-state contracts before integrating one
-process and image. Integration owns the combined listeners, configuration, dedicated Goose Job,
-cdk8s Deployment, both retained Services, Dispatcher database Secret, policies, image publishing and
-caller settings. Publish Go serving and queue-migrator images under distinct slots so the Python
-image pins cannot start the Go binary before the fenced cutover. The existing Agentplane root Flux
-Kustomization owns CNPG, its Secret, stable Services and the digest-named migration Job; check the
-Job's completion in that root. A separate Kustomization owns only the new Go serving workload and
-depends on the root. This ordering has no cycle and does not transfer CNPG/PVC ownership. Keep the
-Job's full image digest and digest-derived name in the same reviewed manifest; leave a completed Job
-until the next digest replaces it. Stage any other Flux ownership move with the old object's
-`prune: disabled` annotation and verify its UID survives adoption.
-
-Do not run old and new writers concurrently against the same queue or connection records. In the
-first GitOps stage, set old Python Dispatcher and Gateway replicas to zero and verify their Pods and
-workers have stopped. In the second stage, remove those Deployments and init containers, point the
-retained Services at the Go Pod labels, apply the Goose Job, and let the Go serving Kustomization
-reconcile only after root health confirms Job completion. Allow delivery and connection leases to
-expire or prove a fenced handoff; then verify ready unified replicas.
-An accepted request remains in PostgreSQL and is recovered with the same ID after the outage.
-Rollback must use the old binaries against the unchanged schema and retained rows, never clear the
-queue. Test a pre-cutover queued request, unknown delivery response, cross-replica holder/worker,
-runner reconnect, UID replacement, controller Quiesce and app/Notification live reads. Remove the
-two old Deployments as part of the fenced cutover so they cannot race the new writers; recheck that
-neither service has acquired a History dependency. Only after the unified path is stable should
-old images/config/RBAC and obsolete inter-service token
-projection be removed. The explicit Resume action continues through the Runner Proxy. The Python
-Gateway Session wrappers, registry runtime and database have been retired; the unified service must
-preserve the live Runner proxy and control-stream contracts without recreating those surfaces.
+The Dispatcher PostgreSQL queue, per-Sandbox delivery Lease and database-generation fence remain
+separate from the connection Lease and EndpointSlice. A worker on replica A may deliver through
+`<sandbox>-control` to a runner connection held by replica B; co-location does not eliminate that
+routing or the queue. The service has no History client or separate Gateway registry/database.
+Runner journal ingress and Quiesce seal acknowledgements belong to History; app and Notification
+also read History independently. See the [Runner Gateway README](../runner_gateway/README.md) for
+current runtime and deployment ownership, including migration ordering and Flux image automation.
 
 For persistence, compare the current durable queue with direct runner admission:
 

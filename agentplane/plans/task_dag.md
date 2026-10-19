@@ -556,9 +556,9 @@ recipient inbox, and not found for another account's message, an unknown ID and 
 
 ### `AGENT_MESSAGE_RECEPTION` — delivery, recovery and acknowledgement
 
-**Blocked on ingress contract/implementation.** Implement selected recipient read/delivery/ack
-operations under the receiving Sandbox's owner-SA checks, batching and recovery of unread work.
-Delegated inbox reading and acknowledgement remain frozen. Test owner-scoped read/ack,
+**Blocked on ingress contract/implementation.** Integrate peer messages with the existing
+owner-SA-scoped inbox listing, monotonic acknowledgement, notices and unread-work recovery.
+Delegated inbox reading and acknowledgement remain frozen. Test peer-message owner-scoped read/ack,
 recipient-access revocation, deleted recipients,
 ordinary offline catch-up and duplicate delivery without leaking payloads. Accepted correspondence
 survives sender send-permission revocation, subject to recipient inbox permissions and retention;
@@ -1728,8 +1728,7 @@ and the Sandbox controller watches it.
 Move ownership entirely into Postgres: an `expires_at` heartbeat on the same row, or a session-level
 advisory lock that frees itself when the connection drops. Write the comparison first (failover time,
 behavior under a Postgres outage, the shared Lease RBAC rule in `runner_gateway_workload.py`); the Lease
-has no recorded comparison against doing this in Postgres. Prerequisite: the Dispatcher change in
-[#11035](https://github.com/agentydragon/ducktape/pull/11035) lands.
+has no recorded comparison against doing this in Postgres.
 
 ## Scope and retirement of stale gates
 
@@ -1958,9 +1957,9 @@ reviewed; private runner mapping can be implemented independently. Neither desig
 
 ### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping
 
-**Blocked on review of the private mapping contract (`HARNESS_IDENTITY_DESIGN`).** Add runner-owned durable store IDs, exact Sandbox
-UID binding, public Session
-reservations and native-ID mappings using a new migration rather than editing landed state formats.
+**Blocked on review of the private mapping contract (`HARNESS_IDENTITY_DESIGN`).** Extend the
+existing durable public Session reservations and persisted native IDs with runner-owned durable
+store IDs and exact Sandbox UID binding. Use a new migration rather than editing landed state formats.
 Implement adapter-internal process selection, restart/resume and store write fencing; a process
 incarnation must not enter a durable destination. Preserve the current per-Session state and authored
 native data through migration. Cover same-ID/same-spec retries, conflicting reuse, crashes before
@@ -1975,8 +1974,6 @@ rollout before changing live addresses.
 **Blocked on `RUNNER_STORE_SESSION_IDENTITY` rollout; public address cleanup remains with
 `DELIVERY_DESTINATION_CONTRACT` and its own caller gates.** Audit running/saved SandboxTemplates, pinned runner
 wheels and every caller before removing old per-Session-process assumptions and stale docs/protos.
-Identify any remaining placement-registry lookups, but keep the Gateway registry's separate
-native-resume and pinned-caller retirement
-gates; this node does not drop its database or delete retained runner stores, native conversations or
-History. Confirm exact UID/Session routing to the private store, suspended-queue retry and restart on the deployed
-images before retiring old paths.
+Do not delete retained runner stores, native conversations or History. Confirm exact UID/Session
+routing to the private store, suspended-queue retry and restart on the deployed images before retiring
+old paths.
