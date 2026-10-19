@@ -375,7 +375,7 @@ async def test_dispatcher_queued_while_sandbox_wakes(
     await expect(page.get_by_role("textbox", name="Message")).to_be_enabled()
     await expect(
         page.get_by_text(
-            "Sandbox is suspended. Wake on message is on; submitted messages will queue while it wakes.", exact=True
+            "Sandbox is suspended. Wake on message is on; submitted commands will queue while it wakes.", exact=True
         )
     ).to_be_visible()
     row = page.locator('[data-command-id="queued-dispatch"]')
@@ -480,6 +480,8 @@ async def test_thread_setup_progress(view: VisualPage, app: AgentplaneFixture) -
     await expect(setup.get_by_text("Cloning into project...")).to_be_visible()
     await expect(setup.get_by_text("Updating files: 100%")).to_be_visible()
     await expect(setup.get_by_text("Updating files: 10%")).to_have_count(0)
+    await expect(page.get_by_role("textbox", name="Message")).to_be_enabled()
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_enabled()
     await view.capture(name="thread_setup_live_progress")
 
 

@@ -421,8 +421,8 @@ it.each([true, false])(
     expect(button(container, "Send").disabled).toBe(true);
     expect(container.textContent).toContain(
       wakeOnSend
-        ? "Wake on message is on; submitted messages will queue while it wakes."
-        : "Wake on message is off; submitted messages stay queued until you resume it manually."
+        ? "Wake on message is on; submitted commands will queue while it wakes."
+        : "Wake on message is off; submitted commands stay queued until you resume it manually."
     );
 
     await type(field, "Continue after resume");
@@ -435,7 +435,7 @@ it.each([true, false])(
   }
 );
 
-it.each(["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED", "SETUP_STATE_RUNNING"])(
+it.each(["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"])(
   "does not queue messages for a suspended Session whose setup is %s",
   async (setupState) => {
     sandboxes = [inventorySandbox("Suspended", true)];
@@ -525,6 +525,15 @@ it.each([
   await press(composer(container), {});
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "Wake for this message" } }]);
   expect(vi.mocked(submitInput).mock.calls[0]?.[0]).toBe(THREAD.id);
+});
+
+it("queues input while one-shot setup runs", async () => {
+  sharedThread = { setup_state: "SETUP_STATE_RUNNING", harness_state: "HARNESS_STATE_STOPPED" };
+  const container = await render(threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] }));
+  expect(composer(container).disabled).toBe(false);
+  await type(composer(container), "Continue after setup");
+  await press(composer(container), {});
+  expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "Continue after setup" } }]);
 });
 
 it.each([
@@ -677,7 +686,7 @@ it("shows why a refused resume of a suspended Sandbox failed", async () => {
 const waking: SandboxView = { ...inventorySandbox(), phase: "Creating", pod: null, status: null };
 
 it.each([
-  ["a current", true, "Sandbox is starting. Controls return when it is ready."],
+  ["a current", true, "Sandbox is starting. Submitted commands will queue until it is ready."],
   [
     "a stale",
     false,
@@ -688,7 +697,7 @@ it.each([
   inventoryFresh = fresh;
   const container = await render();
   expect(container.querySelector('[role="status"]')?.textContent).toBe(notice);
-  expect(composer(container).disabled).toBe(true);
+  expect(composer(container).disabled).toBe(!fresh);
 });
 
 it("does not call a failed Pod a Sandbox that is starting", async () => {
@@ -791,7 +800,7 @@ it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | n
     "a suspended sandbox",
     [SUSPENDED],
     {},
-    "Sandbox is suspended. Wake on message is off; submitted messages stay queued until you resume it manually.",
+    "Sandbox is suspended. Wake on message is off; submitted commands stay queued until you resume it manually.",
   ],
   ["a deleted sandbox", [], {}, "Sandbox no longer exists."],
   ["a running sandbox on a stale inventory", [RUNNING], { fresh: false }, null],
@@ -813,24 +822,34 @@ it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | n
   expect(texts("alert")).toEqual([]);
 });
 
-it("shows the applied effort and sends a change command without optimistically changing it", async () => {
-  const container = await render();
-  const picker = container.querySelector<HTMLInputElement>('input[aria-label="Reasoning effort"]');
-  expect(picker?.value).toBe("low");
-  await act(async () => picker?.click());
-  const high = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (option) => option.textContent === "high"
-  );
-  expect(high).toBeDefined();
-  await act(async () => high?.click());
-  expect(sentOperations()).toContainEqual({
-    case: "changeReasoningEffort",
-    value: expect.objectContaining({ effort: "high" }),
-  });
-  expect(picker?.value).toBe("low");
-  await rerender(container, threadState({ rows: [viewState()] }));
-  expect(picker?.value).toBe("low");
-});
+it.each(["running", "dormant", "setup", "suspended", "waking"])(
+  "queues an effort change with a %s harness or Sandbox without optimistically changing it",
+  async (state) => {
+    if (state === "suspended") sandboxes = [inventorySandbox("Suspended", true)];
+    if (state === "waking") sandboxes = [waking];
+    if (state === "setup") sharedThread = { setup_state: "SETUP_STATE_RUNNING" };
+    const container = await render(
+      state === "running" ? threadState() : threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] })
+    );
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Model"]')?.disabled).toBe(false);
+    const picker = container.querySelector<HTMLInputElement>('input[aria-label="Reasoning effort"]');
+    expect(picker?.disabled).toBe(false);
+    expect(picker?.value).toBe("low");
+    await act(async () => picker?.click());
+    const high = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (option) => option.textContent === "high"
+    );
+    expect(high).toBeDefined();
+    await act(async () => high?.click());
+    expect(sentOperations()).toContainEqual({
+      case: "changeReasoningEffort",
+      value: expect.objectContaining({ effort: "high" }),
+    });
+    expect(picker?.value).toBe("low");
+    await rerender(container, threadState({ rows: [viewState()] }));
+    expect(picker?.value).toBe("low");
+  }
+);
 
 it.each([
   [{ caughtUp: false }, "Catching up…"],

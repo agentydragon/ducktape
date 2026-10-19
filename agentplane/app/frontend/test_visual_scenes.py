@@ -485,6 +485,8 @@ async def test_session_dormant(view: VisualPage, app: AgentplaneFixture) -> None
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[aria-label="Harness not running"]', state="attached")
     await expect(view.page.get_by_role("textbox", name="Message")).to_be_enabled()
+    await expect(view.page.get_by_role("combobox", name="Model", exact=True)).to_be_enabled()
+    await expect(view.page.get_by_role("combobox", name="Reasoning effort")).to_be_enabled()
     await expect(view.page.get_by_role("button", name="Resume harness")).to_have_count(0)
     await view.check(context="fixture ready")
     await view.capture()
