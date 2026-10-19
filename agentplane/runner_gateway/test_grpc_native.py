@@ -186,7 +186,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         native_session_id = active_session.native_session_id
         assert native_session_id
         assert len(active.processes) == 1
-        await runner.kill_harness(session)
+        await runner.restart()
         await wait_for_entries(
             runner,
             session,
