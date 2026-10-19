@@ -371,6 +371,8 @@ async def test_sandbox_action_results(
                 "head": "docs",
                 "base": "devel",
                 "draft": True,
+                "maintainer_can_modify": False,
+                "reviewers": ["reviewer1", "reviewer2"],
             },
             "Update docs",
             id="github-pr",
@@ -385,7 +387,13 @@ async def test_sandbox_action_results(
         pytest.param(
             "gmail",
             "drafts_create",
-            {"to": ["reviewer@example.com"], "subject": "Deployment review", "body": "Please review."},
+            {
+                "to": ["reviewer@example.com", "owner@example.com"],
+                "cc": ["team@example.com"],
+                "subject": "Deployment review",
+                "body": "Please review.\nConfirm the rollout.\nCheck the deployment notes.\nReply with any blockers.",
+                "thread_id": "existing-thread-123",
+            },
             "reviewer@example.com",
             id="gmail-draft",
         ),
@@ -421,13 +429,19 @@ async def test_sandbox_action_results(
             "tana",
             "get_or_create_calendar_node",
             {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
-            "Granularity: week",
+            "week calendar node",
             id="tana-calendar-node",
         ),
     ],
 )
 async def test_compact_action_summaries(
-    view: VisualPage, app: AgentplaneFixture, group: str, name: str, arguments: dict[str, object], visible: str
+    view: VisualPage,
+    app: AgentplaneFixture,
+    capture_name: str,
+    group: str,
+    name: str,
+    arguments: dict[str, object],
+    visible: str,
 ) -> None:
     await app.show_action_preview(group, name, arguments)
     await app.mount_thread(IDLE_THREAD)
@@ -440,6 +454,15 @@ async def test_compact_action_summaries(
     disclosure = section.get_by_role("button", name=f"Expand {title}")
     bounds = await disclosure.bounding_box()
     assert bounds is not None
+    if group == "gmail" and name == "drafts_create":
+        await expect(section.get_by_text("Deployment review", exact=True)).to_be_visible()
+        await expect(section.get_by_text("Replying to thread existing-thread-123", exact=True)).to_be_visible()
+        await view.capture(f"{capture_name}-collapsed", target=section)
+    if group == "github" and name == "create_pull_request":
+        await expect(section.get_by_text("Create as a draft.", exact=True)).to_be_visible()
+        await expect(section.get_by_text("Do not allow maintainers to edit the branch.", exact=True)).to_be_visible()
+        await expect(section.get_by_text("Request review from reviewer1, reviewer2.", exact=True)).to_be_visible()
+        await view.capture(f"{capture_name}-collapsed", target=section)
     await disclosure.click(position={"x": bounds["width"] - 4, "y": bounds["height"] - 3})
     await expect(section.get_by_text(visible)).to_be_visible()
     if group == "kubernetes_admin" and name == "pods_list_in_namespace":
@@ -489,7 +512,9 @@ async def test_action_argument_fallbacks_use_json_view(
 
 
 @DESKTOP_AND_MOBILE
-async def test_compact_pr_with_description_requires_review(view: VisualPage, app: AgentplaneFixture) -> None:
+async def test_compact_pr_with_description_requires_review(
+    view: VisualPage, app: AgentplaneFixture, capture_name: str
+) -> None:
     await app.show_action_preview(
         "github",
         "create_pull_request",
@@ -499,12 +524,19 @@ async def test_compact_pr_with_description_requires_review(view: VisualPage, app
             "title": "Update docs",
             "head": "docs",
             "base": "devel",
-            "body": "Important PR description that must be read before approval.",
+            "body": "Important PR description that must be read before approval.\n"
+            "Second paragraph explains the rollout and its verification.\n"
+            "Final paragraph lists the remaining review questions.",
         },
     )
     await app.mount_thread(IDLE_THREAD)
     section = view.page.locator(".agentplane-actions-sidebar")
     await _open_phone_navigation(view.page)
+    await expect(
+        section.get_by_text("Important PR description that must be read before approval.", exact=False)
+    ).to_be_visible()
+    await expect(section.get_by_role("button", name="Approve review create pull request")).to_have_count(0)
+    await view.capture(f"{capture_name}-collapsed", target=section)
     await section.get_by_role("button", name="Expand review create pull request").click()
     await expect(
         section.get_by_text("Important PR description that must be read before approval.", exact=False)
@@ -956,6 +988,13 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
     await app.mount_app("/actions")
     page = view.page
     await expect(page.get_by_text("Long action text", exact=True)).to_be_visible()
+    if kind == "email":
+        editor = page.locator(".agentplane-code-block .cm-content").last
+        await expect(editor).to_be_visible()
+        await expect(editor).to_contain_text("Long action content line 48")
+        await _focus(page, editor)
+        await view.capture()
+        return
     if kind == "text":
         await expect(page.get_by_role("button", name="Show all 48 lines", exact=True)).to_be_visible()
     elif kind == "json":

@@ -115,11 +115,9 @@
   overflow-wrap: anywhere;
 }
 
-/* A card is an overview: a long command or argument list is cut here, and the full text is one tap away. */
+/* Each action summary owns its line limits so later decision-relevant fields stay visible. */
 .agentplane-actions-sidebar-collapsed-preview {
   max-width: 100%;
-  max-height: 4.5rem;
-  overflow: hidden;
   color: var(--mantine-color-dimmed);
 }
 

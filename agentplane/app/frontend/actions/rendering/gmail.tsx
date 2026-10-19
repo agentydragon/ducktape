@@ -35,19 +35,19 @@ function DraftLabel(): JSX.Element {
 function DraftCollapsed({ args }: { args: DraftArguments }): JSX.Element {
   return (
     <Stack gap="xs">
-      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+      <Text size="sm" lineClamp={2} style={{ overflowWrap: "anywhere" }}>
         To {recipients(args)}
         {args.cc && args.cc.length > 0 ? ` · Cc ${args.cc.join(", ")}` : ""}
         {args.bcc && args.bcc.length > 0 ? ` · Bcc ${args.bcc.join(", ")}` : ""}
       </Text>
-      <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+      <Text size="sm" fw={600} lineClamp={2} style={{ overflowWrap: "anywhere" }}>
         {args.subject || "(no subject)"}
       </Text>
       <Text size="sm" lineClamp={3} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
         {args.body || "(empty body)"}
       </Text>
       {args.thread_id && (
-        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+        <Text size="xs" c="dimmed" lineClamp={1} style={{ overflowWrap: "anywhere" }}>
           Replying to thread {args.thread_id}
         </Text>
       )}
