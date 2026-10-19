@@ -213,7 +213,7 @@ async def test_sandbox_action_results(
             "kubernetes_admin",
             "resources_get",
             {"apiVersion": "apps/v1", "kind": "Deployment", "name": "web"},
-            "API version: apps/v1",
+            "Read with API version apps/v1",
         ),
         (
             "kubernetes_admin",
@@ -867,6 +867,80 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
         await expect(page.get_by_text("Exact arguments (unredacted)", exact=True)).to_be_visible()
         await expect(page.locator('[data-clamped="true"]').first).to_be_visible()
         await view.capture(f"{capture_name}-raw")
+
+
+@DESKTOP_AND_MOBILE
+async def test_kubernetes_applied_manifest_receipt(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.show_action_receipt(
+        "kubernetes_admin",
+        "resources_create_or_update",
+        {"resource": "apiVersion: v1 kind: ConfigMap metadata: {name: settings, namespace: apps} data: {mode: safe}"},
+        {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "- apiVersion: v1\n  kind: ConfigMap\n  metadata:\n    name: settings\n    namespace: apps\n  data:\n    mode: safe\n- apiVersion: v1\n  kind: Secret\n  metadata:\n    name: token\n    namespace: apps\n",
+                }
+            ],
+            "isError": False,
+        },
+    )
+    await app.mount_app("/actions")
+    page = view.page
+    await expect(page.get_by_text("Manifest · ConfigMap apps/settings", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Resource 1 · ConfigMap apps/settings", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Resource 2 · Secret apps/token", exact=True)).to_be_visible()
+    await expect(page.locator(".cm-editor").first).to_be_visible()
+    await view.check(context="single-line Kubernetes YAML formatted as an applied manifest")
+    await view.capture(target=page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_kubernetes_yaml_result_receipt(view: VisualPage, app: AgentplaneFixture) -> None:
+    resource = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {"name": "settings", "namespace": "apps"},
+        "data": {"mode": "safe"},
+    }
+    await app.show_action_receipt(
+        "kubernetes_admin",
+        "resources_get",
+        {"apiVersion": "v1", "kind": "ConfigMap", "name": "settings", "namespace": "apps"},
+        {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: settings\n  namespace: apps\ndata:\n  mode: safe",
+                }
+            ],
+            "structuredContent": resource,
+            "isError": False,
+        },
+    )
+    await app.mount_app("/actions")
+    page = view.page
+    await expect(page.get_by_text("Resource · ConfigMap apps/settings", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Structured content", exact=True)).to_have_count(0)
+    await view.check(context="Kubernetes YAML and its equivalent structured result shown once")
+    await view.capture(target=page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_kubernetes_delete_success_receipt(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.show_action_receipt(
+        "kubernetes_admin",
+        "resources_delete",
+        {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps"},
+        {"content": [{"type": "text", "text": "Resource deleted successfully"}], "isError": False},
+    )
+    await app.mount_app("/actions")
+    page = view.page
+    await expect(page.get_by_text("Delete Pod apps/web-0", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Deletion accepted", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Result", exact=True)).to_have_count(0)
+    await view.check(context="successful Kubernetes delete shown beside its target")
+    await view.capture(target=page.locator("#app"))
 
 
 if __name__ == "__main__":

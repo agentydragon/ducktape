@@ -1,6 +1,7 @@
 import { Anchor, Badge, Code, Stack, Text } from "@mantine/core";
 import { type JSX, useMemo } from "react";
 import { z } from "zod";
+import { parseAllDocuments } from "yaml";
 
 import { looksLikeJson } from "../json_view";
 import { ActionJson, ActionText } from "./payload";
@@ -72,14 +73,21 @@ export function parseCallToolResult(value: unknown): CallToolResult | null {
   };
 }
 
-/** The tool's own return value: its structured content, else the JSON its one text block holds.
+/** The tool's own return value: its structured content, else the parsed JSON or plain text in its one text block.
  * `undefined` when it has none, and for an error result, whose content says what went wrong rather
  * than returning a value. */
 export function toolValue(result: CallToolResult): unknown {
   if (result.isError) return undefined;
   if (result.structuredContent !== undefined) return result.structuredContent;
   const [only] = result.content;
-  return result.content.length === 1 && only.type === "text" ? parsedJson(only.text) : undefined;
+  if (result.content.length !== 1 || only.type !== "text") return undefined;
+  const json = parsedJson(only.text);
+  return json === undefined ? only.text : json;
+}
+
+/** Whether a custom result view can replace this envelope without hiding distinct tool output. */
+export function toolContentRestatesValue(result: CallToolResult, value: unknown): boolean {
+  return result.content.every((block) => block.type === "text" && restates(block.text, value));
 }
 
 /** A `CallToolResult` the way the tool answered it: its content blocks in order, then its
@@ -90,7 +98,7 @@ export function toolValue(result: CallToolResult): unknown {
 export function CallToolResultView({ result }: { result: CallToolResult }): JSX.Element {
   const structured = result.structuredContent;
   const blocks =
-    structured === undefined
+    structured === undefined || result.isError
       ? result.content
       : result.content.filter((block) => block.type !== "text" || !restates(block.text, structured));
   return (
@@ -183,7 +191,26 @@ function TextBlock({ text }: { text: string }): JSX.Element {
 function restates(text: string, value: unknown): boolean {
   if (typeof value === "string" && text === value) return true;
   const parsed = parsedJson(text);
-  return parsed !== undefined && canonicalJson(parsed) === canonicalJson(value);
+  if (parsed !== undefined) return canonicalJson(parsed) === canonicalJson(value);
+  try {
+    const documents = parseAllDocuments(text, { prettyErrors: false, uniqueKeys: true });
+    if (documents.some((document) => document.errors.length > 0)) return false;
+    const values = documents.flatMap((document) => (document.contents === null ? [] : [document.toJS()]));
+    if (values.length === 0) return false;
+    const resources = values.flatMap((document) => (Array.isArray(document) ? document : [document]));
+    if (resources.some((resource) => !isKubernetesResourceValue(resource))) return false;
+    return canonicalJson(values.length === 1 ? values[0] : values) === canonicalJson(value);
+  } catch {
+    return false;
+  }
+}
+
+function isKubernetesResourceValue(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const resource = value as Record<string, unknown>;
+  if (typeof resource.apiVersion !== "string" || typeof resource.kind !== "string") return false;
+  const metadata = resource.metadata;
+  return metadata === undefined || (metadata !== null && typeof metadata === "object" && !Array.isArray(metadata));
 }
 
 /** JSON with every object's keys sorted, so two serializations of one value compare equal. */

@@ -42,7 +42,8 @@
     "react-dom": "^19.0.0",
     "react-router": "^8.0.0",
     "rrule": "^2.8.1",
-    "zod": "^4.6.4"
+    "zod": "^4.6.4",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "^2.15.0",

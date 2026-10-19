@@ -22,9 +22,9 @@ export function defineResultPreview<S extends z.ZodType>(
   return { schema, render: render as ResultPreview["render"] };
 }
 
-/** Parse `value` with the entry's schema and render; `null` on a mismatch, so the caller falls back
+/** Parse `value` with the entry's schema and render; `undefined` on a mismatch, so the caller falls back
  * to the generic rendering. A server upgrade can reshape what a tool returns. */
-export function renderResultPreview(preview: ResultPreview, value: unknown): ReactNode | null {
+export function renderResultPreview(preview: ResultPreview, value: unknown): ReactNode | null | undefined {
   const parsed = preview.schema.safeParse(value);
-  return parsed.success ? preview.render(parsed.data as never) : null;
+  return parsed.success ? preview.render(parsed.data as never) : undefined;
 }

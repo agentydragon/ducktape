@@ -4,7 +4,13 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { type CallToolResult, CallToolResultView, parseCallToolResult, toolValue } from "./call_tool_result";
+import {
+  type CallToolResult,
+  CallToolResultView,
+  parseCallToolResult,
+  toolContentRestatesValue,
+  toolValue,
+} from "./call_tool_result";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
@@ -179,10 +185,15 @@ describe("toolValue", () => {
     expect(valueOf({ content: [{ type: "text", text: '{"test_a": 1}' }], isError: false })).toEqual({ test_a: 1 });
   });
 
-  it("is absent for an error, for prose, and for more than one block", () => {
+  it("keeps plain text as a value for action-owned decoders", () => {
+    expect(valueOf({ content: [{ type: "text", text: "Resource deleted successfully" }], isError: false })).toBe(
+      "Resource deleted successfully"
+    );
+  });
+
+  it("is absent for an error, and for more than one block", () => {
     for (const stored of [
       { content: [{ type: "text", text: '{"test_a": 1}' }], structuredContent: { test_a: 1 }, isError: true },
-      { content: [{ type: "text", text: "test prose" }], isError: false },
       {
         content: [
           { type: "text", text: "{}" },
@@ -194,5 +205,61 @@ describe("toolValue", () => {
     ]) {
       expect(valueOf(stored)).toBeUndefined();
     }
+  });
+
+  it("recognizes Kubernetes YAML that semantically restates structured content", () => {
+    const resource = {
+      apiVersion: "v1",
+      kind: "ConfigMap",
+      metadata: { name: "settings", namespace: "apps" },
+      data: { mode: "safe", retry: "3" },
+    };
+    const result = parseCallToolResult({
+      content: [
+        {
+          type: "text",
+          text: [
+            "apiVersion: v1",
+            "kind: ConfigMap",
+            "metadata:",
+            "  name: settings",
+            "  namespace: apps",
+            "data:",
+            "  mode: safe",
+            "  retry: '3'",
+          ].join("\n"),
+        },
+      ],
+      structuredContent: resource,
+      isError: false,
+    });
+    if (result === null) throw new Error("the fixture is not a CallToolResult");
+
+    expect(toolContentRestatesValue(result, resource)).toBe(true);
+    const container = await render(result);
+    expect(container.textContent?.match(/kind: ConfigMap/g)).toHaveLength(1);
+  });
+
+  it("does not treat arbitrary YAML as a restatement of structured content", () => {
+    const value = { count: 1 };
+    const result = parseCallToolResult({
+      content: [{ type: "text", text: "count: 1" }],
+      structuredContent: value,
+      isError: false,
+    });
+    if (result === null) throw new Error("the fixture is not a CallToolResult");
+
+    expect(toolContentRestatesValue(result, value)).toBe(false);
+  });
+
+  it("keeps error text even when it looks like a value", () => {
+    const result = parseCallToolResult({
+      content: [{ type: "text", text: "Resource deleted successfully" }],
+      isError: true,
+    });
+    if (result === null) throw new Error("the fixture is not a CallToolResult");
+
+    expect(toolValue(result)).toBeUndefined();
+    expect(toolContentRestatesValue(result, "Resource deleted successfully")).toBe(false);
   });
 });

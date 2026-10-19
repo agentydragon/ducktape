@@ -2,9 +2,9 @@ import { Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { ActionText } from "../../payload";
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
+import { KubernetesManifestText, kubernetesResourcesResult } from "./resources";
 
 const resourceApplyArguments = z.strictObject({ resource: z.string().min(1) });
 
@@ -21,7 +21,7 @@ function ApplyLabel(): JSX.Element {
 }
 
 function Manifest({ args }: { args: z.infer<typeof resourceApplyArguments> }): JSX.Element {
-  return <ActionText text={args.resource} language="yaml" />;
+  return <KubernetesManifestText text={args.resource} />;
 }
 
 export const resourcesApplyCollapsed: ArgumentsPreview = definePreview(resourceApplyArguments, Collapsed);
@@ -29,7 +29,8 @@ export const resourcesApplyManifest: ArgumentsPreview = definePreview(resourceAp
 export const resourcesApplyLabel: ArgumentsPreview = definePreview(resourceApplyArguments, ApplyLabel);
 
 export const resourcesApplyPresentation: ActionPresentation = {
+  fallbackLabel: "Apply Kubernetes resource",
   label: resourcesApplyLabel,
   pane: { collapsed: resourcesApplyCollapsed, opened: resourcesApplyManifest },
-  details: { arguments: resourcesApplyManifest },
+  details: { arguments: resourcesApplyManifest, result: kubernetesResourcesResult },
 };

@@ -95,21 +95,25 @@ export function ActionCall({
 }): JSX.Element {
   const actionLabel = renderActionLabel(request.action, request.arguments);
   const prettyArguments = renderDetailsArguments(request.action, request.arguments);
-  const combinedCall = providedCombinedCall ?? renderActionCall(request.action, request.arguments);
+  const combinedCall =
+    providedCombinedCall === undefined ? renderActionCall(request.action, request.arguments) : providedCombinedCall;
+  const showCombinedCall = combinedCall !== undefined && combinedCall !== null && combinedCall.content != null;
   return (
     <Stack gap="sm">
       <Stack gap={2}>
         <Group justify="space-between" align="flex-start" gap="xs">
-          {actionLabel ?? (
+          {actionLabel === undefined ? (
             <Text fw={600} ff="monospace" style={{ overflowWrap: "anywhere" }}>
               {request.action.group} / {request.action.name}
             </Text>
+          ) : (
+            actionLabel
           )}
           <Group gap="xs" justify="flex-end" wrap="wrap">
             {status}
-            {(prettyArguments !== null || prettyResult || combinedCall !== null) && (
-              <RawSwitch raw={raw} onChange={onRawChange} />
-            )}
+            {(prettyArguments !== undefined ||
+              prettyResult ||
+              (combinedCall !== undefined && combinedCall !== null)) && <RawSwitch raw={raw} onChange={onRawChange} />}
             {headerActions}
           </Group>
         </Group>
@@ -136,19 +140,23 @@ export function ActionCall({
         )}
         <RequestAuditDetails request={request} />
       </Stack>
-      {combinedCall !== null && !raw ? (
+      {showCombinedCall && !raw ? (
         <div>
           <Text size="sm" fw={600} mb={4}>
             Call
           </Text>
           {combinedCall.content}
         </div>
-      ) : (
+      ) : combinedCall?.includesResult && combinedCall.content != null && !raw ? null : (
         <div>
-          <Text size="sm" fw={600} mb={4}>
-            Exact arguments (unredacted)
-          </Text>
-          {prettyArguments === null || raw ? <ActionJson value={request.arguments} /> : prettyArguments}
+          {!(prettyArguments === null && !raw) && (
+            <>
+              <Text size="sm" fw={600} mb={4}>
+                Exact arguments (unredacted)
+              </Text>
+              {prettyArguments === undefined || raw ? <ActionJson value={request.arguments} /> : prettyArguments}
+            </>
+          )}
         </div>
       )}
     </Stack>

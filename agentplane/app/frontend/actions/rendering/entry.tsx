@@ -45,18 +45,14 @@ export function defineCallPreview<ArgsSchema extends z.ZodType, ResultSchema ext
   const render = (args: z.infer<ArgsSchema>, result: z.infer<ResultSchema> | undefined): ReactNode => (
     <Widget args={args} result={result} />
   );
-  return {
-    argumentSchema,
-    resultSchema,
-    render: render as CallPreview["render"],
-  };
+  return { argumentSchema, resultSchema, render: render as CallPreview["render"] };
 }
 
-/** Parse `args` with the entry's schema and render; `null` on a mismatch, so the caller falls back to
- * their JSON. Arguments are not checked against the tool until it runs, so a pending call's may not
- * fit. */
-export function renderPreview(preview: ArgumentsPreview, args: unknown): ReactNode | null {
+/** Parse `args` with the entry's schema and render; `undefined` on a mismatch, so the caller uses
+ * its host fallback. `null` from a matching renderer intentionally suppresses the slot. Arguments
+ * are not checked against the tool until it runs, so a pending call's may not fit. */
+export function renderPreview(preview: ArgumentsPreview, args: unknown): ReactNode | null | undefined {
   const parsed = preview.schema.safeParse(args);
   // `definePreview` bound this render to exactly this schema's output, so the cast is sound.
-  return parsed.success ? preview.render(parsed.data as never) : null;
+  return parsed.success ? preview.render(parsed.data as never) : undefined;
 }

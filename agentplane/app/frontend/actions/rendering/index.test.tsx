@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
-import { type CallToolResult, parseCallToolResult } from "../call_tool_result";
+import { CallToolResultView, type CallToolResult, parseCallToolResult } from "../call_tool_result";
 import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing";
 import {
   actionOffersCardDecisionButtons,
   renderActionCall,
   renderActionLabel,
+  renderActionOutcome,
   renderDetailsArguments,
   renderDetailsResult,
   renderNativeDetailsResult,
@@ -16,6 +17,11 @@ import {
 } from "./index";
 
 const SSH_EXEC = { group: "ssh", name: "exec" };
+
+async function drawDetailsResult(action: { group: string; name: string }, result: CallToolResult) {
+  const custom = renderDetailsResult(action, result);
+  return mount(custom === undefined ? <CallToolResultView result={result} /> : custom);
+}
 
 /** The CallToolResult stored for an ssh `exec` call whose `ExecResult` has `returned`'s fields. */
 function stored(returned: Record<string, unknown> = {}): CallToolResult {
@@ -58,7 +64,7 @@ describe("Action presentation slots", () => {
     expect(label.textContent).toContain("List pods in namespace tofu-controller");
     expect(label.textContent).not.toContain("kubernetes_admin");
     expect(label.textContent).not.toContain("pods_list_in_namespace");
-    expect(renderActionLabel(action, { namespace: "tofu-controller", hidden: true })).toBeNull();
+    expect(renderActionLabel(action, { namespace: "tofu-controller", hidden: true })).toBeUndefined();
     expect(shouldRenderPaneRequestTitle(action, args, "List pods in namespace tofu-controller")).toBe(false);
     expect(shouldRenderPaneRequestTitle(action, args, "Inspect the running demo pods")).toBe(true);
   });
@@ -84,10 +90,27 @@ describe("Action presentation slots", () => {
     const details = await mount(renderDetailsArguments(action, args));
 
     expect(label.textContent).toContain("Get Deployment apps/web");
-    expect(opened.textContent).toContain("API version: apps/v1");
-    expect(details.textContent).toContain("API version: apps/v1");
+    expect(opened.textContent).toContain("Read with API version apps/v1");
+    expect(details.textContent).toContain("Read with API version apps/v1");
     expect(details.textContent).not.toContain("Get Deployment");
     expect(details.textContent).not.toContain("apps/web");
+  });
+
+  it("keeps the target in the label without adding namespace boilerplate", async () => {
+    const action = { group: "kubernetes_admin", name: "resources_get" };
+    const args = { apiVersion: "v1", kind: "Pod", name: "web-0" };
+    const opened = await mount(renderPaneOpened(action, args));
+    const details = await mount(renderDetailsArguments(action, args));
+    const label = await mount(renderActionLabel(action, { ...args, namespace: "apps" }));
+    const suppliedNamespace = await mount(renderPaneOpened(action, { ...args, namespace: "apps" }));
+
+    expect(opened.textContent).toContain("Read with API version v1");
+    expect(details.textContent).toContain("Read with API version v1");
+    expect(opened.textContent).not.toContain("Namespace");
+    expect(details.textContent).not.toContain("Namespace");
+    expect(suppliedNamespace.textContent).not.toContain("Namespace");
+    expect(label.textContent).toContain("apps/web-0");
+    expect(actionOffersCardDecisionButtons(action, { ...args, namespace: "" })).toBe(false);
   });
 
   it("puts list scope in Kubernetes action labels and leaves only filters in the pane", async () => {
@@ -184,7 +207,7 @@ describe("Action presentation slots", () => {
     expect(
       completedView.querySelector('a[href="https://mail.google.com/mail/u/0/#drafts?compose=draft-123"]')
     ).not.toBeNull();
-    expect(renderActionCall(action, { ...args, unexpected: true })).toBeNull();
+    expect(renderActionCall(action, { ...args, unexpected: true })).toBeUndefined();
 
     const unexpectedResult = parseCallToolResult({
       content: [],
@@ -192,7 +215,7 @@ describe("Action presentation slots", () => {
       isError: false,
     });
     if (unexpectedResult === null) throw new Error("the fixture is not a CallToolResult");
-    expect(renderActionCall(action, args, unexpectedResult)).toBeNull();
+    expect(renderActionCall(action, args, unexpectedResult)).toBeUndefined();
   });
 
   it("renders Gmail search arguments and results without fetching subjects", async () => {
@@ -298,12 +321,12 @@ describe("Action presentation slots", () => {
 
     for (const [group, name] of excluded) {
       const action = { group, name };
-      expect(renderActionLabel(action, { id: "opaque-id" })).toBeNull();
-      expect(renderPaneCollapsed(action, { id: "opaque-id" })).toBeNull();
-      expect(renderPaneOpened(action, { id: "opaque-id" })).toBeNull();
-      expect(renderDetailsArguments(action, { id: "opaque-id" })).toBeNull();
+      expect(renderActionLabel(action, { id: "opaque-id" })).toBeUndefined();
+      expect(renderPaneCollapsed(action, { id: "opaque-id" })).toBeUndefined();
+      expect(renderPaneOpened(action, { id: "opaque-id" })).toBeUndefined();
+      expect(renderDetailsArguments(action, { id: "opaque-id" })).toBeUndefined();
 
-      const raw = await mount(renderDetailsResult(action, result));
+      const raw = await drawDetailsResult(action, result);
       expect(raw.textContent).toContain("Structured content");
       expect(raw.textContent).toContain('"lookup_dependent_value": "preserve raw response"');
     }
@@ -321,14 +344,26 @@ describe("Action presentation slots", () => {
   });
 
   it("leaves a slot to the host when no registered widget accepts it", () => {
-    expect(renderPaneCollapsed(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true })).toBeNull();
-    expect(renderPaneOpened({ group: "test_group", name: "exec" }, SSH_EXEC_ARGUMENTS)).toBeNull();
-    expect(renderDetailsArguments(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true })).toBeNull();
-    expect(renderDetailsArguments({ group: "__proto__", name: "constructor" }, {})).toBeNull();
+    expect(renderPaneCollapsed(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true })).toBeUndefined();
+    expect(renderPaneOpened({ group: "test_group", name: "exec" }, SSH_EXEC_ARGUMENTS)).toBeUndefined();
+    expect(renderDetailsArguments(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true })).toBeUndefined();
+    expect(renderDetailsArguments({ group: "__proto__", name: "constructor" }, {})).toBeUndefined();
+  });
+
+  it("shows recorded Kubernetes arguments when the strict schema does not accept them", async () => {
+    const action = { group: "kubernetes_admin", name: "resources_get" };
+    const args = { apiVersion: "v1", kind: "Pod", name: "web-0", namespace: "apps", futureField: true };
+    const label = await mount(renderActionLabel(action, args));
+    const details = await mount(renderDetailsArguments(action, args));
+
+    expect(label.textContent).toContain("Get Kubernetes resource");
+    expect(details.textContent).toContain("Details shown as recorded data");
+    expect(details.textContent).toContain('"futureField": true');
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(false);
   });
 
   it.each([
-    ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api" }, ["API version: apps/v1"]],
+    ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api" }, ["Read with API version apps/v1"]],
     ["pods_log", { name: "api-0", tail: -1 }, ["container: (default)", "previous: no", "tail: -1"]],
   ] as const)(
     "uses the opened-pane argument widget for %s when optional fields are omitted",
@@ -347,7 +382,7 @@ describe("details result rendering", () => {
   });
 
   it("draws the result as the tool answered when the widget does not take its value", async () => {
-    const container = await mount(renderDetailsResult(SSH_EXEC, stored({ exit_code: "test-not-a-number" })));
+    const container = await drawDetailsResult(SSH_EXEC, stored({ exit_code: "test-not-a-number" }));
     expect(container.textContent).toContain("Structured content");
     expect(container.textContent).toContain('"exit_code": "test-not-a-number"');
     expect(container.textContent).not.toContain("Exit");
@@ -357,15 +392,121 @@ describe("details result rendering", () => {
     const failure = { kind: "target_not_configured", message: "SSH host/user target is not configured" };
     const result = parseCallToolResult({ content: [{ type: "text", text: JSON.stringify(failure) }], isError: true });
     if (result === null) throw new Error("the fixture is not a CallToolResult");
-    const container = await mount(renderDetailsResult(SSH_EXEC, result));
+    const container = await drawDetailsResult(SSH_EXEC, result);
     expect(container.textContent).toContain("Tool error");
     expect(container.textContent).toContain('"kind": "target_not_configured"');
   });
 
   it("draws an unregistered Action's result as the tool answered", async () => {
-    const container = await mount(renderDetailsResult({ group: "test_group", name: "exec" }, stored()));
+    const container = await drawDetailsResult({ group: "test_group", name: "exec" }, stored());
     expect(container.textContent).toContain("Structured content");
     expect(container.textContent).not.toContain("Exit 0");
+  });
+
+  it("formats Kubernetes YAML result text with its structured value only once", async () => {
+    const action = { group: "kubernetes_admin", name: "resources_get" };
+    const resource = {
+      apiVersion: "v1",
+      kind: "ConfigMap",
+      metadata: { name: "settings", namespace: "apps" },
+      data: { mode: "safe" },
+    };
+    const result = parseCallToolResult({
+      content: [
+        {
+          type: "text",
+          text: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: settings\n  namespace: apps\ndata:\n  mode: safe",
+        },
+      ],
+      structuredContent: resource,
+      isError: false,
+    });
+    if (result === null) throw new Error("the fixture is not a CallToolResult");
+
+    const container = await mount(renderDetailsResult(action, result));
+    expect(container.textContent).toContain("Resource · ConfigMap apps/settings");
+    expect(container.textContent?.match(/kind: ConfigMap/g)).toHaveLength(1);
+    expect(container.textContent).not.toContain("Structured content");
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
+  });
+
+  it("formats a single-line YAML apply argument and shows malformed input verbatim", async () => {
+    const action = { group: "kubernetes_admin", name: "resources_create_or_update" };
+    const manifest = "apiVersion: v1 kind: ConfigMap metadata: {name: settings, namespace: apps} data: {mode: safe}";
+    const formatted = await mount(renderDetailsArguments(action, { resource: manifest }));
+    expect(formatted.textContent).toContain("Manifest · ConfigMap apps/settings");
+    expect(formatted.textContent).toContain("apiVersion: v1");
+    expect(formatted.querySelector(".cm-editor")).not.toBeNull();
+
+    const malformed = await mount(renderDetailsArguments(action, { resource: "kind: [broken" }));
+    expect(malformed.textContent).toContain("Manifest · showing submitted text");
+    expect(malformed.textContent).toContain("kind: [broken");
+  });
+
+  it("renders a returned YAML sequence as separate Kubernetes resources", async () => {
+    const action = { group: "kubernetes_admin", name: "resources_create_or_update" };
+    const result = parseCallToolResult({
+      content: [
+        {
+          type: "text",
+          text: [
+            "- apiVersion: v1",
+            "  kind: ConfigMap",
+            "  metadata:",
+            "    name: settings",
+            "    namespace: apps",
+            "- apiVersion: v1",
+            "  kind: Secret",
+            "  metadata:",
+            "    name: token",
+            "    namespace: apps",
+          ].join("\n"),
+        },
+      ],
+      isError: false,
+    });
+    if (result === null) throw new Error("the fixture is not a CallToolResult");
+
+    const container = await mount(renderDetailsResult(action, result));
+    expect(container.textContent).toContain("Resource 1 · ConfigMap apps/settings");
+    expect(container.textContent).toContain("Resource 2 · Secret apps/token");
+    expect(container.querySelectorAll(".cm-editor")).toHaveLength(2);
+  });
+
+  it("shows an exact delete success as an outcome with no fabricated result body", async () => {
+    const action = { group: "kubernetes_admin", name: "resources_delete" };
+    const args = {
+      apiVersion: "v1",
+      kind: "Pod",
+      name: "web-0",
+      namespace: "apps",
+      gracePeriodSeconds: 0,
+    };
+    const success = parseCallToolResult({
+      content: [{ type: "text", text: "Resource deleted successfully" }],
+      isError: false,
+    });
+    if (success === null) throw new Error("the fixture is not a CallToolResult");
+
+    expect(renderDetailsResult(action, success)).toBeNull();
+    const call = renderActionCall(action, args, success);
+    expect(call?.includesResult).toBe(true);
+    expect(renderActionOutcome(action, success)?.label).toBe("Deletion accepted");
+    expect((await mount(call?.content)).textContent).toContain("request a 0s grace period");
+    const argumentsView = await mount(renderDetailsArguments(action, args));
+    expect(argumentsView.textContent).toContain("Use API version v1");
+    expect(argumentsView.textContent).toContain("request a 0s grace period");
+
+    const warning = parseCallToolResult({
+      content: [{ type: "text", text: "Resource deleted successfully, but finalizers are still running" }],
+      isError: false,
+    });
+    if (warning === null) throw new Error("the fixture is not a CallToolResult");
+    expect(renderDetailsResult(action, warning)).toBeUndefined();
+    expect(renderActionOutcome(action, warning)).toBeUndefined();
+    const warningView = await drawDetailsResult(action, warning);
+    expect(warningView.textContent).toContain("finalizers are still running");
+    expect(renderActionCall(action, args, warning)).toBeUndefined();
   });
 });
 
@@ -379,7 +520,7 @@ const cardDecisionButtonCases: Array<{
     group: "kubernetes_admin",
     name: "resources_get",
     args: { apiVersion: "apps/v1", kind: "Deployment", name: "api" },
-    visible: ["API version: apps/v1"],
+    visible: ["Read with API version apps/v1"],
   },
   {
     group: "kubernetes_admin",
@@ -542,7 +683,8 @@ describe("sandbox rendering", () => {
     expect((await mount(renderActionLabel(action(name), args))).textContent).toContain(label);
     expect((await mount(renderPaneOpened(action(name), args))).textContent).toContain(body);
     expect(actionOffersCardDecisionButtons(action(name), args)).toBe(false);
-    expect(renderDetailsArguments(action(name), { ...args, hidden: true })).toBeNull();
+    const recorded = await mount(renderDetailsArguments(action(name), { ...args, hidden: true }));
+    expect(recorded.textContent).toContain("Details shown as recorded data");
   });
 
   it("shows readiness conditions and empty lists", async () => {

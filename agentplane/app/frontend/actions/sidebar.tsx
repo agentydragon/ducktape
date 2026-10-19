@@ -98,14 +98,14 @@ function PendingActionList({
                 {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
                 <div className="agentplane-actions-sidebar-request-label">
                   <div className="agentplane-actions-sidebar-name">
-                    {actionLabel ?? `${request.action.group} / ${request.action.name}`}
+                    {actionLabel === undefined ? `${request.action.group} / ${request.action.name}` : actionLabel}
                   </div>
                   {showRequestTitle && (
                     <Text size="xs" lineClamp={1} title={request.title}>
                       {request.title}
                     </Text>
                   )}
-                  {!expanded && collapsedPreview !== null && (
+                  {!expanded && collapsedPreview !== null && collapsedPreview !== undefined && (
                     <div className="agentplane-actions-sidebar-collapsed-preview">{collapsedPreview}</div>
                   )}
                 </div>
@@ -130,7 +130,7 @@ function PendingActionList({
                     Authenticated external caller
                   </Text>
                 )}
-                {openedPreview ?? <ActionJson value={request.arguments} />}
+                {openedPreview === undefined ? <ActionJson value={request.arguments} /> : openedPreview}
                 <Group justify="space-between" wrap="nowrap" gap="xs">
                   {decision ?? (
                     <Text size="xs" c="dimmed">

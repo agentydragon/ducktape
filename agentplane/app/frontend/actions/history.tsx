@@ -10,28 +10,46 @@ import { ActionJson } from "./payload";
 import { useOptionalStreamStatus } from "../stream_status";
 import { followStream, type StreamConnection } from "../live_stream";
 import { ActionCall } from "./call";
-import { parseCallToolResult } from "./call_tool_result";
+import { CallToolResultView, parseCallToolResult, type CallToolResult } from "./call_tool_result";
 import { actionHistory, getAction, listActionGroups, type ActionRequestView } from "./client";
-import { renderActionCall, renderDetailsResult, renderNativeDetailsResult } from "./rendering/index";
+import {
+  renderActionCall,
+  renderActionOutcome,
+  renderDetailsResult,
+  renderNativeDetailsResult,
+} from "./rendering/index";
 import { stateLabel } from "./requests";
 
 /** The stored result: its pretty rendering unless it has none or the action is switched to Raw, and
  * otherwise its stored JSON. */
 function ExecutionResult({
   result,
+  call,
   pretty,
   raw,
 }: {
   result: unknown;
-  pretty: ReactNode | null;
+  call: CallToolResult | null;
+  pretty: ReactNode | null | undefined;
   raw: boolean;
-}): JSX.Element {
+}): JSX.Element | null {
+  if (pretty === null && !raw) return null;
   return (
     <div>
       <Text size="sm" fw={600} mb={4}>
         Result
       </Text>
-      {pretty === null || raw ? <ActionJson value={result} /> : pretty}
+      {raw ? (
+        <ActionJson value={result} />
+      ) : pretty === undefined ? (
+        call === null ? (
+          <ActionJson value={result} />
+        ) : (
+          <CallToolResultView result={call} />
+        )
+      ) : (
+        pretty
+      )}
     </div>
   );
 }
@@ -50,12 +68,13 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
   const call = mcp && hasResult ? parseCallToolResult(result) : null;
   const prettyResult = mcp
     ? call === null
-      ? null
+      ? undefined
       : renderDetailsResult(request.action, call)
     : hasResult
       ? renderNativeDetailsResult(request.action, result)
-      : null;
+      : undefined;
   const combinedCall = renderActionCall(request.action, request.arguments, call ?? undefined);
+  const actionOutcome = call === null ? undefined : renderActionOutcome(request.action, call);
   return (
     <Paper withBorder p="md" data-action-receipt={request.id}>
       <Stack gap="sm">
@@ -73,11 +92,12 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
                   {decision.verdict === "allow" ? "Allowed" : "Denied"}
                 </Badge>
               )}
+              {actionOutcome && <Badge color={actionOutcome.failed ? "red" : "blue"}>{actionOutcome.label}</Badge>}
             </>
           }
           raw={raw}
           onRawChange={setRaw}
-          prettyResult={prettyResult !== null}
+          prettyResult={call !== null || prettyResult !== undefined}
           combinedCall={combinedCall}
         />
         {decision?.decision_note && (
@@ -94,10 +114,10 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
             Auto-approved via policy <Code>{policySet}</Code>
           </Text>
         )}
-        {(hasResult || hasExecutionError || !decisionState) && (
+        {(hasResult || hasExecutionError || (!decisionState && actionOutcome === undefined)) && (
           <Stack gap="xs" data-testid="action-execution-outcome">
             {hasResult && !(combinedCall?.includesResult && !raw) && (
-              <ExecutionResult result={result} pretty={prettyResult} raw={raw} />
+              <ExecutionResult result={result} call={call} pretty={prettyResult} raw={raw} />
             )}
             {hasExecutionError && (
               <div>
@@ -107,7 +127,7 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
                 <ActionJson value={executionError} />
               </div>
             )}
-            {!decisionState && (
+            {!decisionState && actionOutcome === undefined && (
               <Text size="xs" c="dimmed" data-testid="action-execution-state">
                 {stateLabel(request.state)}
               </Text>
