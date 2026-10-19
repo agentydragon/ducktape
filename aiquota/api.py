@@ -148,9 +148,9 @@ class SnapshotFeed:
         # need a provider refresh; the feed still coalesces concurrent misses.
         return await self.fetch()
 
-    async def publish(self, snapshot: QuotaSnapshot, *, force: bool = False) -> int:
+    async def publish(self, snapshot: QuotaSnapshot) -> int:
         async with self._condition:
-            if not force and self._snapshot == snapshot:
+            if self._snapshot == snapshot:
                 return self._revision
             self._snapshot = snapshot
             self._revision += 1

@@ -110,12 +110,13 @@ async def test_clickhouse_sink_batches_raw_and_typed_rows() -> None:
     ]
 
 
-async def test_background_collector_forces_refresh_and_records_success() -> None:
+async def test_background_collector_seeds_cache_then_forces_refresh() -> None:
     class Fetcher:
-        force_refresh: bool | None = None
+        def __init__(self) -> None:
+            self.force_refreshes: list[bool] = []
 
         async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot:
-            self.force_refresh = force_refresh
+            self.force_refreshes.append(force_refresh)
             return _snapshot()
 
     class Sink:
@@ -131,8 +132,10 @@ async def test_background_collector_forces_refresh_and_records_success() -> None
     collector = BackgroundCollector(fetcher, sink, interval=timedelta(minutes=5), metrics=metrics)
 
     await collector.poll_once()
+    assert fetcher.force_refreshes == [False]
 
-    assert fetcher.force_refresh is True
+    await collector.poll_once()
+    assert fetcher.force_refreshes == [False, True]
     assert sink.snapshot is not None
     assert collector.has_persisted is True
     rendered = metrics.registry.collect()

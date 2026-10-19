@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import json
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -26,6 +25,7 @@ from aiquota.api import (
 )
 from aiquota.config import Config
 from aiquota.models import AllQuotas, FetchError, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
+from aiquota.render.view_model import AllQuotasView
 from aiquota.settings import Settings
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
@@ -235,7 +235,7 @@ async def _serve_api(app: FastAPI) -> AsyncIterator[str]:
         yield f"http://127.0.0.1:{sock.getsockname()[1]}"
 
 
-async def _read_view(lines: AsyncIterator[str]) -> dict[str, object]:
+async def _read_view(lines: AsyncIterator[str]) -> AllQuotasView:
     event: str | None = None
     data: str | None = None
     async for line in lines:
@@ -246,7 +246,7 @@ async def _read_view(lines: AsyncIterator[str]) -> dict[str, object]:
         elif not line and event is not None:
             assert event == "view"
             assert data is not None
-            return json.loads(data)
+            return AllQuotasView.model_validate_json(data)
     raise AssertionError("event stream ended before a view")
 
 
@@ -288,10 +288,12 @@ async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypa
         assert first.headers["content-type"].startswith("text/event-stream")
         assert first.headers["cache-control"] == "no-store"
         assert first.headers["x-accel-buffering"] == "no"
-        assert initial["providers"][0]["last_output"]["result"]["windows"][0]["used_percent"] == 45.0
+        initial_result = initial.providers[0].last_output.result
+        assert isinstance(initial_result, FetchSuccess)
+        assert initial_result.windows[0].used_percent == 45.0
         quotas_response = await client.get("/v1/quotas", headers=auth)
         assert quotas_response.status_code == 200
-        assert initial == quotas_response.json()
+        assert initial.model_dump(mode="json") == quotas_response.json()
 
         second_lines = second.aiter_lines().__aiter__()
         second_view = await _read_view(second_lines)
@@ -304,7 +306,9 @@ async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypa
         assert quota_response.status_code == 200
         first_update = await _read_view(first_lines)
         second_update = await _read_view(second_lines)
-        assert first_update["providers"][0]["last_output"]["result"]["windows"][0]["used_percent"] == 52.0
+        first_update_result = first_update.providers[0].last_output.result
+        assert isinstance(first_update_result, FetchSuccess)
+        assert first_update_result.windows[0].used_percent == 52.0
         assert second_update == first_update
         assert provider.fetches == 2  # One refresh reached both clients.
 
@@ -312,9 +316,11 @@ async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypa
         stale_response = await client.get("/v1/quotas", headers=auth)
         assert stale_response.status_code == 200
         stale_update = await _read_view(first_lines)
-        assert stale_update == stale_response.json()
-        assert stale_update["providers"][0]["last_output"]["result"]["kind"] == "error"
-        assert stale_update["providers"][0]["last_success"]["result"]["windows"][0]["used_percent"] == 52.0
+        assert stale_update.model_dump(mode="json") == stale_response.json()
+        stale_provider = stale_update.providers[0]
+        assert isinstance(stale_provider.last_output.result, FetchError)
+        assert stale_provider.last_success is not None
+        assert stale_provider.last_success.result.windows[0].used_percent == 52.0
         assert provider.fetches == 3
 
     await feed.wait_for_subscribers(0)
