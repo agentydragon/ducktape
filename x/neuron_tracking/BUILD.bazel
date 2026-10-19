@@ -40,5 +40,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        # types-jsonschema imports referencing in its public type signatures.
+        "@pypi//referencing",  # keep
     ],
 )
