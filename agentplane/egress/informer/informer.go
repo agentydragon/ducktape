@@ -96,11 +96,11 @@ func New(base *rest.Config, config Config) (*Informer, error) {
 	}
 	period := int64(config.WatchPeriod / time.Second)
 	tweak := func(options *metav1.ListOptions) { options.TimeoutSeconds = &period }
-	bindings := policyinformers.NewTypedFilteredPolicyBindingInformer(policies, config.RulesNamespace, 0, policyinformers.PolicyBindingIndexers{
-		cache.NamespaceIndex: func(binding *policyapi.PolicyBinding) ([]string, error) {
-			return []string{binding.Namespace}, nil
-		},
-	}, tweak)
+	bindings := policyinformers.NewTypedFilteredPolicyBindingInformer(policies, config.RulesNamespace, 0, nil, tweak)
+	// The generated typed lister queries the namespace index with metav1.ObjectMeta.
+	if err := bindings.AddIndexers(cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}); err != nil {
+		return nil, err
+	}
 	// EgressReady uses the generated cache lister, never an extra API read.
 	i.bindings = policylisters.NewPolicyBindingLister(bindings.GetIndexer()).PolicyBindings(config.RulesNamespace)
 	if err := errors.Join(

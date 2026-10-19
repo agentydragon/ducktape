@@ -236,7 +236,7 @@ func watchConnectionLeases(ctx context.Context, client kubernetes.Interface, nam
 		}
 		return string(lease.OwnerReferences[0].UID), uint64(*lease.Spec.LeaseTransitions)
 	}
-	if _, err := informer.AddTypedEventHandler(coordinationinformers.LeaseHandlerFuncs{
+	registration, err := informer.AddTypedEventHandler(coordinationinformers.LeaseHandlerFuncs{
 		AddFunc: func(lease *coordinationv1.Lease) {
 			uid, epoch := leaseUID(lease)
 			local.replaceLease("", uid, epoch)
@@ -250,11 +250,12 @@ func watchConnectionLeases(ctx context.Context, client kubernetes.Interface, nam
 			uid, _ := leaseUID(deleted.OptionalObj)
 			local.forgetLease(uid)
 		},
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 	go informer.Run(ctx.Done())
-	if !cache.WaitForCacheSync(ctx.Done(), informer.HasSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), informer.HasSynced, registration.HasSynced) {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

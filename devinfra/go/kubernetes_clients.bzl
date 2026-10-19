@@ -91,7 +91,7 @@ def kubernetes_clients(name, api, input_base, importpath, kinds, apply_configura
         "internalinterfaces": [":clientset", "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/runtime", "@io_k8s_client_go//tools/cache"],
         "informer_version": [api, ":clientset", ":internalinterfaces", ":listers", "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/runtime", "@io_k8s_apimachinery//pkg/runtime/schema", "@io_k8s_apimachinery//pkg/watch", "@io_k8s_client_go//tools/cache"],
         "informer_group": [":internalinterfaces", ":informer_version"],
-        "informers": [api, ":clientset", ":internalinterfaces", ":informer_group", "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/runtime", "@io_k8s_apimachinery//pkg/runtime/schema", "@io_k8s_client_go//tools/cache"],
+        "informers": [api, ":clientset", ":internalinterfaces", ":informer_group", "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/runtime", "@io_k8s_apimachinery//pkg/runtime/schema", "@io_k8s_apimachinery//pkg/util/wait", "@io_k8s_client_go//tools/cache"],
     }
     for package, files in packages.items():
         native.filegroup(name = package + "_sources", srcs = [":" + name], output_group = package)
