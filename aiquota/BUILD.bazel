@@ -115,6 +115,7 @@ py_test(
         "@pypi//dbus_next",
         "@pypi//httpx",
         "@pypi//httpx_sse",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

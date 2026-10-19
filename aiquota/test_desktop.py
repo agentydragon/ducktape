@@ -11,6 +11,7 @@ import pytest_bazel
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface
 from httpx_sse import ServerSentEvent
+from pydantic import SecretStr
 
 from aiquota.cache import QuotaCache
 from aiquota.config import Config, RemoteAPISettings
@@ -79,12 +80,17 @@ async def test_view_event_updates_dbus_and_raw_offline_cache(tmp_path: Path) -> 
     try:
         recorder = SignalRecorder()
         ServiceInterface._add_bus(daemon.bus_interface, cast(MessageBus, recorder))
+        introspection = daemon.bus_interface.introspect()
+
+        assert [(method.name, method.out_signature) for method in introspection.methods] == [("GetView", "s")]
+        assert {prop.name: prop.signature for prop in introspection.properties} == {"Error": "s", "Status": "s"}
+        assert [(signal.name, signal.signature) for signal in introspection.signals] == [("ViewChanged", "s")]
 
         payload = view_payload()
         raw_json = json.dumps(payload, separators=(",", ":"))
         assert daemon.accept_event(ServerSentEvent(event="view", data=raw_json))
 
-        assert json.loads(daemon.bus_interface.get_view()) == payload
+        assert json.loads(daemon.view_json) == payload
         assert daemon.status == "connected"
         cached = cache.read()
         assert cached is not None
@@ -105,7 +111,7 @@ async def test_malformed_view_event_is_rejected_without_cache_write(tmp_path: Pa
         with pytest.raises(SSEProtocolError):
             daemon.accept_event(ServerSentEvent(event="view", data='{"providers": "invalid"}'))
         assert cache.read() is None
-        assert daemon.bus_interface.get_view() == ""
+        assert daemon.view_json == ""
     finally:
         await daemon.http.aclose()
 
@@ -129,7 +135,7 @@ async def test_stream_reconnects_and_keeps_latest_cache(tmp_path: Path, monkeypa
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
     daemon = QuotaDaemon(
-        Config(remote_api=RemoteAPISettings(url="https://example.test", bearer_token="test-token")),
+        Config(remote_api=RemoteAPISettings(url="https://example.test", bearer_token=SecretStr("test-token"))),
         cache=cache,
         http=http,
     )
@@ -142,7 +148,7 @@ async def test_stream_reconnects_and_keeps_latest_cache(tmp_path: Path, monkeypa
         assert daemon.status == "disconnected"
         assert "stream ended" in daemon.error
         assert cache.read() is not None
-        assert json.loads(daemon.bus_interface.get_view()) == view_payload()
+        assert json.loads(daemon.view_json) == view_payload()
         assert any(message[2] == "ViewChanged" for message in recorder.messages)
     finally:
         if not task.done():
@@ -163,7 +169,7 @@ async def test_stream_cancellation_stops_backoff(tmp_path: Path) -> None:
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(fail))
     daemon = QuotaDaemon(
-        Config(remote_api=RemoteAPISettings(url="https://example.test", bearer_token="test-token")),
+        Config(remote_api=RemoteAPISettings(url="https://example.test", bearer_token=SecretStr("test-token"))),
         cache=cache,
         http=http,
     )
