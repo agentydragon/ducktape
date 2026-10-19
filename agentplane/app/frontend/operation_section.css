@@ -1,0 +1,32 @@
+/* Each Action payload surface owns one frame and one inset; nested disclosures use no gutter. */
+.agentplane-operation-section {
+  --agentplane-disclosure-gutter: 0px;
+  --agentplane-disclosure-body-spacing: 0px;
+  box-sizing: border-box;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  background-color: var(--agentplane-code-surface-background, transparent);
+  border: var(--agentplane-code-surface-border, 0);
+  border-radius: var(--agentplane-code-surface-radius, 0);
+  padding: var(--agentplane-operation-padding, var(--agentplane-code-surface-padding, 0));
+}
+
+.agentplane-operation-heading {
+  display: block;
+  margin-block-end: var(--agentplane-operation-heading-gap, var(--mantine-spacing-xs));
+  color: var(--mantine-color-dimmed);
+  font-size: var(--agentplane-operation-heading-size, var(--mantine-font-size-sm));
+  font-weight: 600;
+}
+
+.agentplane-action-operation-host[data-operation-density="detail"] {
+  --agentplane-operation-padding: var(--mantine-spacing-xs);
+  --agentplane-operation-heading-gap: var(--mantine-spacing-xs);
+  --agentplane-operation-heading-size: var(--mantine-font-size-sm);
+}
+
+.agentplane-actions-sidebar-preview[data-operation-density="compact"] {
+  --agentplane-operation-padding: calc(var(--mantine-spacing-xs) * 0.75);
+  --agentplane-operation-heading-gap: calc(var(--mantine-spacing-xs) * 0.5);
+  --agentplane-operation-heading-size: var(--mantine-font-size-xs);
+}

@@ -238,12 +238,22 @@ agentplane_vitest_test(
     ],
 )
 
+js_library(
+    name = "operation_section_css",
+    srcs = ["operation_section.css"],
+)
+
 ts_library(
     name = "operation_section",
-    srcs = ["operation_section.tsx"],
+    srcs = [
+        "css.d.ts",
+        "operation_section.tsx",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":code_block",
+        ":code_block_css",
+        ":operation_section_css",
         "//:node_modules/@types/react",
     ],
 )
