@@ -1,98 +1,61 @@
 @README.md
 
-Augur is pre-production. Do not add compatibility shims for older URL state
-versions, request schemas, or serialized payloads unless the user explicitly
-asks for backward compatibility.
+Pre-production: no compatibility shims for older URL state, request schemas or serialized
+payloads unless the user asks.
 
-Python owns financial execution through <sim/session.py> and <sim/world.py>; there is
-no native evaluator or runtime fallback. TLH portfolio state and its transitions belong
-to the Python component, not a second holding book. Do not revive deleted `augur/core`
-execution or market-bundle adapters. When extending API responses, project the prepared
-input and the canonical frames directly, as <product/projection.py> does, instead of
-adding parallel read-model tables over the captured long-form polars frames.
+Python owns financial execution (<sim/session.py>, <sim/world.py>); no native evaluator or
+runtime fallback, and no reviving deleted `augur/core` execution or market-bundle adapters.
+TLH portfolio state and transitions live in the Python component, not a second holding book.
+API responses project the prepared input and canonical frames directly (as
+<product/projection.py> does), never parallel read-model tables over the polars frames.
 
 ## Conventions
 
-- **One way to declare a world:** `declare_*`, `hold_lot`, `hold_bond` and `track` on a
-  `World`, taking keyword arguments rather than argument-bundle records, driven by
-  `start()`/`step()` or `ActionSession` (README § Using Augur). Do not add a second
-  declaration path beside it.
-- **Exogenous paths come first and flow one way.** Exogenous models sample market paths;
-  a `World` of simulated actors is built on them. Nothing in `sim/` feeds back into a
-  sampler.
-- **No scenario objects.** No configuration value or enum that tries to represent every use
-  case; callers compose worlds in code.
-- **No layer without a caller that needs it now.**
-- **Strategies stay with their caller.** A rule specific to one study (Guyton–Klinger, a
-  glide, a spending ladder) lives in that study under `study/` or `x/`; core does not grow
-  options to configure it.
-- **A model identifies itself with a `model_id` string, and results display that string.**
-- **Core never depends on `study/` or `x/`:** add no visibility exception for it. A model
-  moves from `x/models/` into core only on evidence that it is good enough.
-- **Money conversions are exact or raise.** Never convert through floats or ad-hoc rounding
-  (`round(x * 100)`); use the helpers README § Using Augur names.
+- **One way to declare a world:** `declare_*`, `hold_lot`, `hold_bond`, `track` on a `World`,
+  keyword arguments (no argument-bundle records), driven by `start()`/`step()` or
+  `ActionSession` (README § Using Augur). No second declaration path.
+- **Exogenous paths flow one way:** nothing in `sim/` feeds back into a sampler.
+- **No scenario objects** (a config value/enum covering every use case); callers compose
+  worlds in code. No layer without a caller that needs it now.
+- **Strategies stay with their study** under `study/` or `x/`; core grows no options for them.
+- **Models identify by a `model_id` string**, and results display it.
+- **Core never depends on `study/` or `x/`**; add no visibility exception. A model moves from
+  `x/models/` into core only on evidence it is good enough.
+- **Money conversions are exact or raise**: never via floats or `round(x * 100)`; use the
+  helpers named in README § Using Augur.
 
 ## numpy vs jnp
 
-JAX is the sampler, not the simulator: `model/`, `fit/` and `x/models/` trace and jit;
-`sim/` runs ordinary Python financial steps. Inside the traced
-packages numpy still belongs, but only in specific places, and the
-line is not "whichever imports first":
+JAX is the sampler, not the simulator: `model/`, `fit/`, `x/models/` trace and jit; `sim/` is
+plain Python. In traced packages: numpy for compile-time structure (static gather index sets,
+anything resolved host-side before the call) and for decoding sampled output into polars; jnp
+for every traced value.
 
-- **numpy for compile-time STRUCTURE.** Static index sets used as gather keys, anything
-  resolved once host-side before a traced call.
-- **numpy for decode.** Sampled output comes back as numpy and polars frames are built
-  from it. That is the far side of the boundary; it is not traced.
-- **jnp for traced VALUES.** Anything a jitted function computes, carries, or branches on.
-
-Two rules follow, and both have been violated before:
-
-- **Never write a second numpy implementation of something a traced function does in
-  jnp.** It cannot be called from the traced path, so it is either dead or a fork waiting
-  to drift — and a green suite over the numpy copy implies coverage of a path that ships
-  from different code.
-- **Write helpers destined for a traced path in jnp from the start.** Converting later is
-  not free: `jnp` has no `argsort(kind=...)`, cannot scatter with `put_along_axis`, and
-  rejects a plain dataclass as a jit output (use `NamedTuple`, which is a native pytree).
-  Assert traceability in the test — `jax.jit` the helper and call it — so a numpy op
-  cannot creep back in unnoticed.
-
-**Validation splits along the same line.** A traced value cannot drive a Python `raise`,
-so anything that must fail loudly has to be checked before tracing, on the static
-inputs.
+- **No numpy twin of a traced jnp function**: it is dead or a drifting fork whose green tests
+  cover code that does not ship.
+- **Write helpers bound for a traced path in jnp from the start** (`jnp` lacks
+  `argsort(kind=...)` and `put_along_axis`; jit outputs must be pytrees, so `NamedTuple` not
+  dataclass). Test traceability by `jax.jit`-ing the helper.
+- **Validate on static inputs before tracing**: a traced value cannot drive a `raise`.
 
 ## Provenance of a reported number
 
-Augur reports probabilities, and a probability is always _according to a model_. A number
-quoted without the model that produced it is not a weaker claim than one quoted with it —
-it is a different, unfalsifiable claim, and it survives into later work as if it were
-measured.
+A probability is always according to a model. Every reported figure (PR, issue, `debug/`
+note, docstring, commit, chat) carries enough to reproduce it, labeled "probability of X
+under {sampler, window, policy}" or pointing at the config pinning them:
 
-So every reported figure — in a PR body, an issue, a `debug/` note, a docstring, a commit
-message, a chat reply — carries enough to reproduce it:
+- **Sampler**: historical replay (overlapping windows: `N` windows ≪ `N` independent draws) or
+  a fitted model.
+- **Fit window and evidence series**, for a fitted sampler.
+- **Full policy config**: allocation, cash band, rebalancing, withdrawal rate, horizon.
+- **Instrument construction** per sleeve (bond maturity, credit quality, fee — 120bp on the
+  bond sleeve outweighs the sampler choice).
+- **Standard error** beside each estimate; do not rank cells whose intervals overlap (most
+  allocation-grid cells are inseparable at achievable sample sizes).
 
-- **Which sampler.** Historical replay over overlapping windows, or draws from a fitted
-  model. These are not interchangeable and do not have the same error structure: replay
-  windows overlap, so `N` windows are worth far fewer than `N` independent observations.
-- **Which fit window**, for a fitted sampler, and which evidence series it was fit against.
-- **The policy config that was live**, in full — allocation, the cash band, rebalancing,
-  withdrawal rate, horizon.
-- **The instrument construction** for each sleeve. A bond sleeve's assumed maturity, credit
-  quality and fee are not detail; a 120bp difference on the bond sleeve moves the answer
-  more than the choice of sampler does.
-- **The sampling noise.** Report the standard error next to the estimate, and do not rank
-  cells whose intervals overlap. Most cells in a plausible allocation grid are not
-  separable at achievable sample sizes, so a bare ordering of cells is usually reading
-  noise.
+`CashBandHousehold.reinvest` (<policy/cash_band_household.py>) is an explicit choice: `None`
+accumulates surplus cash (sales-only — reports must say so); `rebalance_tolerance_ppb` says
+whether drift alone trades. Results from before that choice was required ran cash-flow-only.
 
-`CashBandHousehold`'s `reinvest` (<policy/cash_band_household.py>) is an explicit policy
-choice. With `None`, surplus cash accumulates instead of being invested; reports must state
-this sales-only behavior. Its `rebalance_tolerance_ppb` says whether drift alone trades.
-Results published before the rebalancing choice was required did not say, and ran
-cash-flow-only.
-
-**"Probability of X" is never the whole label.** Write "probability of X under
-{sampler, window, policy}", or point at the config that pins all three. Where a figure is
-quoted from elsewhere, carry its provenance with it or say that you could not establish
-it — an inherited number whose model is unknown is a starting point for an investigation,
-not evidence.
+A quoted figure keeps its provenance or says it could not be established; an inherited number
+of unknown model is a lead, not evidence.
