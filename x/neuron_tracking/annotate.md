@@ -1,19 +1,21 @@
 # Neuron annotation prompt
 
 Produce annotations and an annotated video for the supplied microscopy clip.
-This is the first experiment; perform the work and report what you achieved.
+Perform the work and report what you achieved.
 
-Use the input clip, reference JPEG, and output directory supplied in the launch
-prompt. Process the whole clip and every distinguishable neuron in the target
-region, including neurons that become visible later. The reference's red outline
-indicates the target region; it is not an already aligned segmentation mask.
+Use the input clip, target definition, optional reference image, and output
+directory supplied in the launch prompt. Honor sample-specific inclusion and
+exclusion constraints. Process the whole clip and every distinguishable neuron
+in the requested region, including neurons that become visible later. A reference
+outline guides region selection; it is not an already aligned segmentation mask.
 Start with a clear frame to establish the annotation/review loop, then continue
 through the clip without waiting for intermediate approval.
 
-Create any extraction, processing, mask-editing, rendering, validation, or video
-encoding scripts you need as you work. Use the repo's Nix environment or obtain
+Use the shared `x.neuron_tracking.render` helper for saved-mask previews and AVI
+export; see `README.md` for commands. Create any extraction, processing,
+mask-editing, or additional review scripts you need. Use the repo's Nix environment or obtain
 additional programs through `nix shell` or `nix-shell`. Keep scratch scripts and
-generated artifacts in the output directory; no prebuilt helpers are required.
+generated artifacts in the output directory.
 Choose useful processing methods yourself, while grounding annotations in the
 actual source pixels and keeping the required visual review loop. Keep all neuron
 identity decisions in this conversation; do not delegate frames to other agents.
@@ -27,8 +29,9 @@ parts belong to the same persistent neuron ID. Read the adjacent
 JSON structure. Deliver `annotations.json` conforming to that schema, a copy of
 the schema, `tracks.csv`, `annotated.avi`, and `review.json` in the output directory.
 
-1. Inspect the video frames yourself. Find the small dark target features using
-   the example JPEG as guidance. View a timeline overview, then inspect useful
+1. Inspect the video frames yourself. Find the requested target features using
+   the supplied definition and reference as guidance. Establish a few positive
+   and excluded examples before expanding coverage. View a timeline overview, then inspect useful
    frames and crops at native resolution and pixel-preserving zoom to distinguish
    individual bodies, branch widths, tips, and junctions.
 2. Work in one conversation; context compaction is allowed. Keep a saved
@@ -41,7 +44,8 @@ the schema, `tracks.csv`, `annotated.avi`, and `review.json` in the output direc
    their union is its segmented extent. Trace the full width and visible tips of
    every branch. Rasterize any polygon or brush edits into the saved masks; the
    raster pixels are the annotation used for review and export.
-4. Render the saved annotations on the input image. Open and visually inspect
+4. Render the saved annotations on the input image with stable, distinct colors
+   from the JSON ID/color table. Open and visually inspect
    the actual rendered result, alongside the raw crop. View the body and branch
    layers separately as well as together, with the neuron's persistent color
    and distinct part styling. Check boundaries, missing thin branches, excessive

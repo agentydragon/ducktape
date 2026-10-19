@@ -30,7 +30,7 @@ mkdir -p x/neuron_tracking/runs/luna_xhigh
 codex exec --model gpt-6-luna -c 'model_reasoning_effort="xhigh"' \
   --approve-for-me --json \
   --output-last-message x/neuron_tracking/runs/luna_xhigh/handoff.md \
-  'Read x/neuron_tracking/annotate.md. Process all frames from x/neuron_tracking/data/IMG_6128.AVI, using x/neuron_tracking/data/photo_2026-10-19_14-30-28.jpg as the target reference. Save the colored annotated AVI, pixel annotations, schema, tracking CSV, and review record under x/neuron_tracking/runs/luna_xhigh.' \
+  'Read x/neuron_tracking/annotate.md and x/neuron_tracking/sample_task.md. Process all frames from x/neuron_tracking/data/IMG_6128.AVI, using x/neuron_tracking/data/photo_2026-10-19_14-30-28.jpg as the target reference. Save the colored annotated AVI, pixel annotations, schema, tracking CSV, and review record under x/neuron_tracking/runs/luna_xhigh.' \
   > x/neuron_tracking/runs/luna_xhigh/codex_events.jsonl
 ```
 
@@ -40,3 +40,46 @@ Long runs need a durable process supervisor when their invoking agent's process
 lifetime is uncertain; unexpected SIGTERM exits occurred during the first trials.
 See [the abort investigation](debug/parallel_run_aborts.md) for the observed
 mitigation and the limits of the diagnosis.
+
+## Shared renderer
+
+The helper reads source video and `annotations.json`; it does not detect neurons
+or change masks. Sample-specific target constraints stay in `sample_task.md`.
+Each ID keeps its JSON color across frames and all mask layers. Body pixels use
+a translucent fill, branches a stronger fill, and uncertainty a striped fill in
+that same color. Labels show the ID with its color border and leader line.
+
+From the repository root, enter a Nix shell with the renderer's dependencies:
+
+```bash
+nix-shell -p 'python3.withPackages (ps: [ ps.av ps.pillow ps.pydantic ])'
+```
+
+Then render a single frame or the full AVI:
+
+```bash
+python -m x.neuron_tracking.render \
+  --source x/neuron_tracking/data/IMG_6128.AVI \
+  --annotations x/neuron_tracking/runs/luna_xhigh_03/annotations.json \
+  --frame 68 --output x/neuron_tracking/runs/renderer/frame_068.png
+
+python -m x.neuron_tracking.render \
+  --source x/neuron_tracking/data/IMG_6128.AVI \
+  --annotations x/neuron_tracking/runs/luna_xhigh_03/annotations.json \
+  --output x/neuron_tracking/runs/renderer/annotated.avi
+```
+
+Use `--layer body`, `--layer branches`, or `--layer uncertain` for separate
+views. Repeat `--neuron ID` to select identities; `--no-labels` leaves pixel
+boundaries unobscured. Masks from different neurons draw in ID order; use
+individual-ID views to inspect overlapping ownership. Sparse annotations can
+render an anchor frame; full-video export requires every source frame.
+
+The helper checks source hash, dimensions, timestamps, colors, references, and
+mask invariants. Every output gets a `.png.json` or `.avi.json` report recording
+the annotation hash/revision, palette, selected frames/layer, and output hash.
+AVI uses lossless FFV1 with exactly one encoded frame per source frame and a
+constant cadence based on source duration. The helper decodes the result to
+check frame count and dimensions. Its report keeps original and output
+timestamps and both durations so timing changes are explicit. Rendering is not
+evidence of correct neuron selection or tracking; open and inspect the outputs.

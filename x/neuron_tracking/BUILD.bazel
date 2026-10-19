@@ -1,2 +1,44 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
 # gazelle:exclude data
 # gazelle:exclude runs
+
+py_library(
+    name = "annotations",
+    srcs = ["annotations.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "render",
+    srcs = ["render.py"],
+    deps = [
+        ":annotations",
+        "@pypi//av",
+        "@pypi//pillow",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "render_bin",
+    main_module = "x.neuron_tracking.render",
+    deps = [":render"],
+)
+
+py_test(
+    name = "test_render",
+    srcs = ["test_render.py"],
+    data = ["annotations.schema.json"],
+    deps = [
+        ":annotations",
+        ":render",
+        "//:conftest",
+        "@pypi//av",
+        "@pypi//jsonschema",
+        "@pypi//pillow",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

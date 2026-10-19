@@ -1,14 +1,11 @@
 # TODO
 
-- [ ] Add a shared renderer that takes the source AVI and `annotations.json` and
-      produces the annotated AVI. Use the saved ID/color table and pixel runs,
-      distinguish body, branches, and uncertainty, and keep labels readable.
-      Check source identity, dimensions, frame order, and output timing; report
-      any AVI timing compromise or added frames explicitly. Support still-frame
-      and per-layer previews through the same rendering code used for the video.
-- [ ] Add shared validation for schema and semantic mask invariants, source
-      timestamps, CSV consistency, and the exported video's relationship to the
-      reviewed annotation revision. Exercise it with synthetic pixels and media.
+- [ ] Establish reviewed positive and excluded examples for the sample's
+      side/belly band. Check a few pixel masks and short identity tracks using
+      the shared renderer before another full-clip run.
+- [ ] Extend shared validation to CSV consistency and visual review coverage of
+      the exported annotation revision. The renderer already validates source
+      identity, timestamps, masks, ID colors, and decoded video dimensions/count.
 - [ ] Compare the five runs against source pixels: missed targets and branches,
       background leakage, body/branch boundaries, and identity drift. Use their
       native Codex traces for ad hoc investigation.

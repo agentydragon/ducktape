@@ -4,8 +4,8 @@
 
 Run Codex on the example clip with a prompt and the expected annotation schema.
 Use `gpt-6-luna` with `model_reasoning_effort="xhigh"`. Codex may obtain programs
-through Nix and write its own processing scripts during the run; prebuilt helpers
-are not a prerequisite.
+through Nix and write its own processing scripts during the run. Use the shared
+renderer for saved-mask previews and AVI export.
 Keep one agent conversation for the clip; context compaction is allowed.
 The agent should segment every identifiable pixel of each neuron's body
 and branches, see exactly what those masks look like on the source images,
@@ -24,8 +24,9 @@ substantial changes in specimen position and orientation, variable focus and
 brightness, and crowded dark features. These are moving views of the specimen;
 the video alone does not establish acquisition timing or physical depth.
 
-Use the small dark features in the JPEG's red outlined region as the intended
-target. Treat its outline as guidance for finding the region, not as a mask that
+For this sample, use the neurons along the embryo's side/belly in the JPEG's red
+outlined region as the intended target; see `sample_task.md`. Keep this constraint
+out of the general workflow and renderer. Treat the outline as guidance, not as a mask that
 already aligns with every video frame. Detailed evidence and reproduction
 commands live in `debug/sample_inspection.md`.
 
