@@ -1,7 +1,7 @@
 # Trial annotation format
 
-The saved `annotations.json` contains full-resolution pixel masks for every
-included neuron/frame observation. All pixel coordinates refer to the decoded
+The saved `annotations.json` conforms to `annotations.schema.json` and contains
+full-resolution pixel masks for every included neuron/frame observation. All pixel coordinates refer to the decoded
 source image: integer `(x, y)` indexes the pixel in column `x`, row `y`, with
 `(0, 0)` at the top left. Frame indices start at zero; timestamps retain the
 source presentation times.
@@ -76,6 +76,10 @@ branch-only views; zoom without interpolating mask labels. Edit by tracing,
 brushes, polygons, or computed proposals as useful, then save and inspect the
 resulting pixel masks. The model need not enumerate every foreground pixel in
 its textual response.
+
+JSON Schema checks structure; separately validate the image-dependent run bounds,
+mask disjointness, unique neuron/frame observations, complete frame coverage,
+and frame/ID references. A schema-valid file can still contain incorrect masks.
 
 Derive `tracks.csv` positions from body-mask centroids and include body/branch
 pixel areas, frame index, timestamp, ID, visibility, and review state. If the body mask is

@@ -2,17 +2,19 @@
 
 ## First experiment
 
-Run Codex on the example clip with a prompt, persistent annotation files, and
-small deterministic helpers for extraction, rendering, validation, and export.
+Run Codex on the example clip with a prompt and the expected annotation schema.
+Use `gpt-6-luna` with `model_reasoning_effort="xhigh"`. Codex may obtain programs
+through Nix and write its own processing scripts during the run; prebuilt helpers
+are not a prerequisite.
 Keep one agent conversation for the clip, ideally entirely within one context
 window. The agent should segment every identifiable pixel of each neuron's body
 and branches, see exactly what those masks look like on the source images,
 correct them, and carry identities across frames.
 
-The first question is whether this workflow produces useful annotations on the
-actual sample. A successful, repeated procedure can become a skill with the
-helpers bundled alongside it. The current draft does not establish accuracy or
-constitute a paved workflow.
+The first question is whether this workflow produces useful annotations on all
+73 sample frames. A successful, repeated procedure can become a skill; bundle
+helpers only where actual runs demonstrate their value. The current draft does
+not establish accuracy or constitute a paved workflow.
 
 ## Evidence from the sample
 
@@ -74,15 +76,18 @@ occurred, and do not report a compacted run as a single-context success.
 If the clip cannot fit, save partial results and report the limitation. A
 different continuation strategy is a separate experiment.
 
-## Small helper surface
+## Processing during the run
 
-Build only the helpers the trial actually needs:
+Let the annotation agent choose and execute the processing it needs, using the
+repo's Nix environment, `nix shell`, or `nix-shell`. It may create scratch scripts
+under its ignored output directory for these operations:
 
 - Extract lossless frames and source presentation timestamps with `ffmpeg` and
   `ffprobe`; generate labeled contact sheets.
 - Validate and losslessly encode pixel masks; rasterize edits and render full
   frames, crops, per-part views, and temporal comparisons from a saved revision.
-- Export that same revision to JSON, CSV, and an annotated MP4.
+- Export that same revision to JSON, CSV, and an annotated AVI, including a copy
+  of `annotations.schema.json` with the machine-readable data.
 
 Give every displayed crop its source frame, dimensions, crop origin, scale, and
 revision. Store masks on the original-frame pixel grid; helpers map them into
@@ -95,12 +100,13 @@ part of the overlay pipeline.
 
 ## Proposed outputs
 
-| Artifact           | Contents                                                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `annotations.json` | Versioned source manifest, ID/color table, per-frame body/branch/uncertainty pixel masks, and review state.              |
-| `tracks.csv`       | One row per neuron per frame: ID, index, source timestamp, body centroid, part areas, visibility, and review status.     |
-| `annotated.mp4`    | Original frames and timing with persistent neuron colors and IDs, distinct body/branch styling, and visible uncertainty. |
-| `review.json`      | Checked revision and frame coverage, opened overlay paths, remaining ambiguities, and any incomplete work.               |
+| Artifact                  | Contents                                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `annotations.json`        | Versioned source manifest, ID/color table, per-frame body/branch/uncertainty pixel masks, and review state.                     |
+| `annotations.schema.json` | JSON Schema defining the annotation structure; copy the supplied schema alongside the data.                                     |
+| `tracks.csv`              | One row per neuron per frame: ID, index, source timestamp, body centroid, part areas, visibility, and review status.            |
+| `annotated.avi`           | Source frame order and dimensions with persistent neuron colors and IDs, distinct body/branch styling, and visible uncertainty. |
+| `review.json`             | Checked revision and frame coverage, opened overlay paths, remaining ambiguities, and any incomplete work.                      |
 
 Use zero-based frame indices and source image coordinates: pixel `(0, 0)` is the
 center of the top-left pixel, `x` increases rightward, and `y` downward. Retain the
@@ -118,12 +124,11 @@ annotations. Model self-review does not imply human verification.
 ## Paving and acceptance
 
 - [x] Inspect the actual sample and record reproducible observations.
-- [ ] Agree the bounded trial protocol: selected frames and targets, Codex
-      provider/model, context and token limits, and acceptance criteria.
-- [ ] Implement and exercise the minimal media and annotation helpers via Bazel.
-- [ ] Run the draft prompt on a short sequence including a pose change. Include
-      deliberately mislabeled pixels to check that visual feedback supports
-      detecting and correcting an error; report the correction honestly.
+- [x] Select `gpt-6-luna` with `xhigh` reasoning; allow Nix and processing scripts
+      created during execution.
+- [x] Supply the prompt, pixel-mask semantics, and machine-readable JSON Schema.
+- [ ] Run the prompt on the supplied clip, establishing the visual correction
+      loop on a clear frame and then processing all 73 frames in one conversation.
 - [ ] Review representative masks against the raw frames. Record missed branch
       pixels, background leakage, body/branch classification errors, identity
       switches, unresolved cases, token use, and context-window behavior. Measure
@@ -131,8 +136,8 @@ annotations. Model self-review does not imply human verification.
 - [ ] Amend the prompt and helpers where the run required improvisation; repeat
       from a fresh output directory and Codex session. Each individual run still
       processes its sequence in one conversation.
-- [ ] Extend to all 73 frames and all distinguishable targets in the region.
-      Visually inspect every final overlay and check difficult transitions.
+- [ ] Confirm coverage of all 73 frames and all distinguishable targets in the
+      region. Visually inspect every final overlay and difficult transitions.
 - [ ] Package the demonstrated procedure as a skill, with the tested helpers
       and known limits. Re-run from its instructions before calling it paved.
 
@@ -140,33 +145,24 @@ Before hand-off, machine checks must establish exact mask-encoding round trips,
 valid integer pixel bounds, pairwise disjoint body/branch/uncertainty masks within
 each neuron, unique `(neuron_id, frame_index)` observations, existing ID references,
 a stable and distinct color map, and review coverage for the exported revision.
-Check the encoded video's frame count, dimensions, timing, and overlays against that
-revision. Synthetic fixtures can exercise these contracts without committing
+Check the encoded AVI's frame count, dimensions, timing, and overlays against that
+revision; record any changes to source presentation timing. Synthetic fixtures can exercise these contracts without committing
 the user's media. Biological correctness still needs inspection against the
 source images; no recall or identity-accuracy target has been demonstrated yet.
 
 ## Codex entry point and provider
 
-The installed CLI is `codex-cli 0.162.1`; its help exposes `exec`, `--image`,
-`--sandbox`, `--json`, and `--output-last-message`. After helpers exist, a trial
-can start from the repository root with a prompt along these lines:
+The launch command is in `README.md`. The installed CLI is `codex-cli 0.162.1`;
+its model cache lists `gpt-6-luna`, `xhigh` reasoning, and image inputs. The CLI
+reports an existing ChatGPT login. These read-only checks do not prove that an
+annotation run will succeed; no run has been launched yet.
 
-```bash
-mkdir -p x/neuron_tracking/runs/trial
-codex exec --sandbox workspace-write --json \
-  --output-last-message x/neuron_tracking/runs/trial/handoff.md \
-  'Read x/neuron_tracking/annotate.md. Annotate the agreed trial frames from x/neuron_tracking/data/IMG_6128.AVI and save outputs under x/neuron_tracking/runs/trial.' \
-  > x/neuron_tracking/runs/trial/codex-events.jsonl
-```
-
-This invocation has not been run. Use the current Codex authentication/provider
-first. If CLIProxyAPI is used, verify its available model, image/tool support,
-and context behavior on the same bounded trial. Keep endpoint and credentials
-in local configuration. A separate API orchestration service is unnecessary for
-this experiment.
+Use the current Codex authentication/provider first. CLIProxyAPI is an available
+alternative if desired; keep endpoints and credentials in local configuration.
 
 Official OpenAI documentation describes [non-interactive Codex runs](https://learn.chatgpt.com/docs/non-interactive-mode)
-and [skills](https://learn.chatgpt.com/docs/build-skills). Its
+and [skills](https://learn.chatgpt.com/docs/build-skills), and lists
+[`gpt-6-luna` with `xhigh` support](https://developers.openai.com/api/docs/models/gpt-6-luna). Its
 [vision guidance](https://developers.openai.com/api/docs/guides/images-vision)
 also documents localization and resizing limitations; the crop-to-source
 mapping and render-and-check loop need direct validation.

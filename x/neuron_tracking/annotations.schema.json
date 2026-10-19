@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Neuron pixel annotations",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "revision", "source", "frames", "neurons", "observations"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "width", "height"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "frames": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["frame_index", "timestamp_s"],
+        "properties": {
+          "frame_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "timestamp_s": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "neurons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "color"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          }
+        }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["neuron_id", "frame_index", "visibility", "body", "branches", "uncertain", "review"],
+        "properties": {
+          "neuron_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "frame_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "visibility": {
+            "enum": ["visible", "uncertain", "not_visible", "out_of_frame"]
+          },
+          "body": {
+            "$ref": "#/$defs/mask"
+          },
+          "branches": {
+            "$ref": "#/$defs/mask"
+          },
+          "uncertain": {
+            "$ref": "#/$defs/mask"
+          },
+          "review": {
+            "enum": ["proposed", "agent_reviewed", "human_reviewed"]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "mask": {
+      "type": "array",
+      "description": "Sorted nonoverlapping horizontal runs [y, x_start, x_end_exclusive] in source pixels. See annotation_format.md for semantic validation.",
+      "items": {
+        "$ref": "#/$defs/run"
+      }
+    },
+    "run": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "integer",
+          "minimum": 1
+        }
+      ],
+      "items": false
+    }
+  }
+}
