@@ -716,10 +716,13 @@ def stale_baseline_note(test: ReviewTest) -> str:
     return f"{baseline}, not merge base {merge_base}"
 
 
-def _asset_comment_lines(asset: ReviewAsset, *, asset_base: str, gallery_url: str, test: ReviewTest) -> list[str]:
+def _asset_comment_lines(
+    asset: ReviewAsset, *, asset_base: str, gallery_url: str, test: ReviewTest, include_heading: bool = True
+) -> list[str]:
     anchor = html.escape(f"{gallery_url}#{urllib.parse.quote(asset.path, safe='/')}", quote=True)
     label = f'<a href="{anchor}">{html.escape(asset.label)}</a>'
     stale = f" · ⚠️ stale baseline ({stale_baseline_note(test)})" if asset.baseline_stale else ""
+    stale_heading = [f"<p>⚠️ stale baseline ({stale_baseline_note(test)})</p>", ""] if asset.baseline_stale else []
     if asset.classification == "modified":
         fraction = asset.changed_fraction or 0.0
         diff = (
@@ -727,9 +730,13 @@ def _asset_comment_lines(asset: ReviewAsset, *, asset_base: str, gallery_url: st
             if asset.dimension_changed
             else _preview_img(_asset_url(asset_base, asset, "diff"), f"{asset.label} diff")
         )
+        heading = (
+            [f"<p><strong>{label}</strong> · {fraction:.1%} changed{stale}</p>", ""]
+            if include_heading
+            else stale_heading
+        )
         return [
-            f"<p><strong>{label}</strong> · {fraction:.1%} changed{stale}</p>",
-            "",
+            *heading,
             "| Before | After | Diff |",
             "| --- | --- | --- |",
             f"| {_preview_img(_asset_url(asset_base, asset, 'baseline'), f'{asset.label} baseline')} "
@@ -737,17 +744,11 @@ def _asset_comment_lines(asset: ReviewAsset, *, asset_base: str, gallery_url: st
             f"| {diff} |",
         ]
     if asset.classification == "new":
-        return [
-            f"<p><strong>{label}</strong> · new</p>",
-            "",
-            _preview_img(_asset_url(asset_base, asset, "candidate"), asset.label),
-        ]
+        heading = [f"<p><strong>{label}</strong> · new</p>", ""] if include_heading else stale_heading
+        return [*heading, _preview_img(_asset_url(asset_base, asset, "candidate"), asset.label)]
     if asset.classification == "removed":
-        return [
-            f"<p><strong>{label}</strong> · removed{stale}</p>",
-            "",
-            _preview_img(_asset_url(asset_base, asset, "baseline"), f"{asset.label} baseline"),
-        ]
+        heading = [f"<p><strong>{label}</strong> · removed{stale}</p>", ""] if include_heading else stale_heading
+        return [*heading, _preview_img(_asset_url(asset_base, asset, "baseline"), f"{asset.label} baseline")]
     return []
 
 
@@ -763,7 +764,7 @@ def _is_unchanged(test: ReviewTest) -> bool:
     return test.summary is not None and test.summary.modified == test.summary.new == test.summary.removed == 0
 
 
-def _target_section(test: ReviewTest, *, url: str, open_section: bool) -> list[str]:
+def _target_section(test: ReviewTest, *, url: str, open_section: bool, ci_details_url: str | None) -> list[str]:
     counts = test.summary or ClassificationCounts()
     assets = [asset for asset in _ordered_assets(test.assets) if asset.classification in {"modified", "new", "removed"}]
     largest_change = max(
@@ -773,17 +774,17 @@ def _target_section(test: ReviewTest, *, url: str, open_section: bool) -> list[s
     details = "<details open>" if open_section else "<details>"
     gallery_url = f"{url}tests/{test.slug}/index.html"
     asset_base = f"{url}tests/{test.slug}/"
+    gallery_link = f'<a href="{html.escape(gallery_url, quote=True)}">gallery</a>'
+    rerun_link = f' · <a href="{html.escape(ci_details_url, quote=True)}">request rerun</a>' if ci_details_url else ""
     lines = [
         details,
         f"<summary><code>{html.escape(test.target_label)}</code> — {_format_test_counts(counts)}{impact} · "
-        f"{html.escape(test.title)}</summary>",
-        "",
-        f'<p><a href="{html.escape(gallery_url, quote=True)}">Open this test in the gallery</a></p>',
+        f"{html.escape(test.title)} · {gallery_link}{rerun_link}</summary>",
         "",
     ]
     for index, asset in enumerate(assets):
-        content = _asset_comment_lines(asset, asset_base=asset_base, gallery_url=gallery_url, test=test)
         if len(assets) <= INLINE_ASSET_LIMIT:
+            content = _asset_comment_lines(asset, asset_base=asset_base, gallery_url=gallery_url, test=test)
             lines.extend([*content, ""])
             continue
         asset_title = html.escape(asset.label)
@@ -793,6 +794,11 @@ def _target_section(test: ReviewTest, *, url: str, open_section: bool) -> list[s
             asset_title += f" — {asset.classification}"
         if asset.baseline_stale:
             asset_title += " — ⚠️ stale baseline"
+        asset_anchor = html.escape(f"{gallery_url}#{urllib.parse.quote(asset.path, safe='/')}", quote=True)
+        asset_title = f'<a href="{asset_anchor}">{asset_title}</a>'
+        content = _asset_comment_lines(
+            asset, asset_base=asset_base, gallery_url=gallery_url, test=test, include_heading=False
+        )
         asset_open = open_section and index == 0
         lines += [
             "<details open>" if asset_open else "<details>",
@@ -822,7 +828,9 @@ def _unchanged_section(review_tests: list[ReviewTest], *, url: str) -> list[str]
     ]
 
 
-def _with_target_sections(head: list[str], review_tests: list[ReviewTest], url: str) -> str:
+def _with_target_sections(
+    head: list[str], review_tests: list[ReviewTest], url: str, *, ci_details_url: str | None
+) -> str:
     changed = [test for test in review_tests if test.summary and not _is_unchanged(test)]
     changed.sort(key=_test_impact_key)
     unchanged = _unchanged_section(review_tests, url=url)
@@ -830,7 +838,9 @@ def _with_target_sections(head: list[str], review_tests: list[ReviewTest], url: 
     omitted = 0
     included = 0
     for test in changed:
-        section = _target_section(test, url=url, open_section=included < COMMENT_OPEN_TARGETS)
+        section = _target_section(
+            test, url=url, open_section=included < COMMENT_OPEN_TARGETS, ci_details_url=ci_details_url
+        )
         candidate = "\n".join([*lines, *section])
         if len(candidate) + 160 > COMMENT_BUDGET:
             omitted += 1
@@ -911,6 +921,12 @@ def _fallback_baseline_notice(review_tests: list[ReviewTest]) -> list[str]:
     ]
 
 
+def _ci_rerun_notice(details_url: str | None) -> list[str]:
+    if details_url is None:
+        return []
+    return [f"Request a manual rerun from the [CI run page]({details_url})."]
+
+
 def success_comment_body(
     *,
     repository: str,
@@ -920,6 +936,7 @@ def success_comment_body(
     base_sha: str | None = None,
     ci_conclusion: str = "success",
     ci_failures: list[str] | None = None,
+    ci_details_url: str | None = None,
 ) -> str:
     ci_failures = ci_failures or []
     commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
@@ -927,6 +944,8 @@ def success_comment_body(
     target_count = len(review_tests)
     plural = "" if target_count == 1 else "s"
     lines = [COMMENT_MARKER, f"## Visual review for [`{commit_sha[:8]}`]({commit_url})", ""]
+    if notice := _ci_rerun_notice(ci_details_url):
+        lines += [*notice, ""]
     if notice := _ci_failure_notice(ci_conclusion, ci_failures):
         lines += [*notice, ""]
     if notice := _fallback_baseline_notice(review_tests):
@@ -956,7 +975,7 @@ def success_comment_body(
         f"{totals.unchanged} unchanged. [Open visual review]({page_url}).",
         "",
     ]
-    return _with_target_sections(lines, review_tests, url)
+    return _with_target_sections(lines, review_tests, url, ci_details_url=ci_details_url)
 
 
 def no_visual_comment_body(
@@ -968,7 +987,7 @@ def no_visual_comment_body(
         lines += [*notice, ""]
     lines.append("No visual artifacts were available from the Bazel CI run.")
     if details_url:
-        lines.append(f"[Open the CI run]({details_url}) for the complete test results.")
+        lines.append(f"[Open the CI run]({details_url}) for the complete test results or to request a manual rerun.")
     return "\n".join(lines)
 
 
@@ -979,10 +998,13 @@ def error_comment_body(
     error: Exception,
     ci_conclusion: str = "success",
     ci_failures: list[str] | None = None,
+    ci_details_url: str | None = None,
 ) -> str:
     commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
     message = str(error).replace("```", "'''")[:2000]
     lines = [COMMENT_MARKER, f"## Visual review failed for [`{commit_sha[:8]}`]({commit_url})", ""]
+    if notice := _ci_rerun_notice(ci_details_url):
+        lines += [*notice, ""]
     if notice := _ci_failure_notice(ci_conclusion, ci_failures or []):
         lines += [*notice, ""]
     lines += [
@@ -1246,6 +1268,7 @@ def main() -> None:
             base_sha=base_sha,
             ci_conclusion=args.ci_conclusion,
             ci_failures=ci_failures,
+            ci_details_url=args.ci_details_url or workflow_url,
         )
         summary += _ci_failure_summary(args.ci_conclusion, ci_failures)
         conclusion, details_url = "success", f"{public_url}index.html"
@@ -1268,6 +1291,7 @@ def main() -> None:
             error=error,
             ci_conclusion=args.ci_conclusion,
             ci_failures=ci_failures,
+            ci_details_url=args.ci_details_url or workflow_url,
         )
         summary = str(error) + _ci_failure_summary(args.ci_conclusion, ci_failures)
         conclusion = "failure"

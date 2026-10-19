@@ -1089,16 +1089,22 @@ def test_success_comment_body_labels_each_stale_screenshot() -> None:
                 base_sha="fedcba9876543210fedcba9876543210fedcba98",
                 merge_base_sha="1111111122222222333333334444444455555555",
                 baseline_fallback=True,
-                summary=ClassificationCounts(modified=2),
-                assets=[asset("a.png", stale=True), asset("b.png", stale=None)],
+                summary=ClassificationCounts(modified=4),
+                assets=[
+                    asset("a.png", stale=True),
+                    asset("b.png", stale=None),
+                    asset("c.png", stale=None),
+                    asset("d.png", stale=None),
+                ],
             )
         ],
         base_sha="1" * 40,
     )
 
-    assert body.count("stale baseline") == 1
+    assert body.count("stale baseline") == 2
     assert 'href="https://v/commits/sha/tests/ex-visuals-abcdef/index.html#a.png"' in body
     assert "`fedcba98`, not merge base `11111111`" in body
+    assert '<p><strong><a href="https://v/commits/sha/tests/ex-visuals-abcdef/index.html#a.png">a.png</a>' not in body
 
 
 def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
@@ -1127,7 +1133,10 @@ def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
     )
     # The target disclosure omits zero-count buckets from its summary.
     lines = body.splitlines()
-    assert "<summary><code>//a:x</code> — 4 modified, 12 new · A</summary>" in lines
+    assert (
+        "<summary><code>//a:x</code> — 4 modified, 12 new · A · "
+        '<a href="https://v/commits/sha/tests/a/index.html">gallery</a></summary>'
+    ) in lines
     assert "<summary>1 unchanged target</summary>" in lines
     assert "- [`//b:y`](https://v/commits/sha/tests/b/index.html)" in lines
 
@@ -1208,13 +1217,17 @@ def test_success_comment_body_groups_changed_tests_and_folds_unchanged_targets()
         url="https://v/commits/sha/",
         review_tests=review_tests,
         base_sha="f" * 40,
+        ci_details_url="https://github/actions/runs/123",
     )
     lines = body.splitlines()
     assert "tests/ex-visuals-abcdef/fresh.png" in body
-    assert "<summary><code>//ex:visuals</code> — 1 new · Ex</summary>" in lines
-    assert lines.index("<summary><code>//ex:visuals</code> — 1 new · Ex</summary>") < lines.index(
-        "<summary>22 unchanged targets</summary>"
+    summary = (
+        "<summary><code>//ex:visuals</code> — 1 new · Ex · "
+        '<a href="https://v/commits/sha/tests/ex-visuals-abcdef/index.html">gallery</a> · '
+        '<a href="https://github/actions/runs/123">request rerun</a></summary>'
     )
+    assert summary in lines
+    assert lines.index(summary) < lines.index("<summary>22 unchanged targets</summary>")
     assert "- [`//untouched0:visuals`](https://v/commits/sha/tests/untouched-0/index.html)" in lines
     assert len(body) <= COMMENT_BUDGET
 

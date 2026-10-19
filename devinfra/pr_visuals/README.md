@@ -25,8 +25,11 @@ review with an older result.
 The comment leads with CI or baseline warnings and aggregate change counts, then
 groups changed targets by impact in collapsible sections. The two highest-impact
 targets open by default; each section includes its modified, new, or removed
-screenshots, each titled with a link to its anchor in the gallery test page. The comment uses up to 55,000 characters, with the complete gallery
-available for any target omitted to stay within budget.
+screenshots. Changed-test summaries link to the test gallery and originating CI
+run, while nested screenshot summaries link to their gallery anchors. A reviewer
+can request a manual rerun from the CI run page. The comment uses up to 55,000
+characters, with the complete gallery available for any target omitted to stay
+within budget.
 
 The gallery index starts in the same target-impact ordering as the comment, with
 controls to sort by test name or changed-screenshot count. Per-test pages put
