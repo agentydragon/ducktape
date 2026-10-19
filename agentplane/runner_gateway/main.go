@@ -156,7 +156,7 @@ func serve(ctx context.Context, c config) error {
 	if !catalog.WaitSynced(ctx) {
 		return errors.New("Sandbox inventory did not synchronize")
 	}
-	if err := g.WatchConnectionLeases(ctx, kube.CoordinationV1()); err != nil {
+	if err := g.WatchConnectionLeases(ctx, kube); err != nil {
 		return err
 	}
 	hub := dispatcher.NewWatchHub(c.DispatcherDatabaseURL)

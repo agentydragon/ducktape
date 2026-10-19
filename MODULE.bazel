@@ -1902,8 +1902,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "k8s.io/gengo/v2",
-    sum = "h1:gMplByicHV/TJBizHd9aVEsTYoJBnnUAT5MHlTkbjhQ=",
-    version = "v2.0.0-20250922181213-ec3ebc5fd46b",
+    sum = "h1:3L6PNkMLXkU/pz3jWzaaIUz0Rs2V9h+5O51AeRC7poc=",
+    version = "v2.0.0-20260408192533-25e2208e0dc3",
 )
 go_deps.module(
     path = "github.com/fatih/color",
@@ -1937,8 +1937,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "k8s.io/code-generator",
-    sum = "h1:TvrtfKYZTm9oDF2z+veFKSCcgZE3Igv0svY+ehCmjHQ=",
-    version = "v0.35.0",
+    sum = "h1:AC915wukzlVHHODAQYxvQ25WKibPh95faJ2kxf8dzuo=",
+    version = "v0.37.0",
 )
 go_deps.module(
     path = "golang.org/x/time",

@@ -14,9 +14,9 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/watch"
+	coordinationinformers "k8s.io/client-go/informers/coordination/v1"
+	"k8s.io/client-go/kubernetes"
 	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"
 	discoveryclient "k8s.io/client-go/kubernetes/typed/discovery/v1"
 	"k8s.io/client-go/tools/cache"
@@ -226,40 +226,28 @@ func stringPointer(value string) *string                     { return &value }
 func int32Pointer(value int32) *int32                        { return &value }
 func protocolPointer(value corev1.Protocol) *corev1.Protocol { return &value }
 
-func watchConnectionLeases(ctx context.Context, client coordinationclient.CoordinationV1Interface, namespace string, local *connections) error {
-	listWatch := &cache.ListWatch{
-		ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
-			options.LabelSelector = sandboxlease.ConnectionLabel + "=true"
-			return client.Leases(namespace).List(ctx, options)
-		},
-		WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
-			options.LabelSelector = sandboxlease.ConnectionLabel + "=true"
-			return client.Leases(namespace).Watch(ctx, options)
-		},
-	}
-	informer := cache.NewSharedIndexInformer(listWatch, &coordinationv1.Lease{}, 0, cache.Indexers{})
-	leaseUID := func(object any) (string, uint64) {
-		lease, ok := object.(*coordinationv1.Lease)
-		if !ok || lease.Spec.LeaseTransitions == nil || len(lease.OwnerReferences) != 1 || lease.OwnerReferences[0].Kind != sandboxapi.SandboxKind {
+func watchConnectionLeases(ctx context.Context, client kubernetes.Interface, namespace string, local *connections) error {
+	informer := coordinationinformers.NewTypedFilteredLeaseInformer(client, namespace, 0, nil, func(options *metav1.ListOptions) {
+		options.LabelSelector = sandboxlease.ConnectionLabel + "=true"
+	})
+	leaseUID := func(lease *coordinationv1.Lease) (string, uint64) {
+		if lease == nil || lease.Spec.LeaseTransitions == nil || len(lease.OwnerReferences) != 1 || lease.OwnerReferences[0].Kind != sandboxapi.SandboxKind {
 			return "", 0
 		}
 		return string(lease.OwnerReferences[0].UID), uint64(*lease.Spec.LeaseTransitions)
 	}
-	if _, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(object any) {
-			uid, epoch := leaseUID(object)
+	if _, err := informer.AddTypedEventHandler(coordinationinformers.LeaseHandlerFuncs{
+		AddFunc: func(lease *coordinationv1.Lease) {
+			uid, epoch := leaseUID(lease)
 			local.replaceLease("", uid, epoch)
 		},
-		UpdateFunc: func(previous, current any) {
+		UpdateFunc: func(previous, current *coordinationv1.Lease) {
 			previousUID, _ := leaseUID(previous)
 			uid, epoch := leaseUID(current)
 			local.replaceLease(previousUID, uid, epoch)
 		},
-		DeleteFunc: func(object any) {
-			if tombstone, ok := object.(cache.DeletedFinalStateUnknown); ok {
-				object = tombstone.Obj
-			}
-			uid, _ := leaseUID(object)
+		DeleteFunc: func(deleted coordinationinformers.DeletedLease) {
+			uid, _ := leaseUID(deleted.OptionalObj)
 			local.forgetLease(uid)
 		},
 	}); err != nil {

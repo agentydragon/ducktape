@@ -96,15 +96,18 @@ func New(base *rest.Config, config Config) (*Informer, error) {
 	}
 	period := int64(config.WatchPeriod / time.Second)
 	tweak := func(options *metav1.ListOptions) { options.TimeoutSeconds = &period }
-	indexers := cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
-	bindings := policyinformers.NewFilteredPolicyBindingInformer(policies, config.RulesNamespace, 0, indexers, tweak)
+	bindings := policyinformers.NewTypedFilteredPolicyBindingInformer(policies, config.RulesNamespace, 0, policyinformers.PolicyBindingIndexers{
+		cache.NamespaceIndex: func(binding *policyapi.PolicyBinding) ([]string, error) {
+			return []string{binding.Namespace}, nil
+		},
+	}, tweak)
 	// EgressReady uses the generated cache lister, never an extra API read.
 	i.bindings = policylisters.NewPolicyBindingLister(bindings.GetIndexer()).PolicyBindings(config.RulesNamespace)
 	if err := errors.Join(
 		watchKind(i, bindings, i.putBinding, i.deleteBinding),
-		watchKind(i, policyinformers.NewFilteredPolicySetInformer(policies, config.RulesNamespace, 0, indexers, tweak), i.putSet, i.deleteSet),
-		watchKind(i, egressinformers.NewFilteredEgressCredentialInformer(credentials, config.RulesNamespace, 0, indexers, tweak), i.putCredential, i.index.DeleteCredential),
-		watchKind(i, coreinformers.NewFilteredSecretInformer(core, config.CredentialsNamespace, 0, indexers, tweak), i.putSecret, i.index.DeleteSecret),
+		watchKind(i, policyinformers.NewTypedFilteredPolicySetInformer(policies, config.RulesNamespace, 0, nil, tweak), i.putSet, i.deleteSet),
+		watchKind(i, egressinformers.NewTypedFilteredEgressCredentialInformer(credentials, config.RulesNamespace, 0, nil, tweak), i.putCredential, i.index.DeleteCredential),
+		watchKind(i, coreinformers.NewTypedFilteredSecretInformer(core, config.CredentialsNamespace, 0, nil, tweak), i.putSecret, i.index.DeleteSecret),
 	); err != nil {
 		return nil, err
 	}
@@ -119,8 +122,7 @@ type object interface {
 
 // watchKind applies a generated shared informer's events to the policy Index. Typed
 // handlers preserve tombstone deletion and registration-level synchronization.
-func watchKind[T object](i *Informer, shared cache.SharedIndexInformer, put func(T), remove func(name string)) error {
-	informer := cache.NewTypedSharedIndexInformer[T](shared)
+func watchKind[T object](i *Informer, informer cache.TypedSharedIndexInformer[T], put func(T), remove func(name string)) error {
 	registration, err := informer.AddTypedEventHandler(cache.TypedResourceEventHandlerFuncs[T]{
 		AddFunc:    put,
 		UpdateFunc: func(_, updated T) { put(updated) },

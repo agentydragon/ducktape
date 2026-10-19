@@ -8,6 +8,7 @@ import (
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
+	"k8s.io/client-go/kubernetes"
 	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"
 	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	discoveryclient "k8s.io/client-go/kubernetes/typed/discovery/v1"
@@ -140,7 +141,7 @@ func (g *Gateway) RegisterRunnerControl(server *grpc.Server) {
 }
 
 // WatchConnectionLeases must sync before the public gRPC services start accepting requests.
-func (g *Gateway) WatchConnectionLeases(ctx context.Context, client coordinationclient.CoordinationV1Interface) error {
+func (g *Gateway) WatchConnectionLeases(ctx context.Context, client kubernetes.Interface) error {
 	return watchConnectionLeases(ctx, client, g.config.Namespace, g.connections)
 }
 

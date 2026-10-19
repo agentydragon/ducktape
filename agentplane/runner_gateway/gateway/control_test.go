@@ -543,7 +543,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	})
 	watchContext, stopWatching := context.WithCancel(context.Background())
 	t.Cleanup(stopWatching)
-	if err := gateway.WatchConnectionLeases(watchContext, kube.CoordinationV1()); err != nil {
+	if err := gateway.WatchConnectionLeases(watchContext, kube); err != nil {
 		t.Fatal(err)
 	}
 	other, err := New(Config{
@@ -559,7 +559,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := other.WatchConnectionLeases(watchContext, kube.CoordinationV1()); err != nil {
+	if err := other.WatchConnectionLeases(watchContext, kube); err != nil {
 		t.Fatal(err)
 	}
 	otherListener := newBufconnListener()
