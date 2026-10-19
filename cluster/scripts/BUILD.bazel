@@ -2,7 +2,45 @@
 # Cluster utility scripts (non-validation).
 # Validators are in //cluster/validation/.
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_test(
+    name = "test_seaweedfs_master_persistence_prepare",
+    srcs = ["test_seaweedfs_master_persistence_prepare.py"],
+    deps = [
+        ":seaweedfs_master_persistence",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "seaweedfs_master_canary",
+    srcs = ["seaweedfs_master_canary.py"],
+    deps = [
+        "@pypi//boto3",
+        "@pypi//botocore",
+        "@pypi//kubernetes",
+    ],
+)
+
+py_binary(
+    name = "seaweedfs_master_canary_bin",
+    main_module = "cluster.scripts.seaweedfs_master_canary",
+    deps = [":seaweedfs_master_canary"],
+)
+
+py_library(
+    name = "seaweedfs_master_persistence",
+    srcs = ["seaweedfs_master_persistence.py"],
+)
+
+py_binary(
+    name = "seaweedfs_master_persistence_bin",
+    main_module = "cluster.scripts.seaweedfs_master_persistence",
+    deps = [":seaweedfs_master_persistence"],
+)
 
 # Verify Authentik authentication works end-to-end
 py_binary(
