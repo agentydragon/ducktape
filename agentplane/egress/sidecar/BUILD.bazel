@@ -29,7 +29,10 @@ go_binary(
 )
 
 go_test(
-    name = "config_test",
-    srcs = ["config_test.go"],
+    name = "sidecar_test",
+    srcs = [
+        "config_test.go",
+        "relay_test.go",
+    ],
     embed = [":runtime"],
 )

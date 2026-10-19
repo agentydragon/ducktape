@@ -127,7 +127,6 @@ py_test(
         "//:conftest",
         "//agentplane/egress/testing:sidecar_process",
         "@pypi//aiohttp",
-        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
