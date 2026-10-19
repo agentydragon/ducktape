@@ -47,6 +47,7 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.changes import ChangeSignal
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
@@ -302,6 +303,7 @@ async def app_url(
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    dispatcher_http: UpstreamProxy,
     dispatcher: SessionDispatcherClient,
 ) -> AsyncIterator[str]:
     """The app served by uvicorn, with the one test sandbox resolving to the local runner. The
@@ -325,6 +327,7 @@ async def app_url(
         electric=electric_proxy,
         notifications_http=notifications_http,
         notifications_token_file=notifications_token_file,
+        dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
     sock = bind_free_port()

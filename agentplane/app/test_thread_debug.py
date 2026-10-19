@@ -21,6 +21,7 @@ from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
@@ -46,6 +47,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    dispatcher_http: UpstreamProxy,
 ) -> None:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
@@ -92,6 +94,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         electric=electric_proxy,
         notifications_http=notifications_http,
         notifications_token_file=notifications_token_file,
+        dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
     path = f"/threads/{thread}/evidence"

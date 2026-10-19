@@ -1,10 +1,10 @@
 /**
  * Visual-test harness: Python configures canned data and explicitly mounts the app. No scene registry.
  * `fetch` (stubbed by network.ts, imported first so the
- * app's client captures the stub) answers API and Electric Shape routes. `EventSource` remains
- * only for the live sandbox, thread, and action-inventory views.
+ * app's client captures the stub) answers API, Electric Shape and Dispatcher watch routes. `EventSource`
+ * remains only for the live sandbox, thread, and action-inventory views.
  */
-import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from "./network";
+import { electricLive, electricShape, electricSubset, ndjsonWatch, routes, UNANSWERED } from "./network";
 import { TEST_REASONING_EFFORTS } from "../test_model_catalog";
 import "@mantine/core/styles.css";
 
@@ -2772,6 +2772,27 @@ function observationPage(threadId: string) {
 routes.push(
   [
     "GET",
+    /^\/upstream\/dispatcher\/v1\/dispatches:watch$/,
+    (_match, query, signal) =>
+      ndjsonWatch(
+        [
+          ...query.getAll("filter.commandIds").map((commandId) => ({
+            dispatch: {
+              commandId,
+              sessionId: query.get("filter.sessionId"),
+              sandbox: "pending-sandbox",
+              state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+              reason: queuedReasons.get(commandId) ?? "sandbox_resuming",
+              updatedAt: ago(1_000),
+            },
+          })),
+          { caughtUp: {} },
+        ],
+        signal
+      ),
+  ],
+  [
+    "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/scope$/,
     (match) =>
       flags.has("syncScopeUnavailable")
@@ -2995,22 +3016,6 @@ class HarnessEventSource extends EventTarget {
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify({ observed_at: ago(0), inboxes }) }));
       // A dropped Thread listing takes the notice stream down with it, so the badges show stale too.
       if (flags.has("threadStreamDropped")) this.drop();
-      return;
-    }
-    const dispatches = url.pathname.match(/^\/threads\/([0-9a-f-]+)\/dispatches\/stream$/);
-    if (dispatches) {
-      const snapshot = {
-        dispatches: url.searchParams.getAll("command_id").map((commandId) => ({
-          commandId,
-          sessionId: dispatches[1],
-          sandbox: "pending-sandbox",
-          state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-          reason: queuedReasons.get(commandId) ?? "sandbox_resuming",
-          updatedAt: ago(1_000),
-        })),
-        absent: [],
-      };
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;

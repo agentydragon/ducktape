@@ -65,6 +65,7 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.changes import ChangeSignal
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
@@ -165,6 +166,7 @@ async def review(
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    dispatcher_http: UpstreamProxy,
 ) -> AsyncIterator[Review]:
     server = FastMCP("test-review")
     calls: list[str] = []
@@ -360,6 +362,7 @@ async def review(
             electric=electric_proxy,
             notifications_http=notifications_http,
             notifications_token_file=notifications_token_file,
+            dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )
         await stack.enter_async_context(serve_app(idp, sock=idp_sock))
@@ -395,6 +398,7 @@ async def review(
             electric=electric_proxy,
             notifications_http=notifications_http,
             notifications_token_file=notifications_token_file,
+            dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )
         second_browser = await stack.enter_async_context(

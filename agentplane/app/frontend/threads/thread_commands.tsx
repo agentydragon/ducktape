@@ -5,26 +5,17 @@ import {
   changeModel,
   changeReasoningEffort,
   CommandSubmissionRefused,
-  dispatchesStreamUrl,
-  dispatchReceipt,
   displayableError,
   interruptTurn,
   submitInput,
   type CommandSubmission,
 } from "../client";
-import { useSnapshotStream } from "../live_stream";
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
+import { watchDispatches } from "./dispatch_watch";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type PendingCommand } from "./local_commands";
 import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
-
-/** A frame of the dispatch stream: the Dispatcher's rows for the commands asked about, and the ones it
- * holds no row for. */
-interface DispatchesFrame {
-  dispatches: unknown[];
-  absent: string[];
-}
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
 
@@ -151,29 +142,13 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
         value.dispatch?.state === "DELIVERY_STATE_DELIVERING_TO_RUNNER"
     )
     .map((value) => value.command.commandId);
-  const { snapshot: dispatches } = useSnapshotStream<DispatchesFrame>(
-    watchedIds.length === 0 ? null : dispatchesStreamUrl(threadId, watchedIds)
-  );
+  // Command IDs are UUIDs, so a comma joins them without ambiguity; the effect reopens the watch
+  // only when the set changes.
+  const watched = watchedIds.join(",");
   useEffect(() => {
-    if (dispatches === null) return;
-    try {
-      for (const row of dispatches.dispatches) {
-        const receipt = dispatchReceipt(row);
-        store.updateDispatch(receipt.commandId, receipt);
-      }
-      // The Dispatcher deletes a Sandbox's rows with it.
-      for (const commandId of dispatches.absent)
-        store.updateDispatch(commandId, {
-          commandId,
-          sessionId: threadId,
-          state: "DELIVERY_STATE_UNKNOWN",
-          reason: "sandbox_deleted",
-          admission: null,
-        });
-    } catch (reason) {
-      console.warn("a dispatch frame could not be applied", reason);
-    }
-  }, [dispatches, store, threadId]);
+    if (watched === "") return;
+    return watchDispatches(store, threadId, watched.split(","));
+  }, [store, threadId, watched]);
   function submit(value: PendingCommand): boolean {
     try {
       void deliver(store.remember(value));

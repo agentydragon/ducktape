@@ -38,6 +38,7 @@ from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandboxes.testing.fake_inventory import TEMPLATE, FakeAuthenticationV1Api
@@ -75,6 +76,7 @@ def serve(
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    dispatcher_http: UpstreamProxy,
 ) -> ServeApp:
     """The app as staging runs it -- a login and the token path on one port -- and its IdP."""
 
@@ -138,6 +140,7 @@ def serve(
             electric=electric_proxy,
             notifications_http=notifications_http,
             notifications_token_file=notifications_token_file,
+            dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )
         # The database pool belongs to this event loop, not serve_app's dedicated thread.

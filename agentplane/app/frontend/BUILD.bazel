@@ -433,6 +433,35 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "watch_stream",
+    srcs = ["watch_stream.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":live_stream",
+    ],
+)
+
+ts_library(
+    name = "watch_fixture",
+    testonly = True,
+    srcs = ["watch_fixture.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/vitest"],
+)
+
+agentplane_vitest_test(
+    name = "watch_stream_test",
+    srcs = ["watch_stream.test.ts"],
+    deps = [
+        ":live_stream",
+        ":watch_fixture",
+        ":watch_stream",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "stream_status",
     srcs = ["stream_status.tsx"],
     tsconfig = TSCONFIG,

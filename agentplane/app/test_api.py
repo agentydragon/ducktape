@@ -34,8 +34,9 @@ from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.runner_directory import RunnerDirectory, SandboxNotReachableError
-from agentplane.app.threads.store import MAX_PAGE, ThreadStore
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.grpc.serving import serving
@@ -152,6 +153,7 @@ def bare_app(
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    dispatcher_http: UpstreamProxy,
     event_logs: SeededEventLogStore,
     content: ContentStore,
 ) -> FastAPI:
@@ -174,6 +176,7 @@ def bare_app(
         operator_sessions=operator_sessions,
         notifications_http=notifications_http,
         notifications_token_file=notifications_token_file,
+        dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
 
@@ -758,17 +761,6 @@ async def test_bridge_returns_the_dispatcher_queued_receipt_over_grpc(
     assert result.reason == "sandbox_resuming"
 
 
-async def test_dispatch_stream_follows_a_known_thread_and_a_bounded_list_of_commands(
-    client: httpx.AsyncClient, event_logs: SeededEventLogStore
-) -> None:
-    thread_id = await event_logs.seed("live", str(uuid4()))
-    path = f"/threads/{thread_id}/dispatches/stream"
-
-    assert (await client.get(f"/threads/{uuid4()}/dispatches/stream", params={"command_id": "sent"})).status_code == 404
-    assert (await client.get(path)).status_code == 422
-    assert (await client.get(path, params={"command_id": [str(n) for n in range(MAX_PAGE + 1)]})).status_code == 422
-
-
 async def test_command_submission_tags_dispatch_and_archived_retry_after_sandbox_deletion(
     client: httpx.AsyncClient,
     bridge: RunnerBridge,
@@ -826,6 +818,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    dispatcher_http: UpstreamProxy,
 ) -> None:
     """Bound command admission at the public service RPC, without runner internals."""
     live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
@@ -849,6 +842,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
             electric=electric_proxy,
             notifications_http=notifications_http,
             notifications_token_file=notifications_token_file,
+            dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )
         async with _agent_client(app) as http, asyncio.timeout(10):

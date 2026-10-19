@@ -146,20 +146,23 @@ call. Otherwise the browser keeps Retry and never Cancel after an unconfirmed re
 Dispatcher may have stored the command despite a lost reply.
 
 The browser follows the Dispatcher's later state of the commands it still holds as queued or delivering
-at `GET /threads/{id}/dispatches/stream?command_id=…` (SSE): a snapshot of those commands at connect
-and whenever the Dispatcher's `WatchDispatches` reports a change, with a command the Dispatcher holds no
-row for listed as `absent`, and a heartbeat after 15 s of quiet. Queued and delivering are distinct from
+with `GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=…&filter.commandIds=…`, the Dispatcher's
+`WatchDispatches` over its generated [HTTP/JSON facade](../docs/grpc_services.md#httpjson-facades):
+newline-delimited JSON of each of those commands' Dispatches, a `CaughtUp` frame, then a Dispatch whenever
+one changes. A command with no Dispatch by `CaughtUp` is shown as unknown, since the Dispatcher deletes a
+Sandbox's rows with it. A connection that ends is replaced by a new one, which sends the current Dispatches
+again. Queued and delivering are distinct from
 runner admission, and neither admission nor `HARNESS_CONFIRMED` is presented as an effect. History
 remains the authority for command outcomes. The browser retains the command locally until History
 projects its admission or command row; the app adds no command queue. Deploy the Session Dispatcher
 and authorize the app ServiceAccount before rolling out an app image that requires this setting.
 
-With `session_dispatcher_http_url` set, `GET /upstream/dispatcher/…` relays a read of the Dispatcher's
-generated [HTTP/JSON facade](../docs/grpc_services.md#httpjson-facades) as it is, with the app's
-Dispatcher token: the facade's status and body come back unchanged, and a watch (newline-delimited
-JSON) streams unbuffered until the operator session ends, the app drains or the browser goes. It serves
-operator sessions and `GET` only, so commands stay on the typed Thread routes, whose checks the
-Dispatcher does not make. The facade's own authentication runs on every call. Unset, the route is absent.
+`GET /upstream/dispatcher/…` relays a read of the facade as it is, with the app's Dispatcher token
+(`session_dispatcher_http_url`): the facade's status and body come back unchanged, and a watch streams
+unbuffered until the operator session ends, the app drains or the browser goes. It serves operator
+sessions and `GET` only: commands stay on the typed Thread routes, whose checks the Dispatcher does not
+make. Reads carry no Thread check, so an operator can read the Dispatches of any Session id. The
+facade's own authentication runs on every call.
 
 The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
 runner Pod does not clear the inventory. A row's status mark is derived from those last-observed History

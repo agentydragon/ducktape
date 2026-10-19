@@ -68,6 +68,7 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions import Outcome
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
@@ -306,6 +307,7 @@ def app(
     electric_http: httpx.AsyncClient,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    dispatcher_http: UpstreamProxy,
 ) -> FastAPI:
     """Neither test below reaches a database, a runner or the History Service -- the guard answers
     before a route body runs, and the document comes from the signatures -- so nothing here connects."""
@@ -338,6 +340,7 @@ def app(
         ),
         notifications_http=notifications_http,
         notifications_token_file=notifications_token_file,
+        dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
 

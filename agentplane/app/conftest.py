@@ -38,6 +38,7 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import serving
@@ -395,6 +396,14 @@ async def notifications_http() -> AsyncIterator[httpx.AsyncClient]:
         base_url="http://notifications.test", transport=_refusing("Notification Service")
     ) as client:
         yield client
+
+
+@pytest.fixture
+async def dispatcher_http(tmp_path: Path) -> AsyncIterator[UpstreamProxy]:
+    async with httpx.AsyncClient(
+        base_url="http://dispatcher-facade.test", transport=_refusing("Dispatcher facade")
+    ) as client:
+        yield UpstreamProxy(client, tmp_path / "dispatcher-token")
 
 
 @pytest.fixture

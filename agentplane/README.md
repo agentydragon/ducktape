@@ -83,7 +83,7 @@ flowchart LR
 
     browser -->|HTTPS requests| app
     app -->|gRPC health + tunneled Runner RPCs| gw
-    app -->|Dispatcher API| gw
+    app -->|Dispatcher API: gRPC and HTTP/JSON reads| gw
     app --> hs
     app --> notif
     app --> actions

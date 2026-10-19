@@ -116,6 +116,30 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "dispatch_watch",
+    srcs = ["dispatch_watch.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":local_commands",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:watch_stream",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "dispatch_watch_test",
+    srcs = ["dispatch_watch.test.ts"],
+    deps = [
+        ":dispatch_watch",
+        ":local_commands",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:watch_fixture",
+        "//agentplane/proto:command_pb",
+    ],
+)
+
+ts_library(
     name = "local_commands",
     srcs = ["local_commands.ts"],
     tsconfig = TSCONFIG,
@@ -217,6 +241,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend:topbar",
+        "//agentplane/app/frontend:watch_fixture",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
@@ -346,6 +371,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":command_progress",
+        ":dispatch_watch",
         ":local_commands",
         ":thread_cards",
         ":thread_evidence",

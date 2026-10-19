@@ -135,7 +135,6 @@ py_library(
     srcs = ["dispatcher_client.py"],
     deps = [
         "//agentplane/grpc:calls",
-        "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/proto:session_dispatcher_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
@@ -189,37 +188,5 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
-    ],
-)
-
-py_library(
-    name = "dispatch_stream",
-    srcs = ["dispatch_stream.py"],
-    deps = [
-        ":dispatcher_client",
-        "//agentplane:changes",
-        "//agentplane/app:live",
-        "//agentplane/proto:session_dispatcher_pb2",
-        "@pypi//protobuf",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_dispatch_stream",
-    srcs = ["test_dispatch_stream.py"],
-    deps = [
-        ":dispatch_stream",
-        ":dispatcher_client",
-        "//:conftest",
-        "//agentplane/app:conftest",
-        "//agentplane/grpc:calls",
-        "//agentplane/grpc:serving",
-        "//agentplane/proto:session_dispatcher_pb2",
-        "//agentplane/proto:session_dispatcher_pb2_grpc",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

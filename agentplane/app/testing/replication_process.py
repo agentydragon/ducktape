@@ -48,6 +48,7 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
@@ -271,6 +272,7 @@ async def _serve(
                 base_url=electric_url or "http://test-unused-electric.invalid", timeout=65
             ) as electric_http,
             httpx.AsyncClient(base_url="http://test-unused-notifications.invalid") as notifications_http,
+            httpx.AsyncClient(base_url="http://test-unused-dispatcher.invalid") as dispatcher_facade,
         ):
             inventory = SandboxAccess(
                 SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core),
@@ -329,6 +331,7 @@ async def _serve(
                     content=content,
                     database_updates=database_updates,
                     operator_sessions=OperatorSessionStore(engine),
+                    dispatcher_http=UpstreamProxy(dispatcher_facade, Path(directory) / "dispatcher-token"),
                     notifications_http=notifications_http,
                     notifications_token_file=Path(directory) / "notifications-token",
                     system_status=answering_system_status(),

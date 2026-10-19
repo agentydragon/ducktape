@@ -34,6 +34,7 @@ from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.postgres.wakeups import WakeupListener
 
@@ -105,6 +106,7 @@ def serve(
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    dispatcher_http: UpstreamProxy,
 ) -> ServeApp:
     def serving(sessions: OperatorSessionStore, updates: WakeupListener) -> FastAPI:
         app = create_app(
@@ -124,6 +126,7 @@ def serve(
             electric=electric_proxy,
             notifications_http=notifications_http,
             notifications_token_file=notifications_token_file,
+            dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )
 

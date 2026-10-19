@@ -131,6 +131,23 @@ export function electricLive(handle: string, relation?: string, signal?: AbortSi
   return new Response(body, { headers: { ...shapeHeaders(handle, schema), "content-type": "text/event-stream" } });
 }
 
+/** A gRPC-Gateway server stream that sends `results` and then stays open until `signal` aborts, as a
+ * watch does: newline-delimited `{"result": ...}` objects. */
+export function ndjsonWatch(results: readonly unknown[], signal: AbortSignal | undefined): Response {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder();
+      for (const result of results) controller.enqueue(encoder.encode(`${JSON.stringify({ result })}\n`));
+      signal?.addEventListener(
+        "abort",
+        () => controller.error(new DOMException("The watch request was aborted", "AbortError")),
+        { once: true }
+      );
+    },
+  });
+  return new Response(body, { headers: { "content-type": "application/x-ndjson" } });
+}
+
 /**
  * A subset snapshot: Electric returns operations in a subset envelope rather than the append-only
  * shape log. The snapshot mark links each row to the PostgreSQL visibility metadata and lets the

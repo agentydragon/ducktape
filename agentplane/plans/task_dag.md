@@ -1908,13 +1908,12 @@ One track per service. Tracks are independent except where an edge is drawn, and
 claims no priority. Each migration keeps its own caller inventory, authorization and
 behavior-preservation review, tests, rollout and rollback plan; none is a repo-wide migration. The
 shared piece is the facade machinery (gateway toolchain, serve helper, the app's generic upstream
-proxy, the browser's stream client), which `DISPATCHER_READS_FACADE` builds once. A Python service
-gets its facade with its Go port, from the same proto. Design, alternatives and exit evidence:
+proxy, the browser's stream client), built with the Dispatcher's. A Python service gets its facade with
+its Go port, from the same proto. Design, alternatives and exit evidence:
 [generated HTTP facades](grpc_http_facade.md). The order of the ports belongs to the Go rewrite.
 
 ```mermaid
 flowchart LR
-    DISPATCHER_READS_FACADE[In flight: Dispatcher reads as a generated browser API]
     EGRESS_ADMIN_HTTP_TEARDOWN[Caller audit: remove the hand-written egress admin HTTP]
     HISTORY_SERVICE_GO_PORT[Candidate: port the History Service to Go]
     HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
@@ -1923,30 +1922,16 @@ flowchart LR
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
     HISTORY_SERVICE_GO_PORT --> HISTORY_READS_FACADE
-    DISPATCHER_READS_FACADE --> HISTORY_READS_FACADE
     NOTIFICATION_SERVICE_SPLIT --> NOTIFICATION_SERVICE_GO_PORT
-    DISPATCHER_READS_FACADE -. facade half waits for the shared machinery .-> NOTIFICATION_SERVICE_GO_PORT
-    DISPATCHER_READS_FACADE -. facade half waits for the shared machinery .-> ACTION_SERVICE_GO_PORT
-    DISPATCHER_READS_FACADE -. generated handlers replace the hand-written ones where an HTTP caller remains .-> EGRESS_ADMIN_HTTP_TEARDOWN
     HISTORY_SERVICE_GO_PORT -. sequencing choice: record the UID in Go if the port goes first .-> HISTORY_SANDBOX_UID
 ```
 
-### `DISPATCHER_READS_FACADE` — Dispatcher reads as a generated browser API
-
-**In flight (the operator dispatched it in the delivery-facade thread, 2026-10-19 10:13 UTC).** The Runner
-Gateway serves the Dispatcher's RPCs as a generated HTTP/JSON facade ([#11116](https://github.com/agentydragon/ducktape/pull/11116),
-merged) and the app relays its reads under `/upstream/dispatcher/` behind an optional setting. Remaining, in
-order: the manifests that turn the listener on ([#11122](https://github.com/agentydragon/ducktape/pull/11122)) and
-that set the app's URL once its image is pinned, then the browser's `fetch` stream client, which replaces
-`app/threads/dispatch_stream.py` and its route and makes the setting required. This builds the machinery
-every other facade reuses. Exit evidence: missing, invalid and valid bearers behave as over gRPC; the
-generated TypeScript types are chosen; one visual scene runs on the streaming stub.
 
 ### `EGRESS_ADMIN_HTTP_TEARDOWN` — remove the hand-written egress admin HTTP
 
 Inventory remaining HTTP callers first, including the rules route the
 [agent CLI](agent_cli.md) plan's egress commands target: where an HTTP caller remains, the generated facade
-from `DISPATCHER_READS_FACADE` replaces the handler instead of leaving two interfaces.
+(as the Dispatcher's) replaces the handler instead of leaving two interfaces.
 Then delete the `/decisions`, `/decisions/changes`, `/healthz`, `/livez`, `/v1/rules` and OpenAPI
 handlers after every caller's replacement image is pinned (removals follow their callers).
 
@@ -1959,7 +1944,7 @@ land in Go if the port goes first; otherwise it lands in Python and is ported. T
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
 
-**Blocked on `HISTORY_SERVICE_GO_PORT` and `DISPATCHER_READS_FACADE`.** Annotate the browser's History
+**Blocked on `HISTORY_SERVICE_GO_PORT`.** Annotate the browser's History
 reads and replace the app's mirror models (`app/threads/view/content.py`,
 `app/threads/events/debug.py`) with the generic proxy. `WatchSessionSummaries` says only that something
 changed, so a browser-facing watch gets frames that carry state. Decide on purpose whether the app's Thread
@@ -1969,8 +1954,7 @@ check on `thread_observations` (404 for a Session no Thread links) is kept or dr
 
 **Blocked on `NOTIFICATION_SERVICE_SPLIT`, so the service is ported once, after the operator decides what
 stays.** Proto and generated facade for subscriptions, inboxes and the operator streams, replacing the
-app's Notification proxy. The signed GitHub webhook stays hand-written HTTP. The facade half waits for
-`DISPATCHER_READS_FACADE`.
+app's Notification proxy. The signed GitHub webhook stays hand-written HTTP.
 
 ### `ACTION_SERVICE_GO_PORT` — port the Action Service to Go
 
@@ -1978,8 +1962,7 @@ app's Notification proxy. The signed GitHub webhook stays hand-written HTTP. The
 workload APIs as generated facades and delete `OperatorActionServiceClient` and the app's Action routes and
 relays. The request watch gets a resume cursor or delta frames in its proto from the start: its first frame
 is the whole history (megabytes, #7922) and it ends every minute with the exchanged token. The MCP
-endpoint, OAuth metadata and consent callbacks stay hand-written HTTP. The facade half waits for
-`DISPATCHER_READS_FACADE`. Decide with
+endpoint, OAuth metadata and consent callbacks stay hand-written HTTP. Decide with
 [`AGENT_API_TOOLING_DESIGN`](#agent_api_tooling_design--preserve-ergonomic-scriptable-agent-workflows)
 whether the agent CLI's Action Service changes land in the Python service or in this port.
 

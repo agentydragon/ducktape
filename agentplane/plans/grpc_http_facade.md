@@ -38,7 +38,6 @@ Counted at `devel` f2741979 (#10982).
 | Action Service operator surface, 3 times | 26 operator routes of 39 in `action_service/api.py`; one `OperatorActionServiceClient` method per route (`action_service/client.py`, 168 lines); about 30 of the app's 83 routes, a ~330-line block of the actions, push, consent and connections routers in `app/api.py` | One request and response per route. The app imports the service's Pydantic models, so the schema is declared once and each route three times.           |
 | Operator stream relays                   | `_operator_relay`, `_operator_resource_stream`, `_notifications_proxy`, `_action_chunks`, `_renewed`, `_without_repeated_snapshots` in `app/api.py`                                                                                                                       | A byte relay of the upstream's SSE that adds two things: the stream ends when the operator session does, and the upstream reopens under a fresh token.  |
 | History reads                            | `app/threads/view/content.py`, `app/threads/events/debug.py`: Pydantic mirrors of `ReadEntityEvidenceResponse`, `ReadNativeFramesResponse` and the observation pages                                                                                                      | The proto3 JSON mapping: `uint64` as a decimal string (the `DecimalCursor` comment in `app/api.py` justifies it by hand) and absent `optional` as null. |
-| Dispatcher watch                         | `app/threads/dispatch_stream.py`, 85 lines                                                                                                                                                                                                                                | `WatchDispatches` already streams each changed `Dispatch`. The app discards the payload and re-reads `ListDispatches` to build a snapshot frame.        |
 | Status mapping                           | `service_error` and `_ERROR_STATUS` in `app/api.py`, `_ERRORS` in `action_service/api.py`                                                                                                                                                                                 | gRPC status and exception to HTTP status, in three tables.                                                                                              |
 | Frontend                                 | `client.ts`: `openapi-fetch` over types generated from FastAPI's OpenAPI document (`js_openapi_schema`), 46 call sites; seven `followStream` call sites over `EventSource`                                                                                                | The app's own routes. Proto messages already cross as proto-JSON (`MessageToDict`) and decode with protobuf-es.                                         |
 
@@ -98,11 +97,11 @@ are the app's own logic.
 - A watch response is a `oneof` of frames (`snapshot`, `changed`, `health`, `reconnect_required`), as
   `WatchSessionSummariesResponse` already is. The app's `snapshot` and `health` SSE events map onto
   them one to one.
-- `followStream` becomes `fetch` plus a line reader with the same backoff. A failed open now exposes
-  its status and body, which `EventSource` hides (`live_stream.ts` probes `GET /models` to learn
-  whether the login lapsed). Resume positions become request fields, since the facade supplies none.
-- The visual-test harness stubs `EventSource` and the fetch `openapi-fetch` captures
-  (`harness/harness.tsx`, `harness/network.ts`); both stubs gain a streaming `fetch`.
+- `followWatch` (`watch_stream.ts`) is `fetch` plus a line reader with `followStream`'s backoff, and a
+  failed open exposes its status and body, which `EventSource` hides. A watch has no resume position, so
+  each connection replays the state and the consumer judges what is missing by that replay. The
+  app's other `followStream` call sites move to it as their routes become facade reads, and
+  `followStream` goes with the last one.
 
 ### Browser path: through the app
 
@@ -129,10 +128,17 @@ still holds: the facade is plain HTTP/JSON.
 ### Types and client
 
 `protoc-gen-openapiv2` emits OpenAPI 2.0, and as I understand it the repo's `openapi-typescript` (7.x)
-reads only 3.x. The first step picks between an OpenAPI 3 generator (google/gnostic
+reads only 3.x. A service whose reads move picks between an OpenAPI 3 generator (google/gnostic
 `protoc-gen-openapi`), which keeps `openapi-fetch` call sites as they are, and a small client over
 the protobuf-es messages the frontend already generates. The default is OpenAPI 3. Until the app's own
 contract moves, the frontend holds two generated schemas behind one client.
+
+The Dispatcher's watch used neither: its frames are the proto-JSON `Dispatch` the typed Thread routes
+already return, which `dispatchReceipt` validates, so the browser holds no generated type for them. A
+`session_dispatcher_pb` from `ts_proto_library` builds only with a root `google/api` package that
+copies googleapis' `http.proto` and `annotations.proto` and generates their TypeScript, because
+protoc-gen-es imports `../../google/api/annotations_pb` and `ts_proto_library` declares its outputs
+beside a proto of its own package. That is the cost of generated messages for any annotated proto.
 
 ### Errors
 

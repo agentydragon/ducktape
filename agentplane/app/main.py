@@ -197,14 +197,10 @@ async def async_main(settings: Settings) -> None:
                 electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
             )
             system_probes.append(http_health_probe("Electric", electric_http, "/v1/health"))
-        dispatcher_http = None
-        if settings.session_dispatcher_http_url is not None:
-            dispatcher_http = UpstreamProxy(
-                await frontend.enter_async_context(
-                    httpx.AsyncClient(base_url=str(settings.session_dispatcher_http_url))
-                ),
-                settings.session_dispatcher_token_file,
-            )
+        dispatcher_http = UpstreamProxy(
+            await frontend.enter_async_context(httpx.AsyncClient(base_url=str(settings.session_dispatcher_http_url))),
+            settings.session_dispatcher_token_file,
+        )
         app = create_app(
             inventory,
             bridge,

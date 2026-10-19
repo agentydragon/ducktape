@@ -49,7 +49,6 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy, router as electric_router
 from agentplane.app.identity import CallerKind, TokenReviewer, require_caller
 from agentplane.app.live import (
-    HEALTH_INTERVAL_S,
     ActionPolicy,
     Caller,
     LiveIndex,
@@ -82,7 +81,6 @@ from agentplane.app.sandbox_models import (
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from agentplane.app.system_status import ComponentStatus, SystemStatusChecker
 from agentplane.app.threads import bridge as runner_bridge
-from agentplane.app.threads.dispatch_stream import DispatchesSnapshot, dispatch_frames
 from agentplane.app.threads.events import stream
 from agentplane.app.threads.events.debug import (
     ArchivedObservationEntry,
@@ -161,7 +159,7 @@ class AppServices:
     reviewer: TokenReviewer | None
     operator_actions: FederatedOperatorActions | None
     electric: ElectricProxy | None
-    dispatcher_http: UpstreamProxy | None
+    dispatcher_http: UpstreamProxy
     oauth: OAuth | None = field(init=False)
     drain: Drain = field(default_factory=Drain)
 
@@ -330,11 +328,8 @@ async def dispatcher_upstream(
     """The Session Dispatcher's HTTP/JSON reads (`agentplane/proto/session_dispatcher.proto`), unchanged,
     for as long as the operator session lasts. Its commands are not reachable here: they go through the
     Thread routes, whose checks the Dispatcher does not make."""
-    proxy = services.dispatcher_http
-    if proxy is None:
-        raise TypeError("the upstream router is mounted without a Dispatcher HTTP upstream")
     try:
-        upstream = await proxy.open_get(path, request.url.query)
+        upstream = await services.dispatcher_http.open_get(path, request.url.query)
     except httpx.RequestError as error:
         raise upstream_http_error(error) from error
     return StreamingResponse(
@@ -459,11 +454,6 @@ async def list_policy_sets(action_policy: ActionPolicy) -> list[ActionPolicySetV
 
 
 threads = APIRouter(prefix="/threads", tags=["threads"])
-
-# SSE, so the body is a stream of frames; the model is declared for the frontend's generated types.
-_DISPATCHES_FRAMES: dict[int | str, dict[str, Any]] = {
-    200: {"model": DispatchesSnapshot, "content": {"text/event-stream": {}}}
-}
 
 
 actions_router = APIRouter(prefix="/actions", tags=["actions"])
@@ -1056,23 +1046,6 @@ async def interrupt_turn(
     return InterruptResultSubmission(result=MessageToDict(response))
 
 
-@threads.get("/{thread_id}/dispatches/stream", responses=_DISPATCHES_FRAMES)
-async def thread_dispatches_stream(
-    store: Store,
-    bridge: runner_bridge.Bridge,
-    shutdown: Shutdown,
-    thread_id: UUID,
-    command_id: Annotated[list[str], Query(min_length=1, max_length=MAX_PAGE, description="The commands to follow.")],
-) -> StreamingResponse:
-    """SSE of the Dispatcher's current state of the named commands, pushed whenever one changes. It
-    reports where the Dispatcher holds a command, not a runner or harness effect."""
-    if await store.get_thread(thread_id) is None:
-        raise ThreadNotFoundError(thread_id)
-    return sse_response(
-        shutdown.until(dispatch_frames(bridge.dispatcher, thread_id, command_id, interval_s=HEALTH_INTERVAL_S))
-    )
-
-
 # A fold cursor is 64-bit and a JavaScript number is not, so it travels as a decimal
 # string -- the representation every fold response model already publishes it in. Declaring
 # it `int` here would put `integer` in the schema and make every browser caller cast past it. The
@@ -1242,7 +1215,7 @@ def create_app(
     operator_actions: FederatedOperatorActions | None = None,
     *,
     electric: ElectricProxy | None,
-    dispatcher_http: UpstreamProxy | None = None,
+    dispatcher_http: UpstreamProxy,
     event_logs: EventLogStore,
     content: ContentStore,
     database_updates: WakeupListener,
@@ -1338,8 +1311,7 @@ def create_app(
         app.include_router(api_router, dependencies=[Depends(require_caller)])
     if electric is not None:
         app.include_router(electric_router, dependencies=[Depends(require_caller)])
-    if dispatcher_http is not None:
-        app.include_router(upstream_router, dependencies=[Depends(require_caller)])
+    app.include_router(upstream_router, dependencies=[Depends(require_caller)])
     if oidc is not None:
         app.add_middleware(
             OperatorSessionMiddleware,

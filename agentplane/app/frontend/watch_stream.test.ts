@@ -1,0 +1,124 @@
+// @vitest-environment happy-dom
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+import type { StreamConnection } from "./live_stream";
+import { followWatch } from "./watch_stream";
+import { type ServedWatch, stubWatchFetch } from "./watch_fixture";
+
+let fetchMock: ReturnType<typeof stubWatchFetch>;
+let events: unknown[] = [];
+let connections: StreamConnection[] = [];
+let stop: () => void = () => undefined;
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  fetchMock = stubWatchFetch();
+});
+
+afterEach(() => {
+  stop();
+  events = [];
+  connections = [];
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+function follow(): void {
+  stop = followWatch("/test/watch", {
+    onOpen: () => events.push("open"),
+    onFrame: (result) => events.push(result),
+    onConnection: (connection) => connections.push(connection),
+  });
+}
+
+async function settle(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(0);
+}
+
+function connection(): StreamConnection {
+  const latest = connections.at(-1);
+  if (latest === undefined) throw new Error("no connection reported");
+  return latest;
+}
+
+function watch(index: number): ServedWatch {
+  const served = fetchMock.served[index];
+  if (served === undefined) throw new Error(`request ${index} was not made`);
+  return served;
+}
+
+it("hands over each result as it arrives, however the bytes are split", async () => {
+  follow();
+  await settle();
+  watch(0).write('{"result":{"n":1}}\n{"res');
+  await settle();
+  expect(events).toEqual(["open", { n: 1 }]);
+  watch(0).write('ult":{"n":2}}\n');
+  await settle();
+
+  expect(events).toEqual(["open", { n: 1 }, { n: 2 }]);
+  expect(connections.map(({ phase }) => phase)).toEqual(["connecting", "live"]);
+});
+
+it("opens a new connection after one ends, and says the replay starts again", async () => {
+  follow();
+  await settle();
+  watch(0).send(1);
+  watch(0).end();
+  await settle();
+  expect(connection()).toMatchObject({ phase: "reconnecting", attempt: 1, lastError: null });
+
+  await vi.advanceTimersByTimeAsync(1_000);
+  watch(1).send(2);
+  await settle();
+
+  expect(connection().phase).toBe("live");
+  expect(events).toEqual(["open", 1, "open", 2]);
+});
+
+it("reports why a request was refused and keeps retrying", async () => {
+  fetchMock.fetch.mockResolvedValueOnce(new Response('{"code":14,"message":"no backend"}', { status: 503 }));
+  follow();
+  await settle();
+  expect(connection()).toMatchObject({ phase: "reconnecting", attempt: 1 });
+  expect(connections.at(-1)).toHaveProperty("lastError", expect.stringContaining("503"));
+
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(fetchMock.fetch).toHaveBeenCalledTimes(2);
+  expect(events).toEqual(["open"]);
+});
+
+it("treats an error message of the stream as the end of the connection", async () => {
+  follow();
+  await settle();
+  watch(0).write('{"error":{"code":14,"message":"lease lost"}}\n');
+  await settle();
+
+  expect(connection()).toMatchObject({ phase: "reconnecting", lastError: expect.stringContaining("lease lost") });
+});
+
+it("connects again at once when the browser comes back online", async () => {
+  follow();
+  await settle();
+  watch(0).end();
+  await settle();
+  expect(fetchMock.fetch).toHaveBeenCalledTimes(1);
+
+  window.dispatchEvent(new Event("online"));
+  await settle();
+  expect(fetchMock.fetch).toHaveBeenCalledTimes(2);
+
+  // The backoff that was running is cancelled, not left to open a third connection.
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(fetchMock.fetch).toHaveBeenCalledTimes(2);
+});
+
+it("aborts the request in flight when stopped, and does not connect again", async () => {
+  follow();
+  await settle();
+  stop();
+  await vi.advanceTimersByTimeAsync(60_000);
+
+  expect(watch(0).signal?.aborted).toBe(true);
+  expect(fetchMock.fetch).toHaveBeenCalledTimes(1);
+});

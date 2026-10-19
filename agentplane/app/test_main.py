@@ -42,6 +42,7 @@ from agentplane.app.threads.history_watch import SessionOpenings
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
@@ -52,6 +53,7 @@ APP_ENVIRONMENT = {
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
     "AGENTPLANE_RUNNER_GATEWAY_TARGET": "runner-gateway.test:8080",
     "AGENTPLANE_SESSION_DISPATCHER_TARGET": "session-dispatcher.test:8080",
+    "AGENTPLANE_SESSION_DISPATCHER_HTTP_URL": "http://session-dispatcher.test.invalid:8081",
     "AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET": "{sandbox}-control.{namespace}.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TOKEN_FILE": "/tokens/runner-gateway",
     "AGENTPLANE_HISTORY_SERVICE_TARGET": "history-service.test:8080",
@@ -254,6 +256,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
     core_v1: FakeCoreV1Api,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    dispatcher_http: UpstreamProxy,
     history_client: HistoryServiceClient,
     dispatcher: SessionDispatcherClient,
 ) -> None:
@@ -281,6 +284,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
         electric=None,
         notifications_http=notifications_http,
         notifications_token_file=notifications_token_file,
+        dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
     port = pick_free_port()

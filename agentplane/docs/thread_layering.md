@@ -312,7 +312,7 @@ sequenceDiagram
     SD->>SD: Persist Dispatch M
     SD-->>A: Dispatch M queued
     A-->>F: HTTP 200, Dispatch M
-    F->>A: GET /threads/T/dispatches/stream?command_id=M
+    F->>A: GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=T&filter.commandIds=M
     SD->>G: ChangeModel for T
     G->>R: ChangeModel over the control stream
     R->>R: Persist M
@@ -424,11 +424,11 @@ sequenceDiagram
     SD->>SD: Mark C runner-admitted
     A--xF: Connection lost before saved confirmation reaches browser
     Note over F: Reload
-    F->>A: GET /threads/T/dispatches/stream?command_id=C
-    A->>SD: ListDispatches T
+    F->>A: GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=T&filter.commandIds=C
+    A->>SD: the same read over the HTTP/JSON facade
     alt Dispatcher has the durable Dispatch
-        SD-->>A: Current state of C
-        A-->>F: SSE snapshot, Dispatch state; continue watching History for outcomes
+        SD-->>A: Dispatch C, then CaughtUp
+        A-->>F: the same frames; continue watching History for outcomes
     else No durable Dispatch is found
         F->>A: POST same Command C with same ID and payload
         A->>SD: per-operation RPC for C

@@ -43,6 +43,7 @@ import {
 } from "./thread_state_fixture";
 import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync } from "./thread_sync";
 import { TopbarContext } from "../topbar";
+import { type ServedWatch, stubWatchFetch } from "../watch_fixture";
 
 vi.mock("../client", async (importOriginal) => ({
   ...(await importOriginal<typeof ClientModule>()),
@@ -108,8 +109,8 @@ let inventoryDrops = false;
 let sharedFeed: "active" | "ended" | "failed" = "active";
 let sharedThread: Partial<ThreadView> = {};
 let eventSourceUrls: string[] = [];
-// The dispatch streams the page opened, which a test answers itself.
-let dispatchStreams: Array<EventTarget & { url: string; closed: boolean }> = [];
+// The Dispatcher watches the page opened, which a test answers itself.
+let dispatchWatches: ServedWatch[] = [];
 let threadRows: ThreadView[] | null = null;
 
 beforeEach(() => {
@@ -126,7 +127,7 @@ beforeEach(() => {
   sharedFeed = "active";
   sharedThread = {};
   eventSourceUrls = [];
-  dispatchStreams = [];
+  dispatchWatches = stubWatchFetch().served;
   threadRows = null;
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
@@ -145,10 +146,6 @@ beforeEach(() => {
       constructor(readonly url: string) {
         super();
         eventSourceUrls.push(url);
-        if (new URL(url, "http://test").pathname.endsWith("/dispatches/stream")) {
-          dispatchStreams.push(this);
-          return;
-        }
         queueMicrotask(() => {
           if (sandboxes === null) return;
           this.dispatchEvent(
@@ -1006,14 +1003,22 @@ function dispatchReceipt(commandId: string, state: string, reason: string, updat
   return { commandId, sessionId: THREAD.id, state, reason, updatedAt, admission: null } as const;
 }
 
-// A Dispatch as the stream carries it: proto-JSON leaves out what is unset, such as a reason or admission.
+// A Dispatch as the watch carries it: proto-JSON leaves out what is unset, such as a reason or admission.
 function dispatchRow(commandId: string, state: string, reason: string | undefined, updatedAt: string) {
   return { commandId, sessionId: THREAD.id, state, reason, updatedAt };
 }
 
-async function sendDispatches(frame: { dispatches: object[]; absent: string[] }): Promise<void> {
+async function openedWatch(): Promise<ServedWatch> {
+  await vi.waitFor(() => expect(dispatchWatches).not.toHaveLength(0));
+  return dispatchWatches[0];
+}
+
+// What the Dispatcher holds, then the frame that says the watch has it all.
+async function sendDispatches(rows: object[]): Promise<void> {
+  const watch = await openedWatch();
   await act(async () => {
-    dispatchStreams.at(-1)?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(frame) }));
+    for (const dispatch of rows) watch.send({ dispatch });
+    watch.send({ caughtUp: {} });
   });
 }
 
@@ -1030,19 +1035,18 @@ it("replaces a queued Dispatcher receipt with the failure its stream reports", a
 
   const container = await render();
   expect(progressLabel(container, waiting.commandId)).toBe("Sandbox is not ready; message is queued");
-  await sendDispatches({
-    dispatches: [
-      dispatchRow(
-        waiting.commandId,
-        "DELIVERY_STATE_FAILED",
-        "runner NotFound: no rollout found for thread id",
-        "2026-10-17T12:26:35Z"
-      ),
-    ],
-    absent: [],
-  });
+  await sendDispatches([
+    dispatchRow(
+      waiting.commandId,
+      "DELIVERY_STATE_FAILED",
+      "runner NotFound: no rollout found for thread id",
+      "2026-10-17T12:26:35Z"
+    ),
+  ]);
 
-  expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="dispatch_failed"]')).not.toBeNull();
+  await vi.waitFor(() =>
+    expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="dispatch_failed"]')).not.toBeNull()
+  );
 });
 
 it("follows the dispatches of queued commands only until they settle", async () => {
@@ -1057,14 +1061,13 @@ it("follows the dispatches of queued commands only until they settle", async () 
   vi.mocked(submitInput).mockResolvedValue({ kind: "dispatch", dispatch: queued });
 
   await render();
-  const [stream] = dispatchStreams;
-  expect(new URL(stream.url, "http://test").searchParams.getAll("command_id")).toEqual([waiting.commandId]);
-  await sendDispatches({
-    dispatches: [dispatchRow(waiting.commandId, "DELIVERY_STATE_RUNNER_ADMITTED", undefined, "2026-10-17T12:26:45Z")],
-    absent: [],
-  });
+  const watch = await openedWatch();
+  expect(watch.url.searchParams.getAll("filter.commandIds")).toEqual([waiting.commandId]);
+  await sendDispatches([
+    dispatchRow(waiting.commandId, "DELIVERY_STATE_RUNNER_ADMITTED", undefined, "2026-10-17T12:26:45Z"),
+  ]);
 
-  expect(stream.closed).toBe(true);
+  await vi.waitFor(() => expect(watch.signal?.aborted).toBe(true));
 });
 
 it("calls a command the Dispatcher holds no row for unknown, as after Sandbox deletion", async () => {
@@ -1081,9 +1084,11 @@ it("calls a command the Dispatcher holds no row for unknown, as after Sandbox de
   });
 
   const container = await render();
-  await sendDispatches({ dispatches: [], absent: [waiting.commandId] });
+  await sendDispatches([]);
 
-  expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="unknown"]')).not.toBeNull();
+  await vi.waitFor(() =>
+    expect(pendingRow(container, waiting.commandId).querySelector('[data-stage="unknown"]')).not.toBeNull()
+  );
 });
 
 it("opens compact command detail on touch and closes on blur or Escape", async () => {

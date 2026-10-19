@@ -430,17 +430,6 @@ export async function interruptTurn(threadId: string, commandId: string, turnId:
   );
 }
 
-/** The route's own bound, as many commands as one listing page carries. */
-const MAX_DISPATCH_STREAM_COMMANDS = 200;
-
-/** The stream of the Dispatcher's current state of the named commands of a thread; past the route's
- * bound the later ones go without. */
-export function dispatchesStreamUrl(threadId: string, commandIds: readonly string[]): string {
-  const query = new URLSearchParams();
-  for (const id of commandIds.slice(0, MAX_DISPATCH_STREAM_COMMANDS)) query.append("command_id", id);
-  return `/threads/${encodeURIComponent(threadId)}/dispatches/stream?${query}`;
-}
-
 /**
  * The epoch a thread's shapes are pinned to. A long poll: the server holds the read until the
  * thread has a fold, and answers null if it still has none when the hold runs out.
