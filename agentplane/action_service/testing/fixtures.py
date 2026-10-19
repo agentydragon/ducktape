@@ -65,10 +65,10 @@ def store(engine: AsyncEngine) -> ActionStore:
 @pytest.fixture(scope="session")
 def operator_idp() -> Iterator[OperatorIdp]:
     private_key, public_key = generate_rsa_keypair()
-    sock = bind_free_port()
-    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}"
+    listener = bind_free_port()
+    issuer = listener.origin
     with serve_app_sync(
-        build_mock_oidc_app(issuer_url=issuer, private_key=private_key, public_key=public_key), sock=sock
+        build_mock_oidc_app(issuer_url=issuer, private_key=private_key, public_key=public_key), listener=listener
     ):
         yield OperatorIdp(issuer=issuer, signing_key=private_key)
 

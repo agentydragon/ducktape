@@ -35,9 +35,9 @@ DOCKER_ACCEPT_TYPES = [
 @contextlib.asynccontextmanager
 async def _run_server(app: FastAPI) -> AsyncIterator[str]:
     """Run a FastAPI app on an ephemeral port, yield the base URL."""
-    sock = bind_free_port()
-    async with serve_app_in_loop(app, sock=sock):
-        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
+    listener = bind_free_port()
+    async with serve_app_in_loop(app, listener=listener):
+        yield listener.origin
 
 
 async def test_proxy_preserves_multi_valued_accept_headers(monkeypatch: pytest.MonkeyPatch) -> None:

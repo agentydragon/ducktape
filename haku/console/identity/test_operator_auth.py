@@ -129,8 +129,8 @@ def _static_agent_config(tmp_path: Path) -> Path:
 async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path: Path) -> None:
     """The browser API requires an Operator session; a static Agent bearer is MCP-only."""
     private_key, public_key = generate_rsa_keypair()
-    idp_sock, console_sock = bind_free_port(), bind_free_port()
-    idp_url, console_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, console_sock))
+    idp_listener, console_listener = bind_free_port(), bind_free_port()
+    idp_url, console_url = idp_listener.origin, console_listener.origin
     idp = build_mock_oidc_app(
         issuer_url=idp_url,
         private_key=private_key,
@@ -149,7 +149,7 @@ async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path
     )
     app = create_app(settings)
 
-    async with serve_app(idp, sock=idp_sock), serve_app(app, sock=console_sock):
+    async with serve_app(idp, listener=idp_listener), serve_app(app, listener=console_listener):
         # No credential: every `/api/*` route rejects; the health probe stays open.
         async with httpx.AsyncClient(base_url=console_url) as anon:
             assert (await anon.get("/api/tool-calls")).status_code == 401
@@ -179,8 +179,8 @@ async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_pat
     state each new authorization request evicts the last, and the loser's callback dies on
     "expired or was superseded"."""
     private_key, public_key = generate_rsa_keypair()
-    idp_sock, console_sock = bind_free_port(), bind_free_port()
-    idp_url, console_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, console_sock))
+    idp_listener, console_listener = bind_free_port(), bind_free_port()
+    idp_url, console_url = idp_listener.origin, console_listener.origin
     idp = build_mock_oidc_app(
         issuer_url=idp_url,
         private_key=private_key,
@@ -200,8 +200,8 @@ async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_pat
     app = create_app(settings)
 
     async with (
-        serve_app(idp, sock=idp_sock),
-        serve_app(app, sock=console_sock),
+        serve_app(idp, listener=idp_listener),
+        serve_app(app, listener=console_listener),
         # One client is one browser: both tabs share a cookie jar, and both requests are built
         # from the same snapshot of it.
         httpx.AsyncClient(base_url=console_url) as browser,

@@ -327,9 +327,9 @@ async def app_url(
         notifications_token_file=notifications_token_file,
         system_status=answering_system_status(),
     )
-    sock = bind_free_port()
-    async with serve_app_in_loop(app, sock=sock):
-        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
+    listener = bind_free_port()
+    async with serve_app_in_loop(app, listener=listener):
+        yield listener.origin
 
 
 async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_event_id(

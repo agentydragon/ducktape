@@ -47,11 +47,10 @@ async def test_dex_app_exposes_remote_oauth_metadata() -> None:
 
 
 async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_lease: ExecutionLease) -> None:
-    sock = bind_free_port()
-    host, port = sock.getsockname()
-    base_url = f"http://{host}:{port}"
+    listener = bind_free_port()
+    base_url = listener.origin
     app = build_app(base_url=base_url, redirect_uri=REDIRECT_URI).http_app(path=PATH)
-    with serve_app_sync(app, sock=sock):
+    with serve_app_sync(app, listener=listener):
         server = McpOAuthServer(
             server_id="example", server_url=f"{base_url}{PATH}", client_id=CLIENT_ID, redirect_uri=REDIRECT_URI
         )

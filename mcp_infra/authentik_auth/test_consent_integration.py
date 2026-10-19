@@ -95,12 +95,12 @@ async def _complete_authorization(
 async def test_build_authentik_auth_requires_consent_for_every_authorization() -> None:
     """The same browser and DCR client must not silently reuse an earlier approval."""
     private_key, public_key = generate_rsa_keypair()
-    oidc_sock, mcp_sock = bind_free_port(), bind_free_port()
-    oidc_url = f"http://127.0.0.1:{oidc_sock.getsockname()[1]}"
-    mcp_url = f"http://127.0.0.1:{mcp_sock.getsockname()[1]}/mcp"
+    oidc_listener, mcp_listener = bind_free_port(), bind_free_port()
+    oidc_url = oidc_listener.origin
+    mcp_url = f"{mcp_listener.origin}/mcp"
     idp = build_mock_oidc_app(issuer_url=oidc_url, private_key=private_key, public_key=public_key)
 
-    async with serve_app(idp, sock=oidc_sock):
+    async with serve_app(idp, listener=oidc_listener):
         auth = build_authentik_auth(
             AuthentikAuthConfig(
                 oidc_issuer=oidc_url,
@@ -112,7 +112,7 @@ async def test_build_authentik_auth_requires_consent_for_every_authorization() -
         )
         mcp_app = FastMCP("Consent Test", auth=auth).http_app(path="/")
         app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
-        async with serve_app(app, sock=mcp_sock), httpx.AsyncClient(follow_redirects=False) as browser:
+        async with serve_app(app, listener=mcp_listener), httpx.AsyncClient(follow_redirects=False) as browser:
             metadata_response = await browser.get(f"{mcp_url}/.well-known/oauth-authorization-server")
             assert metadata_response.status_code == 200, metadata_response.text
             metadata = metadata_response.json()

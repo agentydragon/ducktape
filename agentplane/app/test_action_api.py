@@ -184,8 +184,8 @@ async def review(
         executor = await stack.enter_async_context(McpActionGroupExecutor("test_review", group, server))
         await wait_available(group)
         private_key, public_key = generate_rsa_keypair()
-        idp_sock = bind_free_port()
-        idp_origin, app_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}", "http://test-app.invalid"
+        idp_listener = bind_free_port()
+        idp_origin, app_url = idp_listener.origin, "http://test-app.invalid"
         idp_url = f"{idp_origin}/application/o/login/"
         target_issuer = idp_url if direct_federation else f"{idp_origin}/application/o/actions/"
         target = OperatorOidcSettings(
@@ -362,7 +362,7 @@ async def review(
             notifications_token_file=notifications_token_file,
             system_status=answering_system_status(),
         )
-        await stack.enter_async_context(serve_app(idp, sock=idp_sock))
+        await stack.enter_async_context(serve_app(idp, listener=idp_listener))
         browser = await stack.enter_async_context(
             httpx.AsyncClient(base_url=app_url, follow_redirects=True, mounts={app_url: httpx.ASGITransport(app=app)})
         )
@@ -505,9 +505,9 @@ def _bind_live_sandbox(policies: PolicyIndex) -> None:
 async def _served(app: FastAPI) -> AsyncIterator[str]:
     """The app on a real socket, in this loop: the in-memory transport waits for a body that never
     ends, and another thread's loop could not use the store's connections."""
-    sock = bind_free_port()
-    async with serve_app_in_loop(app, sock=sock):
-        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
+    listener = bind_free_port()
+    async with serve_app_in_loop(app, listener=listener):
+        yield listener.origin
 
 
 async def _first_snapshot(client: httpx.AsyncClient, path: str, headers: dict[str, str]) -> SandboxSnapshot:

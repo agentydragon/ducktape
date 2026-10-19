@@ -32,8 +32,8 @@ async def test_signed_operator_admission(
     engine: AsyncEngine, failure: str | None, token_profile: OperatorTokenProfile
 ) -> None:
     private, public = generate_rsa_keypair()
-    sock = bind_free_port()
-    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}"
+    listener = bind_free_port()
+    issuer = listener.origin
     idp = build_mock_oidc_app(issuer_url=issuer, private_key=private, public_key=public)
     catalog = ActionCatalog()
     service = ActionService(action_store(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
@@ -75,7 +75,7 @@ async def test_signed_operator_admission(
     elif failure == "missing-sub":
         del claims["sub"]
     async with (
-        serve_app(idp, sock=sock),
+        serve_app(idp, listener=listener),
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://actions.test") as client,
     ):
         response = await client.get(

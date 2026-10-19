@@ -63,12 +63,11 @@ def _operator_cookies(settings: Settings) -> dict[str, str]:
 
 
 async def test_oauth_api_works_after_startup(mock_k8s_store: MagicMock) -> None:
-    sock = bind_free_port()
-    port = sock.getsockname()[1]
-    settings = _settings(port)
+    listener = bind_free_port()
+    settings = _settings(listener.port)
     app = create_app(settings, include_static=False)
 
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
+    async with serve_app(app, listener=listener), httpx.AsyncClient(base_url=listener.origin) as http:
         assert (await http.get("/healthz")).json() == {"ok": True}
         http.cookies.update(_operator_cookies(settings))
         response = await http.get("/api/oauth/providers")
@@ -121,12 +120,11 @@ async def test_oauth_providers_reports_expired_token_status(
             )
         ],
     )
-    sock = bind_free_port()
-    port = sock.getsockname()[1]
+    listener = bind_free_port()
     with patch("airlock.app.token_refresh_loop", side_effect=fake_token_refresh_loop):
-        settings = _settings(port, oauth=oauth)
+        settings = _settings(listener.port, oauth=oauth)
         app = create_app(settings, include_static=False)
-        async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
+        async with serve_app(app, listener=listener), httpx.AsyncClient(base_url=listener.origin) as http:
             http.cookies.update(_operator_cookies(settings))
             response = await http.get("/api/oauth/providers")
 
@@ -142,12 +140,11 @@ async def test_oauth_providers_reports_expired_token_status(
 
 
 async def test_api_requires_valid_session(mock_k8s_store: MagicMock) -> None:
-    sock = bind_free_port()
-    port = sock.getsockname()[1]
-    settings = _settings(port)
+    listener = bind_free_port()
+    settings = _settings(listener.port)
     app = create_app(settings, include_static=False)
 
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
+    async with serve_app(app, listener=listener), httpx.AsyncClient(base_url=listener.origin) as http:
         assert (await http.get("/api/oauth/providers")).status_code == 401
         assert (
             await http.get("/api/oauth/providers", headers={"Authorization": "Bearer not-a-jwt"})
@@ -157,11 +154,10 @@ async def test_api_requires_valid_session(mock_k8s_store: MagicMock) -> None:
 
 
 async def test_mcp_and_tool_approval_routes_are_absent(mock_k8s_store: MagicMock) -> None:
-    sock = bind_free_port()
-    port = sock.getsockname()[1]
-    app = create_app(_settings(port), include_static=False)
+    listener = bind_free_port()
+    app = create_app(_settings(listener.port), include_static=False)
 
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
+    async with serve_app(app, listener=listener), httpx.AsyncClient(base_url=listener.origin) as http:
         assert (await http.post("/mcp")).status_code == 404
         assert (await http.get("/api/actions")).status_code == 404
         assert (await http.get("/api/backends")).status_code == 404

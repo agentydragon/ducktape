@@ -255,8 +255,8 @@ def serve(keypair: RSAKeyPair) -> Serve:
     async def serving(
         *, subject: str = OWNER, id_token_claims: dict[str, str] | None = None, **config_overrides: Any
     ) -> AsyncIterator[LoginConfig]:
-        idp_sock, app_sock = bind_free_port(), bind_free_port()
-        idp_url, app_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, app_sock))
+        idp_listener, app_listener = bind_free_port(), bind_free_port()
+        idp_url, app_url = idp_listener.origin, app_listener.origin
         private_key, public_key = keypair
         idp = build_mock_oidc_app(
             issuer_url=idp_url,
@@ -268,7 +268,7 @@ def serve(keypair: RSAKeyPair) -> Serve:
         config = replace(BASE, issuer=idp_url, public_base_url=app_url, **config_overrides)
         app = _app()
         install_login(app, config)
-        async with serve_app(idp, sock=idp_sock), serve_app(app, sock=app_sock):
+        async with serve_app(idp, listener=idp_listener), serve_app(app, listener=app_listener):
             yield config
 
     return serving

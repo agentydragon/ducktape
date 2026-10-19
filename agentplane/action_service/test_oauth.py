@@ -7,7 +7,6 @@ import base64
 import hashlib
 import json
 import secrets
-import socket
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,7 +54,7 @@ from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
-from util.net import bind_free_port
+from util.net import Listener, bind_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
@@ -74,7 +73,7 @@ class OAuthFixture:
     base_url: str
     metadata: dict[str, str]
     settings: OAuthSettings
-    service_sock: socket.socket  # `base_url`'s port, bound and listening, for a test that serves the app over HTTP
+    service_listener: Listener  # `base_url`'s port, bound and listening, for a test that serves the app over HTTP
 
     async def register(self) -> str:
         response = await self.browser.post(
@@ -164,9 +163,9 @@ class OAuthFixture:
 @pytest.fixture
 async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterator[OAuthFixture]:
     private_key, public_key = generate_rsa_keypair()
-    oidc_sock, service_sock = bind_free_port(), bind_free_port()
-    issuer = f"http://127.0.0.1:{oidc_sock.getsockname()[1]}/application/o/actions/"
-    base_url = f"http://127.0.0.1:{service_sock.getsockname()[1]}"
+    oidc_listener, service_listener = bind_free_port(), bind_free_port()
+    issuer = f"{oidc_listener.origin}/application/o/actions/"
+    base_url = service_listener.origin
     secret, signing, encryption = (tmp_path / name for name in ("upstream-secret", "jwt-key", "encryption-key"))
     secret.write_text("test-only-upstream-secret")
     signing.write_text(secrets.token_urlsafe(48))
@@ -189,8 +188,11 @@ async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterat
     idp = build_mock_oidc_app(
         issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
     )
-    with service_sock:  # uvicorn closes it only in a test that serves on it
-        async with serve_app(idp, sock=oidc_sock), running_oauth(settings, db_url, enrollments, connections) as proxy:
+    with service_listener:  # uvicorn closes it only in a test that serves on it
+        async with (
+            serve_app(idp, listener=oidc_listener),
+            running_oauth(settings, db_url, enrollments, connections) as proxy,
+        ):
             app = Starlette(routes=proxy.get_routes(mcp_path="/mcp"))
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app), base_url=base_url, follow_redirects=False
@@ -198,7 +200,15 @@ async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterat
                 response = await browser.get(f"{base_url}/.well-known/oauth-authorization-server")
                 response.raise_for_status()
                 yield OAuthFixture(
-                    proxy, callers, connections, enrollments, browser, base_url, response.json(), settings, service_sock
+                    proxy,
+                    callers,
+                    connections,
+                    enrollments,
+                    browser,
+                    base_url,
+                    response.json(),
+                    settings,
+                    service_listener,
                 )
 
 
@@ -281,7 +291,7 @@ async def test_real_sdk_dcr_over_http_persists_client_metadata(
         oauth=oauth.proxy,
     )
     # PostgreSQL pools belong to the fixture event loop, not serve_app's thread.
-    async with service, serve_app_in_loop(app, sock=oauth.service_sock):
+    async with service, serve_app_in_loop(app, listener=oauth.service_listener):
         registered = await register_client(f"{oauth.base_url}/mcp", redirect_uri)
         assert registered.client.client_id is not None
         # A separately constructed provider reads durable server metadata, not the

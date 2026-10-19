@@ -63,8 +63,8 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
             "<!doctype html><title>session sync test shell</title>", encoding="utf-8"
         )
         private_key, public_key = generate_rsa_keypair()
-        idp_sock, app_sock = bind_free_port(), bind_free_port()
-        idp_url, app_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, app_sock))
+        idp_listener, app_listener = bind_free_port(), bind_free_port()
+        idp_url, app_url = idp_listener.origin, app_listener.origin
         idp = build_mock_oidc_app(
             issuer_url=idp_url,
             private_key=private_key,
@@ -93,10 +93,10 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
         )
         # The app runs in this loop, not in `serve_app`'s thread: its `store` holds this loop's asyncpg connections.
         async with (
-            serve_app(idp, sock=idp_sock),
+            serve_app(idp, listener=idp_listener),
             serve_app_in_loop(
                 create_app(supervisor=supervisor, settings=settings, store=store, frontend_dir=frontend_dir),
-                sock=app_sock,
+                listener=app_listener,
             ),
         ):
             yield app_url
@@ -159,9 +159,9 @@ async def test_the_owner_pairs_by_pasting_the_redirect_url(owner: httpx.AsyncCli
 async def test_pairing_can_start_on_one_web_replica_and_finish_on_another(store: SessionStore, tmp_path: Path) -> None:
     """Both public pods proxy to the single control process that owns the PKCE attempt and credential."""
     private_key, public_key = generate_rsa_keypair()
-    idp_sock, app_sock = bind_free_port(), bind_free_port()
-    idp_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}"
-    app_url = f"http://127.0.0.1:{app_sock.getsockname()[1]}"
+    idp_listener, app_listener = bind_free_port(), bind_free_port()
+    idp_url = idp_listener.origin
+    app_url = app_listener.origin
     idp = build_mock_oidc_app(
         issuer_url=idp_url,
         private_key=private_key,
@@ -200,7 +200,7 @@ async def test_pairing_can_start_on_one_web_replica_and_finish_on_another(store:
     )
     control_app = create_control_app(supervisor=supervisor)
     async with (
-        serve_app(idp, sock=idp_sock),
+        serve_app(idp, listener=idp_listener),
         httpx.AsyncClient(base_url="http://control", transport=httpx.ASGITransport(app=control_app)) as control_client,
     ):
         web_one = create_web_app(
@@ -215,7 +215,7 @@ async def test_pairing_can_start_on_one_web_replica_and_finish_on_another(store:
             await app(scope, receive, send)
 
         async with (
-            serve_app_in_loop(route_to_replica, sock=app_sock),
+            serve_app_in_loop(route_to_replica, listener=app_listener),
             httpx.AsyncClient(base_url=app_url, headers={"Origin": app_url}) as owner,
         ):
             await owner.get("/auth/login", follow_redirects=True)

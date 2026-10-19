@@ -122,9 +122,9 @@ def signing_keys() -> tuple[_SigningKey, _SigningKey, _SigningKey]:
 @pytest.fixture
 async def jwks_server(signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey]):
     state = _JwksState(document=_jwks(signing_keys[0]))
-    sock = bind_free_port()
-    async with serve_app(Starlette(routes=[Route("/jwks", state.serve)]), sock=sock):
-        yield state, f"http://127.0.0.1:{sock.getsockname()[1]}/jwks"
+    listener = bind_free_port()
+    async with serve_app(Starlette(routes=[Route("/jwks", state.serve)]), listener=listener):
+        yield state, f"{listener.origin}/jwks"
 
 
 async def test_resolves_only_issuer_and_subject_from_access_token(
@@ -700,13 +700,16 @@ async def _authorization_and_refresh_tokens(
 
 async def test_authentik_compatible_mock_access_tokens_match_authentik_audience_contract() -> None:
     private_key, public_key = generate_rsa_keypair()
-    sock = bind_free_port()
-    base_url = f"http://127.0.0.1:{sock.getsockname()[1]}"
+    listener = bind_free_port()
+    base_url = listener.origin
     issuer = f"{base_url}/application/o/test/"
     app = build_mock_oidc_app(
         issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
     )
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=base_url, follow_redirects=False) as client:
+    async with (
+        serve_app(app, listener=listener),
+        httpx.AsyncClient(base_url=base_url, follow_redirects=False) as client,
+    ):
         token_responses = await _authorization_and_refresh_tokens(
             client, authorization_path="/application/o/authorize/", token_path="/application/o/token/"
         )
@@ -723,10 +726,10 @@ async def test_authentik_compatible_mock_access_tokens_match_authentik_audience_
 
 async def test_default_mock_access_token_audience_behavior_is_unchanged() -> None:
     private_key, public_key = generate_rsa_keypair()
-    sock = bind_free_port()
-    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}"
+    listener = bind_free_port()
+    issuer = listener.origin
     app = build_mock_oidc_app(issuer_url=issuer, private_key=private_key, public_key=public_key)
-    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=issuer, follow_redirects=False) as client:
+    async with serve_app(app, listener=listener), httpx.AsyncClient(base_url=issuer, follow_redirects=False) as client:
         issued, refreshed = await _authorization_and_refresh_tokens(
             client, authorization_path="/authorize", token_path="/token"
         )

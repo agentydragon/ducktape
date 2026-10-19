@@ -230,9 +230,9 @@ def _make_snapshot(used_percent: float, fetched_at: datetime) -> QuotaSnapshot:
 
 @asynccontextmanager
 async def _serve_api(app: FastAPI) -> AsyncIterator[str]:
-    sock = bind_free_port()
-    async with serve_app_in_loop(app, sock=sock):
-        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
+    listener = bind_free_port()
+    async with serve_app_in_loop(app, listener=listener):
+        yield listener.origin
 
 
 async def _read_view(lines: AsyncIterator[str]) -> AllQuotasView:

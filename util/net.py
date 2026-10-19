@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import socket
-from typing import Literal, overload
+from dataclasses import dataclass
+from typing import Literal, Self, overload
 
 from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
@@ -88,14 +89,35 @@ def pick_free_port(host: str = "127.0.0.1", *, preferred: int | None = None, max
     return preferred
 
 
-def bind_free_port(host: str = "127.0.0.1") -> socket.socket:
-    """A listening socket on an OS-assigned port, to hand to the server that will accept on it.
+@dataclass(frozen=True)
+class Listener:
+    """A listening TCP socket on a port held from the moment it was chosen, so nothing else on a busy host can
+    take the port before a server serves on it. Closing it releases the port; a server serving on it closes it
+    at shutdown."""
 
-    Unlike ``pick_free_port`` the port is held from the moment it's chosen, so nothing else on a busy
-    host can take it before the server binds; read it back with ``sock.getsockname()[1]``.
-    """
+    sock: socket.socket
+
+    @property
+    def port(self) -> int:
+        return int(self.sock.getsockname()[1])
+
+    @property
+    def origin(self) -> str:
+        """``http://<host>:<port>`` as bound: meaningful for a specific host, not a ``0.0.0.0`` wildcard."""
+        host, port = self.sock.getsockname()[:2]
+        return f"http://{host}:{port}"
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.sock.close()
+
+
+def bind_free_port(host: str = "127.0.0.1") -> Listener:
+    """A listening socket on an OS-assigned port on ``host``, to hand to the server that will accept on it."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((host, 0))
     sock.listen()
-    return sock
+    return Listener(sock)

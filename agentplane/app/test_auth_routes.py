@@ -83,8 +83,8 @@ def serve(
         subjects: Collection[str], *, reject_token_exchange: bool = False, id_failure: str | None = None
     ) -> AsyncIterator[str]:
         private_key, public_key = generate_rsa_keypair()
-        idp_sock, app_sock = bind_free_port(), bind_free_port()
-        idp_url, app_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, app_sock))
+        idp_listener, app_listener = bind_free_port(), bind_free_port()
+        idp_url, app_url = idp_listener.origin, app_listener.origin
         extra_claims: dict[str, Any] = {"preferred_username": OPERATOR}
         if id_failure == "issuer":
             extra_claims["iss"] = "https://wrong-issuer.invalid"
@@ -141,7 +141,7 @@ def serve(
             system_status=answering_system_status(),
         )
         # The database pool belongs to this event loop, not serve_app's dedicated thread.
-        async with serve_app(idp, sock=idp_sock), serve_app_in_loop(app, sock=app_sock):
+        async with serve_app(idp, listener=idp_listener), serve_app_in_loop(app, listener=app_listener):
             yield app_url
 
     return serving

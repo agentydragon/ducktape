@@ -194,8 +194,8 @@ def http_group(fake_server: FakeMcpServer) -> Iterator[ActionGroup]:
 @pytest.fixture
 def oauth_settings(tmp_path: Path) -> Iterator[OAuthSettings]:
     private_key, public_key = generate_rsa_keypair()
-    sock = bind_free_port()
-    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}/application/o/test-actions/"
+    listener = bind_free_port()
+    issuer = f"{listener.origin}/application/o/test-actions/"
     secret, signing, encryption = (tmp_path / name for name in ("upstream-secret", "jwt-key", "encryption-key"))
     secret.write_text("test-only-upstream-secret")
     signing.write_text(secrets.token_urlsafe(48))
@@ -203,7 +203,7 @@ def oauth_settings(tmp_path: Path) -> Iterator[OAuthSettings]:
     idp = build_mock_oidc_app(
         issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
     )
-    with serve_app_sync(idp, sock=sock):
+    with serve_app_sync(idp, listener=listener):
         yield OAuthSettings(
             config_url=f"{issuer}.well-known/openid-configuration",
             upstream_client_id="test-actions-client",

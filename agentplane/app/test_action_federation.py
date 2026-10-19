@@ -43,8 +43,8 @@ SPENT = "test-spent-refresh-token"  # a test literal, not a real credential
 @pytest.fixture
 async def dex_session() -> AsyncIterator[OperatorSession]:
     private, public = generate_rsa_keypair()
-    sock = bind_free_port()
-    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}"
+    listener = bind_free_port()
+    issuer = listener.origin
     now = int(time())
     token = sign_jwt(
         private, {"iss": issuer, "aud": "test-dex-client", "sub": "test-dex-user", "iat": now, "exp": now + 60}
@@ -53,7 +53,7 @@ async def dex_session() -> AsyncIterator[OperatorSession]:
     async def keys(_request: Request) -> JSONResponse:
         return JSONResponse(build_jwks(public))
 
-    async with serve_app(Starlette(routes=[Route("/keys", keys)]), sock=sock):
+    async with serve_app(Starlette(routes=[Route("/keys", keys)]), listener=listener):
         yield OperatorSession(
             issuer=issuer,
             subject="test-dex-user",
@@ -124,8 +124,8 @@ async def login_provider() -> AsyncIterator[LoginProvider]:
     """An Authentik-shaped login provider whose token endpoint renews by refresh token, rotating it,
     and a direct federation that hands the renewed login token on as the target token."""
     private, public = generate_rsa_keypair()
-    sock = bind_free_port()
-    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}/application/o/test-login/"
+    listener = bind_free_port()
+    issuer = f"{listener.origin}/application/o/test-login/"
     idp = build_mock_oidc_app(
         issuer_url=issuer, private_key=private, public_key=public, subject=SUBJECT, authentik_compatible=True
     )
@@ -171,7 +171,7 @@ async def login_provider() -> AsyncIterator[LoginProvider]:
             )
 
         idp.routes.insert(0, Route("/application/o/token/", renew, methods=["POST"]))
-        async with serve_app(idp, sock=sock):
+        async with serve_app(idp, listener=listener):
             yield provider
 
 
