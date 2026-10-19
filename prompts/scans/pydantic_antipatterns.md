@@ -6,7 +6,7 @@
 
 ## Pattern 1: Manual Field-by-Field model_dump
 
-### Seen in: adgn/rspcache/models.py
+### Example
 
 ```python
 # BAD: Repetitive manual dumping per field
@@ -31,7 +31,7 @@ Issues:
 
 ## Pattern 2: Manual Field-by-Field model_validate
 
-### Seen in: adgn/rspcache/models.py
+### Example
 
 ```python
 # BAD: Manual validation replicating what Pydantic does

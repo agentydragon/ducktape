@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document surveys Bazel rulesets for JavaScript/TypeScript development, focusing on dependency management, module resolution, workspace support, and linting integration. The repository now has four independent React frontends.
+This document surveys Bazel rulesets for JavaScript/TypeScript development, focusing on dependency management, module resolution, workspace support, and linting integration. The repository now has three independent React frontends.
 
 ---
 
@@ -136,7 +136,6 @@ The ducktape repository currently uses aspect_rules_js for:
 - **Props frontend** (React + Mantine): esbuild, TypeScript checks, Playwright visual sweep
 - **Airlock frontend** (React + Mantine): esbuild, TypeScript checks, browser visual tests
 - **study_casino frontend** (React): browser frontend
-- **rspcache admin_ui** (React): Vite build
 
 Bundling and dev servers work across these projects. Props renders its visual harness with the Python Playwright sweep; the Playwright module-identity issue (#1) remains relevant for projects that run Playwright from JS.
 
@@ -379,7 +378,7 @@ Bazel keeps outputs in a distinct output tree (bazel-out), separate from sources
 
 ## 10. Recommended Setup for Ducktape
 
-Given the current architecture (4 React frontends):
+Given the current architecture (3 React frontends):
 
 ### Primary Stack
 
@@ -398,11 +397,6 @@ Given the current architecture (4 React frontends):
    - Or: use custom `js_test` with explicit entry point configuration
    - Or: implement custom wrapper that ensures module identity consistency
 
-2. **React (rspcache admin_ui)**
-   - Should work as-is with aspect_rules_js
-   - Vite+React works cleanly
-   - No module identity issues expected
-
 ---
 
 ## 11. Further Investigation Areas
@@ -416,7 +410,7 @@ Given the current architecture (4 React frontends):
 
 2. **ESLint Integration**
    - Set up aspect_rules_lint configuration
-   - Test all four current frontends with their TypeScript and ESLint checks
+   - Test all three current frontends with their TypeScript and ESLint checks
    - Configure hoisting for all required plugins
 
 3. **Cross-Frontend Shared Packages**

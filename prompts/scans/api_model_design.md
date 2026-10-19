@@ -6,7 +6,7 @@
 
 ## Pattern 1: Denormalized/Computed Fields in Models
 
-### Seen in: adgn/rspcache/admin_app.py
+### Example
 
 ```python
 # BAD: Storing denormalized relationship data as flat fields
@@ -34,7 +34,7 @@ Issues:
 
 ## Pattern 2: Duplicated Data Across Tables
 
-### Seen in: adgn/rspcache (Response.token_usage vs ResponseSnapshot.token_usage)
+### Example
 
 ```python
 # BAD: Same data stored in two tables with different types
@@ -64,7 +64,7 @@ Issues:
 
 ## Pattern 3: `_json` Suffix on DB Columns
 
-### Seen in: adgn/rspcache (request_body_json, token_usage_json)
+### Example
 
 ```python
 # BAD: Leaking DB implementation details into naming
@@ -90,7 +90,7 @@ Issues:
 
 ## Pattern 4: Flattened API Models vs Nested DB Relationships
 
-### Seen in: adgn/rspcache/admin_app.py (before refactor)
+### Example
 
 ```python
 # BAD: Flattening nested data with renamed fields
@@ -118,7 +118,7 @@ Issues:
 
 ## Pattern 5: Untyped Dicts Instead of Pydantic Models
 
-### Seen in: Throughout rspcache
+### Example
 
 ```python
 # BAD: Using dict[str, Any] when proper types exist

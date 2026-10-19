@@ -26,10 +26,6 @@ const unusedVarsOptions = { argsIgnorePattern: "^_", varsIgnorePattern: "^_" };
 // `finance/augur/frontend`, so the React projects were uncovered. When adding one, check it
 // fires: append an unused `const` to a file in it and confirm the target fails to build.
 //
-// x/rspcache/admin_ui is intentionally NOT listed: its BUILD.bazel has no
-// js_library targets (the Vite build is a WIP stub), so the lint aspect never
-// runs on it. Listing it here would be dead config implying coverage that does
-// not exist — re-add once it's Bazelized (per-file ts_library).
 const reactProjects = [
   "agentplane/app/frontend/**",
   "aiquota/frontend/**",

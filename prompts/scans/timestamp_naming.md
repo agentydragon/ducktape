@@ -156,7 +156,7 @@ created: date  # Why date not datetime?
 ✅ **IDE support** - Autocomplete recognizes common pattern
 ✅ **Onboarding** - New developers expect `_at` convention
 
-## Examples from rspcache
+## Examples
 
 ```python
 # ✗ BAD: Non-standard _ts suffix

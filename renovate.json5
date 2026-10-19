@@ -163,7 +163,6 @@
         "props/frontend/package.json",
         "study_casino/frontend/package.json",
         "util/testing/frontend_visual/package.json",
-        "x/rspcache/admin_ui/package.json",
         "third_party/manifold_mcp_server/package.json",
       ],
       skipArtifactsUpdate: true,

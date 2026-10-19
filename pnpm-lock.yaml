@@ -266,8 +266,6 @@ importers:
         specifier: '>=0.28.0'
         version: 0.28.2
 
-  x/rspcache/admin_ui: {}
-
 packages:
 
   '@alloc/quick-lru@5.3.0':

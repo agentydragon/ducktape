@@ -21,7 +21,6 @@
   - **props/frontend**: React + Mantine SPA, bundled with esbuild
   - **airlock/frontend**: React + Mantine bundled with esbuild
   - **study_casino/frontend**: React
-  - **rspcache/admin_ui**: React + Mantine
 - pnpm workspace with per-project package.json files
 - aspect_rules_js for Bazel integration
 - Vite or esbuild via the Bazel rules, depending on the frontend

@@ -334,7 +334,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
 ✅ **Refactoring** - Rename enum value, all usages update
 ✅ **Exhaustiveness** - Type checker ensures you handle all cases
 
-## Examples from rspcache
+## Examples
 
 ```python
 # ✓ GOOD: Using StrEnum for internal status

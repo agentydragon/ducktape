@@ -7,9 +7,8 @@ app repeats: copy `index.html` and a `public/` tree next to the emitted JS/CSS
 into a single served `dist/` directory.
 
 Why the native `esbuild()` rule: it ships a bazel-sandbox module resolver that
-understands `rules_js`'s symlinked `node_modules` layout. Vite/Rollup follow
-those symlinks out of the sandbox (the "artifact prefix conflict" that blocked
-`x/rspcache/admin_ui`), so esbuild is the hermetic choice under Bazel.
+understands `rules_js`'s symlinked `node_modules` layout. Vite/Rollup can follow
+those symlinks out of the sandbox, so esbuild is the hermetic choice under Bazel.
 
 Two configuration paths:
 
