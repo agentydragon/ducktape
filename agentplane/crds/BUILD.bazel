@@ -1,9 +1,9 @@
-# The Sandbox CRDs derive from Go API types; other Agentplane CRDs remain authored here.
-# The typed cdk8s Python constructs are generated from these first-party manifests,
+# The Sandbox and EgressCredential CRDs derive from Go API types; PolicySet and PolicyBinding are
+# authored here. The typed cdk8s Python constructs are generated from these first-party manifests,
 # so importing directly from them is correct (see
-# devinfra/js/cdk8s_import.bzl's crd arg doc, which only warns against vendoring a copy of
-# an *upstream* CRD). See cluster/docs/cdk8s.md. `bb run :generate_bin` writes the Sandbox CRDs,
-# and the binding CRD's subject block. Flux packages the CRDs from this same source directory for
+# devinfra/js/cdk8s_import.bzl's crd arg doc, which only warns against vendoring a copy of an
+# upstream CRD). See cluster/docs/cdk8s.md. `bb run :generate_bin` writes the Go-derived CRDs and
+# the binding CRD's subject block. Flux packages the CRDs from this same source directory for
 # application, so there is no checked-in manifest copy.
 
 # Each *_crds module below is generated at build time by cdk8s_import, not a pip
@@ -54,7 +54,10 @@ py_library(
 
 py_binary(
     name = "generate_bin",
-    data = ["//agentplane/sandboxes/api:generated_crds"],
+    data = [
+        "//agentplane/egress/api/v1alpha1:generated_crds",
+        "//agentplane/sandboxes/api:generated_crds",
+    ],
     main_module = "agentplane.crds.generate",
     deps = [":generate"],
 )
@@ -64,6 +67,7 @@ py_test(
     srcs = ["test_generate.py"],
     data = [
         ":crds",
+        "//agentplane/egress/api/v1alpha1:generated_crds",
         "//agentplane/sandboxes/api:generated_crds",
     ],
     deps = [
@@ -81,6 +85,7 @@ py_test(
 py_test(
     name = "test_sandbox_admission",
     srcs = ["test_sandbox_admission.py"],
+    data = [":crds"],
     deps = [
         "//:conftest",
         "//agentplane/testing:kubernetes_apiserver",

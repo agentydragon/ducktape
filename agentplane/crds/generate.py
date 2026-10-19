@@ -1,10 +1,9 @@
-"""Derived Sandbox CRDs, written by `bb run //agentplane/crds:generate_bin`.
+"""Go-derived Agentplane CRDs, written by `bb run //agentplane/crds:generate_bin`.
 
-The Sandbox CRDs are generated from the shared Go API types by controller-gen. The other CRDs
-remain authored in `manifests/`. `PolicyBinding.spec.subject`
-is `agentplane.subjects.ServiceAccountRef`, the model every binding reader decides against, so its schema block
-is spliced into the otherwise hand-written CRD from the model's own JSON schema. Flux packages
-the authored CRDs directly from `agentplane/crds/manifests` (`cluster/cdk8s/agentplane_crds.py`).
+Sandbox and EgressCredential CRDs are generated from Go API types by controller-gen. PolicySet and
+PolicyBinding remain authored in `manifests/`; `PolicyBinding.spec.subject` is `ServiceAccountRef`,
+so its schema block is generated from that model. Flux packages the CRDs directly from
+`agentplane/crds/manifests` (`cluster/cdk8s/agentplane_crds.py`).
 """
 
 from __future__ import annotations
@@ -34,7 +33,9 @@ SANDBOX_CRDS = {
     "crd-sandboxtemplates.yaml": "agentplane.allegedly.works_sandboxtemplates.yaml",
     "crd-sandboxes.yaml": "agentplane.allegedly.works_sandboxes.yaml",
 }
-GENERATED_CRDS = "_main/agentplane/sandboxes/api/generated_crds"
+EGRESS_CRDS = {"crd-egresscredentials.yaml": "agentplane.allegedly.works_egresscredentials.yaml"}
+SANDBOX_GENERATED_CRDS = "_main/agentplane/sandboxes/api/generated_crds"
+EGRESS_GENERATED_CRDS = "_main/agentplane/egress/api/v1alpha1/generated_crds"
 # The spec field holding a binding CRD's subject; an array field's items are the subject.
 _SUBJECT_FIELDS = {"crd-policybindings.yaml": "subject"}
 
@@ -101,7 +102,7 @@ def with_subject_schema(crd_text: str, field: str) -> str:
     return "".join(lines[: start.line]) + indent(block, " " * start.column) + "".join(lines[node.end_mark.line :])
 
 
-def _sandbox_crd(generated: str) -> str:
+def _generated_crd(generated: str) -> dict[str, Any]:
     crd = yaml.safe_load(generated)
     annotations = crd["metadata"].get("annotations", {})
     annotations.pop("controller-gen.kubebuilder.io/version", None)
@@ -110,6 +111,11 @@ def _sandbox_crd(generated: str) -> str:
     for version in crd["spec"]["versions"]:
         if version.get("subresources") == {}:
             del version["subresources"]
+    return crd
+
+
+def _sandbox_crd(generated: str) -> str:
+    crd = _generated_crd(generated)
     if crd["spec"]["names"]["kind"] == "SandboxTemplate":
         claim = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"][
             "workspaceVolume"
@@ -125,11 +131,17 @@ def _sandbox_crd(generated: str) -> str:
     return yaml.safe_dump(crd, sort_keys=False)
 
 
-def generated_files(crds: Mapping[str, str], sandbox_crds: Mapping[str, str]) -> Iterator[tuple[Path, str]]:
+def generated_files(
+    crds: Mapping[str, str], sandbox_crds: Mapping[str, str], egress_crds: Mapping[str, str]
+) -> Iterator[tuple[Path, str]]:
     """(repo-relative path, content) of each generated CRD."""
     for crd_file, committed in crds.items():
         if crd_file in SANDBOX_CRDS:
             text = _sandbox_crd(sandbox_crds[crd_file])
+            yield CRDS_DIR / crd_file, text
+        elif crd_file in EGRESS_CRDS:
+            generated = egress_crds[crd_file]
+            text = yaml.safe_dump(_generated_crd(generated), sort_keys=False)
             yield CRDS_DIR / crd_file, text
         elif field := _SUBJECT_FIELDS.get(crd_file):
             text = with_subject_schema(committed, field)
@@ -140,10 +152,12 @@ def generated_files(crds: Mapping[str, str], sandbox_crds: Mapping[str, str]) ->
 
 def main() -> None:
     root = get_build_workspace_directory()
-    generated = get_required_path(GENERATED_CRDS)
-    sandbox_crds = {name: (generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
+    sandbox_generated = get_required_path(SANDBOX_GENERATED_CRDS)
+    egress_generated = get_required_path(EGRESS_GENERATED_CRDS)
+    sandbox_crds = {name: (sandbox_generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
+    egress_crds = {name: (egress_generated / source).read_text() for name, source in EGRESS_CRDS.items()}
     for relative, content in generated_files(
-        {name: (root / CRDS_DIR / name).read_text() for name in CRD_FILES}, sandbox_crds
+        {name: (root / CRDS_DIR / name).read_text() for name in CRD_FILES}, sandbox_crds, egress_crds
     ):
         (root / relative).write_text(content)
 

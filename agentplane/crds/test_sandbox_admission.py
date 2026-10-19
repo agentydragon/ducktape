@@ -155,5 +155,54 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
             )
 
 
+async def test_egress_credential_source_and_target_validation() -> None:
+    async with kubernetes_apiserver() as server:
+        core = k8s_client.CoreV1Api(server.api)
+        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE)))
+        api = k8s_client.CustomObjectsApi(server.api)
+
+        async def create(name: str, source: dict[str, Any], target: dict[str, str], valid: bool) -> None:
+            body = {
+                "apiVersion": f"{GROUP}/{VERSION}",
+                "kind": "EgressCredential",
+                "metadata": {"name": name},
+                "spec": {"description": "API token", "source": source, "targets": [target]},
+            }
+            if not valid:
+                with pytest.raises(ApiException) as rejected:
+                    await api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, "egresscredentials", body)
+                assert rejected.value.status == 422, f"{name}: {rejected.value.status}: {rejected.value.body!r}"
+                return
+            await api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, "egresscredentials", body)
+
+        source_cases = [
+            ({"secretRef": {"name": "api-token", "key": "token"}}, True),
+            ({"authenticatedWorkloadToken": {}}, True),
+            ({"projectedWorkloadToken": {"audience": "kubernetes"}}, True),
+            ({}, False),
+            (
+                {"secretRef": {"name": "api-token", "key": "token"}, "authenticatedWorkloadToken": {}},
+                False,
+            ),
+        ]
+        target_cases = [
+            ({"method": "wholeValue", "header": "Authorization"}, True),
+            ({"method": "schemeToken", "header": "Authorization", "scheme": "Bearer"}, True),
+            ({"method": "basicUsername", "header": "Authorization"}, True),
+            ({"method": "basicPassword", "header": "Authorization"}, True),
+            ({"method": "basicWhole", "header": "Authorization"}, True),
+            ({"method": "jsonField", "field": "password"}, True),
+            ({"method": "wholeValue", "header": "Authorization", "scheme": "Bearer"}, False),
+            ({"method": "schemeToken", "header": "Authorization"}, False),
+            ({"method": "jsonField", "header": "Authorization"}, False),
+            ({"method": "jsonField", "field": "password", "scheme": "Bearer"}, False),
+        ]
+        secret = {"secretRef": {"name": "api-token", "key": "token"}}
+        for index, (source, valid) in enumerate(source_cases):
+            await create(f"source-{index}", source, {"method": "wholeValue", "header": "Authorization"}, valid)
+        for index, (target, valid) in enumerate(target_cases):
+            await create(f"target-{index}", secret, target, valid)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -1,6 +1,5 @@
-"""The committed binding CRDs and kubeconform schemas are what `generate` writes (STYLE.md § Testing,
-generated-output snapshot): regenerate with `bb run //agentplane/crds:generate_bin` and commit the
-result when this fails.
+"""The committed CRDs are what `generate` writes (STYLE.md § Testing, generated-output snapshot):
+regenerate with `bb run //agentplane/crds:generate_bin` and commit the result when this fails.
 """
 
 import re
@@ -12,7 +11,15 @@ import yaml
 from jsonschema import Draft4Validator
 from referencing import Registry
 
-from agentplane.crds.generate import CRD_FILES, CRDS_DIR, GENERATED_CRDS, SANDBOX_CRDS, generated_files
+from agentplane.crds.generate import (
+    CRD_FILES,
+    CRDS_DIR,
+    EGRESS_CRDS,
+    EGRESS_GENERATED_CRDS,
+    SANDBOX_CRDS,
+    SANDBOX_GENERATED_CRDS,
+    generated_files,
+)
 from util.bazel.runfiles import get_required_path
 
 
@@ -21,9 +28,13 @@ def _committed(relative: Path) -> str:
 
 
 def test_committed_files_are_generated() -> None:
-    generated = get_required_path(GENERATED_CRDS)
-    sandbox_crds = {name: (generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
-    for relative, content in generated_files({name: _committed(CRDS_DIR / name) for name in CRD_FILES}, sandbox_crds):
+    sandbox_generated = get_required_path(SANDBOX_GENERATED_CRDS)
+    egress_generated = get_required_path(EGRESS_GENERATED_CRDS)
+    sandbox_crds = {name: (sandbox_generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
+    egress_crds = {name: (egress_generated / source).read_text() for name, source in EGRESS_CRDS.items()}
+    for relative, content in generated_files(
+        {name: _committed(CRDS_DIR / name) for name in CRD_FILES}, sandbox_crds, egress_crds
+    ):
         assert content == _committed(relative), f"{relative} is stale"
 
 
@@ -47,27 +58,36 @@ def test_policy_host_schema_admits_only_supported_wildcards(host: str, valid: bo
         assert bool(re.fullmatch(pattern, host)) is valid
 
 
-@pytest.mark.parametrize(
-    ("target", "valid"),
-    [
-        ({"method": "jsonField", "field": "password"}, True),
-        ({"method": "jsonField"}, False),
-        ({"method": "jsonField", "field": "password", "header": "Authorization"}, False),
-        ({"method": "jsonField", "field": "password", "scheme": "Bearer"}, False),
-        ({"method": "jsonField", "field": ""}, False),
-        ({"method": "schemeToken", "header": "Authorization", "scheme": "Bearer"}, True),
-        ({"method": "schemeToken", "header": "Authorization"}, False),
-        ({"method": "wholeValue", "header": "X-Key"}, True),
-        ({"method": "wholeValue", "field": "password"}, False),
-        ({"method": "wholeValue", "header": "X-Key", "scheme": "Bearer"}, False),
-    ],
-)
-def test_credential_target_schema_is_unambiguous(target: dict[str, str], valid: bool) -> None:
+def test_credential_schema_preserves_source_and_target_constraints() -> None:
     crd = yaml.safe_load(_committed(CRDS_DIR / "crd-egresscredentials.yaml"))
     for version in crd["spec"]["versions"]:
-        schema = version["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"]["targets"]["items"]
-        # Draft 4 includes Kubernetes' structural oneOf/not, but not if/then/else.
-        assert Draft4Validator(schema, registry=Registry()).is_valid(target) is valid
+        spec = version["schema"]["openAPIV3Schema"]["properties"]["spec"]
+        assert set(spec["required"]) == {"description", "source", "targets"}
+        assert spec["properties"]["description"]["minLength"] == 1
+        assert spec["properties"]["targets"]["minItems"] == 1
+
+        source = spec["properties"]["source"]
+        assert source["properties"]["authenticatedWorkloadToken"]["maxProperties"] == 0
+        validator = Draft4Validator(source, registry=Registry())
+        assert validator.is_valid({"secretRef": {"name": "token", "key": "value"}})
+        assert validator.is_valid({"authenticatedWorkloadToken": {}})
+        assert validator.is_valid({"projectedWorkloadToken": {"audience": "api"}})
+        assert not validator.is_valid({})
+        assert not validator.is_valid(
+            {"secretRef": {"name": "token", "key": "value"}, "authenticatedWorkloadToken": {}}
+        )
+
+        target = spec["properties"]["targets"]["items"]
+        assert target["properties"]["method"]["enum"] == [
+            "wholeValue",
+            "schemeToken",
+            "basicUsername",
+            "basicPassword",
+            "basicWhole",
+            "jsonField",
+        ]
+        assert target["properties"]["field"]["maxLength"] == 256
+        assert target["x-kubernetes-validations"]
 
 
 if __name__ == "__main__":
