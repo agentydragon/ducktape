@@ -2,7 +2,8 @@
 
 A real client goes through the binary to a scripted upstream. The proxy intercepts with a throwaway
 CA the client trusts, verifies the upstream's certificate against a second throwaway CA, takes its
-identity and policy from the fake API server, and appends decisions to PostgreSQL. Every assertion
+identity and policy from a real envtest API server, and appends decisions to PostgreSQL.
+The replica-divergence fault injection uses scripted API servers. Every assertion
 is on what the client and the upstream actually saw.
 """
 
@@ -14,15 +15,18 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from ipaddress import ip_network
 from pathlib import Path
+from typing import cast
 
 import aiohttp
 import grpc
 import pytest
 import pytest_bazel
 from aiohttp import web
+from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
+from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.conftest import AUDIENCE, GITHUB_POLICY, SANDBOX_A, SUBJECT_A, TOKEN_A, UPSTREAM_HOST, seed
 from agentplane.egress.resources import TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
@@ -42,14 +46,14 @@ from agentplane.testing.fake_apiserver import (
     CREDENTIALS_PLURAL,
     NAMESPACE,
     SANDBOX_NAMESPACE,
-    SECRETS_PLURAL,
-    FakeApiServer,
     credential,
     egress_policy_set,
     fake_apiserver,
     policy_binding,
     secret,
 )
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kubernetes_apiserver
+from util.kubernetes import CustomObjectsClient
 
 
 @dataclass
@@ -93,23 +97,20 @@ async def recording_upstream(cert_path: Path, key_path: Path) -> AsyncIterator[R
 
 
 def replica_settings(
-    tmp_path: Path,
-    name: str,
     *,
-    api_port: int,
+    api_config: Path,
     ca: tuple[Path, Path],
     database_url: str,
     port_factory: Callable[[], int],
     upstream_ca_file: Path | None = None,
 ) -> Settings:
-    """A replica process watching the fake API server on `api_port`, on ports of its own."""
     cert, key = ca
     return Settings(
         _cli_parse_args=False,
         rules_namespace=NAMESPACE,
         allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
         credentials_namespace=CREDENTIALS_NAMESPACE,
-        kubeconfig=kubeconfig(tmp_path / f"kube-{name}.yaml", api_port),
+        kubeconfig=api_config,
         ca_cert=cert,
         ca_key=key,
         listen_host="127.0.0.1",
@@ -132,35 +133,55 @@ _CONTRACT_CREDENTIAL = "transport-contract"
 _CONTRACT_PATH = "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream"
 
 
-def seed_transport_contract(fake: FakeApiServer) -> None:
-    """Sandbox A may reach the upstream's contract paths, substituting a BuildBuddy-style header."""
-    fake.put(SECRETS_PLURAL, secret(_CONTRACT_CREDENTIAL, {"key": "contract-secret"}))
-    fake.put(
-        CREDENTIALS_PLURAL,
-        credential(
-            _CONTRACT_CREDENTIAL,
-            secret_name=_CONTRACT_CREDENTIAL,
-            key="key",
-            targets=[{"header": "x-buildbuddy-api-key", "method": TargetMethod.WHOLE_VALUE}],
+async def seed_transport_contract(server: KubernetesApiServer) -> str:
+    core = k8s_client.CoreV1Api(server.api)
+    for namespace in (NAMESPACE, SANDBOX_NAMESPACE, CREDENTIALS_NAMESPACE):
+        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=namespace)))
+    await core.create_namespaced_service_account(
+        SANDBOX_NAMESPACE, k8s_client.V1ServiceAccount(metadata=k8s_client.V1ObjectMeta(name=SANDBOX_A))
+    )
+    await core.create_namespaced_pod(
+        SANDBOX_NAMESPACE,
+        k8s_client.V1Pod(
+            metadata=k8s_client.V1ObjectMeta(name=SANDBOX_A),
+            spec=k8s_client.V1PodSpec(
+                service_account_name=SANDBOX_A,
+                containers=[k8s_client.V1Container(name="workload", image="registry.test/unused")],
+            ),
         ),
     )
-    fake.put(
-        POLICY_SETS_PLURAL,
-        egress_policy_set(
-            _CONTRACT_CREDENTIAL,
-            [
-                {
-                    "hosts": [UPSTREAM_HOST],
-                    "paths": ["/contract", "/contract-sse", "/contract-ws", _CONTRACT_PATH],
-                    "credentialRef": {"name": _CONTRACT_CREDENTIAL},
-                }
-            ],
+    await core.create_namespaced_secret(CREDENTIALS_NAMESPACE, secret(_CONTRACT_CREDENTIAL, {"key": "contract-secret"}))
+    custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(server.api))
+    for plural, body in (
+        (
+            CREDENTIALS_PLURAL,
+            credential(
+                _CONTRACT_CREDENTIAL,
+                secret_name=_CONTRACT_CREDENTIAL,
+                key="key",
+                targets=[{"header": "x-buildbuddy-api-key", "method": TargetMethod.WHOLE_VALUE}],
+            ),
         ),
-    )
-    fake.put(
-        POLICY_BINDINGS_PLURAL,
-        policy_binding(BINDING, subject=SUBJECT_A.model_dump(), policy_sets=[GITHUB_POLICY, _CONTRACT_CREDENTIAL]),
-    )
+        (
+            POLICY_SETS_PLURAL,
+            egress_policy_set(
+                _CONTRACT_CREDENTIAL,
+                [
+                    {
+                        "hosts": [UPSTREAM_HOST],
+                        "paths": ["/contract", "/contract-sse", "/contract-ws", _CONTRACT_PATH],
+                        "credentialRef": {"name": _CONTRACT_CREDENTIAL},
+                    }
+                ],
+            ),
+        ),
+        (
+            POLICY_BINDINGS_PLURAL,
+            policy_binding(BINDING, subject=SUBJECT_A.model_dump(), policy_sets=[_CONTRACT_CREDENTIAL]),
+        ),
+    ):
+        await custom.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body)
+    return await server.pod_token(SANDBOX_NAMESPACE, SANDBOX_A, [AUDIENCE])
 
 
 @dataclass(frozen=True)
@@ -168,6 +189,8 @@ class Egress:
     """The running proxy and the scripted world around it."""
 
     proxy_port: int
+    token: str
+    api: KubernetesApiServer
     interception_ca: CertificateAuthority
     upstream_ca: CertificateAuthority
     upstream: RecordingUpstream
@@ -184,15 +207,12 @@ async def egress(
     interception_ca = make_ca("agentplane-egress-test-interception")
     upstream_ca = make_ca("agentplane-egress-test-upstream")
     async with (
-        fake_apiserver() as api,
+        kubernetes_apiserver() as api,
         recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
     ):
-        seed(api)
-        seed_transport_contract(api)
+        token = await seed_transport_contract(api)
         settings = replica_settings(
-            tmp_path,
-            "proxy",
-            api_port=api.port,
+            api_config=api.kubeconfig,
             ca=write_ca(interception_ca, tmp_path, "interception"),
             database_url=history_db_url,
             port_factory=unused_tcp_port_factory,
@@ -200,6 +220,8 @@ async def egress(
         )
         async with go_replica(settings, directory=tmp_path) as running:
             yield Egress(
+                token=token,
+                api=api,
                 proxy_port=running.proxy_port,
                 interception_ca=interception_ca,
                 upstream_ca=upstream_ca,
@@ -262,9 +284,7 @@ async def test_health_reports_ready_only_once_the_tunnel_accepts(
     async with fake_apiserver() as api:
         seed(api)
         settings = replica_settings(
-            tmp_path,
-            "readiness",
-            api_port=api.port,
+            api_config=kubeconfig(tmp_path / "fake-api.yaml", api.port),
             ca=ca,
             database_url=history_db_url,
             port_factory=unused_tcp_port_factory,
@@ -289,9 +309,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
         seed(second_api)
         settings = [
             replica_settings(
-                tmp_path,
-                f"replica-{i}",
-                api_port=fake.port,
+                api_config=kubeconfig(tmp_path / f"fake-api-{i}.yaml", fake.port),
                 ca=(cert, key),
                 database_url=history_db_url,
                 port_factory=unused_tcp_port_factory,
@@ -360,9 +378,7 @@ async def test_go_proxy_finishes_an_admitted_request_after_sigterm(
     ):
         seed(api)
         settings = replica_settings(
-            tmp_path,
-            "sigterm",
-            api_port=api.port,
+            api_config=kubeconfig(tmp_path / "fake-api.yaml", api.port),
             ca=(cert, key),
             database_url=history_db_url,
             port_factory=unused_tcp_port_factory,
@@ -404,7 +420,7 @@ async def test_header_substitution(egress: Egress) -> None:
         client.get(
             egress.url("/contract"),
             proxy=f"http://127.0.0.1:{egress.proxy_port}",
-            proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+            proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
             ssl=client_tls_context(egress.interception_ca),
             headers={"x-buildbuddy-api-key": placeholder_of(_CONTRACT_CREDENTIAL)},
         ) as response,
@@ -413,6 +429,31 @@ async def test_header_substitution(egress: Egress) -> None:
         await response.read()
     assert one(egress.upstream.requests)[2]["x-buildbuddy-api-key"] == "contract-secret"
     assert "proxy-authorization" not in one(egress.upstream.requests)[2]
+
+
+async def test_real_binding_revocation_denies_the_next_connection(egress: Egress) -> None:
+    custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api))
+    async with aiohttp.ClientSession() as client:
+
+        async def request_status() -> int:
+            async with client.get(
+                egress.url("/contract"),
+                proxy=f"http://127.0.0.1:{egress.proxy_port}",
+                proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
+                ssl=client_tls_context(egress.interception_ca),
+                headers={"x-buildbuddy-api-key": placeholder_of(_CONTRACT_CREDENTIAL)},
+            ) as response:
+                await response.read()
+                return response.status
+
+        assert await request_status() == 200
+        await custom.delete_namespaced_custom_object(GROUP, VERSION, NAMESPACE, POLICY_BINDINGS_PLURAL, BINDING)
+        async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
+            with attempt:
+                assert await request_status() == 403
+        before = len(egress.upstream.requests)
+        assert await request_status() == 403
+        assert len(egress.upstream.requests) == before
 
 
 async def test_incremental_sse_and_websocket(egress: Egress) -> None:
@@ -452,7 +493,7 @@ async def test_incremental_sse_and_websocket(egress: Egress) -> None:
             async with client.get(
                 f"https://{UPSTREAM_HOST}:{port}/contract-sse",
                 proxy=f"http://127.0.0.1:{egress.proxy_port}",
-                proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
                 ssl=client_tls_context(egress.interception_ca),
             ) as response:
                 assert response.status == 200
@@ -465,7 +506,7 @@ async def test_incremental_sse_and_websocket(egress: Egress) -> None:
             async with client.ws_connect(
                 f"https://{UPSTREAM_HOST}:{port}/contract-ws",
                 proxy=f"http://127.0.0.1:{egress.proxy_port}",
-                proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
                 ssl=client_tls_context(egress.interception_ca),
             ) as websocket_client:
                 await websocket_client.send_str("first")
@@ -498,7 +539,7 @@ async def test_denial_has_zero_upstream_tcp_accepts(egress: Egress) -> None:
             client.get(
                 f"https://{UPSTREAM_HOST}:{port}/not-admitted",
                 proxy=f"http://127.0.0.1:{egress.proxy_port}",
-                proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
                 ssl=client_tls_context(egress.interception_ca),
             ) as response,
         ):
@@ -518,7 +559,7 @@ async def test_denial_has_zero_upstream_tcp_accepts(egress: Egress) -> None:
 async def test_interactive_grpc_before_eof(egress: Egress, monkeypatch: pytest.MonkeyPatch, tls: bool) -> None:
     keypair = read_keypair(*issue_leaf(egress.upstream_ca, UPSTREAM_HOST, egress.tmp_path)) if tls else None
     token_file = egress.tmp_path / "contract-hop-token"
-    token_file.write_text(TOKEN_A)
+    token_file.write_text(egress.token)
     finished = asyncio.Event()
     async with (
         recording_grpc_upstream(keypair, finished=finished) as (port, requests),
