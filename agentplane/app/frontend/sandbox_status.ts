@@ -91,6 +91,14 @@ export function sandboxSuspended(sandbox: SandboxView | null | undefined): boole
   return sandbox?.phase === "Suspended" && sandbox.operating_mode === "Suspended";
 }
 
+export function sandboxStarting(sandbox: SandboxView): boolean {
+  return (
+    sandbox.operating_mode === "Running" &&
+    ["Creating", "Running"].includes(sandbox.phase) &&
+    sandboxSummary(sandbox).kind === "pending"
+  );
+}
+
 /** Why a Sandbox is suspended, as the views word it; null while it runs and until the controller reports. */
 export function suspensionReason(sandbox: SandboxView): "idle" | "on request" | null {
   switch (sandbox.suspended_by) {

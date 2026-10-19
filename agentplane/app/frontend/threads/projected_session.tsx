@@ -58,7 +58,7 @@ import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
 import { DISCLOSURE_STICKY_Z_INDEX, DisclosureCard } from "../disclosure";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
-import { sandboxReady, sandboxSummary, suspensionReason } from "../sandbox_status";
+import { sandboxReady, sandboxStarting, sandboxSummary, sandboxSuspended, suspensionReason } from "../sandbox_status";
 import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
@@ -1371,14 +1371,6 @@ function SyncedThread({
   );
 }
 
-function sandboxStarting(sandbox: SandboxView): boolean {
-  return (
-    sandbox.operating_mode === "Running" &&
-    ["Creating", "Running"].includes(sandbox.phase) &&
-    sandboxSummary(sandbox).kind === "pending"
-  );
-}
-
 /** Why the thread's sandbox cannot take commands, as the inventory last reported it; the composer's
  * dot says only "Sandbox unavailable". An absence reads as a deletion only from a current inventory:
  * a stale or dropped stream may not have seen the sandbox since. */
@@ -1389,7 +1381,7 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
       : "Sandbox absent from last inventory snapshot. Current availability unknown; controls are disabled.";
   }
   if (sandboxReady(sandbox)) return null;
-  if (sandbox.phase === "Suspended" && sandbox.operating_mode === "Suspended" && inventoryFresh) {
+  if (sandboxSuspended(sandbox) && inventoryFresh) {
     const reason = suspensionReason(sandbox);
     const suspended = reason === null ? "Sandbox is suspended." : `Sandbox is suspended (${reason}).`;
     return sandbox.wake_on_send
@@ -1425,7 +1417,7 @@ export function ProjectedSession({
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
   const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
-  const suspended = sandbox?.phase === "Suspended" && sandbox.operating_mode === "Suspended";
+  const suspended = sandboxSuspended(sandbox);
   const canQueueCommands = inventoryFresh && sandbox !== undefined && (suspended || sandboxStarting(sandbox));
   useEffect(() => {
     let current = true;
