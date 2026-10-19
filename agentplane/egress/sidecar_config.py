@@ -3,10 +3,9 @@
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.egress.platform_routes import PlatformRoute
-from util.yaml_file_settings import YamlFileSettings
 
 CONTAINER_NAME = "egress-sidecar"
 REFUSED_HEADER = "x-agentplane-egress-sidecar"
@@ -16,10 +15,11 @@ READINESS_HOST = "0.0.0.0"
 READINESS_PORT = 3129
 
 
-class Settings(YamlFileSettings):
+class Settings(BaseModel):
     """The Go runtime reads the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE` and nothing
     else: no per-setting env variables and no flags."""
 
+    model_config = ConfigDict(extra="forbid")
     config_file_env: ClassVar[str] = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 
     proxy_host: str = Field(description="Host of the central egress proxy every request is relayed to.")

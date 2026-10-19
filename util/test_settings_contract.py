@@ -17,7 +17,7 @@ class _Server(BaseModel):
     client_id: str
 
 
-class _Settings(BaseSettings):
+class _Settings(BaseModel):
     model_config = SettingsConfigDict(env_prefix="CONTRACT_TEST_", env_nested_delimiter="__", cli_kebab_case=True)
 
     listen_port: int = 8080

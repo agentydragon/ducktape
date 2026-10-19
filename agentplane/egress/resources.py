@@ -1,19 +1,15 @@
-"""The resources the proxy reads off the API server, parsed once at the boundary.
+"""Python read models for the app's egress policy and credential projections.
 
-`EgressCredential` is Agentplane's own kind (group `agentplane.allegedly.works`, `v1alpha1`; the
-CRD lives in `agentplane/crds`), and a `Rule` is the shape of a `PolicySet`'s `egress` rules
-(`agentplane/policy_sets.py` reads those sets and their bindings). `Secret` holds the credentials the rules
-substitute, in the credentials namespace. Only the fields the proxy reads are modelled; everything
-else on the wire is ignored.
+Go API types own CRD generation, and the Go proxy owns parsing and enforcement.
+These models describe the fields the Python app presents; cdk8s also uses the
+credential-name-to-placeholder convention defined here.
 """
 
 from __future__ import annotations
 
-import base64
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
@@ -35,17 +31,10 @@ class _Wire(BaseModel):
 
 class ObjectMeta(_Wire):
     name: str
-    uid: str | None = Field(default=None, description="Set by the API server; absent on objects built by hand.")
-    generation: int | None = Field(default=None, description="Bumped by the API server on every spec change.")
-    labels: dict[str, str] = Field(
-        default_factory=dict,
-        description="Read by the app to tell a Flux-applied binding, which git owns, from a runtime "
-        "grant it may revoke; the proxy decides nothing from them.",
-    )
 
 
 class SecretKeyRef(_Wire):
-    name: str = Field(description="Secret in the proxy's namespace.")
+    name: str = Field(description="Secret in the egress credentials namespace.")
     key: str = Field(description="Key of that Secret holding the credential.")
 
 
@@ -230,20 +219,3 @@ class Rule(_Wire):
         if "*" in self.hosts and (self.cluster_internal or self.credential_ref is not None):
             raise ValueError("A blanket host rule cannot set clusterInternal or credentialRef")
         return self
-
-
-class Secret(BaseModel):
-    """One Secret's decoded data; never logged, never serialized."""
-
-    model_config = ConfigDict(frozen=True)
-
-    name: str
-    data: dict[str, str] = Field(repr=False)
-
-    @classmethod
-    def from_v1(cls, secret: k8s_client.V1Secret) -> Secret:
-        # `data` is base64 on the wire and the client leaves it so; `stringData` is write-only.
-        return cls(
-            name=secret.metadata.name,
-            data={key: base64.b64decode(value).decode() for key, value in (secret.data or {}).items()},
-        )

@@ -1,6 +1,7 @@
-"""Deployment schema for the Go egress proxy's flags, environment and YAML file.
+"""Authoring model for the Go egress proxy's deployment configuration.
 
-The black-box tests serialize this model into the Go binary's strict settings loader.
+cdk8s and black-box fixtures serialize these values; the Go process owns loading
+flags, environment variables and its YAML file.
 """
 
 from __future__ import annotations
@@ -9,18 +10,17 @@ from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.log_levels import LogLevels
-from util.yaml_file_settings import YamlFileSettings
 
 
-class Settings(YamlFileSettings):
-    """Each field is a `--flag` and an `AGENTPLANE_EGRESS_*` environment variable."""
+class Settings(BaseModel):
+    """Typed values and environment naming metadata, without runtime settings loading."""
 
     config_file_env: ClassVar[str] = "AGENTPLANE_EGRESS_CONFIG_FILE"
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_EGRESS_", cli_parse_args=True, cli_kebab_case=True)
+    model_config = SettingsConfigDict(extra="forbid", env_prefix="AGENTPLANE_EGRESS_")
 
     rules_namespace: str = Field(
         description="The one namespace holding the PolicySet, PolicyBinding and EgressCredential objects this "

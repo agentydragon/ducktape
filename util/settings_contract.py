@@ -3,7 +3,8 @@
 `env_nested_delimiter`; a `validation_alias` is the whole name, without the prefix) and a
 key of the YAML settings file. Rendering a Deployment's flags, env var names and settings
 file through the model fails at synth on a renamed or dropped field, instead of as a
-CrashLoopBackOff on the cluster.
+CrashLoopBackOff on the cluster. Models for Go configuration can carry this authoring
+metadata without loading any settings in Python.
 """
 
 from __future__ import annotations
@@ -11,12 +12,12 @@ from __future__ import annotations
 import copy
 import types
 from collections.abc import Iterable, Sequence
-from typing import Annotated, Any, TypeAliasType, Union, get_args, get_origin
+from typing import Annotated, Any, TypeAliasType, Union, cast, get_args, get_origin
 
 from more_itertools import one
 from pydantic import BaseModel, Field, TypeAdapter
 from pydantic.fields import FieldInfo
-from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
 
 # Stands in for a leaf another source supplies when the whole file validates as its model.
 # At least 32 characters, so externally supplied signing secrets pass their minimum-length check.
@@ -73,7 +74,7 @@ def _field_annotation(model: Any, name: str) -> Any:
     return first.annotation
 
 
-def env_name(settings: type[BaseSettings], field: str, *path: str) -> str:
+def env_name(settings: type[BaseModel], field: str, *path: str) -> str:
     """The environment variable for `field`, or for a field nested under it: each `path`
     segment is a field of the nested model, except that a dict-valued field's key is taken
     verbatim (`env_name(Settings, "mcp_servers", "github", "client_id")`)."""
@@ -84,7 +85,7 @@ def env_name(settings: type[BaseSettings], field: str, *path: str) -> str:
             annotation = get_args(annotation)[1]
         else:
             annotation = _field_annotation(annotation, segment)
-    config = settings.model_config
+    config = cast(SettingsConfigDict, settings.model_config)
     delimiter = config.get("env_nested_delimiter")
     if path and not delimiter:
         raise ValueError(f"{settings.__name__} nests no settings in environment variables")
@@ -98,7 +99,7 @@ def env_name(settings: type[BaseSettings], field: str, *path: str) -> str:
     return (delimiter or "").join([head, *path]).upper()
 
 
-def cli_args(settings: type[BaseSettings], **values: object) -> list[str]:
+def cli_args(settings: type[BaseModel], **values: object) -> list[str]:
     """`--kebab-case=value` flags, each value checked against the field it sets."""
     if not settings.model_config.get("cli_kebab_case"):
         raise ValueError(f"{settings.__name__} does not take kebab-case flags")
@@ -107,7 +108,7 @@ def cli_args(settings: type[BaseSettings], **values: object) -> list[str]:
     return [f"--{name.replace('_', '-')}={value}" for name, value in values.items()]
 
 
-def checked_value[T](settings: type[BaseSettings], field: str, value: T) -> T:
+def checked_value[T](settings: type[BaseModel], field: str, value: T) -> T:
     """`value` once it validates as `field`'s whole type -- for a field a Deployment supplies
     serialized in one piece (a JSON ConfigMap key, an env var)."""
     TypeAdapter(_field_annotation(settings, field)).validate_python(value)

@@ -39,10 +39,7 @@ py_library(
         "//cluster/cdk8s/public_coder:__pkg__",
         "//cluster/validation:__pkg__",
     ],
-    deps = [
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -124,7 +121,6 @@ py_library(
     ],
     deps = [
         ":platform_routes",
-        "//util:yaml_file_settings",
         "@pypi//pydantic",
     ],
 )
@@ -154,7 +150,6 @@ py_library(
     ],
     deps = [
         "//agentplane:log_levels",
-        "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],

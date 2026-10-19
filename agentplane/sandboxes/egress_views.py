@@ -65,11 +65,6 @@ class SandboxOwnedBindingError(InventoryError):
         self.name = name
 
 
-# The rule and credential kinds are `agentplane.egress.resources`, shared with the proxy that enforces them.
-# The app modelled them separately until node H moved a rule's credential to `credentialRef` and the
-# same edit had to be made twice; a second copy of a CRD's shape is a second thing to forget.
-
-
 class _Wire(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
