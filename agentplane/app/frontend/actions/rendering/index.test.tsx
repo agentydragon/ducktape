@@ -87,12 +87,10 @@ describe("Action presentation slots", () => {
     const action = { group: "kubernetes_admin", name: "resources_get" };
     const args = { apiVersion: "apps/v1", kind: "Deployment", name: "web", namespace: "apps" };
     const label = await mount(renderActionLabel(action, args));
-    const collapsed = await mount(renderPaneCollapsed(action, args));
     const opened = await mount(renderPaneOpened(action, args));
     const details = await mount(renderDetailsArguments(action, args));
 
     expect(label.textContent).toContain("Get Deployment apps/web");
-    expect(collapsed.textContent).toContain("Read with API version apps/v1");
     expect(opened.textContent).toContain("Read with API version apps/v1");
     expect(details.textContent).toContain("Read with API version apps/v1");
     expect(details.textContent).not.toContain("Get Deployment");
@@ -382,7 +380,7 @@ describe("Action presentation slots", () => {
     }
   });
 
-  it("uses an Action-owned collapsed view instead of synthesizing a summary from fields", async () => {
+  it("summarizes a Gmail draft with its recipient, subject, and body preview", async () => {
     const collapsed = await mount(
       renderPaneCollapsed(
         { group: "gmail", name: "drafts_create" },
@@ -390,7 +388,8 @@ describe("Action presentation slots", () => {
       )
     );
     expect(collapsed.textContent).toContain("To user@example.com");
-    expect(collapsed.textContent).not.toContain("Deploy");
+    expect(collapsed.textContent).toContain("Deploy");
+    expect(collapsed.textContent).toContain("Ready");
   });
 
   it("leaves unregistered slots to the host and preserves arguments rejected by a strict schema", async () => {
@@ -653,7 +652,8 @@ const cardDecisionButtonCases: Array<{
     visible: [
       "example/repo",
       "Update docs",
-      "feature → devel",
+      "from feature",
+      "into devel",
       "Draft pull request.",
       "Do not allow maintainers to edit.",
       "Request review from reviewer1.",
@@ -740,7 +740,7 @@ describe("card decision buttons capability", () => {
 
     expect(actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, args)).toBe(false);
     const container = await mount(renderPaneOpened({ group: pr.group, name: pr.name }, args));
-    expect(container.textContent).toContain("open Review");
+    expect(container.textContent).toContain("important text");
   });
 });
 

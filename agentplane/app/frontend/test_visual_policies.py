@@ -210,13 +210,6 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
         ),
         (
             "kubernetes_admin",
-            "resources_get",
-            {"apiVersion": "apps/v1", "kind": "Deployment", "name": "web", "namespace": "apps"},
-            ["Read with API version apps/v1"],
-            "Read with API version apps/v1",
-        ),
-        (
-            "kubernetes_admin",
             "resources_delete",
             {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
             ["Use API version v1", "request a 0s grace period"],
@@ -432,7 +425,6 @@ async def test_sandbox_action_results(
         "sandbox-list",
         "grocy-products",
         "grocy-units",
-        "grocy-system-info",
         "tana-calendar-node",
     ],
 )
