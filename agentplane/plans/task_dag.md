@@ -1915,17 +1915,13 @@ gets its facade with its Go port, from the same proto. Design, alternatives and 
 ```mermaid
 flowchart LR
     DISPATCHER_READS_FACADE[In flight: Dispatcher reads as a generated browser API]
-    EGRESS_ADMIN_ACTIVATION[In flight: activate egress admin gRPC]
-    EGRESS_ADMIN_APP_SWITCH[In flight: the app reads egress admin over gRPC]
-    EGRESS_ADMIN_HTTP_TEARDOWN[Blocked: remove the hand-written egress admin HTTP]
+    EGRESS_ADMIN_HTTP_TEARDOWN[Caller audit: remove the hand-written egress admin HTTP]
     HISTORY_SERVICE_GO_PORT[Candidate: port the History Service to Go]
     HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
     NOTIFICATION_SERVICE_GO_PORT[Blocked: port the Notification Service to Go]
     ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
-    EGRESS_ADMIN_ACTIVATION --> EGRESS_ADMIN_APP_SWITCH
-    EGRESS_ADMIN_APP_SWITCH --> EGRESS_ADMIN_HTTP_TEARDOWN
     HISTORY_SERVICE_GO_PORT --> HISTORY_READS_FACADE
     DISPATCHER_READS_FACADE --> HISTORY_READS_FACADE
     NOTIFICATION_SERVICE_SPLIT --> NOTIFICATION_SERVICE_GO_PORT
@@ -1946,31 +1942,13 @@ that set the app's URL once its image is pinned, then the browser's `fetch` stre
 every other facade reuses. Exit evidence: missing, invalid and valid bearers behave as over gRPC; the
 generated TypeScript types are chosen; one visual scene runs on the streaming stub.
 
-### `EGRESS_ADMIN_ACTIVATION` — activate egress admin gRPC
-
-The decisions, rules and health gRPC implementations landed in
-[#11115](https://github.com/agentydragon/ducktape/pull/11115) and
-[#11117](https://github.com/agentydragon/ducktape/pull/11117). Remaining: pin an image containing
-both, enable the app-only admin audience/caller in testing and staging, and mount the app's
-projected audience token. This uses the existing listeners and network policies. Confirm readiness
-and successful caller authorization after Flux rolls the configuration.
-
-### `EGRESS_ADMIN_APP_SWITCH` — the app reads egress admin over gRPC
-
-**In flight ([#11123](https://github.com/agentydragon/ducktape/pull/11123)).** Replace the app's HTTP decisions client and SSE
-change watcher with subject-filtered gRPC snapshots, and use standard gRPC health for its egress
-probe. Python proto targets and test callers move with the client. Merge after
-`EGRESS_ADMIN_ACTIVATION`; once the app image rolls, verify decisions streaming, backend outage
-reporting, and the system-status probe in testing and staging. The HTTP compatibility handlers
-remain for the separate teardown below.
-
 ### `EGRESS_ADMIN_HTTP_TEARDOWN` — remove the hand-written egress admin HTTP
 
-**Blocked on `EGRESS_ADMIN_APP_SWITCH` being rolled out.** Delete the `/decisions`, `/decisions/changes`,
-`/healthz`, `/livez`, `/v1/rules` and OpenAPI handlers, after every caller's image is pinned
-(removals follow their callers). Inventory callers first, including the rules route the
+Inventory remaining HTTP callers first, including the rules route the
 [agent CLI](agent_cli.md) plan's egress commands target: where an HTTP caller remains, the generated facade
 from `DISPATCHER_READS_FACADE` replaces the handler instead of leaving two interfaces.
+Then delete the `/decisions`, `/decisions/changes`, `/healthz`, `/livez`, `/v1/rules` and OpenAPI
+handlers after every caller's replacement image is pinned (removals follow their callers).
 
 ### `HISTORY_SERVICE_GO_PORT` — port the History Service to Go
 
