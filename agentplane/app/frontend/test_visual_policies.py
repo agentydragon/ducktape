@@ -829,7 +829,7 @@ async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture, c
 @pytest.mark.parametrize("kind", ["text", "json", "email", "manifest"])
 async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, capture_name: str, kind: str) -> None:
     text = "\n".join(f"Long action content line {index + 1}" for index in range(48))
-    group, name = "github", "long_text"
+    group, name = "example_docs", "long_text"
     arguments: dict[str, object] = {"lines": text.splitlines()}
     result: object = {"content": [{"type": "text", "text": text}]}
     if kind == "json":
@@ -849,6 +849,10 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
     await app.mount_app("/actions")
     page = view.page
     await expect(page.get_by_text("Long action text", exact=True)).to_be_visible()
+    if kind == "text":
+        await expect(page.get_by_role("button", name="Show all 48 lines", exact=True)).to_be_visible()
+    elif kind == "json":
+        await expect(page.get_by_text("Structured content", exact=True)).to_be_visible()
     blocks = page.locator('.agentplane-clamped-block:has([data-clamped="true"])')
     block = blocks.last if kind in {"text", "json"} else blocks.first
     await expect(block).to_be_visible()
