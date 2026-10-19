@@ -14,8 +14,8 @@ const (
 )
 
 type modelConfig struct {
-	Model                    string `yaml:"model"`
-	TotalContextBudgetTokens int    `yaml:"total_context_budget_tokens"`
+	Model                    string `json:"model" yaml:"model"`
+	TotalContextBudgetTokens int    `json:"total_context_budget_tokens" yaml:"total_context_budget_tokens"`
 }
 
 type config struct {
