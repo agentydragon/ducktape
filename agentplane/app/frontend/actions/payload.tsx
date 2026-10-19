@@ -1,14 +1,29 @@
+import { Stack, Text } from "@mantine/core";
 import { type JSX, useMemo } from "react";
 
 import { ClampedBlock, lineCount } from "../clamped_block";
 import { CodeBlock, type Language } from "../code_block";
 import { OUTPUT_MAX_HEIGHT_REM } from "../command_view";
 
-export function ActionText({ text, language }: { text: string; language?: Language }): JSX.Element {
+export function ActionText({
+  text,
+  language,
+  heading,
+}: {
+  text: string;
+  language?: Language;
+  heading?: string;
+}): JSX.Element {
+  const label = heading ?? "Action text";
   return (
-    <ClampedBlock maxHeightRem={OUTPUT_MAX_HEIGHT_REM} lines={lineCount(text)} label="Action text">
-      <CodeBlock text={text} language={language} />
-    </ClampedBlock>
+    <Stack gap={4}>
+      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+        {label}
+      </Text>
+      <ClampedBlock maxHeightRem={OUTPUT_MAX_HEIGHT_REM} lines={lineCount(text)} label={label}>
+        <CodeBlock text={text} language={language} />
+      </ClampedBlock>
+    </Stack>
   );
 }
 

@@ -3,8 +3,8 @@ import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
-import { defineCallPreview, definePreview, type ArgumentsPreview } from "../entry";
-import { defineResultPreview } from "../result_entry";
+import { defineCallPreview, definePreview, type ArgumentsPreview, type CallPreview } from "../entry";
+import { defineResultPreview, type ResultPreview } from "../result_entry";
 
 import { kubernetesTarget, resource } from "./resource_common";
 
@@ -33,10 +33,12 @@ function DeleteLabel({ args }: { args: z.infer<typeof resourcesDeleteArguments> 
 
 export const resourcesDeleteLabel: ArgumentsPreview = definePreview(resourcesDeleteArguments, DeleteLabel);
 export const resourcesDeletePane: ArgumentsPreview = definePreview(resourcesDeleteArguments, Delete);
-export const resourcesDeleteCall = defineCallPreview(resourcesDeleteArguments, resourcesDeleteResult, ({ args }) => (
-  <Delete args={args} />
-));
-export const resourcesDeleteResultPreview = defineResultPreview(resourcesDeleteResult, () => null);
+export const resourcesDeleteCall: CallPreview = defineCallPreview(
+  resourcesDeleteArguments,
+  resourcesDeleteResult,
+  ({ args }) => <Delete args={args} />
+);
+export const resourcesDeleteResultPreview: ResultPreview = defineResultPreview(resourcesDeleteResult, () => null);
 
 export const resourcesDeletePresentation: ActionPresentation = {
   fallbackLabel: "Delete Kubernetes resource",

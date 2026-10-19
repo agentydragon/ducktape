@@ -50,8 +50,8 @@ describe("ssh exec arguments", () => {
   });
 
   it("takes no call it could not show whole", () => {
-    expect(renderPreview(execArgumentsPreview, { ...ARGUMENTS, test_extra: "test-value" })).toBeNull();
-    expect(renderPreview(execArgumentsPreview, { host: ARGUMENTS.host, user: ARGUMENTS.user })).toBeNull();
+    expect(renderPreview(execArgumentsPreview, { ...ARGUMENTS, test_extra: "test-value" })).toBeUndefined();
+    expect(renderPreview(execArgumentsPreview, { host: ARGUMENTS.host, user: ARGUMENTS.user })).toBeUndefined();
   });
 });
 
@@ -117,7 +117,7 @@ describe("ssh exec result", () => {
   });
 
   it("takes no value shaped otherwise", () => {
-    expect(renderResultPreview(execResultPreview, { ...VALUE, test_extra: true })).toBeNull();
-    expect(renderResultPreview(execResultPreview, { ...VALUE, exit_code: "test-not-a-number" })).toBeNull();
+    expect(renderResultPreview(execResultPreview, { ...VALUE, test_extra: true })).toBeUndefined();
+    expect(renderResultPreview(execResultPreview, { ...VALUE, exit_code: "test-not-a-number" })).toBeUndefined();
   });
 });

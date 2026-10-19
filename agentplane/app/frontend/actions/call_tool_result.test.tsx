@@ -207,7 +207,7 @@ describe("toolValue", () => {
     }
   });
 
-  it("recognizes Kubernetes YAML that semantically restates structured content", () => {
+  it("recognizes Kubernetes YAML that semantically restates structured content", async () => {
     const resource = {
       apiVersion: "v1",
       kind: "ConfigMap",

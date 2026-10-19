@@ -1,12 +1,10 @@
-import { Stack, Text } from "@mantine/core";
+import { Stack } from "@mantine/core";
 import type { JSX } from "react";
 import { parseAllDocuments, stringify } from "yaml";
 import { z } from "zod";
 
-import { ClampedBlock, lineCount } from "../../../clamped_block";
-import { CodeBlock } from "../../../code_block";
-import { OUTPUT_MAX_HEIGHT_REM } from "../../../command_view";
-import { defineResultPreview } from "../result_entry";
+import { ActionText } from "../../payload";
+import { defineResultPreview, type ResultPreview } from "../result_entry";
 import { kubernetesTarget } from "./resource_common";
 
 export type KubernetesResource = Record<string, unknown>;
@@ -40,7 +38,7 @@ export function kubernetesResources(value: unknown): KubernetesResource[] | unde
   return resources.length > 0 && resources.every(isKubernetesResource) ? resources : undefined;
 }
 
-export const kubernetesResourcesSchema = z.unknown().transform((value, context) => {
+export const kubernetesResourcesSchema: z.ZodType<KubernetesResource[]> = z.unknown().transform((value, context) => {
   const resources = kubernetesResources(value);
   if (resources === undefined) {
     context.addIssue({ code: "custom", message: "Expected Kubernetes resource document(s)" });
@@ -49,7 +47,7 @@ export const kubernetesResourcesSchema = z.unknown().transform((value, context) 
   return resources;
 });
 
-export const kubernetesResourcesResult = defineResultPreview(kubernetesResourcesSchema, ({ result }) => (
+export const kubernetesResourcesResult: ResultPreview = defineResultPreview(kubernetesResourcesSchema, ({ result }) => (
   <KubernetesResources resources={result} heading="Resource" />
 ));
 
@@ -87,16 +85,7 @@ export function KubernetesManifestText({ text }: { text: string }): JSX.Element 
 }
 
 function KubernetesYamlText({ heading, text }: { heading: string; text: string }): JSX.Element {
-  return (
-    <Stack gap={4}>
-      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-        {heading}
-      </Text>
-      <ClampedBlock maxHeightRem={OUTPUT_MAX_HEIGHT_REM} lines={lineCount(text)} label={heading}>
-        <CodeBlock text={text} language="yaml" surface="plain" />
-      </ClampedBlock>
-    </Stack>
-  );
+  return <ActionText text={text} language="yaml" heading={heading} />;
 }
 
 function resourceTarget(resource: KubernetesResource): string {
