@@ -55,13 +55,15 @@ func TestGuestConfigurationBuildsIsolatedHarnessSettings(t *testing.T) {
 	for key, want := range map[string]string{
 		"HTTP_PROXY":    "http://proxy.test:3128",
 		"HTTPS_PROXY":   "http://proxy.test:3128",
-		"KUBECONFIG":    guestKubeconfig,
 		"SSL_CERT_FILE": guestCABundle,
 		"NO_PROXY":      "127.0.0.1,localhost,control.test,ingress.test",
 	} {
 		if got := os.Getenv(key); got != want {
 			t.Errorf("runner environment %s = %q, want %q", key, got, want)
 		}
+	}
+	if config.HarnessEnvironment["KUBECONFIG"] != guestKubeconfig {
+		t.Fatalf("guest harness KUBECONFIG = %q", config.HarnessEnvironment["KUBECONFIG"])
 	}
 	if _, exists := config.HarnessEnvironment["ANTHROPIC_AUTH_TOKEN"]; exists {
 		t.Error("guest runner configuration leaked the real Anthropic token into harness environment")

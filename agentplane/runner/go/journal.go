@@ -81,6 +81,7 @@ type Journal struct {
 type batchContextKey struct{}
 
 type journalBatch struct {
+	locked       bool
 	journal      *Journal
 	active       bool
 	appended     []*eventlogpb.EventEntry
@@ -316,10 +317,8 @@ func (j *Journal) Since(ctx context.Context, afterCursor uint64, limit int) ([]*
 	if limit < 1 {
 		return nil, errors.New("replay requires a positive page size")
 	}
-	batch, inBatch := ctx.Value(batchContextKey{}).(*journalBatch)
-	if inBatch && batch.journal != j {
-		inBatch = false
-	}
+	inBatch := j.ownsBatch(ctx)
+	batch, _ := ctx.Value(batchContextKey{}).(*journalBatch)
 	if !inBatch {
 		j.mu.Lock()
 		defer j.mu.Unlock()
@@ -474,14 +473,17 @@ func applyCheckpoint(state *RecoveryState, entry *eventlogpb.EventEntry) {
 
 func (j *Journal) WithBatch(ctx context.Context, callback func(context.Context) error) error {
 	j.mu.Lock()
-	defer j.mu.Unlock()
+	batch := &journalBatch{journal: j, locked: true, sealOverride: cloneSeal(j.seal)}
+	defer func() {
+		if batch.locked {
+			j.mu.Unlock()
+		}
+	}()
 	if err := j.checkWritableLocked(); err != nil {
 		return err
 	}
-	batch := &journalBatch{journal: j, sealOverride: cloneSeal(j.seal)}
 	batchCtx := context.WithValue(ctx, batchContextKey{}, batch)
-	err := callback(batchCtx)
-	if err != nil {
+	if err := callback(batchCtx); err != nil {
 		if batch.active {
 			_, rollbackErr := j.conn.ExecContext(context.Background(), "ROLLBACK")
 			j.failure = err
@@ -490,25 +492,20 @@ func (j *Journal) WithBatch(ctx context.Context, callback func(context.Context) 
 		}
 		return err
 	}
-	if batch.active {
-		if _, err := j.conn.ExecContext(ctx, "COMMIT"); err != nil {
-			j.failure = err
-			j.notifyLocked()
-			return &JournalStorageError{Err: err}
-		}
-		j.publishLocked(batch.appended, batch.sealChanged, batch.sealOverride)
-	}
-	return nil
+	return j.CommitBatch(batchCtx)
 }
 
-// CommitBatch publishes the calling batch before a native write or reply handoff.
+// CommitBatch publishes the calling batch and releases writer ownership before a
+// native write or reply handoff. Later operations in the callback reacquire it.
 func (j *Journal) CommitBatch(ctx context.Context) error {
 	batch, ok := ctx.Value(batchContextKey{}).(*journalBatch)
-	if !ok || batch.journal != j {
-		// Session call paths use this as a "commit any stdout batch before handoff" hook.
-		// Outside a batch there is nothing to commit.
+	if !ok || batch.journal != j || !batch.locked {
 		return nil
 	}
+	defer func() {
+		batch.locked = false
+		j.mu.Unlock()
+	}()
 	if !batch.active {
 		return nil
 	}
@@ -526,6 +523,14 @@ func (j *Journal) CommitBatch(ctx context.Context) error {
 	return nil
 }
 
+func (j *Journal) lockBatch(batch *journalBatch) {
+	if !batch.locked {
+		j.mu.Lock()
+		batch.locked = true
+		batch.sealOverride = cloneSeal(j.seal)
+	}
+}
+
 func cloneSeal(seal *SealState) *SealState {
 	if seal == nil {
 		return nil
@@ -535,6 +540,7 @@ func cloneSeal(seal *SealState) *SealState {
 }
 
 func (j *Journal) ensureBatch(ctx context.Context, batch *journalBatch) error {
+	j.lockBatch(batch)
 	if batch.active {
 		return nil
 	}
@@ -1185,7 +1191,11 @@ func (j *Journal) TurnEvents(ctx context.Context, turnID string) ([]*eventlogpb.
 
 func (j *Journal) ownsBatch(ctx context.Context) bool {
 	batch, ok := ctx.Value(batchContextKey{}).(*journalBatch)
-	return ok && batch.journal == j
+	if !ok || batch.journal != j {
+		return false
+	}
+	j.lockBatch(batch)
+	return true
 }
 
 func (j *Journal) HasAdapterItem(ctx context.Context, adapterID, itemID string) (bool, error) {

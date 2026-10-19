@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
@@ -8,9 +9,11 @@ alias(
     actual = "//agentplane/runner/go/cmd:agentplane-runner",
 )
 
-alias(
+copy_file(
     name = "runner_release",
-    actual = "//agentplane/runner/go/cmd:agentplane-runner",
+    src = "//agentplane/runner/go/cmd:agentplane-runner",
+    out = "agentplane-runner",
+    is_executable = True,
 )
 
 py_library(

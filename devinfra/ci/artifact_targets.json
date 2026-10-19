@@ -82,7 +82,7 @@
     },
     "agentplane-runner": {
       "target": "//agentplane/runner:runner_release",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/agentplane/runner/go/cmd/agentplane-runner_/agentplane-runner",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/agentplane/runner/agentplane-runner",
       "release": "agentplane-runner"
     },
     "pr-visuals": {

@@ -120,7 +120,12 @@ func (r *Runner) Startup(ctx context.Context) error {
 	}
 	if r.config.Launch.Bootstrap != nil {
 		if err := r.startBootstrap(); err != nil {
-			return err
+			if status.Code(err) != codes.AlreadyExists {
+				return err
+			}
+			// Keep serving durable reservations; activation reports the conflicting
+			// bootstrap without executing it or abandoning admitted commands.
+			slog.Error("the Sandbox selected a different bootstrap script", "error", err)
 		}
 	}
 	r.changed()

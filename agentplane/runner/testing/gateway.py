@@ -234,18 +234,18 @@ class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
                 # The runner will reconnect and this next call will be proxied to History.
                 return
             self._route_changed.clear()
-            next_frame = asyncio.create_task(anext(frames))
+            next_frame = asyncio.ensure_future(anext(frames))
             route_change = asyncio.create_task(self._route_changed.wait())
-            done, _ = await asyncio.wait((next_frame, route_change), return_when=asyncio.FIRST_COMPLETED)
+            try:
+                done, _ = await asyncio.wait((next_frame, route_change), return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for task in (next_frame, route_change):
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(next_frame, route_change, return_exceptions=True)
             if route_change in done and self._forward_target is not None:
-                next_frame.cancel()
-                await asyncio.gather(next_frame, return_exceptions=True)
                 return
-            route_change.cancel()
-            await asyncio.gather(route_change, return_exceptions=True)
             if next_frame not in done:
-                next_frame.cancel()
-                await asyncio.gather(next_frame, return_exceptions=True)
                 continue
             try:
                 frame = await next_frame
@@ -300,33 +300,36 @@ class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
                         pass
                 yield frame
 
-        async with grpc.aio.insecure_channel(address) as channel:
-            call = runner_ingress_pb2_grpc.RunnerIngressStub(channel).Push(
-                frames(), metadata=(("authorization", f"Bearer {bearer}"),)
-            )
-            async for acknowledgement in call:
-                previous = self._cursor.get(session_id, 0)
-                if acknowledgement.cursor < previous:
-                    raise ValueError(
-                        f"session {session_id}: upstream acknowledgement "
-                        f"{acknowledgement.cursor} moved behind {previous}"
-                    )
-                committed = self.committed.setdefault(session_id, [])
-                for cursor in sorted(cursor for cursor in pending if previous < cursor <= acknowledgement.cursor):
-                    committed.append(pending.pop(cursor))
-                for cursor in tuple(pending):
-                    if cursor <= acknowledgement.cursor:
-                        pending.pop(cursor)
-                self._cursor[session_id] = acknowledgement.cursor
-                if acknowledgement.sealed:
-                    self.sealed[session_id] = acknowledgement.cursor
-                    if pending_seal is not None and pending_seal.sealed.HasField("incarnation_uid"):
-                        self._sealing_incarnation[session_id] = pending_seal.sealed.incarnation_uid
-                    elif incarnation_uid is not None:
-                        self._sealing_incarnation[session_id] = incarnation_uid
-                await context.write(acknowledgement)
-                async with self._changed:
-                    self._changed.notify_all()
+        try:
+            async with grpc.aio.insecure_channel(address) as channel:
+                call = runner_ingress_pb2_grpc.RunnerIngressStub(channel).Push(
+                    frames(), metadata=(("authorization", f"Bearer {bearer}"),)
+                )
+                async for acknowledgement in call:
+                    previous = self._cursor.get(session_id, 0)
+                    if acknowledgement.cursor < previous:
+                        raise ValueError(
+                            f"session {session_id}: upstream acknowledgement "
+                            f"{acknowledgement.cursor} moved behind {previous}"
+                        )
+                    committed = self.committed.setdefault(session_id, [])
+                    for cursor in sorted(cursor for cursor in pending if previous < cursor <= acknowledgement.cursor):
+                        committed.append(pending.pop(cursor))
+                    for cursor in tuple(pending):
+                        if cursor <= acknowledgement.cursor:
+                            pending.pop(cursor)
+                    self._cursor[session_id] = acknowledgement.cursor
+                    if acknowledgement.sealed:
+                        self.sealed[session_id] = acknowledgement.cursor
+                        if pending_seal is not None and pending_seal.sealed.HasField("incarnation_uid"):
+                            self._sealing_incarnation[session_id] = pending_seal.sealed.incarnation_uid
+                        elif incarnation_uid is not None:
+                            self._sealing_incarnation[session_id] = incarnation_uid
+                    await context.write(acknowledgement)
+                    async with self._changed:
+                        self._changed.notify_all()
+        except grpc.aio.AioRpcError as error:
+            await context.abort(error.code(), error.details())
 
 
 @dataclass(frozen=True)

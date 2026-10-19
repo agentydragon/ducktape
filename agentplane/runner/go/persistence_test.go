@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -408,4 +409,61 @@ func openTestJournal(t *testing.T) *Journal {
 		}
 	})
 	return journal
+}
+
+func TestCommittedBatchAllowsReplayAndAdmissionWhileCallbackWaits(t *testing.T) {
+	journal := openTestJournal(t)
+	committed, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- journal.WithBatch(context.Background(), func(ctx context.Context) error {
+			if _, err := journal.Append(ctx, &eventpb.Event{Observation: &eventpb.Event_Native{Native: &eventpb.Native{Line: "first"}}}, AppendOptions{}); err != nil {
+				return err
+			}
+			if err := journal.CommitBatch(ctx); err != nil {
+				return err
+			}
+			close(committed)
+			<-release
+			_, err := journal.Append(ctx, &eventpb.Event{Observation: &eventpb.Event_Native{Native: &eventpb.Native{Line: "last"}}}, AppendOptions{})
+			return err
+		})
+	}()
+	<-committed
+	replayed := make(chan error, 1)
+	go func() {
+		entries, err := journal.Since(context.Background(), 0, 10)
+		if err != nil {
+			replayed <- err
+			return
+		}
+		if len(entries) != 1 || entries[0].GetEvent().GetNative().Line != "first" {
+			replayed <- errors.New("committed batch was not available to replay")
+			return
+		}
+		_, _, err = journal.Admit(context.Background(), &commandpb.Command{CommandId: "between", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "between"}}}, "")
+		replayed <- err
+	}()
+	select {
+	case err := <-replayed:
+		close(release)
+		if batchErr := <-done; batchErr != nil {
+			t.Fatal(batchErr)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		close(release)
+		<-done
+		<-replayed
+		t.Fatal("committed callback retained journal writer ownership")
+	}
+	entries, err := journal.Since(context.Background(), 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 || entries[1].GetEvent().GetCommandAdmitted().GetCommand().GetCommandId() != "between" || entries[2].GetEvent().GetNative().Line != "last" {
+		t.Fatalf("journal handoff order = %v", entries)
+	}
 }
