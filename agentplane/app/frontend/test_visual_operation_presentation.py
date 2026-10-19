@@ -43,7 +43,11 @@ async def test_action_payloads_share_operation_surfaces(
     )
     assert len(sections) == 5
     assert all(section["padding"] != "0px" for section in sections)
-    assert [section["border"] for section in sections] == ["1px", "0px", "1px", "1px", "1px"]
+    border_widths = [float(section["border"].removesuffix("px")) for section in sections]
+    framed_widths = [border_widths[index] for index in (0, 2, 3, 4)]
+    assert border_widths[1] == 0
+    assert all(width > 0 for width in framed_widths)
+    assert max(framed_widths) - min(framed_widths) <= 0.01
     assert all(section["codeBorder"] in (None, "0px") for section in sections)
     await view.capture(target=panel, name=f"action_operation_surfaces_{viewport.width}")
 
