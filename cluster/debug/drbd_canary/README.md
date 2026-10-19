@@ -5,6 +5,17 @@ These resources are applied explicitly for the experiment; Flux does not own
 them. The provider itself is managed through Flux. Do not run before both
 workers and the `local-canary` class pass preparation checks.
 
+`config_paths_bin` compares private multi-document machine configurations and
+prints changed paths without their values. `--canary-output PATH` writes a
+configuration preserving the first input's live settings while copying only
+the installer image, kernel modules, and canary label from the second input.
+Keep inputs and output in a private directory, then compare the output against
+the live input again before use.
+
+```bash
+bb run //cluster/debug/drbd_canary:config_paths_bin -- BEFORE.yaml AFTER.yaml
+```
+
 ```bash
 kubectl apply -k cluster/debug/drbd_canary
 kubectl -n drbd-canary-tests wait pod/block pod/filesystem --for=condition=Ready --timeout=180s

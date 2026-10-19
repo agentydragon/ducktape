@@ -1,0 +1,13 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_binary(
+    name = "config_paths_bin",
+    main_module = "cluster.debug.drbd_canary.config_paths",
+    deps = [":config_paths"],
+)
+
+py_library(
+    name = "config_paths",
+    srcs = ["config_paths.py"],
+    deps = ["@pypi//pyyaml"],
+)
