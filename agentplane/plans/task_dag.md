@@ -2,7 +2,7 @@
 
 This is the dispatch map for **unfinished** work. Detailed contracts belong in component plans;
 completed work belongs in component docs, not done nodes here. Maintenance rules are in
-[AGENTS.md](../AGENTS.md#task-dag-maintenance). Deliberately deferred candidates and conditional
+[task DAG maintenance](../docs/task_dag_maintenance.md). Deliberately deferred candidates and conditional
 hardening live in the [freezer](task_freezer.md), except the explicit nonblocking
 intra-Sandbox hardening reminder retained here at Rai's request.
 

@@ -1,105 +1,60 @@
 @README.md
 
-# Agentplane service boundaries
+## Service boundaries
 
-The integration app is a user-facing composition layer, not a backend dependency.
-See [the dependency rule](docs/service_boundaries.md).
+The integration app is a client of the backend services, never their dependency
+([dependency rule](docs/service_boundaries.md)).
 
-- Do not add backend-service imports of `agentplane.app`, calls to its APIs, reads of its private
-  tables, or requirements for its process, browser session, or app-issued identity to be available.
-  Backend functionality needed by another service must be extracted into its owning service or a
-  neutral shared package, not exposed through a temporary app-owned backend API.
-- The app calls independent services; those services do not call back into the app to operate.
-  This includes v1, startup, background recovery, provisioning, and backend-required prompt/context
-  construction. Operator approval still belongs to its backend authority; the app presents it.
-- The integration app submits Sandbox desired-state and operator-grant changes through Kubernetes;
-  the Sandbox Controller reconciles those requests and owns Sandbox status. The Session Dispatcher
-  owns command admission, the Runner Gateway owns the reverse control stream and Runner proxy, and
-  runners own Sessions, native execution and canonical command/Event evidence. Notifications owns
-  subscriptions and inboxes.
-- Current backend responsibilities inside the app are extraction work, not a precedent for new
-  dependencies. Distinguish planned boundaries from what is already implemented.
-- Acceptance for an extracted backend path must exercise it with the integration app unavailable.
-  Do not add another command queue, event authority, or credential issuer as an incidental refactor.
+- Backend code must not import `agentplane.app`, call its APIs, read its private tables, or need its
+  process, browser session or app-issued identity — including for v1, startup, background recovery,
+  provisioning and backend-required prompt/context construction. Extract what another service needs
+  into its owning service or a neutral shared package, never a temporary app-owned backend API.
+  Operator approval stays with its backend authority; the app only presents it.
+- Owners: the app submits Sandbox desired state and operator grants through Kubernetes; the Sandbox
+  Controller reconciles them and owns Sandbox status; the Session Dispatcher owns command admission;
+  the Runner Gateway owns the reverse control stream and Runner proxy; runners own Sessions, native
+  execution and canonical command/Event evidence; Notifications owns subscriptions and inboxes.
+- Backend responsibilities still inside the app are extraction work, not precedent. Distinguish
+  planned boundaries from implemented ones.
+- Acceptance for an extracted backend path runs with the app unavailable. Never add a command queue,
+  event authority or credential issuer as an incidental refactor.
 
-# Settings
+## Settings
 
-Service settings reject unknown keys, and the cdk8s manifests set them. Add a setting in code
-before a manifest sets it; remove one in two steps, the manifests first and the field after the
-rollout.
+Service settings reject unknown keys, and the cdk8s manifests set them: add a setting in code before
+a manifest sets it; remove one from the manifests first and the field after rollout.
 
-# gRPC services
+## gRPC services
 
 Servicers, clients, auth, errors and server wiring follow [one pattern](docs/grpc_services.md).
 
 ## System overview diagram
 
-A PR that adds, removes, splits or renames a service or Deployment, or changes the traffic between
-them (who calls whom, over which protocol, or an edge going live), updates the
-[README system overview](README.md#system-overview) in the same PR. The diagrams describe service
-boundaries and traffic independently of a particular environment or replica layout. Do not turn
-them into deployment snapshots; draw a platform route dashed where the runner initiates it.
+A PR that adds, removes, splits or renames a service or Deployment, or changes traffic between them
+(caller/callee, protocol, an edge going live), updates the [README system overview](README.md#system-overview)
+and [focused diagrams](docs/system_overview.md) in the same PR. Draw boundaries and traffic, not a
+deployment or replica snapshot; dash runner-initiated platform routes.
 
 ## Deployed state is disposable
 
-Agentplane has no production tier, only staging and testing, so its deployed state is disposable.
-This holds for agentplane only: another component's deployed state is not disposable unless its
-own `AGENTS.md` says so. A schema, CRD or wire change does not have to keep existing rows, custom
-resources or messages readable: change the shape, and delete and recreate whatever no longer
-parses. Do not write a migration, a tolerant reader, or a compatibility field to carry old data
-forward, and do not stage a rollout to avoid a window where the two disagree. The schema change
-itself is still a new migration, and the migrate step fails the rollout when the schema differs
-from the models. The limits in the root [`AGENTS.md`](../AGENTS.md) § Refactoring
-(person-authored data, roll-safety) still bind.
+Agentplane has only staging and testing tiers, so its deployed state is disposable (agentplane
+only; another component's is not unless its own `AGENTS.md` says so). A schema, CRD or wire change
+need not keep existing rows, custom resources or messages readable: change the shape and
+delete/recreate whatever no longer parses. No migration, tolerant reader or compatibility field to
+carry old data, and no staged rollout to avoid a disagreement window. The schema change itself is
+still a new migration; the migrate step fails the rollout when schema and models differ. Root
+`AGENTS.md` § Refactoring limits (person-authored data, roll-safety) still bind.
 
 ## Preserve staging data during service extractions
 
-When ownership of state moves between services, data-preserving migration is the default despite
-the disposable-state rule above. Inventory existing state, retain identities/history and runner
-storage where feasible, and validate backup/restore and the cutover before changing staging.
-Do not drop/recreate staging databases, sandboxes, volumes, or session state as a shortcut. If
-preservation cannot be achieved, explain the exact loss/disruption and obtain operator approval
-before proceeding. Procedure: [staging data preservation](docs/staging_data_preservation.md).
+Exception to the above: when state ownership moves between services, preserve data by default —
+inventory state, retain identities/history and runner storage where feasible, and validate
+backup/restore and the cutover before changing staging. Never drop/recreate staging databases,
+sandboxes, volumes or session state as a shortcut; unavoidable loss needs the exact loss stated and
+operator approval first. Procedure: [staging data preservation](docs/staging_data_preservation.md).
 
 ## Task DAG maintenance
 
-`plans/task_dag.md` is a dispatch map for unfinished work, not a catalog of every possible
-improvement or an acceptance-history ledger. `plans/task_freezer.md` holds deliberately deferred
-ideas with a concrete reason to revisit them. Component plans own detailed designs; the DAG owns
-status and dependencies. Keep their links and decisions consistent when changing either.
-
-- Give each node one independently finishable outcome, its state, prerequisites and proportional
-  exit evidence. Split larger plans at meaningful design, implementation and rollout boundaries;
-  use a capstone only when downstream work genuinely needs the combined result. Do not create a
-  node for every test or enumerate speculative implementation phases before a design is chosen.
-- Make operator decisions explicit nodes: identify the alternatives, recommendation and question
-  requiring review. Downstream implementation waits for that decision; drafting alternatives can
-  proceed in parallel. Do not silently choose transport, authority or RBAC while rewriting plans.
-- Draw real prerequisite edges, including shared foundations and migration sequencing holds.
-  Label technical dependencies separately from operational holds and conditional branches. Edges
-  constrain starting mutating work where stated, not merely its final acceptance. No priority
-  inference from graph position, and no blanket permission to start a blocked implementation.
-- Record in-flight work and who/source reported it, with a timestamp and scope. A partial backfill,
-  merged implementation or successful unit test is not a completed rollout. Do not invent current
-  state from an old log. Remove finished nodes; keep evidence in the owning component docs.
-- Keep temporary rollout holds, migration sequencing and task-specific exceptions in the task DAG
-  and owning component plans, not in `AGENTS.md`. This file contains durable contribution rules.
-- Acceptance must address the changed contract and credible risk. Preserve security-denial,
-  revocation, isolation, data-preservation and ordinary retry/reconnect/concurrency tests. Prefer
-  deterministic automated coverage; require live checks only for an identified deployment-specific
-  uncertainty, with a bounded scenario and stopping condition. Do not require seeing a provider
-  outage in production, repeat operator-accepted work, or add compound-disaster drills by default.
-- Missing live evidence alone is not unfinished work when suitable automated evidence exists.
-  Remove redundant/waived gates; do not move them into the freezer as mandatory future chores.
-  Unlikely hardening without a concrete need is omitted, or frozen with an incident/measurement/
-  product-decision trigger. Frozen items neither block the main DAG nor imply a dispatch priority.
-- Check graph nodes/edges, cycles, linked anchors and duplicated outcomes before publishing a DAG
-  refactor. Explain material gate removals; do not bury unresolved security or migration risks as
-  “over-conservative” merely to shorten the list.
-
-## Virtualized browser review scenes
-
-`data-layout-settled=true` covers mounted rows; off-screen rows may still retain loading-height
-estimates. For repeatable scrolled screenshots, establish the same measured content before scene
-interactions. Keep unmeasured-row and delayed-content behavior covered separately; do not hide
-scroll drift by masking screenshots or weakening reader-position assertions.
+Before editing `plans/task_dag.md` or `plans/task_freezer.md`, read
+[task DAG maintenance](docs/task_dag_maintenance.md). Temporary rollout holds, migration sequencing
+and task-specific exceptions go there or in component plans, never in this file.

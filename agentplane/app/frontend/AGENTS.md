@@ -1,34 +1,25 @@
-## Verifying a visual change — see the rendered image, not just a passing test
+## Verifying a visual change
 
-A passing `bbr test //agentplane/app/frontend/... --test_tag_filters=visual` only proves every scene mounted
-without an uncaught error — it says nothing about whether it looks right (there are no checked-in
-pixel baselines here; see `util/testing/frontend_visual/README.md`). Before calling a visual
-change (`threads/projected_session.tsx`, `threads/projected_session.css`, or any other component/stylesheet here) done, actually look
-at a rendered PNG of every state you touched. Either of these satisfies that — the point is seeing
-the real pixels, not a specific mechanism for getting there:
+Visual tests (`--test_tag_filters=visual`) have no pixel baselines; passing only means every scene
+mounted without an uncaught error. Before calling a component/stylesheet change done, look at a
+rendered PNG of every state you touched, via either:
 
-- **Wait for CI's `pr-visuals` comment** on the PR: it renders every visual scenario and posts
-  before/after/diff thumbnails automatically once pushed.
-- **Or run a specific target** — `bbr test //agentplane/app/frontend:visual_history
---test_filter=<test-name> --noremote_accept_cached --nocache_test_results` — and download the PNG it
-  writes to the test's
-  undeclared outputs (`buildbuddy_api` skill: `bbapi artifact list <invocation-id>` for the exact
-  name, passed to `view.capture()`, then `bbapi artifact download <invocation-id>
-"<name>.png"`), then view it. A failure in another shard: `bbapi target log <invocation-id>
-//agentplane/app/frontend:visual_history --failed`.
+- CI's `pr-visuals` PR comment (before/after/diff for every visual scenario), or
+- `bbr test //agentplane/app/frontend:visual_history --test_filter=<test-name> --noremote_accept_cached --nocache_test_results`,
+  then fetch the PNG from undeclared outputs with `bbapi artifact list <invocation-id>` (name as
+  passed to `view.capture()`) and `bbapi artifact download <invocation-id> "<name>.png"`. Failure
+  in another shard: `bbapi target log <invocation-id> //agentplane/app/frontend:visual_history --failed`.
 
-A local interactive browser session (running the app, clicking through it by hand) is neither
-required nor the goal here — it's extra machinery for the same answer a screenshot already gives.
-Reach for it only when a _static_ screenshot genuinely can't show what changed (verifying motion
-itself, not an animation's start/end frames — which visual tests disable anyway).
+Run the app interactively only when a static screenshot cannot show the change (motion itself;
+visual tests disable animations).
 
 ## Adding a visual test
 
-Tests configure mock services through `AgentplaneFixture` in `visual_app.py`, then
-explicitly mount the app at a route (or mount the isolated disclosure specimen).
-The TypeScript harness exposes callable data builders and component mounts; it does not
-select setup from a scene name or interpret a recipe object. Keep actual recorded payloads
-such as rollout rows as data, not route/flag catalogs.
+Configure mock services through `AgentplaneFixture` (`visual_app.py`), then explicitly mount the app
+at a route (or the isolated disclosure specimen). The TypeScript harness exposes data builders and
+component mounts only: it never selects setup from a scene name or interprets a recipe object, and
+gets no switches that click, focus, scroll or inspect the DOM. Keep recorded payloads (e.g. rollout
+rows) as data, not route/flag catalogs.
 
 ```python
 @pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
@@ -39,27 +30,26 @@ async def test_recovery(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.capture()
 ```
 
-Python tests own readiness, clicks, scrolls, assertions and capture. Pass browser geometry
-explicitly using `util/testing/viewports.py`, and pass crop locators to `view.capture()`.
-Load both `util.testing.visual_fixtures` and `agentplane.app.frontend.testing.visual_fixtures`
-plugins. The shared `view` yield fixture owns browser cleanup; the app plugin provides
-`app` and the default desktop viewport. Default screenshot names follow the pytest case
-ID, not a parallel output-name table. A screenshot name identifies an artifact; it must
-not select behavior. Use explicit capture names only for additional checkpoints.
-
-Do not add harness switches that click, focus, scroll or inspect the DOM. Add an ordinary
-Python behavior test and an explicit screenshot checkpoint instead. BUILD names the test
-module, not individual scenes. Each `visual_*` test target owns one Python test file.
-Run a target directly, or select the group with Bazel's `--test_tag_filters=visual`; there is no aggregate runner or suite.
-Filter within a target with the test function or parametrized case ID.
+- Python owns readiness, clicks, scrolls, assertions and capture. Pass geometry explicitly from
+  `util/testing/viewports.py` and crop locators to `view.capture()`.
+- Load both `util.testing.visual_fixtures` and `agentplane.app.frontend.testing.visual_fixtures`
+  plugins. `view` owns browser cleanup; the app plugin provides `app` and the default desktop
+  viewport.
+- Screenshot names default to the pytest case ID and never select behavior; pass explicit names
+  only for extra checkpoints.
+- Each `visual_*` target owns one Python test file; BUILD names the module, not scenes. No
+  aggregate runner: run a target, or the group via `--test_tag_filters=visual`; filter by test
+  function or case ID.
 
 ## Scrolling review scenes
 
-Do not center a sticky heading with `scrollIntoView()`: its pinned screen position makes the
-result depend on the starting scroll offset. Position ordinary content, then assert that its
-heading and content are visible before capture.
-
-After setup clicks, choose the pointer position explicitly before composing a scene. Scrolling
-can move a different hover target under a stationary pointer; hover scenes should hover deliberately.
-Hover containers mounted under the pointer may not receive `pointerenter`; move outside, then hover
-them deliberately.
+- Do not center a sticky heading with `scrollIntoView()` (its pinned position makes the result
+  depend on the starting offset). Position ordinary content, then assert its heading and content are
+  visible before capture.
+- After setup clicks, place the pointer explicitly: scrolling can move a different hover target
+  under a stationary pointer. Hover containers mounted under the pointer may miss `pointerenter`;
+  move outside, then hover deliberately.
+- `data-layout-settled=true` covers mounted rows only; off-screen rows may keep loading-height
+  estimates. For repeatable scrolled screenshots, establish the same measured content before scene
+  interactions. Cover unmeasured-row and delayed-content behavior separately; never hide scroll
+  drift by masking screenshots or weakening reader-position assertions.

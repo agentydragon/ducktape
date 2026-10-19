@@ -4,7 +4,7 @@ Agentplane is running on staging. Implemented contracts live beside the app, run
 Action Service, LLM ingress, acceptance suite, and durable evidence under [`../docs/`](../docs/).
 This directory contains current design gates, genuinely deferred decisions, and north-star context;
 the [task DAG](task_dag.md) is authoritative for status and dependencies.
-[Maintenance conventions](../AGENTS.md#task-dag-maintenance) distinguish dispatchable phases,
+[Maintenance conventions](../docs/task_dag_maintenance.md) distinguish dispatchable phases,
 operator decisions and proportional acceptance from the [low-priority freezer](task_freezer.md).
 
 ## Open plans and gates

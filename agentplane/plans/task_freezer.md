@@ -5,7 +5,7 @@ unless a selected plan explicitly promotes the needed prerequisite. Each group/i
 recheck implementation and evidence when promoting it, then add concrete phases/edges to the DAG.
 These are not promises to perform every former acceptance test. Waived or redundant live checks
 are removed, not stored here as obligations. Security/data-loss bugs with concrete evidence belong
-in active work. See [maintenance conventions](../AGENTS.md#task-dag-maintenance).
+in active work. See [maintenance conventions](../docs/task_dag_maintenance.md).
 
 ## Legacy leftovers
 
