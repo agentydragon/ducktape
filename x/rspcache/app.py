@@ -221,64 +221,6 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-async def _proxy_stream(
-    resp: httpx.Response, *, db: ResponsesDB, key: str, response_id: str | None, start_time: float
-) -> AsyncIterator[bytes]:
-    text_buffer = ""
-    token_usage: ResponseUsage | None = None
-    latest_response: OpenAIResponse | None = None
-
-    async def _process_frame(frame_dict: dict[str, Any]) -> None:
-        nonlocal response_id, token_usage, latest_response
-
-        frame_payload = _response_stream_event_adapter.validate_python(frame_dict)
-        response_id, usage_update, latest = await _update_response_state(
-            frame=frame_payload, db=db, cache_key=key, response_id=response_id
-        )
-        if usage_update is not None:
-            token_usage = usage_update
-        if latest is not None:
-            latest_response = latest
-        await db.append_frame(key, frame_payload, response_id=response_id)
-
-    try:
-        async for chunk in resp.aiter_bytes():
-            if not chunk:
-                continue
-            yield chunk
-            try:
-                decoded = chunk.decode("utf-8")
-            except UnicodeDecodeError:
-                continue
-            text_buffer += decoded
-            text_buffer, parsed = _extract_frames(text_buffer)
-            if not parsed:
-                continue
-            for frame in parsed:
-                await _process_frame(frame)
-
-        trailing_frames = _extract_remaining(text_buffer)
-        for frame in trailing_frames:
-            await _process_frame(frame)
-
-        latency_ms = int((time.perf_counter() - start_time) * 1000)
-        if latest_response is not None and latest_response.usage is not None:
-            token_usage = latest_response.usage
-        await db.finalize_response(
-            key, response_id=response_id, response_obj=latest_response, latency_ms=latency_ms, token_usage=token_usage
-        )
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        error_reason = "Streaming proxy failure"
-        await db.record_error(
-            key, error_reason=error_reason, response_id=response_id, error=ErrorPayload(message=error_reason)
-        )
-        raise
-    finally:
-        await resp.aclose()
-
-
 def _relay_error_response(resp: httpx.Response) -> Response:
     media_type = resp.headers.get("content-type")
     body = resp.content
