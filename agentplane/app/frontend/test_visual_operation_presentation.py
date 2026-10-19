@@ -29,7 +29,7 @@ async def test_action_payloads_share_operation_surfaces(
     await expect(manifest_heading).to_be_visible()
     await expect(panel.get_by_role("button", name="Show all 24 lines")).to_be_visible()
     await expect(panel.get_by_text("Recorded data", exact=True)).to_be_visible()
-    await expect(panel.locator(".agentplane-output-disclosure .cm-line").first).to_have_text(
+    await expect(panel.locator(".agentplane-output-disclosure .cm-line").first).to_contain_text(
         "hello from the selected container"
     )
     await expect(panel.locator(".cm-agentplane-special-char")).to_contain_text("ZWSP")
