@@ -98,7 +98,11 @@ def test_egress_cuts_over_testing_before_staging(
     assert "PGSSLMODE" not in proxy_env
     assert "PGSSLMODE" not in migrator_env
     assert any(volume.get("configMap", {}).get("name") == settings for volume in pod["volumes"])
-    assert ("--confdir=/var/lib/agentplane-egress" in proxy["args"]) == (namespace == "agentplane-staging")
+    if namespace == "agentplane-staging":
+        assert "--confdir=/var/lib/agentplane-egress" in proxy["args"]
+    else:
+        assert "args" not in proxy
+        assert proxy_env["AGENTPLANE_EGRESS_RULES_NAMESPACE"]["value"] == namespace
     config = yaml.safe_load(_by_name(docs, "ConfigMap", settings)["data"]["settings.yaml"])
     assert not {"confdir", "decision_flush_seconds"} & config.keys()
 

@@ -71,7 +71,7 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, In
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import cli_args, env_name
+from util.settings_contract import checked_value, cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "egress"
@@ -826,6 +826,15 @@ class Egress(Construct):
                 migrate_env = {env_name(Settings, "database_url"): self.database_url}
                 args["confdir"] = "/var/lib/agentplane-egress"
         args.update(upstream_ca_file=f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}", token_audience=WORKLOAD_TOKEN_AUDIENCE)
+        flags: list[str] | None = None
+        setting_env: dict[str, EnvValue] = {}
+        if self.env.egress.runtime == EgressRuntime.GO:
+            setting_env = {
+                env_name(Settings, field): EnvValue.from_value(str(checked_value(Settings, field, value)))
+                for field, value in args.items()
+            }
+        else:
+            flags = cli_args(Settings, **args)
 
         workload = add_service_workload(
             self,
@@ -833,8 +842,8 @@ class Egress(Construct):
             serves=[self.agent_api, self.proxy],
             container="proxy",
             image=f"{image}:{_PLACEHOLDER_TAG}",
-            args=cli_args(Settings, **args),
-            env_variables={env_name(Settings, "database_url"): self.database_url, **self.container_env},
+            args=flags,
+            env_variables={**setting_env, env_name(Settings, "database_url"): self.database_url, **self.container_env},
             extra_ports=[self.admin.container_port()],
             readiness=http_probe("/healthz", port=self.admin.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/livez", port=self.admin.pod_port, initial_delay_seconds=30, period_seconds=30),

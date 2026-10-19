@@ -827,17 +827,25 @@ spec:
     spec:
       automountServiceAccountToken: true
       containers:
-        - args:
-            - --rules-namespace=agentplane-testing
-            - --credentials-namespace=agentplane-testing-egress-credentials
-            - --listen-port=8888
-            - --admin-port=8081
-            - --agent-api-port=8082
-            - --ca-cert=/etc/agentplane-egress/ca/tls.crt
-            - --ca-key=/etc/agentplane-egress/ca/tls.key
-            - --upstream-ca-file=/etc/agentplane-egress/upstream-ca/ca-certificates.crt
-            - --token-audience=agentplane-egress
-          env:
+        - env:
+            - name: AGENTPLANE_EGRESS_RULES_NAMESPACE
+              value: agentplane-testing
+            - name: AGENTPLANE_EGRESS_CREDENTIALS_NAMESPACE
+              value: agentplane-testing-egress-credentials
+            - name: AGENTPLANE_EGRESS_LISTEN_PORT
+              value: "8888"
+            - name: AGENTPLANE_EGRESS_ADMIN_PORT
+              value: "8081"
+            - name: AGENTPLANE_EGRESS_AGENT_API_PORT
+              value: "8082"
+            - name: AGENTPLANE_EGRESS_CA_CERT
+              value: /etc/agentplane-egress/ca/tls.crt
+            - name: AGENTPLANE_EGRESS_CA_KEY
+              value: /etc/agentplane-egress/ca/tls.key
+            - name: AGENTPLANE_EGRESS_UPSTREAM_CA_FILE
+              value: /etc/agentplane-egress/upstream-ca/ca-certificates.crt
+            - name: AGENTPLANE_EGRESS_TOKEN_AUDIENCE
+              value: agentplane-egress
             - name: AGENTPLANE_EGRESS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
