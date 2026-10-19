@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -23,6 +25,7 @@ POINTER_KEY = re.compile(r"^baselines/(?:reviews/)?([^/]+)\.json$")
 CLOSED_PR_GRACE = timedelta(hours=8)
 DEFAULT_RETENTION = timedelta(days=3)
 ACTIVE_RUN_STATUSES = ("queued", "in_progress", "requested", "waiting", "pending")
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -154,11 +157,13 @@ def collect_github_roots(repository: Any, observed_at: datetime) -> dict[str, se
 
 def _list_objects(client: Any, bucket: str) -> list[StoredObject]:
     objects: list[StoredObject] = []
-    for page in client.get_paginator("list_objects_v2").paginate(Bucket=bucket):
+    # SeaweedFS accepts 10,000-key pages; avoid hundreds of small round trips.
+    for page in client.get_paginator("list_objects_v2").paginate(Bucket=bucket, PaginationConfig={"PageSize": 10000}):
         objects.extend(
             StoredObject(key=item["Key"], size=item["Size"], last_modified=_utc(item["LastModified"]))
             for item in page.get("Contents", [])
         )
+        LOGGER.info("Listed %d objects", len(objects))
     return objects
 
 
@@ -277,13 +282,19 @@ def build_retention_report(
             if bundle.prefix in parsed_prefixes:
                 continue
             parsed_prefixes.add(bundle.prefix)
+            if len(parsed_prefixes) % 50 == 0:
+                LOGGER.info("Reading metadata for retained bundle %d", len(parsed_prefixes))
             aggregate_key = f"{bundle.prefix}metadata.json"
             test_keys = sorted(target_metadata_by_prefix.get(bundle.prefix, []))
             metadata_records: list[tuple[dict[str, Any], str]] = []
             actual_target_slugs: set[str] = set()
-            test_keys = sorted(target_metadata_by_prefix.get(bundle.prefix, []))
+            metadata_keys = ([aggregate_key] if aggregate_key in by_key else []) + test_keys
+            # The production callback uses a thread-safe boto3 client; callbacks
+            # supplied by callers must support concurrent read requests too.
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                bodies = dict(zip(metadata_keys, pool.map(fetch_object, metadata_keys), strict=True))
             if aggregate_key in by_key:
-                body = fetch_object(aggregate_key)
+                body = bodies[aggregate_key]
                 if body is None:
                     blockers.append(f"listed retained metadata disappeared: {aggregate_key}")
                     break
@@ -310,7 +321,7 @@ def build_retention_report(
                     )
                     break
             for key in test_keys:
-                body = fetch_object(key)
+                body = bodies[key]
                 if body is None:
                     blockers.append(f"listed retained metadata disappeared: {key}")
                     break
@@ -460,6 +471,7 @@ def _parse_timestamp(value: str | None, default: datetime) -> datetime:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--endpoint", required=True, help="S3-compatible endpoint URL")
     parser.add_argument("--bucket", required=True)
@@ -473,7 +485,9 @@ def main() -> None:
     s3 = boto3.client("s3", endpoint_url=args.endpoint)
     with Github(auth=Auth.Token(token)) as github:
         repository = github.get_repo(args.repository)
+        LOGGER.info("Reading GitHub PR and Actions references")
         roots = collect_github_roots(repository, observed_at)
+        LOGGER.info("Collected %d protected commit references; listing bucket", len(roots))
         report = build_retention_report(
             _list_objects(s3, args.bucket),
             fetch_object=lambda key: _read_s3_object(s3, args.bucket, key),
