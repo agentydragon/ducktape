@@ -347,9 +347,11 @@ _SUBSCRIPTION_HAIKU = Model(
 # slugs that don't match the public API names (reasoning-tier suffixes baked into the
 # slug: -high/-low/-lite/-agent), and the open-weight (Apache-2.0) gpt-oss-120b, which
 # Google can self-host like anyone else. The 2026-10-15 CLIProxyAPI account list included
-# gemini-3-flash and gemini-3.5-flash-lite, both registered by the pinned source. The live
-# gemini-3.8-flash-tiered ID is not registered under that exact name. The two Pro IDs are
-# also absent from the pinned source and remain unserved until it registers them again.
+# gemini-3-flash and gemini-3.5-flash-lite, both registered by the pinned source. On
+# 2026-10-19 the live account list also exposed the exact gemini-3.8-flash-high ID, which
+# is registered below; gemini-3.8-flash-tiered is not registered under that exact name.
+# The two Pro IDs are also absent from the pinned source and remain unserved until it
+# registers them again.
 # Dated source/account intersections are recorded in antigravity_limits.md. Image, Claude
 # and GPT-OSS remain distinct routes.
 #
@@ -682,12 +684,22 @@ ANTIGRAVITY_GEMINI_FLASH_LITE = Route(
     publish_limits=True,
     reasoning_efforts=_ANTIGRAVITY_GEMINI_EFFORTS,
 )
+ANTIGRAVITY_GEMINI_38_FLASH_HIGH = Route(
+    Model(
+        id="gemini-3.8-flash-high",
+        display_name="Gemini 3.8 Flash (High)",
+        reasoning=True,
+        limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
+    ),
+    ANTIGRAVITY_MESSAGES,
+    publish_limits=True,
+    reasoning_efforts=("low", "medium", "high"),
+)
 # Re-enable `gemini-pro-agent` and `gemini-3.1-pro-low` only after the pinned
 # CLIProxyAPI model registry registers those exact Antigravity IDs again and the
 # deployed image includes that revision. The staging failure showed that a route
 # accepted by LiteLLM can still fail CLIProxyAPI's provider lookup.
-# Likewise, wait to re-enable the live `gemini-3.8-flash-tiered` ID until the
-# pinned registry contains that exact name; it currently registers a different ID.
+# `gemini-3.8-flash-tiered` is a different, unregistered ID; use the exact `-high` ID above.
 ANTIGRAVITY_FLASH_IMAGE = Route(
     Model(id="gemini-3.1-flash-image", display_name="Gemini 3.1 Flash Image", reasoning=False), ANTIGRAVITY_MESSAGES
 )
@@ -706,6 +718,7 @@ ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_SONNET,
     ANTIGRAVITY_GEMINI_FLASH,
     ANTIGRAVITY_GEMINI_FLASH_LITE,
+    ANTIGRAVITY_GEMINI_38_FLASH_HIGH,
     ANTIGRAVITY_FLASH_IMAGE,
     ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
 )

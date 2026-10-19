@@ -39,6 +39,9 @@ _COMMON_HARNESS_REASONING_EFFORTS = frozenset(("low", "medium", "high"))
 # four Opus efforts returned 429 `Individual quota reached`, so those remain unverified.
 # Agentplane stores one effort list per model across both harnesses, so expose their common
 # values: low, medium, high.
+# Follow-up: `gemini-3.8-flash-high` returned HTTP 200 at low, medium, and high through
+# `/v1/messages` with adaptive thinking (one 4-token request per effort); minimal is not
+# declared for this model by the CLIProxyAPI registry.
 
 DUCKTAPE_PR_INSTRUCTIONS = Path(__file__).with_name("ducktape_pr_instructions.md").read_text(encoding="utf-8").strip()
 _PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from agentplane.llm_ingress.models import ModelConfig
 from model_catalog.catalog import (
+    ANTIGRAVITY_GEMINI_38_FLASH_HIGH,
     ANTIGRAVITY_GEMINI_FLASH,
     ANTIGRAVITY_GEMINI_FLASH_LITE,
     ANTIGRAVITY_OPUS,
@@ -38,6 +39,7 @@ _AGENTPLANE_ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_SONNET,
     ANTIGRAVITY_GEMINI_FLASH,
     ANTIGRAVITY_GEMINI_FLASH_LITE,
+    ANTIGRAVITY_GEMINI_38_FLASH_HIGH,
 )
 
 # The Agentplane Codex picker offers Qwen at 256K only; the 128K native route remains
