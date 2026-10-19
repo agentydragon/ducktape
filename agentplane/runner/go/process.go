@@ -448,7 +448,9 @@ func (p *Process) escalate() {
 	cmd := p.cmd
 	p.mu.Unlock()
 	if path != "" {
-		_ = writeCgroupControl(path+"/cgroup.kill", "1\n")
+		if manager, err := loadCgroup(path); err == nil {
+			_ = manager.Kill()
+		}
 	}
 	if cmd != nil && cmd.Process != nil {
 		// Leave the supervisor alive to reap and wait for cgroup emptiness while it holds state ownership.
@@ -457,40 +459,21 @@ func (p *Process) escalate() {
 }
 
 func readPIDReport(ctx context.Context, report *os.File) (int, error) {
-	fd := int(report.Fd())
-	buffer := make([]byte, 32)
-	for {
-		if err := ctx.Err(); err != nil {
-			return 0, err
-		}
-		poll := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN | unix.POLLHUP}}
-		count, err := unix.Poll(poll, 50)
-		if err == unix.EINTR {
-			continue
-		}
-		if err != nil {
-			return 0, fmt.Errorf("wait for native PID report: %w", err)
-		}
-		if count == 0 {
-			continue
-		}
-		n, err := unix.Read(fd, buffer)
-		if err == unix.EINTR {
-			continue
-		}
-		if err != nil {
-			return 0, fmt.Errorf("read native PID report: %w", err)
-		}
-		if n == 0 {
-			return 0, errors.New("supervisor closed the PID report without a PID")
-		}
-		line := bytes.TrimSpace(buffer[:n])
-		pid, err := strconv.Atoi(string(line))
-		if err != nil || pid <= 0 {
-			return 0, fmt.Errorf("invalid native PID report %q", line)
-		}
-		return pid, nil
+	stop := context.AfterFunc(ctx, func() { _ = report.Close() })
+	defer stop()
+	data, err := io.ReadAll(io.LimitReader(report, 33))
+	if ctx.Err() != nil {
+		return 0, ctx.Err()
 	}
+	if err != nil {
+		return 0, fmt.Errorf("read native PID report: %w", err)
+	}
+	line := bytes.TrimSpace(data)
+	pid, err := strconv.Atoi(string(line))
+	if len(data) > 32 || err != nil || pid <= 0 {
+		return 0, fmt.Errorf("invalid native PID report %q", line)
+	}
+	return pid, nil
 }
 
 func environment(values map[string]string) []string {

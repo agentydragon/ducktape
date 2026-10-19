@@ -2,8 +2,10 @@ package harness
 
 import (
 	"encoding/json"
+	"io"
 	"reflect"
 	"sort"
+	"strings"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
@@ -45,14 +47,20 @@ func argumentsEqual(left, right string) bool {
 	if left == right {
 		return true
 	}
-	var leftValue, rightValue any
-	if err := json.Unmarshal([]byte(left), &leftValue); err != nil {
-		return false
+	// Ignore object order and whitespace, but keep numeric tokens exact. In
+	// particular, decoding through float64 could hide a changed tool argument.
+	values := make([]any, 2)
+	for i, raw := range []string{left, right} {
+		decoder := json.NewDecoder(strings.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&values[i]); err != nil {
+			return false
+		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			return false
+		}
 	}
-	if err := json.Unmarshal([]byte(right), &rightValue); err != nil {
-		return false
-	}
-	return reflect.DeepEqual(leftValue, rightValue)
+	return reflect.DeepEqual(values[0], values[1])
 }
 
 func UnknownItem(itemID, reason string) *eventpb.ItemRecovery {

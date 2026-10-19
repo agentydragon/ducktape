@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -386,5 +387,19 @@ func openLifecycleSession(sessionID, cwd string) *controlpb.OpenSessionRequest {
 	return &controlpb.OpenSessionRequest{
 		SessionId: sessionID,
 		Spec:      &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model"},
+	}
+}
+
+func TestScriptOutputFailureStopsProcessAndReturnsCause(t *testing.T) {
+	r := newBareRunner(t)
+	failure := fmt.Errorf("bootstrap output storage failed")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := r.runScript(ctx, "printf output; exec sleep 1000", t.TempDir(), func(bool, []byte) error { return failure })
+	if !errors.Is(err, failure) {
+		t.Fatalf("output failure was lost: %v", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("script waited for timeout after output failed: %v", err)
 	}
 }

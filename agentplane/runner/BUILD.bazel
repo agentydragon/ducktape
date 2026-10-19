@@ -252,3 +252,20 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_cgroups",
+    srcs = ["test_cgroups.py"],
+    data = ["//agentplane/runner/go:runner_test"],  # keep: the real Go integration fixture
+    env = {"RUNNER_TEST_BINARY": "$(rlocationpath //agentplane/runner/go:runner_test)"},
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//third_party/containers:debian_slim",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "@pypi//pytest_bazel",
+    ],
+)

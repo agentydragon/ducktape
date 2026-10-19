@@ -442,3 +442,56 @@ func pidExists(pid int) bool {
 	err := unix.Kill(pid, 0)
 	return err == nil || err == unix.EPERM
 }
+
+func TestPIDReportCancellationAndFraming(t *testing.T) {
+	t.Run("split report", func(t *testing.T) {
+		reader, writer, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reader.Close()
+		go func() {
+			defer writer.Close()
+			_, _ = writer.WriteString("12")
+			_, _ = writer.WriteString("34\n")
+		}()
+		if pid, err := readPIDReport(context.Background(), reader); err != nil || pid != 1234 {
+			t.Fatalf("PID report = %d, %v", pid, err)
+		}
+	})
+	for _, report := range []string{"", "0\n", "not-a-pid\n", strings.Repeat("1", 33)} {
+		t.Run(fmt.Sprintf("invalid %q", report), func(t *testing.T) {
+			reader, writer, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+			_, _ = writer.WriteString(report)
+			_ = writer.Close()
+			if pid, err := readPIDReport(context.Background(), reader); err == nil {
+				t.Fatalf("invalid report accepted as %d", pid)
+			}
+		})
+	}
+	t.Run("cancel while writer stays open", func(t *testing.T) {
+		reader, writer, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reader.Close()
+		defer writer.Close()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { _, err := readPIDReport(ctx, reader); done <- err }()
+		cancel()
+		select {
+		case err := <-done:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("cancelled PID report = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("PID read did not observe cancellation")
+		}
+	})
+}

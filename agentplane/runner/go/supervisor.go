@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/containerd/cgroups/v3/cgroup2"
 	"golang.org/x/sys/unix"
 )
 
@@ -169,8 +170,8 @@ func ExecMain(args []string) int {
 }
 
 type supervisorCgroup struct {
-	path string
-	dir  *os.File
+	manager *cgroup2.Manager
+	dir     *os.File
 }
 
 func openSupervisorCgroup(path string) (*supervisorCgroup, error) {
@@ -190,7 +191,12 @@ func openSupervisorCgroup(path string) (*supervisorCgroup, error) {
 		return nil, err
 	}
 	_ = events.Close()
-	return &supervisorCgroup{path: path, dir: dir}, nil
+	manager, err := loadCgroup(path)
+	if err != nil {
+		_ = dir.Close()
+		return nil, err
+	}
+	return &supervisorCgroup{manager: manager, dir: dir}, nil
 }
 
 func (c *supervisorCgroup) close() {
@@ -299,11 +305,13 @@ func fenceNativeGroup(leader int, cgroup *supervisorCgroup) error {
 	}
 	for {
 		if err := killCgroup(cgroup); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
 			time.Sleep(time.Second)
 			continue
 		}
-		empty, err := cgroupIsEmpty(filepath.Join(cgroup.path, "cgroup.events"))
-		if err == nil && empty {
+		if err := cgroup.manager.Delete(); err == nil || errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -314,7 +322,7 @@ func killCgroup(cgroup *supervisorCgroup) error {
 	if cgroup == nil {
 		return nil
 	}
-	return writeCgroupControl(filepath.Join(cgroup.path, "cgroup.kill"), "1\n")
+	return cgroup.manager.Kill()
 }
 
 func parentAlreadyGone(parent *os.File) bool {

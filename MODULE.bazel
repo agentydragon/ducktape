@@ -1677,6 +1677,13 @@ go_deps.gazelle_override(
     path = "github.com/grpc-ecosystem/grpc-gateway/v2",
 )
 
+# The upstream stats proto go_package omits /v3. Use the shipped Go bindings
+# rather than generating a second package at that obsolete import path.
+go_deps.gazelle_override(
+    directives = ["gazelle:proto disable_global"],
+    path = "github.com/containerd/cgroups/v3",
+)
+
 # k8s.io/apimachinery's generated BUILD files import kube-openapi, but that
 # dependency is not imported by first-party Go files.
 go_deps.module(
@@ -2025,6 +2032,7 @@ use_repo(
     "com_github_cespare_xxhash_v2",
     "com_github_cheynewallace_tabby",
     "com_github_coder_websocket",
+    "com_github_containerd_cgroups_v3",
     "com_github_docker_docker",
     "com_github_dustin_go_humanize",
     "com_github_elliotchance_orderedmap",

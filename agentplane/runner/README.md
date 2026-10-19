@@ -32,6 +32,8 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   isolation. The runner executes itself in an internal supervisor mode, which retains
   the state-owner descriptor until native work is fenced. A private liveness pipe
   detects parent death independently of the Go runtime's OS-thread lifetimes.
+  Containerd's cgroup-v2 library applies resource limits and fences group members;
+  the supervisor retains state ownership until the group is empty and removed.
 - `go/claude/` and `go/codex/`: harness-specific launch, frame translation and native
   history readers. They depend on the shared adapter contract and recovery types in
   `go/harness/`, independently of the runner runtime. Unknown frames remain in raw history,

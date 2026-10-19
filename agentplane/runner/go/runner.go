@@ -20,6 +20,7 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	controlpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -265,34 +266,28 @@ func (r *Runner) runScript(ctx context.Context, script, cwd string, output func(
 	if err := process.Start(ctx); err != nil {
 		return 0, err
 	}
-	var readers sync.WaitGroup
-	results := make(chan error, 2)
+	var readers errgroup.Group
 	for _, stream := range []struct {
 		reader io.Reader
 		stdout bool
 	}{{process.Stdout(), true}, {process.Stderr(), false}} {
-		readers.Add(1)
-		go func(reader io.Reader, stdout bool) {
-			defer readers.Done()
+		readers.Go(func() error {
 			buffer := make([]byte, 64*1024)
 			for {
-				n, err := reader.Read(buffer)
+				n, err := stream.reader.Read(buffer)
 				if n > 0 {
-					if e := output(stdout, append([]byte(nil), buffer[:n]...)); e != nil {
-						results <- e
-						_ = process.Stop(context.Background(), 5*time.Second)
-						return
+					if e := output(stream.stdout, append([]byte(nil), buffer[:n]...)); e != nil {
+						return errors.Join(e, process.Stop(context.Background(), stopGrace))
 					}
+				}
+				if err == io.EOF {
+					return nil
 				}
 				if err != nil {
-					if err == io.EOF {
-						err = nil
-					}
-					results <- err
-					return
+					return errors.Join(err, process.Stop(context.Background(), stopGrace))
 				}
 			}
-		}(stream.reader, stream.stdout)
+		})
 	}
 	writeErr := process.Write(ctx, []byte(script))
 	if errors.Is(writeErr, os.ErrClosed) || errors.Is(writeErr, io.ErrClosedPipe) {
@@ -303,8 +298,7 @@ func (r *Runner) runScript(ctx context.Context, script, cwd string, output func(
 	if waitErr != nil {
 		waitErr = errors.Join(waitErr, process.Stop(context.WithoutCancel(ctx), 5*time.Second))
 	}
-	readers.Wait()
-	return code, errors.Join(writeErr, closeErr, waitErr, <-results, <-results)
+	return code, errors.Join(writeErr, closeErr, waitErr, readers.Wait())
 }
 
 func (r *Runner) startBootstrap() error {

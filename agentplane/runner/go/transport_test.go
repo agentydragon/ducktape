@@ -554,3 +554,47 @@ func assertEntries(t *testing.T, got, want []*eventlogpb.EventEntry) {
 		}
 	}
 }
+
+func TestStreamRetryPreservesLocalFailures(t *testing.T) {
+	for _, failure := range []error{
+		&JournalStorageError{Err: errors.New("journal failed")},
+		&localStreamError{err: errors.New("acknowledgement failed")},
+	} {
+		calls := 0
+		err := retryStream(context.Background(), "test", func(context.Context) (bool, error) {
+			calls++
+			return true, failure
+		})
+		if err != failure || calls != 1 {
+			t.Fatalf("local error retried: %d calls, %v", calls, err)
+		}
+	}
+}
+
+func TestStreamRetryStopsOnCancellationDuringPermissionBackoff(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	calls := 0
+	if err := retryStream(ctx, "test", func(context.Context) (bool, error) {
+		calls++
+		cancel()
+		return false, status.Error(codes.PermissionDenied, "revoked")
+	}); err != nil || calls != 1 {
+		t.Fatalf("cancelled reconnect = %v after %d attempts", err, calls)
+	}
+}
+
+func TestStreamRetryReconnectsAfterRemoteError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	calls := 0
+	if err := retryStream(ctx, "test", func(context.Context) (bool, error) {
+		calls++
+		if calls == 1 {
+			return false, status.Error(codes.Unavailable, "disconnected")
+		}
+		return true, nil
+	}); err != nil || calls != 2 {
+		t.Fatalf("reconnect = %v after %d attempts", err, calls)
+	}
+}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +14,7 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	controlpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/proto/runner_ingress"
+	"github.com/sethvargo/go-retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
@@ -73,50 +73,41 @@ func (r *Runner) Run(ctx context.Context, control, ingress Endpoint) error {
 	return errors.Join(failure, closeErr)
 }
 
-func retry(ctx context.Context, name string, attempt func(context.Context) (bool, error)) error {
-	delay := 500 * time.Millisecond
-	for {
+func retryStream(ctx context.Context, name string, attempt func(context.Context) (bool, error)) error {
+	newBackoff := func() retry.Backoff {
+		return retry.WithFullJitter(retry.WithCappedDuration(30*time.Second, retry.NewExponential(500*time.Millisecond)))
+	}
+	backoff := newBackoff()
+	var lastError error
+	waits := retry.BackoffFunc(func() (time.Duration, bool) {
+		wait, stop := backoff.Next()
+		if code := status.Code(lastError); code == codes.PermissionDenied || code == codes.FailedPrecondition {
+			wait = 30 * time.Second
+		}
+		slog.Warn("runner stream lost", "stream", name, "error", lastError, "retry_after", wait)
+		return wait, stop
+	})
+	err := retry.Do(ctx, waits, func(ctx context.Context) error {
 		progress, err := attempt(ctx)
-		if ctx.Err() != nil {
-			return nil
-		}
-		if err == nil {
-			return nil
-		}
 		var storage *JournalStorageError
-		if errors.As(err, &storage) {
-			return err
-		}
 		var local *localStreamError
-		if errors.As(err, &local) {
+		if err == nil || errors.As(err, &storage) || errors.As(err, &local) {
 			return err
 		}
 		if progress {
-			delay = 500 * time.Millisecond
+			backoff = newBackoff()
 		}
-		wait := time.Duration(rand.Float64() * float64(delay))
-		if code := status.Code(err); code == codes.PermissionDenied || code == codes.FailedPrecondition {
-			wait = 30 * time.Second
-		}
-		slog.Warn("runner stream lost", "stream", name, "error", err, "retry_after", wait)
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil
-		case <-timer.C:
-		}
-		if delay < 30*time.Second {
-			delay *= 2
-			if delay > 30*time.Second {
-				delay = 30 * time.Second
-			}
-		}
+		lastError = err
+		return retry.RetryableError(err)
+	})
+	if ctx.Err() != nil {
+		return nil
 	}
+	return err
 }
 
 func (r *Runner) controlLoop(ctx context.Context, endpoint Endpoint) error {
-	return retry(ctx, "control", func(ctx context.Context) (bool, error) { return r.connectControl(ctx, endpoint) })
+	return retryStream(ctx, "control", func(ctx context.Context) (bool, error) { return r.connectControl(ctx, endpoint) })
 }
 
 func (r *Runner) connectControl(ctx context.Context, endpoint Endpoint) (bool, error) {
@@ -300,7 +291,7 @@ func (r *Runner) ingressLoop(ctx context.Context, endpoint Endpoint) error {
 			pushes.Add(1)
 			go func(s *Session) {
 				defer pushes.Done()
-				err := retry(ctx, "ingress "+s.id, func(ctx context.Context) (bool, error) { return r.pushOnce(ctx, endpoint, stub, s) })
+				err := retryStream(ctx, "ingress "+s.id, func(ctx context.Context) (bool, error) { return r.pushOnce(ctx, endpoint, stub, s) })
 				if err != nil {
 					r.fail(err)
 				}

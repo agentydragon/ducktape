@@ -259,6 +259,8 @@ that needs it.
 | PostgreSQL | `lib/pq` for the driver, `goose` for migrations.                                                                                                     |
 | UUIDs      | `google/uuid`.                                                                                                                                       |
 | YAML       | `gopkg.in/yaml.v3`.                                                                                                                                  |
+| Retry      | `sethvargo/go-retry` for backoff, jitter and cancellable waits; callers own error classification and progress resets.                                |
+| Cgroups    | `containerd/cgroups/v3/cgroup2` for Linux cgroup-v2 resources and lifecycle.                                                                         |
 
 ## Build System (Bazel)
 
