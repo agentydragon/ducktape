@@ -9,9 +9,9 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 
 ## Open plans and gates
 
-- [Architecture overview](architecture_overview.md) — where each object lives now, what the lanes
-  propose and what the operator has said, the open placement questions and the order to settle them;
-  decides nothing yet
+- [Architecture overview](architecture_overview.md) — whether a Sandbox's history outlives it, which
+  control plane holds Agentplane's records, where each object lives now, and the placement questions
+  that follow; decides nothing yet
 - [Native session discovery](native_session_discovery.md) — remaining harness characterization and
   deferred shared-session design with identity, attribution and durability gates
 - [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
