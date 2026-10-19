@@ -148,7 +148,8 @@ describe("ActionHistory", () => {
       node.textContent?.includes("test-exact-token")
     );
     if (!block) throw new Error("missing the arguments");
-    expect(block.closest(".agentplane-disclosure-panel")).toBeNull();
+    expect(block.closest("[data-clamped]")?.getAttribute("data-clamped")).toBe("false");
+    expect(block.closest("[hidden]")).toBeNull();
   });
 
   it("renders the auto-approving policy when the Decision carries policy evidence", async () => {
@@ -210,7 +211,12 @@ describe("ActionHistory", () => {
       if (path !== "/actions/history") return undefined;
       const all = query.get("include_auto_allowed") === "true";
       return {
-        items: [request(all ? "succeeded" : query.has("cursor") ? "cancelled" : "denied", 1)],
+        items: [
+          request(
+            all ? "succeeded" : query.has("cursor") ? "cancelled" : "denied",
+            all ? 3 : query.has("cursor") ? 2 : 1
+          ),
+        ],
         next_cursor: query.has("cursor") ? null : "page2",
       };
     });

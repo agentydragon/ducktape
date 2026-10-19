@@ -50,8 +50,7 @@ describe("ActionRequests", () => {
     for (const value of [grant.issuer, grant.client_id, grant.connection_id]) {
       expect(container.textContent).toContain(value);
     }
-    const control = container.querySelector<HTMLButtonElement>(".agentplane-disclosure-summary");
-    if (!control) throw new Error("missing grant audit disclosure");
+    const control = button(container, "Request & grant audit details");
     expect(control.getAttribute("aria-expanded")).toBe("false");
     await act(async () => control.click());
     expect(control.getAttribute("aria-expanded")).toBe("true");
@@ -72,7 +71,7 @@ describe("ActionRequests", () => {
       expect(container.textContent).not.toContain("Authenticated external caller");
       // The request-id disclosure exists regardless of external_grant, but carries only the id --
       // no grant provenance to fold in without one.
-      const control = container.querySelector<HTMLButtonElement>(".agentplane-disclosure-summary");
+      const control = button(container, "Request audit details");
       expect(container.textContent).not.toContain("Authenticated external caller");
       expect(control?.textContent).toBe("Request audit details");
       expect(control?.getAttribute("aria-expanded")).toBe("false");
