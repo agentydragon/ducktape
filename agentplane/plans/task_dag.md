@@ -1602,7 +1602,7 @@ flowchart TD
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     RUNNER_RENAME[Decision, unscheduled: a better name than runner]
-    GO_SERVICES_SETTINGS_LOADER[Blocked: Go services read settings through util/settings]
+    GO_SERVICES_SETTINGS_LOADER[Unscheduled: Go services read settings with Viper, file and environment]
 ```
 
 ### `RUNNER_RENAME` — a better name than "runner"
@@ -1642,16 +1642,17 @@ sandbox, so it no longer reads as a Session Sandbox: the `sandbox__*` Actions,
 `cluster/cdk8s/agentplane/command_sandbox.py`. The `sandbox__*` tool names are what agents and
 external Connections call, so renaming them is a wire change.
 
-### `GO_SERVICES_SETTINGS_LOADER` — Go services read settings through one loader
+### `GO_SERVICES_SETTINGS_LOADER` — Go services read settings with Viper
 
-**Blocked on the egress `util/settings` loader landing ([#10989](https://github.com/agentydragon/ducktape/pull/10989)
-and [#11080](https://github.com/agentydragon/ducktape/pull/11080)); unscheduled (coordinator, 2026-10-19,
-relaying the operator's 2026-10-18 direction of one settings loader for Go services, file and
-environment, no flags).** Move the Runner Gateway, the Sandbox Controller, the Policy Controller and the
-egress sidecar from flag parsing to `util/settings`, one service per change. Setting names and values stay;
-only how they are read changes. Each manifest change follows its image pin and removes flags only after
-the image that reads the file is pinned (image before config). New settings in the meantime, such as the
-Gateway's `--http-listen-address`, follow how the service reads settings today.
+**Unscheduled; the egress proxy's move is [#11080](https://github.com/agentydragon/ducktape/pull/11080)
+(open) (coordinator, 2026-10-19, relaying the operator's 2026-10-18 direction that Go services read
+settings the same way, from a file and the environment, with no flags).** LLM ingress already reads its
+settings through Viper used directly in the service ([#10989](https://github.com/agentydragon/ducktape/pull/10989)).
+Move the Runner Gateway, the Sandbox Controller, the Policy Controller and the egress sidecar from flag
+parsing to the same, one service per change. Setting names and values stay; only how they are read
+changes. Each manifest change follows its image pin and removes flags only after the image that reads
+the file is pinned (image before config). New settings in the meantime, such as the Gateway's
+`--http-listen-address`, follow how the service reads settings today.
 
 ## 9. Legacy burn-down
 
