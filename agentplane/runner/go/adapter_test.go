@@ -226,7 +226,7 @@ func TestClaudeToolArgumentsPreserveNativePayload(t *testing.T) {
 	}
 }
 
-func TestCodexHandshakeAndServerReplyKeepNativeNullableFields(t *testing.T) {
+func TestCodexHandshakeAndUnsupportedServerRequest(t *testing.T) {
 	ctx := context.Background()
 	base := newAdapterTestHost()
 	base.session.Resuming = false
@@ -244,8 +244,16 @@ func TestCodexHandshakeAndServerReplyKeepNativeNullableFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	params := initialize["params"].(map[string]any)
-	if value, ok := params["capabilities"]; !ok || value != nil {
-		t.Fatalf("Codex initialize omitted null capabilities: %s", host.requests[0])
+	if params["clientInfo"].(map[string]any)["name"] != "agentplane" {
+		t.Fatalf("Codex initialize lost client identity: %s", host.requests[0])
+	}
+	var start map[string]any
+	if err := json.Unmarshal(host.requests[1], &start); err != nil {
+		t.Fatal(err)
+	}
+	params = start["params"].(map[string]any)
+	if params["cwd"] != base.session.Cwd || params["model"] != base.session.Model || params["approvalPolicy"] != "never" || params["sandbox"] != "danger-full-access" || params["ephemeral"] != false {
+		t.Fatalf("Codex thread/start lost launch policy: %s", host.requests[1])
 	}
 	if err := adapter.OnFrame(ctx, json.RawMessage(`{"id":"server-request","method":"item/tool/requestUserInput","params":{}}`), 3); err != nil {
 		t.Fatal(err)
@@ -254,8 +262,8 @@ func TestCodexHandshakeAndServerReplyKeepNativeNullableFields(t *testing.T) {
 	if err := json.Unmarshal(base.nativeWrites[len(base.nativeWrites)-1], &answer); err != nil {
 		t.Fatal(err)
 	}
-	if value, ok := answer["error"].(map[string]any)["data"]; !ok || value != nil {
-		t.Fatalf("Codex error response omitted null data: %s", base.nativeWrites[len(base.nativeWrites)-1])
+	if answer["id"] != "server-request" || answer["error"].(map[string]any)["code"] != float64(-32601) {
+		t.Fatalf("Codex unsupported request response: %s", base.nativeWrites[len(base.nativeWrites)-1])
 	}
 }
 
@@ -320,7 +328,7 @@ func TestCodexIgnoresChildFramesAndKeepsUnknownItemFields(t *testing.T) {
 	if len(host.events) != 0 || !bytes.Equal(childFrame, childBefore) {
 		t.Fatalf("Codex child frame changed root state or raw evidence: events=%d raw=%s", len(host.events), childFrame)
 	}
-	unknown := json.RawMessage(`{"method":"item/started","params":{"threadId":"thread-root","turnId":"turn-root","item":{"type":"futureTool","id":"future-call","foo":{"x":1},"status":"completed","exitCode":0}}}`)
+	unknown := json.RawMessage(`{"method":"item/started","params":{"threadId":"thread-root","turnId":"turn-root","item":{"type":"futureTool","id":"future-call","foo":{"x":9007199254740993},"status":"completed","exitCode":0}}}`)
 	unknownBefore := append(json.RawMessage(nil), unknown...)
 	if err := adapter.OnFrame(ctx, unknown, 2); err != nil {
 		t.Fatal(err)
@@ -335,12 +343,15 @@ func TestCodexIgnoresChildFramesAndKeepsUnknownItemFields(t *testing.T) {
 	if started.GetToolName() != "futureTool" || started.GetItemId() != "future-call" {
 		t.Fatalf("unknown item identity was lost: %#v", started)
 	}
-	var arguments map[string]any
+	var arguments map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(host.events[1].GetToolArguments().ArgumentsJson), &arguments); err != nil {
 		t.Fatal(err)
 	}
 	if len(arguments) != 1 || arguments["foo"] == nil {
 		t.Fatalf("unknown item's outcome fields leaked into arguments: %s", host.events[1].GetToolArguments().ArgumentsJson)
+	}
+	if string(arguments["foo"]) != `{"x":9007199254740993}` {
+		t.Fatalf("unknown item's payload lost precision: %s", arguments["foo"])
 	}
 }
 

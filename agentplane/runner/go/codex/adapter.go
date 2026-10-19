@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/go/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -137,9 +138,7 @@ func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 	}
 	response, _, err := a.request(ctx, initializeID, map[string]any{
 		"method": "initialize", "id": initializeID,
-		"params": map[string]any{
-			"clientInfo": map[string]string{"name": codexClientName, "version": "0.1"}, "capabilities": nil,
-		},
+		"params": protocol.InitializeParams{ClientInfo: protocol.ClientInfo{Name: codexClientName, Version: "0.1"}},
 	})
 	if err != nil {
 		return "", fmt.Errorf("Codex initialize: %w", err)
@@ -163,9 +162,10 @@ func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		excludeTurns := true
 		response, _, err = a.request(ctx, requestID, map[string]any{
 			"method": method, "id": requestID,
-			"params": map[string]any{"threadId": threadID, "excludeTurns": true},
+			"params": protocol.ThreadResumeParams{ThreadID: threadID, ExcludeTurns: &excludeTurns},
 		})
 		if err != nil {
 			return "", fmt.Errorf("Codex thread/resume: %w", err)
@@ -179,13 +179,16 @@ func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		params := map[string]any{
-			"cwd": snapshot.Cwd, "approvalPolicy": "never", "sandbox": "danger-full-access",
-			"ephemeral": false, "model": snapshot.Model,
-			"config": map[string]any{"model_reasoning_effort": snapshot.ReasoningEffort},
+		never := protocol.Never
+		sandbox := protocol.SandboxMode("danger-full-access")
+		ephemeral := false
+		params := protocol.ThreadStartParams{
+			Cwd: &snapshot.Cwd, ApprovalPolicy: &protocol.ApprovalPolicyUnion{Enum: &never}, Sandbox: &sandbox,
+			Ephemeral: &ephemeral, Model: &snapshot.Model,
+			Config: map[string]any{"model_reasoning_effort": snapshot.ReasoningEffort},
 		}
 		if snapshot.Instructions != "" {
-			params["developerInstructions"] = snapshot.Instructions
+			params.DeveloperInstructions = &snapshot.Instructions
 		}
 		response, _, err = a.request(ctx, requestID, map[string]any{"method": method, "id": requestID, "params": params})
 		if err != nil {
@@ -199,21 +202,27 @@ func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 	if len(result) == 0 || string(result) == "null" {
 		return "", fmt.Errorf("Codex %s returned no result", method)
 	}
-	var threadResult struct {
-		Thread struct {
-			ID string `json:"id"`
-		} `json:"thread"`
+	var nativeThreadID string
+	if method == "thread/resume" {
+		var response protocol.ThreadResumeResponse
+		if err := json.Unmarshal(result, &response); err != nil {
+			return "", err
+		}
+		nativeThreadID = response.Thread.ID
+	} else {
+		var response protocol.ThreadStartResponse
+		if err := json.Unmarshal(result, &response); err != nil {
+			return "", err
+		}
+		nativeThreadID = response.Thread.ID
 	}
-	if err := json.Unmarshal(result, &threadResult); err != nil {
-		return "", err
-	}
-	if threadResult.Thread.ID == "" {
+	if nativeThreadID == "" {
 		return "", fmt.Errorf("Codex %s returned no thread id", method)
 	}
 	a.mu.Lock()
-	a.threadID = threadResult.Thread.ID
+	a.threadID = nativeThreadID
 	a.mu.Unlock()
-	return threadResult.Thread.ID, nil
+	return nativeThreadID, nil
 }
 
 func (a *codexAdapter) Reconcile(ctx context.Context, turnID string, _ bool) (*eventpb.ConversationReconciled, error) {
@@ -282,9 +291,9 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 	a.mu.Unlock()
 	response, sourceSequence, err := a.request(ctx, requestID, map[string]any{
 		"method": "turn/start", "id": requestID,
-		"params": map[string]any{
-			"threadId": threadID, "input": []any{map[string]any{"type": "text", "text": text, "text_elements": []any{}}},
-			"model": model, "effort": effort,
+		"params": protocol.TurnStartParams{
+			ThreadID: threadID, Input: []protocol.UserInput{{Type: "text", Text: &text}},
+			Model: &model, Effort: &effort,
 		},
 	})
 	if err != nil {
@@ -308,7 +317,7 @@ func (a *codexAdapter) Interrupt(ctx context.Context, turnID string) error {
 	}
 	_, _, err = a.request(ctx, requestID, map[string]any{
 		"method": "turn/interrupt", "id": requestID,
-		"params": map[string]string{"threadId": threadID, "turnId": turnID},
+		"params": protocol.TurnInterruptParams{ThreadID: threadID, TurnID: turnID},
 	})
 	return err
 }
@@ -369,11 +378,21 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 		"item/agentMessage/delta": true, "item/reasoning/summaryTextDelta": true,
 		"item/commandExecution/outputDelta": true,
 	}
+	var routing map[string]json.RawMessage
 	if threadScoped[frame.Method] {
+		if err := json.Unmarshal(frame.Params, &routing); err != nil {
+			return err
+		}
+		var scopedThreadID string
+		if rawID := routing["threadId"]; len(rawID) != 0 {
+			if err := json.Unmarshal(rawID, &scopedThreadID); err != nil {
+				return err
+			}
+		}
 		a.mu.Lock()
 		threadID := a.threadID
 		a.mu.Unlock()
-		if frame.Params.ThreadID != threadID {
+		if scopedThreadID != threadID {
 			return nil
 		}
 	}
@@ -386,12 +405,20 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 	}
 	switch frame.Method {
 	case "turn/started":
-		turnID := frame.Params.Turn.ID
+		var params protocol.TurnStartedNotification
+		if err := json.Unmarshal(frame.Params, &params); err != nil {
+			return err
+		}
+		turnID := params.Turn.ID
 		if turnID != a.host.Session().ActiveTurnID {
 			return a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: turnID, Model: a.host.Session().Model}}, sources)
 		}
 	case "turn/completed":
-		turn := frame.Params.Turn
+		var params protocol.TurnCompletedNotification
+		if err := json.Unmarshal(frame.Params, &params); err != nil {
+			return err
+		}
+		turn := params.Turn
 		status := eventpb.TurnStatus_TURN_STATUS_UNSPECIFIED
 		errorText := ""
 		knownStatus := true
@@ -412,13 +439,27 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 		}
 		return a.emit(ctx, &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{TurnId: turn.ID, Status: status, Error: errorText}}, sources)
 	case "item/started":
-		return a.projectItemStarted(ctx, frame.Params.Item, sources)
+		return a.projectItemStarted(ctx, routing["item"], sources)
 	case "item/completed":
-		return a.projectItemCompleted(ctx, frame.Params.Item, sources)
-	case "item/agentMessage/delta", "item/reasoning/summaryTextDelta":
-		return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: frame.Params.ItemID, Text: frame.Params.Delta}}, sources)
+		return a.projectItemCompleted(ctx, routing["item"], sources)
+	case "item/agentMessage/delta":
+		var params protocol.AgentMessageDeltaNotification
+		if err := json.Unmarshal(frame.Params, &params); err != nil {
+			return err
+		}
+		return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: params.ItemID, Text: params.Delta}}, sources)
+	case "item/reasoning/summaryTextDelta":
+		var params protocol.ReasoningSummaryTextDeltaNotification
+		if err := json.Unmarshal(frame.Params, &params); err != nil {
+			return err
+		}
+		return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: params.ItemID, Text: params.Delta}}, sources)
 	case "item/commandExecution/outputDelta":
-		return a.emit(ctx, &eventpb.Event_ToolOutputDelta{ToolOutputDelta: &eventpb.ToolOutputDelta{ItemId: frame.Params.ItemID, Text: frame.Params.Delta}}, sources)
+		var params protocol.CommandExecutionOutputDeltaNotification
+		if err := json.Unmarshal(frame.Params, &params); err != nil {
+			return err
+		}
+		return a.emit(ctx, &eventpb.Event_ToolOutputDelta{ToolOutputDelta: &eventpb.ToolOutputDelta{ItemId: params.ItemID, Text: params.Delta}}, sources)
 	}
 	return nil
 }
@@ -460,11 +501,7 @@ func (a *codexAdapter) onResponse(ctx context.Context, frame codexWireFrame, req
 			return err
 		}
 	}
-	var result struct {
-		Turn struct {
-			ID string `json:"id"`
-		} `json:"turn"`
-	}
+	var result protocol.TurnStartResponse
 	if err := json.Unmarshal(frame.Result, &result); err != nil {
 		return err
 	}
@@ -593,8 +630,8 @@ func (a *codexAdapter) itemCompletedTool(ctx context.Context, itemID, output str
 
 func (a *codexAdapter) answerServerRequest(ctx context.Context, frame codexWireFrame) error {
 	return a.send(ctx, map[string]any{
-		"id": frame.ID, "error": map[string]any{
-			"code": -32601, "message": "the agentplane runner does not answer " + frame.Method, "data": nil,
+		"id": frame.ID, "error": protocol.JSONRPCErrorError{
+			Code: -32601, Message: "the agentplane runner does not answer " + frame.Method,
 		},
 	})
 }
@@ -656,31 +693,16 @@ func (a *codexAdapter) emit(ctx context.Context, observation any, sources []uint
 	return a.host.Emit(ctx, event, sources)
 }
 
+// codexWireFrame keeps opaque JSON-RPC payloads until a known method selects a generated type.
 type codexWireFrame struct {
-	ID     json.RawMessage `json:"id"`
-	Method string          `json:"method"`
-	Result json.RawMessage `json:"result"`
-	Error  *struct {
-		Code    int             `json:"code"`
-		Message string          `json:"message"`
-		Data    json.RawMessage `json:"data"`
-	} `json:"error"`
-	Params struct {
-		ThreadID string `json:"threadId"`
-		TurnID   string `json:"turnId"`
-		Turn     struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
-			Error  *struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		} `json:"turn"`
-		Item   json.RawMessage `json:"item"`
-		ItemID string          `json:"itemId"`
-		Delta  string          `json:"delta"`
-	} `json:"params"`
+	ID     json.RawMessage             `json:"id"`
+	Method string                      `json:"method"`
+	Result json.RawMessage             `json:"result"`
+	Error  *protocol.JSONRPCErrorError `json:"error"`
+	Params json.RawMessage             `json:"params"`
 }
 
+// codexItem holds the fields used by Agentplane's transcript projection.
 type codexItem struct {
 	Type             string
 	WireType         string
@@ -698,54 +720,48 @@ type codexItem struct {
 }
 
 func decodeCodexItem(raw json.RawMessage) (codexItem, error) {
-	var item codexItem
-	var values map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &values); err != nil {
-		return item, err
+	var header struct {
+		Type string `json:"type"`
+		ID   string `json:"id"`
 	}
-	if err := json.Unmarshal(values["type"], &item.WireType); err != nil {
-		return item, err
+	if err := json.Unmarshal(raw, &header); err != nil {
+		return codexItem{}, err
 	}
-	if err := json.Unmarshal(values["id"], &item.ID); err != nil {
-		return item, err
-	}
-	item.Type = item.WireType
-	switch item.WireType {
+	item := codexItem{Type: header.Type, WireType: header.Type, ID: header.ID}
+	switch header.Type {
 	case "userMessage":
 	case "agentMessage":
-		if err := json.Unmarshal(values["text"], &item.Text); err != nil {
+		var native protocol.AgentMessageThreadItem
+		if err := json.Unmarshal(raw, &native); err != nil {
 			return item, err
 		}
+		item.Text = native.Text
 	case "reasoning":
-		var summary []string
-		if len(values["summary"]) > 0 {
-			if err := json.Unmarshal(values["summary"], &summary); err != nil {
-				return item, err
-			}
+		var native protocol.ReasoningThreadItem
+		if err := json.Unmarshal(raw, &native); err != nil {
+			return item, err
 		}
-		item.Summary = summary
+		item.Summary = native.Summary
 	case "commandExecution":
-		for key, destination := range map[string]*string{"command": &item.Command, "cwd": &item.Cwd, "status": &item.Status} {
-			if len(values[key]) > 0 {
-				if err := json.Unmarshal(values[key], destination); err != nil {
-					return item, err
-				}
-			}
+		var native protocol.CommandExecutionThreadItem
+		if err := json.Unmarshal(raw, &native); err != nil {
+			return item, err
 		}
-		if len(values["aggregatedOutput"]) > 0 && string(values["aggregatedOutput"]) != "null" {
-			if err := json.Unmarshal(values["aggregatedOutput"], &item.AggregatedOutput); err != nil {
-				return item, err
-			}
+		item.Command, item.Cwd, item.Status = native.Command, native.Cwd, string(native.Status)
+		if native.AggregatedOutput != nil {
+			item.AggregatedOutput = *native.AggregatedOutput
 		}
 	case "subAgentActivity":
-		for key, destination := range map[string]*string{"kind": &item.Kind, "agentThreadId": &item.AgentThreadID, "agentPath": &item.AgentPath} {
-			if err := json.Unmarshal(values[key], destination); err != nil {
-				return item, err
-			}
+		var native protocol.SubAgentActivityThreadItem
+		if err := json.Unmarshal(raw, &native); err != nil {
+			return item, err
 		}
+		item.Kind, item.AgentThreadID, item.AgentPath = string(native.Kind), native.AgentThreadID, native.AgentPath
 	default:
 		item.Type = "unknown"
-		item.Extras = values
+		if err := json.Unmarshal(raw, &item.Extras); err != nil {
+			return item, err
+		}
 		delete(item.Extras, "type")
 		delete(item.Extras, "id")
 	}

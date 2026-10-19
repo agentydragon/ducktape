@@ -46,6 +46,14 @@ The production build and release target is `//agentplane/runner:runner_release`.
 The binary includes the supervisor and SQLite; the native Claude/Codex executables,
 workspace tools and CA certificates are supplied by the runtime image.
 
+`go/codex/protocol` generates Go models at build time with Quicktype from schemas
+exported by the same pinned Codex executable used by the native tests. Requests,
+responses, notifications and known item payloads use these models. Method and item
+dispatch keep a raw JSON boundary for unknown variants; recorded native frames are
+never reconstructed from decoded models. Codex rollout history is a separate format
+and still has a dedicated reader. Schema export and JavaScript code generation are
+build dependencies only.
+
 The integration fixtures launch this executable and drive its public control and ingress
 protocols. `test_turns.py`, `test_subagents.py`, and `test_restart.py` exercise the real
 native harnesses; App, History, Gateway, and Notification integration tests use the

@@ -10,6 +10,7 @@ go_library(
     visibility = ["//agentplane/runner:__subpackages__"],
     deps = [
         "//agentplane/proto:event_go_proto",
+        "//agentplane/runner/go/codex/protocol",
         "//agentplane/runner/go/harness",
         "@com_github_google_uuid//:uuid",
     ],
