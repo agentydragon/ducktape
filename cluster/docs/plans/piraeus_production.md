@@ -13,6 +13,14 @@ every node need not supply both tiers. Preserve the same class names across
 node types and permit remote consumption on prepared nodes, subject to the
 explicit site policy below.
 
+Deploy on **Talos first**. Talos host preparation, pools, recovery acceptance and
+initial production use must not depend on NixOS support, Atlas capacity or laptop
+availability. Keep NixOS nodes outside Piraeus satellite/CSI eligibility and
+Piraeus-consuming workload placement until their separate later rollout passes
+acceptance. That rollout joins the same operator, LINSTOR cluster and storage
+classes; it does not install a second provider or require migrating existing
+Talos volumes.
+
 | Proposed class  | Pool  | Steady-state diskful copies |
 | --------------- | ----- | --------------------------: |
 | `piraeus-ssd-1` | `ssd` |                           1 |
@@ -40,17 +48,17 @@ that Forgejo's current 200 GiB claim will fit. Size application pools from
 measured data, growth and resync headroom before a migration; choose any logical
 overcommit explicitly and test physical-exhaustion behavior.
 
-| Node               | Proposed first local pool                                      | Allocation route and prerequisite                                                                                                                                                                                                                                                         |
-| ------------------ | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ovh-ns1001419`    | SSD: 64 GiB thin data in a 96 GiB raw region                   | First SSD candidate: only 12.06 GB observed data use; evacuate its SeaweedFS data and study-casino replica, then rebuild the **data disk** layout. Leave the install/etcd disk untouched.                                                                                                 |
-| `ovh-ns104952`     | SSD: 64 GiB thin data in a 96 GiB raw region                   | Repeat after the first SSD succeeds. Preserve/restore legacy XFS for SeaweedFS, CNPG and Valkey.                                                                                                                                                                                          |
-| `ovh-ns104963`     | SSD: 64 GiB thin data in a 96 GiB raw region                   | Repeat after replica health is restored; its testing PostgreSQL singleton requires an accepted outage or prior migration.                                                                                                                                                                 |
-| `ovh-ns102453`     | HDD: 128 GiB thin data in a 192 GiB raw region                 | First HDD candidate: DRBD already prepared and the 4 TB data device has the most headroom. Evacuate/restore SeaweedFS, ClickHouse and all local PVC consumers before rebuilding its data layout.                                                                                          |
-| `ovh-ns103656`     | HDD, size pending legacy capacity budget                       | Its 1890 GiB local-path requests exceed the roughly 1862 GiB data filesystem. Agree growth/reprovisioning limits before taking capacity away.                                                                                                                                             |
-| `ovh-ns103711`     | HDD, size pending legacy capacity budget                       | Its 2368 GiB local-path requests exceed the roughly 1862 GiB data filesystem; this includes live 1800 GiB SeaweedFS and 500 GiB ClickHouse claims. Same capacity gate.                                                                                                                    |
-| `wyrm2`            | New dedicated SSD and HDD virtual disks, initially 96 GiB each | Resolve Atlas read access/headroom and actual media, choose unused slots, then attach. Each can initially hold a 64 GiB thin pool plus metadata/reserve. Existing OpenEBS VGs stay with OpenEBS.                                                                                          |
-| `optiplex`         | SSD after adding capacity                                      | Prefer an additional SSD if the hardware permits; otherwise plan a larger-NVMe replacement with backup/restore. The sole current 256 GB disk has only 60.75 GB filesystem free, insufficient for a new 96 GiB region without reducing existing usage. Client enrollment can precede this. |
-| `iguana`, `rugged` | Local SSD pools after an online inventory                      | First enroll as clients after kernel validation. Establish dedicated capacity, encryption/unlock ownership and suspend/disconnect behavior before adding local pools.                                                                                                                     |
+| Node                                   | Proposed first local pool                                      | Allocation route and prerequisite                                                                                                                                                                                                                                                         |
+| -------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ovh-ns1001419`                        | SSD: 64 GiB thin data in a 96 GiB raw region                   | First SSD candidate: only 12.06 GB observed data use; evacuate its SeaweedFS data and study-casino replica, then rebuild the **data disk** layout. Leave the install/etcd disk untouched.                                                                                                 |
+| `ovh-ns104952`                         | SSD: 64 GiB thin data in a 96 GiB raw region                   | Repeat after the first SSD succeeds. Preserve/restore legacy XFS for SeaweedFS, CNPG and Valkey.                                                                                                                                                                                          |
+| `ovh-ns104963`                         | SSD: 64 GiB thin data in a 96 GiB raw region                   | Repeat after replica health is restored; its testing PostgreSQL singleton requires an accepted outage or prior migration.                                                                                                                                                                 |
+| `ovh-ns102453`                         | HDD: 128 GiB thin data in a 192 GiB raw region                 | First HDD candidate: DRBD already prepared and the 4 TB data device has the most headroom. Evacuate/restore SeaweedFS, ClickHouse and all local PVC consumers before rebuilding its data layout.                                                                                          |
+| `ovh-ns103656`                         | HDD, size pending legacy capacity budget                       | Its 1890 GiB local-path requests exceed the roughly 1862 GiB data filesystem. Agree growth/reprovisioning limits before taking capacity away.                                                                                                                                             |
+| `ovh-ns103711`                         | HDD, size pending legacy capacity budget                       | Its 2368 GiB local-path requests exceed the roughly 1862 GiB data filesystem; this includes live 1800 GiB SeaweedFS and 500 GiB ClickHouse claims. Same capacity gate.                                                                                                                    |
+| `wyrm2` (later NixOS phase)            | New dedicated SSD and HDD virtual disks, initially 96 GiB each | Resolve Atlas read access/headroom and actual media, choose unused slots, then attach. Each can initially hold a 64 GiB thin pool plus metadata/reserve. Existing OpenEBS VGs stay with OpenEBS.                                                                                          |
+| `optiplex`                             | SSD after adding capacity                                      | Prefer an additional SSD if the hardware permits; otherwise plan a larger-NVMe replacement with backup/restore. The sole current 256 GB disk has only 60.75 GB filesystem free, insufficient for a new 96 GiB region without reducing existing usage. Client enrollment can precede this. |
+| `iguana`, `rugged` (later NixOS phase) | Local SSD pools after an online inventory                      | First enroll as clients after kernel validation. Establish dedicated capacity, encryption/unlock ownership and suspend/disconnect behavior before adding local pools.                                                                                                                     |
 
 The raw-region budget includes VG metadata and unallocated extension reserve;
 do not allocate its full capacity as thin data. Keep at least 25% of each new VG
@@ -102,26 +110,25 @@ testing this design; neither tested three-node two-copy movement or WAN boundari
 
 ## Implementation changes
 
+### First rollout: Talos
+
 - [ ] **Host preparation:** generalize
       `cluster/terraform/main/drbd-canary.tf` into opt-in DRBD preparation for OVH
       and home Talos nodes. Preserve every node's existing extension/kernel settings.
       Add `dm-thin-pool` and required snapshot support for LVM_THIN. Roll one node at
       a time, control planes serially, using the existing Talos runbook and application
       restoration gates. Verify readiness before activating its Piraeus eligibility.
-- [ ] **NixOS support:** add a shared opt-in host module with a DRBD 9 module built
-      for each running kernel, utilities and udev integration; keep resource ownership
-      in LINSTOR. The earlier build targeted 6.18.55 while wyrm2 still runs 6.18.54.
-      Build/inspect a matching module or use a scheduled kernel roll; do not assume
-      either reboot-free activation or compatibility with rugged's last-known 7.2 kernel.
 - [ ] **Provider scope:** extend `cluster/cdk8s/piraeus.py`, preserving one operator
       and one LINSTOR owner. Separate stable controller placement, prepared-node CSI/
-      satellite eligibility, OS-specific configuration and per-node pool selection.
+      satellite eligibility and per-node pool selection. Initially admit only prepared
+      Talos nodes; keep Piraeus-consuming Pods on eligible nodes, including remote
+      consumers. Add NixOS-specific configuration and eligibility in the later phase.
       Add four explicit classes, suitable host-network/Nebula firewall reachability,
       a port allocation range larger than the 20-port canary, and protected monitoring.
-      Account for control-plane/roaming taints and temporarily offline satellites.
-- [ ] **LVM canary:** prove the bounded raw-region/legacy-XFS layout, NixOS/Talos
-      interoperability and pool ownership before production disk conversion. Dedicated
-      temporary virtual capacity is an alternative if Atlas access is restored first.
+      Account for control-plane taints and temporarily offline satellites.
+- [ ] **LVM canary:** prove the bounded raw-region/legacy-XFS layout and pool
+      ownership on disposable Talos storage before production disk conversion.
+      Arrange that capacity independently of NixOS enrollment or Atlas availability.
 - [ ] **Pool allocation changes:** one node per reviewed destructive conversion;
       record exact device identities, all current consumers, replica/writer state,
       measured copy size, staging capacity, restorable backup and the restore target.
@@ -138,6 +145,21 @@ testing this design; neither tested three-node two-copy movement or WAN boundari
       direct Piraeus RWO requires an explicit single-active-app design, or a separately
       benchmarked NFS/RWX design. The existing SeaweedFS S3 service remains in use.
 
+### Later rollout: NixOS
+
+- [ ] **Host support:** add a shared opt-in host module with a DRBD 9 module built
+      for each running kernel, utilities and udev integration; keep resource ownership
+      in LINSTOR. The earlier build targeted 6.18.55 while wyrm2 still runs 6.18.54.
+      Build/inspect a matching module or use a scheduled kernel roll; do not assume
+      either reboot-free activation or compatibility with rugged's last-known 7.2 kernel.
+- [ ] **Enrollment and capacity:** add OS-specific satellite/CSI configuration and
+      admit hosts individually, starting with wyrm2 after its capacity prerequisites
+      are resolved. Validate client access before adding dedicated local pools.
+      Inventory laptops online and test suspend/disconnect behavior before admission.
+- [ ] **Interoperability acceptance:** repeat Block/Filesystem lifecycle and recovery
+      checks on NixOS, then test Talos/NixOS remote use and automatic movement within
+      the approved placement domain. Preserve existing Talos service throughout.
+
 The Talos integration follows the [upstream Piraeus Talos guide](https://piraeus.io/docs/v2/how-to/talos/).
 The repository's [canary preparation](../drbd_canary.md),
 [canary observations](../../debug/drbd_canary/results.md),
@@ -146,7 +168,10 @@ The repository's [canary preparation](../drbd_canary.md),
 
 ## Acceptance before admitting production data
 
-- [ ] On each OS/tier, create a sparse 50 GiB volume; measure physical allocation,
+These gates apply to the Talos deployment first. NixOS acceptance is a separate
+gate for admitting NixOS nodes, not a prerequisite for Talos production use.
+
+- [ ] On Talos for each tier, create a sparse 50 GiB volume; measure physical allocation,
       enforce the logical limit, expand, discard, snapshot/restore and retain/delete.
 - [ ] On three stable same-site nodes, move a two-copy Filesystem and raw Block
       volume to the third node under writes: same PVC UID, remote use, automatic local
@@ -159,10 +184,11 @@ The repository's [canary preparation](../drbd_canary.md),
       performance measurements while synchronization is incomplete.
 - [ ] Test constrained pool exhaustion/metadata monitoring on disposable capacity,
       and recover a volume plus controller metadata from independent backups.
-- [ ] Demonstrate no unintended WAN synchronous peer or laptop placement, and
+- [ ] Demonstrate no unintended WAN synchronous peer or ineligible-node placement, and
       record what happens when a client lacks the requested local media or free space.
 
-Outstanding inputs are Atlas read access/backing headroom, smaller-HDD legacy
-capacity budgets, OptiPlex's hardware allocation, online laptop inventory and the
-two-copy site/locality policy. They block their respective allocation steps, not
-the independent host-preparation and provider changes.
+Outstanding Talos inputs are smaller-HDD legacy capacity budgets, OptiPlex's
+hardware allocation and the two-copy site/locality policy. They block their
+respective allocation steps, not the independent host-preparation and provider
+changes. Atlas read access/backing headroom, NixOS kernel support and online
+laptop inventory belong to the later NixOS rollout and do not block Talos.
