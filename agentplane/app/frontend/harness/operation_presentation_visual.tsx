@@ -35,7 +35,9 @@ export function OperationPresentationVisual(): JSX.Element {
         <ActionText
           heading="Description"
           format="prose"
-          text="The pod reported a zero-width\u200b marker in its response. The text stays selectable while the marker remains visible."
+          text={
+            "The pod reported a zero-width\u200b marker in its response. The text stays selectable while the marker remains visible."
+          }
           clamp={false}
         />
         <ActionJson heading="Recorded data" value={{ phase: "Running", replicas: 2 }} clamp={false} />
@@ -46,7 +48,7 @@ export function OperationPresentationVisual(): JSX.Element {
           releaseWhenFar
           surface="framed"
         />
-        <OutputBlock name="stdout" text="hello from the selected container\n" releaseWhenFar surface="framed" />
+        <OutputBlock name="stdout" text={"hello from the selected container\n"} raw releaseWhenFar surface="framed" />
       </Stack>
       <div style={{ height: "1800px" }} aria-hidden="true" />
       <section id="parked-code-section" aria-label="Long code sample">
