@@ -227,8 +227,8 @@ The API's `at` field is the `decided_at` column; `ingested_at` is the row's inse
 1,000) inside the retention window and returns them oldest first.
 
 The schema is Goose SQL in `history_migrations/history/`, tracked by `egress_goose_version`.
-Staging and testing each hold an `egress` database in their CNPG cluster. Both completed the
-[Go cutover](docs/go_cutover.md); Alembic is no longer a migration owner. Existing history rows and
+Staging and testing each hold an `egress` database in their CNPG cluster. Both use Goose;
+Alembic is no longer a migration owner. Existing history rows and
 the inert `egress_alembic_version` table remain in place. The migrator runs as the proxy Pod's init
 container, so a failed migration keeps that Pod unready while the previous proxies keep enforcing.
 
