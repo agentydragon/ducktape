@@ -1336,7 +1336,6 @@ spec:
       paths:
         - /llms.txt
         - /docs/agents/**
-        - /openapi.json
         - /v1/rules
       type: egress
     - clusterInternal: true

@@ -1357,7 +1357,6 @@ spec:
       paths:
         - /llms.txt
         - /docs/agents/**
-        - /openapi.json
         - /v1/rules
       type: egress
     - clusterInternal: true
@@ -9522,7 +9521,6 @@ spec:
         - GET
       paths:
         - /v1/rules
-        - /openapi.json
       type: egress
     - clusterInternal: true
       credentialRef:

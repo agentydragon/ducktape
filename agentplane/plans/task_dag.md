@@ -1932,9 +1932,7 @@ Inventory remaining HTTP callers first: where an HTTP caller remains, the genera
 Dispatcher's and the rules route's, which the [agent CLI](agent_cli.md) plan's egress commands target)
 replaces the handler instead of leaving two interfaces.
 Then delete the `/decisions`, `/decisions/changes`, `/healthz` and `/livez` handlers after every caller's
-replacement image is pinned (removals follow their callers). The `/openapi.json` path rules in
-`cluster/cdk8s/agentplane/egress.py` and `cluster/cdk8s/public_coder/egress.py` that name the egress rules
-API go once the image without that handler is pinned. Nothing imports `invopop/jsonschema` any more
+replacement image is pinned (removals follow their callers). Nothing imports `invopop/jsonschema` any more
 (the rules OpenAPI reflected with it), so its direct `require` in `third_party/go.mod` becomes
 `// indirect` and its `use_repo` entry in `MODULE.bazel` goes; both are graph-wide, so batch them with
 the next Go dependency change.

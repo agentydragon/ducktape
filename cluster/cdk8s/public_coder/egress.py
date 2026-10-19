@@ -209,7 +209,7 @@ def add_gateway_resources(
                 hosts=[GATEWAY.fqdn],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/v1/rules", "/openapi.json"],
+                paths=["/v1/rules"],
                 credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
             Rule.egress(
