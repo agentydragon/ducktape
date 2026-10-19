@@ -512,6 +512,10 @@ owned by the `Sandbox`, so deleting it removes them:
   EndpointSlice `<sandbox>-control`, naming the holder's Pod IP and annotated
   `agentplane.allegedly.works/connection-epoch`.
 
+Existing connection Leases and EndpointSlices must belong to the exact Sandbox API, kind, name and
+UID, with no other owners, and must not be deleting. Foreign records, including records of a deleted
+Sandbox whose name was reused, block connection acceptance until they are removed.
+
 Accepting a connection updates the Lease with the `resourceVersion` it read (creating it if absent),
 re-reading and retrying on a conflict; then writes the EndpointSlice unless it already names a newer
 epoch; then sends `Welcome` with the new epoch. The previous owner, if it still holds a stream, finds

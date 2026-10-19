@@ -65,6 +65,9 @@ func (r *connectionRecords) accept(ctx context.Context, sandbox SandboxIdentity,
 		}
 		var next int32 = 1
 		if current != nil {
+			if !ownsSandbox(current.OwnerReferences, sandbox) || !current.DeletionTimestamp.IsZero() {
+				return fmt.Errorf("refusing to adopt Lease %s: foreign or being deleted", leaseName)
+			}
 			if current.Spec.LeaseTransitions != nil {
 				if *current.Spec.LeaseTransitions == math.MaxInt32 {
 					return fmt.Errorf("connection epoch exhausted")
@@ -128,7 +131,7 @@ func (r *connectionRecords) renew(
 		}
 		if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != r.holder.name ||
 			lease.Spec.LeaseTransitions == nil || uint64(*lease.Spec.LeaseTransitions) != epoch ||
-			!ownsSandbox(lease.OwnerReferences, sandbox.UID) {
+			!ownsSandbox(lease.OwnerReferences, sandbox) {
 			return errSupersededConnection
 		}
 		if lease.Annotations == nil {
@@ -165,7 +168,10 @@ func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox S
 		} else if err != nil {
 			return err
 		}
-		if current != nil && ownsSandbox(current.OwnerReferences, sandbox.UID) {
+		if current != nil {
+			if !ownsSandbox(current.OwnerReferences, sandbox) || !current.DeletionTimestamp.IsZero() {
+				return fmt.Errorf("refusing to adopt EndpointSlice %s: foreign or being deleted", name)
+			}
 			if currentEpoch, err := strconv.ParseUint(current.Annotations[sandboxlease.ConnectionEpochAnnotation], 10, 64); err == nil && currentEpoch >= epoch {
 				return nil
 			}
@@ -210,8 +216,10 @@ func sandboxOwnerReference(sandbox SandboxIdentity) metav1.OwnerReference {
 	}
 }
 
-func ownsSandbox(references []metav1.OwnerReference, uid string) bool {
-	return len(references) == 1 && references[0].Kind == sandboxapi.SandboxKind && string(references[0].UID) == uid
+func ownsSandbox(references []metav1.OwnerReference, sandbox SandboxIdentity) bool {
+	return len(references) == 1 && references[0].APIVersion == sandboxapi.GroupVersion.String() &&
+		references[0].Kind == sandboxapi.SandboxKind && references[0].Name == sandbox.Name &&
+		string(references[0].UID) == sandbox.UID
 }
 
 func stringPointer(value string) *string                     { return &value }
