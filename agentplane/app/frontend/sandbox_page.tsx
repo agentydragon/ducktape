@@ -41,7 +41,7 @@ import { PolicyBindingsSection } from "./policy_bindings";
 import { SandboxConsole } from "./sandbox_console";
 import { SessionsTable } from "./sandbox_sessions";
 import { StatusView } from "./sandbox_status_view";
-import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
+import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandboxSuspended } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { snapshotFresh } from "./thread_status";
 import { TopbarActions, TopbarTitle } from "./topbar";
@@ -121,6 +121,7 @@ export function SandboxPage({
   const threadsUnavailable = Array.isArray(threadListing) ? null : threadListing.code;
   const threads = Array.isArray(threadListing) ? threadListing : [];
   const ready = sandboxReady(sandbox);
+  const canWakeForSession = sandboxSuspended(sandbox) && sandbox?.wake_on_send === true;
   useEffect(() => {
     if (requestedTab === "console" && sandbox !== null && !vmConsoleAvailable) {
       setSearchParams({}, { replace: true });
@@ -343,7 +344,10 @@ export function SandboxPage({
       )}
       {sandbox && !ready && (
         <Alert color="gray" role="status">
-          Sandbox status: {sandboxSummary(sandbox).label}. New sessions need a ready Sandbox.
+          Sandbox status: {sandboxSummary(sandbox).label}.{" "}
+          {canWakeForSession
+            ? "Starting a session will wake the Sandbox."
+            : "New sessions need a ready Sandbox or a suspended Sandbox with wake on send enabled."}
         </Alert>
       )}
       {pendingOpen && (
@@ -431,7 +435,7 @@ export function SandboxPage({
             <div hidden={!launching}>
               <NewSessionForm
                 presetName={sandbox?.preset ?? null}
-                startable={ready && !pendingOpen}
+                startable={(ready || canWakeForSession) && !pendingOpen}
                 creating={creatingSession}
                 onStart={(spec, setupScript) => void createSession(spec, setupScript)}
                 onClose={() => setLaunching(false)}
