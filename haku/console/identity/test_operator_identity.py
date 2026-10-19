@@ -93,20 +93,6 @@ async def test_disabled_operator_invalidates_session_static_and_resolution_paths
         await store.resolve_configured_external_user_key("disabled-user")
 
 
-async def test_list_active_ids_is_scoped_to_current_trust_domain(
-    migrated_sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    current_store = _store(migrated_sessions)
-    current = await current_store.resolve_configured_external_user_key("current-user")
-    other_store = PostgresOperatorIdentityStore(
-        migrated_sessions,
-        OperatorIdentityTrust(trust_domain="auth.test/other/v1", trusted_issuers=frozenset({_BROWSER_ISSUER})),
-    )
-    await other_store.resolve_configured_external_user_key("other-user")
-
-    assert await current_store.list_active_ids() == [current]
-
-
 async def test_existing_authority_fails_closed_when_current_trust_changes(
     migrated_sessions: async_sessionmaker[AsyncSession],
 ) -> None:

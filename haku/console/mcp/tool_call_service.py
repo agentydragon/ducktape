@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
-from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
 from haku.console.mcp.execution import (
     AgentMcpExecutionCaller,
     McpExecutionCaller,
@@ -30,15 +29,12 @@ from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     ApprovalDecision,
     ApprovalDecisionRequest,
-    SubmitToolCallRequest,
     ToolCallPayloadField,
     ToolCallRecord,
     ToolCallStatus,
 )
 
 logger = logging.getLogger(__name__)
-
-TERMINAL_STATUSES = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED, ToolCallStatus.WITHDRAWN}
 
 _CURSOR_SEPARATOR = "~"
 
@@ -86,17 +82,6 @@ class ToolCallPageCursor:
 
 
 class ToolCallRepository(Protocol):
-    async def submit(
-        self,
-        *,
-        server: McpServerEntry,
-        req: SubmitToolCallRequest,
-        actor: RuntimeActor,
-        auto_approval_policy_id: str | None = None,
-        auto_approval_evaluation: str | None = None,
-        auto_denial_reason: str | None = None,
-    ) -> ToolCallRecord: ...
-
     async def get(
         self, tool_call_id: str, *, actor: RuntimeActor, fields: Collection[ToolCallPayloadField] | None = None
     ) -> ToolCallRecord: ...
@@ -194,113 +179,12 @@ class ToolCallApplicationService:
         self._repository = repository
         self._executor = executor
         self._in_process_servers = in_process_servers
-        self._auto_approval_policies = AutoApprovalPolicyRegistry(settings)
         # In-flight background execution tasks dispatched by `decide`. Held so they aren't GC'd
         # mid-run, and drained/cancelled at shutdown (`aclose`).
         self._execution_tasks: set[asyncio.Task[ToolCallRecord]] = set()
 
     async def _backend_auth(self, server: McpServerEntry, operator_id: UUID) -> str | None:
         return await backend_auth_for_operator(server=server, operator_id=operator_id)
-
-    async def submit_and_wait(self, *, req: SubmitToolCallRequest, actor: RuntimeActor) -> ToolCallRecord:
-        actor = self._require_actor(actor)
-        server = _server_entry(self._settings, req.server_id)
-        server_builder = self._in_process_servers.get(server.id)
-        authorizer = server_builder.authorizer if server_builder is not None else None
-        if authorizer is not None and (authorization_denial := authorizer(actor, req.tool_name, req.arguments)):
-            record = await self._repository.submit(
-                server=server,
-                req=req,
-                actor=actor,
-                auto_approval_evaluation="denied: trusted in-process authorization",
-                auto_denial_reason=authorization_denial,
-            )
-            logger.info(
-                "tool call %s auto-denied (in-process authorization) server=%s tool=%s caller=%s reason=%r",
-                record.tool_call_id,
-                record.server_id,
-                record.tool_name,
-                record.caller,
-                record.decision_note,
-            )
-            return record
-        decision = await auto_approve_tool_call(
-            policies=self._auto_approval_policies,
-            actor=actor,
-            server_id=server.id,
-            tool_name=req.tool_name,
-            arguments=req.arguments,
-            mcp=server_builder.builder(None) if server_builder is not None else None,
-        )
-        if isinstance(decision, PolicyDenial):
-            # Schema failure or policy auto-denial: the call can never execute, so it is
-            # persisted born-denied (full audit row, never pending).
-            record = await self._repository.submit(
-                server=server,
-                req=req,
-                actor=actor,
-                auto_approval_evaluation=decision.evaluation,
-                auto_denial_reason=decision.reason,
-            )
-            logger.info(
-                "tool call %s auto-denied (policy/schema) server=%s tool=%s caller=%s reason=%r",
-                record.tool_call_id,
-                record.server_id,
-                record.tool_name,
-                record.caller,
-                record.decision_note,
-            )
-            return record
-        auto_approval_policy_id, auto_approval_evaluation = decision
-
-        # A missing operator-linked account must fail before a RUNNING row is durable. Once
-        # persisted, every RUNNING call has all authorization needed to attempt execution.
-        auth_token = None
-        if auto_approval_policy_id is not None:
-            auth_token = await self._backend_auth(server, actor.operator_id)
-
-        record = await self._repository.submit(
-            server=server,
-            req=req,
-            actor=actor,
-            auto_approval_policy_id=auto_approval_policy_id,
-            auto_approval_evaluation=auto_approval_evaluation,
-        )
-        logger.info(
-            "tool call %s submitted status=%s server=%s tool=%s caller=%s approval_policy=%s auto_approval=%s",
-            record.tool_call_id,
-            record.status,
-            record.server_id,
-            record.tool_name,
-            record.caller,
-            record.approval_policy_id,
-            record.auto_approval_evaluation,
-        )
-        if record.status == ToolCallStatus.RUNNING:
-            record = await self._execute(record=record, server=server, auth_token=auth_token, actor=actor)
-        return await self._wait_terminal(record.tool_call_id, actor, req.wait_for_ms)
-
-    async def execute_direct(self, *, req: SubmitToolCallRequest, actor: RuntimeActor) -> dict[str, Any]:
-        """Execute as the authenticated Operator without policy, ledger, events, or promises."""
-
-        operator = self._require_operator(actor)
-        server = _server_entry(self._settings, req.server_id)
-        auth_token = await self._backend_auth(server, operator.operator_id)
-        logger.info(
-            "operator direct MCP call server=%s tool=%s operator_id=%s", server.id, req.tool_name, operator.operator_id
-        )
-        return await self._executor.execute(
-            server,
-            req.tool_name,
-            req.arguments,
-            auth_token,
-            McpExecutionContext(
-                caller=OperatorMcpExecutionCaller(operator_id=operator.operator_id),
-                tool_call_id=None,
-                approving_operator_id=None,
-                approval_policy_id=None,
-            ),
-        )
 
     async def get(
         self, tool_call_id: str, *, actor: RuntimeActor, fields: Collection[ToolCallPayloadField] | None = None
@@ -439,12 +323,6 @@ class ToolCallApplicationService:
         if not task.cancelled() and (error := task.exception()) is not None:
             logger.error("tool-call execution task crashed", exc_info=error)
 
-    async def join_executions(self) -> None:
-        """Await in-flight execution tasks to completion without cancelling — a graceful drain (as
-        opposed to `aclose`'s cancel). Lets a caller wait for approved calls to finish."""
-        while self._execution_tasks:
-            await asyncio.gather(*tuple(self._execution_tasks), return_exceptions=True)
-
     async def aclose(self) -> None:
         """Cancel in-flight execution tasks and wait for them to settle. Each terminalizes its row as
         cancelled (see `_execute`); with the console's Recreate rollout a bounded cancel is the
@@ -453,25 +331,6 @@ class ToolCallApplicationService:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-
-    async def _wait_terminal(self, tool_call_id: str, actor: RuntimeActor, wait_for_ms: int) -> ToolCallRecord:
-        record = await self._repository.get(tool_call_id, actor=actor)
-        if record.status in TERMINAL_STATUSES or wait_for_ms <= 0:
-            return record
-
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + (wait_for_ms / 1000)
-        while True:
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                return await self._repository.get(tool_call_id, actor=actor)
-
-            # The durable row is authoritative. Keep the bounded wait useful without a push
-            # transport by checking it at a modest interval.
-            await asyncio.sleep(min(0.25, remaining))
-            record = await self._repository.get(tool_call_id, actor=actor)
-            if record.status in TERMINAL_STATUSES:
-                return record
 
     @staticmethod
     def _require_actor(actor: RuntimeActor) -> RuntimeActor:

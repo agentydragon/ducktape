@@ -41,7 +41,7 @@ py_test(
     deps = [
         "//:conftest",
         "//agent_core/testing:responses",
-        "//mcp_infra/exec:matchers",
+        "//mcp_infra/testing:matchers",
         "//props:conftest",
         "//props/agents/critic_dev/testing:mocks",
         "//props/db:database",

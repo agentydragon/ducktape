@@ -22,6 +22,7 @@ from haku.console.identity.operator_identity_store import PostgresOperatorIdenti
 from haku.console.mcp.approval import PostgresToolCallLedger
 from haku.console.mcp.execution import AgentMcpExecutionCaller, McpExecutionContext
 from haku.console.mcp.principal import RequestPrincipal
+from haku.console.mcp.testing import join_executions, seed_pending_tool_call
 from haku.console.mcp.tool_call_service import (
     AgentActorRequiredError,
     OperatorActorRequiredError,
@@ -29,13 +30,7 @@ from haku.console.mcp.tool_call_service import (
     ToolCallNotFoundError,
     ToolCallStateConflictError,
 )
-from haku.console.mcp_config import (
-    InProcessBackend,
-    InProcessServers,
-    McpServerEntry,
-    McpServerNotFoundError,
-    NoCredential,
-)
+from haku.console.mcp_config import InProcessBackend, InProcessServers, McpServerEntry, NoCredential
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     ApprovalDecision,
@@ -230,37 +225,19 @@ def service(
     return _service(database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, executor=executor)
 
 
-def _request(*, owner: str, wait_for_ms: int = 0) -> SubmitToolCallRequest:
+def _request(*, owner: str) -> SubmitToolCallRequest:
     return SubmitToolCallRequest(
-        server_id="operator-backend",
-        tool_name="mutate",
-        arguments={"owner": owner},
-        rationale=f"exercise {owner}",
-        wait_for_ms=wait_for_ms,
+        server_id="operator-backend", tool_name="mutate", arguments={"owner": owner}, rationale=f"exercise {owner}"
     )
 
 
-async def _always_approve(**_: Any) -> tuple[str, str]:
-    return "policy:test", "approved by test policy"
-
-
-async def test_operator_direct_execution_has_no_ledger_side_effects(
-    actors: dict[str, RuntimeActor], executor: _RecordingExecutor, service: ToolCallApplicationService
-) -> None:
-    operator = actors["oa"]
-    assert isinstance(operator, OperatorActor)
-
-    result = await service.execute_direct(req=_request(owner="browser"), actor=operator)
-
-    assert result["content"][0]["text"] == "operator-backend:mutate"
-    assert len(executor.executions) == 1
-    server_id, tool_name, arguments, token, execution_context = executor.executions[0]
-    assert (server_id, tool_name, arguments, token) == ("operator-backend", "mutate", {"owner": "browser"}, None)
-    assert execution_context.tool_call_id is None
-    assert await service.list_tool_calls(actor=operator) == []
-
-    with pytest.raises(OperatorActorRequiredError, match="operator actor required"):
-        await service.execute_direct(req=_request(owner="agent"), actor=actors["aa1"])
+async def _submit_pending(ledger: _RecordingLedger, *, actor: RuntimeActor, owner: str) -> ToolCallRecord:
+    return await seed_pending_tool_call(
+        server=McpServerEntry(id="operator-backend", backend=InProcessBackend(credential=NoCredential())),
+        ledger=ledger,
+        req=_request(owner=owner),
+        actor=actor,
+    )
 
 
 async def test_two_operator_two_agent_authorization_matrix(
@@ -271,18 +248,15 @@ async def test_two_operator_two_agent_authorization_matrix(
     service: ToolCallApplicationService,
 ) -> None:
     """Every service read and lifecycle transition is scoped from the authenticated actor."""
-    records = {
-        name: await service.submit_and_wait(req=_request(owner=name), actor=actor) for name, actor in actors.items()
-    }
+    records = {name: await _submit_pending(ledger, actor=actor, owner=name) for name, actor in actors.items()}
     assert all(record.status is ToolCallStatus.PENDING_APPROVAL for record in records.values())
 
     invalid_actor: Any = SimpleNamespace(operator_id=actors["oa"].operator_id)
     with pytest.raises(TypeError, match="unsupported tool-call actor"):
-        await service.submit_and_wait(req=_request(owner="lookalike"), actor=invalid_actor)
-    with pytest.raises(TypeError, match="unsupported tool-call actor"):
         await service.list_tool_calls(actor=invalid_actor)
     with pytest.raises(TypeError, match="unsupported tool-call actor"):
-        await ledger.submit(
+        await seed_pending_tool_call(
+            ledger=ledger,
             server=McpServerEntry(id="operator-backend", backend=InProcessBackend(credential=NoCredential())),
             req=_request(owner="lookalike"),
             actor=invalid_actor,
@@ -358,7 +332,7 @@ async def test_two_operator_two_agent_authorization_matrix(
         ToolCallStatus.RUNNING,
         ToolCallStatus.DENIED,
     ]
-    await service.join_executions()
+    await join_executions(service)
     # Every registered server declares `NoCredential`, so backend auth resolves to None regardless
     # of which Operator approved.
     assert [execution[3] for execution in executor.executions] == [None, None]
@@ -376,69 +350,11 @@ async def test_two_operator_two_agent_authorization_matrix(
     ] == [ToolCallStatus.OK, ToolCallStatus.OK]
 
 
-async def test_pending_wait_observes_the_durable_terminal_state(
-    actors: dict[str, RuntimeActor], service: ToolCallApplicationService
-) -> None:
-    agent = actors["aa1"]
-    operator = actors["oa"]
-
-    waiting = asyncio.create_task(service.submit_and_wait(req=_request(owner="wait", wait_for_ms=5000), actor=agent))
-    pending_rows = []
-    for _ in range(100):
-        pending_rows = await service.list_tool_calls(actor=agent)
-        if pending_rows:
-            break
-        await asyncio.sleep(0.01)
-    [pending] = pending_rows
-    assert pending.status is ToolCallStatus.PENDING_APPROVAL
-
-    decided = await service.decide(
-        tool_call_id=pending.tool_call_id,
-        decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
-        actor=operator,
-    )
-    completed = await asyncio.wait_for(waiting, timeout=2)
-
-    # decide returns the RUNNING record; the waiting agent observes the terminal OK in the ledger.
-    assert decided.status is ToolCallStatus.RUNNING
-    assert completed.status is ToolCallStatus.OK
-    await service.join_executions()
-
-
-async def test_auto_approval_finishes_as_agent(
-    *,
-    actors: dict[str, RuntimeActor],
-    ledger: _RecordingLedger,
-    executor: _RecordingExecutor,
-    service: ToolCallApplicationService,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("haku.console.mcp.tool_call_service.auto_approve_tool_call", _always_approve)
-
-    submitted_actors = [actors["aa1"], actors["ab1"]]
-    completed = [
-        await service.submit_and_wait(req=_request(owner=f"auto-{index}"), actor=actor)
-        for index, actor in enumerate(submitted_actors)
-    ]
-    assert [record.status for record in completed] == [ToolCallStatus.OK, ToolCallStatus.OK]
-    assert [execution[3] for execution in executor.executions] == [None, None]
-    for execution, actor in zip(executor.executions, submitted_actors, strict=True):
-        assert isinstance(actor, AgentActor)
-        context = execution[4]
-        assert context.caller == AgentMcpExecutionCaller(
-            principal=RequestPrincipal.from_source(actor), operator_id=actor.operator_id
-        )
-        assert context.tool_call_id is not None
-        assert context.approving_operator_id is None
-        assert context.approval_policy_id == "policy:test"
-    assert ledger.finish_actors == submitted_actors
-
-
 async def test_withdraw_rejects_calls_that_are_no_longer_pending(
-    actors: dict[str, RuntimeActor], service: ToolCallApplicationService
+    actors: dict[str, RuntimeActor], ledger: _RecordingLedger, service: ToolCallApplicationService
 ) -> None:
     actor = actors["aa1"]
-    pending = await service.submit_and_wait(req=_request(owner="raced"), actor=actor)
+    pending = await _submit_pending(ledger, actor=actor, owner="raced")
     await service.decide(
         tool_call_id=pending.tool_call_id,
         decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
@@ -449,17 +365,17 @@ async def test_withdraw_rejects_calls_that_are_no_longer_pending(
     with pytest.raises(ToolCallStateConflictError, match=ToolCallStatus.RUNNING):
         await service.withdraw(tool_call_id=pending.tool_call_id, reason="too late", actor=actor)
 
-    withdrawn = await service.submit_and_wait(req=_request(owner="twice"), actor=actor)
+    withdrawn = await _submit_pending(ledger, actor=actor, owner="twice")
     await service.withdraw(tool_call_id=withdrawn.tool_call_id, reason="first", actor=actor)
     with pytest.raises(ToolCallStateConflictError, match=ToolCallStatus.WITHDRAWN):
         await service.withdraw(tool_call_id=withdrawn.tool_call_id, reason="second", actor=actor)
 
 
 async def test_withdraw_is_agent_only_and_scoped_to_the_submitting_agent(
-    actors: dict[str, RuntimeActor], service: ToolCallApplicationService
+    actors: dict[str, RuntimeActor], ledger: _RecordingLedger, service: ToolCallApplicationService
 ) -> None:
     actor = actors["aa1"]
-    pending = await service.submit_and_wait(req=_request(owner="mine"), actor=actor)
+    pending = await _submit_pending(ledger, actor=actor, owner="mine")
 
     # An operator's verb is `deny`; letting one write `withdrawn` would record the agent as having
     # retracted a request the operator in fact dismissed.
@@ -476,7 +392,7 @@ async def test_withdraw_is_agent_only_and_scoped_to_the_submitting_agent(
 
 
 async def test_withdraw_survives_credential_binding_rotation(
-    actors: dict[str, RuntimeActor], service: ToolCallApplicationService, migrated_sessions
+    actors: dict[str, RuntimeActor], ledger: _RecordingLedger, service: ToolCallApplicationService, migrated_sessions
 ) -> None:
     """An Agent that reconnected can still clear its predecessor binding's ask out of the queue.
 
@@ -486,7 +402,7 @@ async def test_withdraw_survives_credential_binding_rotation(
     """
     original = actors["aa1"]
     assert isinstance(original, AgentActor)
-    pending = await service.submit_and_wait(req=_request(owner="pre-rotation"), actor=original)
+    pending = await _submit_pending(ledger, actor=original, owner="pre-rotation")
 
     successor_id = uuid4()
     now = datetime.datetime.now(datetime.UTC)
@@ -532,49 +448,19 @@ async def test_withdraw_survives_credential_binding_rotation(
     assert withdrawn.status is ToolCallStatus.WITHDRAWN
 
 
-async def test_pending_wait_returns_when_the_agent_withdraws(
-    actors: dict[str, RuntimeActor], service: ToolCallApplicationService
-) -> None:
-    actor = actors["aa1"]
-    pending = await service.submit_and_wait(req=_request(owner="awaited"), actor=actor)
-
-    # A second connection holds the promise open while this one retracts it; WITHDRAWN must count as
-    # terminal or the waiter would block for the full wait_for_ms.
-    waiting = asyncio.create_task(service._wait_terminal(pending.tool_call_id, actor, 60_000))
-    await asyncio.sleep(0)
-    await service.withdraw(tool_call_id=pending.tool_call_id, reason="changed my mind", actor=actor)
-
-    settled = await asyncio.wait_for(waiting, timeout=5)
-    assert settled.status is ToolCallStatus.WITHDRAWN
-
-
-async def test_unknown_server_is_a_transport_independent_not_found(
-    actors: dict[str, RuntimeActor], service: ToolCallApplicationService
-) -> None:
-    actor = actors["aa1"]
-
-    with pytest.raises(McpServerNotFoundError):
-        await service.submit_and_wait(
-            req=_request(owner="missing").model_copy(update={"server_id": "missing"}), actor=actor
-        )
-    assert await service.list_tool_calls(actor=actor) == []
-
-
 async def test_executor_cancellation_terminalizes_before_reraising(
-    *,
-    migrated_db_url: str,
-    tmp_path: Path,
-    actors: dict[str, RuntimeActor],
-    ledger: _RecordingLedger,
-    monkeypatch: pytest.MonkeyPatch,
+    *, migrated_db_url: str, tmp_path: Path, actors: dict[str, RuntimeActor], ledger: _RecordingLedger
 ) -> None:
     actor = actors["aa1"]
-    monkeypatch.setattr("haku.console.mcp.tool_call_service.auto_approve_tool_call", _always_approve)
     executor = _CancellingExecutor()
     service = _service(database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, executor=executor)
-
-    with pytest.raises(asyncio.CancelledError):
-        await service.submit_and_wait(req=_request(owner="cancelled"), actor=actor)
+    pending = await _submit_pending(ledger, actor=actor, owner="cancelled")
+    await service.decide(
+        tool_call_id=pending.tool_call_id,
+        decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
+        actor=actors["oa"],
+    )
+    await join_executions(service)
 
     [terminal] = await service.list_tool_calls(actor=actor)
     assert terminal.status is ToolCallStatus.ERROR
@@ -586,7 +472,7 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
 ) -> None:
     executor = _BlockingExecutor()
     service = _service(database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, executor=executor)
-    pending = await service.submit_and_wait(req=_request(owner="aa1"), actor=actors["aa1"])
+    pending = await _submit_pending(ledger, actor=actors["aa1"], owner="aa1")
     assert pending.status is ToolCallStatus.PENDING_APPROVAL
 
     # decide returns immediately with RUNNING while execution blocks in the background task.
@@ -621,7 +507,7 @@ async def test_finish_only_accepts_running_calls(actors: dict[str, RuntimeActor]
     operator = actors["oa"]
     assert isinstance(operator, OperatorActor)
     server = McpServerEntry(id="operator-backend", backend=InProcessBackend(credential=NoCredential()))
-    record = await ledger.submit(server=server, req=_request(owner="terminal"), actor=operator)
+    record = await seed_pending_tool_call(ledger=ledger, server=server, req=_request(owner="terminal"), actor=operator)
 
     with pytest.raises(ToolCallStateConflictError):
         await ledger.finish(record.tool_call_id, actor=operator, result={"ok": True}, error=None)
@@ -641,7 +527,8 @@ async def test_execution_authorization_reloads_profile_changed_after_operator_ap
     operator = actors["oa"]
     assert isinstance(agent, AgentActor)
     assert isinstance(operator, OperatorActor)
-    record = await ledger.submit(
+    record = await seed_pending_tool_call(
+        ledger=ledger,
         server=McpServerEntry(id="operator-backend", backend=InProcessBackend(credential=NoCredential())),
         req=_request(owner="profile-changed-after-approval"),
         actor=agent,
@@ -664,12 +551,15 @@ async def test_binding_revoked_after_execution_authorization_does_not_strand_run
 ) -> None:
     agent = actors["aa1"]
     assert isinstance(agent, AgentActor)
-    record = await ledger.submit(
+    record = await seed_pending_tool_call(
+        ledger=ledger,
         server=McpServerEntry(id="operator-backend", backend=InProcessBackend(credential=NoCredential())),
         req=_request(owner="revoked-during-execution"),
         actor=agent,
-        auto_approval_policy_id="policy:test",
     )
+    operator = actors["oa"]
+    assert isinstance(operator, OperatorActor)
+    await ledger.mark_running(record.tool_call_id, actor=operator)
 
     authorization = await ledger.authorize_execution(record.tool_call_id, actor=agent)
     assert authorization.operator_id == agent.operator_id

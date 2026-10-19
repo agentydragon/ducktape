@@ -80,7 +80,7 @@ py_test(
     deps = [
         "//:conftest",
         "//agent_core/testing:responses",
-        "//mcp_infra/exec:matchers",
+        "//mcp_infra/testing:matchers",
         "//openai_utils:model",
         "//props:conftest",
         "//props/agents/critic_dev/testing:mocks",
@@ -107,7 +107,7 @@ py_test(
     deps = [
         "//:conftest",
         "//agent_core/testing:responses",
-        "//mcp_infra/exec:matchers",
+        "//mcp_infra/testing:matchers",
         "//props:conftest",
         "//props/agents/critic_dev/testing:mocks",
         "//props/agents/critic_dev/testing:orchestration_fixtures",

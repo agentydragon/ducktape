@@ -42,7 +42,7 @@ from fastmcp.client.transports import FastMCPTransport
 from opentelemetry import trace
 
 from grocy_mcp.client import GrocyClient
-from grocy_mcp.grocy_container import make_settings
+from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.server import build_mcp
 from grocy_mcp.testing.helpers import RefData, create_refunwrap_result, unwrap_result
 from grocy_mcp.tool_metadata import TOOL_OVERRIDES
@@ -103,7 +103,9 @@ async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
     """Function-scoped MCP client exercising the full MCP protocol in-process."""
     async with GrocyClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as http_client:
         with tracer.start_as_current_span("build_mcp"):
-            mcp = build_mcp(make_settings(grocy_base_url), client_provider=borrowed_http_client_provider(http_client))
+            mcp = build_mcp(
+                ServerSettings(grocy_url=grocy_base_url), client_provider=borrowed_http_client_provider(http_client)
+            )
         async with Client(FastMCPTransport(mcp)) as client:
             yield client
 

@@ -14,7 +14,6 @@ from opentelemetry import trace
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core.container import DockerContainer
 
-from grocy_mcp.mcp_types import ServerSettings
 from third_party.containers import grocy
 from util.oci import load_oci_image
 
@@ -30,11 +29,6 @@ _HOST_NETWORK_ENV = "GROCY_MCP_HOST_NETWORK"
 
 def _host_network_enabled() -> bool:
     return os.environ.get(_HOST_NETWORK_ENV) == "1"
-
-
-def make_settings(grocy_url: str) -> ServerSettings:
-    """Settings for a Grocy test instance: direct HTTP, no Authentik outpost."""
-    return ServerSettings(grocy_url=grocy_url)
 
 
 @contextmanager

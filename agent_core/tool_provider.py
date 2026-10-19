@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Protocol
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field
 
 # --- Tool result content types (discriminated union) ---
 
@@ -59,17 +59,6 @@ class ToolResult(BaseModel):
     def structured(cls, data: ToolOutputData, *, is_error: bool = False) -> ToolResult:
         """Create a structured result with JSON data (dict or list)."""
         return cls(structured_content=data, is_error=is_error)
-
-    def extract_structured[T](self, output_type: type[T]) -> T:
-        """Extract and validate structured content from this result.
-
-        Raises ValueError if result is an error or lacks structured content.
-        """
-        if self.is_error:
-            raise ValueError(f"Cannot extract from error result: {self}")
-        if self.structured_content is None:
-            raise ValueError(f"ToolResult missing structured content: {self}")
-        return TypeAdapter(output_type).validate_python(self.structured_content)
 
 
 # --- Tool schema ---

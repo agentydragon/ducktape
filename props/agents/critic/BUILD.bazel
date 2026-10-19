@@ -154,7 +154,7 @@ py_test(
         ":main",
         "//:conftest",
         "//agent_core/testing:responses",
-        "//mcp_infra/exec:matchers",
+        "//mcp_infra/testing:matchers",
         "//props:conftest",
         "//props/agents/critic/testing:mocks",
         "//props/db:database",

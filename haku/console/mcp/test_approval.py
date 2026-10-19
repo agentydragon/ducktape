@@ -21,6 +21,7 @@ from haku.console.database_schema import Agent, CredentialBinding, StaticCredent
 from haku.console.identity.authorization import fingerprint_static_token
 from haku.console.mcp.approval import McpServerDispatcher, PostgresToolCallLedger
 from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
+from haku.console.mcp.testing import const_in_process_server, join_executions, seed_pending_tool_call
 from haku.console.mcp.tool_call_service import ToolCallApplicationService
 from haku.console.mcp_config import (
     InProcessBackend,
@@ -28,7 +29,6 @@ from haku.console.mcp_config import (
     InProcessServerRegistration,
     McpServerEntry,
     NoCredential,
-    const_in_process_server,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
@@ -204,25 +204,18 @@ def operator_client(make_operator_client: Callable[..., Any], console_app: dict[
 
 
 def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
-    """Submit directly at the application boundary to exercise legacy-row draining."""
-    app = cast(FastAPI, client.app)
-
-    async def submit() -> Any:
-        return await app.state.tool_call_service.submit_and_wait(
-            req=SubmitToolCallRequest(
-                server_id="grocy-sf",
-                tool_name="stock_add",
-                title="Add Thrive box items to Grocy",
-                rationale="box is physically present",
-                arguments={"items": [{"product_id": 123, "amount": amount}]},
-                wait_for_ms=0,
-            ),
-            actor=app.state.test_operator_actor,
-        )
-
-    assert client.portal is not None
-    record = client.portal.call(submit)
-    return cast(dict[str, Any], record.model_dump(mode="json"))
+    """Seed a historical pending row for testing approval and history routes."""
+    return _submit_request(
+        client,
+        SubmitToolCallRequest(
+            server_id="grocy-sf",
+            tool_name="stock_add",
+            title="Add Thrive box items to Grocy",
+            rationale="box is physically present",
+            arguments={"items": [{"product_id": 123, "amount": amount}]},
+            wait_for_ms=0,
+        ),
+    )
 
 
 def _submit_request(
@@ -231,8 +224,13 @@ def _submit_request(
     app = cast(FastAPI, client.app)
 
     async def submit() -> Any:
-        return await app.state.tool_call_service.submit_and_wait(
-            req=request, actor=actor if actor is not None else app.state.test_operator_actor
+        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+        ledger = PostgresToolCallLedger(sessions)
+        return await seed_pending_tool_call(
+            ledger=ledger,
+            server=McpServerEntry(id=request.server_id, backend=InProcessBackend(credential=NoCredential())),
+            req=request,
+            actor=actor if actor is not None else app.state.test_operator_actor,
         )
 
     assert client.portal is not None
@@ -367,10 +365,6 @@ async def test_agent_withdrawal_clears_the_operator_queue_but_keeps_the_audit_ro
     assert decision.status_code == 409
 
 
-async def _join_executions(service: ToolCallApplicationService) -> None:
-    await service.join_executions()
-
-
 def _drain_executions(client: TestClient) -> None:
     """Run decide()'s dispatched background executions to completion on the app loop, so a sync
     TestClient can observe the terminal row — approving now returns RUNNING and executes in the
@@ -378,7 +372,7 @@ def _drain_executions(client: TestClient) -> None:
     portal = client.portal
     assert portal is not None
     service = cast(ToolCallApplicationService, cast(FastAPI, client.app).state.tool_call_service)
-    portal.call(_join_executions, service)
+    portal.call(join_executions, service)
 
 
 def test_approval_executes_tool_and_records_terminal_result(operator_client: TestClient) -> None:

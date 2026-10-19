@@ -22,17 +22,6 @@ py_binary(
     deps = ["//mcp_infra/exec/docker:launcher"],
 )
 
-py_library(
-    name = "matchers",
-    testonly = True,
-    srcs = ["matchers.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//util/exec:models",
-        "@pypi//pyhamcrest",
-    ],
-)
-
 py_test(
     name = "test_docker",
     srcs = ["test_docker.py"],

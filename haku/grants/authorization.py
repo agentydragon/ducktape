@@ -20,10 +20,6 @@ class GrantSourceKind(StrEnum):
     DATABASE = "database"
 
 
-class AuthorizationUnavailableError(RuntimeError):
-    """A required authorization authority could not be evaluated."""
-
-
 class AuthorizationAllowed(BaseModel):
     """An authorization decision admitted by one effective authority."""
 

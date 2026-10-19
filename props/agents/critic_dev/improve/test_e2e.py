@@ -24,7 +24,7 @@ import pytest_bazel
 from hamcrest import assert_that
 
 from agent_core.testing.responses import PlayGen
-from mcp_infra.exec.matchers import exited_successfully
+from mcp_infra.testing.matchers import exited_successfully
 from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.db.database import Database
 from props.db.models import AgentRun

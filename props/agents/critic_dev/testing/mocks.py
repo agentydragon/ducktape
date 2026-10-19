@@ -6,7 +6,7 @@ from uuid import UUID
 from hamcrest import all_of, assert_that
 
 from agent_core.testing.responses import PlayGen, tool_roundtrip
-from mcp_infra.exec.matchers import exited_successfully, stdout_contains
+from mcp_infra.testing.matchers import exited_successfully, stdout_contains
 from openai_utils.model import FunctionCallItem, ResponsesRequest
 from props.agents.critic_dev.loop import ReportFailureArgs, WaitUntilCriticCompletedArgs, WaitUntilGradedToolArgs
 from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse

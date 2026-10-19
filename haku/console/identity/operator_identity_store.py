@@ -113,19 +113,6 @@ class PostgresOperatorIdentityStore:
             )
             return status is OperatorStatus.ACTIVE
 
-    async def list_active_ids(self) -> list[UUID]:
-        """Return active Operators in this store's configured identity trust domain."""
-        async with self._session_factory() as session:
-            return list(
-                await session.scalars(
-                    select(Operator.operator_id)
-                    .join(IdentityAnchor, IdentityAnchor.operator_id == Operator.operator_id)
-                    .where(Operator.status == OperatorStatus.ACTIVE)
-                    .where(IdentityAnchor.trust_domain == self.trust.trust_domain)
-                    .distinct()
-                )
-            )
-
     async def require_active_in_transaction(self, session: AsyncSession, operator_id: UUID) -> None:
         """Lock and validate an Operator inside a caller-owned database transaction.
 

@@ -23,7 +23,7 @@ from hamcrest import all_of, assert_that
 from more_itertools import one
 
 from agent_core.testing.responses import PlayGen
-from mcp_infra.exec.matchers import exited_successfully, stdout_contains
+from mcp_infra.testing.matchers import exited_successfully, stdout_contains
 from props.agents.critic.testing.mocks import CriticMock
 from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.agents.critic_dev.testing.orchestration_fixtures import (

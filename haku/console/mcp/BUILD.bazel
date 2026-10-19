@@ -44,8 +44,23 @@ py_library(
         "//haku/console:mcp_config",
         "//haku/console:settings",
         "//haku/console:tool_call_actor",
-        "//haku/console/auto_approval:registry",
         "@ducktape_haku//haku/console:tool_calls",
+    ],
+)
+
+py_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["testing.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":approval",
+        ":tool_call_service",
+        "//haku/console:database_schema",
+        "//haku/console:mcp_config",
+        "//haku/console:tool_call_actor",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -104,6 +119,7 @@ py_test(
         ":approval",
         ":execution",
         ":principal",
+        ":testing",
         ":tool_call_service",
         "//:conftest",
         "//haku/console:conftest",
@@ -127,6 +143,7 @@ py_test(
     deps = [
         ":approval",
         ":execution",
+        ":testing",
         ":tool_call_service",
         "//:conftest",
         "//haku/console:conftest",

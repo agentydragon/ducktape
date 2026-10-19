@@ -70,7 +70,6 @@ py_library(
     srcs = ["operator_agents.py"],
     deps = [
         ":enrollment",
-        "//haku/console:tool_call_actor",
         "@pypi//fastapi",
     ],
 )

@@ -337,7 +337,7 @@ def _server_entry(config: ConsoleConfigFile, server_id: str) -> McpServerEntry:
 #
 # The registry holds *builders*, not prebuilt instances, so a future credentialed server can build
 # per execution from the acting Operator's resolved token with no shared/ambient state.
-# Credential-free servers (every registered server today) use `const_in_process_server`.
+# Credential-free servers can use a constant builder that ignores the resolved token.
 InProcessServerBuilder = Callable[[str | None], FastMCP]
 InProcessRequestAuthorizer = Callable[[RuntimeActor, str, dict[str, Any]], str | None]
 
@@ -354,11 +354,6 @@ class InProcessServerRegistration:
 
 
 InProcessServers = dict[str, InProcessServerRegistration]
-
-
-def const_in_process_server(mcp: FastMCP) -> InProcessServerRegistration:
-    """A builder that ignores the token and always returns ``mcp`` (credential-free servers, tests)."""
-    return InProcessServerRegistration(builder=lambda _token: mcp, credential_kind=InProcessCredentialKind.NONE)
 
 
 def validate_in_process_server_bindings(config: ConsoleConfigFile, registrations: InProcessServers) -> None:

@@ -7,7 +7,6 @@ history API plus execution of already-approved rows while the ledger drains.
 from __future__ import annotations
 
 import datetime
-import secrets
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Annotated, Any, Never, TypeVar, cast
@@ -47,7 +46,6 @@ from haku.console.tool_calls import (
     AgentToolCallCaller,
     ApprovalDecisionRequest,
     OperatorToolCallCaller,
-    SubmitToolCallRequest,
     ToolCallCaller,
     ToolCallPayloadField,
     ToolCallRecord,
@@ -105,66 +103,6 @@ class PostgresToolCallLedger:
         # here — constructing a ledger neither connects nor mutates schema. The engine/sessionmaker is
         # created once in create_app and shared across every store.
         self._sessions = sessions
-
-    async def submit(
-        self,
-        *,
-        server: McpServerEntry,
-        req: SubmitToolCallRequest,
-        actor: RuntimeActor,
-        auto_approval_policy_id: str | None = None,
-        auto_approval_evaluation: str | None = None,
-        auto_denial_reason: str | None = None,
-    ) -> ToolCallRecord:
-        async with self._sessions.begin() as session:
-            tool_call_id = f"tc_{secrets.token_hex(12)}"
-            match actor:
-                case AgentActor():
-                    display_name, _ = await self._require_active_agent_binding(session, actor)
-                    caller: ToolCallCaller = AgentToolCallCaller(
-                        agent_id=actor.agent_id, display_name=display_name, session_id=None
-                    )
-                    principal = McpToolCallPrincipal(
-                        tool_call_id=tool_call_id, operator_id=None, binding_id=actor.binding_id
-                    )
-                case OperatorActor():
-                    await self._require_active_operator(session, actor.operator_id)
-                    caller = OperatorToolCallCaller()
-                    principal = McpToolCallPrincipal(
-                        tool_call_id=tool_call_id, operator_id=actor.operator_id, binding_id=None
-                    )
-                case _:
-                    raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
-            now = datetime.datetime.now(datetime.UTC)
-            if auto_denial_reason is not None:
-                # Born-denied (schema-invalid on an owned in-process server): a full audit row
-                # that never passes through PENDING_APPROVAL and never reaches the queue.
-                assert auto_approval_policy_id is None, "a call cannot be both auto-approved and auto-denied"
-                status = ToolCallStatus.DENIED
-            elif auto_approval_policy_id is not None:
-                status = ToolCallStatus.RUNNING
-            else:
-                status = ToolCallStatus.PENDING_APPROVAL
-            record = ToolCallRecord(
-                tool_call_id=tool_call_id,
-                server_id=server.id,
-                tool_name=req.tool_name,
-                caller=caller,
-                status=status,
-                created_at=now,
-                updated_at=now,
-                arguments=req.arguments,
-                rationale=req.rationale,
-                title=req.title,
-                decision_note=auto_denial_reason,
-                approval_policy_id=auto_approval_policy_id,
-                auto_approval_evaluation=auto_approval_evaluation,
-                approved_at=now if auto_approval_policy_id is not None else None,
-            )
-            session.add(self._row_from_record(record))
-            await session.flush()
-            session.add(principal)
-            return record
 
     async def get(
         self, tool_call_id: str, *, actor: RuntimeActor, fields: Collection[ToolCallPayloadField] | None = None
@@ -422,28 +360,6 @@ class PostgresToolCallLedger:
                 AgentNameReservation.agent_id == Agent.agent_id,
                 AgentNameReservation.reservation_id == Agent.current_name_reservation_id,
             ),
-        )
-
-    @staticmethod
-    def _row_from_record(record: ToolCallRecord) -> McpToolCall:
-        return McpToolCall(
-            tool_call_id=record.tool_call_id,
-            server_id=record.server_id,
-            tool_name=record.tool_name,
-            status=record.status,
-            created_at=record.created_at,
-            updated_at=record.updated_at,
-            arguments_json=record.arguments,
-            rationale=record.rationale,
-            title=record.title,
-            result_json=record.result,
-            error=record.error,
-            decision_note=record.decision_note,
-            decision_operator_id=record.decision_operator_id,
-            withdrawal_reason=record.withdrawal_reason,
-            approval_policy_id=record.approval_policy_id,
-            auto_approval_evaluation=record.auto_approval_evaluation,
-            approved_at=record.approved_at,
         )
 
     @classmethod

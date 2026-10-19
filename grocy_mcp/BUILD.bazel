@@ -109,7 +109,6 @@ py_library(
     srcs = ["grocy_container.py"],
     visibility = ["//grocy_mcp:__subpackages__"],
     deps = [
-        ":mcp_types",
         "//third_party/containers:grocy",
         "//util:oci",
         "@pypi//httpx",
@@ -268,7 +267,7 @@ py_test(
     deps = [
         ":client",
         ":conftest",
-        ":grocy_container",
+        ":mcp_types",
         ":server",
         ":tool_metadata",
         "//:conftest",
