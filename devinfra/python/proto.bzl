@@ -11,15 +11,26 @@ def _py_proto_with_mypy_stubs_impl(ctx):
     # correctly records the full closure in `transitive_pyi_files`, but intentionally exposes only
     # the direct schema there. Presenting the closure here lets generated stubs import schemas the
     # direct proto imports, without taking over protobuf code generation or its proto graph.
+    # Generated sources from external proto dependencies are runfiles under their external
+    # repository root (`../repo/...` in File.short_path). Make each root importable: aspect_rules_py
+    # builds the binary's .pth from PyInfo.imports, and the standard py_proto_library provider only
+    # adds imports for virtual roots.
+    external_import_roots = depset([
+        source.short_path.split("/")[1]
+        for source in py_info.transitive_sources.to_list()
+        if source.short_path.startswith("../")
+    ])
+    imports = depset(transitive = [py_info.imports, external_import_roots])
+
     return [
-        # Preserve every runtime/runfiles field from the standard generated target.  The adapter
-        # changes only the shape through which rules_mypy reads its generated stubs.
+        # Preserve the generated target's runtime/runfiles files and add the external proto
+        # import roots. The adapter also exposes the full stub closure to rules_mypy.
         generated[DefaultInfo],
         PyInfo(
             direct_pyi_files = py_info.transitive_pyi_files,
             has_py2_only_sources = py_info.has_py2_only_sources,
             has_py3_only_sources = py_info.has_py3_only_sources,
-            imports = py_info.imports,
+            imports = imports,
             transitive_pyi_files = py_info.transitive_pyi_files,
             transitive_sources = py_info.transitive_sources,
             uses_shared_libraries = py_info.uses_shared_libraries,

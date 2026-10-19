@@ -1,0 +1,29 @@
+load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//devinfra/python:defs.bzl", "py_library")
+
+# gazelle:resolve py agentplane.proto.session_dispatcher_pb2 //agentplane/proto:session_dispatcher_pb2
+
+package(default_visibility = ["//visibility:private"])
+
+aspect_py_binary(
+    name = "external_proto_import_probe",
+    main = "probe.py",
+    deps = [":probe"],
+)
+
+sh_test(
+    name = "external_proto_import_test",
+    srcs = ["run_external_proto_import_probe.sh"],
+    args = ["$(rlocationpath :external_proto_import_probe)"],
+    data = [":external_proto_import_probe"],
+)
+
+py_library(
+    name = "probe",
+    srcs = ["probe.py"],
+    deps = [
+        "//agentplane/proto:session_dispatcher_pb2",
+        "@pypi//protobuf",
+    ],
+)
