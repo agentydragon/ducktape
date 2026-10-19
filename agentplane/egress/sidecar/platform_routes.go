@@ -38,7 +38,7 @@ func bindPlatformRoutes(routes map[string]platformRouteConfig, listenHost string
 	started := make([]*platformRoute, 0, len(names))
 	for _, name := range names {
 		config := routes[name]
-		listener, err := net.Listen("tcp", net.JoinHostPort(listenHost, fmt.Sprint(config.ListenPort)))
+		listener, err := net.Listen("tcp", net.JoinHostPort(listenHost, fmt.Sprint(*config.ListenPort)))
 		if err != nil {
 			stopPlatformRoutes(started)
 			return nil, fmt.Errorf("listen for platform route %q: %w", name, err)
