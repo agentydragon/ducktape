@@ -1,5 +1,7 @@
 """Shared Action payload surfaces and bounded editor retention."""
 
+import re
+
 import pytest
 import pytest_bazel
 from playwright.async_api import expect
@@ -21,10 +23,15 @@ async def test_action_payloads_share_operation_surfaces(
 ) -> None:
     await app.mount_operation_presentation()
     panel = view.page.locator("#operation-presentation-surface")
-    await expect(panel.get_by_text("Applied manifest", exact=True).last).to_be_visible()
+    manifest_heading = panel.locator("[data-operation-heading]:visible").filter(
+        has_text=re.compile(r"^Applied manifest$")
+    )
+    await expect(manifest_heading).to_be_visible()
     await expect(panel.get_by_role("button", name="Show all 24 lines")).to_be_visible()
     await expect(panel.get_by_text("Recorded data", exact=True)).to_be_visible()
-    await expect(panel.get_by_text("hello from the selected container", exact=True)).to_be_visible()
+    await expect(panel.locator(".agentplane-output-disclosure .cm-line").first).to_have_text(
+        "hello from the selected container"
+    )
     await expect(panel.locator(".cm-agentplane-special-char")).to_contain_text("ZWSP")
 
     sections = await panel.locator(".agentplane-operation-section").evaluate_all(
