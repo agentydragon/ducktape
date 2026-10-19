@@ -1926,7 +1926,6 @@ flowchart LR
     HISTORY_SERVICE_GO_PORT -. sequencing choice: record the UID in Go if the port goes first .-> HISTORY_SANDBOX_UID
 ```
 
-
 ### `EGRESS_ADMIN_HTTP_TEARDOWN` — remove the hand-written egress admin HTTP
 
 Inventory remaining HTTP callers first, including the rules route the
