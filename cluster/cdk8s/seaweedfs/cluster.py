@@ -234,8 +234,6 @@ def seaweed(scope: Construct) -> Seaweed:
                 # Raft log, snapshots, term/vote and TopologyId must survive Pod replacement.
                 # Adoption on the existing StatefulSet requires the migration in
                 # cluster/docs/runbooks/seaweedfs_master_persistence.md before rolling any Pod.
-                # TODO: Derive kubeconform's Seaweed schema from the pinned operator CRD;
-                # the public catalog schema predates master.persistence and rejects it.
                 persistence=SeaweedSpecMasterPersistence(
                     enabled=True,
                     storage_class_name="local-path-ovh-ssd",
