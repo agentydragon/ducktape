@@ -41,7 +41,7 @@ import { PolicyBindingsSection } from "./policy_bindings";
 import { SandboxConsole } from "./sandbox_console";
 import { SessionsTable } from "./sandbox_sessions";
 import { StatusView } from "./sandbox_status_view";
-import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
+import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandboxSuspended } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { snapshotFresh } from "./thread_status";
 import { TopbarActions, TopbarTitle } from "./topbar";
@@ -121,8 +121,7 @@ export function SandboxPage({
   const threadsUnavailable = Array.isArray(threadListing) ? null : threadListing.code;
   const threads = Array.isArray(threadListing) ? threadListing : [];
   const ready = sandboxReady(sandbox);
-  const canWakeForSession =
-    sandbox?.phase === "Suspended" && sandbox.operating_mode === "Suspended" && sandbox.wake_on_send;
+  const canWakeForSession = sandboxSuspended(sandbox) && sandbox?.wake_on_send === true;
   useEffect(() => {
     if (requestedTab === "console" && sandbox !== null && !vmConsoleAvailable) {
       setSearchParams({}, { replace: true });
