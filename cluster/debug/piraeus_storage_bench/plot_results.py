@@ -177,7 +177,7 @@ def main() -> None:
     notes.text(
         0.04,
         0.50,
-        "Independent linear scales.\n\nShaded: Jul 11 SSD reference.\nOther rows: Oct 19 HDD.\n\nHDD SeaweedFS Forgejo: init EIO.",
+        "Independent linear scales.\n\nShaded: Jul 11 SSD reference.\nOther rows: Oct 19 HDD.\n\nHDD SeaweedFS Forgejo:\nfresh-PVC retry; first init failed.",
         va="top",
         linespacing=1.6,
         fontsize=10,
