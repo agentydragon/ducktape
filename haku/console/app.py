@@ -129,7 +129,6 @@ def create_app(
     tool_call_ledger = approval.PostgresToolCallLedger(db_sessions)
     agent_authority = PostgresAgentAuthority(
         db_sessions,
-        public_base_url=settings.public_base_url,
         operator_identity_store=operator_identity_store,
         access_profiles=tuple(profile.id for profile in console_config.access_profiles),
         default_access_profile_id=console_config.default_access_profile_id,

@@ -81,12 +81,9 @@ py_library(
         ":agent",
         ":enrollment",
         ":naming",
-        ":oauth_grants",
         ":operator_identity",
         ":operator_identity_store",
         "//haku/console:database_schema",
-        "//haku/console:tool_call_actor",
-        "//util:oidc_principal",
         "@pypi//sqlalchemy",
     ],
 )
@@ -143,7 +140,6 @@ py_test(
         ":agent",
         ":authorization",
         ":enrollment",
-        ":oauth_grants",
         ":operator_identity",
         ":operator_identity_store",
         "//:conftest",
@@ -152,7 +148,6 @@ py_test(
         "//haku/console:tool_call_actor",
         "//haku/console/mcp:approval",
         "//util:db_url",
-        "//util:oidc_principal",
         "//util/testing:sqlalchemy_engines",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -202,10 +197,4 @@ py_test(
         "@pypi//pyyaml",
         "@pypi//sqlalchemy",
     ],
-)
-
-py_library(
-    name = "oauth_grants",
-    srcs = ["oauth_grants.py"],
-    deps = ["//haku/console:tool_call_actor"],
 )

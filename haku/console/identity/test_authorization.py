@@ -5,18 +5,16 @@ from __future__ import annotations
 import asyncio
 import datetime
 import errno
-import threading
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import create_engine, event, func, select
-from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
 
 from haku.console.database_schema import (
@@ -25,15 +23,23 @@ from haku.console.database_schema import (
     AuthorizationGrant,
     ClientSoftware,
     CredentialBinding,
+    EnrollmentCorrelationReservation,
     EnrollmentInteraction,
-    Operator,
     StaticCredential,
 )
-from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind, EnrollmentPhase
+from haku.console.identity.agent import (
+    AgentStatus,
+    ClientRegistrationKind,
+    CredentialBindingStatus,
+    CredentialKind,
+    EnrollmentPhase,
+)
 from haku.console.identity.authorization import (
+    AgentGrantAuthorityUnavailableError,
     PostgresAgentAuthority,
     StaticAgentDefinition,
     StaticAgentRejectedError,
+    _digest,
     fingerprint_static_token,
 )
 from haku.console.identity.enrollment import (
@@ -43,33 +49,15 @@ from haku.console.identity.enrollment import (
     EnrollmentBrowserBindingError,
     EnrollmentBrowserSession,
     EnrollmentDecisionConflictError,
-    ReconnectAgentDecision,
 )
-from haku.console.identity.oauth_grants import (
-    AgentGrantAuthorityUnavailableError,
-    AuthorizationCorrelation,
-    AuthorizationRequest,
-    ClientSoftwareSnapshot,
-    EnrollmentRejectedError,
-    GrantAuthorization,
-    GrantRejectedError,
-    TokenFamilyEvidence,
-)
-from haku.console.identity.operator_identity import (
-    OperatorIdentityTrust,
-    OperatorStatus,
-    ResolvedOperatorIdentity,
-    VerifiedExternalIdentity,
-)
+from haku.console.identity.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp.approval import PostgresToolCallLedger
 from haku.console.tool_call_actor import AgentActor
 from util.db_url import render_postgresql_url
-from util.oidc_principal import VerifiedOidcPrincipal
 from util.testing.sqlalchemy_engines import managed_async_engine
 
 _BROWSER_ISSUER = "https://auth.test/browser/"
-_MCP_ISSUER = "https://auth.test/mcp/"
 _CLIENT_ID = "claude-test-client"
 _REDIRECT_URI = "https://claude.test/oauth/callback"
 
@@ -82,6 +70,13 @@ def _orm_session(database_url: str) -> Iterator[Session]:
             yield session
     finally:
         engine.dispose()
+
+
+@dataclass(frozen=True)
+class PersistedInteractionState:
+    phase: EnrollmentPhase
+    browser_binding_digest: bytes | None
+    pending_name_count: int
 
 
 @dataclass(frozen=True)
@@ -101,13 +96,6 @@ def _grant_state(session: Session, grant_id: UUID) -> PersistedGrantState:
     agent = session.get(Agent, binding.agent_id)
     assert agent is not None
     return PersistedGrantState(interaction=interaction, binding=binding, agent=agent)
-
-
-@dataclass(frozen=True)
-class PersistedInteractionState:
-    phase: EnrollmentPhase
-    browser_binding_digest: bytes | None
-    pending_name_count: int
 
 
 def _interaction_state(session: Session, interaction_id: UUID) -> PersistedInteractionState:
@@ -145,24 +133,12 @@ class SecretSequence:
         return f"browser-secret-{self.sequence}"
 
 
-class DisableAfterPrincipalResolutionIdentityStore(PostgresOperatorIdentityStore):
-    async def resolve_verified_identity(self, identity: VerifiedExternalIdentity) -> ResolvedOperatorIdentity:
-        resolved = await super().resolve_verified_identity(identity)
-        async with self._session_factory.begin() as session:
-            operator = await session.get(Operator, resolved.operator_id)
-            assert operator is not None
-            operator.status = OperatorStatus.DISABLED
-            operator.updated_at = datetime.datetime.now(datetime.UTC)
-        return resolved
-
-
 @dataclass(frozen=True)
 class Harness:
     authority: PostgresAgentAuthority
     sessions: async_sessionmaker[AsyncSession]
     identities: PostgresOperatorIdentityStore
     browser: EnrollmentBrowserSession
-    principal: VerifiedOidcPrincipal
     clock: MutableClock
 
 
@@ -184,21 +160,19 @@ def harness_factory(db_url: str, migrated_sessions: async_sessionmaker[AsyncSess
         identities = PostgresOperatorIdentityStore(
             sessions,
             OperatorIdentityTrust(
-                trust_domain="auth.test/authentik-user-id/v1", trusted_issuers=frozenset({_BROWSER_ISSUER, _MCP_ISSUER})
+                trust_domain="auth.test/authentik-user-id/v1", trusted_issuers=frozenset({_BROWSER_ISSUER})
             ),
         )
         browser_identity = await identities.resolve_verified_identity(
             VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject=subject)
         )
-        # Correlation reservations are deliberately evaluated against PostgreSQL's
-        # clock, so ground the mutable test clock in that same time domain.
+        # Ground the mutable test clock in PostgreSQL's time domain.
         with _orm_session(db_url) as session:
             database_now = session.scalar(select(func.clock_timestamp()))
         assert isinstance(database_now, datetime.datetime)
         clock = MutableClock(database_now)
         authority = PostgresAgentAuthority(
             sessions,
-            public_base_url="https://haku.test",
             operator_identity_store=identities,
             clock=clock,
             browser_secret_factory=SecretSequence(),
@@ -215,7 +189,6 @@ def harness_factory(db_url: str, migrated_sessions: async_sessionmaker[AsyncSess
                 browser_session_id="browser-session",
                 display_name="Test Operator",
             ),
-            principal=VerifiedOidcPrincipal(issuer=_MCP_ISSUER, subject=subject),
             clock=clock,
         )
 
@@ -227,35 +200,71 @@ async def harness(harness_factory: HarnessFactory) -> Harness:
     return await harness_factory()
 
 
-def _request(label: str) -> AuthorizationRequest:
-    return AuthorizationRequest(
-        correlation=AuthorizationCorrelation(
-            client_id=_CLIENT_ID, redirect_uri=_REDIRECT_URI, code_challenge=f"challenge-{label}-{uuid4()}"
-        ),
-        client=ClientSoftwareSnapshot(client_id=_CLIENT_ID, display_name="Claude Desktop"),
-        requested_scopes=frozenset({"tools:call", "tools:list"}),
-    )
-
-
-def _interaction_from_url(url: str) -> tuple[UUID, str]:
-    parsed = urlsplit(url)
-    return UUID(parsed.path.rsplit("/", 1)[1]), parse_qs(parsed.query)["browser_nonce"][0]
-
-
-async def _open(harness: Harness, request: AuthorizationRequest) -> tuple[UUID, str]:
-    url = await harness.authority.reserve_authorization(
-        request=request, upstream_authorization_url=f"https://auth.test/authorize/{uuid4()}"
-    )
-    interaction_id, nonce = _interaction_from_url(url)
+async def _open(harness: Harness, label: str) -> tuple[UUID, str]:
+    now = harness.clock.now
+    interaction_id = uuid4()
+    nonce = f"browser-nonce-{uuid4()}"
+    code_challenge = f"challenge-{label}-{uuid4()}"
+    async with harness.sessions.begin() as session:
+        client = await session.scalar(select(ClientSoftware).where(ClientSoftware.oauth_client_id == _CLIENT_ID))
+        if client is None:
+            client = ClientSoftware(
+                client_software_id=uuid4(),
+                registration_kind=ClientRegistrationKind.OAUTH_PROXY_UNCLASSIFIED,
+                oauth_client_id=_CLIENT_ID,
+                validated_redirect_uris=[_REDIRECT_URI],
+                metadata_hash=b"test-client-metadata",
+                observed_name="Claude Desktop",
+                observed_icon_uri=None,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(client)
+            await session.flush()
+        session.add(
+            EnrollmentInteraction(
+                interaction_id=interaction_id,
+                client_software_id=client.client_software_id,
+                client_id=_CLIENT_ID,
+                redirect_uri=_REDIRECT_URI,
+                code_challenge=code_challenge,
+                requested_scopes=["tools:call", "tools:list"],
+                presentation_snapshot={"display_name": "Claude Desktop"},
+                upstream_authorization_url=f"https://auth.test/authorize/{uuid4()}",
+                phase=EnrollmentPhase.AWAITING_BROWSER,
+                expires_at=now + datetime.timedelta(minutes=10),
+                correlation_release_after=now + datetime.timedelta(hours=2),
+                browser_nonce_digest=_digest("browser-nonce", nonce),
+                browser_identity_id=None,
+                browser_binding_digest=None,
+                decision_digest=None,
+                reconnect_agent_id=None,
+                reconnect_predecessor_binding_id=None,
+                access_profile_id=None,
+                closure_reason=None,
+                created_at=now,
+                updated_at=now,
+                closed_at=None,
+            )
+        )
+        await session.flush()
+        session.add(
+            EnrollmentCorrelationReservation(
+                interaction_id=interaction_id,
+                client_id=_CLIENT_ID,
+                redirect_uri=_REDIRECT_URI,
+                code_challenge=code_challenge,
+                release_after=now + datetime.timedelta(hours=2),
+            )
+        )
     page = await harness.authority.open_interaction(
         interaction_id=interaction_id, browser_nonce=nonce, interaction_cookie=None, browser=harness.browser
     )
     return interaction_id, page.form_token
 
 
-async def _allow_create(harness: Harness, *, label: str, display_name: str) -> tuple[AuthorizationRequest, UUID]:
-    request = _request(label)
-    interaction_id, form_token = await _open(harness, request)
+async def _allow_create(harness: Harness, *, label: str, display_name: str) -> UUID:
+    interaction_id, form_token = await _open(harness, label)
     result = await harness.authority.decide(
         interaction_id=interaction_id,
         browser=harness.browser,
@@ -267,47 +276,198 @@ async def _allow_create(harness: Harness, *, label: str, display_name: str) -> t
         ),
     )
     assert isinstance(result, EnrollmentAllowed)
-    return request, interaction_id
+    return interaction_id
 
 
-async def _create_grant(
-    harness: Harness, *, label: str, display_name: str, activate: bool = False
-) -> GrantAuthorization:
-    request, _interaction_id = await _allow_create(harness, label=label, display_name=display_name)
-    grant = await harness.authority.begin_exchange(
-        correlation=request.correlation,
-        client=request.client,
-        principal=harness.principal,
-        granted_scopes=frozenset({"tools:call"}),
-    )
-    await harness.authority.record_token_family(
-        grant_id=grant.grant_id,
-        evidence=TokenFamilyEvidence(access_jti=f"access-{label}", refresh_jti=f"refresh-{label}"),
-    )
-    if activate:
-        await harness.authority.activate_for_tool_call(
-            grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
+async def _seed_expiring_grant(harness: Harness, *, phase: EnrollmentPhase) -> UUID:
+    """Insert a legacy grant row to exercise expiry of persisted state without OAuth issuance."""
+
+    assert phase in {EnrollmentPhase.EXCHANGING, EnrollmentPhase.COMPLETED}
+    now = harness.clock.now
+    older = now - datetime.timedelta(minutes=16)
+    interaction_id = uuid4()
+    client_software_id = uuid4()
+    client_id = f"legacy-client-{uuid4()}"
+    reservation_id = uuid4()
+    agent_id = uuid4()
+    binding_id = uuid4()
+    grant_id = uuid4()
+    code_challenge = f"legacy-challenge-{uuid4()}"
+    is_exchanging = phase is EnrollmentPhase.EXCHANGING
+    expires_at = now - datetime.timedelta(seconds=1) if is_exchanging else now + datetime.timedelta(minutes=10)
+    correlation_release_after = expires_at + datetime.timedelta(hours=2)
+    async with harness.sessions.begin() as session:
+        session.add(
+            ClientSoftware(
+                client_software_id=client_software_id,
+                registration_kind=ClientRegistrationKind.OAUTH_PROXY_UNCLASSIFIED,
+                oauth_client_id=client_id,
+                validated_redirect_uris=[_REDIRECT_URI],
+                metadata_hash=b"legacy-client-metadata",
+                observed_name="Legacy client",
+                observed_icon_uri=None,
+                created_at=older,
+                updated_at=older,
+            )
         )
-    return grant
+        await session.flush()
+        interaction = EnrollmentInteraction(
+            interaction_id=interaction_id,
+            client_software_id=client_software_id,
+            client_id=client_id,
+            redirect_uri=_REDIRECT_URI,
+            code_challenge=code_challenge,
+            requested_scopes=["tools:call"],
+            presentation_snapshot={"display_name": "Legacy client"},
+            upstream_authorization_url="https://auth.test/authorize/legacy",
+            phase=EnrollmentPhase.AWAITING_BROWSER,
+            expires_at=expires_at,
+            correlation_release_after=correlation_release_after,
+            browser_nonce_digest=b"legacy-browser-nonce",
+            browser_identity_id=None,
+            browser_binding_digest=None,
+            decision_digest=None,
+            reconnect_agent_id=None,
+            reconnect_predecessor_binding_id=None,
+            access_profile_id=None,
+            closure_reason=None,
+            created_at=older,
+            updated_at=older,
+            closed_at=None,
+        )
+        session.add(interaction)
+        await session.flush()
+        session.add(
+            EnrollmentCorrelationReservation(
+                interaction_id=interaction_id,
+                client_id=client_id,
+                redirect_uri=_REDIRECT_URI,
+                code_challenge=code_challenge,
+                release_after=correlation_release_after,
+            )
+        )
+        await session.flush()
+        interaction.phase = EnrollmentPhase.AWAITING_APPROVAL
+        interaction.browser_nonce_digest = None
+        interaction.browser_identity_id = harness.browser.identity_id
+        interaction.browser_binding_digest = b"legacy-browser-binding"
+        await session.flush()
+        interaction.phase = EnrollmentPhase.ALLOWED
+        interaction.decision_digest = b"legacy-decision"
+        interaction.access_profile_id = "no_auto_approval"
+        await session.flush()
+        name = AgentNameReservation(
+            reservation_id=reservation_id,
+            display_name=f"Legacy Agent {grant_id}",
+            display_name_key=f"legacy-agent-{grant_id}",
+            originating_interaction_id=interaction_id,
+            pending_interaction_id=interaction_id,
+            agent_id=None,
+            created_at=older,
+            activated_at=None,
+        )
+        session.add(name)
+        await session.flush()
+        session.add(
+            Agent(
+                agent_id=agent_id,
+                owner_operator_id=harness.browser.operator_id,
+                current_name_reservation_id=reservation_id,
+                status=AgentStatus.DRAFT,
+                created_at=older,
+                updated_at=older,
+                activated_at=None,
+                last_seen_at=None,
+                access_profile_id="no_auto_approval",
+            )
+        )
+        await session.flush()
+        name.pending_interaction_id = None
+        name.agent_id = agent_id
+        name.activated_at = older
+        binding = CredentialBinding(
+            binding_id=binding_id,
+            agent_id=agent_id,
+            kind=CredentialKind.OAUTH,
+            status=CredentialBindingStatus.ISSUING,
+            generation=1,
+            supersedes_binding_id=None,
+            created_at=older,
+            updated_at=older,
+            issued_at=None,
+            activated_at=None,
+            ended_at=None,
+            end_reason=None,
+        )
+        session.add(binding)
+        await session.flush()
+        interaction.phase = EnrollmentPhase.EXCHANGING
+        await session.flush()
+        grant = AuthorizationGrant(
+            grant_id=grant_id,
+            binding_id=binding_id,
+            authorizing_identity_id=harness.browser.identity_id,
+            client_software_id=client_software_id,
+            enrollment_interaction_id=interaction_id,
+            allowed_scopes=["tools:call"],
+            initial_access_jti=None,
+            initial_refresh_jti=None,
+            token_family_persisted_at=None,
+            created_at=older,
+        )
+        session.add(grant)
+        await session.flush()
+    if not is_exchanging:
+        async with harness.sessions.begin() as session:
+            interaction = await session.get(EnrollmentInteraction, interaction_id, with_for_update=True)
+            binding = await session.get(CredentialBinding, binding_id, with_for_update=True)
+            grant = await session.get(AuthorizationGrant, grant_id, with_for_update=True)
+            assert interaction is not None
+            assert binding is not None
+            assert grant is not None
+            binding.status = CredentialBindingStatus.ISSUED
+            binding.issued_at = older
+            binding.updated_at = older
+            grant.initial_access_jti = f"legacy-access-{grant_id}"
+            grant.token_family_persisted_at = older
+            interaction.phase = EnrollmentPhase.COMPLETED
+            interaction.browser_binding_digest = None
+            interaction.closure_reason = "authorization_completed"
+            interaction.closed_at = now
+            interaction.updated_at = now
+    return grant_id
 
 
 async def test_list_agents_returns_owned_active_and_disabled_agents_with_latest_binding(
-    db_url: str, harness: Harness, harness_factory: HarnessFactory
+    harness: Harness, harness_factory: HarnessFactory
 ) -> None:
-    assert await harness.authority.list_agents(operator_id=harness.browser.operator_id) == ()
+    active_definition = StaticAgentDefinition(
+        agent_id=uuid4(),
+        display_name="Listed Agent",
+        operator_id=harness.browser.operator_id,
+        secret_reference="env:LISTED_AGENT_TOKEN",
+        token_fingerprint=fingerprint_static_token("listed-agent-token"),
+        access_profile_id="no_auto_approval",
+    )
+    removed_definition = StaticAgentDefinition(
+        agent_id=uuid4(),
+        display_name="Removed Agent",
+        operator_id=harness.browser.operator_id,
+        secret_reference="env:REMOVED_AGENT_TOKEN",
+        token_fingerprint=fingerprint_static_token("removed-agent-token"),
+        access_profile_id="no_auto_approval",
+    )
+    await harness.authority.reconcile_static_agents((active_definition, removed_definition))
+    await harness.authority.reconcile_static_agents((active_definition,))
 
-    grant = await _create_grant(harness, label="listed", display_name="Listed Agent", activate=True)
-    [active] = await harness.authority.list_agents(operator_id=harness.browser.operator_id)
-    assert active.agent_id == grant.actor.agent_id
+    agents = await harness.authority.list_agents(operator_id=harness.browser.operator_id)
+    [active, disabled] = agents
+    assert active.agent_id == active_definition.agent_id
     assert active.display_name == "Listed Agent"
     assert active.status is AgentStatus.ACTIVE
-    assert active.credential_kind is CredentialKind.OAUTH
+    assert active.credential_kind is CredentialKind.STATIC
     assert active.credential_status is CredentialBindingStatus.ACTIVE
-    assert active.last_seen_at == harness.clock.now
-
-    await harness.authority.revoke_grant(grant_id=grant.grant_id)
-    [disabled] = await harness.authority.list_agents(operator_id=harness.browser.operator_id)
-    assert disabled.agent_id == active.agent_id
+    assert disabled.agent_id == removed_definition.agent_id
     assert disabled.status is AgentStatus.DISABLED
     assert disabled.credential_status is CredentialBindingStatus.REVOKED
 
@@ -315,68 +475,23 @@ async def test_list_agents_returns_owned_active_and_disabled_agents_with_latest_
     assert await other.authority.list_agents(operator_id=other.browser.operator_id) == ()
 
 
-async def test_enrollment_and_settings_persist_the_selected_access_profile_id(harness_factory: HarnessFactory) -> None:
+async def test_enrollment_persists_the_selected_access_profile_id(db_url: str, harness_factory: HarnessFactory) -> None:
     harness = await harness_factory(access_profiles=("no_auto_approval", "haku_v1"))
-    request = _request("policy-selection")
-    interaction_id, form_token = await _open(harness, request)
+    interaction_id, form_token = await _open(harness, "policy-selection")
     await harness.authority.decide(
         interaction_id=interaction_id,
         browser=harness.browser,
         interaction_cookie=form_token,
         decision=CreateAgentDecision(form_token=form_token, display_name="Policy Agent", access_profile_id="haku_v1"),
     )
-    grant = await harness.authority.begin_exchange(
-        correlation=request.correlation,
-        client=request.client,
-        principal=harness.principal,
-        granted_scopes=frozenset({"tools:call"}),
-    )
-    assert grant.actor.access_profile_id == "haku_v1"
-    await harness.authority.record_token_family(
-        grant_id=grant.grant_id, evidence=TokenFamilyEvidence(access_jti="policy-access", refresh_jti="policy-refresh")
-    )
-    activated = await harness.authority.activate_for_tool_call(
-        grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
-    )
-    assert activated.actor.access_profile_id == "haku_v1"
-
-    updated = await harness.authority.set_access_profile(
-        operator_id=harness.browser.operator_id, agent_id=grant.actor.agent_id, access_profile_id="no_auto_approval"
-    )
-    assert updated.access_profile_id == "no_auto_approval"
-    resolved = await harness.authority.activate_for_tool_call(
-        grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
-    )
-    assert resolved.actor.access_profile_id == "no_auto_approval"
-
-
-async def test_reservation_accumulates_exact_fastmcp_validated_redirects(db_url: str, harness: Harness) -> None:
-    first = _request("first-redirect")
-    second_redirect = "https://claude.test/oauth/alternate-callback"
-    second = AuthorizationRequest(
-        correlation=AuthorizationCorrelation(
-            client_id=_CLIENT_ID, redirect_uri=second_redirect, code_challenge=f"challenge-second-{uuid4()}"
-        ),
-        client=first.client,
-        requested_scopes=first.requested_scopes,
-    )
-
-    await harness.authority.reserve_authorization(
-        request=first, upstream_authorization_url="https://auth.test/authorize/first"
-    )
-    await harness.authority.reserve_authorization(
-        request=second, upstream_authorization_url="https://auth.test/authorize/second"
-    )
-
     with _orm_session(db_url) as session:
-        client = session.scalar(select(ClientSoftware).where(ClientSoftware.oauth_client_id == _CLIENT_ID))
-        assert client is not None
-        assert client.validated_redirect_uris == [_REDIRECT_URI, second_redirect]
+        interaction = session.get(EnrollmentInteraction, interaction_id)
+        assert interaction is not None
+        assert interaction.access_profile_id == "haku_v1"
 
 
-async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db_url: str, harness: Harness) -> None:
-    request = _request("create")
-    interaction_id, form_token = await _open(harness, request)
+async def test_create_decision_is_idempotent(db_url: str, harness: Harness) -> None:
+    interaction_id, form_token = await _open(harness, "create")
     decision = CreateAgentDecision(
         form_token=form_token, display_name="Kitchen Claude", access_profile_id="no_auto_approval"
     )
@@ -408,151 +523,24 @@ async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db
             ),
         )
 
-    grant = await harness.authority.begin_exchange(
-        correlation=request.correlation,
-        client=request.client,
-        principal=harness.principal,
-        granted_scopes=frozenset({"tools:call"}),
-    )
-    await harness.authority.record_token_family(
-        grant_id=grant.grant_id, evidence=TokenFamilyEvidence(access_jti="access-create", refresh_jti="refresh-create")
-    )
-    assert (
-        await harness.authority.resolve_grant(
-            grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
-        )
-    ).actor.binding_id == grant.actor.binding_id
-    activated = await harness.authority.activate_for_tool_call(
-        grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
-    )
-    assert activated.actor == grant.actor
-    await harness.authority.revoke_grant(grant_id=grant.grant_id)
-    with pytest.raises(GrantRejectedError):
-        await harness.authority.resolve_grant(
-            grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
-        )
-
     with _orm_session(db_url) as session:
-        state = _grant_state(session, grant.grant_id)
-        decision_digest = state.interaction.decision_digest
-        assert state.interaction.browser_nonce_digest is None
-        assert state.interaction.browser_binding_digest is None
-        assert state.interaction.phase is EnrollmentPhase.COMPLETED
-        assert state.binding.status is CredentialBindingStatus.REVOKED
-        assert state.agent.status is AgentStatus.DISABLED
-
-    with _orm_session(db_url) as session:
-        disabled_agent = session.get(Agent, activated.actor.agent_id)
-        assert disabled_agent is not None
-        disabled_agent.status = AgentStatus.ACTIVE
-        with pytest.raises(IntegrityError):
-            session.commit()
+        interaction = session.get(EnrollmentInteraction, interaction_id)
+        assert interaction is not None
+        decision_digest = interaction.decision_digest
+        assert interaction.browser_nonce_digest is None
+        assert interaction.browser_binding_digest is not None
+        assert interaction.phase is EnrollmentPhase.ALLOWED
+        assert interaction.access_profile_id == "no_auto_approval"
 
     assert decision_digest not in {form_token.encode(), b"browser-secret-1", b"browser-secret-2"}
-
-
-async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(db_url: str, harness: Harness) -> None:
-    initial = await _create_grant(harness, label="initial-timeout", display_name="Initial Timeout")
-    harness.clock.advance(datetime.timedelta(minutes=16))
-    with pytest.raises(GrantRejectedError):
-        await harness.authority.resolve_grant(
-            grant_id=initial.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
-        )
-
-    active = await _create_grant(harness, label="active", display_name="Reconnectable", activate=True)
-    request = _request("reconnect-timeout")
-    interaction_id, form_token = await _open(harness, request)
-    reconnect_decision = ReconnectAgentDecision(
-        form_token=form_token, agent_id=active.actor.agent_id, access_profile_id="no_auto_approval"
-    )
-    first = await harness.authority.decide(
-        interaction_id=interaction_id,
-        browser=harness.browser,
-        interaction_cookie=form_token,
-        decision=reconnect_decision,
-    )
-    assert first == await harness.authority.decide(
-        interaction_id=interaction_id,
-        browser=harness.browser,
-        interaction_cookie=form_token,
-        decision=reconnect_decision,
-    )
-    replacement = await harness.authority.begin_exchange(
-        correlation=request.correlation,
-        client=request.client,
-        principal=harness.principal,
-        granted_scopes=frozenset({"tools:call"}),
-    )
-    await harness.authority.record_token_family(
-        grant_id=replacement.grant_id, evidence=TokenFamilyEvidence(access_jti="replacement-access", refresh_jti=None)
-    )
-    harness.clock.advance(datetime.timedelta(minutes=16))
-    with pytest.raises(GrantRejectedError):
-        await harness.authority.activate_for_tool_call(
-            grant_id=replacement.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
-        )
-
-    with _orm_session(db_url) as session:
-        initial_state = _grant_state(session, initial.grant_id)
-        active_state = _grant_state(session, active.grant_id)
-        replacement_state = _grant_state(session, replacement.grant_id)
-        assert initial_state.binding.status is CredentialBindingStatus.EXPIRED
-        assert initial_state.agent.status is AgentStatus.ABANDONED
-        assert active_state.binding.status is CredentialBindingStatus.ACTIVE
-        assert replacement_state.binding.status is CredentialBindingStatus.EXPIRED
-        assert active_state.agent.status is AgentStatus.ACTIVE
-
-
-async def test_reconnect_activation_revokes_predecessor_before_activating_successor(
-    db_url: str, harness: Harness
-) -> None:
-    active = await _create_grant(harness, label="active-reconnect", display_name="Reconnectable", activate=True)
-    request = _request("successful-reconnect")
-    interaction_id, form_token = await _open(harness, request)
-    await harness.authority.decide(
-        interaction_id=interaction_id,
-        browser=harness.browser,
-        interaction_cookie=form_token,
-        decision=ReconnectAgentDecision(
-            form_token=form_token, agent_id=active.actor.agent_id, access_profile_id="no_auto_approval"
-        ),
-    )
-    replacement = await harness.authority.begin_exchange(
-        correlation=request.correlation,
-        client=request.client,
-        principal=harness.principal,
-        granted_scopes=frozenset({"tools:call"}),
-    )
-    await harness.authority.record_token_family(
-        grant_id=replacement.grant_id,
-        evidence=TokenFamilyEvidence(access_jti="replacement-access", refresh_jti="replacement-refresh"),
-    )
-
-    activated = await harness.authority.activate_for_tool_call(
-        grant_id=replacement.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
-    )
-
-    assert activated.actor == replacement.actor
-    with _orm_session(db_url) as session:
-        active_state = _grant_state(session, active.grant_id)
-        replacement_state = _grant_state(session, replacement.grant_id)
-        assert active_state.binding.status is CredentialBindingStatus.REVOKED
-        assert active_state.binding.end_reason == "superseded"
-        assert replacement_state.binding.status is CredentialBindingStatus.ACTIVE
-        assert replacement_state.binding.supersedes_binding_id == active.actor.binding_id
-        assert replacement_state.agent.status is AgentStatus.ACTIVE
 
 
 async def test_expiry_maintenance_sweeps_allowed_response_loss_and_skips_locked_rows(
     db_url: str, harness: Harness
 ) -> None:
-    _locked_request, locked_interaction_id = await _allow_create(
-        harness, label="locked-allowed", display_name="Locked Allowed"
-    )
+    locked_interaction_id = await _allow_create(harness, label="locked-allowed", display_name="Locked Allowed")
     harness.clock.advance(datetime.timedelta(seconds=1))
-    _unlocked_request, unlocked_interaction_id = await _allow_create(
-        harness, label="unlocked-allowed", display_name="Unlocked Allowed"
-    )
+    unlocked_interaction_id = await _allow_create(harness, label="unlocked-allowed", display_name="Unlocked Allowed")
     harness.clock.advance(datetime.timedelta(minutes=11))
 
     engine = create_engine(db_url)
@@ -592,21 +580,13 @@ async def test_expiry_maintenance_sweeps_allowed_response_loss_and_skips_locked_
 
 
 async def test_expiry_sweep_terminates_exchanging_response_loss(db_url: str, harness: Harness) -> None:
-    request, interaction_id = await _allow_create(harness, label="lost-exchange", display_name="Lost Exchange Sweep")
-    grant = await harness.authority.begin_exchange(
-        correlation=request.correlation,
-        client=request.client,
-        principal=harness.principal,
-        granted_scopes=frozenset({"tools:call"}),
-    )
-    harness.clock.advance(datetime.timedelta(minutes=11))
+    grant_id = await _seed_expiring_grant(harness, phase=EnrollmentPhase.EXCHANGING)
 
     assert await harness.authority.sweep_expired_state() == 1
     assert await harness.authority.sweep_expired_state() == 0
 
     with _orm_session(db_url) as session:
-        state = _grant_state(session, grant.grant_id)
-        assert state.interaction.interaction_id == interaction_id
+        state = _grant_state(session, grant_id)
         assert state.interaction.phase is EnrollmentPhase.EXPIRED
         assert state.interaction.browser_binding_digest is None
         assert state.interaction.closure_reason == "expiry_sweep"
@@ -616,151 +596,18 @@ async def test_expiry_sweep_terminates_exchanging_response_loss(db_url: str, har
 
 
 async def test_expiry_sweep_terminates_issued_response_loss(db_url: str, harness: Harness) -> None:
-    grant = await _create_grant(harness, label="lost-issued", display_name="Lost Issued Sweep")
-    harness.clock.advance(datetime.timedelta(minutes=16))
+    grant_id = await _seed_expiring_grant(harness, phase=EnrollmentPhase.COMPLETED)
 
     assert await harness.authority.sweep_expired_state() == 1
     assert await harness.authority.sweep_expired_state() == 0
 
     with _orm_session(db_url) as session:
-        state = _grant_state(session, grant.grant_id)
+        state = _grant_state(session, grant_id)
         assert state.interaction.phase is EnrollmentPhase.COMPLETED
         assert state.interaction.browser_binding_digest is None
         assert state.binding.status is CredentialBindingStatus.EXPIRED
         assert state.binding.end_reason == "activation_timeout"
         assert state.agent.status is AgentStatus.ABANDONED
-
-
-async def test_exchange_uses_the_live_correlation_reservation_after_tuple_reuse(db_url: str, harness: Harness) -> None:
-    request = _request("correlation-reuse")
-    with _orm_session(db_url) as session:
-        database_now = session.execute(select(func.clock_timestamp())).scalar_one()
-        assert isinstance(database_now, datetime.datetime)
-    harness.clock.now = database_now - datetime.timedelta(hours=3)
-    old_url = await harness.authority.reserve_authorization(
-        request=request, upstream_authorization_url="https://auth.test/authorize/old"
-    )
-    old_interaction_id, _old_nonce = _interaction_from_url(old_url)
-    harness.clock.now = database_now
-    new_url = await harness.authority.reserve_authorization(
-        request=request, upstream_authorization_url="https://auth.test/authorize/new"
-    )
-    new_interaction_id, new_nonce = _interaction_from_url(new_url)
-    assert new_interaction_id != old_interaction_id
-    page = await harness.authority.open_interaction(
-        interaction_id=new_interaction_id, browser_nonce=new_nonce, interaction_cookie=None, browser=harness.browser
-    )
-    await harness.authority.decide(
-        interaction_id=new_interaction_id,
-        browser=harness.browser,
-        interaction_cookie=page.form_token,
-        decision=CreateAgentDecision(
-            form_token=page.form_token, display_name="Reused Correlation", access_profile_id="no_auto_approval"
-        ),
-    )
-    grant = await harness.authority.begin_exchange(
-        correlation=request.correlation,
-        client=request.client,
-        principal=harness.principal,
-        granted_scopes=frozenset({"tools:call"}),
-    )
-    with _orm_session(db_url) as session:
-        persisted_grant = session.get(AuthorizationGrant, grant.grant_id)
-        assert persisted_grant is not None
-        claimed_interaction_id = persisted_grant.enrollment_interaction_id
-    assert claimed_interaction_id == new_interaction_id
-
-
-async def test_exchange_rejects_principal_from_different_operator_without_mutating_approval(
-    db_url: str, harness: Harness
-) -> None:
-    request, interaction_id = await _allow_create(
-        harness, label="wrong-operator", display_name="Wrong Operator Rejected"
-    )
-    other_subject = "different-operator"
-    other_identity = await harness.identities.resolve_verified_identity(
-        VerifiedExternalIdentity(issuer=_MCP_ISSUER, subject=other_subject)
-    )
-    assert other_identity.operator_id != harness.browser.operator_id
-
-    with pytest.raises(EnrollmentRejectedError):
-        await harness.authority.begin_exchange(
-            correlation=request.correlation,
-            client=request.client,
-            principal=VerifiedOidcPrincipal(issuer=_MCP_ISSUER, subject=other_subject),
-            granted_scopes=frozenset({"tools:call"}),
-        )
-
-    with _orm_session(db_url) as session:
-        interaction_state = _interaction_state(session, interaction_id)
-        grant_count = session.execute(
-            select(func.count())
-            .select_from(AuthorizationGrant)
-            .where(AuthorizationGrant.enrollment_interaction_id == interaction_id)
-        ).scalar_one()
-        binding_count = session.execute(select(func.count()).select_from(CredentialBinding)).scalar_one()
-        agent_count = session.execute(select(func.count()).select_from(Agent)).scalar_one()
-
-    assert interaction_state.phase is EnrollmentPhase.ALLOWED
-    assert interaction_state.browser_binding_digest is not None
-    assert interaction_state.pending_name_count == 1
-    assert grant_count == 0
-    assert binding_count == 0
-    assert agent_count == 0
-
-
-async def test_exchange_timeout_and_preissuance_revoke_abandon_new_agents(db_url: str, harness: Harness) -> None:
-    request = _request("exchange-expiry")
-    interaction_id, form_token = await _open(harness, request)
-    await harness.authority.decide(
-        interaction_id=interaction_id,
-        browser=harness.browser,
-        interaction_cookie=form_token,
-        decision=CreateAgentDecision(
-            form_token=form_token, display_name="Lost Exchange", access_profile_id="no_auto_approval"
-        ),
-    )
-    grant = await harness.authority.begin_exchange(
-        correlation=request.correlation,
-        client=request.client,
-        principal=harness.principal,
-        granted_scopes=frozenset({"tools:call"}),
-    )
-    harness.clock.advance(datetime.timedelta(minutes=11))
-    with pytest.raises(EnrollmentRejectedError):
-        await harness.authority.record_token_family(
-            grant_id=grant.grant_id, evidence=TokenFamilyEvidence(access_jti="too-late", refresh_jti=None)
-        )
-
-    request_two = _request("preissuance-revoke")
-    interaction_two, token_two = await _open(harness, request_two)
-    await harness.authority.decide(
-        interaction_id=interaction_two,
-        browser=harness.browser,
-        interaction_cookie=token_two,
-        decision=CreateAgentDecision(
-            form_token=token_two, display_name="Revoked Before Issue", access_profile_id="no_auto_approval"
-        ),
-    )
-    grant_two = await harness.authority.begin_exchange(
-        correlation=request_two.correlation,
-        client=request_two.client,
-        principal=harness.principal,
-        granted_scopes=frozenset({"tools:call"}),
-    )
-    await harness.authority.revoke_grant(grant_id=grant_two.grant_id)
-
-    with _orm_session(db_url) as session:
-        expired = _grant_state(session, grant.grant_id)
-        revoked = _grant_state(session, grant_two.grant_id)
-        assert expired.interaction.phase is EnrollmentPhase.EXPIRED
-        assert expired.interaction.browser_binding_digest is None
-        assert expired.binding.status is CredentialBindingStatus.FAILED
-        assert expired.agent.status is AgentStatus.ABANDONED
-        assert revoked.interaction.phase is EnrollmentPhase.FAILED
-        assert revoked.interaction.browser_binding_digest is None
-        assert revoked.binding.status is CredentialBindingStatus.FAILED
-        assert revoked.agent.status is AgentStatus.ABANDONED
 
 
 async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: str, harness: Harness) -> None:
@@ -994,60 +841,6 @@ async def test_static_reconcile_revokes_removed_definition_and_restores_stable_s
     assert agent_status is AgentStatus.ACTIVE
 
 
-async def test_revoke_waits_for_interaction_before_locking_grant_graph(
-    db_url: str, harness: Harness, migrated_engine: AsyncEngine
-) -> None:
-    grant = await _create_grant(harness, label="lock-order", display_name="Lock Ordered Agent")
-    authority = PostgresAgentAuthority(
-        harness.sessions,
-        public_base_url="https://haku.test",
-        operator_identity_store=harness.identities,
-        clock=harness.clock,
-        access_profiles=("no_auto_approval",),
-        default_access_profile_id="no_auto_approval",
-    )
-    interaction_lock_attempted = threading.Event()
-
-    def observe_interaction_lock(
-        _connection: object, _cursor: object, statement: str, _parameters: object, _context: object, _executemany: bool
-    ) -> None:
-        normalized = statement.casefold()
-        if "enrollment_interactions" in normalized and "for update" in normalized:
-            interaction_lock_attempted.set()
-
-    event.listen(migrated_engine.sync_engine, "before_cursor_execute", observe_interaction_lock)
-    engine = create_engine(db_url)
-    owner = Session(engine)
-    transaction = owner.begin()
-    task: asyncio.Task[None] | None = None
-    try:
-        persisted_grant = owner.get(AuthorizationGrant, grant.grant_id)
-        assert persisted_grant is not None
-        interaction_id = persisted_grant.enrollment_interaction_id
-        binding_id = persisted_grant.binding_id
-        owner.execute(
-            select(EnrollmentInteraction)
-            .where(EnrollmentInteraction.interaction_id == interaction_id)
-            .with_for_update()
-        ).scalar_one()
-        task = asyncio.create_task(authority.revoke_grant(grant_id=grant.grant_id))
-        assert await asyncio.to_thread(interaction_lock_attempted.wait, 5)
-        assert not task.done()
-        owner.execute(
-            select(CredentialBinding).where(CredentialBinding.binding_id == binding_id).with_for_update(nowait=True)
-        ).scalar_one()
-        transaction.commit()
-        await task
-    finally:
-        if transaction.is_active:
-            transaction.rollback()
-        owner.close()
-        if task is not None and not task.done():
-            await task
-        event.remove(migrated_engine.sync_engine, "before_cursor_execute", observe_interaction_lock)
-        engine.dispose()
-
-
 async def test_database_outage_maps_to_authority_unavailable() -> None:
     database_url = "postgresql+asyncpg://postgres:postgres@127.0.0.1:1/unavailable"
     async with managed_async_engine(create_async_engine(database_url, pool_pre_ping=True)) as engine:
@@ -1057,15 +850,12 @@ async def test_database_outage_maps_to_authority_unavailable() -> None:
         )
         authority = PostgresAgentAuthority(
             sessions,
-            public_base_url="https://haku.test",
             operator_identity_store=identities,
             access_profiles=("no_auto_approval",),
             default_access_profile_id="no_auto_approval",
         )
         with pytest.raises(AgentGrantAuthorityUnavailableError):
-            await authority.reserve_authorization(
-                request=_request("outage"), upstream_authorization_url="https://auth.test/authorize"
-            )
+            await authority.list_agents(operator_id=uuid4())
 
 
 async def test_sqlalchemy_pool_timeout_maps_to_authority_unavailable(db_url: str, harness: Harness) -> None:
@@ -1085,38 +875,6 @@ async def test_host_unreachable_maps_to_authority_unavailable(db_url: str, harne
 
     with pytest.raises(AgentGrantAuthorityUnavailableError):
         await harness.authority._database_call(no_route_to_host)
-
-
-async def test_exchange_revalidates_operator_after_principal_resolution(harness: Harness) -> None:
-    request = _request("operator-race")
-    interaction_id, form_token = await _open(harness, request)
-    await harness.authority.decide(
-        interaction_id=interaction_id,
-        browser=harness.browser,
-        interaction_cookie=form_token,
-        decision=CreateAgentDecision(
-            form_token=form_token, display_name="Disabled During Exchange", access_profile_id="no_auto_approval"
-        ),
-    )
-    trust = OperatorIdentityTrust(
-        trust_domain="auth.test/authentik-user-id/v1", trusted_issuers=frozenset({_BROWSER_ISSUER, _MCP_ISSUER})
-    )
-    authority = PostgresAgentAuthority(
-        harness.sessions,
-        public_base_url="https://haku.test",
-        operator_identity_store=DisableAfterPrincipalResolutionIdentityStore(harness.sessions, trust),
-        clock=harness.clock,
-        access_profiles=("no_auto_approval",),
-        default_access_profile_id="no_auto_approval",
-    )
-
-    with pytest.raises(EnrollmentRejectedError):
-        await authority.begin_exchange(
-            correlation=request.correlation,
-            client=request.client,
-            principal=harness.principal,
-            granted_scopes=frozenset({"tools:call"}),
-        )
 
 
 if __name__ == "__main__":
