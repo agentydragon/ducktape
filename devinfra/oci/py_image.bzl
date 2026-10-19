@@ -156,7 +156,7 @@ def py_image_bytecode_layer(name, layers, owner = "1000", group = "1000"):
 set -eu
 root=$$(mktemp -d)
 for layer in $(SRCS); do tar -xzf $$layer -C $$root; done
-python=$$(find $$root -path '*/bin/python3.[0-9]*' -type f | head -n1)
+python=$$(find $$root -regextype posix-extended -type f -regex '.*/bin/python3[.][0-9]+' -print -quit)
 $$python -m compileall -q -j0 --invalidation-mode unchecked-hash -s $$root -p / $$root
 (cd $$root && find . -path '*/__pycache__/*.pyc' -print0 | tar --null -T - --owner={owner} --group={group} -czf - ) > $@
 """.format(owner = owner, group = group),
