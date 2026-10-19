@@ -15,19 +15,31 @@ import "google/protobuf/timestamp.proto";
 // idempotency key across all of them: a retry of the same operation and payload answers with the same
 // `Dispatch`, and the same ID under another operation or payload fails `ALREADY_EXISTS`.
 service SessionDispatcher {
-  rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
-  rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
-  rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
+  rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}:submitInput" body: "*"};
+  }
+  rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}:changeModel" body: "*"};
+  }
+  rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}:changeReasoningEffort" body: "*"};
+  }
   // Not stored or queued: delivered at once to a Ready Sandbox. A stale turn is rejected
   // by the runner with FAILED_PRECONDITION; unavailable Sandbox behavior remains explicit below.
-  rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse);
+  rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}:interruptTurn" body: "*"};
+  }
   // Stores the request and answers with the Session's `SessionOpening` in
   // `DELIVERY_STATE_QUEUED_IN_DISPATCHER`; the opening is delivered once the Sandbox is `Ready`, before any
   // command for the Session. `session_id` is the idempotency key: a retry with the same Sandbox and request
   // answers with the same `SessionOpening`, and the same ID with another Sandbox or request fails
   // `ALREADY_EXISTS`. A Sandbox that does not exist fails `NOT_FOUND`.
-  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
-  rpc GetSessionOpening(GetSessionOpeningRequest) returns (GetSessionOpeningResponse);
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}:open" body: "*"};
+  }
+  rpc GetSessionOpening(GetSessionOpeningRequest) returns (GetSessionOpeningResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/opening"};
+  }
   rpc GetDispatch(GetDispatchRequest) returns (GetDispatchResponse) {
     option (google.api.http) = {get: "/v1/dispatches/{command_id}"};
   }
@@ -42,7 +54,9 @@ service SessionDispatcher {
   }
   // Only while the Dispatch is `DELIVERY_STATE_QUEUED_IN_DISPATCHER`: once a delivery began its outcome
   // is the runner's.
-  rpc CancelDispatch(CancelDispatchRequest) returns (CancelDispatchResponse);
+  rpc CancelDispatch(CancelDispatchRequest) returns (CancelDispatchResponse) {
+    option (google.api.http) = {post: "/v1/dispatches/{command_id}:cancel" body: "*"};
+  }
 }
 
 // Where a Dispatch is. The one vocabulary of every dispatch.

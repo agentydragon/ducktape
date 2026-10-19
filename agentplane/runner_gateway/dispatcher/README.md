@@ -17,9 +17,12 @@ The manual queue, replica and wake probes are documented in the
   the idempotency key across every command RPC.
 - **Watching**: `WatchDispatches` sends the Dispatches in scope, then one `CaughtUp` frame, then a Dispatch
   again whenever it changes. `DispatchFilter.command_ids` (at most 1000) narrows either scope to those
-  commands, so a caller holding a few of them does not replay a whole Session. `GetDispatch`, `ListDispatches`
-  and `WatchDispatches` also have an HTTP/JSON form (`/v1/dispatches`) on the Gateway's optional
-  `--http-listen-address`, [generated from the proto](../../docs/grpc_services.md#httpjson-facades).
+  commands, so a caller holding a few of them does not replay a whole Session.
+- **HTTP/JSON form**: every RPC also answers over HTTP on the Gateway's optional `--http-listen-address`,
+  [generated from the proto](../../docs/grpc_services.md#httpjson-facades): reads under `/v1/dispatches`
+  and `/v1/sessions/{session_id}/opening`, commands as `POST /v1/sessions/{session_id}:<verb>` and
+  `POST /v1/dispatches/{command_id}:cancel`. The Dispatcher admits only the configured ServiceAccounts
+  on either form; a browser reaches it through the app, whose Thread checks stay in front of commands.
 - **Delivery states** say where a command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`,
   `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN` (a deleted Sandbox's). A
   `Dispatch`'s `reason` says what a queued command waits for or where a terminal one ended.

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -24,6 +25,8 @@ type dispatcher struct {
 	mu            sync.Mutex
 	authorization []string
 	filter        *dispatcherpb.DispatchFilter
+	submitted     *dispatcherpb.SubmitInputRequest
+	cancelled     string
 }
 
 func (d *dispatcher) GetDispatch(ctx context.Context, request *dispatcherpb.GetDispatchRequest) (*dispatcherpb.GetDispatchResponse, error) {
@@ -36,6 +39,22 @@ func (d *dispatcher) GetDispatch(ctx context.Context, request *dispatcherpb.GetD
 	return &dispatcherpb.GetDispatchResponse{Dispatch: &dispatcherpb.Dispatch{
 		CommandId: request.GetCommandId(), State: dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED,
 	}}, nil
+}
+
+func (d *dispatcher) SubmitInput(_ context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
+	d.mu.Lock()
+	d.submitted = request
+	d.mu.Unlock()
+	return &dispatcherpb.SubmitInputResponse{Dispatch: &dispatcherpb.Dispatch{
+		CommandId: request.GetCommandId(), State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+	}}, nil
+}
+
+func (d *dispatcher) CancelDispatch(_ context.Context, request *dispatcherpb.CancelDispatchRequest) (*dispatcherpb.CancelDispatchResponse, error) {
+	d.mu.Lock()
+	d.cancelled = request.GetCommandId()
+	d.mu.Unlock()
+	return &dispatcherpb.CancelDispatchResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId()}}, nil
 }
 
 func (d *dispatcher) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, stream grpc.ServerStreamingServer[dispatcherpb.WatchDispatchesResponse]) error {
@@ -77,7 +96,12 @@ func serve(t *testing.T) (*dispatcher, string) {
 
 func get(t *testing.T, url, authorization string) *http.Response {
 	t.Helper()
-	request, err := http.NewRequest(http.MethodGet, url, nil)
+	return send(t, http.MethodGet, url, authorization, "")
+}
+
+func send(t *testing.T, method, url, authorization, body string) *http.Response {
+	t.Helper()
+	request, err := http.NewRequest(method, url, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,5 +181,38 @@ func TestServerStreamAnswersOneResultObjectPerLine(t *testing.T) {
 	defer servicer.mu.Unlock()
 	if servicer.filter.GetSessionId() != "session-1" || !slices.Equal(servicer.filter.GetCommandIds(), []string{"command-a", "command-b"}) {
 		t.Fatalf("servicer saw filter %v", servicer.filter)
+	}
+}
+
+func TestCommandTakesSessionFromPathAndRestFromBody(t *testing.T) {
+	servicer, facade := serve(t)
+	response := send(t, http.MethodPost, facade+"/v1/sessions/session-1:submitInput", "Bearer token-1",
+		`{"commandId": "command-1", "sandbox": "sandbox-1", "text": "hello"}`)
+	var body struct {
+		Dispatch struct{ State string } `json:"dispatch"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || body.Dispatch.State != "DELIVERY_STATE_QUEUED_IN_DISPATCHER" {
+		t.Fatalf("status %d, body %+v", response.StatusCode, body)
+	}
+	servicer.mu.Lock()
+	defer servicer.mu.Unlock()
+	if got := servicer.submitted; got.GetSessionId() != "session-1" || got.GetCommandId() != "command-1" || got.GetSandbox() != "sandbox-1" || got.GetText() != "hello" {
+		t.Fatalf("servicer saw %v", got)
+	}
+}
+
+func TestCommandWithOnlyAPathParameterTakesAnEmptyBody(t *testing.T) {
+	servicer, facade := serve(t)
+	response := send(t, http.MethodPost, facade+"/v1/dispatches/command-2:cancel", "Bearer token-1", "{}")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", response.StatusCode)
+	}
+	servicer.mu.Lock()
+	defer servicer.mu.Unlock()
+	if servicer.cancelled != "command-2" {
+		t.Fatalf("servicer cancelled %q", servicer.cancelled)
 	}
 }

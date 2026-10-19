@@ -67,8 +67,7 @@ are the app's own logic.
 - One `agentplane/proto/<name>.proto` per API, as in [gRPC services](../docs/grpc_services.md). Each
   RPC reachable over HTTP carries one `google.api.http` rule; an unannotated RPC is not. That keeps
   `RunnerControl.Connect` and `RunnerIngress.Push` (full duplex, native gRPC per the approved
-  direction), the tunneled `Runner` service and, for now, the Dispatcher's write RPCs off HTTP: the
-  app's Thread checks sit in front of those.
+  direction) and the tunneled `Runner` service off HTTP.
 - Operator and workload audiences are separate proto services, as the Action Service already
   separates `/v1/operator/...` from `/v1/...` with different authenticators. An annotation then
   names its audience.
@@ -183,10 +182,10 @@ lands as separate, independently landable changes with no shim: a service's chan
 hand-written routes, client methods and app relays, and updates the agent guides and the
 [agent CLI](agent_cli.md) plan with it. Manifests follow the pinned image.
 
-Not yet on the DAG: Dispatcher writes for the browser wait for the app's Thread checks to have a home
-that is not a hand-written route, which is the app-contract decision. Deferred, not asked: whether the
-app's own views (Threads, Sandboxes) become protos. The tracks do not need it, and an early answer would
-be hard to reverse.
+Not yet on the DAG: the Dispatcher's commands have generated routes, but the browser keeps reaching them
+through the app's typed routes until the app's Thread checks have a home that is not a hand-written
+route, which is the app-contract decision. Deferred, not asked: whether the app's own views (Threads,
+Sandboxes) become protos. The tracks do not need it, and an early answer would be hard to reverse.
 
 ## Direct browser access, later
 
