@@ -74,6 +74,7 @@ py_test(
         ":generate",
         "//:conftest",
         "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
         "@pypi//jsonschema",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -21,6 +21,7 @@ from agentplane.crds.generate import (
     generated_files,
 )
 from util.bazel.runfiles import get_required_path
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def _committed(relative: Path) -> str:
@@ -32,9 +33,13 @@ def test_committed_files_are_generated() -> None:
     egress_generated = get_required_path(EGRESS_GENERATED_CRDS)
     sandbox_crds = {name: (sandbox_generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
     egress_crds = {name: (egress_generated / source).read_text() for name, source in EGRESS_CRDS.items()}
+    egress_manifest = CRDS_DIR / "crd-egresscredentials.yaml"
     for relative, content in generated_files(
         {name: _committed(CRDS_DIR / name) for name in CRD_FILES}, sandbox_crds, egress_crds
     ):
+        if relative == egress_manifest:
+            expected = undeclared_outputs_dir() / relative.name
+            expected.write_text(content)
         assert content == _committed(relative), f"{relative} is stale"
 
 

@@ -192,10 +192,13 @@ async def test_egress_credential_source_and_target_validation() -> None:
             ({"method": "basicPassword", "header": "Authorization"}, True),
             ({"method": "basicWhole", "header": "Authorization"}, True),
             ({"method": "jsonField", "field": "password"}, True),
-            ({"method": "wholeValue", "header": "Authorization", "scheme": "Bearer"}, False),
-            ({"method": "schemeToken", "header": "Authorization"}, False),
-            ({"method": "jsonField", "header": "Authorization"}, False),
+            ({"method": "jsonField"}, False),
+            ({"method": "jsonField", "field": "password", "header": "Authorization"}, False),
             ({"method": "jsonField", "field": "password", "scheme": "Bearer"}, False),
+            ({"method": "jsonField", "field": ""}, False),
+            ({"method": "wholeValue", "header": "Authorization", "scheme": "Bearer"}, False),
+            ({"method": "wholeValue", "field": "password"}, False),
+            ({"method": "schemeToken", "header": "Authorization"}, False),
         ]
         secret = {"secretRef": {"name": "api-token", "key": "token"}}
         for index, (source, valid) in enumerate(source_cases):
