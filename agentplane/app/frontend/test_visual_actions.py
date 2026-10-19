@@ -304,6 +304,7 @@ async def test_action_presentations(
     await page.evaluate("window.location.hash = '/actions/70000000-0000-4000-8000-000000000007'")
     receipt = page.locator("[data-action-receipt]")
     await expect(receipt).to_be_visible()
+    await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(receipt).to_contain_text(example.result_text)
     await expect(receipt.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
@@ -313,6 +314,7 @@ async def test_action_presentations(
     await page.evaluate("window.location.hash = '/actions'")
     await expect(page.get_by_role("radio", name="Not auto-allowed", exact=True)).to_be_visible()
     await expect(page.locator("[data-action-receipt]")).to_have_count(1)
+    await page.locator("[data-action-receipt]").evaluate("element => element.scrollIntoView({block: 'end'})")
     await wait_for_stable(page)
     await view.capture(f"{capture_name}-history", target=page.locator("[data-action-receipt]"))
 
