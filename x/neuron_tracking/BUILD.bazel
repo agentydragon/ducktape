@@ -44,3 +44,31 @@ py_test(
         "@pypi//referencing",  # keep
     ],
 )
+
+py_library(
+    name = "check",
+    srcs = ["check.py"],
+    deps = [
+        ":annotations",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "check_bin",
+    main_module = "x.neuron_tracking.check",
+    deps = [":check"],
+)
+
+py_test(
+    name = "test_check",
+    srcs = ["test_check.py"],
+    deps = [
+        ":annotations",
+        ":check",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

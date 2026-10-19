@@ -1,8 +1,9 @@
 # TODO
 
-- [ ] Establish reviewed positive and excluded examples for the sample's
-      side/belly band. Check a few pixel masks and short identity tracks using
-      the shared renderer before another full-clip run.
+- [ ] Extend the reviewed frame-52 examples to short identity tracks and nearby
+      excluded structures before another full-clip run. Add more checks as those
+      examples are reviewed; the accepted count, body locations, and distinct IDs are in
+      `sample_checks.json`.
 - [ ] Extend shared validation to CSV consistency and visual review coverage of
       the exported annotation revision. The renderer already validates source
       identity, timestamps, masks, ID colors, and decoded video dimensions/count.

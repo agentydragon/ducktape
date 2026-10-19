@@ -83,3 +83,50 @@ constant cadence based on source duration. The helper decodes the result to
 check frame count and dimensions. Its report keeps original and output
 timestamps and both durations so timing changes are explicit. Rendering is not
 evidence of correct neuron selection or tracking; open and inspect the outputs.
+
+## Sample sanity checks
+
+Run the checks against an annotation JSON from the repository root, in the Nix
+shell above (the checker itself only needs Pydantic):
+
+```bash
+python -m x.neuron_tracking.check \
+  --annotations x/neuron_tracking/runs/manual_frame_review/annotations.json \
+  --checks x/neuron_tracking/sample_checks.json
+```
+
+`sample_checks.json` pins this source by SHA-256 and dimensions and selects
+frame 52 at 25.9 seconds. Its named checks require:
+
+- 12–20 predicted body centers inside `[245, 560, 635, 805]`, the reviewed
+  side/belly crop.
+- At least one predicted body center inside `[332, 714, 348, 731]`, around the
+  blue example's soma.
+- Body-pixel overlap with each of these boxes, covering the full body, branch,
+  and uncertainty mask extent of the corresponding reviewed candidate:
+
+  | Example                 | Box                    |
+  | ----------------------- | ---------------------- |
+  | Dark blue               | `[487, 643, 519, 669]` |
+  | Dark teal just below it | `[493, 676, 518, 693]` |
+  | Leftmost red/pink       | `[254, 758, 290, 786]` |
+
+- All four examples must be present and have separate identities: no predicted
+  neuron ID may match more than one of their boxes.
+
+Regions use source pixels as `[left, top, right, bottom]`, excluding the right
+and bottom edges. `body_center` uses the area-weighted centroid of the saved
+`body` pixels. `body_overlap` requires at least one body pixel in the box, even
+if its center lies outside. Each ID counts once; branch and uncertainty pixels
+do not satisfy either predicate. Colors, ID names, and review labels do not
+determine a location match. Distinctness compares the matched IDs and also fails
+if an example is missing. The checker prints JSON with pass/fail, matching IDs,
+and IDs shared between examples, exits 0 when all checks pass, and exits 1 for
+failed checks. Wrong source/frame metadata raises an input error.
+
+Add named regions to this file or create another sample/frame check file as
+examples accumulate, and add named `distinct` groups for examples that must
+have separate IDs. A null `max_count` leaves the upper bound open. These are
+coarse checks: passing does not establish mask boundaries or correct tracking.
+None of the first five runs pass all checks; see
+[the baseline comparison](debug/sanity_check_baseline.md).

@@ -11,6 +11,16 @@ type Run = tuple[StrictInt, StrictInt, StrictInt]
 type Mask = list[Run]
 
 
+def mask_center(mask: Mask) -> tuple[float, float] | None:
+    area = sum(end - start for _, start, end in mask)
+    if area == 0:
+        return None
+    return (
+        sum((start + end - 1) * (end - start) / 2 for _, start, end in mask) / area,
+        sum(y * (end - start) for y, start, end in mask) / area,
+    )
+
+
 class Part(StrEnum):
     BODY = "body"
     BRANCHES = "branches"

@@ -19,3 +19,11 @@ selection as well as pixel boundaries. Then follow the same identities through
 a few neighboring frames and a pose change, using the shared renderer's stable
 ID colors to inspect associations. A pilot with only a few neurons is partial
 coverage, not a complete census.
+
+Run `x.neuron_tracking.check` with `sample_checks.json` before hand-off. The
+frame-52 checks encode the user's accepted approximate count in the reviewed
+crop, four body-location examples, and their distinct identities. The blue
+example uses a body-center check; the dark blue, dark teal below it, and leftmost
+red/pink examples use body-pixel overlap with their reviewed mask bounding boxes.
+Correct failed checks by revisiting the source images; a matching count alone
+does not show that the masks or identities are right.

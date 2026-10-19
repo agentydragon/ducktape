@@ -13,7 +13,7 @@ import av
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 from pydantic import BaseModel
 
-from x.neuron_tracking.annotations import Annotations, Mask, Part
+from x.neuron_tracking.annotations import Annotations, Mask, Part, mask_center
 
 
 class Layer(StrEnum):
@@ -41,14 +41,6 @@ class RenderReport(BaseModel):
 def hash_file(path: Path) -> str:
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
-
-
-def mask_center(mask: Mask) -> tuple[float, float]:
-    area = sum(end - start for _, start, end in mask)
-    return (
-        sum((start + end - 1) * (end - start) / 2 for _, start, end in mask) / area,
-        sum(y * (end - start) for y, start, end in mask) / area,
-    )
 
 
 def render_frame(
@@ -80,8 +72,8 @@ def render_frame(
                     case Part.UNCERTAIN:
                         for x in range(start, end):
                             draw.point((x, y), fill=(*color, 180 if (x + y) % 4 < 2 else 45))
-        if displayed:
-            anchors.append((observation.neuron_id, mask_center(displayed)))
+        if (center := mask_center(displayed)) is not None:
+            anchors.append((observation.neuron_id, center))
     if labels:
         draw_labels(draw, anchors, colors=colors, size=image.size)
     return Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
