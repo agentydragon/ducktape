@@ -312,7 +312,7 @@ async def test_action_presentations(
     await view.capture(f"{capture_name}-detail-result", target=receipt)
 
     await page.evaluate("window.location.hash = '/actions'")
-    await expect(page.get_by_role("radio", name="Not auto-allowed", exact=True)).to_be_visible()
+    await expect(page.get_by_role("radio", name="Not auto-allowed", exact=True)).to_be_checked()
     await expect(page.locator("[data-action-receipt]")).to_have_count(1)
     await page.locator("[data-action-receipt]").evaluate("element => element.scrollIntoView({block: 'end'})")
     await wait_for_stable(page)
