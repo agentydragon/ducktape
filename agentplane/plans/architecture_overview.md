@@ -24,21 +24,25 @@ with its library-consistency work (#10816, #10989).
 
 ### Q1. Where does collection membership live?
 
-**Open.** DAG: `HISTORY_ACCESS_AFTER_DELETION` (held) and the membership part of
-`SESSION_ACCESS_RULES_DESIGN`. The operator's constraints:
+**Tentatively answered: a database, with a reconciler.** The Kubernetes-borrowing lane asked whether
+membership may leave Kubernetes and GitOps, recommending History as owner with an import for static
+sets. The operator answered "i guess that would be okay, we could still have some kind of reconciler or
+something" (2026-10-19 01:10). The owner (History is the lane's default) and the key (Sandbox UID) are
+not confirmed. DAG: `HISTORY_ACCESS_AFTER_DELETION` (held) and the membership part of
+`SESSION_ACCESS_RULES_DESIGN`. His other constraints:
 
 - History of a deleted Sandbox stays readable (2026-10-18 23:29).
 - Collections keep covering Sandboxes "no longer alive", such as "every Coordinator can audit every IC
   Agent" (2026-10-18 23:33).
 - He leaned against splitting membership between History and Kubernetes, and against Kubernetes as a
   historical log (2026-10-17 03:22).
-- Membership in a database is "okay, we could still have some kind of reconciler" (2026-10-19 01:10).
 
 Options:
 
-- **A. One database owned by History.** Rows keyed by Sandbox UID live as long as the history. Sets
-  authored in git are copied in one way by a reconciler, and launch enrollment writes directly. Rules
-  stay `PolicySet` rules in Kubernetes, where a collection is a name and not an object.
+- **A. One database owned by History (his tentative answer).** Rows keyed by Sandbox UID live as long
+  as the history. Sets authored in git are copied in one way by a reconciler, and launch enrollment
+  writes directly. Rules stay `PolicySet` rules in Kubernetes, where a collection is a name and not an
+  object.
 - **B. Live-only `SandboxCollectionMembership` CRs.** They die with their Sandbox, so collections stop
   covering dead members. This fails the 2026-10-18 requirement.
 - **C. CRs for live sends, a database for archive reads.** This fits his tentative idea that archive
@@ -48,8 +52,8 @@ Options:
   for every listed Sandbox each 10 s tick, so 1,000 retained Sandboxes write about 100 Leases per
   second (`runner_gateway/dispatcher/delivery.go`).
 
-**Recommended: A.** It is the only option that meets all four constraints. Then send v1 carries direct
-and `allSandboxes` targets only; `sandboxCollections` and the membership CR leave the draft schema, and
+A is the only option that meets all his constraints. If it holds, send v1 carries direct and
+`allSandboxes` targets only; `sandboxCollections` and the membership CR leave the draft schema, and
 collection targets arrive for send and read together with History's membership API. Sending then stays
 independent of the read decisions, as the operator expected (2026-10-17 05:51); the one thing that tied
 them was the collection target (the dashed edge into `SESSION_ACCESS_RULES`).
@@ -111,7 +115,7 @@ reads and constrain neither. **Recommended:** no question until then.
 
 ```mermaid
 flowchart TD
-    Q1["Q1 Membership store"]
+    Q1["Q1 Membership store, tentative"]
     Q2["Q2 Python now or Go first"]
     Q3["Q3 Sandbox UID and key"]
     Q4["Q4 Send path home"]
@@ -173,7 +177,7 @@ instead of deleting Sandboxes as "one consistent way" (2026-10-18 23:29).
 | `session_access` rule shape, `targets` union, one `SandboxCollectionMembership` CR per Sandbox and collection | #10987, plan                                           | Only the two target decisions above                                           |
 | Resync of 300 s, refusal after three missed cycles, `policy_resync_seconds`                                   | #10987                                                 | Asked "Shouldn't freshness just come from a k8s watch?" The number is not his |
 | Payloads expire at 30 days, 128 unacknowledged per sender per inbox, idempotency key, recipient states        | [plan](multiagent_communication.md), #10987            | Never answered that batch; he later asked for one question at a time          |
-| History owns membership, keyed by Sandbox UID                                                                 | #10990                                                 | "okay" to a database, not to the owner or key                                 |
+| History owns membership, keyed by Sandbox UID                                                                 | #10990                                                 | Tentatively okay to a database, not to the owner or key                       |
 | Records stay in the primary cluster's Kubernetes API                                                          | #10990 "Take"                                          | Raised a second control plane as a possibility, no answer                     |
 | gRPC-Gateway in each service's process over loopback, NDJSON streams, per-service rollout with the Go port    | [facade plan](grpc_http_facade.md), merged as proposed | The direction and the app-first path only                                     |
 | History is the next Go port                                                                                   | Go lane card                                           | No recorded answer                                                            |
@@ -182,16 +186,16 @@ instead of deleting Sandboxes as "one consistent way" (2026-10-18 23:29).
 
 | PR     | Encodes                                                                      | Handling                                                                                         |
 | ------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| #10987 | The draft send schema with the membership CR, freshness and recipient states | Do not merge before Q1; after A, drop the CR and collection targets, then merge                  |
-| #10990 | History as default membership owner; records stay in the primary API         | Narrow to the options not chosen once Q1 is answered, then merge                                 |
+| #10987 | The draft send schema with the membership CR, freshness and recipient states | Update for Q1 before merging: drop the CR and collection targets                                 |
+| #10990 | History as default membership owner; records stay in the primary API         | Narrow once Q1's owner and key are confirmed, then merge                                         |
 | #10816 | A Go egress policy evaluator and informer beside the Python ones             | Already delayed by the operator; its Go evaluator is the second implementation in C2             |
 | #10989 | A shared Go settings loader                                                  | The operator asked "do we need one?"; the lane compared `kong` and `koanf`; his merge answers it |
 
 ## Conflicts between lanes
 
 - **C1. Membership in two places.** #10987 reads CRs in the Notification service's watch; #10990
-  recommends a History database; the operator said not to split membership and also said a database
-  is "okay". Settled by Q1.
+  recommends a History database; the operator leaned against splitting membership and later said a
+  database is okay. Q1 leans to the database; #10987 still assumes CRs.
 - **C2. Shared code versus Go first.** The agent-communication plan shares one evaluator; the Go
   lane and #10816 write Go evaluators. Settled by Q2.
 - **C3. First to dispatch versus Go first.** The DAG makes `HISTORY_SANDBOX_UID` the first node to
