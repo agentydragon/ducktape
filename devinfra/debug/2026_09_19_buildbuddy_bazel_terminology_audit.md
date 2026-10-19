@@ -30,7 +30,7 @@ Evidence:
   images.”
 - `devinfra/ci/docs/publish_planning.md:158` says “RBE worker image” when explaining
   why the image build does not depend on its own published artifact.
-- `devinfra/pr_visuals/README.md:96` and
+- `devinfra/pr_visuals/docs/publisher.md` (§ Baseline resolution) and
   `devinfra/ci/plans/bazel_diff_base_hash_caching.md:173` call a pin change an
   “rbe-worker” / “RBE image” bump.
 

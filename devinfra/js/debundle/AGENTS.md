@@ -2,158 +2,111 @@
 
 # Debundler Implementation Constraints
 
-> The canonical design — what debundling means as a problem, what
-> emit strategies are correct under which conditions, and the
-> realizability theorem the validator enforces — lives in
-> <docs/design.md>. Read that first when working on the splitting
-> pipeline. This file documents agent-facing operating principles
-> on top of the design.
+Read <docs/design.md> (problem, correct emit strategies, the realizability theorem
+the validator enforces) before working on the splitting pipeline.
 
 ## Mission
 
-The debundler is a peeling toolkit: it recovers a production-minified JavaScript
-bundle into something that reads like a hand-written modular codebase. Each release
-of an upstream app is re-peeled from a versioned spec; **the spec is the source of
-truth** for which symbols belong where and what they are called. Consequences:
+Recover a minified bundle into what reads like a hand-written modular codebase; each
+upstream release is re-peeled from a versioned spec. **The spec is the source of
+truth** for where symbols belong and what they are called.
 
-- **Spec authoring is high-value, low-friction** — build tools and side-output
-  analyses that make authoring convenient; the pipeline emits machine-readable
-  artifacts so tools can suggest owner/module splits and rename targets.
-- **Heuristics surface signals, the spec makes decisions.** Heuristic outputs are
-  diagnostics and candidate sets only; the spec author reviews and commits.
-- **The debundler is itself a living target** — when a new bundle shape exposes a
-  missing capability, extend it, reproducing the failure minimally first.
+- Invest in tools and side-output analyses that make spec authoring cheap; the
+  pipeline emits machine-readable artifacts for suggesting owner/module splits and
+  renames.
+- Heuristics produce diagnostics and candidate sets only; the spec author decides.
+- When a new bundle shape exposes a missing capability, extend the debundler,
+  reproducing the failure minimally first. When debundle tooling blocks a task,
+  follow <docs/bug_reproductions.md> before working around it. Keep private source
+  out of public bug reports and fixtures.
 
-When debundle tooling blocks a task, follow
-<docs/bug_reproductions.md> before working around it. Keep private source out
-of public bug reports and fixtures.
+## Profiling
 
-## Performance Profiling
+`-c opt` binary, pre-staged inputs, `perf_wrapper.sh` (<docs/bazel_integration.md>
+§ Profiling). Progress markers: `perf_record_stderr.txt`; self-cost:
+`perf_report_flat_symbols.txt`; callgraphs: the children report. Keep production
+telemetry coarse.
 
-Profile an `-c opt` binary against a pre-staged input set with `perf_wrapper.sh`
-(<docs/bazel_integration.md> § Profiling). In `perf` captures, read `perf_record_stderr.txt` for
-progress markers, `perf_report_flat_symbols.txt` for self-cost, and the symbolized
-children report for callgraphs. For timed repros, stop the
-process on timeout and attach `gdb` to inspect live stacks; core-dump only when the
-state must outlive the process. Keep production telemetry coarse.
+## Parallel workers
 
-## Worktree discipline for parallel agents
-
-Dispatch parallel workers with the Agent tool's `isolation: "worktree"`. Symptoms
-of missed isolation: changes spanning multiple agents' files, "my work
-disappeared", `git status` showing another branch's files — bail out and
-re-dispatch with isolation rather than recovering from contamination. The
+Dispatch with the Agent tool's `isolation: "worktree"`. On signs of missed isolation
+(another agent's files in your diff, vanished work, foreign branch files in
+`git status`), bail and re-dispatch isolated; don't recover from contamination. The
 orchestrator keeps the main worktree and never disturbs in-flight worker trees.
 
-### Signing in worktrees
+**Signing (web sessions)**: `/tmp/code-sign` (`gpg.ssh.program`) works only with cwd
+`/home/user/ducktape`; in a worktree it fails `status 400: missing source`. Ratified
+narrow exception: ephemeral worker worktrees commit `--no-gpg-sign` and push unsigned
+(squash/merge signs on `devel`); the orchestrator in the canonical path signs
+normally.
 
-The session's signing tool (`/tmp/code-sign` via `gpg.ssh.program`) succeeds only
-when cwd is the canonical repo path (`/home/user/ducktape`); from any worktree it
-fails with `status 400: missing source`. Ratified exception to "never bypass
-signing", narrowly scoped: ephemeral worker worktrees commit with `--no-gpg-sign`
-and push unsigned — squash/merge signs the resulting commit on `devel`. The
-orchestrator's commits in the canonical path keep the default signing.
+## AST only
 
-## AST Requirement
-
-JavaScript-source transformations use proper AST operations on the SWC-parsed
-input — never raw text rewrites, regex rewriting, or ad hoc source patching.
-
-Syntax-derived facts come from the one SWC parse in `prepare_js_chunks` and flow
-through `ChunkManifest` / the `ArtifactIndexes` query API — not phase-local
-rescans. Mutation passes still need an AST visitor to apply a rewrite, but the
-resolution decision is fed from the manifest. If a new pipeline question can't be
-answered by the existing manifest schema, extend the shallow analysis once instead
-of re-deriving the fact in another stage.
+Transform JS via AST operations on the SWC parse — never text/regex rewrites or ad
+hoc patching. Syntax-derived facts come from the single SWC parse in
+`prepare_js_chunks` via `ChunkManifest` / the `ArtifactIndexes` query API, not
+phase-local rescans; mutation passes use an AST visitor to apply a rewrite but take
+the decision from the manifest. A question the manifest can't answer → extend the
+shallow analysis once, don't re-derive it in another stage.
 
 ## Selector resolution
 
 Read <docs/selector_resolution.md> before touching
 `selectors/resolution/selector_resolve.rs`, `selectors/matching/source_match/`,
-`selector_ir_lowering` or `selector_constraint_model_builder`.
-A command never decides exactly-one itself; it calls `selector_resolve`. Its
-§ "Rejected: tree matching as solver constraints" and § "Rejected: localizing a
-contradiction with assumption cores" are measured dead ends: do not reopen
-either without a new measurement.
+`selector_ir_lowering` or `selector_constraint_model_builder`. Commands never decide
+exactly-one themselves; they call `selector_resolve`. § Rejected: tree matching as
+solver constraints and § Rejected: localizing a contradiction with assumption cores
+are measured dead ends — reopen only with a new measurement.
 
-### Debug a selector at known source
-
-Use <docs/debugging_selectors.md>: first `inspect-source --around-binding` or
-`--statements` to see numbered source statements, then
-`spec match-selector --explain --statements` with `--match` or a
-`--selector 'module.yaml#/source_matches/0'` address. Check the printed range
-before interpreting a mismatch; these indices belong to the parsed input file,
-not a prepared owner graph. Keep source and selector inputs reproducible.
-
-The explanation is local. It does not check uniqueness, other selectors,
-all-different, or external reference identities. A `matched` explanation cannot
-replace `spec validate` or the extraction gate. `limited` and `unsupported` are
-inconclusive. Do not treat a failed backtracking branch as proof of a matcher
-bug; reduce the range/pattern and establish a supported control first.
+**Debugging a selector**: <docs/debugging_selectors.md>. Statement indices belong to
+the parsed input file, not a prepared owner graph; check the printed range first. A
+`matched` explanation is local and never replaces `spec validate` or the gate;
+`limited`/`unsupported` are inconclusive; a failed backtracking branch is not proof
+of a matcher bug — reduce the range/pattern and establish a supported control first.
 
 ## Soundness over completeness
 
-Any spec the validator accepts must emit a bundle that runs correctly.
-Over-restriction is an acceptable failure mode; under-restriction is a soundness
-violation. When an analysis is only conditionally correct, check the precondition
-and fall back to the conservative path — never widen a rule because the common case
-is fine. If the easiest fix is not the deepest correct fix, do the deeper fix or
-stop and explain the blocker.
-
-The contract and theorem: <docs/design.md> § "Soundness over completeness".
-Admission rules for the purity whitelists and the spec's declared-purity trust
-contracts: <docs/purity_soundness.md> — read it before touching
+A validator-accepted spec must emit a bundle that runs correctly; over-restriction
+is acceptable, under-restriction is a soundness bug. Conditionally-correct analyses
+check their precondition and fall back conservatively — never widen a rule because
+the common case is fine. If the easy fix isn't the deepest correct fix, do the deeper
+one or stop and explain the blocker. Theorem: <docs/design.md> § Soundness over
+completeness. Read <docs/purity_soundness.md> before touching
 <purity/whitelists.rs> or adding a purity annotation to a spec.
 
-## Testing Philosophy
+## Testing
 
-**Default to end-to-end tests that drive the real pipeline** through the `debundle`
-CLI (`e2e/` + `e2e/support/`) — a debundler bug almost always manifests in the
-emitted output: exports, runtime behavior, file layout, source shape. This applies
-even when the bug lives in one internal stage. Assertions state the external
-contract ("module `foo/bar.js` exports `abc` and not `xyz`", "the emitted entry
-prints `expected output` under Node") and survive internal refactors.
+- **Default: e2e through the `debundle` CLI** (`e2e/`, `e2e/support/`), even for a
+  bug in one internal stage. Assert the external contract (module exports, entry
+  output under Node, layout, source shape).
+- Use the assertion helpers re-exported by `e2e/support/mod.rs`
+  (`assert_module_exports`, `assert_module_source`, `assert_entry_output`, …); add a
+  helper for a repeated shape — a test is one or two helper calls, not `fs::read` +
+  substring matches.
+- Unit tests only for combinatorial corner cases of pure functions or invariants
+  awkward to expose via the CLI.
+- **Forbidden**: mocking the pipeline or a stage; hand-constructing intermediate
+  artifact/manifest types when a real-pipeline fixture reaches the same path.
 
-`e2e/support/mod.rs` re-exports the assertion primitives (`assert_module_exports`,
-`assert_module_source`, `assert_entry_output`,
-`assert_generated_module_after_entry_script`, …) — add a helper when you repeat an
-assertion shape; a test should be one or two helper calls, not a wall of
-`fs::read` and substring matches.
+## Rust shapes
 
-Unit tests reaching into a module are the minority: combinatorial corner cases of
-pure functions, or invariants awkward to expose via the CLI.
+- Typed structs/enums, not string discriminators or `Map<String, Value>` mirrors of
+  JSON. File roles are `FileRole`. Owned serialized enums use
+  `#[serde(rename_all = "snake_case")]` unless an external contract says otherwise.
+- `serde_json::Value` only for genuinely polymorphic values (spec args,
+  `#[serde(flatten)]` slots) or raw external input.
+- Owned JSON gets no compatibility envelopes (`kind`, `schema_version`, stage lists)
+  without a real external consumer. Flat specs carry inputs and author decisions
+  only; analysis provenance (`evidence`, `confidence`, `export_shape`) goes in docs
+  or diagnostic side outputs, not `VendorMark`.
 
-### Forbidden test shapes
+## Spec
 
-- Mocking the pipeline or any of its stages.
-- Hand-constructing intermediate artifact/manifest types to drive a stage in
-  isolation when an input fixture through the real pipeline reaches the same code
-  path.
-
-## Native Rust Shapes
-
-Internal pipeline types are pure Rust: typed structs and enums, not stringly-typed
-discriminators or `Map<String, Value>` blobs mirroring external JSON. File roles
-are `FileRole`. Debundler-owned serialized enums use `#[serde(rename_all = "snake_case")]` unless
-an external contract requires otherwise. `serde_json::Value` only for genuinely
-polymorphic values (spec args, `#[serde(flatten)]` slots) or raw external input.
-Debundler-owned JSON gets no compatibility envelopes (`kind`, `schema_version`,
-stage lists) unless a real external consumer needs them; flat transform specs carry
-inputs and author decisions only — analysis provenance (`evidence`, `confidence`,
-`export_shape`) goes in docs or diagnostic side outputs, not `VendorMark`.
-
-## Spec `note:` field — STYLE.md exemption
-
-**Deviation** from STYLE.md ("every field needs a reader"; provenance belongs in
-`#` comments): the spec's `note:` fields are a ratified exemption, because the
-rewriters drop `#` comments (<docs/spec_editing.md> § Comments and notes).
-
-## Spec structure
-
-The flat transform spec carries declarative top-level data maps (`inputs`,
-`vendor`, `logical_modules`, `unassigned_mode`, `chunk_renames`), read via typed
-serde structs in <spec/spec.rs>; transforms run in a fixed canonical order. Field
-semantics and authoring workflow: <docs/spec_editing.md>. The CLI accepts relative
-or absolute paths for `--spec` / package roots; for module-specifier path math use
-the path crates and helpers (`relative-path`, artifact path helpers), never
-hand-rolled segment splitting.
+- Flat spec top-level maps (`inputs`, `vendor`, `logical_modules`,
+  `unassigned_mode`, `chunk_renames`) are typed serde structs in <spec/spec.rs>;
+  transforms run in a fixed canonical order. Semantics/workflow:
+  <docs/spec_editing.md>.
+- Module-specifier path math uses `relative-path` and the artifact path helpers,
+  never hand-rolled segment splitting.
+- **Deviation** from STYLE.md (every field needs a reader): spec `note:` fields are a
+  ratified exemption, since the rewriters drop `#` comments.

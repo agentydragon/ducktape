@@ -1,10 +1,12 @@
 # mcp-infra
 
-MCP support package providing exec backends and shared utilities.
+Shared support for the repo's FastMCP servers.
 
-## Components
-
-- **exec**: Execution backends (Docker, sandbox)
-- **naming**: MCP function naming utilities
-- **types**: MCP domain types with Pydantic validation
-- **constants**: shared path and process constants
+- `exec/` — Docker exec server backend and image-reading helpers
+- `authentik_auth/` — Authentik-backed MCP auth: provider composition, RFC 7523 token
+  exchange, FastMCP proxy compatibility
+- `request_scoped_openapi.py` — per-invocation HTTP clients for FastMCP OpenAPI tools
+- `static_bearer.py` — fixed-bearer ASGI guard for cluster-internal endpoints
+- `persistence.py` — server state store config (PostgreSQL / Valkey)
+- `constants.py` — shared path and process constants
+- `testing/` — fixtures, stubs (`TypedClient`), naming and schema helpers

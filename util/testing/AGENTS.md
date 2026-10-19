@@ -1,7 +1,11 @@
-- Construct `VisualPage` before navigation so it records errors from page load.
-- Captures check render and network health; tests own application readiness and interactions.
-- Tests using the session-scoped `playwright_driver` must use `pytest.mark.asyncio(loop_scope="session")`; auto mode alone runs them on a function loop and can hang browser startup.
-- `.capture.json` sidecars are diagnostic outputs, not visual-review assets or baselines.
-- Put nontrivial injected browser scripts in linted `.js` files and declare their runfiles; don't embed them in Python.
-- `VisualPage.capture()` review assets must live in the root `TEST_UNDECLARED_OUTPUTS_DIR` and have unique names. The publisher reads only the root `visual-review.json`; nested output directories create manifests it does not see.
-- Playwright route callbacks can declare `(route, request)`; the adapter passes both positional arguments and trims them by the callback signature. A loop lambda such as `lambda route, gate=gate` therefore binds `request` to `gate`. Use a factory returning a one-argument `handler(route)` that closes over the gate.
+- Construct `VisualPage` before navigation so it records page-load errors.
+- Captures check render and network health; tests own app readiness and interactions.
+- `.capture.json` sidecars are diagnostics, not visual-review assets or baselines.
+- `VisualPage.capture()` review assets go in the root `TEST_UNDECLARED_OUTPUTS_DIR`
+  with unique names: the publisher reads only the root `visual-review.json`.
+- Nontrivial injected browser scripts live in linted `.js` files declared as
+  runfiles, not embedded in Python.
+- **Gotcha:** Playwright passes route callbacks `(route, request)` positionally,
+  trimmed to the callback's signature, so a loop lambda `lambda route, gate=gate`
+  receives `request` as `gate`. Use a factory returning a one-argument
+  `handler(route)` closing over the gate.

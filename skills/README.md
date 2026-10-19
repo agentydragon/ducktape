@@ -1,60 +1,41 @@
 # Skills
 
-Agent skills for Claude Code, Gemini CLI, OpenCode, and other AI agents.
+Agent skills for Claude Code, Gemini CLI, OpenCode, and other agents.
 
 ## Deployment
 
-Skills are built by Bazel (`skill_package` macro in `defs.bzl`) — each skill is
-its own `.skill` zip (`//skills/<name>:<name>_skill`). CI publishes each one as a
-separate `skill-<name>` GitHub release artifact (see the registry below).
+Each skill is its own `.skill` zip built by the `skill_package` macro (`defs.bzl`),
+`//skills/<name>:<name>_skill`, released by CI as a `skill-<name>` GitHub release.
 
-**Local machines**: `flake.nix` fetches each Nix-enabled `skill-*` pin and assembles them
-into one flat directory of `<name>/` subdirs (`skills-tar`). `nix/home/skills.nix`
-then creates Home Manager `home.file` entries for each configured agent home
-(`~/.claude/skills/`, `~/.gemini/skills/`, `~/.codex/skills/`, etc.).
+- **Local machines**: `flake.nix` fetches each Nix-enabled `skill-*` pin into one
+  flat directory of `<name>/` subdirs (`skills-tar`); `nix/home/skills.nix` links it
+  into each agent home (`~/.claude/skills/`, `~/.gemini/skills/`,
+  `~/.codex/skills/`, …).
+- **Claude Code Web**: the `devtools` profile's `ducktapePkgs.skills` assembles the
+  same artifacts at `share/claude-hooks/skills/`; `devinfra/claude/web_setup.sh`
+  symlinks each into `~/.claude/skills/`, preserving Anthropic's defaults.
 
-**Claude Code Web**: the `devtools` profile includes `ducktapePkgs.skills`,
-which assembles the same per-skill artifacts under the Nix profile at
-`share/claude-hooks/skills/`. `devinfra/claude/web_setup.sh` then symlinks each
-profile skill directory into `~/.claude/skills/`, preserving Anthropic's
-preinstalled default skills.
+## Registry
 
-## Skill registry
-
-`skills_registry.json` is the hand-written source of truth for which skills are
-built and released. Each entry names a skill and maps it to Bazel and release
-identifiers, with an optional Nix deployment setting:
-
-- `name` — the skill (also the `.skill` subdir and its `~/.claude/skills/` dir)
-- `pkg` — its release/tag/pin name, always `skill-<name>`
-- `target` / `output` — the `skill_package` archive target and its `bb-out/` path
-- `filename` — the release asset, always `<name>.skill`
-- `nix` — optional; set to `false` to release the skill without pinning or
-  deploying it through Nix. Defaults to `true`.
-
-Consumed by `.github/workflows/release.yml` (release matrix),
-`devinfra/ci/artifacts.py` (Nix pin sync), and `flake.nix` /
-`nix/packages/default.nix` (Nix assembly). The `nix` field controls only pinning
-and Nix deployment; a disabled skill is still built and released. A skill that
-has a `skill_package` but no registry entry simply isn't released or deployed —
-a valid state, not an error.
+`skills_registry.json` (hand-written) decides what is built and released. Entry
+fields: `name` (skill, `.skill` subdir, and skills dir name), `pkg` (`skill-<name>`),
+`target` / `output` (`skill_package` target and its `bb-out/` path), `filename`
+(`<name>.skill`), optional `nix` (default `true`; `false` = released but not pinned or
+deployed via Nix). Consumers: `.github/workflows/release.yml`,
+`devinfra/ci/artifacts.py` (pin sync), `flake.nix` / `nix/packages/default.nix`. A
+`skill_package` with no registry entry is valid — just not released or deployed.
 
 ## Adding a skill
 
-1. Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `description`).
-   **Do not add `allowed-tools`** unless explicitly approved — it auto-grants
-   tool permissions without prompting. See `AGENTS.md`.
-   Keep `description` at or below 1024 characters; `//skills:test_frontmatter`
-   enforces the current Codex frontmatter limit.
-2. Create `skills/<name>/BUILD.bazel` using `skill_package(name, srcs)`
-3. To ship it, add an entry to `skills_registry.json` (see the fields above).
-4. After CI publishes the `skill-<name>` release, `sync-pins` seeds a pin in
-   `nix/artifact-pins.json` unless the registry sets `nix` to `false`; then run
-   `home-manager switch` for Nix-enabled skills.
+1. `skills/<name>/SKILL.md` with frontmatter `name`, `description` (≤1024 chars,
+   enforced by `//skills:test_frontmatter`). No `allowed-tools` without approval
+   (<AGENTS.md>).
+2. `skills/<name>/BUILD.bazel` with `skill_package(name, srcs)`.
+3. Add a `skills_registry.json` entry to ship it.
+4. After CI releases `skill-<name>`, `sync-pins` seeds its pin in
+   `nix/artifact-pins.json` (unless `nix: false`); then `home-manager switch`. Nix
+   assembly skips registered skills without a pin, so the first release can precede
+   the pin.
 
-Nix assembly skips registered skills without an artifact pin. This lets the
-first merged release publish a new skill before `sync-pins` seeds its pin.
-
-Skills tied to one component may live next to it instead of under `skills/`
-(e.g. `cpap/skill/`, `cluster/skills/`, the debundle skills) — same
-`skill_package` macro; register them the same way.
+Component-specific skills may live beside their component (`cpap/skill/`,
+`cluster/skills/`, the debundle skills) — same macro, same registry.

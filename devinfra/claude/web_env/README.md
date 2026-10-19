@@ -1,109 +1,54 @@
 # Claude Code Web Environment
 
 Reproducible reconstruction of the Claude Code web container, verified by
-full-filesystem manifest diffing.
-
-> **Platform note (2026-06-10)**: sessions run on Firecracker microVMs (real
-> kernel, ext4 root) — see the platform note in `../AGENTS.md`. If the
-> Firecracker marker is absent in a live web/remote session, stop and report
-> platform drift instead of reviving older container-runtime workarounds.
-
-**Goal**: Zero diff exclusions that aren't session-start-hook artifacts or
-unavoidable runtime differences (`/proc`, `/sys`, caches). Any difference
-fixable by updating the Dockerfile should be fixed there, not excluded.
+full-filesystem manifest diffing. Goal: no diff exclusions except session-start-hook
+artifacts and unavoidable runtime differences (`/proc`, `/sys`, caches) — anything
+the Dockerfile can fix is fixed there.
 
 ## Quick Start
 
-The build works from **any machine** with Docker and network access; it does
-not require running inside the live Claude Code web container.
+Runs on any machine with Docker and network access:
 
 ```bash
-# Full build + diff (calls fetch_debs automatically)
+# Full build + diff (runs fetch_debs)
 bazel run //devinfra/claude/web_env/tools:build_and_diff_bin
-
 # Diff only (image already built)
 bazel run //devinfra/claude/web_env/tools:build_and_diff_bin -- --diff-only
 ```
 
-Commit `diff_report.md` along with Dockerfile/rootfs changes. See <AGENTS.md>
-for the full build workflow and `tools/build_and_diff.py` for the
-implementation.
+Commit `diff_report.md` with Dockerfile/rootfs changes. Implementation:
+`tools/build_and_diff.py`.
 
-## Directory Layout
+## Layout
 
-| Path              | Purpose                                                     |
-| ----------------- | ----------------------------------------------------------- |
-| `Dockerfile`      | Full container build from Ubuntu 24.04                      |
-| `exclusions.yaml` | Diff-time exclusion rules (commented)                       |
-| `rootfs/`         | **Container content** — mirrors live filesystem structure   |
-| `tools/`          | Build/diff tooling (capture_manifest.py, diff_manifests.py) |
-| `reference/`      | Reference snapshots from live (not used in build)           |
-| `docs/`           | Container spec and environment discovery notes              |
-| `proxy-ca/`       | Build-time TLS certificates (from TLS-inspecting proxy)     |
+| Path              | Purpose                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| `Dockerfile`      | Full build from Ubuntu 24.04                                                          |
+| `exclusions.yaml` | Diff-time exclusion rules                                                             |
+| `rootfs/`         | Container content at its live paths (`etc/`, `usr/`, `root/`, `home/claude/`), COPYed |
+| `tools/`          | Build/diff tooling (`capture_manifest.py`, `diff_manifests.py`, `fetch_debs.py`)      |
+| `reference/`      | Live snapshots, see below                                                             |
+| `re/`             | Reverse engineering of `environment-manager` and `process_api`                        |
+| `docs/`           | <docs/container_spec.md> (runtime details), environment discovery notes               |
 
-### `rootfs/` Structure
+`reference/`:
 
-Container content files are organized to mirror their placement in the live
-container filesystem. The Dockerfile COPYs from these paths:
+- `versions-YYYY-MM-DD.yaml` — runtimes, dpkg, npm globals, binary hashes (from
+  `//devinfra/claude/web_env/tools:capture_versions_bin`).
+- `environment-manager.gz`, `process_api.gz` — proprietary binaries, gunzipped into
+  the image by the Dockerfile.
+- `*-settings.json`, `*-env-vars.txt` — documentation only.
 
-```
-rootfs/
-├── etc/
-│   ├── apt/
-│   │   ├── preferences.d/     # APT version pins (php84-pin)
-│   │   └── sources.list.d/    # PPA sources (deb822 format)
-│   └── profile.d/             # Shell profile scripts
-├── home/claude/
-│   ├── .claude/               # Claude Code settings, hooks, skills
-│   ├── scripts/               # Helper scripts directory
-│   └── README.md
-├── process_api/               # Proprietary process API server
-│   └── process_api            # ELF binary from live container
-├── root/
-│   ├── .bashrc                # Shell config
-│   ├── .profile               # Login profile
-│   ├── .claude/               # Claude Code settings, skills
-│   ├── .gitconfig
-│   └── .local/bin/env
-└── usr/local/
-    ├── bin/                   # Helper scripts, environment-manager
-    └── share/ca-certificates/ # CA certs
-```
+## Manifests and exclusions
 
-### `reference/` Contents
+Manifests are NDJSON: `path`, `type` (`f`/`d`/`l`/`p`/`s`), `perms`, `owner`,
+`group`, `size`, `sha256` (files ≤50MB), `link_target`. Exclusions apply at diff
+time only, so manifests never need recapturing.
 
-Snapshots captured from the live container:
-
-- `versions-YYYY-MM-DD.yaml` — Structured version snapshot (runtimes, dpkg, npm globals, binary hashes)
-- `environment-manager.gz` — Claude Code's environment manager (baked into build)
-- `process_api.gz` — Anthropic's process API server (baked into build)
-- `*-settings.json` — Claude Code settings (documentation only)
-- `*-env-vars.txt` — Environment variable snapshots (documentation only)
-
-The proprietary binaries are compressed with gzip and COPYed/decompressed in the Dockerfile.
-
-## Manifest Format
-
-NDJSON — one JSON object per line: `path`, `type` (`f`/`d`/`l`/`p`/`s`),
-`perms`, `owner`, `group`, `size`, `sha256` (files ≤50MB), `link_target`.
-Exclusions apply at diff time only, so manifests never need recapturing.
-
-## Exclusion Categories
-
-Configured in `exclusions.yaml`:
-
-| Category          | Purpose                                                     |
-| ----------------- | ----------------------------------------------------------- |
-| `skip_paths`      | Ignored entirely (`/proc`, `/sys`, caches)                  |
-| `volatile_paths`  | Differences expected (tool builds: rbenv, nvm, uv, rustup)  |
-| `hash_may_differ` | File must exist on both sides, content may differ           |
-| `only_in_live`    | Expected only in live (proprietary binaries, runtime state) |
-| `only_in_built`   | Expected only in built (npm cache artifacts)                |
-
-## Installed Runtimes
-
-See `reference/versions-YYYY-MM-DD.yaml` for exact versions of all runtimes,
-dpkg packages, npm globals, and binary hashes. Generated by
-`//devinfra/claude/web_env/tools:capture_versions_bin`.
-
-See <docs/container_spec.md> for runtime details.
+| `exclusions.yaml` category | Meaning                                                     |
+| -------------------------- | ----------------------------------------------------------- |
+| `skip_paths`               | Ignored entirely (`/proc`, `/sys`, caches)                  |
+| `volatile_paths`           | Differences expected (tool builds: rbenv, nvm, uv, rustup)  |
+| `hash_may_differ`          | Must exist on both sides; content may differ                |
+| `only_in_live`             | Expected only in live (proprietary binaries, runtime state) |
+| `only_in_built`            | Expected only in built (npm cache artifacts)                |

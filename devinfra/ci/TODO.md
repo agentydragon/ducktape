@@ -41,7 +41,7 @@ publish ran 14:29–14:31 and found no manifests; its sweep finished at 14:32:27
 with all 34.
 
 Accepted for now because the damage is bounded to staleness —
-<devinfra/pr_visuals/README.md> states why a partial read can leave a baseline
+<devinfra/pr_visuals/docs/publisher.md> states why a partial read can leave a baseline
 pointer old but never move it somewhere wrong. On a busy devel day baselines run
 a few commits behind and PR comments carry more `baseline_fallback` warnings; a
 quiet period heals it.
