@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: drbd-auto-diskful-tests
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: auto-diskful-canary
+  annotations:
+    description: Disposable evaluation of storage following a Pod between prepared canary workers.
+provisioner: linstor.csi.linbit.com
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  linstor.csi.linbit.com/storagePool: local-canary
+  linstor.csi.linbit.com/resourceGroup: auto-diskful-canary
+  linstor.csi.linbit.com/placementCount: "1"
+  linstor.csi.linbit.com/allowRemoteVolumeAccess: "true"
+  DrbdOptions/auto-diskful: "1"
+  DrbdOptions/auto-diskful-allow-cleanup: "true"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data
+  namespace: drbd-auto-diskful-tests
+spec:
+  storageClassName: auto-diskful-canary
+  volumeMode: Block
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: io
+  namespace: drbd-auto-diskful-tests
+  labels:
+    app.kubernetes.io/name: drbd-auto-diskful-tests
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    storage.allegedly.works/drbd-canary: "true"
+    kubernetes.io/hostname: ovh-ns102453
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: io
+      image: alpine:3.24.2
+      command:
+        - /bin/sh
+        - -ec
+        - apk add --no-cache fio coreutils && exec sleep infinity
+      readinessProbe:
+        exec:
+          command:
+            - fio
+            - --version
+        periodSeconds: 2
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: "1"
+          memory: 512Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      volumeDevices:
+        - name: data
+          devicePath: /dev/canary
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: data

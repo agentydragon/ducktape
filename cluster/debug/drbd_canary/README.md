@@ -9,6 +9,9 @@ Live observations are in [results.md](results.md). Review the
 [FILE_THIN resync investigation](thin_resync.md) before repeating relocation:
 the first sparse filesystem resync stalled with the generated defaults.
 
+The separate [auto-diskful experiment](auto_diskful/README.md) evaluates automatic
+local copying and old-copy cleanup after moving only the consuming Pod.
+
 `config_paths_bin` compares private multi-document machine configurations and
 prints changed paths without their values. `--canary-output PATH` writes a
 configuration preserving the first input's live settings while copying only
