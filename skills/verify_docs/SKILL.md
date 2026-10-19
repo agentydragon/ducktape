@@ -26,9 +26,9 @@ Cut everything a strong LLM could derive from reading the code or from general k
 ## Audit procedure
 
 1. **Discover conventions**: read root AGENTS.md, STYLE.md, README.md to learn this repo's doc structure, file hierarchy, and naming conventions. Don't assume — each repo may differ.
-2. **Inventory**: find all documentation files (markdown, plaintext, in-code docs).
+2. **Inventory**: find all documentation files (markdown, plaintext, docstrings, comments, config examples) in scope — the path or component the user names, else the whole repo. For a large scope, split by package and hand each part to a subagent, routing claims that cross parts to the part that owns them.
 3. **Structural check**: verify the repo's own doc conventions are followed consistently.
-4. **Staleness check**: for each claim in docs (file paths, function signatures, env vars, CLI flags, build targets), grep the codebase to verify it still exists and is accurate. Flag stale references.
+4. **Staleness check**: for each claim in docs (file paths, function signatures, env vars, CLI flags, build targets, described behavior, defaults), verify it against the code. A keyword match or a file's existence is not verification: read the implementation, trace the call, and confirm a referenced doc actually says what the pointer to it claims. Flag stale references.
 5. **Token audit**: for each doc, flag:
    - General knowledge LLMs already have
    - Restated type signatures or parameter lists
