@@ -1217,7 +1217,9 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - clusterInternal: true
+      credentialRef:
+        name: ollama
       hosts:
         - ollama.ollama.svc.cluster.local
       methods:
@@ -1227,10 +1229,10 @@ spec:
         - /api/ps
         - /api/version
         - /v1/models
-      clusterInternal: true
+      type: egress
+    - clusterInternal: true
       credentialRef:
         name: ollama
-    - type: egress
       hosts:
         - ollama.ollama.svc.cluster.local
       methods:
@@ -1245,10 +1247,10 @@ spec:
         - /v1/completions
         - /v1/responses
         - /v1/embeddings
-      clusterInternal: true
+      type: egress
+    - clusterInternal: true
       credentialRef:
-        name: ollama
-    - type: egress
+        name: litellm-cheap-experiments
       hosts:
         - litellm.litellm.svc.cluster.local
       methods:
@@ -1257,10 +1259,10 @@ spec:
         - /v1/models
         - /models
         - /model/info
-      clusterInternal: true
+      type: egress
+    - clusterInternal: true
       credentialRef:
         name: litellm-cheap-experiments
-    - type: egress
       hosts:
         - litellm.litellm.svc.cluster.local
       methods:
@@ -1273,9 +1275,7 @@ spec:
         - /v1/messages/count_tokens
         - /v1/embeddings
         - /v1/audio/transcriptions
-      clusterInternal: true
-      credentialRef:
-        name: litellm-cheap-experiments
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1284,9 +1284,9 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
-      hosts:
+    - hosts:
         - "*"
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1295,16 +1295,18 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
       hosts:
         - llm-ingress.agentplane-staging.svc.cluster.local
       methods:
         - GET
         - POST
-      clusterInternal: true
+      type: egress
+    - clusterInternal: true
       credentialRef:
-        name: agentplane-workload
-    - type: egress
+        name: agentplane-notifications-workload
       hosts:
         - notifications.agentplane-staging.svc.cluster.local
       methods:
@@ -1322,10 +1324,10 @@ spec:
         - /v1/subscriptions/**
         - /v1/inboxes
         - /v1/inboxes/**
-      clusterInternal: true
+      type: egress
+    - clusterInternal: true
       credentialRef:
-        name: agentplane-notifications-workload
-    - type: egress
+        name: agentplane-workload
       hosts:
         - actions.agentplane-staging.svc.cluster.local
       methods:
@@ -1341,10 +1343,10 @@ spec:
         - /v1/action-policy
         - /v1/action-requests
         - /v1/action-requests/**
-      clusterInternal: true
+      type: egress
+    - clusterInternal: true
       credentialRef:
         name: agentplane-workload
-    - type: egress
       hosts:
         - egress.agentplane-staging.svc.cluster.local
       methods:
@@ -1354,15 +1356,13 @@ spec:
         - /docs/agents/**
         - /openapi.json
         - /v1/rules
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-    - type: egress
-      hosts:
-        - kubernetes.default.svc.cluster.local
-      clusterInternal: true
+      type: egress
+    - clusterInternal: true
       credentialRef:
         name: kubernetes-workload
+      hosts:
+        - kubernetes.default.svc.cluster.local
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1371,8 +1371,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
-      hosts:
+    - hosts:
         - bcr.bazel.build
         - cache.nixos.org
         - channels.nixos.org
@@ -1397,6 +1396,7 @@ spec:
       methods:
         - GET
         - HEAD
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1405,7 +1405,8 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - credentialRef:
+        name: github-pat
       hosts:
         - api.github.com
         - github.com
@@ -1417,8 +1418,7 @@ spec:
         - PUT
         - PATCH
         - DELETE
-      credentialRef:
-        name: github-pat
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1427,11 +1427,11 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
-      hosts:
+    - hosts:
         - "*.blob.core.windows.net"
       methods:
         - GET
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1440,13 +1440,13 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
-      hosts:
+    - hosts:
         - s3.allegedly.works
       methods:
         - GET
       paths:
         - /pr-visuals/**
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1455,12 +1455,12 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - credentialRef:
+        name: buildbuddy
       hosts:
         - app.buildbuddy.io
         - remote.buildbuddy.io
-      credentialRef:
-        name: buildbuddy
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1469,8 +1469,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
-      hosts:
+    - hosts:
         - github.com
       methods:
         - GET
@@ -1480,6 +1479,7 @@ spec:
         - /*/*.git/git-upload-pack
         - /*/*/info/refs
         - /*/*/git-upload-pack
+      type: egress
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -2104,16 +2104,16 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - clusterInternal: true
+      credentialRef:
+        name: agentplane-runner-ingress
       hosts:
         - history-service.agentplane-staging.svc.cluster.local
       methods:
         - POST
       paths:
         - /agentplane.proto.runner_ingress.RunnerIngress/Push
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-runner-ingress
+      type: egress
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -6269,27 +6269,27 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: kubernetes_role_binding
+    - namespaces:
+        - public-coder-agent
       role:
         kind: Role
         name: agentplane-testing-login-reader
-      namespaces:
-        - public-coder-agent
-    - type: kubernetes_role_binding
+      type: kubernetes_role_binding
+    - namespaces:
+        - agentplane-testing
       role:
         kind: Role
         name: agentplane-testing-operator
-      namespaces:
-        - agentplane-testing
-    - type: egress
+      type: kubernetes_role_binding
+    - clusterInternal: true
       hosts:
         - app.agentplane-testing.svc.cluster.local
-      clusterInternal: true
-    - type: egress
+      type: egress
+    - clusterInternal: true
       hosts:
         - agentplane-testing.allegedly.works
         - agentplane-dex-testing.allegedly.works
-      clusterInternal: true
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -6298,8 +6298,8 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: kubernetes_cluster_role_binding
-      clusterRole: cluster-diagnostics-reader
+    - clusterRole: cluster-diagnostics-reader
+      type: kubernetes_cluster_role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -6308,17 +6308,17 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: kubernetes_role_binding
+    - namespaces:
+        - agentplane-staging
       role:
         kind: Role
         name: claude-ai-coinbase-reader
-      namespaces:
-        - agentplane-staging
-    - type: egress
-      hosts:
+      type: kubernetes_role_binding
+    - hosts:
         - api.coinbase.com
       methods:
         - GET
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -6327,12 +6327,12 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: kubernetes_role_binding
+    - namespaces:
+        - haku-sandbox
       role:
         kind: Role
         name: haku-sandbox-admin
-      namespaces:
-        - haku-sandbox
+      type: kubernetes_role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -6341,13 +6341,15 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: kubernetes_role_binding
+    - namespaces:
+        - plaid-mcp
       role:
         kind: Role
         name: plaid-finance-diagnostics-reader
-      namespaces:
-        - plaid-mcp
-    - type: egress
+      type: kubernetes_role_binding
+    - clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
       hosts:
         - plaid-pgweb.plaid-mcp.svc.cluster.local
       methods:
@@ -6359,19 +6361,17 @@ spec:
         - /api/query
         - /api/schemas
         - /api/tables/**
-      clusterInternal: true
+      type: egress
+    - clusterInternal: true
       credentialRef:
         name: plaid-pgweb
-    - type: egress
       hosts:
         - plaid-pgweb.plaid-mcp.svc.cluster.local
       methods:
         - POST
       paths:
         - /api/query
-      clusterInternal: true
-      credentialRef:
-        name: plaid-pgweb
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -6380,10 +6380,10 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: kubernetes_cluster_role_binding
-      clusterRole: public-coder-agent-cluster-metadata-reader
-    - type: kubernetes_cluster_role_binding
-      clusterRole: public-coder-agent-node-reader
+    - clusterRole: public-coder-agent-cluster-metadata-reader
+      type: kubernetes_cluster_role_binding
+    - clusterRole: public-coder-agent-node-reader
+      type: kubernetes_cluster_role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -6392,12 +6392,12 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: kubernetes_role_binding
+    - namespaces:
+        - agentplane-staging
       role:
         kind: Role
         name: agentplane-sandbox-tool-config-reader
-      namespaces:
-        - agentplane-staging
+      type: kubernetes_role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -6406,11 +6406,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: kubernetes_role_binding
-      role:
-        kind: ClusterRole
-        name: agent-readable-namespace-logs
-      namespaces:
+    - namespaces:
         - activitywatch
         - agentplane-index
         - agentplane-staging
@@ -6442,11 +6438,11 @@ spec:
         - proxmox-proxy
         - study-casino
         - tana-mcp
-    - type: kubernetes_role_binding
       role:
         kind: ClusterRole
-        name: agent-readable-namespace-metadata
-      namespaces:
+        name: agent-readable-namespace-logs
+      type: kubernetes_role_binding
+    - namespaces:
         - activitywatch
         - agent-sandbox-system
         - agentplane-index
@@ -6481,36 +6477,40 @@ spec:
         - public-coder-agent
         - study-casino
         - tana-mcp
-    - type: kubernetes_role_binding
+      role:
+        kind: ClusterRole
+        name: agent-readable-namespace-metadata
+      type: kubernetes_role_binding
+    - namespaces:
+        - clickhouse
       role:
         kind: Role
         name: agent-clickhouse-diagnostics-reader
-      namespaces:
-        - clickhouse
-    - type: kubernetes_role_binding
+      type: kubernetes_role_binding
+    - namespaces:
+        - haku-console
       role:
         kind: Role
         name: agent-haku-console-metadata-reader
-      namespaces:
-        - haku-console
-    - type: kubernetes_role_binding
+      type: kubernetes_role_binding
+    - namespaces:
+        - public-coder-agent
       role:
         kind: Role
         name: agent-public-coder-extended-diagnostics-reader
-      namespaces:
-        - public-coder-agent
-    - type: kubernetes_role_binding
+      type: kubernetes_role_binding
+    - namespaces:
+        - ducktape-flux
       role:
         kind: Role
         name: ducktape-flux-reader
-      namespaces:
-        - ducktape-flux
-    - type: kubernetes_role_binding
+      type: kubernetes_role_binding
+    - namespaces:
+        - public-coder-agent
       role:
         kind: Role
         name: public-coder-agent-reader
-      namespaces:
-        - public-coder-agent
+      type: kubernetes_role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -6519,12 +6519,12 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: kubernetes_role_binding
+    - namespaces:
+        - plaid-mcp
       role:
         kind: Role
         name: plaid-spend-finance-config-reader
-      namespaces:
-        - plaid-mcp
+      type: kubernetes_role_binding
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -7241,9 +7241,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: action_auto_approve
-      policy:
-        type: exact_actions
+    - policy:
         actions:
           github:
             - find_duplicate
@@ -7276,6 +7274,8 @@ spec:
             - search_repositories
             - search_users
             - ui_get
+        type: exact_actions
+      type: action_auto_approve
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -7286,12 +7286,12 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: action_auto_approve
-      policy:
-        type: exact_actions
+    - policy:
         actions:
           github:
             - get_me
+        type: exact_actions
+      type: action_auto_approve
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -7302,9 +7302,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: action_auto_approve
-      policy:
-        type: github_public_repository
+    - policy:
         actions:
           github:
             - actions_get
@@ -7333,9 +7331,9 @@ spec:
             - search_code
             - search_issues
             - search_pull_requests
-    - type: action_auto_approve
-      policy:
-        type: github_repository
+        type: github_public_repository
+      type: action_auto_approve
+    - policy:
         actions:
           github:
             - actions_get
@@ -7366,9 +7364,9 @@ spec:
             - search_pull_requests
         owner: agentydragon
         repository: ducktape
-    - type: action_auto_approve
-      policy:
         type: github_repository
+      type: action_auto_approve
+    - policy:
         actions:
           github:
             - actions_get
@@ -7399,9 +7397,9 @@ spec:
             - search_pull_requests
         owner: agentydragon-agent
         repository: ducktape
-    - type: action_auto_approve
-      policy:
         type: github_repository
+      type: action_auto_approve
+    - policy:
         actions:
           github:
             - actions_get
@@ -7432,6 +7430,8 @@ spec:
             - search_pull_requests
         owner: agentydragon
         repository: gaffer-private
+        type: github_repository
+      type: action_auto_approve
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -7442,9 +7442,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: action_auto_approve
-      policy:
-        type: argument_schema
+    - policy:
         actions:
           github:
             - actions_run_trigger
@@ -7465,6 +7463,8 @@ spec:
             - repo
             - run_id
           type: object
+        type: argument_schema
+      type: action_auto_approve
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -7475,9 +7475,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: action_auto_approve
-      policy:
-        type: argument_schema
+    - policy:
         actions:
           github:
             - create_branch
@@ -7499,9 +7497,9 @@ spec:
             - repo
             - branch
           type: object
-    - type: action_auto_approve
-      policy:
         type: argument_schema
+      type: action_auto_approve
+    - policy:
         actions:
           github:
             - create_pull_request
@@ -7534,6 +7532,8 @@ spec:
             - head
             - base
           type: object
+        type: argument_schema
+      type: action_auto_approve
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -7709,8 +7709,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
-      hosts:
+    - hosts:
         - github.com
         - codeload.github.com
         - objects.githubusercontent.com
@@ -7719,6 +7718,7 @@ spec:
       methods:
         - GET
         - HEAD
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
@@ -7804,9 +7804,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: action_auto_approve
-      policy:
-        type: exact_actions
+    - policy:
         actions:
           sandbox:
             - create
@@ -7815,6 +7813,8 @@ spec:
             - get
             - get_template
             - list
+        type: exact_actions
+      type: action_auto_approve
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -7825,9 +7825,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: action_auto_approve
-      policy:
-        type: exact_actions
+    - policy:
         actions:
           home_assistant:
             - ha_config_get_automation
@@ -7860,7 +7858,11 @@ spec:
             - ha_list_floors_areas
             - ha_list_services
             - ha_search
-    - type: egress
+        type: exact_actions
+      type: action_auto_approve
+    - clusterInternal: true
+      credentialRef:
+        name: home-assistant-readonly
       hosts:
         - home-assistant.home-assistant.svc.cluster.local
       methods:
@@ -7869,9 +7871,7 @@ spec:
         - /api/states
         - /api/states/*
         - /api/history/period/*
-      clusterInternal: true
-      credentialRef:
-        name: home-assistant-readonly
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -7882,9 +7882,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: action_auto_approve
-      policy:
-        type: exact_actions
+    - policy:
         actions:
           gmail:
             - drafts_get
@@ -7896,6 +7894,8 @@ spec:
             - messages_get
             - threads_get
             - threads_list
+        type: exact_actions
+      type: action_auto_approve
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -7906,14 +7906,14 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: action_auto_approve
-      policy:
-        type: exact_actions
+    - policy:
         actions:
           google_calendar:
             - get_event
             - list_event_instances
             - list_events
+        type: exact_actions
+      type: action_auto_approve
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -7924,9 +7924,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: action_auto_approve
-      policy:
-        type: exact_actions
+    - policy:
         actions:
           tana:
             - get_children
@@ -7936,6 +7934,8 @@ spec:
             - list_workspaces
             - read_node
             - search_nodes
+        type: exact_actions
+      type: action_auto_approve
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -7946,9 +7946,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: action_auto_approve
-      policy:
-        type: exact_actions
+    - policy:
         actions:
           grocy_sf:
             - entities_get
@@ -7970,7 +7968,10 @@ spec:
             - shopping_lists_list
             - stock_entries_list
             - stock_get
-    - type: egress
+        type: exact_actions
+      type: action_auto_approve
+    - credentialRef:
+        name: grocy-sf-readonly
       hosts:
         - grocy-sf.allegedly.works
       methods:
@@ -7983,8 +7984,7 @@ spec:
         - /api/system/db-changed-time
         - /api/system/info
         - /api/user
-      credentialRef:
-        name: grocy-sf-readonly
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -7995,12 +7995,12 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: action_auto_approve
-      policy:
-        type: exact_actions
+    - policy:
         actions:
           ssh:
             - list_targets
+        type: exact_actions
+      type: action_auto_approve
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
@@ -8176,19 +8176,19 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - clusterInternal: true
+      credentialRef:
+        name: forgejo-haku
       hosts:
         - forgejo-http.forgejo.svc.cluster.local
         - forgejo-http.forgejo.svc
         - forgejo-http.forgejo
-      clusterInternal: true
-      credentialRef:
+      type: egress
+    - credentialRef:
         name: forgejo-haku
-    - type: egress
       hosts:
         - git.allegedly.works
-      credentialRef:
-        name: forgejo-haku
+      type: egress
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -8283,19 +8283,19 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - clusterInternal: true
+      credentialRef:
+        name: forgejo-finance-agent
       hosts:
         - forgejo-http.forgejo.svc.cluster.local
         - forgejo-http.forgejo.svc
         - forgejo-http.forgejo
-      clusterInternal: true
-      credentialRef:
+      type: egress
+    - credentialRef:
         name: forgejo-finance-agent
-    - type: egress
       hosts:
         - git.allegedly.works
-      credentialRef:
-        name: forgejo-finance-agent
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
@@ -8320,7 +8320,8 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - credentialRef:
+        name: google-readonly
       hosts:
         - docs.googleapis.com
         - gmail.googleapis.com
@@ -8331,9 +8332,9 @@ spec:
         - youtube.googleapis.com
       methods:
         - GET
-      credentialRef:
+      type: egress
+    - credentialRef:
         name: google-readonly
-    - type: egress
       hosts:
         - www.googleapis.com
       methods:
@@ -8342,17 +8343,16 @@ spec:
         - /calendar/v3/**
         - /drive/v3/**
         - /youtube/v3/**
-      credentialRef:
+      type: egress
+    - credentialRef:
         name: google-readonly
-    - type: egress
       hosts:
         - driveactivity.googleapis.com
       methods:
         - POST
       paths:
         - /v2/activity:query
-      credentialRef:
-        name: google-readonly
+      type: egress
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -8621,16 +8621,17 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - credentialRef:
+        name: activitywatch-read
       hosts:
         - activitywatch-read.allegedly.works
       methods:
         - GET
       paths:
         - /api/0/**
-      credentialRef:
+      type: egress
+    - credentialRef:
         name: activitywatch-read
-    - type: egress
       hosts:
         - activitywatch-read.allegedly.works
       methods:
@@ -8638,8 +8639,7 @@ spec:
       paths:
         - /api/0/query
         - /api/0/query/
-      credentialRef:
-        name: activitywatch-read
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
@@ -8750,16 +8750,18 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - credentialRef:
+        name: aiquota-read
       hosts:
         - aiquota.allegedly.works
       methods:
         - GET
       paths:
         - /v1/**
+      type: egress
+    - clusterInternal: true
       credentialRef:
         name: aiquota-read
-    - type: egress
       hosts:
         - aiquota-api.cli-proxy-api.svc.cluster.local
       methods:
@@ -8767,19 +8769,17 @@ spec:
       paths:
         - /v1/quotas
         - /v1/providers/*/raw
-      clusterInternal: true
+      type: egress
+    - clusterInternal: true
       credentialRef:
-        name: aiquota-read
-    - type: egress
+        name: clickhouse-aiquota-history-credentials
       hosts:
         - clickhouse.clickhouse.svc.cluster.local
       methods:
         - GET
       paths:
         - /
-      clusterInternal: true
-      credentialRef:
-        name: clickhouse-aiquota-history-credentials
+      type: egress
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -8875,7 +8875,8 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - credentialRef:
+        name: haku-mailbox
       hosts:
         - haku-mailbox.allegedly.works
       methods:
@@ -8883,17 +8884,16 @@ spec:
       paths:
         - /.well-known/jmap
         - /jmap/**
-      credentialRef:
+      type: egress
+    - credentialRef:
         name: haku-mailbox
-    - type: egress
       hosts:
         - haku-mailbox.allegedly.works
       methods:
         - POST
       paths:
         - /jmap/**
-      credentialRef:
-        name: haku-mailbox
+      type: egress
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -9444,25 +9444,26 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - credentialRef:
+        name: github-pat
       hosts:
         - github.com
         - api.github.com
         - codeload.github.com
-      credentialRef:
-        name: github-pat
-    - type: egress
+      type: egress
+    - credentialRef:
+        name: public-coder-haku-console
       hosts:
         - haku-kubeapi.allegedly.works
-      credentialRef:
-        name: public-coder-haku-console
-    - type: egress
-      hosts:
-        - clickhouse.clickhouse.svc.cluster.local
-      clusterInternal: true
+      type: egress
+    - clusterInternal: true
       credentialRef:
         name: public-coder-clickhouse
-    - type: egress
+      hosts:
+        - clickhouse.clickhouse.svc.cluster.local
+      type: egress
+    - credentialRef:
+        name: aiquota-read
       hosts:
         - aiquota.allegedly.works
       methods:
@@ -9470,23 +9471,24 @@ spec:
       paths:
         - /v1/quotas
         - /v1/providers/*/raw
-      credentialRef:
-        name: aiquota-read
-    - type: egress
+      type: egress
+    - credentialRef:
+        name: brave-search
       hosts:
         - api.search.brave.com
-      credentialRef:
-        name: brave-search
-    - type: egress
+      type: egress
+    - credentialRef:
+        name: public-coder-matrix
       hosts:
         - matrix.allegedly.works
       methods:
         - POST
       paths:
         - /_matrix/client/v3/login
+      type: egress
+    - clusterInternal: true
       credentialRef:
-        name: public-coder-matrix
-    - type: egress
+        name: agentplane-workload
       hosts:
         - egress.agentplane-staging.svc.cluster.local
       methods:
@@ -9494,10 +9496,10 @@ spec:
       paths:
         - /v1/rules
         - /openapi.json
-      clusterInternal: true
+      type: egress
+    - clusterInternal: true
       credentialRef:
         name: agentplane-workload
-    - type: egress
       hosts:
         - actions.agentplane-staging.svc.cluster.local
       methods:
@@ -9511,9 +9513,7 @@ spec:
         - /v1/action-policy
         - /v1/action-requests
         - /v1/action-requests/**
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding

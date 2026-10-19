@@ -28,14 +28,6 @@ def _committed(relative: Path) -> str:
     return get_required_path(f"_main/{relative}").read_text()
 
 
-def _has_key(value: object, key: str) -> bool:
-    if isinstance(value, dict):
-        return key in value or any(_has_key(child, key) for child in value.values())
-    if isinstance(value, list):
-        return any(_has_key(child, key) for child in value)
-    return False
-
-
 def test_committed_files_are_generated() -> None:
     sandbox_generated = get_required_path(SANDBOX_GENERATED_CRDS)
     egress_generated = get_required_path(EGRESS_GENERATED_CRDS)

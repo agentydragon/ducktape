@@ -239,16 +239,16 @@ metadata:
   namespace: agentplane-staging
 spec:
   rules:
-    - type: egress
+    - clusterInternal: true
+      credentialRef:
+        name: agentplane-runner-control
       hosts:
         - runner-gateway.agentplane-staging.svc.cluster.local
       methods:
         - POST
       paths:
         - /agentplane.proto.runner_control.RunnerControl/Connect
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-runner-control
+      type: egress
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

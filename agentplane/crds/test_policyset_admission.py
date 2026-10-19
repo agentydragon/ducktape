@@ -34,7 +34,7 @@ async def test_policyset_admission() -> None:
         def action(kind: str, **fields: Any) -> dict[str, Any]:
             return {"type": "action_auto_approve", "policy": {"type": kind, "actions": {"g": ["a"]}, **fields}}
 
-        rules = (
+        rules: tuple[dict[str, Any], ...] = (
             {"type": "kubernetes_role_binding", "role": {"kind": "Role", "name": "reader"}, "namespaces": ["team-a"]},
             {"type": "kubernetes_cluster_role_binding", "clusterRole": "reader"},
             {
