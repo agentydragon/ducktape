@@ -523,45 +523,53 @@ func (a *codexAdapter) projectItemStarted(ctx context.Context, raw json.RawMessa
 	if err != nil {
 		return err
 	}
-	if item.Type == "userMessage" || (item.Type == "subAgentActivity" && item.Kind != "started" && item.Kind != "interacted" && item.Kind != "interrupted" && item.Kind != "completed") {
+	switch item := item.(type) {
+	case nil:
 		return nil
-	}
-	remembered, err := a.host.Journal().RememberAdapterItem(ctx, a.adapterID, item.ID)
-	if err != nil || !remembered {
+	case protocol.AgentMessageThreadItem:
+		_, err := a.startItem(ctx, item.ID, eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT, "", sources)
 		return err
-	}
-	switch item.Type {
-	case "agentMessage":
-		return a.emit(ctx, &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: item.ID, Kind: eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT}}, sources)
-	case "reasoning":
-		return a.emit(ctx, &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: item.ID, Kind: eventpb.ItemKind_ITEM_KIND_REASONING}}, sources)
-	case "commandExecution", "subAgentActivity":
-		if err := a.emit(ctx, &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: item.ID, Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, ToolName: item.Type}}, sources); err != nil {
+	case protocol.ReasoningThreadItem:
+		_, err := a.startItem(ctx, item.ID, eventpb.ItemKind_ITEM_KIND_REASONING, "", sources)
+		return err
+	case protocol.CommandExecutionThreadItem:
+		started, err := a.startItem(ctx, item.ID, eventpb.ItemKind_ITEM_KIND_TOOL_CALL, "commandExecution", sources)
+		if err != nil || !started {
 			return err
 		}
-		var arguments any
-		if item.Type == "commandExecution" {
-			arguments = map[string]any{"command": item.Command, "cwd": item.Cwd}
-		} else {
-			arguments = struct {
-				AgentThreadID string `json:"agentThreadId"`
-				AgentPath     string `json:"agentPath"`
-			}{AgentThreadID: item.AgentThreadID, AgentPath: item.AgentPath}
+		return a.toolArguments(ctx, item.ID, map[string]any{"command": item.Command, "cwd": item.Cwd}, sources)
+	case protocol.SubAgentActivityThreadItem:
+		kind := string(item.Kind)
+		if kind != "started" && kind != "interacted" && kind != "interrupted" && kind != "completed" {
+			return nil
 		}
-		return a.toolArguments(ctx, item.ID, arguments, sources)
-	case "unknown":
-		if err := a.emit(ctx, &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: item.ID, Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, ToolName: item.WireType}}, sources); err != nil {
+		started, err := a.startItem(ctx, item.ID, eventpb.ItemKind_ITEM_KIND_TOOL_CALL, "subAgentActivity", sources)
+		if err != nil || !started {
+			return err
+		}
+		return a.toolArguments(ctx, item.ID, struct {
+			AgentThreadID string `json:"agentThreadId"`
+			AgentPath     string `json:"agentPath"`
+		}{AgentThreadID: item.AgentThreadID, AgentPath: item.AgentPath}, sources)
+	case codexUnknownItem:
+		fields, err := item.fields()
+		if err != nil {
+			return err
+		}
+		started, err := a.startItem(ctx, item.id, eventpb.ItemKind_ITEM_KIND_TOOL_CALL, item.typeName, sources)
+		if err != nil || !started {
 			return err
 		}
 		arguments := make(map[string]json.RawMessage)
-		for key, value := range item.Extras {
+		for key, value := range fields {
 			if !codexOutcomeFields[key] {
 				arguments[key] = value
 			}
 		}
-		return a.toolArguments(ctx, item.ID, arguments, sources)
+		return a.toolArguments(ctx, item.id, arguments, sources)
+	default:
+		return fmt.Errorf("unsupported decoded Codex item type %T", item)
 	}
-	return nil
 }
 
 func (a *codexAdapter) projectItemCompleted(ctx context.Context, raw json.RawMessage, sources []uint64) error {
@@ -569,32 +577,44 @@ func (a *codexAdapter) projectItemCompleted(ctx context.Context, raw json.RawMes
 	if err != nil {
 		return err
 	}
-	if item.Type == "userMessage" || (item.Type == "subAgentActivity" && item.Kind != "started" && item.Kind != "interacted" && item.Kind != "interrupted" && item.Kind != "completed") {
+	if item == nil {
 		return nil
 	}
 	if err := a.projectItemStarted(ctx, raw, sources); err != nil {
 		return err
 	}
-	switch item.Type {
-	case "agentMessage":
+	switch item := item.(type) {
+	case protocol.AgentMessageThreadItem:
 		return a.itemCompletedText(ctx, item.ID, item.Text, sources)
-	case "reasoning":
+	case protocol.ReasoningThreadItem:
 		return a.itemCompletedText(ctx, item.ID, strings.Join(item.Summary, "\n"), sources)
-	case "commandExecution":
-		return a.itemCompletedTool(ctx, item.ID, item.AggregatedOutput, item.Status == "completed", sources)
-	case "subAgentActivity":
+	case protocol.CommandExecutionThreadItem:
+		output := ""
+		if item.AggregatedOutput != nil {
+			output = *item.AggregatedOutput
+		}
+		return a.itemCompletedTool(ctx, item.ID, output, string(item.Status) == "completed", sources)
+	case protocol.SubAgentActivityThreadItem:
+		kind := string(item.Kind)
+		if kind != "started" && kind != "interacted" && kind != "interrupted" && kind != "completed" {
+			return nil
+		}
 		output, err := json.Marshal(struct {
 			Kind          string `json:"kind"`
 			AgentThreadID string `json:"agentThreadId"`
 			AgentPath     string `json:"agentPath"`
-		}{Kind: item.Kind, AgentThreadID: item.AgentThreadID, AgentPath: item.AgentPath})
+		}{Kind: kind, AgentThreadID: item.AgentThreadID, AgentPath: item.AgentPath})
 		if err != nil {
 			return err
 		}
 		return a.itemCompletedTool(ctx, item.ID, string(output), true, sources)
-	case "unknown":
+	case codexUnknownItem:
+		fields, err := item.fields()
+		if err != nil {
+			return err
+		}
 		outcome := make(map[string]json.RawMessage)
-		for key, value := range item.Extras {
+		for key, value := range fields {
 			if codexOutcomeFields[key] {
 				outcome[key] = value
 			}
@@ -605,9 +625,20 @@ func (a *codexAdapter) projectItemCompleted(ctx context.Context, raw json.RawMes
 		if err != nil {
 			return err
 		}
-		return a.itemCompletedTool(ctx, item.ID, string(output), status == "completed", sources)
+		return a.itemCompletedTool(ctx, item.id, string(output), status == "completed", sources)
+	default:
+		return fmt.Errorf("unsupported decoded Codex item type %T", item)
 	}
-	return nil
+}
+
+func (a *codexAdapter) startItem(ctx context.Context, itemID string, kind eventpb.ItemKind, toolName string, sources []uint64) (bool, error) {
+	remembered, err := a.host.Journal().RememberAdapterItem(ctx, a.adapterID, itemID)
+	if err != nil || !remembered {
+		return false, err
+	}
+	return true, a.emit(ctx, &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{
+		ItemId: itemID, Kind: kind, ToolName: toolName,
+	}}, sources)
 }
 
 func (a *codexAdapter) toolArguments(ctx context.Context, itemID string, value any, sources []uint64) error {
@@ -702,70 +733,65 @@ type codexWireFrame struct {
 	Params json.RawMessage             `json:"params"`
 }
 
-// codexItem holds the fields used by Agentplane's transcript projection.
-type codexItem struct {
-	Type             string
-	WireType         string
-	ID               string
-	Text             string
-	Summary          []string
-	Command          string
-	Cwd              string
-	Status           string
-	AggregatedOutput string
-	Kind             string
-	AgentThreadID    string
-	AgentPath        string
-	Extras           map[string]json.RawMessage
+type codexUnknownItem struct {
+	typeName string
+	id       string
+	raw      json.RawMessage
 }
 
-func decodeCodexItem(raw json.RawMessage) (codexItem, error) {
+func (item codexUnknownItem) fields() (map[string]json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(item.raw, &fields); err != nil {
+		return nil, err
+	}
+	delete(fields, "type")
+	delete(fields, "id")
+	return fields, nil
+}
+
+// decodeCodexItem returns the generated type for known items and keeps unknown items opaque.
+func decodeCodexItem(raw json.RawMessage) (any, error) {
 	var header struct {
 		Type string `json:"type"`
 		ID   string `json:"id"`
 	}
 	if err := json.Unmarshal(raw, &header); err != nil {
-		return codexItem{}, err
+		return nil, err
 	}
-	item := codexItem{Type: header.Type, WireType: header.Type, ID: header.ID}
 	switch header.Type {
 	case "userMessage":
+		return nil, nil
 	case "agentMessage":
 		var native protocol.AgentMessageThreadItem
 		if err := json.Unmarshal(raw, &native); err != nil {
-			return item, err
+			return nil, err
 		}
-		item.Text = native.Text
+		return native, nil
 	case "reasoning":
 		var native protocol.ReasoningThreadItem
 		if err := json.Unmarshal(raw, &native); err != nil {
-			return item, err
+			return nil, err
 		}
-		item.Summary = native.Summary
+		return native, nil
 	case "commandExecution":
 		var native protocol.CommandExecutionThreadItem
 		if err := json.Unmarshal(raw, &native); err != nil {
-			return item, err
+			return nil, err
 		}
-		item.Command, item.Cwd, item.Status = native.Command, native.Cwd, string(native.Status)
-		if native.AggregatedOutput != nil {
-			item.AggregatedOutput = *native.AggregatedOutput
-		}
+		return native, nil
 	case "subAgentActivity":
 		var native protocol.SubAgentActivityThreadItem
 		if err := json.Unmarshal(raw, &native); err != nil {
-			return item, err
+			return nil, err
 		}
-		item.Kind, item.AgentThreadID, item.AgentPath = string(native.Kind), native.AgentThreadID, native.AgentPath
+		return native, nil
 	default:
-		item.Type = "unknown"
-		if err := json.Unmarshal(raw, &item.Extras); err != nil {
-			return item, err
-		}
-		delete(item.Extras, "type")
-		delete(item.Extras, "id")
+		return codexUnknownItem{
+			typeName: header.Type,
+			id:       header.ID,
+			raw:      append(json.RawMessage(nil), raw...),
+		}, nil
 	}
-	return item, nil
 }
 
 func rawJSONIDEquals(raw json.RawMessage, expected string) bool {

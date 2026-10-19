@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "codex",
@@ -14,4 +14,11 @@ go_library(
         "//agentplane/runner/go/harness",
         "@com_github_google_uuid//:uuid",
     ],
+)
+
+go_test(
+    name = "codex_test",
+    srcs = ["adapter_test.go"],
+    embed = [":codex"],
+    deps = ["//agentplane/runner/go/codex/protocol"],
 )
