@@ -121,6 +121,8 @@ export function SandboxPage({
   const threadsUnavailable = Array.isArray(threadListing) ? null : threadListing.code;
   const threads = Array.isArray(threadListing) ? threadListing : [];
   const ready = sandboxReady(sandbox);
+  const canWakeForSession =
+    sandbox?.phase === "Suspended" && sandbox.operating_mode === "Suspended" && sandbox.wake_on_send;
   useEffect(() => {
     if (requestedTab === "console" && sandbox !== null && !vmConsoleAvailable) {
       setSearchParams({}, { replace: true });
@@ -343,7 +345,10 @@ export function SandboxPage({
       )}
       {sandbox && !ready && (
         <Alert color="gray" role="status">
-          Sandbox status: {sandboxSummary(sandbox).label}. New sessions need a ready Sandbox.
+          Sandbox status: {sandboxSummary(sandbox).label}.{" "}
+          {canWakeForSession
+            ? "Starting a session will wake the Sandbox."
+            : "New sessions need a ready Sandbox or a suspended Sandbox with wake on send enabled."}
         </Alert>
       )}
       {pendingOpen && (
@@ -431,7 +436,7 @@ export function SandboxPage({
             <div hidden={!launching}>
               <NewSessionForm
                 presetName={sandbox?.preset ?? null}
-                startable={ready && !pendingOpen}
+                startable={(ready || canWakeForSession) && !pendingOpen}
                 creating={creatingSession}
                 onStart={(spec, setupScript) => void createSession(spec, setupScript)}
                 onClose={() => setLaunching(false)}

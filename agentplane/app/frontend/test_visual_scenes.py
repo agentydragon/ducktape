@@ -150,6 +150,17 @@ async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
 
 
 @DESKTOP_AND_MOBILE
+async def test_sandbox_start_session_suspended(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.ADD_SUSPENDED_SANDBOXES)
+    await app.mount_app("/sandboxes/idle-suspended-sandbox")
+    await expect(view.page.get_by_text("Starting a session will wake the Sandbox.", exact=False)).to_be_visible()
+    await view.page.get_by_role("button", name="New session").click()
+    await expect(view.page.get_by_role("combobox", name="Model")).not_to_have_value("")
+    await expect(view.page.get_by_role("button", name="Start session")).to_be_enabled()
+    await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
 async def test_sandbox_status_idle_suspended(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.ADD_SUSPENDED_SANDBOXES)
     await app.mount_app("/sandboxes/idle-suspended-sandbox?tab=status")

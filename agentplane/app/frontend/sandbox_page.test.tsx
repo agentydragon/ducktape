@@ -597,6 +597,16 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   expect(startSession().disabled).toBe(true);
   expect(sessions).not.toHaveBeenCalled();
 
+  readySandbox.wake_on_send = true;
+  await rerender();
+  expect(container.textContent).toContain("Starting a session will wake the Sandbox.");
+  expect(startSession().disabled).toBe(false);
+  expect(sessions).not.toHaveBeenCalled();
+
+  readySandbox.wake_on_send = false;
+  await rerender();
+  expect(startSession().disabled).toBe(true);
+
   const menuButton = actionButton();
   if (!menuButton) throw new Error("Missing retained Session actions menu");
   await act(async () => menuButton.click());
