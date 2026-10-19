@@ -180,10 +180,7 @@ async def test_egress_credential_source_and_target_validation() -> None:
             ({"authenticatedWorkloadToken": {}}, True),
             ({"projectedWorkloadToken": {"audience": "kubernetes"}}, True),
             ({}, False),
-            (
-                {"secretRef": {"name": "api-token", "key": "token"}, "authenticatedWorkloadToken": {}},
-                False,
-            ),
+            ({"secretRef": {"name": "api-token", "key": "token"}, "authenticatedWorkloadToken": {}}, False),
         ]
         target_cases = [
             ({"method": "wholeValue", "header": "Authorization"}, True),
