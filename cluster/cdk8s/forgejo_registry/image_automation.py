@@ -137,7 +137,7 @@ class ForgejoImageAutomation(Construct):
 def chart(app: App) -> Chart:
     """The ImageRepository/ImagePolicy pair per CI image, as one chart. The directory had
     one hand-written file per pair; a single generated file keeps each pair adjacent
-    (cluster/AGENTS.md § Colocating image repository and policy)."""
+    (cluster/AGENTS.md § Container Images)."""
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     ForgejoImageAutomation(chart, "images")
     return chart

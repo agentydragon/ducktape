@@ -347,7 +347,7 @@ Their Flux Kustomizations are either retained as suspended declarations with the
 `ducktape.org/parked` annotation or removed from the active root bundle, as noted below.
 Non-ducktape-owned manifests stay under `cluster/parked/<name>/`; ducktape-owned
 manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
-(non-ducktape-owned) application manifests").
+applications").
 
 - **OpenClaw (public-coder-agent)**: `cluster/parked/public-coder-agent/` — the instance
   is off with its PVCs and data kept; the app, devbox and backup Kustomizations stay

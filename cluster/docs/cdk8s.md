@@ -167,7 +167,7 @@ Component also lists a `kustomizeconfig` naming that path (`cpap-sync/image-pins
 Argo CD Image Updater would need the identical carve-out: its `git` write-back mode
 writes a separate file, and its default `argocd` mode stores the override on the live
 `Application` object only, which a bootstrap from committed state loses (contra
-`cluster/AGENTS.md` § Primary Directive). Image automation therefore moves the
+`cluster/AGENTS.md` § Bootstrap). Image automation therefore moves the
 Flux-vs-Argo question in neither direction.
 
 ## CRD bindings

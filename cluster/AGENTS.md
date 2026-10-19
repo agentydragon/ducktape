@@ -1,287 +1,152 @@
 @README.md
 
-## Talos Linux Documentation
-
-Use `https://docs.siderolabs.com/llms.txt` as the entrypoint for Talos Linux
-documentation. Fetch it with WebFetch to discover available doc pages.
-
-# Agent Instructions
+Talos docs: start from `https://docs.siderolabs.com/llms.txt` (WebFetch).
 
 ## Invariants
 
-These are destructive or silently corrupting if you get them wrong. Everything else in
-this file is guidance you can apply judgment to.
+Getting these wrong is destructive or silently corrupting.
 
-### Persistent auth survives bootstrap
+- **Persistent auth survives bootstrap.** "Bootstrap/tear down/recreate the cluster" means
+  `bazel run //cluster:bootstrap`. Persistent-auth resources (keypairs, CSI tokens, signing
+  keys) carry `prevent_destroy`. Never remove a `prevent_destroy` rule unless the user says
+  "including persistent auth" or "from scratch".
+- **Commit and push before reconciling Flux** — it reads the git remote; reconciling
+  uncommitted work applies the old state and looks like a failed change.
+- **Wiping a backing DB orphans tofu state.** `tf/gitops/sso-providers/` (Authentik OAuth2
+  providers) and `props/deploy/forgejo/tofu/` (Forgejo registry user) record IDs of objects
+  in other stateful systems; wiping that DB without clearing tofu state (CNPG
+  `tofu-state-db-ovh`, one schema per `Terraform` CR) yields
+  `Unable to read … not found with id N`. Recovery: <docs/troubleshooting.md>
+  § "Resource ID Desync After Wiping a Backing Datastore".
+- **DNS and website must survive OVH-only** (README § "OVH-Only Resilience Invariants").
 
-"Bootstrap/tear down/recreate the cluster" defaults to `bazel run //cluster:bootstrap`
-(single TF root at `terraform/main/`, targeted applies). Persistent-auth resources
-(keypairs, CSI tokens, signing keys) carry `lifecycle { prevent_destroy = true }` and are
-preserved across bootstrap cycles.
+## Bootstrap
 
-**Never remove a `prevent_destroy` lifecycle rule without explicit user authorization.**
-Destroying persistent auth requires the user to say "including persistent auth" or "from
-scratch"; removing the lifecycle rules is part of that request, never a prerequisite you
-satisfy on your own.
+- Done = `bazel run //cluster:bootstrap` from committed state → working cluster. Debug
+  freely, but every fix lands as committed config, never an imperative patch. SSO is
+  required for all in-scope apps.
+- Bootstrap is the only supported method: preflight, targeted applies against
+  `terraform/main/` (persistent-auth → infrastructure → full), SOPS age key deployment. Run
+  with `dangerouslyDisableSandbox: true`, `timeout: 600000`; takes ~15–20 min.
+- New Terraform modules get BUILD targets for format, lint, validate.
+- Changing bootstrap prerequisites or recovery of its infra/access material: update
+  <docs/bootstrap_dependencies.md> (app credentials, TF runners, service deps are
+  documented with their owning component).
 
-### Commit and push before reconciling Flux
+## Access
 
-Flux reads from the git remote, not your local filesystem — reconciling uncommitted work
-applies the previous state and reads as a failed change.
+- SSH `root@atlas` (key auth); from wyrm2 before Nebula DNS is up, `root@10.2.0.2`.
+- Run `talosctl` from `cluster/` (direnv supplies tools + config).
+- Proxmox API is reachable only from the VLAN: pods need
+  `nodeSelector: topology.kubernetes.io/region: proxmox`.
 
-### Wiping a backing DB orphans tofu state
+## Key files (`terraform/main/`)
 
-`tf/gitops/sso-providers/` (Authentik OAuth2 providers) and
-`props/deploy/forgejo/tofu/` (Forgejo registry user) both manage objects inside
-another stateful system whose IDs
-they record in tfstate. Wiping the backing DB without also clearing the tofu state
-triggers `Unable to read … not found with id N` failures on the next plan. State lives
-in the `tofu-state-db-ovh` CNPG cluster (one schema per `Terraform` CR). Recovery:
-<docs/troubleshooting.md> § "Resource ID Desync After Wiping a Backing Datastore".
-
-### DNS and website must survive OVH-only
-
-Full statement — no Proxmox-pinned storage or nodes — in README § "OVH-Only
-Resilience Invariants" above; compliance checklist in <docs/decisions.md>.
-
-## Primary Directive: Declarative Turnkey Bootstrap
-
-**Goal**: `bazel run //cluster:bootstrap` from committed repo state produces a working cluster.
-
-1. Debug freely, but every fix lands as committed configuration — no imperative patches
-2. Done = bootstrap → verify passes
-3. SSO required for all in-scope applications
-
-## Bootstrap Script
-
-**Only supported method**: `bazel run //cluster:bootstrap`
-
-Handles preflight validation, targeted applies against `terraform/main/` (persistent-auth ->
-infrastructure -> full apply), SOPS age key deployment. Requires `dangerouslyDisableSandbox: true`
-and `timeout: 600000` (10 min). Takes ~15-20 min.
-
-New Terraform modules get BUILD.bazel targets for format, lint, and validate.
-
-## Operational Context
-
-- **SSH**: `root@atlas` (Proxmox host, key auth). Fallback from wyrm2: `root@10.2.0.2` if nebula DNS isn't up yet.
-- **Talos CLI**: Run from cluster directory (direnv provides tools + config)
-- **Proxmox API**: Only reachable from VLAN. Use `nodeSelector: topology.kubernetes.io/region: proxmox`.
-
-## Key Files
-
-In `terraform/main/`:
-
-| File                       | Purpose                                        |
-| -------------------------- | ---------------------------------------------- |
-| `ovh-nodes.tf`             | OVH Kimsufi bare-metal definitions             |
-| `home-nodes.tf`            | Home bare-metal Talos worker definitions       |
-| `proxmox-nodes.tf`         | Proxmox VM definitions                         |
-| `talos-machine-secrets.tf` | Machine secrets (ephemeral)                    |
-| `cilium.tf`                | CNI configuration                              |
-| `infrastructure.tf`        | Firewall, Talos bootstrap, registry mirrors    |
-| `persistent-auth.tf`       | Keypairs, tokens (`prevent_destroy` lifecycle) |
-| `nebula.tf`                | Per-node Nebula config + endpoint drift check  |
-
-At repo root:
-
-| File               | Purpose                                                              |
-| ------------------ | -------------------------------------------------------------------- |
-| `nebula-mesh.json` | Mesh host roster (SSOT). Add/remove/re-IP: <docs/mesh_membership.md> |
-
-## SSO
-
-See <docs/sso.md> for secret flow, proxy NetworkPolicy template, blueprint tombstone rules.
+`ovh-nodes.tf` (OVH bare metal), `home-nodes.tf` (home Talos workers), `proxmox-nodes.tf`
+(Proxmox VMs), `talos-machine-secrets.tf` (ephemeral), `cilium.tf`, `infrastructure.tf`
+(firewall, Talos bootstrap, registry mirrors), `persistent-auth.tf` (`prevent_destroy`),
+`nebula.tf` (per-node config + endpoint drift check).
 
 ## Secrets
 
-See <docs/secrets.md> for SOPS procedures, adding/rotating secrets, age key management.
+Procedures: <docs/secrets.md>. SSO: <docs/sso.md>.
 
-**Keep <docs/bootstrap_dependencies.md> up to date** when changing prerequisites of
-`bazel run //cluster:bootstrap` or recovery of its infrastructure and access material.
-Document application credentials, Terraform runners, and service dependencies with
-the owning component.
+**SOPS files here set no `mac_only_encrypted`**, so the MAC covers metadata: a raw text
+edit (e.g. adding an annotation) fails with `MAC mismatch`. Edit via `sops <file>` with the
+cluster age key; without it, re-author the whole Secret as plaintext and `sops -e -i`,
+minting fresh values for fields you can't recover (i.e. rotate).
 
-### Annotating a SOPS-encrypted Secret
+## Manifest conventions
 
-These files set no `mac_only_encrypted`, so the document MAC covers metadata: a **raw
-text edit** of the ciphertext (adding an annotation without re-encrypting) fails
-decryption with `MAC mismatch`. Go through `sops`: with the cluster age key,
-`sops <file>` edits and re-MACs in one step. An agent without the key can still
-_encrypt_ to a rule's recipients, so it authors the whole Secret as plaintext and
-`sops -e -i`s it — minting a fresh value for any opaque field it can't recover (i.e.
-rotate).
-
-The default user-level `SOPS_AGE_KEY` on machines such as `rugged` and `wyrm2`
-may be an encryption-only identity for cluster Flux files: successful encryption
-does not imply decryption access to an existing `cluster/k8s/**/*.sops.yaml`.
-Check decryption capability before editing an existing file; prefer a scoped ESO
-distribution or an operator with the cluster decryption identity when it is absent.
-
-### Description Annotations
-
-Add `metadata.annotations.description` to any resource where name + namespace doesn't
-make the purpose obvious. Skip for obvious cases.
+- Add `metadata.annotations.description` where name + namespace doesn't make the purpose
+  obvious.
+- YAML consumed by `configMapGenerator` stays `.yaml` (never disguised as `.txt`): add
+  `cluster-manifest-ignored=true` in root `.gitattributes`, add the path to the kubeconform
+  exclusion in `.pre-commit-config.yaml`, and mark the file as a `configMapGenerator` input.
+- A `HelmRepository`/`GitRepository` consumed by exactly one `HelmRelease` in the same
+  component directory: put it first in `helmrelease.yaml` and list only that file in
+  `kustomization.yaml`. Keep separate if reused, independently owned, or a consumer needs
+  a single-document file.
+- Agent read access to a new namespace: a new `agent-rbac/` directory, never RoleBindings in
+  `agent-rbac-base` or `shared-rbac` (<docs/agent_rbac.md>).
+- CiliumNetworkPolicy for Gateway API backends: <docs/cilium_network_policy.md>.
+  Postmortems: <docs/lessons_learned/>.
 
 ## Container Images
 
-See <docs/container-images.md> for build/push/tag guide and Flux image automation.
+Guide: <docs/container-images.md>.
 
-**Gotcha — no YAML flow mappings (`{a: 1, b: 2}`) in a manifest carrying an
-`$imagepolicy` marker.** `ImageUpdateAutomation` re-serialises the whole document
-when it rewrites a tag, and its emitter writes `{a: 1}` where prettier writes
-`{ a: 1 }`. Since that rewrite lands on `devel` as `chore: update images
-[skip ci]` — no PR, no CI — the branch goes red _after_ your green PR merged, and
-re-reds on every image update. Use block style in those files.
-
-### Colocating image repository and policy
-
-When an image has exactly one `ImageRepository` and one `ImagePolicy`, and neither
-resource is intentionally reused by another independent policy or automation
-ownership path, define both resources in one multi-document `<name>-image.yaml` file,
-with `ImageRepository` first and `ImagePolicy` second. Keep an
-`ImageUpdateAutomation` in its own file: it normally serves multiple image policies
-or a separate `GitRepository`. A Receiver reference alone does not require splitting
-the pair; Receivers address the Kubernetes resource by name.
-
-### Colocating simple Helm sources and releases
-
-When a `HelmRepository` or `GitRepository` is consumed by exactly one
-`HelmRelease`, and the source and release belong to the same component directory,
-define them in the existing `helmrelease.yaml` as one multi-document file. Put the
-source resource first and the `HelmRelease` second, and update the directory's
-`kustomization.yaml` to reference only `helmrelease.yaml`. Keep the source in its
-own file when it is reused by another release, has independent ownership, or either
-manifest is consumed by a tool that requires a single YAML document.
-
-## Agent RBAC Architecture
-
-When adding agent read access to a new service namespace, create a new `agent-rbac/`
-directory — never add RoleBindings to `agent-rbac-base` or `shared-rbac`. The full
-three-layer split, permission scopes, and the sandbox quota:
-<docs/agent_rbac.md>.
+- **No YAML flow mappings (`{a: 1}`) in a manifest
+  carrying an `$imagepolicy` marker** — `ImageUpdateAutomation` re-serializes the document
+  differently from prettier and pushes to `devel` as `chore: update images [skip ci]`
+  without CI, turning `devel` red on every image update. Use block style.
+- One `ImageRepository` + one `ImagePolicy` not reused elsewhere: one `<name>-image.yaml`,
+  repository first. `ImageUpdateAutomation` gets its own file. A Receiver reference alone
+  doesn't force a split.
 
 ## Storage Selection
 
-**Prefer replicated storage (`seaweedfs-ovh`) over node-local (`local-path-*`) for app
-PVCs** — SeaweedFS volumes are not node-pinned, so pods reschedule across drain, node
-loss, and rebalance. New OVH-hosted apps default to `seaweedfs-ovh` for
-document/media/state volumes. Use `local-path-*` only when:
+App PVCs default to `seaweedfs-ovh` (not node-pinned). Use `local-path-*` only for:
 
-- The workload does its **own** replication and must own a raw local disk — **CNPG
-  Postgres** (follow <docs/cnpg_conventions.md>; never put a DB on SeaweedFS) and similar
-  self-replicating stores.
-- A benchmark shows SeaweedFS latency/throughput is inadequate for the workload
-  (see <docs/seaweedfs_csi_bench.md>) — record the finding before falling back.
+- self-replicating stores needing a raw local disk — CNPG Postgres
+  (<docs/cnpg_conventions.md>; never a DB on SeaweedFS);
+- workloads a recorded benchmark shows SeaweedFS can't serve (<docs/seaweedfs_csi_bench.md>).
 
-For SeaweedFS `Bucket`, `S3Identity`, `S3Credentials`, and related S3 objects,
-read <skills/seaweed_operator/SKILL.md> before operating on them.
+Before operating on SeaweedFS `Bucket`/`S3Identity`/`S3Credentials` objects, read
+<skills/seaweed_operator/SKILL.md>.
 
-## Flux Kustomization Wiring
+## Flux Kustomizations
 
-Flux `Kustomization` resources are defined together in the generated
-`cluster/k8s/flux/kustomizations.k8s.yaml`, applied by the bootstrap `flux-system`
-Kustomization from `./cluster/k8s/flux` (`flux/flux-system/gotk-sync.yaml`). Nothing
-applies the root `cluster/k8s/kustomization.yaml`; it is the runfiles anchor validation
-tests locate `cluster/k8s` by. A directory's own `kustomization.yaml`
-lists only the manifests Flux applies at `spec.path` — never its Flux Kustomization,
-which lives in the central chart.
+- All Flux `Kustomization`s are generated into `k8s/flux/kustomizations.k8s.yaml`, applied by
+  the bootstrap `flux-system` Kustomization (`k8s/flux/flux-system/gotk-sync.yaml`). Root
+  `k8s/kustomization.yaml` is applied by nothing; it is the runfiles anchor validation tests
+  use. A directory's `kustomization.yaml` lists only what Flux applies at `spec.path`, never
+  its own Flux Kustomization.
+- **Custom resources must transitively depend on the Kustomization installing their
+  CRDs/operator**; an operator HelmRelease and its instances go in separate Kustomizations.
+  Enforced by `validate_operator_dependencies` in
+  `//cluster/validation:test_cluster_integration` (regression: `:test_crd_layering`).
 
 ### Migrating stateful Flux Kustomizations
 
-Never rename or remove a Flux Kustomization that owns a CNPG Cluster, PVC, Bucket, or
-other persistent resource in the same unrehearsed reconciliation that adds its replacement.
-With `prune: true`, removing the old Kustomization can delete its entire managed inventory;
-the default deletion policy mirrors `prune`. Before the cutover, suspend each old owner and
-patch the live object to `spec.prune: false` and `spec.deletionPolicy: Orphan`. Verify those
-settings and the existing stateful resource, then reconcile the replacement and confirm it
-uses the same resource and PVC identities before cleaning up the old owner. `suspend` alone
-does not make deletion safe.
+- Never rename/remove a Kustomization owning a CNPG Cluster, PVC, Bucket, or other persistent
+  resource in the same unrehearsed reconciliation that adds its replacement (`prune: true`
+  deletes the old inventory). First suspend the old owner and patch it live to
+  `spec.prune: false`, `spec.deletionPolicy: Orphan`; verify, reconcile the replacement,
+  confirm identical resource/PVC identities, then clean up. `suspend` alone is not safe.
+- **Operators may copy `kustomize.toolkit.fluxcd.io/*` labels into Service selectors**, so
+  an ownership change can drop endpoints before Pods roll (seen: Opstree Redis operator,
+  Langfuse Valkey). Inspect generated Services' selectors and Pod labels first; if they
+  participate, hand off an explicit label-transition procedure. Verify ready EndpointSlice
+  backends and a connection from the consumer — identical manifests and Flux readiness
+  don't prove continuity. See
+  [the incident](docs/lessons_learned/2026_09_20_redis_operator_flux_labels.md).
 
-**Flux ownership labels can affect operator-managed traffic.** Before moving a custom
-resource between Kustomizations, inspect its generated Services' selectors, workload
-Pod templates, and existing Pod labels. Operators may propagate
-`kustomize.toolkit.fluxcd.io/*` labels into selectors. Changing ownership can disconnect
-running Pods before they roll; an unavailable replica can prolong the outage.
+### Parked applications
 
-Confirmed with Opstree Redis operator managing Langfuse Valkey: changing the owner
-from `langfuse-cache` to `langfuse` removed the master Service's endpoints. Orphan
-protection prevents deletion but does not prevent this routing failure. If ownership
-labels participate in selectors, include an explicit label-transition procedure in the
-handoff. Verify ready EndpointSlice backends and a connection from the consuming
-workload afterward; unchanged resource/PVC identities, identical rendered manifests,
-and Flux readiness alone do not prove service continuity. See the
-[Redis operator incident and guarded recovery](docs/lessons_learned/2026_09_20_redis_operator_flux_labels.md),
-including upstream issue #1347 and the partial fix in PR #1382.
-
-**Custom resources must transitively depend on the Kustomization providing their
-CRDs/operator.** An application HelmRelease may share a Kustomization with resources
-from separately installed operators (for example, a CNPG Cluster or ExternalSecret).
-An operator HelmRelease and instances requiring that operator belong in separate
-Kustomizations: admitting the HelmRelease does not install its CRDs synchronously.
-`validate_operator_dependencies` enforces this in
-`//cluster/validation:test_cluster_integration`; regression coverage lives in
-`//cluster/validation:test_crd_layering`.
-
-- Flat example: `k8s/aiquota/` — single flux-kustomization, all manifests at root
-- Grouped example: `k8s/langfuse/` — one Flux unit composing namespace, secrets, database, cache, storage, and app directories
-
-### Parked (non-ducktape-owned) application manifests
-
-An app whose source ducktape does **not** own — a third-party image, Helm chart, or
-tool, as opposed to `<project>/deploy/`-pattern code like `props/deploy/`,
-`loom/wayback/deploy/` — moves entirely to
-`cluster/parked/<name>/` when decommissioned or suspended indefinitely. Keep the
-layout it already had (flat, or `namespace/`/`db/`/`app/`/etc.). By default, its Flux
-Kustomization remains in the central chart with `spec.suspend: true` and
-`metadata.annotations.ducktape.org/parked: "true"`; the suspended object does not apply
-the parked workload manifests. `cluster/cdk8s/test_generate_manifests.py`'s
-`test_flux_kustomizations_under_parked_path_are_annotated` requires paths under
-`cluster/parked/` to carry the annotation. A parked ducktape-owned project may keep its
-manifests in its own `deploy/` directory instead.
-
-`cluster/parked` is outside the manifest roots and the image-automation path:
-`cluster/validation` skips it, and Flux image automation does not update its
-`$imagepolicy` pins.
-
-When explicitly asked to fully unwire a decommissioned app, remove its Kustomization
-constructor and call from the generated central chart; keep the manifests under
-`cluster/parked/` for manual revival. Revive an unwired app by adding its
-Kustomization back to the central chart, dropping the parked annotation and suspension,
-and moving the directory back under a manifest root (`cdk8s/manifest_roots.py`).
-
-Ducktape-owned code is never part of this convention — it keeps manifests under its own
-`<project>/deploy/`, active or suspended, right beside the source. Current inventory and
-per-app reasons: <docs/decisions.md> § "Parked application manifests".
+- A decommissioned or indefinitely suspended app whose source ducktape does **not** own
+  (third-party image/chart/tool) moves whole to `cluster/parked/<name>/`, layout unchanged.
+  Its Flux Kustomization stays in the central chart with `spec.suspend: true` and annotation
+  `ducktape.org/parked: "true"` (required for `cluster/parked/` paths by
+  `test_flux_kustomizations_under_parked_path_are_annotated` in
+  `cdk8s/test_generate_manifests.py`).
+- Ducktape-owned code (`<project>/deploy/`, e.g. `props/deploy/`) keeps its manifests beside
+  its source, active or suspended.
+- `cluster/parked` is outside the manifest roots: `cluster/validation` skips it, image
+  automation doesn't update its `$imagepolicy` pins.
+- Full unwire only when explicitly asked: remove its Kustomization from the central chart,
+  keep the manifests. Revive by re-adding it without the annotation/suspension and moving
+  the directory under a manifest root (`cdk8s/manifest_roots.py`).
+- Inventory and reasons: <docs/decisions.md> § "Parked application manifests".
 
 ## Generated manifests
 
-Every file under `cluster/generated`, every `*.k8s.yaml` under `cluster/k8s` or `cluster/parked`, and
-each `kustomization.yaml` or copied payload there that `.gitattributes` marks
-`linguist-generated=true` (the list of record), is `bb run //cluster/cdk8s:generate_manifests`
-output. A directory lives under
-`cluster/generated` exactly when the generator writes all of it (<docs/cdk8s.md>). Change the generator under
-`cluster/cdk8s/` and regenerate; `//cluster/cdk8s:test_generate_manifests` fails on
-drift. What stays hand-written, and why: <docs/cdk8s.md> § What stays hand-written. The
-layout rules in this file for hand-written directories bind a generated directory only
-where the generator has a knob for them. An invariant over generated objects is a fleet rule or a
-test beside the generator, never a new test under `cluster/validation/` reading the
-committed output; `cluster/validation/` keeps the whole-graph checks (dependency cycles,
-CRD layering, `kustomize build`) and tests of hand-written directories. Conventions:
-<cdk8s/AGENTS.md>; design: <docs/cdk8s.md>.
-
-## Kustomize configuration inputs
-
-Keep YAML configuration inputs as `.yaml` files; do not disguise YAML as `.txt` merely to avoid
-manifest validation. When a YAML file is consumed by `configMapGenerator` rather than applied as a
-Kubernetes resource, keep the `.yaml` extension, add a `cluster-manifest-ignored=true` entry in the
-root `.gitattributes`, and add the matching path to the kubeconform exclusion in
-`.pre-commit-config.yaml`. Mark the file itself as a `configMapGenerator` input so its purpose is
-clear to later readers.
-
-## Reference Documentation
-
-Read on demand:
-
-- <docs/cilium_network_policy.md> — CiliumNetworkPolicy patterns for Gateway API backends (`fromEntities: [ingress]`, not host/remote-node)
-- <docs/lessons_learned/> — past incident postmortems (ESO desync, MTU, hostname loss, etc.)
+Everything under `cluster/generated`, every `*.k8s.yaml` under `cluster/k8s` or
+`cluster/parked`, and files `.gitattributes` marks `linguist-generated=true` there are
+`bb run //cluster/cdk8s:generate_manifests` output: change the generator and regenerate
+(`//cluster/cdk8s:test_generate_manifests` fails on drift). A directory is under
+`cluster/generated` exactly when the generator writes all of it. Layout rules above bind
+generated directories only where the generator has a knob. Invariants over generated
+objects are fleet rules or tests beside the generator, never new `cluster/validation/` tests
+reading committed output (that package keeps whole-graph checks and hand-written-directory
+tests). Conventions: <cdk8s/AGENTS.md>; design and what stays hand-written: <docs/cdk8s.md>.
