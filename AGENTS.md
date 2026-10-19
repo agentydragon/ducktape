@@ -156,9 +156,11 @@ temporary instrumentation local to the investigation and remove it before review
 
 ## Delegation and model selection
 
-**Model/effort choices apply only where the harness exposes those controls**
-(currently our Codex setup). Claude sessions without them use the available model,
-not invented overrides or GPT-to-Claude tier mappings. Other principles still apply.
+**Model/effort choices apply wherever the harness exposes those controls**: Codex,
+and Claude Code's Agent tool (`model`, `effort`; a `fork` always inherits the parent's
+model and effort). The tier names below are Codex's; in Claude Code, pick among its
+own models and effort levels by the same principles, never by a GPT-to-Claude tier
+mapping. A harness without such controls uses the available model.
 
 **Optimize total cost of correctly completed work**, including parent review,
 retries, integration, latency, and operator attention—not just worker token price.
