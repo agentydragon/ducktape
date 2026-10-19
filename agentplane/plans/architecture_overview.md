@@ -65,19 +65,20 @@ D1 and D2 differ only in lifetime; D3 and D4 change the store.
 
 ## The operator's workflows in each
 
-| Workflow                                                                                                                         | D1                                                                                         | D2                                                                       | D3                                                                                                                    | D4                                                                                           |
-| -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Launch a Sandbox                                                                                                                 | As today                                                                                   | As today                                                                 | The app writes it to the Agentplane plane; the controller creates its children on the cluster and deletes them itself | The app calls the records service; the controller follows its watch and creates the children |
-| Finish with a Sandbox                                                                                                            | Retire it and drop its workspace                                                           | Delete it; its history, membership and grants stay                       | Either                                                                                                                | Either; retired or deleted is a row state                                                    |
-| Haku moves to a fresh Sandbox ([story 4](user_stories.md#4-haku-itself-lives-here): "the sandbox is disposable and Haku is not") | The old Sandbox's threads go if it is deleted, so it stays retired                         | The old threads stay readable                                            | As D1 or D2                                                                                                           | The old threads stay readable                                                                |
-| A coordinator audits its agents, finished ones included                                                                          | Grants on Sandboxes that still exist                                                       | Grants matched on History's record of the writer, apart from live grants | As D1 or D2                                                                                                           | Grants and membership are rows beside the Sandbox rows                                       |
-| Grant a git-authored collection                                                                                                  | Flux applies `PolicySet`s; membership is CRs owned by Sandboxes (#10987)                   | Flux applies `PolicySet`s; a reconciler copies the sets into History     | Flux applies to the second plane (`spec.kubeConfig`)                                                                  | tofu-controller or an importer writes rows                                                   |
-| Try a CRD change on testing first                                                                                                | Not possible: one cluster-scoped CRD set from `devel` serves both                          | Not possible                                                             | Possible: each plane has its own CRDs                                                                                 | Possible: each environment has its own database                                              |
-| Inspect records with `kubectl`                                                                                                   | Yes                                                                                        | Live ones; retained data through History's API                           | Yes, with the second plane's kubeconfig                                                                               | No; the records service's HTTP API                                                           |
-| Thousands of Sandboxes over time                                                                                                 | Retired ones stay in the cluster's etcd, about 10 MB per thousand, each with its state PVC | Only live ones stay                                                      | Off the cluster's etcd                                                                                                | Off the cluster's etcd                                                                       |
+| Workflow                                                                                                                         | D1                                                                                                                                      | D2                                                                       | D3                                                                                                                    | D4                                                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Launch a Sandbox                                                                                                                 | As today                                                                                                                                | As today                                                                 | The app writes it to the Agentplane plane; the controller creates its children on the cluster and deletes them itself | The app calls the records service; the controller follows its watch and creates the children |
+| Finish with a Sandbox                                                                                                            | Retire it and drop its workspace                                                                                                        | Delete it; its history, membership and grants stay                       | Either                                                                                                                | Either; retired or deleted is a row state                                                    |
+| Haku moves to a fresh Sandbox ([story 4](user_stories.md#4-haku-itself-lives-here): "the sandbox is disposable and Haku is not") | The old Sandbox's threads go if it is deleted, so it stays retired                                                                      | The old threads stay readable                                            | As D1 or D2                                                                                                           | The old threads stay readable                                                                |
+| A coordinator audits its agents, finished ones included                                                                          | Grants on Sandboxes that still exist                                                                                                    | Grants matched on History's record of the writer, apart from live grants | As D1 or D2                                                                                                           | Grants and membership are rows beside the Sandbox rows                                       |
+| Grant a git-authored collection                                                                                                  | Flux applies `PolicySet`s; membership is CRs owned by Sandboxes (#10987)                                                                | Flux applies `PolicySet`s; a reconciler copies the sets into History     | Flux applies to the second plane (`spec.kubeConfig`)                                                                  | tofu-controller or an importer writes rows                                                   |
+| Try a CRD change on testing first                                                                                                | Not possible: one cluster-scoped CRD set from `devel` serves both                                                                       | Not possible                                                             | Possible: each plane has its own CRDs                                                                                 | Possible: each environment has its own database                                              |
+| Inspect records with `kubectl`                                                                                                   | Yes                                                                                                                                     | Live ones; retained data through History's API                           | Yes, with the second plane's kubeconfig                                                                               | No; the records service's HTTP API                                                           |
+| 100 Sandboxes a day for a year (the operator, 09:50)                                                                             | 36,500 retired ones stay in the cluster's etcd, about 365 MB, each with its state PVC ([below](#keeping-finished-sandboxes-as-records)) | Only live ones stay                                                      | Off the cluster's etcd, still in every watcher's cache                                                                | Off the cluster's etcd                                                                       |
 
-The 10 MB is arithmetic from staging's object sizes ([size today](#size-today)): a Sandbox with its `PolicyBinding` and
-ServiceAccount, `managedFields` included, is about 10 KB. It is not a measurement.
+The 365 MB is arithmetic from staging's object sizes ([size today](#size-today)): a Sandbox with its
+`PolicyBinding` and ServiceAccount, `managedFields` included, is about 10 KB. It is not a
+measurement.
 
 ## What each costs, how hard it is to back out of, and what it bets on
 
@@ -214,6 +215,39 @@ renews only while its Sandbox has queued or delivering work, so a Sandbox writes
 per second while it has work, about 0.07 more while its runner is connected, and none once retired;
 arithmetic, not a measurement at scale.
 
+### Keeping finished Sandboxes as records
+
+The operator's knot (09:50): "when you delete a Sandbox CR, that deletes also all its history; if
+you want to 'archive', that's some different operation that keeps the CR alive", and the question it
+raises: "is it a good idea to keep around potentially all sandboxes I've ever ran if I made like 100
+a day and I run agentplane for a year". That is 36,500 Sandboxes. Their bytes fit, 365 MB at the
+10 KB above against etcd's default 2 GiB quota, but three costs grow with every Sandbox kept rather
+than with the live ones:
+
+- the apiserver's watch cache holds every object of a kind in memory;
+- every service watching Sandboxes caches and relists all of them; a label selector keeps retired
+  ones out of a watcher's cache, not out of the apiserver's;
+- each keeps its node-local state PVC (`local-path-ovh-hdd` in the checked-in templates).
+
+Agentplane's own apiserver (D3) takes the first and the quota off the cluster's control plane. The
+watchers and the PVCs cost the same, and kine is slower than etcd at large lists (not measured
+here).
+
+Kubernetes keeps live objects and bounds what has finished: terminated Pods are collected past
+`--terminated-pod-gc-threshold` (12,500 by default), Events expire after `--event-ttl` (1 h), and
+Jobs take `ttlSecondsAfterFinished`. Projects whose CRs record finished work keep them in a database
+instead: [Tekton Results](https://tekton.dev/docs/results/) stores PipelineRuns and TaskRuns so the
+cluster can delete them, and the
+[Argo workflow archive](https://argo-workflows.readthedocs.io/en/latest/workflow-archive/) keeps
+completed Workflows in Postgres or MySQL.
+
+The operator's "archive" keeps the CR, which is D1's retiring. The precedent suggests a second kind
+of archive, a move out of Kubernetes: the CR and state PVC go, History keeps the transcript, and an
+archive row keeps what grants need, such as the Sandbox's collections when it was archived. Retired
+Sandboxes, which can resume, stay CRs and stay few. It is D2 with an explicit archive step. It needs
+no restore: the operator would not ask for "given just history records and no Sandbox or PVC
+anymore, make a new Sandbox and make it restore and continue that history" (09:53).
+
 ## Right under every direction
 
 Candidates; each still needs the operator's go.
@@ -230,8 +264,11 @@ Candidates; each still needs the operator's go.
   and that takes the state PVC with the runner's journals and native resume files. A request in the
   Sandbox's spec, acted on while it is suspended, would delete the claim and clear
   `status.volumes.workspace`; the next start creates a fresh claim, so an agent such as Haku can
-  re-clone and resume. D1 and D3 finish a Sandbox this way; D2 and D4 can keep one without its
-  storage.
+  re-clone and resume. The operator: dropping the workspace "should still in principle let a harness
+  start and continue" (09:50). The catch: a Session's working directory is under the workspace
+  (`/state/workspaces/{session_id}/...` in the presets), and its one-time setup script, which
+  creates it, does not rerun under the same Session ID ([app README](../app/README.md)). D1 and D3
+  finish a Sandbox this way; D2 and D4 can keep one without its storage.
 
 ## Configurable within sane options
 
@@ -361,12 +398,16 @@ Held until one is chosen:
 | 2026-10-19 01:37 | Python and Go ports can be sequenced in any order relative to the other things                      | Ports are not part of this map                     |
 | 2026-10-19 02:14 | No definite pick yet on where data and objects live                                                 | No direction chosen                                |
 | 2026-10-19 09:42 | The workspace PVC "should be disposable without history disappearing"                               | A workspace drop is right under every direction    |
+| 2026-10-19 09:50 | Dropping the workspace "should still in principle let a harness start and continue"                 | The drop keeps the Sandbox resumable               |
+| 2026-10-19 09:53 | No restoring a Sandbox from history records alone                                                   | An archive need not be resumable                   |
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control
 plane "if it came to it" (22:54), membership in a database with a reconciler (2026-10-19 01:10), and
 deleting a Sandbox's history with it as "one other consistent option" (02:04), and the state PVC and
-metadata as parts "I do not really need to dispose independently, I think" (09:42).
+metadata as parts "I do not really need to dispose independently, I think" (09:42), and "one valid
+way to cut the knot might be" deleting history with the Sandbox CR and archiving as "some different
+operation that keeps the CR alive" (09:50).
 
 ## Assumed by a lane and never confirmed
 
