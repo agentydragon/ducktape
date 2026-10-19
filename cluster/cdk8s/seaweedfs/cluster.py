@@ -238,7 +238,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 # the public catalog schema predates master.persistence and rejects it.
                 persistence=SeaweedSpecMasterPersistence(
                     enabled=True,
-                    storage_class_name="local-path-ovh-ssd-retain",
+                    storage_class_name="local-path-ovh-ssd",
                     mount_path="/data",
                     resources=SeaweedSpecMasterPersistenceResources(
                         requests={"storage": SeaweedSpecMasterPersistenceResourcesRequests.from_string("4Gi")}

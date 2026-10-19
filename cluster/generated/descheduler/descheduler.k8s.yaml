@@ -43,7 +43,6 @@ spec:
                         - name: local-path-ovh-hdd
                         - name: local-path-ovh-hdd-retain
                         - name: local-path-ovh-ssd
-                        - name: local-path-ovh-ssd-retain
                         - name: local-path-proxmox
                         - name: lvm-proxmox-hdd
                         - name: lvm-proxmox-hdd-block

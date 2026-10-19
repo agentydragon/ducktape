@@ -3,7 +3,7 @@
 ## Storage contract
 
 Each of the three masters gets an independent 4 GiB filesystem claim on
-`local-path-ovh-ssd-retain`, mounted at `/data`. SeaweedFS uses its `-mdir`
+`local-path-ovh-ssd`, mounted at `/data`. SeaweedFS uses its `-mdir`
 for the Raft log, snapshots, peer configuration, current term and vote. Its
 replicated state includes `MaxVolumeId` and `TopologyId`. The claim does not
 hold object contents or the filer's filesystem metadata database.
@@ -12,8 +12,11 @@ For the current `seaweedfs` CR and port 9333, the operator sets `-mdir=/data`;
 SeaweedFS writes `/data/m9333`. The claim template is `seaweedfs-master`, so
 the claims are `seaweedfs-master-seaweedfs-master-{0,1,2}`. Each is ReadWriteOnce.
 
-The local-path class binds on first consumption to an OVH SSD node and retains
-the backing directory when its claim is deleted. The masters already have hard
+The existing local-path class binds on first consumption to an OVH SSD node.
+Its reclaim policy is `Delete`: deleting a PVC deletes its backing storage.
+The StatefulSet's separate Retain/Retain claim policy keeps claims on controller
+deletion or scale-down; it does not protect against explicit PVC deletion.
+The masters already have hard
 hostname anti-affinity and tolerate the control-plane taint on these nodes.
 Raft provides replication across masters; this storage must remain independent
 of SeaweedFS CSI. A local PV cannot move to another node: permanent node loss
@@ -62,10 +65,9 @@ copy of an active Raft directory.
    read back and compare its contents, then delete only that object. Record a
    baseline read of a retained existing object as well. Credentials stay out of
    logs. A successful HTTP probe alone is not storage acceptance.
-4. Verify `local-path-ovh-ssd-retain` exists with `Retain`,
+4. Verify `local-path-ovh-ssd` exists with `Delete`,
    `WaitForFirstConsumer` and the OVH/SSD topology, and that three SSD nodes
-   have capacity. The class is owned by Flux `local-path-provisioner`; wait
-   for that independent reconciliation before creating claims.
+   have capacity. The class is already owned by Flux `local-path-provisioner`.
 
 ### Hold automatic replacement
 
@@ -134,7 +136,7 @@ as a current catch-up metric; it can lag live state.
 
 ### Complete and verify
 
-1. Confirm three distinct bound claims/PVs, `Retain` reclaim policy, distinct
+1. Confirm three distinct bound claims/PVs, `Delete` reclaim policy, distinct
    node placement, persistent master commands, and unchanged cluster identity.
    Complete another bounded leader failover with S3 canary traffic and record
    the interruption duration. Check retained objects and filer/volume health.
@@ -146,8 +148,8 @@ as a current catch-up metric; it can lag live state.
    updates. Resume
    `ducktape-flux/seaweedfs-cluster` at the reviewed revision. Check the rendered
    persistence configuration remains applied and there is no unexpected rollout.
-3. Keep PVs, claims and diagnostic evidence. Retain protects data from automatic
-   reclamation; it is not a backup. Record permanent-node-replacement and
+3. Keep PVs, claims and diagnostic evidence. The StatefulSet claim retention
+   policy is not a backup or protection against PVC deletion. Record permanent-node-replacement and
    disaster-recovery procedures separately before relying on unattended recovery.
 
 ## Stop and recovery
