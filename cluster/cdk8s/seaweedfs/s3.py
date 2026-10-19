@@ -9,8 +9,9 @@ Operator behaviour these encode (`cluster/skills/seaweed_operator/SKILL.md`):
 - An `S3Identity` claims a cluster-global IAM name; it lives in the SeaweedFS namespace
   unless its tenant keeps it local.
 - `S3Credentials` resolves `identityRef` literally when no same-namespace `S3Identity`
-  exists, so it is named after the identity it holds a key for. It always retains its key
-  and Secret: its CRD defaults to `Delete`.
+  exists, so it is named after the identity it holds a key for. These helpers explicitly
+  default identities and credentials to `Retain`; callers may choose `Delete` when retiring
+  an identity and its keys.
 - A Bucket, S3Identity or S3Credentials outside the SeaweedFS namespace may reference the
   `Seaweed` cluster only through a grant there: `cluster.TENANTS` lists the namespaces its
   `tenants` grant admits, and these functions refuse any other. A cross-namespace `secretRef`
@@ -104,15 +105,21 @@ def bucket(
 
 
 def identity(
-    scope: Construct, id: str, *, name: str, namespace: str = seaweedfs_namespace.NAME, description: str | None = None
+    scope: Construct,
+    id: str,
+    *,
+    name: str,
+    namespace: str = seaweedfs_namespace.NAME,
+    description: str | None = None,
+    reclaim_policy: S3IdentitySpecReclaimPolicy | None = S3IdentitySpecReclaimPolicy.RETAIN,
 ) -> S3Identity:
-    """The S3Identity claiming IAM name `name`. Our policy: `Retain`."""
+    """The S3Identity claiming IAM name `name`. Defaults to `Retain`."""
     return S3Identity(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=_tenant(namespace), annotations=_description(description)),
         seaweed_ref=S3IdentitySpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
-        reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN,
+        reclaim_policy=reclaim_policy,
     )
 
 
@@ -126,11 +133,13 @@ def credentials(
     key_fields: SecretKeyFields | None,
     secret_namespace: str | None = None,
     description: str | None = None,
+    reclaim_policy: S3CredentialsSpecReclaimPolicy | None = S3CredentialsSpecReclaimPolicy.RETAIN,
 ) -> S3Credentials:
     """A key for IAM identity `identity`, mirrored into Secret `secret`. A same-namespace Secret
     is created and owned by the operator; one in `secret_namespace` must already exist and be
     granted (`secret_grant`). `key_fields=None` keeps `accessKey`/`secretKey`. Our policy:
-    `Retain`."""
+    Defaults to `Retain`; `Delete` revokes this key and removes a same-namespace Secret controlled
+    by this resource."""
     return S3Credentials(
         scope,
         id,
@@ -143,7 +152,7 @@ def credentials(
             access_key_field=key_fields.access_key if key_fields else None,
             secret_key_field=key_fields.secret_key if key_fields else None,
         ),
-        reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
+        reclaim_policy=reclaim_policy,
     )
 
 

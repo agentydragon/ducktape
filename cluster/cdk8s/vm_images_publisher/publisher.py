@@ -38,7 +38,13 @@ def _credentials(identity: str) -> SecretRef:
 def _identity(scope: Construct, name: str) -> S3Identity:
     """A publisher-local S3Identity plus the S3Credentials the operator mints its key pair
     into (`_credentials(name)`)."""
-    identity = s3.identity(scope, name, name=name, namespace=NAME)
+    identity = s3.identity(
+        scope,
+        name,
+        name=name,
+        namespace=NAME,
+        reclaim_policy=s3.S3IdentitySpecReclaimPolicy.DELETE,
+    )
     s3.credentials(
         scope,
         f"{name}-credentials",
@@ -46,6 +52,7 @@ def _identity(scope: Construct, name: str) -> S3Identity:
         namespace=NAME,
         secret=_credentials(name).name,
         key_fields=None,
+        reclaim_policy=s3.S3CredentialsSpecReclaimPolicy.DELETE,
     )
     return identity
 
@@ -60,6 +67,7 @@ def _storage(scope: Construct) -> None:
         # The physical bucket already exists; this CR is moving to the publisher's
         # namespace without deleting or recreating its data.
         adopt_existing=True,
+        reclaim_policy=s3.BucketSpecReclaimPolicy.DELETE,
     )
     _identity(scope, _WRITER)
     _identity(scope, _READER)

@@ -33,7 +33,7 @@ spec:
     name: seaweedfs
     namespace: seaweedfs
   name: vm-images
-  reclaimPolicy: Retain
+  reclaimPolicy: Delete
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
@@ -41,7 +41,7 @@ metadata:
   name: vm-images-ci-writer
   namespace: vm-images-publisher
 spec:
-  reclaimPolicy: Retain
+  reclaimPolicy: Delete
   seaweedRef:
     name: seaweedfs
     namespace: seaweedfs
@@ -54,7 +54,7 @@ metadata:
 spec:
   identityRef:
     name: vm-images-ci-writer
-  reclaimPolicy: Retain
+  reclaimPolicy: Delete
   seaweedRef:
     name: seaweedfs
     namespace: seaweedfs
@@ -67,7 +67,7 @@ metadata:
   name: vm-images-cdi-reader
   namespace: vm-images-publisher
 spec:
-  reclaimPolicy: Retain
+  reclaimPolicy: Delete
   seaweedRef:
     name: seaweedfs
     namespace: seaweedfs
@@ -80,7 +80,7 @@ metadata:
 spec:
   identityRef:
     name: vm-images-cdi-reader
-  reclaimPolicy: Retain
+  reclaimPolicy: Delete
   seaweedRef:
     name: seaweedfs
     namespace: seaweedfs

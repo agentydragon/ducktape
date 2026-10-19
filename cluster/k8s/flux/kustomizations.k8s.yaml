@@ -2231,6 +2231,7 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: WaitForTermination
   dependsOn:
     - name: seaweedfs-operator
       namespace: ducktape-flux
