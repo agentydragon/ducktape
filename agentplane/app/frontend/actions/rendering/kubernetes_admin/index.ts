@@ -1,8 +1,7 @@
 import type { ActionPresentation } from "../presentation";
 import { podsInNamespacePresentation } from "./pods_list_in_namespace";
 import { resourcesApplyPresentation } from "./resources_apply";
-import { podsDeletePresentation } from "./pods_exec";
-import { podsExecPresentation } from "./pods_exec";
+import { podsDeletePresentation, podsExecPresentation } from "./pods_exec";
 import { resourcesGetPresentation } from "./resources_get";
 import { resourcesListPresentation } from "./resources_list";
 import { resourcesDeletePresentation } from "./resources_delete";
