@@ -96,6 +96,7 @@ def add_stable_services(
     proxy = runner_gateway.service(env.namespace)
     control = control or runner_control_service(env.namespace)
     dispatcher = dispatcher_service(env.namespace)
+    dispatcher_http = session_dispatcher.http_service(env.namespace)
     k8s.KubeService(
         scope,
         "runner-gateway-service",
@@ -133,7 +134,8 @@ def add_stable_services(
                     port=dispatcher.port.number,
                     target_port=k8s.IntOrString.from_number(dispatcher.pod_port),
                     protocol="TCP",
-                )
+                ),
+                dispatcher_http.port.k8s_service_port(),
             ],
         ),
     )
@@ -174,6 +176,7 @@ class RunnerGateway(Construct):
         proxy = runner_gateway.service(namespace)
         control = control or runner_control_service(namespace)
         self.control = control
+        dispatcher_http = session_dispatcher.http_service(namespace)
         own_account = ServiceAccountRef(namespace=namespace, name=runner_gateway.NAME)
         # A delivery worker may run on a different replica from the holder. It calls
         # the per-Sandbox control Service with this projected Gateway-audience token.
@@ -182,6 +185,7 @@ class RunnerGateway(Construct):
         args = [
             f"--sandbox-namespace={namespace}",
             f"--listen-address=0.0.0.0:{_GRPC_PORT}",
+            f"--http-listen-address=0.0.0.0:{dispatcher_http.pod_port}",
             f"--runner-token-file={_RUNNER_TOKEN_FILE}",
             f"--dispatcher-audience={session_dispatcher.TOKEN_AUDIENCE}",
             f"--gateway-audience={runner_gateway.TOKEN_AUDIENCE}",
@@ -195,6 +199,7 @@ class RunnerGateway(Construct):
             self,
             env,
             serves=[proxy, control],
+            extra_ports=[dispatcher_http.container_port()],
             container="runner-gateway",
             image=image,
             args=args,
@@ -244,6 +249,7 @@ class RunnerGateway(Construct):
         namespace = self.env.namespace
         proxy = runner_gateway.service(namespace)
         dispatcher = dispatcher_service(namespace)
+        dispatcher_http = session_dispatcher.http_service(namespace)
         NetworkPolicy(
             self,
             "network-policy",
@@ -252,7 +258,10 @@ class RunnerGateway(Construct):
             ingress=[
                 *(pods.admit(proxy.pod_port) for pods in self.proxy_callers.values()),
                 self.sandbox_controller_pods.admit(proxy.pod_port),
-                *(pods.admit(dispatcher.pod_port) for pods in self.dispatcher_callers.values()),
+                *(
+                    pods.admit(dispatcher.pod_port, dispatcher_http.pod_port)
+                    for pods in self.dispatcher_callers.values()
+                ),
                 egress.proxy(namespace).pods.admit(self.control.pod_port),
             ],
             egress=[

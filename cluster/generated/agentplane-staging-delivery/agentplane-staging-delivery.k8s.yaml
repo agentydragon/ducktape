@@ -36,6 +36,7 @@ spec:
         - args:
             - --sandbox-namespace=agentplane-staging
             - --listen-address=0.0.0.0:8080
+            - --http-listen-address=0.0.0.0:8081
             - --runner-token-file=/var/run/secrets/agentplane-runner-gateway/token
             - --dispatcher-audience=session-dispatcher
             - --gateway-audience=agentplane-runner-gateway
@@ -70,6 +71,9 @@ spec:
           ports:
             - containerPort: 8080
               name: grpc
+              protocol: TCP
+            - containerPort: 8081
+              name: http
               protocol: TCP
           readinessProbe:
             failureThreshold: 3
@@ -329,6 +333,8 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+            - port: "8081"
+              protocol: TCP
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: notifications
@@ -336,6 +342,8 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+            - port: "8081"
               protocol: TCP
     - fromEndpoints:
         - matchLabels:

@@ -3,7 +3,7 @@
 The durable command queue is the Dispatcher role of the
 [Runner Gateway](../README.md). Python App and Notification callers use the
 Session Dispatcher gRPC contract; the stable Dispatcher Service maps its port `8080`
-to the shared listener on `8080`. The worker delivers through the Runner proxy once
+to the shared listener on `8080` and its port `8081` to the HTTP/JSON facade. The worker delivers through the Runner proxy once
 the exact Sandbox is ready, with per-Sandbox Lease and PostgreSQL generation fencing.
 
 The manual queue, replica and wake probes are documented in the

@@ -62,8 +62,10 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     container = one(c for c in pod["containers"] if c["name"] == "runner-gateway")
     assert container["image"].startswith("git.allegedly.works/ducktape-ci/agentplane-runner-gateway:")
     assert pod["serviceAccountName"] == runner_gateway.NAME
-    assert {p["containerPort"] for p in container["ports"]} == {8080}
+    http = session_dispatcher.http_service(staging.ENV.namespace)
+    assert {p["containerPort"] for p in container["ports"]} == {8080, http.pod_port}
     assert "--listen-address=0.0.0.0:8080" in container["args"]
+    assert f"--http-listen-address=0.0.0.0:{http.pod_port}" in container["args"]
     assert f"--dispatcher-audience={session_dispatcher.TOKEN_AUDIENCE}" in container["args"]
     assert f"--gateway-audience={runner_gateway.TOKEN_AUDIENCE}" in container["args"]
     assert f"--dispatcher-caller={staging.ENV.namespace}/{app.NAME}" in container["args"]
@@ -76,7 +78,8 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
         {"name": "runner-control", "port": 8082, "protocol": "TCP", "targetPort": 8080},
     ]
     assert _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]["ports"] == [
-        {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080}
+        {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080},
+        {"name": "http", "port": http.port.number, "protocol": "TCP", "targetPort": http.pod_port},
     ]
     assert _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]["selector"] == {
         "app.kubernetes.io/name": runner_gateway.NAME
@@ -89,7 +92,9 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
         for port in rule.get("toPorts", [{}])[0].get("ports", [])
     }
     assert (app.NAME, "8080") in ingress
+    assert (app.NAME, str(http.pod_port)) in ingress
     assert (notifications.NAME, "8080") in ingress
+    assert (notifications.NAME, str(http.pod_port)) in ingress
     assert (runner_gateway.NAME, "8080") in ingress
     assert (sandbox_controller.NAME, "8080") in ingress
     assert (sandbox_controller.NAME, "8080") in ingress
@@ -105,7 +110,7 @@ def test_runner_platform_route_fences_name_the_gateway_listener_port(
     """Cilium matches after the Service's translation, so each fence must name the Pods' own port."""
     documents = agentplane_manifests[namespace]
     container = one(_resource(documents, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]["containers"])
-    listening = {port["containerPort"] for port in container["ports"]}
+    listening = {port["containerPort"] for port in container["ports"] if port["name"] == "grpc"}
 
     def ports(rules: list[dict[str, Any]], peers: str) -> set[int]:
         return {
