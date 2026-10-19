@@ -667,7 +667,7 @@ async def test_action_history_automatic_paging(view: VisualPage, app: Agentplane
     await expect(page.get_by_test_id("action-history-sentinel")).to_be_attached()
     await page.locator(".agentplane-shell-main").evaluate("element => { element.scrollTop = element.scrollHeight; }")
     await expect(page.get_by_text("End of action history.", exact=True)).to_be_attached()
-    await page.get_by_text("End of action history.", exact=True).scroll_into_view_if_needed()
+    await _focus(page, page.get_by_text("End of action history.", exact=True))
     await view.capture(target=page.locator("#app"))
 
 
