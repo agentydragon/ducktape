@@ -198,10 +198,12 @@ upload prevents review publication and baseline-pointer advancement.
 
 ## Retention
 
-Nothing is deleted. New publications reuse shared PNGs; existing commit bundles
-are retained without migration. Garbage collection and historical-review retention
-are separate work. Shared images must remain while any retained review metadata
-references them; their object age alone is not an expiration criterion.
+The publisher does not delete objects. New publications reuse shared PNGs; existing
+commit bundles are not migrated automatically. Shared images must remain while any
+retained review metadata references them; their object age alone is not an
+expiration criterion. The [storage cleanup procedure](docs/storage-cleanup.md)
+describes one-time review expiry, reference checks, and volume compaction, including
+the measured 2026-10-19 cleanup. No recurring expiry policy is installed.
 
 ## Released commands
 
