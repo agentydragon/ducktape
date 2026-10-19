@@ -4,41 +4,43 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"os"
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
-	"github.com/agentydragon/ducktape/util/settings"
+	"github.com/go-viper/mapstructure/v2"
+	"github.com/spf13/viper"
 )
 
 const settingPrefix = "AGENTPLANE_EGRESS_"
 
 // config is the proxy's deployment contract: each setting is a YAML key of the file named by
 // AGENTPLANE_EGRESS_CONFIG_FILE, with AGENTPLANE_EGRESS_* environment overrides for scalar
-// settings. Lists and maps are file-only. Settings are loaded by util/settings.
+// settings. Lists and maps are file-only. Viper loads the settings.
 type config struct {
-	RulesNamespace                  string            `yaml:"rules_namespace"`
-	CredentialsNamespace            string            `yaml:"credentials_namespace"`
-	AllowedServiceAccountNamespaces []string          `env:"-" yaml:"allowed_service_account_namespaces"`
-	ListenHost                      string            `yaml:"listen_host"`
-	ListenPort                      int               `yaml:"listen_port"`
-	AdminHost                       string            `yaml:"admin_host"`
-	AdminPort                       int               `yaml:"admin_port"`
-	AgentAPIHost                    string            `yaml:"agent_api_host"`
-	AgentAPIPort                    int               `yaml:"agent_api_port"`
-	CACert                          string            `yaml:"ca_cert"`
-	CAKey                           string            `yaml:"ca_key"`
-	UpstreamCAFile                  string            `yaml:"upstream_ca_file"`
-	TokenAudience                   string            `yaml:"token_audience"`
-	ProjectedTokenAudiences         []string          `env:"-" yaml:"projected_token_audiences"`
-	Kubeconfig                      string            `yaml:"kubeconfig"`
-	LogLevels                       map[string]string `env:"-" yaml:"log_levels"`
-	ResyncSeconds                   int               `yaml:"resync_seconds"`
-	DatabaseURL                     string            `yaml:"database_url"`
-	DecisionHistorySize             int               `yaml:"decision_history_size"`
-	DecisionRetentionDays           int               `yaml:"decision_retention_days"`
-	DecisionQueueSize               int               `yaml:"decision_queue_size"`
-	DecisionBatchSize               int               `yaml:"decision_batch_size"`
-	ExemptNetworks                  []netip.Prefix    `env:"-" yaml:"exempt_networks"`
+	RulesNamespace                  string            `mapstructure:"rules_namespace"`
+	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
+	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
+	ListenHost                      string            `mapstructure:"listen_host"`
+	ListenPort                      int               `mapstructure:"listen_port"`
+	AdminHost                       string            `mapstructure:"admin_host"`
+	AdminPort                       int               `mapstructure:"admin_port"`
+	AgentAPIHost                    string            `mapstructure:"agent_api_host"`
+	AgentAPIPort                    int               `mapstructure:"agent_api_port"`
+	CACert                          string            `mapstructure:"ca_cert"`
+	CAKey                           string            `mapstructure:"ca_key"`
+	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`
+	TokenAudience                   string            `mapstructure:"token_audience"`
+	ProjectedTokenAudiences         []string          `mapstructure:"projected_token_audiences"`
+	Kubeconfig                      string            `mapstructure:"kubeconfig"`
+	LogLevels                       map[string]string `mapstructure:"log_levels"`
+	ResyncSeconds                   int               `mapstructure:"resync_seconds"`
+	DatabaseURL                     string            `mapstructure:"database_url"`
+	DecisionHistorySize             int               `mapstructure:"decision_history_size"`
+	DecisionRetentionDays           int               `mapstructure:"decision_retention_days"`
+	DecisionQueueSize               int               `mapstructure:"decision_queue_size"`
+	DecisionBatchSize               int               `mapstructure:"decision_batch_size"`
+	ExemptNetworks                  []netip.Prefix    `mapstructure:"exempt_networks"`
 }
 
 func defaultConfig() config {
@@ -49,10 +51,42 @@ func defaultConfig() config {
 	}
 }
 
-func loadConfig(environ []string) (config, error) {
-	c, err := settings.Load(settingPrefix, defaultConfig(), environ)
-	if err != nil {
-		return config{}, err
+func loadConfig() (config, error) {
+	c := defaultConfig()
+	settings := viper.New()
+	settings.SetEnvPrefix("AGENTPLANE_EGRESS")
+	for _, key := range []string{
+		"rules_namespace",
+		"credentials_namespace",
+		"listen_host",
+		"listen_port",
+		"admin_host",
+		"admin_port",
+		"agent_api_host",
+		"agent_api_port",
+		"ca_cert",
+		"ca_key",
+		"upstream_ca_file",
+		"token_audience",
+		"kubeconfig",
+		"resync_seconds",
+		"database_url",
+		"decision_history_size",
+		"decision_retention_days",
+		"decision_queue_size",
+		"decision_batch_size",
+	} {
+		settings.MustBindEnv(key)
+	}
+	if path := os.Getenv(settingPrefix + "CONFIG_FILE"); path != "" {
+		settings.SetConfigFile(path)
+		settings.SetConfigType("yaml")
+		if err := settings.ReadInConfig(); err != nil {
+			return config{}, errors.New("could not read egress settings file")
+		}
+	}
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+		return config{}, errors.New("invalid egress settings")
 	}
 	if err := c.validate(); err != nil {
 		return config{}, err

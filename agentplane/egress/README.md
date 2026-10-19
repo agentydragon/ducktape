@@ -66,8 +66,8 @@ there is no checked-in generated client tree or manual regeneration step. Build 
 
 Settings are YAML keys of the file named by `AGENTPLANE_EGRESS_CONFIG_FILE`. Scalar settings also
 accept `AGENTPLANE_EGRESS_*` environment overrides; lists and maps come from the file. The binary
-takes no flags. A key or variable it does
-not know is refused (<cmd/config.go>, loaded by <../../util/settings/settings.go>). The proxy needs an interception CA (`ca_cert`,
+takes no flags. Unknown file keys are refused by Viper
+(<cmd/config.go>); unrelated environment variables are ignored. The proxy needs an interception CA (`ca_cert`,
 `ca_key`) that the runner containers trust; it signs a short-lived leaf per handshake. Upstream certificates are
 verified against the system roots, or against `upstream_ca_file` when given; the deployment passes
 public roots plus the cluster CA, so a `clusterInternal` rule can reach the API server. Identity and egress policy come from

@@ -38,7 +38,10 @@ require (
 )
 
 // Direct dependencies for Agentplane service configuration
-require github.com/spf13/viper v1.21.0
+require (
+	github.com/go-viper/mapstructure/v2 v2.4.0
+	github.com/spf13/viper v1.21.0
+)
 
 // Direct dependencies for Agentplane YAML consumers
 require gopkg.in/yaml.v3 v3.0.1
@@ -232,7 +235,6 @@ require (
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
