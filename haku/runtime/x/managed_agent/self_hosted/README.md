@@ -1,256 +1,91 @@
 # Managed Agents — self-hosted sandbox (Runtime B)
 
-> **Unwired.** Flux does not register this worker, and CI does not build or publish
-> its image. The flake package remains available for deliberate manual builds.
-> See [`deploy/README.md`](deploy/README.md) for the retained manifests and
-> reactivation conditions.
+> **Unwired.** No Flux registration, no CI image build/publish; the flake package remains for
+> deliberate manual builds. Retained manifests and reactivation conditions:
+> [`deploy/README.md`](deploy/README.md).
 
-Runtime B from <../../../../plans/runtime_options.md>: Anthropic runs the agent loop;
-tool execution runs in a worker **you** run in `haku-sandbox` (self-hosted
-sandbox, `config.type: self_hosted`). The Anthropic-hosted-sandbox alternative is
-the sibling <../anthropic_hosted/README.md>. Full design + tradeoffs:
-<../../../../plans/managed_agents.md> (+ <../../../../plans/managed_agents_artifacts.md>).
+Runtime B (<../../../../plans/runtime_options.md>): Anthropic runs the agent loop; tools execute
+in our worker in `haku-sandbox` (`config.type: self_hosted`). Sibling:
+<../anthropic_hosted/README.md>. Design: <../../../../plans/managed_agents.md> (+
+<../../../../plans/managed_agents_artifacts.md>). Bring-up RCA:
+<debug/self_hosted_worker_bringup.md>. Control-plane runbook, IDs, and transcript debugging:
+<operations.md>.
 
-The bring-up RCA — the fix chain, diagnostics, and open issues — is in
-<debug/self_hosted_worker_bringup.md>.
+## Provisioned with `ant`, not Terraform
 
-## Why this is provisioned imperatively, not Terraform
+`provision.sh` + `haku.{environment,agent,deployment}.yaml` via `ant`. The
+`modus-agendi/anthropic-claude-managed-agents` provider (v1.1.0 / `main` as of 2026-07-03) always
+sends `config.networking`, which the API rejects for `type = "self_hosted"`
+(`config.networking: Extra inputs are not permitted`); egress here is ours (`haku-egress-proxy` +
+CCNP). A TF migration (`tf/gitops/haku-self-hosted-agent`, PR #2673) never applied and was
+reverted. Revisit only once the provider makes `networking` optional for `self_hosted`.
 
-Unlike the sibling **anthropic-hosted** agent — whose historical Terraform root is
-<../anthropic_hosted/terraform/> — this self-hosted agent is provisioned
-**imperatively** with `ant` (`provision.sh`, `haku.{environment,agent,deployment}.yaml`).
+The former shared vault and MCP credentials were deleted 2026-09-30; the `haku-cloud-agent-ids`
+Secret's vault ID is invalid. Reactivation needs a fresh vault passed as
+`HAKU_MANAGED_AGENT_VAULT_ID` to `provision.sh`. Toolset parity with the historical cloud agent is
+enforced by `//haku/runtime/x/managed_agent:test_agent_config_ssot`.
 
-The reason is a provider gap: `modus-agendi/anthropic-claude-managed-agents`
-(v1.1.0, the latest release — and unreleased `main` as of 2026-07-03) has **no
-`self_hosted` support**. Its `environment` resource makes `networking` a
-**required** attribute and always sends `config.networking` to the API. That is
-correct for `type = "cloud"` (where Anthropic runs the sandbox and enforces
-egress), but the API's `config` is discriminated on `type`, and for
-`type = "self_hosted"` it **rejects** `networking`:
+## Worker
 
-```text
-anthropic api: status=400 type=invalid_request_error
-message=config.networking: Extra inputs are not permitted
-```
+`worker.py` uses the `anthropic` Python SDK's environment worker
+(`client.beta.environments.work.worker`), not `ant beta:worker poll`: the Go SDK posts an empty
+text block for empty tool output, which the API 400s, deadlocking the session
+([anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377)); the Python
+runner substitutes `"(no output)"`. The control plane still uses `ant` (`anthropic-cli` stays in
+the devshell). The SDK (`anthropic` 0.111) comes from a `python3` override in `nixos.nix`;
+`worker.py` is gazelle-excluded, not a Bazel target (see `BUILD.bazel`).
 
-For self-hosted, egress is _ours_ (the haku-managed-agent pod's `haku-egress-proxy` + CCNP),
-so `{type: self_hosted}` is the entire config — no `networking`. The `ant` CLI
-sends exactly that, so the imperative path works (it created the live env,
-`env_015uqL9WAMSDytQEWWmLG9zF`); the provider cannot express it. We briefly
-migrated this to TF (`tf/gitops/haku-self-hosted-agent`, PR #2673) and it never
-applied for this reason, so it was reverted. Revisit only if the provider gains
-`self_hosted` (make `networking` optional / discriminated by `type`); an upstream
-issue is the path there. The provider can represent `type = "cloud"`, but the
-cloud agent's Anthropic resources are deleted and its Flux registration is removed.
+No warm-session supervisor: the scheduled deployment fires a fresh session each tick; `haku-state`
+is the durable memory.
 
-Only the **environment / agent / deployment** are provisioned by `ant`. The
-formerly shared Anthropic vault and its MCP credentials were deleted on
-2026-09-30. The old `haku-cloud-agent-ids` output Secret may remain in the cluster,
-but its vault ID is invalid. Before reactivation, create a fresh vault and the
-required MCP credentials, then pass that vault ID as
-`HAKU_MANAGED_AGENT_VAULT_ID` to `provision.sh`. The agent's toolset is kept in
-parity with the historical cloud agent by
-`//haku/runtime/x/managed_agent:test_agent_config_ssot`.
+| File                    | Role                                                                    | Runs on              |
+| ----------------------- | ----------------------------------------------------------------------- | -------------------- |
+| `haku.environment.yaml` | self-hosted environment (`ant beta:environments create`)                | control plane        |
+| `haku.agent.yaml`       | thin `system` pointer, fixed toolset + 2 `mcp_toolset`s (= cloud agent) | control plane        |
+| `haku.deployment.yaml`  | scheduled-deployment wake trigger                                       | control plane        |
+| `provision.sh`          | create environment/agent/deployment via `ant` (needs fresh vault ID)    | operator / CI        |
+| `entrypoint.sh`         | clone ducktape + haku-state, exec `haku-managed-agent`                  | `haku-managed-agent` |
+| `worker.py`             | poll loop                                                               | `haku-managed-agent` |
+| `nixos.nix`             | full-NixOS worker system                                                | manual image build   |
+| `image.nix`             | uncompressed rootfs tarball for `.#haku-managed-agent-image`            | manual image build   |
 
-## The worker is `worker.py` on the anthropic Python SDK (not `ant`)
+Image-side files (`worker.py`, `nixos.nix`, `image.nix`, `entrypoint.sh`) do not flow through
+CI + Flux while parked; reactivation must choose an image publication/pinning path.
 
-The poll loop is `worker.py`, built on the official `anthropic` Python SDK's
-environment-worker helper (`client.beta.environments.work.worker`). It replaced
-`ant beta:worker poll` (the Go CLI) because the
-Go SDK's session tool runner posts an **empty text block** for empty tool output,
-which the API 400s — deadlocking the session
-([anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377)).
-The Python session runner guards that exact case (`"(no output)"`), so the
-Python worker sidesteps the deadlock. The Go-vs-Python source evidence is in the
-RCA.
+## Trust split
 
-**Why the SDK is pinned in `nixos.nix`, not the shared Bazel lockfile:** the
-worker lib (`anthropic.lib.environments`) needs `anthropic>=0.111`, but
-`agent-framework-anthropic` (used by `haku/runtime/agent`) hard-pins
-`anthropic<0.80.1` on every release to date — an irreconcilable lockfile
-conflict. So the worker closure gets `anthropic` 0.111 via a `python3` override
-in `nixos.nix`, and `worker.py` is a baked script excluded from Bazel (see the
-local `BUILD.bazel`) — independent of the repo lockfile, Runtime C untouched.
-
-The **control plane** still uses `ant` (`provision.sh`,
-`ant beta:deployments run`, `…:work stats`) — only the in-pod poll loop moved to
-Python. The `anthropic-cli` package stays in the devshell.
-
-The **warm-session supervisor is deferred**: the wake trigger is a scheduled
-deployment that fires a fresh session each tick; `haku-state` (git) is the
-durable memory, so a cold session just re-orients.
-
-## Pieces
-
-| File                    | Role                                                                                | Runs on              |
-| ----------------------- | ----------------------------------------------------------------------------------- | -------------------- |
-| `haku.environment.yaml` | self-hosted environment (`ant beta:environments create`)                            | control plane        |
-| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + 2 MCP `mcp_toolset`s (= cloud agent)  | control plane        |
-| `haku.deployment.yaml`  | scheduled-deployment wake trigger                                                   | control plane        |
-| `provision.sh`          | one-shot: create environment/agent/deployment via `ant` (requires a fresh vault ID) | operator / CI        |
-| `entrypoint.sh`         | clone ducktape + haku-state, then exec `haku-managed-agent`                         | `haku-managed-agent` |
-| `worker.py`             | the poll loop (anthropic Python SDK environment worker)                             | `haku-managed-agent` |
-| `nixos.nix`             | full-NixOS worker system                                                            | manual image build   |
-| `image.nix`             | uncompressed rootfs tarball recipe for `.#haku-managed-agent-image`                 | manual image build   |
-
-## Trust split — keep the org key off the worker
-
-- **Worker pod** (`haku-sandbox`): only `ANTHROPIC_ENVIRONMENT_KEY`
-  (`sk-ant-oat01-…`, one environment's work queue). The worker authenticates
-  every call with a Bearer sub-client derived from it; a prompt-injected tool
-  call can't reach the control plane.
-- **Provisioning** (`provision.sh`, deployment management, `…:work stats`): the
-  org-scoped `ANTHROPIC_API_KEY`, run from CI / the operator laptop — **never**
-  on the worker host.
+- **Worker pod**: only `ANTHROPIC_ENVIRONMENT_KEY` (`sk-ant-oat01-…`, one environment's work
+  queue), used via a Bearer sub-client, so a prompt-injected tool call cannot reach the control
+  plane.
+- **Provisioning** (`provision.sh`, deployment management, `…:work stats`): org-scoped
+  `ANTHROPIC_API_KEY` from CI / operator laptop — **never** on the worker host.
 
 ## Worker image (`nix build .#haku-managed-agent-image`)
 
-A full-NixOS rootfs (`nixos.nix`, declaratively consistent with the fleet)
-carrying `bash`, `git`, `kubectl`, `postgresql` (`psql`), `curl`, `jq`, `cacert`,
-`fastmcp`, `tea`, and `haku-managed-agent` (the pinned `python3` + `anthropic` 0.111 running
-`worker.py`). We do **not** boot it: booting systemd PID 1 in an unprivileged
-container can't mount the API filesystems, so the pod runs the closure
-**directly** — k8s execs `/sw/bin/haku-managed-agent-run` (a wrapper that puts the tool
-closure on PATH and execs `entrypoint.sh`) as the non-root `haku` uid with all
-caps dropped. Build the uncompressed rootfs tarball with `nix build
-.#haku-managed-agent-image`; this is currently a manual output. There is no automatic
-image build/publish job or Flux image policy while the experiment is parked. If Runtime B
-is deliberately reactivated, choose and restore an image publication/pinning path as part
-of that change.
+Full-NixOS rootfs carrying `bash`, `git`, `kubectl`, `psql`, `curl`, `jq`, `cacert`, `fastmcp`,
+`tea`, and `haku-managed-agent`. Not booted (systemd PID 1 cannot mount API filesystems
+unprivileged): k8s execs `/sw/bin/haku-managed-agent-run` (puts the tool closure on PATH, execs
+`entrypoint.sh`) as non-root `haku` with all caps dropped. Pod `fsGroup` must be the `haku` gid so
+the `/workspace` emptyDir is writable.
 
-`tea` is available in the image and logged in via the `haku-forgejo-tea` Secret
-mounted at `/home/haku/.config/tea/config.yml`. The token is minted by
-`forgejo-token-rotation` with the full privileges of the `haku` Forgejo account;
-check it in a worker session with `tea whoami`.
+`tea` is logged in via the `haku-forgejo-tea` Secret at `/home/haku/.config/tea/config.yml`
+(token from `forgejo-token-rotation`, full `haku` Forgejo account privileges; check with
+`tea whoami`).
 
-The fixed toolset is `agent_toolset_20260401` (`bash/read/write/edit/glob/grep`);
-Haku reaches Plaid (`psql`), Google (`curl`), and the cluster (`kubectl`,
-in-cluster `haku` SA) through `bash`. On top of that it has two native
-`mcp_toolset`s (Anthropic-side vault auth), matching the historical cloud agent:
-`haku-console` (the console's aggregated MCP catalog, with approval-gated
-writes) and `kubectl-machine` (a machine-JWT cluster
-path — redundant here with in-pod `kubectl`, kept for parity).
+Tools: fixed `agent_toolset_20260401` (`bash/read/write/edit/glob/grep`) — Plaid via `psql`,
+Google via `curl`, cluster via `kubectl` (in-cluster `haku` SA). Plus two native `mcp_toolset`s
+with Anthropic-side vault auth: `haku-console` (`haku.allegedly.works/mcp`, an endpoint the
+console has since retired) and `kubectl-machine` (machine-JWT; redundant with in-pod `kubectl`,
+kept for parity).
 
-## k8s wiring
+## k8s wiring and env
 
-The `haku-managed-agent` Deployment, its `haku-managed-agent` ServiceAccount (bound to
-`haku-sandbox-admin`), the `ANTHROPIC_ENVIRONMENT_KEY` secret, and the clone/git env live
-in <deploy/README.md>. The worker reuses Haku's `haku-sandbox`
-perimeter (`haku-sandbox-admin` RBAC, `haku-egress-proxy` egress + CA injection,
-ResourceQuota); none of it relies on agent restraint.
+Deployment, `haku-managed-agent` ServiceAccount (bound to `haku-sandbox-admin`), env-key secret,
+and clone/git env: <deploy/README.md>. Reuses the `haku-sandbox` perimeter (RBAC,
+`haku-egress-proxy` egress + CA injection, ResourceQuota); nothing relies on agent restraint.
 
-## Bring-up (only after explicit reactivation)
-
-```sh
-# First create a fresh vault and its MCP credentials; never use the stale output Secret.
-HAKU_MANAGED_AGENT_VAULT_ID="$VAULT_ID" ./provision.sh  # org API key, outside the worker
-# generate the environment key in the Console -> ANTHROPIC_ENVIRONMENT_KEY secret
-# deploy haku-managed-agent (env key + the HAKU_* clone/git env) in haku-sandbox
-ant beta:deployments run --deployment-id "$DEPL_ID"   # test one run, watch in Console
-```
-
-## Updating the agent / deployment (control plane)
-
-These are **control-plane** objects at Anthropic — `haku.{agent,environment,deployment}.yaml`
-are version-controlled here but applied with `ant` (org `ANTHROPIC_API_KEY`),
-**not** Flux. Editing the YAML alone changes nothing live. The two image-side
-files (`worker.py`, `nixos.nix`, `image.nix`, `entrypoint.sh`) no longer flow through
-CI + Flux while this experiment is parked. The recorded control-plane IDs are agent
-`agent_01CV5VupX8ALuVD1dsoEzHY6`, deployment
-`depl_011DSrUoXuhoDWJoPyDuePqR` (haku-scan), environment
-`env_015uqL9WAMSDytQEWWmLG9zF`.
-
-This self-hosted agent is distinct from the Anthropic-hosted cloud agent and was
-left in place. Its old shared-vault credentials were deleted, so treat it as
-inactive until a fresh vault is assigned to the deployment.
-
-The former shared vault and MCP credentials were deleted. On reactivation, first
-create a fresh vault with credentials for the configured MCP servers, set
-`HAKU_MANAGED_AGENT_VAULT_ID` for `provision.sh`, and point the deployment at that
-vault. Do not use an ID read from the possibly stale `haku-cloud-agent-ids` Secret.
-
-After editing `haku.agent.yaml`, apply it and re-pin in **both** steps:
-
-```sh
-# 1. Push the new agent version. The YAML is the request body (stdin); --version
-#    is the CURRENT version (optimistic-concurrency guard) — get it from retrieve.
-cur=$(ant beta:agents retrieve --agent-id "$AGENT_ID" --transform version -r)
-ant beta:agents update --agent-id "$AGENT_ID" --version "$cur" < haku.agent.yaml
-#    -> returns the new version (e.g. 3)
-
-# 2. RE-PIN the deployment. It pins a SPECIFIC agent version, so a fresh agent
-#    version is ignored until you re-pin. A bare agent ID re-pins to latest:
-ant beta:deployments update --deployment-id "$DEPL_ID" --agent "$AGENT_ID"
-ant beta:deployments retrieve --deployment-id "$DEPL_ID" --transform '{agent}'  # confirm version bumped
-```
-
-`haku.deployment.yaml` (schedule, initial events) is likewise applied with
-`ant beta:deployments update` (flags like `--schedule`, `--initial-event`).
-
-Test + observe:
-
-```sh
-ant beta:deployments run --deployment-id "$DEPL_ID" --transform '{id}'  # the run's session_id is in the response
-ant beta:sessions:events list "$SID"                                    # transcript (tool_use vs tool_result)
-ant beta:sessions delete --session-id "$SID"  # end a stuck/parked session; the worker force-stops the
-                                              # work item and returns to polling (no pod restart needed)
-```
-
-**Gotcha:** a deployment run uses the agent version the deployment pins _at run
-time_, and a parked session keeps the version it was created with — so re-pin
-**before** triggering a wake, and start a fresh session to pick up the change
-(re-pinning doesn't migrate an in-flight session).
-
-### Reading a session transcript
-
-`ant beta:sessions:events list <SID>` is the control-plane (org-key) transcript.
-Use `--format jsonl` for one event per line so `jq` can parse it (the default
-`auto` pretty-prints; it is **not** a JSON array):
-
-```sh
-ant beta:sessions:events list "$SID" --format jsonl > events.jsonl
-
-# Conversation flow — the wake, the model's text, and every tool call:
-jq -r 'select(.type=="user.message" or .type=="agent.message")
-       | "[\(.type)] \([.content[]?|.text//empty]|join(" "))"' events.jsonl
-jq -r 'select(.type|test("tool_use$")) | "TOOL \(.name)  \(.input|tojson[:160])"' events.jsonl
-
-# Tool results + errors (is_error=true is a tool-level failure, not a worker bug):
-jq -r 'select(.type|test("tool_result$")) | "\(.tool_use_id) is_error=\(.is_error)"' events.jsonl
-```
-
-Event types worth knowing: `user.message` (the wake), `agent.thinking`,
-`agent.message` (model text), `agent.tool_use` / `agent.mcp_tool_use` (calls),
-`user.tool_result` (results, keyed by `tool_use_id`), and
-`session.status_idle` / `session.thread_status_idle` carrying a `stop_reason`.
-
-**Diagnosing a stuck session:** a `*_tool_use` whose `id` has no matching
-`user.tool_result.tool_use_id` is the pending one. If the session is idle with
-`stop_reason.type == "requires_action"`, that tool is **awaiting approval** —
-its toolset's `permission_policy` is `always_ask` (set it to `always_allow` in
-`haku.agent.yaml` for unattended runs; that is the trust-boundary posture here).
-Distinguish from the old empty-output **deadlock** (now fixed): that showed a
-`tool_use` whose result never posted because the worker 400'd on empty text —
-here results post fine (`200 OK` in the pod logs); the agent is just **waiting**.
-
-The worker-side view is the pod logs (`kubectl logs deploy/haku-managed-agent
--n haku-sandbox`): `executing tool tool=… tool_use_id=…` then `POST …/events
-200` per result, `work/…/heartbeat` keeping the lease, and `session terminated`
-→ `work/…/stop` when a session ends.
-
-## Worker env
-
-`ANTHROPIC_ENVIRONMENT_ID`, `ANTHROPIC_ENVIRONMENT_KEY`, `HAKU_DUCKTAPE_REPO_URL`,
-`HAKU_STATE_REPO_URL`, `HAKU_GIT_HOST`, `HAKU_GIT_USERNAME`, `HAKU_GIT_PASSWORD`.
-`ANTHROPIC_WORKDIR` is optional and left unset — `worker.py` defaults it to `/workspace`, the
-shared `emptyDir`.
-
-The pod runs the closure directly (no systemd), so the Deployment's `env` lands
-straight in the entry process — plus the `HTTP(S)_PROXY`/`SSL_CERT_FILE` the
-`haku-sandbox` Kyverno policy injects for mitmproxy egress (httpx honors both via
-`trust_env`). Set the pod `fsGroup` to the `haku` gid so the `/workspace`
-emptyDir is writable.
-
-Beta-surface field/flag names (`agent_toolset_20260401`, `vault_ids`, the
-deployment schema) follow the `ant` docs as of 2026-06 — verify with
-`ant <cmd> --help`.
+Env: `ANTHROPIC_ENVIRONMENT_ID`, `ANTHROPIC_ENVIRONMENT_KEY`, `HAKU_DUCKTAPE_REPO_URL`,
+`HAKU_STATE_REPO_URL`, `HAKU_GIT_HOST`, `HAKU_GIT_USERNAME`, `HAKU_GIT_PASSWORD`;
+`ANTHROPIC_WORKDIR` unset (defaults to `/workspace`). Without systemd, Deployment `env` reaches the
+entry process directly, alongside the Kyverno-injected `HTTP(S)_PROXY` / `SSL_CERT_FILE` (httpx
+honors both via `trust_env`).
