@@ -34,16 +34,6 @@ let
     pkgs.markdownlint-cli2
     ducktapePkgs.prettier
     pkgs.kubeconform
-    (pkgs.writeShellApplication {
-      name = "ducktape-kubeconform";
-      runtimeInputs = [
-        (pkgs.python3.withPackages (ps: [ ps.pyyaml ]))
-        pkgs.kubeconform
-      ];
-      text = ''
-        exec python devinfra/precommit/run_kubeconform.py "$@"
-      '';
-    })
     pkgs.tflint
     pkgs.checkov
     # TODO: Consider a rustfmt-only package here, preserving cargo-fmt in
