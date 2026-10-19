@@ -12,6 +12,7 @@ GET /healthz
 GET /readyz
 GET /metrics
 GET /v1/quotas
+GET /v1/events
 GET /v1/providers/{provider}/raw
 ```
 
@@ -32,6 +33,14 @@ carries the bounded exact response bytes as base64, their full-body SHA-256 and
 original byte length. The exact-byte field is truncated only when the response
 exceeds the 1 MiB capture cap. It never returns request or response headers,
 OAuth refresh responses, cookies, or credentials.
+
+`/v1/events` uses the same browser-session or bearer authentication and sends
+Server-Sent Events. It first emits `event: view` with the complete `/v1/quotas`
+view JSON, then emits the latest view after each newly published quota snapshot.
+Updates coalesce to the newest snapshot for slow clients; reconnecting starts with
+the current view instead of replaying history. The stream sends a heartbeat comment
+every 10 seconds, disables proxy buffering, and also emits when a time-derived
+peak-burn status changes between provider polls.
 
 ## Browser dashboard and OAuth API
 
@@ -64,7 +73,13 @@ cached snapshot so the CLI and GNOME panel still show the most recent known
 quotas while offline.
 
 Responses use `Cache-Control: no-store`. The service keeps the most recent
-snapshot in process memory (default 120 seconds).
+snapshot in process memory (default 120 seconds). One background quota collector
+runs at the configured poll interval (default 300 seconds), even when ClickHouse
+is not configured and no clients are connected. Authenticated GETs may refresh an
+expired in-memory snapshot on demand; each newly fetched snapshot is published to
+all active event streams. When ClickHouse is configured, that same collector also
+persists each snapshot and readiness continues to wait for the first successful
+write.
 
 ## Historical collection
 

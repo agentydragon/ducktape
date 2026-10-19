@@ -27,7 +27,7 @@ import httpx
 import uvicorn
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Gauge, generate_latest
@@ -49,6 +49,7 @@ _bearer = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
 
 _FRONTEND_INDEX = "_main/aiquota/frontend/dist/index.html"
+_SSE_HEARTBEAT_SECONDS = 10
 
 
 class RawUpstreamResponse(BaseModel):
@@ -96,6 +97,135 @@ class HistorySink(Protocol):
     async def write_history(self, snapshot: HistorySnapshot) -> int: ...
 
 
+@dataclass(frozen=True)
+class SnapshotSubscription:
+    token: int
+    revision: int
+    snapshot: QuotaSnapshot
+
+
+class SnapshotFeed:
+    """One shared latest-snapshot feed for HTTP reads and event-stream clients.
+
+    Updates are kept as a single current value. Subscribers wait on a revision
+    predicate, so a slow client skips intermediate snapshots instead of
+    accumulating an unbounded queue.
+    """
+
+    def __init__(self, fetcher: SnapshotFetcher) -> None:
+        self._fetcher = fetcher
+        self._condition = asyncio.Condition()
+        self._fetch_lock = asyncio.Lock()
+        self._snapshot: QuotaSnapshot | None = None
+        self._revision = 0
+        self._fetch_revision = 0
+        self._next_subscriber = 0
+        self._subscribers: set[int] = set()
+
+    @property
+    def latest(self) -> QuotaSnapshot | None:
+        return self._snapshot
+
+    @property
+    def subscriber_count(self) -> int:
+        return len(self._subscribers)
+
+    async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot:
+        # Calls that were already waiting when a refresh began share its result,
+        # including forced collector calls. A later forced call starts a new
+        # provider poll as requested.
+        observed_fetch_revision = self._fetch_revision
+        async with self._fetch_lock:
+            if self._fetch_revision != observed_fetch_revision and self._snapshot is not None:
+                return self._snapshot
+            snapshot = await self._fetcher.fetch(force_refresh=force_refresh)
+            self._fetch_revision += 1
+            await self.publish(snapshot)
+            return snapshot
+
+    async def ensure_current(self) -> QuotaSnapshot:
+        # Let the source's existing 120-second cache decide whether reconnects
+        # need a provider refresh; the feed still coalesces concurrent misses.
+        return await self.fetch()
+
+    async def publish(self, snapshot: QuotaSnapshot, *, force: bool = False) -> int:
+        async with self._condition:
+            if not force and self._snapshot == snapshot:
+                return self._revision
+            self._snapshot = snapshot
+            self._revision += 1
+            self._condition.notify_all()
+            return self._revision
+
+    async def publish_time_transition(self, snapshot: QuotaSnapshot, expected_revision: int) -> None:
+        async with self._condition:
+            if self._revision != expected_revision or self._snapshot is not snapshot:
+                return
+            self._revision += 1
+            self._condition.notify_all()
+
+    async def subscribe_current(self) -> SnapshotSubscription:
+        async with self._condition:
+            assert self._snapshot is not None
+            self._next_subscriber += 1
+            token = self._next_subscriber
+            self._subscribers.add(token)
+            self._condition.notify_all()
+            return SnapshotSubscription(token, self._revision, self._snapshot)
+
+    async def open_subscription(self) -> SnapshotSubscription:
+        await self.ensure_current()
+        return await self.subscribe_current()
+
+    async def close_subscription(self, token: int) -> None:
+        async with self._condition:
+            self._subscribers.discard(token)
+            self._condition.notify_all()
+
+    async def wait_for_subscribers(self, count: int) -> None:
+        async with self._condition:
+            await self._condition.wait_for(lambda: len(self._subscribers) == count)
+
+    async def wait_after(self, revision: int) -> tuple[int, QuotaSnapshot]:
+        async with self._condition:
+            await self._condition.wait_for(lambda: self._revision > revision)
+            assert self._snapshot is not None
+            return self._revision, self._snapshot
+
+    async def _wait_for_snapshot(self) -> tuple[int, QuotaSnapshot]:
+        async with self._condition:
+            await self._condition.wait_for(lambda: self._snapshot is not None)
+            assert self._snapshot is not None
+            return self._revision, self._snapshot
+
+    async def run_time_transitions(self) -> None:
+        """Republish when a view's time-derived peak-burn status changes."""
+        while True:
+            revision, snapshot = await self._wait_for_snapshot()
+            transition = _next_view_transition(snapshot)
+            if transition is None:
+                await self.wait_after(revision)
+                continue
+            delay = max(0.0, (transition - datetime.now(UTC)).total_seconds())
+            try:
+                await asyncio.wait_for(self.wait_after(revision), timeout=delay)
+            except TimeoutError:
+                # A new revision is useful even though the provider snapshot is
+                # unchanged: clients must recompute its time-derived view now.
+                # The revision guard prevents a timer from replacing a newer
+                # provider snapshot that arrived as its timeout expired.
+                await self.publish_time_transition(snapshot, revision)
+
+
+def _next_view_transition(snapshot: QuotaSnapshot) -> datetime | None:
+    changes = [provider.burn.changes_at for provider in to_view(snapshot.quotas).providers if provider.burn is not None]
+    return min(changes) if changes else None
+
+
+def _view_event(snapshot: QuotaSnapshot) -> bytes:
+    return f"event: view\ndata: {to_view(snapshot.quotas).model_dump_json()}\n\n".encode()
+
+
 class CollectorMetrics:
     def __init__(self, registry: CollectorRegistry | None = None) -> None:
         self.registry = registry or CollectorRegistry()
@@ -133,10 +263,10 @@ class CollectorMetrics:
 
 
 class BackgroundCollector:
-    """Continuously refresh providers and append each snapshot to a sink."""
+    """Continuously refresh providers and optionally append snapshots to a sink."""
 
     def __init__(
-        self, fetcher: SnapshotFetcher, sink: SnapshotSink, *, interval: timedelta, metrics: CollectorMetrics
+        self, fetcher: SnapshotFetcher, sink: SnapshotSink | None, *, interval: timedelta, metrics: CollectorMetrics
     ) -> None:
         self._fetcher = fetcher
         self._sink = sink
@@ -144,6 +274,15 @@ class BackgroundCollector:
         self.metrics = metrics
         self.has_persisted = False
         self.is_running = False
+        self._has_collected = False
+
+    @property
+    def requires_persistence_for_readiness(self) -> bool:
+        return self._sink is not None
+
+    def bind_fetcher(self, fetcher: SnapshotFetcher) -> None:
+        """Use the app's publication feed for collector snapshots as well."""
+        self._fetcher = fetcher
 
     async def run(self) -> None:
         self.is_running = True
@@ -156,7 +295,10 @@ class BackgroundCollector:
 
     async def poll_once(self) -> None:
         try:
-            snapshot = await self._fetcher.fetch(force_refresh=True)
+            # The first poll joins a simultaneous lazy GET/SSE seed fetch. Later
+            # polls preserve the configured unconditional refresh cadence.
+            snapshot = await self._fetcher.fetch(force_refresh=self._has_collected)
+            self._has_collected = True
         except httpx.HTTPError, OSError:
             self.metrics.polls.labels(result="error").inc()
             logger.exception("aiquota quota fetch failed")
@@ -165,6 +307,9 @@ class BackgroundCollector:
             self.metrics.provider_success.labels(provider=provider.provider).set(
                 1 if isinstance(provider.last_output.result, FetchSuccess) else 0
             )
+        if self._sink is None:
+            self.metrics.polls.labels(result="success").inc()
+            return
         try:
             rows = await self._sink.write(snapshot)
         except httpx.HTTPError, OSError:
@@ -411,10 +556,14 @@ def create_app(
     browser_oauth: BrowserOAuth | None = None,
 ) -> FastAPI:
     app_metrics = metrics or (collector.metrics if collector else CollectorMetrics())
+    feed = fetcher if isinstance(fetcher, SnapshotFeed) else SnapshotFeed(fetcher)
+    if collector is not None:
+        collector.bind_fetcher(feed)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         async with anyio.create_task_group() as tasks:
+            tasks.start_soon(feed.run_time_transitions, name="aiquota-view-transitions")
             if collector is not None:
                 tasks.start_soon(collector.run, name="aiquota-clickhouse-collector")
             if history_collector is not None:
@@ -426,7 +575,8 @@ def create_app(
 
     app = FastAPI(title="aiquota API", version="1", lifespan=lifespan)
     app.state.bearer_token = bearer_token
-    app.state.fetcher = fetcher
+    app.state.fetcher = feed
+    app.state.snapshot_feed = feed
     app.state.oauth_username = browser_oauth.username if browser_oauth else None
 
     @app.get("/healthz")
@@ -437,7 +587,9 @@ def create_app(
     async def readyz() -> JSONResponse:
         if not all(runner is None or runner.is_running for runner in (collector, history_collector)):
             return JSONResponse({"status": "unavailable"}, status_code=503)
-        if collector is None or collector.has_persisted:
+        if collector is None or not collector.requires_persistence_for_readiness:
+            return JSONResponse({"status": "ready"})
+        if collector.has_persisted:
             return JSONResponse({"status": "ready"})
         return JSONResponse({"status": "collecting"}, status_code=503)
 
@@ -450,6 +602,35 @@ def create_app(
         snapshot = await service.fetch()
         response.headers.update(_CACHE_CONTROL)
         return to_view(snapshot.quotas)
+
+    @app.get("/v1/events", dependencies=[Depends(_require_api_auth)])
+    async def events(request: Request) -> StreamingResponse:
+        await feed.ensure_current()
+
+        async def event_stream() -> AsyncIterator[bytes]:
+            subscription = await feed.subscribe_current()
+            revision = subscription.revision
+            try:
+                yield _view_event(subscription.snapshot)
+                while True:
+                    if await request.is_disconnected():
+                        return
+                    try:
+                        revision, snapshot = await asyncio.wait_for(
+                            feed.wait_after(revision), timeout=_SSE_HEARTBEAT_SECONDS
+                        )
+                    except TimeoutError:
+                        if await request.is_disconnected():
+                            return
+                        yield b": heartbeat\n\n"
+                    else:
+                        yield _view_event(snapshot)
+            finally:
+                await feed.close_subscription(subscription.token)
+
+        return StreamingResponse(
+            event_stream(), media_type="text/event-stream", headers={**_CACHE_CONTROL, "X-Accel-Buffering": "no"}
+        )
 
     @app.get("/v1/providers/{provider}/raw", dependencies=[Depends(_require_api_auth)])
     async def provider_raw(provider: str, service: Annotated[SnapshotFetcher, Depends(_fetcher)]) -> JSONResponse:
@@ -542,7 +723,8 @@ def main() -> None:
         cli_proxy_api_key=settings.cli_proxy_api_key.get_secret_value() if settings.cli_proxy_api_key else None,
     )
     metrics = CollectorMetrics()
-    collector: BackgroundCollector | None = None
+    feed = SnapshotFeed(service)
+    sink: ClickHouseSnapshotSink | None = None
     history_collector: HistoryCollector | None = None
     if settings.clickhouse_url:
         assert settings.clickhouse_password is not None
@@ -554,16 +736,16 @@ def main() -> None:
             raw_table=settings.clickhouse_raw_table,
             windows_table=settings.clickhouse_windows_table,
         )
-        collector = BackgroundCollector(
-            service, sink, interval=timedelta(seconds=settings.poll_interval_seconds), metrics=metrics
-        )
         history_collector = HistoryCollector(
             service, sink, interval=timedelta(seconds=settings.history_interval_seconds), metrics=metrics
         )
+    collector = BackgroundCollector(
+        feed, sink, interval=timedelta(seconds=settings.poll_interval_seconds), metrics=metrics
+    )
     uvicorn.run(
         create_app(
             bearer_token=settings.api_bearer_token,
-            fetcher=service,
+            fetcher=feed,
             collector=collector,
             history_collector=history_collector,
             metrics=metrics,

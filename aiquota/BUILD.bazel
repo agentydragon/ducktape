@@ -269,9 +269,13 @@ py_test(
     imports = [".."],
     deps = [
         ":api",
+        ":config",
         ":models",
         ":settings",
         "//:conftest",
+        "//util:net",
+        "//util/testing:asgi",
+        "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

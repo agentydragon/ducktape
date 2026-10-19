@@ -1,16 +1,34 @@
+import asyncio
 import base64
-from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
+import json
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 import pytest
 import pytest_asyncio
 import pytest_bazel
+from fastapi import FastAPI
 
-from aiquota.api import BrowserOAuth, QuotaSnapshot, RawUpstreamResponse, _CapturingClientFactory, create_app
-from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
+from aiquota import api
+from aiquota.api import (
+    BackgroundCollector,
+    BrowserOAuth,
+    CollectorMetrics,
+    QuotaAPIService,
+    QuotaSnapshot,
+    RawUpstreamResponse,
+    SnapshotFeed,
+    _CapturingClientFactory,
+    create_app,
+)
+from aiquota.config import Config
+from aiquota.models import AllQuotas, FetchError, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
 from aiquota.settings import Settings
+from util.net import bind_free_port
+from util.testing.asgi import serve_app_in_loop
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -18,7 +36,7 @@ if __name__ == "__main__":
 
 class FakeFetcher:
     def __init__(self) -> None:
-        now = datetime(2026, 8, 20, 4, 0, tzinfo=UTC)
+        now = datetime.now(UTC)
         self.calls = 0
         self.snapshot = QuotaSnapshot(
             quotas=AllQuotas(
@@ -102,7 +120,7 @@ async def test_quota_api_requires_an_oauth_session_or_bearer() -> None:
     )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="https://aiquota.test") as browser:
-        response = await browser.get("/v1/quotas")
+        response = await browser.get("/v1/events")
     assert response.status_code == 401
 
 
@@ -124,9 +142,10 @@ async def test_metrics_are_public(client: httpx.AsyncClient) -> None:
     assert "aiquota_collector_ready" in response.text
 
 
+@pytest.mark.parametrize("path", ["/v1/quotas", "/v1/events"])
 @pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic test-bearer"}])
-async def test_quota_endpoints_require_bearer(client: httpx.AsyncClient, headers: dict[str, str]) -> None:
-    response = await client.get("/v1/quotas", headers=headers)
+async def test_quota_endpoints_require_bearer(client: httpx.AsyncClient, path: str, headers: dict[str, str]) -> None:
+    response = await client.get(path, headers=headers)
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
 
@@ -185,3 +204,252 @@ async def test_capture_preserves_exact_bounded_upstream_bytes() -> None:
     assert base64.b64decode(raw.body_base64) == body
     assert raw.body_size_bytes == len(body)
     assert raw.truncated is False
+
+
+def _make_snapshot(used_percent: float, fetched_at: datetime) -> QuotaSnapshot:
+    return QuotaSnapshot(
+        quotas=AllQuotas(
+            fetched_at=fetched_at,
+            providers=[
+                ProviderQuota(
+                    provider="claude",
+                    last_output=ProviderFetch(
+                        fetched_at=fetched_at,
+                        result=FetchSuccess(
+                            windows=[
+                                QuotaWindow(used_percent=used_percent, reset_seconds=3600, window_seconds=5 * 3600)
+                            ]
+                        ),
+                    ),
+                )
+            ],
+        ),
+        raw_responses={},
+    )
+
+
+@asynccontextmanager
+async def _serve_api(app: FastAPI) -> AsyncIterator[str]:
+    sock = bind_free_port()
+    async with serve_app_in_loop(app, sock=sock):
+        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
+
+
+async def _read_view(lines: AsyncIterator[str]) -> dict[str, object]:
+    event: str | None = None
+    data: str | None = None
+    async for line in lines:
+        if line.startswith("event: "):
+            event = line.removeprefix("event: ")
+        elif line.startswith("data: "):
+            data = line.removeprefix("data: ")
+        elif not line and event is not None:
+            assert event == "view"
+            assert data is not None
+            return json.loads(data)
+    raise AssertionError("event stream ended before a view")
+
+
+async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    class CountingProvider:
+        name = "claude"
+
+        def __init__(self) -> None:
+            self.fetches = 0
+            self.used_percent = 45.0
+            self.fail = False
+
+        async def fetch(self) -> ProviderFetch:
+            self.fetches += 1
+            if self.fail:
+                return ProviderFetch(fetched_at=datetime.now(UTC), result=FetchError(error="provider unavailable"))
+            return ProviderFetch(
+                fetched_at=datetime.now(UTC),
+                result=FetchSuccess(
+                    windows=[QuotaWindow(used_percent=self.used_percent, reset_seconds=3600, window_seconds=5 * 3600)]
+                ),
+            )
+
+    provider = CountingProvider()
+    monkeypatch.setattr(api, "_instantiate", lambda _config, **_kwargs: [provider])
+    service = QuotaAPIService(Config())
+    app = create_app(bearer_token="test-bearer", fetcher=service)
+    feed: SnapshotFeed = app.state.snapshot_feed
+    auth = {"Authorization": "Bearer test-bearer"}
+
+    async with (
+        _serve_api(app) as url,
+        httpx.AsyncClient(base_url=url) as client,
+        client.stream("GET", "/v1/events", headers=auth) as first,
+        client.stream("GET", "/v1/events", headers=auth) as second,
+    ):
+        first_lines = first.aiter_lines().__aiter__()
+        initial = await _read_view(first_lines)
+        assert first.headers["content-type"].startswith("text/event-stream")
+        assert first.headers["cache-control"] == "no-store"
+        assert first.headers["x-accel-buffering"] == "no"
+        assert initial["providers"][0]["last_output"]["result"]["windows"][0]["used_percent"] == 45.0
+        quotas_response = await client.get("/v1/quotas", headers=auth)
+        assert quotas_response.status_code == 200
+        assert initial == quotas_response.json()
+
+        second_lines = second.aiter_lines().__aiter__()
+        second_view = await _read_view(second_lines)
+        assert second_view == initial
+        assert provider.fetches == 1  # The second client used the service's fresh cache.
+
+        service._cache_ttl = timedelta(0)
+        provider.used_percent = 52.0
+        quota_response = await client.get("/v1/quotas", headers=auth)
+        assert quota_response.status_code == 200
+        first_update = await _read_view(first_lines)
+        second_update = await _read_view(second_lines)
+        assert first_update["providers"][0]["last_output"]["result"]["windows"][0]["used_percent"] == 52.0
+        assert second_update == first_update
+        assert provider.fetches == 2  # One refresh reached both clients.
+
+        provider.fail = True
+        stale_response = await client.get("/v1/quotas", headers=auth)
+        assert stale_response.status_code == 200
+        stale_update = await _read_view(first_lines)
+        assert stale_update == stale_response.json()
+        assert stale_update["providers"][0]["last_output"]["result"]["kind"] == "error"
+        assert stale_update["providers"][0]["last_success"]["result"]["windows"][0]["used_percent"] == 52.0
+        assert provider.fetches == 3
+
+    await feed.wait_for_subscribers(0)
+
+
+@pytest.mark.parametrize("start_with_collector", [False, True])
+async def test_initial_sse_and_collector_fetch_are_coalesced(start_with_collector: bool) -> None:
+    class BlockingFetcher(FakeFetcher):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot:
+            self.calls += 1
+            self.started.set()
+            await self.release.wait()
+            return self.snapshot
+
+    fetcher = BlockingFetcher()
+
+    class TrackedFeed(SnapshotFeed):
+        def __init__(self, source: BlockingFetcher) -> None:
+            super().__init__(source)
+            self.requests = 0
+            self.second_request = asyncio.Event()
+
+        async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot:
+            self.requests += 1
+            if self.requests == 2:
+                self.second_request.set()
+            return await super().fetch(force_refresh=force_refresh)
+
+    feed = TrackedFeed(fetcher)
+    collector = BackgroundCollector(feed, None, interval=timedelta(seconds=300), metrics=CollectorMetrics())
+
+    if start_with_collector:
+        collection = asyncio.create_task(collector.poll_once())
+        await fetcher.started.wait()
+        subscription_task = asyncio.create_task(feed.open_subscription())
+    else:
+        subscription_task = asyncio.create_task(feed.open_subscription())
+        await fetcher.started.wait()
+        collection = asyncio.create_task(collector.poll_once())
+    await feed.second_request.wait()
+    fetcher.release.set()
+    subscription = await subscription_task
+    await collection
+
+    assert fetcher.calls == 1
+    assert feed.latest is subscription.snapshot
+    await feed.close_subscription(subscription.token)
+
+
+async def test_background_collection_runs_without_clickhouse() -> None:
+    fetcher = FakeFetcher()
+    feed = SnapshotFeed(fetcher)
+    collector = BackgroundCollector(feed, None, interval=timedelta(seconds=300), metrics=CollectorMetrics())
+    app = create_app(bearer_token="test-bearer", fetcher=feed, collector=collector)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://aiquota.test") as client:
+        assert (await client.get("/readyz")).status_code == 503
+        async with app.router.lifespan_context(app):
+            await feed.wait_after(0)
+            assert collector.is_running
+            assert feed.latest is not None
+            assert (await client.get("/readyz")).status_code == 200
+    assert not collector.is_running
+
+
+async def test_clickhouse_failure_does_not_block_snapshot_publication() -> None:
+    class FailingSink:
+        async def write(self, snapshot: QuotaSnapshot) -> int:
+            raise OSError("ClickHouse unavailable")
+
+    feed = SnapshotFeed(FakeFetcher())
+    collector = BackgroundCollector(feed, FailingSink(), interval=timedelta(seconds=300), metrics=CollectorMetrics())
+    app = create_app(bearer_token="test-bearer", fetcher=feed, collector=collector)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        httpx.AsyncClient(transport=transport, base_url="http://aiquota.test") as client,
+        app.router.lifespan_context(app),
+    ):
+        await feed.wait_after(0)
+        assert feed.latest is not None
+        assert not collector.has_persisted
+        assert (await client.get("/readyz")).status_code == 503
+
+
+async def test_peak_transition_republishes_without_fetching(monkeypatch: pytest.MonkeyPatch) -> None:
+    fetcher = FakeFetcher()
+    feed = SnapshotFeed(fetcher)
+    subscription = await feed.open_subscription()
+    monkeypatch.setattr(api, "_next_view_transition", lambda _snapshot: datetime.now(UTC) + timedelta(seconds=0.02))
+    transition_task = asyncio.create_task(feed.run_time_transitions())
+    try:
+        revision, snapshot = await asyncio.wait_for(feed.wait_after(subscription.revision), timeout=0.5)
+        assert revision > subscription.revision
+        assert snapshot is subscription.snapshot
+        assert fetcher.calls == 1
+    finally:
+        transition_task.cancel()
+        await asyncio.gather(transition_task, return_exceptions=True)
+        await feed.close_subscription(subscription.token)
+
+
+async def test_old_peak_timer_cannot_replace_a_newer_snapshot() -> None:
+    fetcher = FakeFetcher()
+    feed = SnapshotFeed(fetcher)
+    subscription = await feed.open_subscription()
+    newer = _make_snapshot(60.0, datetime.now(UTC) + timedelta(seconds=1))
+    newer_revision = await feed.publish(newer)
+
+    await feed.publish_time_transition(subscription.snapshot, subscription.revision)
+
+    assert feed.latest is newer
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(feed.wait_after(newer_revision), timeout=0.01)
+    await feed.close_subscription(subscription.token)
+
+
+async def test_event_stream_heartbeats_and_disconnect_cleans_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(api, "_SSE_HEARTBEAT_SECONDS", 0.01)
+    fetcher = FakeFetcher()
+    app = create_app(bearer_token="test-bearer", fetcher=fetcher)
+    feed: SnapshotFeed = app.state.snapshot_feed
+    async with (
+        _serve_api(app) as url,
+        httpx.AsyncClient(base_url=url) as client,
+        client.stream("GET", "/v1/events", headers={"Authorization": "Bearer test-bearer"}) as response,
+    ):
+        lines = response.aiter_lines().__aiter__()
+        assert (await _read_view(lines))["providers"]
+        assert await anext(lines) == ": heartbeat"
+        assert await anext(lines) == ""
+        assert fetcher.calls == 1  # Heartbeats do not poll providers per client.
+    async with asyncio.timeout(1):
+        await feed.wait_for_subscribers(0)
