@@ -38,13 +38,7 @@ def _credentials(identity: str) -> SecretRef:
 def _identity(scope: Construct, name: str) -> S3Identity:
     """A publisher-local S3Identity plus the S3Credentials the operator mints its key pair
     into (`_credentials(name)`)."""
-    identity = s3.identity(
-        scope,
-        name,
-        name=name,
-        namespace=NAME,
-        reclaim_policy=s3.S3IdentitySpecReclaimPolicy.DELETE,
-    )
+    identity = s3.identity(scope, name, name=name, namespace=NAME, reclaim_policy=s3.S3IdentitySpecReclaimPolicy.DELETE)
     s3.credentials(
         scope,
         f"{name}-credentials",
