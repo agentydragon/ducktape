@@ -175,7 +175,7 @@ async def test_egress_credential_source_and_target_validation() -> None:
                 return
             await api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, "egresscredentials", body)
 
-        source_cases = [
+        source_cases: list[tuple[dict[str, Any], bool]] = [
             ({"secretRef": {"name": "api-token", "key": "token"}}, True),
             ({"authenticatedWorkloadToken": {}}, True),
             ({"projectedWorkloadToken": {"audience": "kubernetes"}}, True),

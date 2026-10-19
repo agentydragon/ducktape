@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from textwrap import indent
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from more_itertools import one
@@ -103,7 +103,7 @@ def with_subject_schema(crd_text: str, field: str) -> str:
 
 
 def _generated_crd(generated: str) -> dict[str, Any]:
-    crd = yaml.safe_load(generated)
+    crd = cast(dict[str, Any], yaml.safe_load(generated))
     annotations = crd["metadata"].get("annotations", {})
     annotations.pop("controller-gen.kubebuilder.io/version", None)
     if not annotations:
