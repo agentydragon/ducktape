@@ -1,34 +1,28 @@
-load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
-load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
 # Manual only: it runs k3s as root.
 
-# Test runners use the same runtime. Lifecycle tests need no native harness; the model smoke
-# adds only Claude. The full Nix-built toolbox image lives in agentplane/runner/image.nix.
-aspect_py_binary(
-    name = "runner_image_bin",
-    main = "runner_entrypoint.py",
-    deps = [":runner_entrypoint"],
-)
-
-runner_layers_oci_tars = shared_py_image_layers(
-    name = "runner_layers",
-    binary = ":runner_image_bin",
-    group = "1000",
-    owner = "1000",
+# Test runners use the Go executable. Keep Debian's shell utilities for bootstrap and
+# process-lifecycle fixtures; the Nix-built production image supplies the full toolset.
+pkg_tar(
+    name = "runner_binary",
+    srcs = ["//agentplane/runner/go/cmd:agentplane-runner"],
+    mode = "0755",
+    package_dir = "/usr/bin",
 )
 
 oci_image(
     name = "runner_image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("runner_image_bin"),
-    env = py_image_env(binary_name = "runner_image_bin"),
-    tars = runner_layers_oci_tars + ["//third_party/debian_slim:cacerts"],
+    entrypoint = ["/usr/bin/agentplane-runner"],
+    tars = [
+        ":runner_binary",
+        "//third_party/debian_slim:cacerts",
+    ],
     user = "1000:1000",
 )
 
@@ -217,12 +211,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
-)
-
-py_library(
-    name = "runner_entrypoint",
-    srcs = ["runner_entrypoint.py"],
-    deps = ["//agentplane/runner:main"],
 )
 
 py_library(

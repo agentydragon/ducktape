@@ -1,29 +1,33 @@
-# The one runner package consumed by both the OCI sandbox image and the NixOS guest.
+# The single static runner executable consumed by the OCI image and NixOS guest.
+# The existing artifact pin remains the old wheel until the first Go binary release is
+# published and sync-pins updates it. Reject that stale asset clearly during the cutover.
 {
-  pkgsUnstable,
-  wheel,
+  pkgs,
+  binary,
 }:
-let
-  python = pkgsUnstable.python314;
-in
-python.pkgs.buildPythonApplication {
+pkgs.stdenvNoCC.mkDerivation {
   pname = "agentplane-runner";
-  version = "latest";
-  format = "wheel";
-  src = wheel;
-  dependencies = with python.pkgs; [
-    aiosqlite
-    greenlet # sqlalchemy's asyncio extension
-    grpcio
-    grpcio-health-checking # agentplane.grpc.serving
-    httpx
-    protobuf
-    pydantic
-    sqlalchemy
-    tenacity
-    typer
-  ];
-  pythonImportsCheck = [
-    "agentplane.runner.main"
-  ];
+  version = "released";
+  dontUnpack = true;
+  dontBuild = true;
+  dontConfigure = true;
+  dontCheck = true;
+
+  preInstall = ''
+    magic="$(head -c 4 ${binary} | od -An -tx1 | tr -d '[:space:]')"
+    if [ "$magic" != "7f454c46" ]; then
+      echo "agentplane-runner artifact is not an ELF binary; wait for the Go release pin to sync" >&2
+      exit 1
+    fi
+  '';
+
+  installPhase = ''
+    install -Dm755 ${binary} $out/bin/agentplane-runner
+    ln -s agentplane-runner $out/bin/agentplane-runner-vm
+  '';
+
+  meta = {
+    mainProgram = "agentplane-runner";
+    platforms = [ "x86_64-linux" ];
+  };
 }

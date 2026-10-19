@@ -108,13 +108,13 @@ ducktapePkgs
   # Build: nix build .#agentplane-sandbox-build-image
   # Load:  docker load < result
   agentplane-sandbox-build-image = import ../../agentplane/images/build.nix { inherit pkgs; };
-  # agentplane's runner image: the sandbox image plus the released runner wheel and nixpkgs'
+  # agentplane's runner image: the sandbox image plus the released static runner binary and nixpkgs'
   # Claude Code and Codex (agentplane/runner/image.nix).
   # Build: nix build .#runner-image
   # Load:  docker load < result
   agentplane-runner = import ../../agentplane/runner/package.nix {
-    inherit pkgsUnstable;
-    wheel = artifacts.agentplane-runner;
+    inherit pkgs;
+    binary = artifacts.agentplane-runner;
   };
   runner-image = import ../../agentplane/runner/image.nix {
     inherit pkgs pkgsUnstable;

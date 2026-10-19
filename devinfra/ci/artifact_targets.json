@@ -81,8 +81,8 @@
       "release": "gazelle"
     },
     "agentplane-runner": {
-      "target": "//agentplane/runner:runner_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/agentplane/runner/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
+      "target": "//agentplane/runner:runner_release",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/agentplane/runner/go/cmd/agentplane-runner_/agentplane-runner",
       "release": "agentplane-runner"
     },
     "pr-visuals": {

@@ -22,7 +22,7 @@ from util.bazel.runfiles import get_required_path
 
 CLAUDE_BINARY = "claude_code_cli_linux_x64/claude"
 CODEX_BINARY = "agentplane_codex_cli_linux_x64/bin/codex"
-RUNNER_BINARY = "_main/agentplane/runner/main_bin"
+RUNNER_BINARY = "_main/agentplane/runner/go/cmd/agentplane-runner_/agentplane-runner"
 GO_RUNNER_BINARY = "_main/agentplane/runner/go/cmd/agentplane-runner_/agentplane-runner"
 TOKEN = "test-key"
 PLATFORM_INSTRUCTIONS = "Test platform guidance."

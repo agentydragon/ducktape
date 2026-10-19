@@ -36,8 +36,8 @@ egress proxy, egress sidecar and egress history migrator use the pinned
 `gcr.io/distroless/static-debian13:nonroot` base. Their binaries are
 built with `pure = "on"`; images retain explicit UID/GID `1000:1000` and working directory `/`.
 The base supplies CA certificates and timezone data. LLM ingress retains the repository's
-explicit CA bundle layer. These images have no shell; runners and Python services use their
-own runtime images.
+explicit CA bundle layer. These images have no shell. The Go runner uses its Nix sandbox image
+for native harnesses and workspace tools; Python services use their own runtime images.
 
 ## System overview
 

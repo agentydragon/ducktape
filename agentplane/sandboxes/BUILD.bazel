@@ -190,3 +190,13 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "guest_config",
+    srcs = ["guest_config.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = ["@pypi//pydantic"],
+)

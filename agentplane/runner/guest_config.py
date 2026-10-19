@@ -7,15 +7,15 @@ import logging
 import os
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Literal
 from urllib.parse import urlsplit
-
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from agentplane.runner.cgroups import AgentCgroups
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig, ServiceEndpoint
 from agentplane.runner.main import async_main
 from agentplane.runner.sandbox_launch import SandboxLaunch
+from agentplane.sandboxes.guest_config import CA_BUNDLE, Endpoint, GuestConfig
+
+__all__ = ["CA_BUNDLE", "Endpoint", "GuestConfig"]
 
 CONFIG_PATH = Path("/run/agentplane/config.json")
 # The Sandbox's own launch file, linked to its disk by vm.nix like the public config.
@@ -28,56 +28,7 @@ AGENT_GID = 107
 RUNNER_STATE_DIR = Path("/state")
 # The VM-local workspace disk, mounted where Pods keep Session working directories.
 WORKSPACE_DIR = RUNNER_STATE_DIR / "workspaces"
-CA_BUNDLE = Path("/run/agentplane/ca-certificates.crt")
 KUBECONFIG = Path("/run/agentplane/kubeconfig")
-
-
-class Endpoint(BaseModel):
-    """A service the runner dials through `proxy_url` (agentplane/docs/runner_control.md)."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    target: str = Field(min_length=1, description="host:port to dial.")
-    bearer: str = Field(min_length=1, description="Placeholder the egress proxy swaps for the guest's token.")
-
-
-class GuestConfig(BaseModel):
-    """Public per-environment launch values delivered on the ConfigMap disk."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    version: Literal[1]
-    control: Endpoint
-    ingress: Endpoint
-    llm_base_url: str = Field(min_length=1)
-    proxy_url: str = Field(min_length=1)
-    platform_instructions: str = Field(min_length=1, description="Standing instructions for every Session.")
-    console_autologin: bool = Field(
-        default=False,
-        description="Whether the serial console is a root shell without a login (vm.nix reads this field).",
-    )
-
-    @field_validator("llm_base_url", "proxy_url")
-    @classmethod
-    def http_origin(cls, value: str, info: ValidationInfo) -> str:
-        parsed = urlsplit(value)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.path not in {"", "/"}
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError(f"{info.field_name} must be an HTTP(S) origin URL")
-        try:
-            port = parsed.port
-        except ValueError as error:
-            raise ValueError(f"{info.field_name} has an invalid port") from error
-        if port == 0:
-            raise ValueError(f"{info.field_name} must not use port 0")
-        return value.rstrip("/")
 
 
 def read_guest_config(path: Path = CONFIG_PATH) -> GuestConfig:

@@ -1,18 +1,22 @@
-load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
 load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_EXEC_PROPERTIES")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
-py_binary(
+alias(
     name = "main_bin",
-    main_module = "agentplane.runner.main",
-    deps = [":main"],
+    actual = "//agentplane/runner/go/cmd:agentplane-runner",
+)
+
+alias(
+    name = "runner_release",
+    actual = "//agentplane/runner/go/cmd:agentplane-runner",
 )
 
 py_library(
     name = "adapter",
+    testonly = True,
     srcs = ["adapter.py"],
     deps = [
         "//agentplane/proto:event_pb2",
@@ -22,6 +26,7 @@ py_library(
 
 py_library(
     name = "claude",
+    testonly = True,
     srcs = ["claude.py"],
     deps = [
         ":adapter",
@@ -41,6 +46,7 @@ py_library(
 
 py_library(
     name = "codex",
+    testonly = True,
     srcs = ["codex.py"],
     deps = [
         ":adapter",
@@ -58,6 +64,7 @@ py_library(
 
 py_library(
     name = "config",
+    testonly = True,
     srcs = ["config.py"],
     deps = [
         ":cgroups",
@@ -70,6 +77,7 @@ py_library(
 
 py_library(
     name = "cgroups",
+    testonly = True,
     srcs = ["cgroups.py"],
 )
 
@@ -88,6 +96,7 @@ py_library(
 
 py_library(
     name = "harness_process",
+    testonly = True,
     srcs = ["harness_process.py"],
     data = [":harness_supervisor"],
     deps = [
@@ -98,6 +107,7 @@ py_library(
 
 rust_binary(
     name = "harness_supervisor",
+    testonly = True,
     srcs = [
         "harness_supervisor.rs",
         "pid_line.rs",
@@ -135,6 +145,7 @@ rust_binary(
 
 py_library(
     name = "main",
+    testonly = True,
     srcs = ["main.py"],
     deps = [
         ":config",
@@ -149,6 +160,7 @@ py_library(
 
 py_library(
     name = "reconnect",
+    testonly = True,
     srcs = ["reconnect.py"],
     deps = [
         "@pypi//grpcio",
@@ -158,6 +170,7 @@ py_library(
 
 py_library(
     name = "runner",
+    testonly = True,
     srcs = ["runner.py"],
     deps = [
         ":adapter",
@@ -181,6 +194,7 @@ py_library(
 
 py_library(
     name = "session",
+    testonly = True,
     srcs = ["session.py"],
     deps = [
         ":adapter",
@@ -204,6 +218,7 @@ py_library(
 
 py_library(
     name = "workspace",
+    testonly = True,
     srcs = ["workspace.py"],
     deps = [
         ":harness_process",
@@ -213,6 +228,7 @@ py_library(
 
 py_library(
     name = "store",
+    testonly = True,
     srcs = ["store.py"],
     deps = [
         ":harness",
@@ -397,53 +413,16 @@ py_test(
     ],
 )
 
-# The runner release (devinfra/ci/artifact_targets.json), which the Nix-built runner image installs
-# beside nixpkgs' Claude Code and Codex. The harness supervisor rides inside the wheel next to the
-# module that starts it, so the wheel is Linux x86_64 only.
-py_package(
-    name = "runner_pkg",
-    packages = ["agentplane"],
-    deps = [
-        ":guest_config",
-        ":main",
-    ],
-)
-
-py_wheel(
-    name = "runner_wheel",
-    distribution = "agentplane_runner",
-    entry_points = {
-        "console_scripts": [
-            "agentplane-runner = agentplane.runner.main:app",
-            "agentplane-runner-vm = agentplane.runner.guest_config:main",
-        ],
-    },
-    platform = "linux_x86_64",
-    python_requires = ">=3.14",
-    requires = [
-        "aiosqlite",
-        "grpcio",
-        "httpx",
-        # The generated *_pb2 modules refuse an older runtime than the protoc that wrote them.
-        "protobuf>=7.36,<8",
-        "pydantic>=2.0",
-        "sqlalchemy[asyncio]>=2.0",
-        "tenacity",
-        "typer",
-    ],
-    version = "0.1.0",
-    deps = [":runner_pkg"],
-)
-
 py_library(
     name = "guest_config",
+    testonly = True,
     srcs = ["guest_config.py"],
     deps = [
         ":cgroups",
         ":config",
         ":main",
         ":sandbox_launch",
-        "@pypi//pydantic",
+        "//agentplane/sandboxes:guest_config",
     ],
 )
 
@@ -545,6 +524,7 @@ py_test(
 
 py_library(
     name = "initialization",
+    testonly = True,
     srcs = ["initialization.py"],
     deps = [
         "//agentplane/proto:runner_pb2",
@@ -594,6 +574,7 @@ py_test(
 
 py_library(
     name = "journal",
+    testonly = True,
     srcs = ["journal.py"],
     deps = [
         ":observation",
@@ -608,6 +589,7 @@ py_library(
 
 py_library(
     name = "observation",
+    testonly = True,
     srcs = ["observation.py"],
     deps = [
         "//agentplane/proto:event_pb2",
@@ -724,6 +706,7 @@ py_test(
 
 py_library(
     name = "claude_history",
+    testonly = True,
     srcs = ["claude_history.py"],
     deps = [
         ":recovery",
@@ -736,6 +719,7 @@ py_library(
 
 py_library(
     name = "recovery",
+    testonly = True,
     srcs = ["recovery.py"],
     deps = [
         ":journal",
@@ -746,6 +730,7 @@ py_library(
 
 py_library(
     name = "codex_history",
+    testonly = True,
     srcs = ["codex_history.py"],
     deps = [
         ":recovery",
@@ -785,6 +770,7 @@ py_library(
 
 py_library(
     name = "model_config",
+    testonly = True,
     srcs = ["model_config.py"],
     deps = [
         "//agentplane/llm_ingress:models",
@@ -830,6 +816,7 @@ py_test(
 
 py_library(
     name = "control",
+    testonly = True,
     srcs = ["control.py"],
     deps = [
         ":journal",
@@ -884,6 +871,7 @@ py_test(
 
 py_library(
     name = "ingress",
+    testonly = True,
     srcs = ["ingress.py"],
     deps = [
         ":reconnect",
@@ -925,6 +913,7 @@ py_test(
 
 py_library(
     name = "sandbox_launch",
+    testonly = True,
     srcs = ["sandbox_launch.py"],
     deps = ["@pypi//pydantic"],
 )
@@ -941,6 +930,7 @@ py_library(
 
 py_library(
     name = "workspace_create",
+    testonly = True,
     srcs = ["workspace_create.py"],
 )
 

@@ -1,6 +1,6 @@
 # Agentplane runner
 
-A process that runs one native harness per session, Claude Code or Codex, and exposes both
+A statically linked Go executable that runs one native harness per session, Claude Code or Codex, and exposes both
 through one protocol, over the control stream and Event ingress it dials. The contract is in <SPEC.md>; the wire definition is
 [`agentplane/proto/runner.proto`](../proto/runner.proto).
 
@@ -20,28 +20,41 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 
 ## Layout
 
-- `runner.py`: the runner's sessions, their lifecycle, and journal follows; `main.py` is the process
-  entry point, configured by flags and credentialed from its environment.
-- `control.py`: the `Runner` service, served through the
-  [runner control stream](../docs/runner_control.md) the runner dials at `--control-target`; `ingress.py` pushes every session's journal to the runner's ingress at
-  `--ingress-target`; both reconnect through `reconnect.py`'s shared backoff.
-- `session.py`: one session's harness process and derived state; `store.py` the session metadata,
-  ingress acknowledgements and durable directory creation.
-- `journal.py`: one SQLite database per durable runner session. SQLAlchemy/aiosqlite transactions
-  commit command admission/outcome state with their exact protobuf `EventEntry` bytes. Coalesced
-  receipts link all originating commands to one Event in the same transaction. Publication and
-  follower wakeup happen after commit; storage failure or cancelled commit stops the writer until
-  recovery. `observation.py` maps harness-neutral observations to the generated Event vocabulary.
-- `harness_process.py`: one native harness child, its pipes, line framing, and exit; no protocol
-  knowledge. `harness_supervisor.rs` retains the state-owner descriptor across runner death,
-  forwards shutdown to the native process group, and reaps the native leader.
-- `config.py`: the runner-owned launch configuration, one `*Launch` per harness (binary, endpoint,
-  credential) under `RunnerConfig`; none of it crosses the protocol.
-- `initialization.py`: the durable, replayable log of the one bootstrap initialization a sandbox
-  may select.
-- `claude.py`, `codex.py`: the adapters, one per harness, behind `adapter.py`. They parse frames
-  with the wire models and reuse the frame constructors and launch configuration in
-  <../native/README.md>.
+- `go/runner.go` and `go/session.go`: durable Session reservations, admission, setup,
+  lazy native startup, command scheduling, recovery and quiesce.
+- `go/transport.go`: the outbound control tunnel and independent per-Session ingress
+  pushes, including heartbeat, replay, acknowledgement and backpressure.
+- `go/journal.go` and `go/store.go`: the existing SQLite schema, verbatim protobuf
+  Event blobs, session metadata, ingress acknowledgements and ownership lock.
+  Transactions use `database/sql` with the cgo-free SQLite driver. Outcomes and all
+  coalesced command receipts commit together; publication and waiter replies follow commit.
+- `go/process.go`, `go/supervisor.go` and `go/cgroups.go`: native pipes and process
+  isolation. The runner executes itself in an internal supervisor mode, which retains
+  the state-owner descriptor until native work is fenced. A private liveness pipe
+  detects parent death independently of the Go runtime's OS-thread lifetimes.
+- `go/adapter.go`, `go/claude.go` and `go/codex.go`: harness-specific launch and frame
+  translation. Unknown frames remain in raw history, and derived Events retain their sources.
+- `go/config.go`, `go/guest.go` and `go/cli.go`: explicit child environment and launch
+  configuration. `go/cmd/main.go` dispatches internal process modes before service startup.
+  `agentplane-runner-vm` is a symlink to this same executable.
+
+The production build and release target is `//agentplane/runner:runner_release`.
+The binary includes the supervisor and SQLite; the native Claude/Codex executables,
+workspace tools and CA certificates are supplied by the runtime image.
+
+The Python implementation and Rust helper remain test-only reference implementations
+for existing in-process integration tests. Bazel prevents production targets from
+linking them. Shared real-harness scenarios in `test_go_native.py` and subprocess
+restart scenarios in `test_restart.py` exercise the Go executable.
+
+## Release and image inputs
+
+`package.nix` installs the released executable from the `agentplane-runner` artifact pin.
+Both image workflows build the exact source commit through BuildBuddy and override
+that artifact for the image build. The first Go release must pass the normal artifact
+publication and pin synchronization before a standalone Nix build can use the released
+binary; a previous wheel pin fails the package's ELF check instead of being installed
+as an executable. No existing Session files are deleted during this transition.
 
 ## VM workspace disk
 
@@ -99,11 +112,11 @@ fsync-boundary storage image for session metadata and directory discovery.
 
 ## Native continuation evidence
 
-`recovery.py` reconstructs observed item content from the journal's indexed turn boundaries.
+`go/recovery.go` reconstructs observed item content from the journal's indexed turn boundaries.
 The adapters compare it with native continuation evidence and emit `ConversationReconciled`;
 the app only folds that neutral report.
 
-- `claude_history.py` walks the persisted main parent chain, correlates split assistant blocks,
+- `go/claude_history.go` walks the persisted main parent chain, correlates split assistant blocks,
   and removes what Claude's resume loader removes: messages with an unresolved tool call, then a
   message holding only thinking once no other entry of its message id is left, so thinking
   before a tool that never answered is not replayed even though the transcript holds it. Ordinary
@@ -112,7 +125,7 @@ the app only folds that neutral report.
   of its message was written, and thinking that would otherwise be absent is unknown when a native
   line of the turn could not be parsed. Compacted or missing history and unfinished live tool outcomes
   remain unknown. The reader is tested against Claude Code 2.1.252.
-- `codex_history.py` reads model `response_item` records, not the app-server's reconstructed
+- `go/codex_history.go` reads model `response_item` records, not the app-server's reconstructed
   turn-item projection, which can omit an unresolved call still sent to the model. In Codex
   0.157.0, `core/src/tasks/mod.rs` flushes the interrupted-turn marker before the terminal
   notification and then flushes that event; `core/src/context_manager/normalize.rs` supplies
@@ -132,7 +145,7 @@ Both harnesses retain the tested completed results.
 
 The connection uses `journal_mode=DELETE` and `synchronous=EXTRA`; publication relies on SQLite's
 [durable rollback-journal commits](https://sqlite.org/pragma.html#pragma_synchronous) and storage honoring sync.
-An async lock owns each complete transaction; the driver's per-statement queue alone does not.
+A journal mutex owns each complete transaction, including batch publication.
 Explicit `BEGIN IMMEDIATE` reserves the writer before reading ids/cursors; no transaction spans
 harness or network I/O. One retained connection serves the single runner-session writer.
 That SQLite transaction is not the native-execution fence: a runner owns its whole retained state
@@ -144,15 +157,15 @@ the replacement cannot start until native work is fenced. A child that remains i
 the inherited lock even after its harness leader exits. See <SPEC.md#durability-and-restart> for
 the supported-storage and escaped-process boundary.
 
-The stdout reader commits in groups (`Journal.batch`): the lines one pipe read delivered and the
+The stdout reader commits in groups (`Journal.WithBatch`): the lines one pipe read delivered and the
 Events derived from them share a transaction, so a burst of output costs one commit rather than one
 per Event. It commits early before writing to the harness, so the record precedes the write, and
 before waiting on the session lock.
 
-The adapter's `on_frame`, called by the reader in frame order, records every Event derived from the
+The adapter's `OnFrame`, called by the reader in frame order, records every Event derived from the
 harness's output, and each such Event names its Native sources. A command whose effect a reply
 proves (Codex's `turn/start`, Claude's `set_model`) keeps what the reply means under the request's
-native id before sending it, and `on_frame` records the effect when the reply arrives. The requester
+native id before sending it, and `OnFrame` records the effect when the reply arrives. The requester
 still waits for the reply, only to dispatch normal commands one at a time; it gets the reply once
 the batch recording it and its translation commits.
 
@@ -168,8 +181,8 @@ The SQLite journal stores a recovery checkpoint in the same transaction as each 
 Opening a session reads that checkpoint and validates the last event, without decoding
 historical frames. Journal follows, such as a session's ingress push, query exclusive-cursor pages of
 128 events on the retained journal connection under its transaction lock, limited to the published
-cursor. A cancelled follow waits for its read session to close before releasing that lock to a
-native callback. A slow follow retains one page.
+cursor. Reads close their SQL rows before releasing that lock to a native callback. A slow
+follow retains one page.
 Completed command IDs and debug checkpoint identities are looked up by their indexed
 keys rather than retained in process-lifetime sets. Outstanding commands remain in memory.
 

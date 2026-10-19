@@ -1,17 +1,21 @@
 # Build the NixOS Agentplane runner guest and publish its qcow2 containerDisk.
 name: Agentplane Runner VM Image
 
-# Python sources enter this image through the agentplane-runner artifact pin.
-# Keep automatic triggers on Nix/image inputs; source-wheel experiments are manual.
+# The Go executable normally enters through the agentplane-runner artifact pin.
+# PR and devel builds override it with the exact checked-out binary so a stale pin
+# cannot produce an image with the previous runner during the release/pin cycle.
 on:
   push:
     branches: [devel]
     paths:
+      - ".github/actions/build-agentplane-runner/action.yml"
       - ".github/actions/setup-ci-secrets/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
+      - "agentplane/runner/BUILD.bazel"
       - "agentplane/runner/container-disk.nix"
+      - "agentplane/runner/go/**"
       - "agentplane/runner/package.nix"
       - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
@@ -28,11 +32,14 @@ on:
   pull_request:
     paths:
       # keep-sorted start
+      - ".github/actions/build-agentplane-runner/action.yml"
       - ".github/actions/setup-ci-secrets/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
+      - "agentplane/runner/BUILD.bazel"
       - "agentplane/runner/container-disk.nix"
+      - "agentplane/runner/go/**"
       - "agentplane/runner/package.nix"
       - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
@@ -51,11 +58,14 @@ on:
     branches: [devel]
     paths:
       # keep-sorted start
+      - ".github/actions/build-agentplane-runner/action.yml"
       - ".github/actions/setup-ci-secrets/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
+      - "agentplane/runner/BUILD.bazel"
       - "agentplane/runner/container-disk.nix"
+      - "agentplane/runner/go/**"
       - "agentplane/runner/package.nix"
       - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
@@ -70,8 +80,8 @@ on:
       # keep-sorted end
   workflow_dispatch:
     inputs:
-      build_runner_wheel:
-        description: Build the runner wheel from this checkout instead of the artifact pin
+      build_runner_binary:
+        description: Build the runner binary from this checkout instead of the artifact pin
         type: boolean
         default: false
 
@@ -122,7 +132,7 @@ jobs:
       flake_output: agentplane-runner-vm-container-disk
       image_name: agentplane-runner-vm
       image: git.allegedly.works/ducktape-ci/agentplane-runner-vm
-      build_runner_wheel: ${{ github.event_name == 'workflow_dispatch' && inputs.build_runner_wheel }}
+      build_runner_binary: ${{ github.event_name != 'workflow_dispatch' || inputs.build_runner_binary }}
       attic: true
       source_commit: ${{ needs.resolve-merge-commit.outputs.sha }}
       allow_unsafe_pr_checkout: ${{ github.event_name == 'pull_request_target' }}

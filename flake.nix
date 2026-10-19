@@ -176,10 +176,10 @@
         config.allowUnfree = true;
       };
 
-      # One released wheel package is shared by the OCI runner image and the VM guest.
+      # One released static Go binary package is shared by the OCI runner image and VM guest.
       agentplaneRunner = import ./agentplane/runner/package.nix {
-        inherit pkgsUnstable;
-        wheel = artifacts.agentplane-runner;
+        inherit pkgs;
+        binary = artifacts.agentplane-runner;
       };
 
       pkgsMaster = import nixpkgs-master {
