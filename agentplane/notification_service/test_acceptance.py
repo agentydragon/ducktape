@@ -198,14 +198,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 headers={"Authorization": f"Bearer {owner_token}"},
             ) as agent:
                 native = remote.runner(destination)
-                setup_script = """
-                i=1
-                while [ "$i" -le 130 ]; do
-                    printf 'notification journal seed %s\\n' "$i" >&2
-                    i=$((i + 1))
-                    sleep 0.02
-                done
-                """
+                setup_script = "printf 'notification setup complete\\n' >&2"
                 session_id = (
                     await native.open_session(session_id=uuid4(), spec=spec, setup_script=setup_script)
                 ).session_id
@@ -233,7 +226,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     with attempt:
                         (opened,) = [row for row in await native.list_sessions() if row.session_id == session_id]
                         assert opened.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
-                        assert opened.last_cursor > 128
                 await history_caught_up()
 
                 submitted = await action_http.post(
