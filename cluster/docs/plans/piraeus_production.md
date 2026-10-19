@@ -1,9 +1,44 @@
 # Piraeus production rollout
 
-Proposed work, based on the [2026-10-19 read-only inventory](../../debug/piraeus_inventory_2026_10_19/README.md).
+Proposed work for [storage issue #4717](https://github.com/agentydragon/ducktape/issues/4717),
+based on the [2026-10-19 read-only inventory](../../debug/piraeus_inventory_2026_10_19/README.md).
 This PR changes documentation and evidence only. Rollout, disk conversion and
 application migration require subsequent scoped changes. Remove completed work
 from this plan as it lands.
+
+## Handoff: deferred, 2026-10-19
+
+**Production rollout deferred; disk layout not approved; migration not started.**
+The occupied-disk conversion is a larger migration than the user wants to
+undertake now. Resume by finding a smaller, less disruptive path, or revisit the
+design after further consideration. The VG/LV sizes and XFS choice below remain
+proposals, not settled decisions or an execution runbook.
+
+Preserve the Talos-first scope: NixOS support is a separate later rollout.
+The requested SSD/HDD and one-/two-copy variants, thin provisioning, Block and
+Filesystem volumes, and automatic locality remain the desired behavior.
+
+The [inventory](../../debug/piraeus_inventory_2026_10_19/README.md),
+[FILE_THIN canary](../../debug/drbd_canary/results.md),
+[automatic-movement results](../../debug/drbd_canary/auto_diskful/results.md), and
+[storage benchmarks](../../debug/piraeus_storage_bench/README.md) preserve the
+evidence. LVM_THIN runtime behavior and Talos/LINSTOR shared-VG ownership are
+unvalidated; offline YAML validation does not establish either.
+
+On resumption:
+
+- First answer: **can we obtain useful production storage incrementally without
+  rebuilding occupied data disks?** Compare candidate paths by required capacity,
+  application downtime, production support and recovery behavior.
+- If disk conversion remains necessary, reconsider allocation sizes and the
+  legacy filesystem before committing to them. Growing from VG reserve is easier
+  than reclaiming space from XFS or an existing thin pool. Ext4's offline shrink
+  capability is a reason to evaluate it, not a tested Talos procedure here.
+- Refresh disk identities, usage, PVC consumers and backup/restore evidence
+  before any allocation decision. The inventory is timestamped, not live state.
+- Review the selected design and its disposable-storage acceptance results before
+  proposing a per-node conversion. No production conversion or workload migration
+  follows from this documentation PR alone.
 
 ## Target behavior
 
@@ -34,7 +69,7 @@ locality goal is auto-diskful with cleanup: one copy follows a one-copy consumer
 two-copy movement temporarily adds a third copy then returns to two. Local
 copying requires a compatible pool and space on the consumer node.
 
-Use LVM_THIN for the production target. Our accepted performance and movement
+The design below proposes LVM_THIN for production. Our accepted performance and movement
 tests used FILE_THIN; they do not validate LVM_THIN or its failure behavior.
 [LINBIT describes File/FileThin as mainly demonstration/experiment backends](https://linbit.com/drbd-user-guide/linstor-guide-1_0-en/).
 Keep the existing file-backed canary separate during transition, and do not
