@@ -234,6 +234,7 @@ def _add_cluster_roles(chart: Chart) -> None:
         _read("dns.cav.enablers.ob", "clusterzones", "clusterrrsets"),
         _read("trust.cert-manager.io", "bundles"),
         _read("external-secrets.io", "externalsecrets"),
+        _read("externaldns.k8s.io", "dnsendpoints"),
         # pods/log and configmaps are granted via namespaced RoleBindings to logs-configmaps-reader
         # in monitoring, kube-system, flux-system, grocy-sf, grocy-vallejo, airlock, authentik.
     )

@@ -52,6 +52,7 @@ NAMESPACE_ALLOWLIST = (
     "cpap-sync",
     "csi-proxmox",
     "docker-ci",
+    "external-dns",
     "flux-system",
     "forgejo",
     "gatus",

@@ -6406,6 +6406,7 @@ spec:
         - cli-proxy-api
         - clickhouse
         - cnpg-system
+        - external-dns
         - flux-system
         - forgejo
         - gatus
@@ -6442,6 +6443,7 @@ spec:
         - cli-proxy-api
         - clickhouse
         - cnpg-system
+        - external-dns
         - flux-system
         - forgejo
         - gatus

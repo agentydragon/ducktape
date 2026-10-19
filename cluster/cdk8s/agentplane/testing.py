@@ -276,6 +276,8 @@ _SANDBOX_RULES = [
     RolePolicyRule(
         resources=[custom_resource(GROUP, "sandboxes")], verbs=["create", "get", "list", "watch", "patch", "delete"]
     ),
+    # Workspace volumes for test Sandboxes; reads of PVCs come from cluster-diagnostics-reader.
+    RolePolicyRule(resources=[custom_resource("", "persistentvolumeclaims")], verbs=["create", "delete"]),
     RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
     RolePolicyRule(
         resources=[custom_resource("", "pods/exec"), custom_resource("", "pods/portforward")], verbs=["create"]

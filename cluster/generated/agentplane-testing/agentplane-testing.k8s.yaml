@@ -4851,6 +4851,13 @@ rules:
   - apiGroups:
       - ""
     resources:
+      - persistentvolumeclaims
+    verbs:
+      - create
+      - delete
+  - apiGroups:
+      - ""
+    resources:
       - pods
     verbs:
       - get

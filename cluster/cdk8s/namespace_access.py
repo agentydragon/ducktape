@@ -28,6 +28,7 @@ NAMESPACE_DIAGNOSTICS = {
     "cli-proxy-api": AgentReadable.LOGS,
     "clickhouse": AgentReadable.LOGS,
     "cnpg-system": AgentReadable.LOGS,
+    "external-dns": AgentReadable.LOGS,
     "flux-system": AgentReadable.LOGS,
     "forgejo": AgentReadable.LOGS,
     "gatus": AgentReadable.LOGS,

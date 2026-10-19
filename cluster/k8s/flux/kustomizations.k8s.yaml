@@ -4405,6 +4405,27 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Delegates managed RoleBinding reconciliation in external-dns.
+  name: agentplane-staging-binding-delegation-external-dns
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: external-dns
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/external-dns
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Delegates managed RoleBinding reconciliation in flux-system.
   name: agentplane-staging-binding-delegation-flux-system
   namespace: ducktape-flux
@@ -5167,6 +5188,27 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/cnpg-system
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in external-dns; policy shared with managed agents.
+  name: agent-namespace-rbac-external-dns
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/external-dns
   prune: true
   retryInterval: 1m
   sourceRef:

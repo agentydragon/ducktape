@@ -1703,6 +1703,7 @@ def generate_manifests(root: Path) -> None:
         "clickhouse": clickhouse_kustomization,
         "cnpg-system": cnpg_kustomization,
         "ducktape-flux": None,
+        "external-dns": external_dns_kustomization,
         "haku-console": haku_console_kustomization,
         # Bootstrap roots have no generated owner Kustomization to depend on.
         "flux-system": None,
