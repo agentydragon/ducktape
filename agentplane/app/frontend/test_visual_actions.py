@@ -161,7 +161,7 @@ EXAMPLES = (
         "get_system_info",
         {},
         {"grocy_version": {"Version": "4.5.0"}, "php_version": "8.4", "sqlite_version": "3.50", "db_version": 1},
-        "Grocy 4.5.0",
+        "4.5.0",
     ),
     ActionExample(
         "tana",
