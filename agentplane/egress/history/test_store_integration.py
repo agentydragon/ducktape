@@ -1,13 +1,11 @@
-"""Run the Go history tests against the schema Alembic created and the one Goose creates fresh."""
+"""Run the Go history tests against the Goose-owned schema."""
 
 import os
 import subprocess
 
-import pytest
 import pytest_bazel
 from sqlalchemy.engine import make_url
 
-from agentplane.egress.database_migrate import RUNNER as EGRESS_ALEMBIC
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.postgres import DatabaseNames, create_temporary_database
 
@@ -21,13 +19,8 @@ _MIGRATOR = get_required_path(
 )
 
 
-@pytest.mark.parametrize("alembic_first", [True, False], ids=["handed-off-from-alembic", "fresh-goose"])
-def test_go_history_against_each_schema(
-    postgres_admin_url: str, database_names: DatabaseNames, alembic_first: bool
-) -> None:
+def test_go_history_against_goose_schema(postgres_admin_url: str, database_names: DatabaseNames) -> None:
     with create_temporary_database(postgres_admin_url, database_names()) as url:
-        if alembic_first:
-            EGRESS_ALEMBIC.apply(url)
         wire_url = (
             make_url(url)
             .set(drivername="postgresql", query={"sslmode": "disable"})

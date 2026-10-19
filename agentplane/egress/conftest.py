@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from agentplane.egress.database_migrate import RUNNER
+from collections.abc import Iterator
+
+import pytest
+
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.subjects import ServiceAccountRef
@@ -16,10 +19,9 @@ from agentplane.testing.fake_apiserver import (
     policy_binding,
     secret,
 )
+from util.testing.postgres import DatabaseNames, create_temporary_database
 from util.testing.postgres_fixtures import (
-    database_clones,
     database_names,
-    migrated_database_fixtures,
     postgres_admin_url,
     postgres_container,
     postgres_image,
@@ -79,6 +81,8 @@ def seed(fake: FakeApiServer) -> None:
     )
 
 
-database_template, history_db_url = migrated_database_fixtures(
-    RUNNER, drivername="postgresql+asyncpg", url_name="history_db_url"
-)
+@pytest.fixture
+def history_db_url(postgres_admin_url: str, database_names: DatabaseNames) -> Iterator[str]:
+    """An empty database that the Go replica's migrator owns."""
+    with create_temporary_database(postgres_admin_url, database_names()) as url:
+        yield url

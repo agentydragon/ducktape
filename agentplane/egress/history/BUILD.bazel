@@ -61,11 +61,9 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/egress:conftest",
-        "//agentplane/egress:database_migrate",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
         "@pypi//psycopg",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

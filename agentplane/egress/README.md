@@ -226,11 +226,10 @@ The API's `at` field is the `decided_at` column; `ingested_at` is the row's inse
 `Store.Recent` takes the newest `decision_history_size` rows (200 by default, at most
 1,000) inside the retention window and returns them oldest first.
 
-The schema is Goose SQL in `history_migrations/history/`. The migrator takes over a database created by
-the earlier Alembic history (`migrations/`, head `0002_service_account_subject`): it refuses an
-Alembic head other than that one, or a schema that differs from that baseline, and otherwise records
-`egress_goose_version` and leaves the rows and `egress_alembic_version` as they are. Staging and testing
-each hold an `egress` database in their CNPG cluster. The migrator runs as the proxy Pod's init
+The schema is Goose SQL in `history_migrations/history/`, tracked by `egress_goose_version`.
+Staging and testing each hold an `egress` database in their CNPG cluster. Both completed the
+[Go cutover](docs/go_cutover.md); Alembic is no longer a migration owner. Existing history rows and
+the inert `egress_alembic_version` table remain in place. The migrator runs as the proxy Pod's init
 container, so a failed migration keeps that Pod unready while the previous proxies keep enforcing.
 
 ## Open questions

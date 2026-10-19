@@ -43,12 +43,13 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        ":database_migrate",
         ":resources",
         "//agentplane:policy_sets",
         "//agentplane:subjects",
         "//agentplane/testing:fake_apiserver",
+        "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
     ],
 )
 
@@ -130,25 +131,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "database_migrate",
-    srcs = ["database_migrate.py"],
-    data = ["//agentplane/egress/migrations:files"],
-    visibility = [
-        "//agentplane:__subpackages__",
-    ],
-    deps = [
-        ":decision_tables",
-        "//util:db_migrations",
-    ],
-)
-
-py_library(
-    name = "decision_tables",
-    srcs = ["decision_tables.py"],
-    deps = ["@pypi//sqlalchemy"],
 )
 
 py_library(

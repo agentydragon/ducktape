@@ -26,7 +26,10 @@ go_library(
     embedsrcs = glob(["history/*.sql"]),
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/history_migrations",
     visibility = ["//agentplane/egress:__subpackages__"],
-    deps = ["//agentplane/postgres/goosehandoff"],
+    deps = [
+        "@com_github_pressly_goose_v3//:goose",
+        "@com_github_pressly_goose_v3//lock",
+    ],
 )
 
 py_test(
@@ -38,7 +41,6 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/egress:conftest",
-        "//agentplane/egress:database_migrate",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
         "@pypi//psycopg",
