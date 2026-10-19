@@ -176,7 +176,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
       action: { group: "kubernetes_admin", name: "resources_get" },
       arguments: { apiVersion: "apps/v1", kind: "Deployment", name: "api" },
       title: "inspect deployment",
-      visible: ["API version: apps/v1"],
+      visible: ["Read with API version apps/v1"],
     },
     {
       ...request("decision_pending", 4),

@@ -64,7 +64,8 @@ describe("Action presentation slots", () => {
     expect(label.textContent).toContain("List pods in namespace tofu-controller");
     expect(label.textContent).not.toContain("kubernetes_admin");
     expect(label.textContent).not.toContain("pods_list_in_namespace");
-    expect(renderActionLabel(action, { namespace: "tofu-controller", hidden: true })).toBeUndefined();
+    const fallback = await mount(renderActionLabel(action, { namespace: "tofu-controller", hidden: true }));
+    expect(fallback.textContent).toContain("List pods in namespace");
     expect(shouldRenderPaneRequestTitle(action, args, "List pods in namespace tofu-controller")).toBe(false);
     expect(shouldRenderPaneRequestTitle(action, args, "Inspect the running demo pods")).toBe(true);
   });
@@ -343,10 +344,11 @@ describe("Action presentation slots", () => {
     expect(collapsed.textContent).not.toContain("Deploy");
   });
 
-  it("leaves a slot to the host when no registered widget accepts it", () => {
+  it("leaves unregistered slots to the host and preserves arguments rejected by a strict schema", async () => {
     expect(renderPaneCollapsed(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true })).toBeUndefined();
     expect(renderPaneOpened({ group: "test_group", name: "exec" }, SSH_EXEC_ARGUMENTS)).toBeUndefined();
-    expect(renderDetailsArguments(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true })).toBeUndefined();
+    const recorded = await mount(renderDetailsArguments(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true }));
+    expect(recorded.textContent).toContain("Details shown as recorded data");
     expect(renderDetailsArguments({ group: "__proto__", name: "constructor" }, {})).toBeUndefined();
   });
 
@@ -432,7 +434,8 @@ describe("details result rendering", () => {
 
   it("formats a single-line YAML apply argument and shows malformed input verbatim", async () => {
     const action = { group: "kubernetes_admin", name: "resources_create_or_update" };
-    const manifest = "apiVersion: v1 kind: ConfigMap metadata: {name: settings, namespace: apps} data: {mode: safe}";
+    const manifest =
+      "{apiVersion: v1, kind: ConfigMap, metadata: {name: settings, namespace: apps}, data: {mode: safe}}";
     const formatted = await mount(renderDetailsArguments(action, { resource: manifest }));
     expect(formatted.textContent).toContain("Manifest · ConfigMap apps/settings");
     expect(formatted.textContent).toContain("apiVersion: v1");
@@ -447,7 +450,7 @@ describe("details result rendering", () => {
     const action = { group: "kubernetes_admin", name: "resources_create_or_update" };
     const single = await mount(
       renderPaneCollapsed(action, {
-        resource: "apiVersion: v1 kind: ConfigMap metadata: {name: settings, namespace: apps}",
+        resource: "{apiVersion: v1, kind: ConfigMap, metadata: {name: settings, namespace: apps}}",
       })
     );
     expect(single.textContent).toBe("Apply ConfigMap apps/settings");
@@ -574,7 +577,7 @@ const cardDecisionButtonCases: Array<{
     group: "kubernetes_admin",
     name: "resources_delete",
     args: { apiVersion: "v1", kind: "Pod", name: "api-0", namespace: "prod", gracePeriodSeconds: 0 },
-    visible: ["grace period: 0s"],
+    visible: ["request a 0s grace period"],
   },
   {
     group: "kubernetes_admin",

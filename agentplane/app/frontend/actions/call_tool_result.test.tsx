@@ -237,7 +237,7 @@ describe("toolValue", () => {
 
     expect(toolContentRestatesValue(result, resource)).toBe(true);
     const container = await render(result);
-    expect(container.textContent?.match(/kind: ConfigMap/g)).toHaveLength(1);
+    expect(container.textContent?.match(/"kind": "ConfigMap"/g)).toHaveLength(1);
   });
 
   it("does not treat arbitrary YAML as a restatement of structured content", () => {

@@ -5,18 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { STALE_AFTER_MS, streamRegistry } from "../stream_status";
 import { ActionRequests, stateLabel } from "./requests";
-import {
-  TestEventSource,
-  answerApi,
-  button,
-  mount,
-  renderLive,
-  request,
-  send,
-  SSH_EXEC_ARGUMENTS,
-  sshExec,
-  unmountLast,
-} from "./testing";
+import { TestEventSource, answerApi, button, mount, renderLive, request, send, sshExec, unmountLast } from "./testing";
 
 describe("ActionRequests", () => {
   it("shows a refused decision's structured error", async () => {
@@ -116,15 +105,10 @@ describe("ActionRequests", () => {
   });
 
   it("offers no Raw switch where the arguments show only as their JSON", async () => {
-    // Arguments no widget is registered for, and ones the registered widget does not take.
-    const unfit = {
-      ...sshExec("decision_pending"),
-      id: request("decision_pending", 2).id,
-      arguments: { ...SSH_EXEC_ARGUMENTS, test_extra: "test-value" },
-    };
-    const container = await renderLive(<ActionRequests />, [request("decision_pending", 1), unfit]);
+    // An unregistered Action has no pretty argument view for Raw to switch back from.
+    const container = await renderLive(<ActionRequests />, [request("decision_pending", 1)]);
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
-    expect(container.textContent).toContain('"test_extra": "test-value"');
+    expect(container.textContent).toContain('"token": "test-exact-token"');
   });
 
   it("renders the caller's own title and description verbatim, as plain text", async () => {

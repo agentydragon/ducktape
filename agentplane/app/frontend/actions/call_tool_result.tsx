@@ -87,6 +87,7 @@ export function toolValue(result: CallToolResult): unknown {
 
 /** Whether a custom result view can replace this envelope without hiding distinct tool output. */
 export function toolContentRestatesValue(result: CallToolResult, value: unknown): boolean {
+  if (result.isError) return false;
   return result.content.every((block) => block.type === "text" && restates(block.text, value));
 }
 

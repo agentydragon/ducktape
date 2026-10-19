@@ -233,7 +233,7 @@ async def test_sandbox_action_results(
             "kubernetes_admin",
             "resources_delete",
             {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
-            "grace period: 0s",
+            "request a 0s grace period",
         ),
         ("kubernetes_admin", "events_list", {"namespace": "apps", "fieldSelector": "type=Warning"}, "type=Warning"),
         (
@@ -860,7 +860,8 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
     await expect(expanded).to_be_visible()
     await expect(expanded.locator('[data-clamped="true"]')).to_have_count(0)
     await view.capture(f"{capture_name}-expanded")
-    await expanded.get_by_role("button", name="Action text", exact=True).click()
+    collapse_name = "Manifest · ConfigMap" if kind == "manifest" else "Action text"
+    await expanded.get_by_role("button", name=collapse_name, exact=False).click()
     await expect(page.locator('.agentplane-clamped-block[data-expanded="true"]')).to_have_count(0)
     if kind == "email":
         await _open_raw_switches(page)
@@ -874,7 +875,9 @@ async def test_kubernetes_applied_manifest_receipt(view: VisualPage, app: Agentp
     await app.show_action_receipt(
         "kubernetes_admin",
         "resources_create_or_update",
-        {"resource": "apiVersion: v1 kind: ConfigMap metadata: {name: settings, namespace: apps} data: {mode: safe}"},
+        {
+            "resource": "{apiVersion: v1, kind: ConfigMap, metadata: {name: settings, namespace: apps}, data: {mode: safe}}"
+        },
         {
             "content": [
                 {

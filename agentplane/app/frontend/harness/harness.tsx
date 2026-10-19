@@ -2134,6 +2134,7 @@ const MCP_GROUPS: ActionGroupView[] = [
   mcpGroup("example_notes", BEARER),
   mcpGroup("ssh", BEARER),
 ];
+let receiptActionGroup: ActionGroupView | undefined;
 
 /** Switches a test sets on the mock services, before mounting or (`publish`) while a stream is open. */
 type Flag =
@@ -2541,10 +2542,12 @@ routes.push(
   [
     "GET",
     /^\/action-groups$/,
-    () =>
-      flags.has("actionGroupsUnavailable")
-        ? Response.json({ detail: "the Action Service did not answer: connection refused" }, { status: 502 })
-        : MCP_GROUPS,
+    () => {
+      if (flags.has("actionGroupsUnavailable")) {
+        return Response.json({ detail: "the Action Service did not answer: connection refused" }, { status: 502 });
+      }
+      return receiptActionGroup === undefined ? MCP_GROUPS : [...MCP_GROUPS, receiptActionGroup];
+    },
   ],
   ["GET", /^\/push\/config$/, () => ({ application_server_key: null })],
   ["GET", /^\/push\/subscriptions$/, () => []],
@@ -3222,6 +3225,9 @@ const visualHarness = {
     ACTIONS[2]!.execution!.result = result;
   },
   showActionReceipt(action: ActionRequestView["action"], args: ActionRequestView["arguments"], result: unknown): void {
+    receiptActionGroup = MCP_GROUPS.some((group) => group.key === action.group)
+      ? undefined
+      : mcpGroup(action.group, "Test MCP backend for the receipt renderer.");
     const receipt = ACTIONS[2]!;
     ACTIONS.splice(0, ACTIONS.length, {
       ...receipt,

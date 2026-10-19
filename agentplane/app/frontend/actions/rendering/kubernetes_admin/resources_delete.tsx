@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
 import { defineCallPreview, definePreview, type ArgumentsPreview, type CallPreview } from "../entry";
-import { defineResultPreview, type ResultPreview } from "../result_entry";
+import type { ResultPreview } from "../result_entry";
 
 import { kubernetesTarget, resource } from "./resource_common";
 
@@ -38,7 +38,10 @@ export const resourcesDeleteCall: CallPreview = defineCallPreview(
   resourcesDeleteResult,
   ({ args }) => <Delete args={args} />
 );
-export const resourcesDeleteResultPreview: ResultPreview = defineResultPreview(resourcesDeleteResult, () => null);
+export const resourcesDeleteResultPreview: ResultPreview = {
+  schema: resourcesDeleteResult,
+  render: () => null,
+};
 
 export const resourcesDeletePresentation: ActionPresentation = {
   fallbackLabel: "Delete Kubernetes resource",
