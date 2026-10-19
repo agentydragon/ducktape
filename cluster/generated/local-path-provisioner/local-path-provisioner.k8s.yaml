@@ -133,6 +133,22 @@ volumeBindingMode: WaitForFirstConsumer
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
+  name: local-path-ovh-ssd-retain
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh
+      - key: storage.allegedly.works/tier
+        values:
+          - ssd
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
   name: local-path-proxmox
 allowedTopologies:
   - matchLabelExpressions:

@@ -60,6 +60,13 @@ spec:
     metricsPort: 9321
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    persistence:
+      enabled: true
+      mountPath: /data
+      resources:
+        requests:
+          storage: 4Gi
+      storageClassName: local-path-ovh-ssd-retain
     priorityClassName: stateful-infra
     replicas: 3
     requests:

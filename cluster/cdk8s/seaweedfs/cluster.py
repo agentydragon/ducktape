@@ -64,6 +64,9 @@ from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
     SeaweedSpecMasterAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
     SeaweedSpecMasterAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
     SeaweedSpecMasterLimits,
+    SeaweedSpecMasterPersistence,
+    SeaweedSpecMasterPersistenceResources,
+    SeaweedSpecMasterPersistenceResourcesRequests,
     SeaweedSpecMasterRequests,
     SeaweedSpecMasterTolerations,
     SeaweedSpecS3,
@@ -228,6 +231,17 @@ def seaweed(scope: Construct) -> Seaweed:
                 # 3-instance raft, spread across kimsufi hosts. Quorum 2/3 -> cluster survives
                 # any single-node outage. Tolerate the CP taint matching volume + s3.
                 replicas=3,
+                # Raft log, snapshots, term/vote and TopologyId must survive Pod replacement.
+                # Adoption on the existing StatefulSet requires the migration in
+                # cluster/docs/runbooks/seaweedfs_master_persistence.md before rolling any Pod.
+                persistence=SeaweedSpecMasterPersistence(
+                    enabled=True,
+                    storage_class_name="local-path-ovh-ssd-retain",
+                    mount_path="/data",
+                    resources=SeaweedSpecMasterPersistenceResources(
+                        requests={"storage": SeaweedSpecMasterPersistenceResourcesRequests.from_string("4Gi")}
+                    ),
+                ),
                 # SeaweedFS derives each volume server's maximum logical volume count from disk
                 # size / volumeSizeLimitMB. 30GB left the first two 1.8TiB servers at 61/61
                 # logical volumes after only a handful of collections, so new replicated

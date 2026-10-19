@@ -1,9 +1,13 @@
-# kubeconform schemas for this repo's own CRDs, one file per served version
+# kubeconform schemas for local and pinned upstream CRDs, one file per served version
 # (<group>/<kind>_<version>.json); each is its CRD's openAPIV3Schema, dumped by
 # `bb run //agentplane/crds:generate_bin` and pinned by //agentplane/crds:test_generate.
 # infra.contrib.fluxcd.io/terraform_v1alpha2.json is the v1alpha2 openAPIV3Schema of
 # @ducktape_tofu_controller//:terraform_crd, shadowing the CRDs-catalog copy that lacks the
 # ExternalArtifact source kind; re-dump it when that module's patches change.
+# seaweed.seaweedfs.com/seaweed_v1.json is the v1 openAPIV3Schema from
+# @seaweed_seaweed_crd//file (operator chart 0.1.42, pinned in MODULE.bazel).
+# The CRDs-catalog copy lacks master.persistence. Re-dump when the pin changes:
+# yq '.spec.versions[] | select(.name == "v1") | .schema.openAPIV3Schema' <pinned-crd.yaml>
 filegroup(
     name = "schemas",
     srcs = glob(["**/*.json"]),

@@ -28,10 +28,11 @@ _PROVISIONER = "cluster.local/local-path-provisioner"
 _REGION = "topology.kubernetes.io/region"
 _TIER = "storage.allegedly.works/tier"
 _OVH_SSD = "local-path-ovh-ssd"
+_OVH_SSD_RETAIN = "local-path-ovh-ssd-retain"
 _HOME_SSD = "local-path-home-ssd"
 # Classes provisioning onto SSD. OVH's tier=ssd nodes are exactly its control planes, so
 # a Cluster on local-path-ovh-ssd must tolerate them (cnpg.py).
-SSD_STORAGE_CLASSES = {_OVH_SSD, _HOME_SSD}
+SSD_STORAGE_CLASSES = {_OVH_SSD, _OVH_SSD_RETAIN, _HOME_SSD}
 
 
 def _node_path(node: str, path: str) -> dict[str, object]:
@@ -95,6 +96,8 @@ _CLASSES = {
     # on HDD. Reserved for fsync/latency-critical data (Forgejo git, forgejo-db,
     # seaweedfs-filer-db). See cluster/docs/plans/ovh_storage_tiering.md.
     _OVH_SSD: _Class(ReclaimPolicy.DELETE, {**node_scheduling.HIL_OVH_NODE_SELECTOR, _TIER: "ssd"}),
+    # Independent master Raft storage; retain consensus state if a claim is deleted.
+    _OVH_SSD_RETAIN: _Class(ReclaimPolicy.RETAIN, {**node_scheduling.HIL_OVH_NODE_SELECTOR, _TIER: "ssd"}),
     "local-path-proxmox": _Class(ReclaimPolicy.DELETE, {_REGION: "proxmox"}),
     # Home automation is intentionally hardware- and LAN-pinned: integrations use the
     # OptiPlex's Bluetooth radio and the home multicast domain. VolSync copies this
