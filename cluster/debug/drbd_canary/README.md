@@ -5,6 +5,10 @@ These resources are applied explicitly for the experiment; Flux does not own
 them. The provider itself is managed through Flux. Do not run before both
 workers and the `local-canary` class pass preparation checks.
 
+Live observations are in [results.md](results.md). Review the
+[FILE_THIN resync investigation](thin_resync.md) before repeating relocation:
+the first sparse filesystem resync stalled with the generated defaults.
+
 `config_paths_bin` compares private multi-document machine configurations and
 prints changed paths without their values. `--canary-output PATH` writes a
 configuration preserving the first input's live settings while copying only
