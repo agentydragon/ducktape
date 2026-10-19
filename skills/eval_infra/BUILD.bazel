@@ -29,14 +29,6 @@ py_library(
     ],
 )
 
-_AGENT_FRAMEWORK_DEPS = [
-    # agent_framework's __init__.py references openai/anthropic stubs.
-    "@pypi//agent_framework_anthropic",
-    "@pypi//agent_framework_claude",
-    "@pypi//agent_framework_core",
-    "@pypi//agent_framework_openai",
-]
-
 py_library(
     name = "transcript",
     srcs = ["transcript.py"],
