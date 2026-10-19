@@ -15,8 +15,10 @@ conversation and from Runner admission.
 
 ## Source and tests
 
-- `main.go`, `config.go`: process, listener wiring and deployment flags, including the optional
-  `--http-listen-address` for the Dispatcher's HTTP/JSON facade (none when empty).
+- `main.go`, `config.go`: process and listener wiring, and the settings (a YAML file named by
+  `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` plus `AGENTPLANE_RUNNER_GATEWAY_*` environment variables;
+  [`settings.py`](settings.py) is the authoring schema), including the optional `http_listen_address`
+  for the Dispatcher's HTTP/JSON facade (none when unset).
 - `gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `migrations/`: Goose migrations for the Dispatcher database.

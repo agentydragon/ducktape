@@ -6,7 +6,9 @@ from urllib.parse import urlsplit
 import pytest_bazel
 import yaml
 
+from agentplane.runner_gateway.settings import Settings
 from agentplane.x.k3s_env import fixture_chart, fixture_database
+from util.settings_contract import env_name
 
 
 def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -103,10 +105,13 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     token = next(volume for volume in pod["volumes"] if volume["name"] == "runner-gateway-token")["projected"][
         "sources"
     ][0]["serviceAccountToken"]
-    args = set(container["args"])
-    assert f"--runner-token-file={token_mount['mountPath']}/{token['path']}" in args
-    assert f"--gateway-audience={token['audience']}" in args
-    assert f"--wake-caller={fixture_chart.NAMESPACE}/app" in args
+    gateway_env = {entry["name"]: entry.get("value") for entry in container["env"]}
+    assert gateway_env[env_name(Settings, "runner_token_file")] == f"{token_mount['mountPath']}/{token['path']}"
+    assert gateway_env[env_name(Settings, "gateway_audience")] == token["audience"]
+    gateway_config = yaml.safe_load(
+        _resource(docs, "ConfigMap", f"{fixture_chart.RUNNER_GATEWAY}-settings")["data"]["settings.yaml"]
+    )
+    assert f"{fixture_chart.NAMESPACE}/app" in gateway_config["wake_callers"]
     assert not pod.get("imagePullSecrets")
 
     for name, expected_port in (

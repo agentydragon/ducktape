@@ -147,7 +147,7 @@ gRPC-Gateway, so no handler translates between the two.
   (`filter.sessionId=...`, a repeated field repeated). The proto's `go_proto_library` adds
   `//devinfra/go:grpc_gateway` to `compilers`, which emits `Register<Service>HandlerFromEndpoint`.
 - **Serving:** [`facade.NewHandler`](../grpc/facade/facade.go) mounts it in the process that serves the
-  gRPC, on an optional `--http-listen-address`, and forwards each request over loopback to the gRPC
+  gRPC, on an optional `http_listen_address` setting, and forwards each request over loopback to the gRPC
   listener. The servicer's own authentication runs on every call: the gateway sends `Authorization` on
   as `authorization` metadata, and a gRPC status becomes its HTTP status with a `{"code", "message"}` body.
 - **Wire form:** stock gRPC-Gateway. Fields are camelCase, enums their names, unpopulated fields

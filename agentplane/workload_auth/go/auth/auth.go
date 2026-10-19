@@ -33,6 +33,16 @@ type Account struct {
 	Name      string
 }
 
+// UnmarshalText reads the `namespace/name` form deployment settings write an Account in.
+func (a *Account) UnmarshalText(text []byte) error {
+	namespace, name, found := strings.Cut(string(text), "/")
+	if !found || namespace == "" || name == "" || strings.Contains(name, "/") {
+		return errors.New("service account must be namespace/name")
+	}
+	*a = Account{Namespace: namespace, Name: name}
+	return nil
+}
+
 // Principal is the Pod-bound ServiceAccount identity proven by one TokenReview.
 type Principal struct {
 	Account           Account

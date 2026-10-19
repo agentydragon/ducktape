@@ -1,4 +1,23 @@
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: runner-gateway-settings
+  namespace: agentplane-staging
+data:
+  settings.yaml: |
+    dispatcher_callers:
+      - agentplane-staging/app
+      - agentplane-staging/notifications
+    gateway_callers:
+      - agentplane-staging/app
+      - agentplane-staging/notifications
+      - agentplane-staging/runner-gateway
+    wake_callers:
+      - agentplane-staging/app
+      - agentplane-staging/notifications
+immutable: false
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: runner-gateway
@@ -50,6 +69,22 @@ spec:
             - --wake-caller=agentplane-staging/app
             - --wake-caller=agentplane-staging/notifications
           env:
+            - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_NAMESPACE
+              value: agentplane-staging
+            - name: AGENTPLANE_RUNNER_GATEWAY_LISTEN_ADDRESS
+              value: 0.0.0.0:8080
+            - name: AGENTPLANE_RUNNER_GATEWAY_HTTP_LISTEN_ADDRESS
+              value: 0.0.0.0:8081
+            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_TOKEN_FILE
+              value: /var/run/secrets/agentplane-runner-gateway/token
+            - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE
+              value: session-dispatcher
+            - name: AGENTPLANE_RUNNER_GATEWAY_GATEWAY_AUDIENCE
+              value: agentplane-runner-gateway
+            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_AUDIENCE
+              value: agentplane-runner-control
+            - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_CONTROLLER_ACCOUNT
+              value: agentplane-staging/sandbox-controller
             - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -59,6 +94,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
+            - name: AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE
+              value: /etc/agentplane-runner-gateway/settings/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:

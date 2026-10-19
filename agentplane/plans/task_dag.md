@@ -1681,15 +1681,17 @@ external Connections call, so renaming them is a wire change.
 
 ### `GO_SERVICES_SETTINGS_LOADER` — Go services read settings with Viper
 
-**Unscheduled; the egress proxy's move is [#11080](https://github.com/agentydragon/ducktape/pull/11080)
-(open) (coordinator, 2026-10-19, relaying the operator's 2026-10-18 direction that Go services read
-settings the same way, from a file and the environment, with no flags).** LLM ingress already reads its
-settings through Viper used directly in the service ([#10989](https://github.com/agentydragon/ducktape/pull/10989)).
-Move the Runner Gateway, the Sandbox Controller, the Policy Controller and the egress sidecar from flag
-parsing to the same, one service per change. Setting names and values stay; only how they are read
-changes. Each manifest change follows its image pin and removes flags only after the image that reads
-the file is pinned (image before config). New settings in the meantime, such as the Gateway's
-`--http-listen-address`, follow how the service reads settings today.
+**Unscheduled; the operator chose one service per change, each after the previous lands
+(2026-10-19, from the operator's 2026-10-18 direction that Go services read settings the same way, from a
+file and the environment, with no flags).** LLM ingress, the egress proxy and the Runner Gateway already
+read their settings through Viper used directly in the service
+([#10989](https://github.com/agentydragon/ducktape/pull/10989),
+[#11080](https://github.com/agentydragon/ducktape/pull/11080)). Move the Sandbox Controller, the Policy
+Controller and the egress sidecar from flag parsing to the same. Setting names and values stay; only how
+they are read changes. A manifest sends the settings next to the flags in the change that reads them, and
+drops the flags only after the image that reads the file is pinned (image before config); the Gateway's
+flags are still sent (tombstone in `runner_gateway_workload.py`). New settings in the meantime follow how
+the service reads settings today.
 
 ## 9. Legacy burn-down
 

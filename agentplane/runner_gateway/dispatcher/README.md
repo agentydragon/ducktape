@@ -18,7 +18,7 @@ The manual queue, replica and wake probes are documented in the
 - **Watching**: `WatchDispatches` sends the Dispatches in scope, then one `CaughtUp` frame, then a Dispatch
   again whenever it changes. `DispatchFilter.command_ids` (at most 1000) narrows either scope to those
   commands, so a caller holding a few of them does not replay a whole Session.
-- **HTTP/JSON form**: every RPC also answers over HTTP on the Gateway's optional `--http-listen-address`,
+- **HTTP/JSON form**: every RPC also answers over HTTP on the Gateway's optional `http_listen_address` setting,
   [generated from the proto](../../docs/grpc_services.md#httpjson-facades): reads under `/v1/dispatches`
   and `/v1/sessions/{session_id}/opening`, commands as `POST /v1/sessions/{session_id}:<verb>` and
   `POST /v1/dispatches/{command_id}:cancel`. The Dispatcher admits only the configured ServiceAccounts

@@ -4,8 +4,10 @@ from typing import Any
 
 import pytest
 import pytest_bazel
+import yaml
 from more_itertools import one
 
+from agentplane.runner_gateway.settings import Settings
 from cluster.cdk8s.agentplane import app, notifications, runner_gateway, session_dispatcher
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from util.settings_contract import env_name
@@ -22,13 +24,14 @@ def test_dispatcher_sender_identity_and_service_routing(
 
     pod = resource("Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
     container = one(pod["containers"])
-    callers = {
-        arg.removeprefix("--dispatcher-caller=") for arg in container["args"] if arg.startswith("--dispatcher-caller=")
-    }
-    wakers = {arg.removeprefix("--wake-caller=") for arg in container["args"] if arg.startswith("--wake-caller=")}
+    settings = yaml.safe_load(resource("ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
+    callers = set(settings["dispatcher_callers"])
+    wakers = set(settings.get("wake_callers", []))
     assert callers == {f"{namespace}/{app.NAME}", f"{namespace}/{notifications.NAME}"}
     assert wakers <= callers
-    assert f"--dispatcher-audience={session_dispatcher.TOKEN_AUDIENCE}" in container["args"]
+    assert {item["name"]: item.get("value") for item in container["env"]}[
+        env_name(Settings, "dispatcher_audience")
+    ] == session_dispatcher.TOKEN_AUDIENCE
     service = resource("Service", session_dispatcher.NAME)["spec"]
     labels = resource("Deployment", runner_gateway.NAME)["spec"]["template"]["metadata"]["labels"]
     assert service["selector"].items() <= labels.items()

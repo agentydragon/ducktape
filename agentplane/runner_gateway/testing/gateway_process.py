@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
+import tempfile
 from collections.abc import AsyncIterator, Awaitable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import grpc
+import yaml
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from sqlalchemy.engine import make_url
 
@@ -19,10 +21,12 @@ from agentplane.grpc.calls import ServiceError, dial
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.runner_gateway.settings import Settings
 from agentplane.sandboxes.guest_config import Endpoint
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import pick_free_port
+from util.settings_contract import env_name, settings_file
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -193,7 +197,7 @@ async def run_gateway(
     runner_proxy_token_file: Path,
     startup_timeout_s: float = 30,
 ) -> AsyncIterator[GatewayProcess]:
-    """Migrate the supplied database, then run the full Gateway using production flags.
+    """Migrate the supplied database, then run the full Gateway on the settings a deployment writes.
 
     The Kubernetes API and PostgreSQL database are owned by the caller. The Goose migration
     runner applies the schema before the server starts. All three gRPC services share a
@@ -205,31 +209,38 @@ async def run_gateway(
     port = pick_free_port()
     binary = get_required_path(own_repo_rlocation(_GATEWAY_BINARY))
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
-    arguments = [
-        str(binary),
-        f"--sandbox-namespace={namespace}",
-        f"--runner-token-file={runner_proxy_token_file}",
-        f"--kubeconfig={kubeconfig}",
-        f"--listen-address=127.0.0.1:{port}",
-        f"--proxy-port={port}",
-        f"--runner-control-target-template=127.0.0.1:{port}",
-        f"--dispatcher-audience={dispatcher_audience}",
-        f"--gateway-audience={gateway_audience}",
-        f"--runner-audience={runner_audience}",
-        *(f"--dispatcher-caller={account.namespace}/{account.name}" for account in dispatcher_callers),
-        *(f"--gateway-caller={account.namespace}/{account.name}" for account in gateway_callers),
-    ]
-    environment = {
-        **os.environ,
-        "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_database_url(database_url),
-        "AGENTPLANE_RUNNER_GATEWAY_POD_NAME": "runner-gateway-test",
-        # Kubernetes rejects loopback EndpointSlice addresses. This advertised test address
-        # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
-        "AGENTPLANE_RUNNER_GATEWAY_POD_IP": "192.0.2.10",
-    }
-    with log_path.open("wb") as log_file:
+    # The settings file as the cdk8s renderer writes it: its keys checked against the Python model.
+    # The database URL stays out of it, as in a deployment, where it is a Secret.
+    settings = settings_file(
+        Settings,
+        {
+            "sandbox_namespace": namespace,
+            "runner_token_file": str(runner_proxy_token_file),
+            "kubeconfig": str(kubeconfig),
+            "listen_address": f"127.0.0.1:{port}",
+            "proxy_port": port,
+            "runner_control_target_template": f"127.0.0.1:{port}",
+            "dispatcher_audience": dispatcher_audience,
+            "gateway_audience": gateway_audience,
+            "runner_audience": runner_audience,
+            "dispatcher_callers": [f"{account.namespace}/{account.name}" for account in dispatcher_callers],
+            "gateway_callers": [f"{account.namespace}/{account.name}" for account in gateway_callers],
+        },
+    )
+    with tempfile.TemporaryDirectory() as settings_dir, log_path.open("wb") as log_file:
+        settings_path = Path(settings_dir) / "settings.yaml"
+        settings_path.write_text(yaml.safe_dump(settings))
+        environment = {
+            **os.environ,
+            Settings.config_file_env: str(settings_path),
+            env_name(Settings, "dispatcher_database_url"): _wire_database_url(database_url),
+            env_name(Settings, "pod_name"): "runner-gateway-test",
+            # Kubernetes rejects loopback EndpointSlice addresses. This advertised test address
+            # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
+            env_name(Settings, "pod_ip"): "192.0.2.10",
+        }
         process = await asyncio.create_subprocess_exec(
-            *arguments, env=environment, stdout=log_file, stderr=subprocess.STDOUT
+            str(binary), env=environment, stdout=log_file, stderr=subprocess.STDOUT
         )
         service = GatewayProcess(process=process, target=f"127.0.0.1:{port}", log_path=log_path)
         try:

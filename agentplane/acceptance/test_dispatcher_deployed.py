@@ -482,14 +482,12 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                 for container in deployment["spec"]["template"]["spec"].get("initContainers", [])
             },
         }
-    gateway = json.loads(await _kubectl("get", "deployment", WORKLOAD, "-o", "json"))
-    args = gateway["spec"]["template"]["spec"]["containers"][0]["args"]
+    gateway_config = json.loads(await _kubectl("get", "configmap", f"{WORKLOAD}-settings", "-o", "json"))
+    gateway_settings = yaml.safe_load(gateway_config["data"]["settings.yaml"])
     expected_wake_callers = [{"namespace": NAMESPACE, "name": "app"}, {"namespace": NAMESPACE, "name": "notifications"}]
     accounts = {f"{account['namespace']}/{account['name']}" for account in expected_wake_callers}
-    assert {
-        arg.removeprefix("--dispatcher-caller=") for arg in args if arg.startswith("--dispatcher-caller=")
-    } == accounts
-    assert {arg.removeprefix("--wake-caller=") for arg in args if arg.startswith("--wake-caller=")} == accounts
+    assert set(gateway_settings["dispatcher_callers"]) == accounts
+    assert set(gateway_settings["wake_callers"]) == accounts
 
     service_config = json.loads(await _kubectl("get", "configmap", "app-config", "-o", "json"))
     policies = yaml.safe_load(service_config["data"]["config.yaml"])["default_policy_sets"]

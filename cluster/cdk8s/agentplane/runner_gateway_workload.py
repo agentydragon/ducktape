@@ -38,6 +38,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDependsO
 
 from agentplane.crd_group import GROUP
 from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
+from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import (
@@ -58,7 +59,9 @@ from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
+from util.settings_contract import checked_value, env_name
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
 _MIGRATION_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
@@ -182,18 +185,43 @@ class RunnerGateway(Construct):
         # the per-Sandbox control Service with this projected Gateway-audience token.
         proxy_callers = {**gateway_callers, own_account: proxy.pods}
         self.proxy_callers = proxy_callers
-        args = [
-            f"--sandbox-namespace={namespace}",
-            f"--listen-address=0.0.0.0:{_GRPC_PORT}",
-            f"--http-listen-address=0.0.0.0:{dispatcher_http.pod_port}",
-            f"--runner-token-file={_RUNNER_TOKEN_FILE}",
-            f"--dispatcher-audience={session_dispatcher.TOKEN_AUDIENCE}",
-            f"--gateway-audience={runner_gateway.TOKEN_AUDIENCE}",
-            f"--runner-audience={RUNNER_CONTROL_AUDIENCE}",
-            f"--sandbox-controller-account={_account(sandbox_controller[0])}",
-            *(f"--dispatcher-caller={_account(account)}" for account in sorted(dispatcher_callers, key=_account)),
-            *(f"--gateway-caller={_account(account)}" for account in sorted(proxy_callers, key=_account)),
-            *(f"--wake-caller={_account(account)}" for account in sorted(wake_callers, key=_account)),
+        scalars = {
+            field: checked_value(Settings, field, value)
+            for field, value in {
+                "sandbox_namespace": namespace,
+                "listen_address": f"0.0.0.0:{_GRPC_PORT}",
+                "http_listen_address": f"0.0.0.0:{dispatcher_http.pod_port}",
+                "runner_token_file": _RUNNER_TOKEN_FILE,
+                "dispatcher_audience": session_dispatcher.TOKEN_AUDIENCE,
+                "gateway_audience": runner_gateway.TOKEN_AUDIENCE,
+                "runner_audience": RUNNER_CONTROL_AUDIENCE,
+                "sandbox_controller_account": _account(sandbox_controller[0]),
+            }.items()
+        }
+        dispatcher_accounts = sorted(map(_account, dispatcher_callers))
+        gateway_accounts = sorted(map(_account, proxy_callers))
+        wake_accounts = sorted(map(_account, wake_callers))
+        # Lists are file-only settings.
+        settings = SettingsFile(
+            self,
+            "settings",
+            metadata=ApiObjectMetadata(name=f"{runner_gateway.NAME}-settings", namespace=namespace),
+            model=Settings,
+            content={
+                "dispatcher_callers": dispatcher_accounts,
+                "gateway_callers": gateway_accounts,
+                **({"wake_callers": wake_accounts} if wake_accounts else {}),
+            },
+            path="/etc/agentplane-runner-gateway/settings/settings.yaml",
+        )
+        # CLEANUP(added 2026-10-19): Remove `args` once the pinned `agentplane-runner-gateway` image is built
+        #   from a tree whose `agentplane/runner_gateway/config.go` reads the settings above. The image
+        #   before it takes only these flags and fails without them; the one after ignores them.
+        legacy_args = [
+            *(f"--{field.replace('_', '-')}={value}" for field, value in scalars.items()),
+            *(f"--dispatcher-caller={account}" for account in dispatcher_accounts),
+            *(f"--gateway-caller={account}" for account in gateway_accounts),
+            *(f"--wake-caller={account}" for account in wake_accounts),
         ]
         workload = add_service_workload(
             self,
@@ -202,10 +230,11 @@ class RunnerGateway(Construct):
             extra_ports=[dispatcher_http.container_port()],
             container="runner-gateway",
             image=image,
-            args=args,
+            args=legacy_args,
             env_variables={
-                "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": database_url,
-                "AGENTPLANE_RUNNER_GATEWAY_POD_IP": EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
+                **{env_name(Settings, field): EnvValue.from_value(str(value)) for field, value in scalars.items()},
+                env_name(Settings, "dispatcher_database_url"): database_url,
+                env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
                 **(container_env or {}),
             },
             readiness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=3, period_seconds=10),
@@ -233,6 +262,7 @@ class RunnerGateway(Construct):
             "/var/run/secrets/agentplane-runner-gateway",
             {"token": runner_gateway.TOKEN_AUDIENCE},
         )
+        settings.mount_into(workload.container, env=Settings.config_file_env)
         self._add_rbac(workload.account, namespace)
         egress.add_runner_egress(
             self,

@@ -4,9 +4,11 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
+import yaml
 from cdk8s import Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
+from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
     app,
@@ -19,10 +21,23 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.secret_ref import SecretRef
+from util.settings_contract import env_name
 
 
 def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
     return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
+
+
+def _gateway_settings(documents: list[dict[str, Any]], container: dict[str, Any]) -> dict[str, Any]:
+    """Each setting as the Gateway reads it: the container's literal env var, else the mounted file's key."""
+    file = yaml.safe_load(_resource(documents, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
+    env = {entry["name"]: entry["value"] for entry in container["env"] if "value" in entry}
+    return {
+        **file,
+        **{
+            field: env[env_name(Settings, field)] for field in Settings.model_fields if env_name(Settings, field) in env
+        },
+    }
 
 
 def _gateway_objects() -> list[dict[str, Any]]:
@@ -64,14 +79,15 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert pod["serviceAccountName"] == runner_gateway.NAME
     http = session_dispatcher.http_service(staging.ENV.namespace)
     assert {p["containerPort"] for p in container["ports"]} == {8080, http.pod_port}
-    assert "--listen-address=0.0.0.0:8080" in container["args"]
-    assert f"--http-listen-address=0.0.0.0:{http.pod_port}" in container["args"]
-    assert f"--dispatcher-audience={session_dispatcher.TOKEN_AUDIENCE}" in container["args"]
-    assert f"--gateway-audience={runner_gateway.TOKEN_AUDIENCE}" in container["args"]
-    assert f"--dispatcher-caller={staging.ENV.namespace}/{app.NAME}" in container["args"]
-    assert f"--dispatcher-caller={staging.ENV.namespace}/{notifications.NAME}" in container["args"]
-    assert f"--gateway-caller={staging.ENV.namespace}/{runner_gateway.NAME}" in container["args"]
-    assert "--wake-caller=" + staging.ENV.namespace + "/" + app.NAME in container["args"]
+    settings = _gateway_settings(docs, container)
+    namespace = staging.ENV.namespace
+    assert settings["listen_address"] == "0.0.0.0:8080"
+    assert settings["http_listen_address"] == f"0.0.0.0:{http.pod_port}"
+    assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
+    assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
+    assert set(settings["dispatcher_callers"]) == {f"{namespace}/{app.NAME}", f"{namespace}/{notifications.NAME}"}
+    assert f"{namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
+    assert f"{namespace}/{app.NAME}" in settings["wake_callers"]
     assert "initContainers" not in pod
     assert _resource(root_docs, "Service", runner_gateway.NAME)["spec"]["ports"] == [
         {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080},

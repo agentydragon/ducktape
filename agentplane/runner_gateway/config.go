@@ -2,123 +2,141 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"os"
-	"strings"
-	"time"
+	"slices"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/go-viper/mapstructure/v2"
+	"github.com/spf13/viper"
 )
 
-type accountFlags []auth.Account
+const settingPrefix = "AGENTPLANE_RUNNER_GATEWAY_"
 
-func (a *accountFlags) String() string {
-	parts := make([]string, 0, len(*a))
-	for _, account := range *a {
-		parts = append(parts, account.Namespace+"/"+account.Name)
-	}
-	return strings.Join(parts, ",")
-}
-
-func parseAccount(value string) (auth.Account, error) {
-	parts := strings.Split(value, "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return auth.Account{}, fmt.Errorf("service account must be namespace/name: %q", value)
-	}
-	return auth.Account{Namespace: parts[0], Name: parts[1]}, nil
-}
-
-func (a *accountFlags) Set(value string) error {
-	account, err := parseAccount(value)
-	if err != nil {
-		return err
-	}
-	*a = append(*a, account)
-	return nil
-}
-
+// config is the Gateway's deployment contract: each setting is a YAML key of the file named by
+// AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE, with AGENTPLANE_RUNNER_GATEWAY_* environment overrides for
+// scalar settings. Lists are file-only. Viper loads the settings. Callers and the controller account
+// are written `namespace/name`.
+//
+// The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
+// values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
 type config struct {
-	Namespace                                           string
-	DispatcherDatabaseURL                               string
-	PodName, PodIP                                      string
-	RunnerTokenFile                                     string
-	Kubeconfig                                          string
-	ListenAddress, HTTPListenAddress                    string
-	ProxyPort                                           int
-	RunnerControlTargetTemplate                         string
-	DispatcherAudience, GatewayAudience, RunnerAudience string
-	DispatcherCallers, GatewayCallers, WakeCallers      []auth.Account
-	ControllerAccount                                   *auth.Account
-	QueueCap                                            int
-	WatchLease, RunnerTimeout                           time.Duration
+	Namespace                   string         `mapstructure:"sandbox_namespace"`
+	DispatcherDatabaseURL       string         `mapstructure:"dispatcher_database_url"`
+	PodName                     string         `mapstructure:"pod_name"`
+	PodIP                       string         `mapstructure:"pod_ip"`
+	RunnerTokenFile             string         `mapstructure:"runner_token_file"`
+	Kubeconfig                  string         `mapstructure:"kubeconfig"`
+	ListenAddress               string         `mapstructure:"listen_address"`
+	HTTPListenAddress           string         `mapstructure:"http_listen_address"`
+	ProxyPort                   int            `mapstructure:"proxy_port"`
+	RunnerControlTargetTemplate string         `mapstructure:"runner_control_target_template"`
+	DispatcherAudience          string         `mapstructure:"dispatcher_audience"`
+	GatewayAudience             string         `mapstructure:"gateway_audience"`
+	RunnerAudience              string         `mapstructure:"runner_audience"`
+	DispatcherCallers           []auth.Account `mapstructure:"dispatcher_callers"`
+	GatewayCallers              []auth.Account `mapstructure:"gateway_callers"`
+	WakeCallers                 []auth.Account `mapstructure:"wake_callers"`
+	ControllerAccount           *auth.Account  `mapstructure:"sandbox_controller_account"`
+	QueueCap                    int            `mapstructure:"max_queued_per_session"`
+	WatchLeaseSeconds           int            `mapstructure:"dispatcher_watch_lease_seconds"`
+	RunnerTimeoutSeconds        int            `mapstructure:"runner_request_timeout_seconds"`
 }
 
-// loadConfig keeps serving configuration explicit at the deployment boundary.
-// Only the database URL and Pod identity are environment values: the former is
-// a Secret and the Pod IP is supplied by the Downward API. Kubernetes sets the
-// Pod hostname to its name unless an explicit hostname is configured.
-func loadConfig(args []string, getenv func(string) string) (config, error) {
-	var c config
-	flags := flag.NewFlagSet("runner-gateway", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	flags.StringVar(&c.Namespace, "sandbox-namespace", "", "namespace of Agentplane Sandboxes")
-	flags.StringVar(&c.RunnerTokenFile, "runner-token-file", "", "projected Gateway audience token for cross-replica Runner calls")
-	flags.StringVar(&c.Kubeconfig, "kubeconfig", "", "Kubernetes client config; defaults to in-cluster credentials")
-	flags.StringVar(&c.ListenAddress, "listen-address", ":8080", "gRPC listen address for Dispatcher, Runner proxy and runner Connect")
-	flags.StringVar(&c.HTTPListenAddress, "http-listen-address", "", "HTTP/JSON listen address for the Dispatcher's generated facade; empty serves none")
-	flags.IntVar(&c.ProxyPort, "proxy-port", sandboxapi.ControlServicePort, "port advertised in each Sandbox control EndpointSlice")
-	flags.StringVar(&c.RunnerControlTargetTemplate, "runner-control-target-template", sandboxapi.ControlServiceTargetTemplate(), "target or target template the Dispatcher uses for each Sandbox runner proxy")
-	flags.StringVar(&c.DispatcherAudience, "dispatcher-audience", "", "Dispatcher caller TokenReview audience")
-	flags.StringVar(&c.GatewayAudience, "gateway-audience", "", "Gateway caller TokenReview audience")
-	flags.StringVar(&c.RunnerAudience, "runner-audience", "", "runner Connect TokenReview audience")
-	flags.IntVar(&c.QueueCap, "max-queued-per-session", 1000, "queued commands per Session")
-	flags.DurationVar(&c.WatchLease, "dispatcher-watch-lease", 300*time.Second, "WatchDispatches stream lease")
-	flags.DurationVar(&c.RunnerTimeout, "runner-request-timeout", 10*time.Second, "per-Sandbox Runner call timeout")
-	flags.Var((*accountFlags)(&c.DispatcherCallers), "dispatcher-caller", "allowed Dispatcher ServiceAccount namespace/name (repeatable)")
-	flags.Var((*accountFlags)(&c.GatewayCallers), "gateway-caller", "allowed Gateway Runner proxy ServiceAccount namespace/name (repeatable)")
-	flags.Var((*accountFlags)(&c.WakeCallers), "wake-caller", "Dispatcher caller allowed to wake on send (repeatable)")
-	controller := flags.String("sandbox-controller-account", "", "ServiceAccount allowed to Quiesce through Gateway")
-	if err := flags.Parse(args); err != nil {
-		return config{}, err
+func defaultConfig() config {
+	return config{
+		ListenAddress: ":8080", ProxyPort: sandboxapi.ControlServicePort,
+		RunnerControlTargetTemplate: sandboxapi.ControlServiceTargetTemplate(),
+		QueueCap:                    1000, WatchLeaseSeconds: 300, RunnerTimeoutSeconds: 10,
 	}
-	if flags.NArg() != 0 {
-		return config{}, errors.New("unexpected positional arguments")
+}
+
+func loadConfig() (config, error) {
+	c := defaultConfig()
+	settings := viper.New()
+	settings.SetEnvPrefix("AGENTPLANE_RUNNER_GATEWAY")
+	for _, key := range []string{
+		"sandbox_namespace",
+		"dispatcher_database_url",
+		"pod_name",
+		"pod_ip",
+		"runner_token_file",
+		"kubeconfig",
+		"listen_address",
+		"http_listen_address",
+		"proxy_port",
+		"runner_control_target_template",
+		"dispatcher_audience",
+		"gateway_audience",
+		"runner_audience",
+		"sandbox_controller_account",
+		"max_queued_per_session",
+		"dispatcher_watch_lease_seconds",
+		"runner_request_timeout_seconds",
+	} {
+		settings.MustBindEnv(key)
 	}
-	if *controller != "" {
-		account, err := parseAccount(*controller)
-		if err != nil {
-			return config{}, err
+	if path := os.Getenv(settingPrefix + "CONFIG_FILE"); path != "" {
+		settings.SetConfigFile(path)
+		settings.SetConfigType("yaml")
+		if err := settings.ReadInConfig(); err != nil {
+			return config{}, errors.New("could not read Runner Gateway settings file")
 		}
-		c.ControllerAccount = &account
 	}
-	c.DispatcherDatabaseURL = getenv("AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL")
-	c.PodName = getenv("AGENTPLANE_RUNNER_GATEWAY_POD_NAME")
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+		return config{}, errors.New("invalid Runner Gateway settings")
+	}
 	if c.PodName == "" {
 		var err error
-		c.PodName, err = os.Hostname()
-		if err != nil {
+		if c.PodName, err = os.Hostname(); err != nil {
 			return config{}, err
 		}
 	}
-	c.PodIP = getenv("AGENTPLANE_RUNNER_GATEWAY_POD_IP")
-	if c.Namespace == "" || c.DispatcherDatabaseURL == "" || c.PodName == "" || c.PodIP == "" || c.RunnerTokenFile == "" ||
-		c.DispatcherAudience == "" || c.GatewayAudience == "" || c.RunnerAudience == "" ||
-		len(c.DispatcherCallers) == 0 || len(c.GatewayCallers) == 0 || c.QueueCap < 1 || c.WatchLease <= 0 || c.RunnerTimeout <= 0 ||
-		c.ListenAddress == "" || c.ProxyPort < 1 || c.ProxyPort > 65535 ||
-		c.RunnerControlTargetTemplate == "" {
-		return config{}, errors.New("Runner Gateway identity, policy, database and positive timeout settings are required")
-	}
-	allowed := make(map[auth.Account]struct{}, len(c.DispatcherCallers))
-	for _, account := range c.DispatcherCallers {
-		allowed[account] = struct{}{}
-	}
-	for _, account := range c.WakeCallers {
-		if _, okay := allowed[account]; !okay {
-			return config{}, fmt.Errorf("wake caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
-		}
+	if err := c.validate(); err != nil {
+		return config{}, err
 	}
 	return c, nil
+}
+
+func (c *config) validate() error {
+	for _, required := range []struct{ name, value string }{
+		{"sandbox_namespace", c.Namespace},
+		{"dispatcher_database_url", c.DispatcherDatabaseURL},
+		{"pod_ip", c.PodIP},
+		{"runner_token_file", c.RunnerTokenFile},
+		{"dispatcher_audience", c.DispatcherAudience},
+		{"gateway_audience", c.GatewayAudience},
+		{"runner_audience", c.RunnerAudience},
+		{"listen_address", c.ListenAddress},
+		{"runner_control_target_template", c.RunnerControlTargetTemplate},
+	} {
+		if required.value == "" {
+			return fmt.Errorf("%s is required", required.name)
+		}
+	}
+	if len(c.DispatcherCallers) == 0 || len(c.GatewayCallers) == 0 {
+		return errors.New("dispatcher_callers and gateway_callers must each list at least one ServiceAccount")
+	}
+	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
+		return errors.New("proxy_port must be between 1 and 65535")
+	}
+	for _, positive := range []struct {
+		name  string
+		value int
+	}{
+		{"max_queued_per_session", c.QueueCap},
+		{"dispatcher_watch_lease_seconds", c.WatchLeaseSeconds},
+		{"runner_request_timeout_seconds", c.RunnerTimeoutSeconds},
+	} {
+		if positive.value < 1 {
+			return fmt.Errorf("%s must be positive", positive.name)
+		}
+	}
+	for _, account := range c.WakeCallers {
+		if !slices.Contains(c.DispatcherCallers, account) {
+			return fmt.Errorf("wake caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
+		}
+	}
+	return nil
 }

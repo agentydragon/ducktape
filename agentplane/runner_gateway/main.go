@@ -186,7 +186,7 @@ func serve(ctx context.Context, c config) error {
 		return err
 	}
 	runner := &dispatcher.ProxyRunner{
-		Namespace: c.Namespace, TokenFile: c.RunnerTokenFile, Timeout: c.RunnerTimeout,
+		Namespace: c.Namespace, TokenFile: c.RunnerTokenFile, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second,
 		TargetTemplate: c.RunnerControlTargetTemplate,
 	}
 	ready := make(chan struct{})
@@ -206,7 +206,7 @@ func serve(ctx context.Context, c config) error {
 	service := &dispatcher.Service{
 		Store: store, Auth: dispatchAuth, Callers: accountSet(c.DispatcherCallers),
 		WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
-		Hub: hub, WatchLease: c.WatchLease,
+		Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
 	server := grpc.NewServer()
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
@@ -256,7 +256,7 @@ func serve(ctx context.Context, c config) error {
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctrllog.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
-	c, err := loadConfig(os.Args[1:], os.Getenv)
+	c, err := loadConfig()
 	if err != nil {
 		slog.Error("invalid Runner Gateway configuration", "error", err)
 		os.Exit(2)

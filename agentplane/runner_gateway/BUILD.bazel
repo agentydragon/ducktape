@@ -126,7 +126,9 @@ go_library(
         "//agentplane/sandboxes/api",
         "//agentplane/workload_auth/go/auth",
         "@com_github_go_logr_logr//:logr",
+        "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
+        "@com_github_spf13_viper//:viper",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//rest",
@@ -151,4 +153,19 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":main_lib"],
+    deps = ["//agentplane/workload_auth/go/auth"],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = [
+        "//util:yaml_file_settings",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
 )

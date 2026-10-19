@@ -67,6 +67,18 @@ func TestResolveAndAuthorize(t *testing.T) {
 	}
 }
 
+func TestAccountReadsNamespaceSlashName(t *testing.T) {
+	var account Account
+	if err := account.UnmarshalText([]byte("agentplane/app")); err != nil || account != (Account{Namespace: "agentplane", Name: "app"}) {
+		t.Fatalf("namespace/name rejected: %+v, %v", account, err)
+	}
+	for _, malformed := range []string{"", "app", "/app", "agentplane/", "agentplane/app/extra"} {
+		if err := new(Account).UnmarshalText([]byte(malformed)); err == nil {
+			t.Fatalf("%q accepted", malformed)
+		}
+	}
+}
+
 func TestRejectsInvalidWorkload(t *testing.T) {
 	for name, mutate := range map[string]func(*authenticationv1.TokenReview){
 		"unauthenticated": func(r *authenticationv1.TokenReview) { r.Status.Authenticated = false },

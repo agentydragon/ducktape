@@ -122,6 +122,8 @@ py_test(
         ":fixture_chart",
         ":fixture_database",
         "//:conftest",
+        "//agentplane/runner_gateway:settings",
+        "//util:settings_contract",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
