@@ -43,7 +43,6 @@ let
 in
 {
   imports = [
-    ./drbd-canary.nix
     ../../modules/operator.nix
     ../../modules/gui.nix
     ../../modules/vm-desktop.nix

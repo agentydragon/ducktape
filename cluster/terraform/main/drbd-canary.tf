@@ -1,7 +1,7 @@
 # Host preparation only. Piraeus/CSI is deployed separately after the module checks
 # in cluster/docs/drbd_canary.md. Keep the rescue/dd schematic unchanged.
 locals {
-  drbd_canary_node           = "ovh-ns102453"
+  drbd_canary_nodes          = toset(["ovh-ns102453", "ovh-ns103656"])
   drbd_canary_talos_version  = "v1.14.0"
   drbd_canary_base_schematic = yamldecode(talos_image_factory_schematic.kimsufi.schematic)
 
@@ -9,7 +9,7 @@ locals {
 
   drbd_canary_machine_config_patches = {
     for name in keys(local.active_kimsufi_servers) :
-    name => name == local.drbd_canary_node ? [
+    name => contains(local.drbd_canary_nodes, name) ? [
       yamlencode({
         machine = {
           install = {
@@ -44,6 +44,6 @@ resource "talos_image_factory_schematic" "drbd_canary" {
 }
 
 output "drbd_canary_installer_image" {
-  description = "In-place upgrade image for the single DRBD canary; never use the rescue/dd installer"
+  description = "In-place upgrade image for the DRBD canary workers; never use the rescue/dd installer"
   value       = local.drbd_canary_installer_image
 }
