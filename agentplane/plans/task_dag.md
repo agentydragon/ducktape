@@ -675,7 +675,8 @@ native capability; it does not establish integration safety or migration behavio
 
 Route requests, replies, notifications and server-initiated requests to the correct Session/thread.
 Preserve Session-specific workdir, instructions, model/effort and setup behavior; identify any
-incompatible process-wide options during design. Concurrent startup must create only one server.
+incompatible process-wide options during design (the context window is one:
+`CODEX_MODEL_CATALOG`). Concurrent startup must create only one server.
 An exact-turn interrupt affects only its target. A shared server failure invalidates every hosted
 assignment; runner recovery must reconcile each affected Session and its admitted commands without
 duplicating side effects. Orderly quiesce still waits for setup/bootstrap. Persisted but unloaded
@@ -849,6 +850,10 @@ flowchart LR
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
     EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
+    CODEX_MODEL_CATALOG[Unscheduled: LLM ingress serves Codex a model catalog]
+    RUNNER_CODEX_SHARED_PROCESS[Blocked: shared Codex app-server, section 3]
+    CODEX_MODEL_CATALOG -. removes a process-wide option .-> RUNNER_CODEX_SHARED_PROCESS
+    RUNNER_HARNESS_DELIVERY_DESIGN -. entries follow the delivered Codex version .-> CODEX_MODEL_CATALOG
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
@@ -1056,6 +1061,38 @@ service may only move the same transfer later, and fetching upstream still costs
 extraction time. Specify version/digest verification, atomic installation, concurrent requests,
 cache scope, unavailable-artifact behavior and allowed egress for any runtime-delivery proposal.
 No new artifact service or runtime-download implementation is selected by this node.
+
+### `CODEX_MODEL_CATALOG` — LLM ingress serves Codex a model catalog that follows the model config
+
+**Unscheduled; operator, 2026-10-19 PDT: wants a catalog Agentplane serves that updates when its model
+config does, without restarting Codex or the runner.** Today the runner passes Codex one process-wide
+`-c model_context_window` from the route's `ModelConfig`. It pins every thread to one window, is why a model
+change across different windows is rejected, and cannot be shared by one app-server hosting several
+Sessions. [Evidence](../debug/codex_model_catalog.md): Codex fetches a provider's `model_catalog_url` and
+refetches it when a Responses reply carries a changed `X-Models-Etag`; the next turn uses the new entry.
+
+Direction: LLM ingress serves the catalog, authenticated like inference and answered from its
+configuration like `/agentplane/model-config` (never forwarded to LiteLLM), with an `ETag`, and adds the same
+value as `X-Models-Etag` to every `/v1/responses` reply. The runner's provider block gains `model_catalog_url`
+(and `features.api_key_model_discovery=true` while the pin is 0.157.0) and drops `-c model_context_window`
+for Codex; Claude keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. Entries are full `ModelInfo` records, not sparse
+overrides ([budget audit](../../model_catalog/client_budgets.md#codex-local-model-catalogue-2026-10-10)):
+generate them from `ModelConfig` plus a template for the pinned Codex version, chosen by the
+`client_version` query Codex sends. Image before config: ingress serves the catalog first, the runner points
+at it afterwards.
+
+Open inside this node, with a default: Sessions on an edited route follow the edit. The
+[ingress README](../llm_ingress/README.md#per-model-client-configuration) tells operators to use a new route
+ID instead so retained Sessions keep their budget; a Session can still be pinned per thread through
+`thread/start.config`. The different-window model-change rejection then applies to Claude only.
+
+**Exit:** ingress tests cover authentication, the `ETag` equal to the header, answering from configuration
+and no LiteLLM forward. A native Codex test against the pin shows a catalog edit reaching a running
+app-server without restart, a switch between routes of different windows, and a failing refetch (0.163.0
+falls back to default metadata until a refetch succeeds). Then remove the runner's `-c model_context_window`
+for Codex and update `runner/SPEC.md` and the ingress README. Untested so far: real tool or reasoning use
+against a served entry, compaction after a switch to a smaller window, and `X-Models-Etag` passing the egress
+sidecar and proxy; check these before the runner change.
 
 ### `K3S_BUNDLED_SERVICES_SPIKE` — measure a less isolated control plane in real k3s
 
