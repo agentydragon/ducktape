@@ -1023,37 +1023,35 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
     await _open_history_receipts(view.page)
     page = view.page
     await expect(page.get_by_text("Long action text", exact=True)).to_be_visible()
-    if kind == "email":
-        editor = page.locator(".agentplane-code-block .cm-content").last
-        await expect(editor).to_be_visible()
-        await expect(editor).to_contain_text("Long action content line 1")
-        await _focus(page, editor)
-        await view.capture()
-        # CodeMirror virtualizes offscreen lines; bring the end into view before checking it.
-        await editor.evaluate("element => element.scrollIntoView({block: 'end'})")
-        await expect(editor.get_by_text("Long action content line 48", exact=True)).to_be_visible()
-        await wait_for_stable(page)
-        await view.capture(f"{capture_name}-end")
-        return
-    if kind == "text":
-        await expect(page.get_by_role("button", name="Show all 48 lines", exact=True)).to_be_visible()
-    elif kind == "json":
+    if kind == "json":
         await expect(page.get_by_text("Structured content", exact=True)).to_be_visible()
     elif kind == "manifest":
         await expect(page.get_by_text("Apply Kubernetes resource", exact=True)).to_be_visible()
-    blocks = page.locator('.agentplane-clamped-block:has([data-clamped="true"])')
-    block = blocks.last if kind in {"text", "json"} else blocks.first
+
+    if kind in {"text", "json"}:
+        block = page.get_by_test_id("action-execution-outcome").locator(
+            '.agentplane-clamped-block[data-clamped="true"]'
+        )
+        expand_label: str | re.Pattern[str] = "Show more"
+        collapse_label = "Payload"
+    elif kind == "email":
+        block = page.locator(".agentplane-clamped-block:has([data-operation-heading])").filter(has_text="Message body")
+        expand_label = "Show more"
+        collapse_label = "Message body"
+    else:
+        block = page.locator(".agentplane-clamped-block:has([data-operation-heading])").filter(has_text="Manifest")
+        expand_label = re.compile(r"Show all \d+ lines")
+        collapse_label = re.compile(r"^Manifest(?:$| ·)")
+    await expect(block).to_have_count(1)
     await expect(block).to_be_visible()
     await _focus(page, block)
     await view.capture()
-    await block.get_by_role("button", name=re.compile(r"Show all \d+ lines")).click()
-    expanded = page.locator('.agentplane-clamped-block[data-expanded="true"]').first
-    await expect(expanded).to_be_visible()
-    await expect(expanded.locator('[data-clamped="true"]')).to_have_count(0)
+    await block.get_by_role("button", name=expand_label, exact=isinstance(expand_label, str)).click()
+    await expect(block).to_have_attribute("data-expanded", "true")
+    await expect(block.locator('[data-clamped="true"]')).to_have_count(0)
     await view.capture(f"{capture_name}-expanded")
-    collapse_name = "Manifest · ConfigMap" if kind == "manifest" else "Action text"
-    await expanded.get_by_role("button", name=collapse_name, exact=False).click()
-    await expect(page.locator('.agentplane-clamped-block[data-expanded="true"]')).to_have_count(0)
+    await block.get_by_role("button", name=collapse_label, exact=isinstance(collapse_label, str)).click()
+    await expect(block).to_have_attribute("data-expanded", "false")
     if kind == "email":
         await _open_raw_switches(page)
         await expect(page.get_by_text("Exact arguments (unredacted)", exact=True)).to_be_visible()
