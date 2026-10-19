@@ -242,16 +242,16 @@ cluster can delete them, and the
 completed Workflows in Postgres or MySQL.
 
 The operator's "archive" keeps the CR, which is D1's retiring. The precedent suggests a second kind
-of archive, a move out of Kubernetes: the CR and state PVC go, History keeps the transcript, and an
-archive row keeps what grants need, such as the Sandbox's tags. The tags move with it and stay
-editable, since freezing them "would be a bit inconvenient" (10:24): at any moment they live in one
-place, the CR or the archive row, so nothing reconciles between the two. Editing them can wait, but
-a mistaken tag must stay fixable, from the app (10:43), so no importer is needed. Until the archive
-has that write path, two things keep it possible: the tags live once per archived Sandbox, never
-copied into each Session's rows, and grants match them at read time, not at archive time. Retired
-Sandboxes, which can resume, stay CRs and stay few. It is D2 with an explicit archive step. It needs
-no restore: the operator would not ask for "given just history records and no Sandbox or PVC
-anymore, make a new Sandbox and make it restore and continue that history" (09:53).
+of archive, a move out of Kubernetes: the CR and state PVC go, History keeps the transcript and its
+record of the Sandbox, and that record keeps what grants need, such as the Sandbox's tags. The tags
+stay editable, since freezing them "would be a bit inconvenient" (10:24): while the CR exists it
+holds them and History only mirrors them, and once it is gone History's copy is the only one. Editing
+them can wait, but a mistaken tag must stay fixable, from the app (10:43), so no importer is needed.
+Until History has that write path, two things keep it possible: the tags live once per archived
+Sandbox, never copied into each Session's rows, and grants match them at read time, not at archive
+time. Retired Sandboxes, which can resume, stay CRs and stay few. It is D2 with an explicit archive
+step. It needs no restore: the operator would not ask for "given just history records and no
+Sandbox or PVC anymore, make a new Sandbox and make it restore and continue that history" (09:53).
 
 What each operation leaves:
 
@@ -264,7 +264,7 @@ What each operation leaves:
 | History's record of the Sandbox (namespace, name, UID, tags)                | Kept                               | Kept            | Purged |
 | Can run again                                                               | Yes                                | No              | No     |
 
-Deleting a Sandbox today is an archive without the archive row. The operator (23:24): "history's
+Deleting a Sandbox today is an archive without History's record of the Sandbox. The operator (23:24): "history's
 record of a Sandbox would be an entity in History Service, and Sandbox CR could stop existing
 without the History Service records disappearing", but "I'm not sure if sandbox controller should be
 involved". It need not be: History already records each Session's writer namespace and name on the
@@ -285,7 +285,9 @@ Candidates; each still needs the operator's go.
 
 - **Record the writing Sandbox's UID in History and check it on every push.** D1 deletes by it, D2
   keys grants by it, and D3 and D4 still identify a Sandbox by an ID History must record. The re-key
-  is not part of this; only D2's reads might need it (`HISTORY_SESSION_KEY_DESIGN`).
+  is not part of this; only D2's reads might need it (`HISTORY_SESSION_KEY_DESIGN`). History is
+  being ported to Go with its schema unchanged, so this, History's record of the Sandbox and the tag
+  watch land in Go after the port.
 - **Collections as tags on the Sandbox.** The operator (09:58): a collection as "something like a
   tag on one or more Sandboxes that's just a string, without a UID identity or a k8s object backing
   it, no Membership objects". A tag lives and dies with its Sandbox, an archive takes it along,
