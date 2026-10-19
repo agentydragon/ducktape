@@ -185,10 +185,10 @@ describe("toolValue", () => {
     expect(valueOf({ content: [{ type: "text", text: '{"test_a": 1}' }], isError: false })).toEqual({ test_a: 1 });
   });
 
-  it("keeps plain text as a value for action-owned decoders", () => {
-    expect(valueOf({ content: [{ type: "text", text: "Resource deleted successfully" }], isError: false })).toBe(
-      "Resource deleted successfully"
-    );
+  it("keeps lone plain text as its exact value for action-owned decoders", () => {
+    for (const text of ["Resource deleted successfully", "test prose\n  raw output"]) {
+      expect(valueOf({ content: [{ type: "text", text }], isError: false })).toBe(text);
+    }
   });
 
   it("is absent for an error, and for more than one block", () => {

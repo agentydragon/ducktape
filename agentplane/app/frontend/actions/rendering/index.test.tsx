@@ -831,7 +831,7 @@ describe("sandbox rendering", () => {
     );
     expect(opened.textContent).not.toContain("Pod apps/pod");
     expect(opened.textContent).toContain("Container worker");
-    expect(opened.querySelector(".agentplane-code-block .cm-line")?.textContent).toBe("printf %s '$HOME'");
+    expect(opened.querySelector(".agentplane-code-block .cm-line")?.textContent).toBe("printf '%s' '$HOME'");
     expect(opened.querySelector(".agentplane-tok-string")).toBeNull();
   });
 });
