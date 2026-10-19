@@ -23,7 +23,7 @@ import { sshRenderers } from "./ssh/index";
 type ActionIdentity = ActionRequestView["action"];
 
 // Maps avoid prototype-key lookups for group and Action names.
-const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>> = new Map([
+export const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>> = new Map([
   ["kubernetes_admin", kubernetesAdminRenderers],
   ["github", githubRenderers],
   ["gmail", gmailRenderers],

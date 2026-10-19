@@ -1,3 +1,4 @@
+# gazelle:exclude test_visual_actions.py
 # gazelle:exclude test_visual_notifications.py
 # gazelle:exclude test_visual_disclosures.py
 # gazelle:exclude test_visual_history.py
@@ -1305,6 +1306,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",
     ],
@@ -1399,4 +1401,11 @@ py_library(
     name = "visual_app",
     srcs = ["visual_app.py"],
     deps = ["@pypi//playwright"],
+)
+
+agentplane_visual_test(
+    name = "visual_actions",
+    src = "test_visual_actions.py",
+    shard_count = 4,
+    title = "Agentplane: action presentations",
 )

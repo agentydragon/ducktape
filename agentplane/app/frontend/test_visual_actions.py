@@ -1,0 +1,308 @@
+"""One named set of real-host screenshots per registered Action renderer."""
+
+import json
+from dataclasses import dataclass
+
+import pytest
+import pytest_bazel
+from playwright.async_api import expect
+
+from agentplane.app.frontend.testing.visual_assertions import _open_phone_navigation
+from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE
+from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
+from util.testing.page_capture import wait_for_stable
+from util.testing.visual_capture import VisualPage
+
+# gazelle:include_dep //util/testing:visual_fixtures
+# gazelle:include_dep //agentplane/app/frontend/testing:visual_fixtures
+pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
+pytestmark = pytest.mark.asyncio(loop_scope="session")
+
+
+@dataclass(frozen=True)
+class ActionExample:
+    group: str
+    name: str
+    arguments: dict[str, object]
+    result: object
+    label: str
+    result_text: str
+
+    @property
+    def key(self) -> str:
+        return f"{self.group}.{self.name}"
+
+
+CONFIG_MAP = {
+    "apiVersion": "v1",
+    "kind": "ConfigMap",
+    "metadata": {"name": "settings", "namespace": "apps"},
+    "data": {"mode": "safe"},
+}
+POD = {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": "web-0", "namespace": "apps"}}
+SANDBOX = {"name": "review-sandbox", "template": "python", "phase": "Running", "conditions": []}
+
+# Authored examples, not defaults generated from schemas: show meaningful optional arguments and
+# domain results. Names are also the gallery identities. The test checks these against the registry.
+EXAMPLES = (
+    ActionExample(
+        "kubernetes_admin",
+        "pods_list_in_namespace",
+        {"namespace": "apps", "labelSelector": "app=web", "fieldSelector": "status.phase=Running"},
+        [POD],
+        "List pods in namespace apps",
+        "web-0",
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "resources_create_or_update",
+        {"resource": json.dumps(CONFIG_MAP)},
+        CONFIG_MAP,
+        "Apply Kubernetes resource",
+        "settings",
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "pods_delete",
+        {"name": "web-0", "namespace": "apps"},
+        "Pod deleted successfully",
+        "Delete Pod apps/web-0",
+        "Pod deleted successfully",
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "pods_exec",
+        {"name": "web-0", "namespace": "apps", "container": "main", "command": ["printf", "%s", "hello world"]},
+        "hello world",
+        "Run command in Pod apps/web-0",
+        "hello world",
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "resources_get",
+        {"apiVersion": "v1", "kind": "ConfigMap", "name": "settings", "namespace": "apps"},
+        CONFIG_MAP,
+        "Get ConfigMap apps/settings",
+        "safe",
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "resources_list",
+        {"apiVersion": "v1", "kind": "Pod", "namespace": "apps", "labelSelector": "app=web"},
+        [POD],
+        "List Pod resources in namespace apps",
+        "web-0",
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "resources_delete",
+        {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
+        "Resource deleted successfully",
+        "Delete Pod apps/web-0",
+        "Deletion accepted",
+    ),
+    ActionExample(
+        "kubernetes_admin", "pods_get", {"name": "web-0", "namespace": "apps"}, POD, "Get Pod apps/web-0", "apiVersion"
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "pods_log",
+        {"name": "web-0", "namespace": "apps", "container": "main", "previous": True, "tail": 100},
+        "Starting web server\nListening on :8080\n",
+        "View logs for Pod apps/web-0",
+        "Listening on :8080",
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "events_list",
+        {"namespace": "apps", "fieldSelector": "type=Warning"},
+        [{"reason": "BackOff", "message": "Back-off restarting failed container"}],
+        "List events in namespace apps",
+        "BackOff",
+    ),
+    ActionExample(
+        "github",
+        "create_pull_request",
+        {
+            "owner": "example",
+            "repo": "service",
+            "title": "Document deployment checks",
+            "head": "docs",
+            "base": "devel",
+            "body": "Explain readiness checks.\nInclude rollback instructions.",
+            "draft": True,
+            "maintainer_can_modify": False,
+            "reviewers": ["reviewer"],
+        },
+        {"number": 42, "html_url": "https://github.com/example/service/pull/42"},
+        "Create pull request",
+        "42",
+    ),
+    ActionExample(
+        "gmail",
+        "drafts_create",
+        {
+            "to": ["owner@example.com"],
+            "cc": ["reviewer@example.com"],
+            "bcc": ["archive@example.com"],
+            "subject": "Deployment review",
+            "body": "Please review the deployment.\nReply with any blockers.",
+            "thread_id": "thread-123",
+        },
+        {"id": "draft-123", "message": {"id": "message-123", "threadId": "thread-123"}},
+        "Gmail: Draft email",
+        "draft-123",
+    ),
+    ActionExample(
+        "gmail",
+        "threads_list",
+        {"q": "from:deployments@example.com", "maxResults": 5, "includeSpamTrash": True},
+        {"threads": [{"id": "thread-123", "snippet": "Deployment review requested"}], "resultSizeEstimate": 1},
+        "Gmail: Search threads",
+        "Deployment review requested",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "products_list",
+        {"detail": "full"},
+        [{"id": 1, "name": "Oat milk"}, {"id": 2, "name": "Coffee"}],
+        "List Grocy products",
+        "Oat milk",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "quantity_units_list",
+        {"detail": "full"},
+        [{"id": 1, "name": "Bottle"}, {"id": 2, "name": "Gram"}],
+        "List quantity units",
+        "Bottle",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "get_system_info",
+        {},
+        {"grocy_version": {"Version": "4.5.0"}, "php_version": "8.4", "sqlite_version": "3.50", "db_version": 1},
+        "Show Grocy system information",
+        "Grocy 4.5.0",
+    ),
+    ActionExample(
+        "tana",
+        "get_or_create_calendar_node",
+        {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
+        {"nodeId": "calendar-week-42"},
+        "Get or create Tana calendar node",
+        "calendar-week-42",
+    ),
+    ActionExample(
+        "sandbox",
+        "exec",
+        {
+            "name": "review-sandbox",
+            "script": "printf '%s\\n' 'ready for review'",
+            "timeout_seconds": 60,
+            "max_output_bytes": 4096,
+            "cwd": "/workspace",
+        },
+        {
+            "exit": {"kind": "exited", "exit_code": 0},
+            "stdout": "ready for review\n",
+            "stderr": "",
+            "duration_seconds": 0.1,
+        },
+        "Run script in sandbox review-sandbox",
+        "ready for review",
+    ),
+    ActionExample(
+        "sandbox",
+        "create",
+        {"name": "review-sandbox", "template": "python"},
+        SANDBOX,
+        "Create sandbox review-sandbox",
+        "Running",
+    ),
+    ActionExample("sandbox", "get", {"name": "review-sandbox"}, SANDBOX, "Inspect sandbox review-sandbox", "Running"),
+    ActionExample(
+        "sandbox",
+        "dispose",
+        {"name": "review-sandbox"},
+        {"name": "review-sandbox", "existed": True},
+        "Dispose sandbox review-sandbox",
+        "disposed",
+    ),
+    ActionExample("sandbox", "list", {}, {"sandboxes": [SANDBOX]}, "List sandboxes", "Running"),
+    ActionExample(
+        "ssh",
+        "exec",
+        {"host": "archive.example.com", "user": "backup", "command": "ls -lh /srv/backups", "timeout_seconds": 30},
+        {
+            "host": "archive.example.com",
+            "user": "backup",
+            "exit_code": 0,
+            "stdout": "-rw-r--r-- 1 backup backup 1.5M Oct 12 03:00 daily.tar.zst\n",
+            "stderr": "",
+            "stdout_truncated": False,
+            "stderr_truncated": False,
+        },
+        "Run SSH command",
+        "daily.tar.zst",
+    ),
+)
+
+
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda example: example.key)
+async def test_action_presentations(
+    view: VisualPage, app: AgentplaneFixture, example: ActionExample, capture_name: str
+) -> None:
+    page = view.page
+    registered = await page.evaluate("window.agentplaneVisual.actionRendererKeys()")
+    keys = [item.key for item in EXAMPLES]
+    assert len(keys) == len(set(keys)), "Duplicate Action visual example"
+    assert set(keys) == set(registered), "Every registered Action renderer needs a named visual example"
+
+    await app.show_action_preview(example.group, example.name, example.arguments)
+    await app.mount_thread(IDLE_THREAD)
+    await _open_phone_navigation(page)
+    sidebar = page.locator(".agentplane-actions-sidebar")
+    await expect(sidebar.locator(".agentplane-actions-sidebar-name")).to_have_text(example.label)
+    await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
+    await wait_for_stable(page)
+    await view.capture(f"{capture_name}-sidebar-collapsed", target=sidebar)
+    await sidebar.get_by_role("button", name="Expand ", exact=False).click()
+    await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
+    await wait_for_stable(page)
+    await view.capture(f"{capture_name}-sidebar-expanded", target=sidebar)
+
+    # Native sandbox results are stored directly. MCP results use the actual wire envelope.
+    result = (
+        example.result
+        if example.group == "sandbox"
+        else {
+            "content": [
+                {
+                    "type": "text",
+                    "text": example.result if isinstance(example.result, str) else json.dumps(example.result),
+                }
+            ],
+            "structuredContent": example.result,
+            "isError": False,
+        }
+    )
+    await app.show_action_receipt(example.group, example.name, example.arguments, result)
+    await page.evaluate("window.location.hash = '/actions/70000000-0000-4000-8000-000000000007'")
+    receipt = page.locator("[data-action-receipt]")
+    await expect(receipt).to_be_visible()
+    await expect(receipt).to_contain_text(example.result_text)
+    await expect(receipt.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
+    await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
+    await wait_for_stable(page)
+    await view.capture(f"{capture_name}-detail-result", target=receipt)
+
+    await page.evaluate("window.location.hash = '/actions'")
+    await expect(page.locator("[data-action-receipt]")).to_have_count(1)
+    await wait_for_stable(page)
+    await view.capture(f"{capture_name}-history", target=page.locator("[data-action-receipt]"))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
