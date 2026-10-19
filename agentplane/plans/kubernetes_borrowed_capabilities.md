@@ -232,6 +232,14 @@ and what a reference needs at read time.
   [archive apart from live objects](multiagent_communication.md#option-authorize-the-archive-apart-from-live-objects)).
 - What dangles are the kinds the Sandbox owns: membership CRs, bindings, Leases. Garbage collection
   removes them with it, which is the intended result for a membership that covers live members only.
+- A membership that must keep covering dead Sandboxes lives in a database that outlives them, keyed
+  by Sandbox UID. The owner is undecided here; History Service is the default, since it already
+  records the writing Sandbox. Static sets stay authored in git and a one-way reconciler copies them
+  into that database (the mirror controller or git-to-API importer from the GitOps glue section).
+  Its input is the authored object, and only an explicit delete of that object removes a
+  membership, so it never has to infer anything from a Sandbox disappearing. Launch enrollment is
+  written to the database directly and never passes through a CR, so there is no Sandbox deletion
+  to capture.
 - Keeping the Sandbox so its references stay valid costs a record family that never goes away. The
   Dispatcher's delivery worker lists every Sandbox on each 10 s tick and acquires or renews a Lease
   for each, suspended or not (`runner_gateway/dispatcher/delivery.go`), and each keeps its
