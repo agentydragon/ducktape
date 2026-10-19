@@ -2,6 +2,7 @@ import { SegmentedControl } from "@mantine/core";
 import { type JSX, useState } from "react";
 
 import { ListDetailsIcon, ListIcon } from "./icons";
+
 type PreviewVariant = "compact" | "detailed";
 
 // The owner holds the compact/detailed selection and passes it to the control.
