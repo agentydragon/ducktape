@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from model_catalog.catalog import (
-    ANTIGRAVITY_PRO,
+    ANTIGRAVITY_GEMINI_FLASH,
     GEMINI_FLASH,
     GEMINI_FLASH_LITE,
     GPT6_ASTRA_MESSAGES,
@@ -59,7 +59,7 @@ def claude_wrapper_models() -> dict[str, dict[str, str | int]]:
             max_output_tokens=65_536,
         ),
         "antigravity-claude": _wrapper(
-            ANTIGRAVITY_PRO,
+            ANTIGRAVITY_GEMINI_FLASH,
             None,
             KEY_MODEL_LANES["antigravity_client_models"],
             max_context_tokens=1_048_576,

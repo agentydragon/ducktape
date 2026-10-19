@@ -153,10 +153,17 @@ and does not register `gemini-3.8-flash-tiered`. Keep 3.8 Flash out of our route
 registry until CLIProxyAPI upstream registers the live ID; then restore it and verify
 the end-to-end Messages route.
 
-The pinned source also does not register the live `gemini-3.5-flash-lite` ID, although
-CLIProxyAPI v8.0.30 does. The Antigravity route is omitted until the source pin and
-deployed image include that support; the separate direct-Gemini route remains.
-The other configured Antigravity route IDs are present in the pinned registry. v8.0.30
-is not a strict superset: it no longer registers `gemini-pro-agent` or
-`gemini-3.1-pro-low`. Reconcile those two routes before upgrading the source pin and
-image. This registry comparison is not a generation test.
+The October 15 deployed image used the older source pin recorded above: it did not
+register the live `gemini-3.5-flash-lite` ID, even though CLIProxyAPI v8.0.30 did.
+The current repository pin is commit
+[`0f5c54cd6a1393447484eee02149bf7fab2e4784`](https://github.com/agentydragon/CLIProxyAPI/blob/0f5c54cd6a1393447484eee02149bf7fab2e4784/internal/registry/models/models.json).
+Its Antigravity registry includes `gemini-3-flash` and `gemini-3.5-flash-lite` with
+1,048,576 input tokens and 65,536 / 65,535 output tokens, respectively. The live
+`gemini-3.8-flash-tiered` ID still differs from the registered `gemini-3.8-flash-high`.
+
+That current registry no longer includes `gemini-pro-agent` or `gemini-3.1-pro-low`.
+Keep both out of LiteLLM and Agentplane until a later pinned CLIProxyAPI registry
+contains those exact IDs and the deployed image includes that revision. The old direct
+Gemini Flash-Lite route remains a separate account and wire. Registry membership is not
+a generation test; verify the deployed image and Messages path before enabling a newly
+registered model.

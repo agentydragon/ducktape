@@ -2,7 +2,7 @@
   "antigravity-claude": {
     "maxContextTokens": 1048576,
     "maxOutputTokens": 65536,
-    "model": "antigravity/ant-messages/gemini-pro-agent"
+    "model": "antigravity/ant-messages/gemini-3-flash"
   },
   "codex-claude": {
     "haikuModel": "chatgpt/ant-messages/gpt-6-luna",

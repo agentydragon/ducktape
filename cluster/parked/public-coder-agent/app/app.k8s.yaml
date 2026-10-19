@@ -224,24 +224,24 @@ data:
               },
               {
                 "contextWindow": 1048576,
-                "id": "antigravity/ant-messages/gemini-pro-agent",
+                "id": "antigravity/ant-messages/gemini-3-flash",
                 "input": [
                   "text",
                   "image"
                 ],
-                "maxTokens": 65535,
-                "name": "Gemini 3.1 Pro (High) (Google Antigravity via LiteLLM)",
-                "reasoning": true
+                "maxTokens": 65536,
+                "name": "Gemini 3 Flash (Google Antigravity via LiteLLM)",
+                "reasoning": false
               },
               {
                 "contextWindow": 1048576,
-                "id": "antigravity/ant-messages/gemini-3.1-pro-low",
+                "id": "antigravity/ant-messages/gemini-3.5-flash-lite",
                 "input": [
                   "text",
                   "image"
                 ],
                 "maxTokens": 65535,
-                "name": "Gemini 3.1 Pro (Low) (Google Antigravity via LiteLLM)",
+                "name": "Gemini 3.5 Flash-Lite (Google Antigravity via LiteLLM)",
                 "reasoning": false
               },
               {

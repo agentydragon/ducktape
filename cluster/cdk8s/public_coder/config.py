@@ -6,9 +6,9 @@ from cluster.cdk8s.openclaw_gateway import disabled_commands, session_memory_hoo
 from cluster.cdk8s.public_coder.egress_proxy_url import PROXY_URL as _EGRESS_PROXY
 from model_catalog.catalog import (
     ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
+    ANTIGRAVITY_GEMINI_FLASH,
+    ANTIGRAVITY_GEMINI_FLASH_LITE,
     ANTIGRAVITY_OPUS,
-    ANTIGRAVITY_PRO,
-    ANTIGRAVITY_PRO_LOW,
     ANTIGRAVITY_SONNET,
     GEMINI_ROUTES,
     GPT6_ASTRA_RESPONSES,
@@ -135,9 +135,9 @@ def config() -> dict:
                     "api": "openai-responses",
                     "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
                     "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
-                    # Preserve the paused client's existing selection, order and budgets.
-                    # These are OpenClaw settings, not provider capacity claims;
-                    # adding provider metadata must not opt another route in.
+                    # Keep this paused client's selection explicit. These OpenClaw
+                    # context/output values are client settings, not provider capacity
+                    # claims; provider metadata alone does not opt a route in.
                     "models": [
                         _model_entry(GPT6_ASTRA_RESPONSES, context_budget=872_000, output_budget=128_000),
                         *(
@@ -153,8 +153,11 @@ def config() -> dict:
                             for route in (ANTIGRAVITY_OPUS, ANTIGRAVITY_SONNET)
                         ),
                         *(
-                            _model_entry(route, context_budget=1_048_576, output_budget=65_535)
-                            for route in (ANTIGRAVITY_PRO, ANTIGRAVITY_PRO_LOW)
+                            _model_entry(route, context_budget=1_048_576, output_budget=output_budget)
+                            for route, output_budget in (
+                                (ANTIGRAVITY_GEMINI_FLASH, 65_536),
+                                (ANTIGRAVITY_GEMINI_FLASH_LITE, 65_535),
+                            )
                         ),
                         _model_entry(ANTIGRAVITY_GPT_OSS_120B_MEDIUM, context_budget=114_000, output_budget=32_768),
                     ],

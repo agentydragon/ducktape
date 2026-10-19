@@ -345,11 +345,12 @@ _SUBSCRIPTION_HAIKU = Model(
 # non-current-generation Claude, Google's own Gemini lineup under Antigravity-specific
 # slugs that don't match the public API names (reasoning-tier suffixes baked into the
 # slug: -high/-low/-lite/-agent), and the open-weight (Apache-2.0) gpt-oss-120b, which
-# Google can self-host like anyone else. The 2026-10-15 CLIProxyAPI list still included
-# gemini-3.6-flash-high, gemini-3-flash, and gemini-3.1-flash-lite; an earlier listing also
-# included gemini-3.7-flash-high. Their dated availability evidence is in antigravity_limits.md.
-# Only the newest Gemini Flash and Flash Lite versions are served; Pro tiers, image,
-# Claude and GPT-OSS remain distinct routes.
+# Google can self-host like anyone else. The 2026-10-15 CLIProxyAPI account list included
+# gemini-3-flash and gemini-3.5-flash-lite, both registered by the pinned source. The live
+# gemini-3.8-flash-tiered ID is not registered under that exact name. The two Pro IDs are
+# also absent from the pinned source and remain unserved until it registers them again.
+# Dated source/account intersections are recorded in antigravity_limits.md. Image, Claude
+# and GPT-OSS remain distinct routes.
 #
 # `reasoning` mirrors the slug's own baked-in effort tier (-high/-agent/-medium as
 # True, -low/-lite/plain/-image as False). OpenClaw consumes this capability flag;
@@ -382,14 +383,6 @@ _ANTIGRAVITY_SONNET = Model(
     reasoning=True,
     limits=TokenLimits(max_input_tokens=250_000, max_output_tokens=64_000),
 )
-_ANTIGRAVITY_PRO = Model(
-    id="gemini-pro-agent",
-    display_name="Gemini 3.1 Pro (High)",
-    reasoning=True,
-    limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
-)
-
-
 # Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key
 # secret). Current-generation lineup only (Gemini 3.x) -- the 2.5 generation,
 # the shut-down gemini-3-pro-preview, and every non-latest 3.x minor version
@@ -666,24 +659,34 @@ ANTIGRAVITY_OPUS = Route(
 ANTIGRAVITY_SONNET = Route(
     _ANTIGRAVITY_SONNET, ANTIGRAVITY_MESSAGES, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
 )
-ANTIGRAVITY_PRO = Route(_ANTIGRAVITY_PRO, ANTIGRAVITY_MESSAGES, publish_limits=True)
-# TODO: Re-add Gemini 3.8 Flash once CLIProxyAPI's model registry catches up with
-# Antigravity's live `gemini-3.8-flash-tiered` ID. The pinned adapter only registers
-# `gemini-3.8-flash-high`, so requests using the live ID fail provider lookup.
-# TODO: Re-add Antigravity Gemini 3.5 Flash Lite after updating the CLIProxyAPI source
-# pin and image; the current pin does not register it. Upstream v8.0.30 does.
-ANTIGRAVITY_FLASH_IMAGE = Route(
-    Model(id="gemini-3.1-flash-image", display_name="Gemini 3.1 Flash Image", reasoning=False), ANTIGRAVITY_MESSAGES
-)
-ANTIGRAVITY_PRO_LOW = Route(
+ANTIGRAVITY_GEMINI_FLASH = Route(
     Model(
-        id="gemini-3.1-pro-low",
-        display_name="Gemini 3.1 Pro (Low)",
+        id="gemini-3-flash",
+        display_name="Gemini 3 Flash",
+        reasoning=False,
+        limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
+    ),
+    ANTIGRAVITY_MESSAGES,
+    publish_limits=True,
+)
+ANTIGRAVITY_GEMINI_FLASH_LITE = Route(
+    Model(
+        id="gemini-3.5-flash-lite",
+        display_name="Gemini 3.5 Flash-Lite",
         reasoning=False,
         limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
     ),
     ANTIGRAVITY_MESSAGES,
     publish_limits=True,
+)
+# Re-enable `gemini-pro-agent` and `gemini-3.1-pro-low` only after the pinned
+# CLIProxyAPI model registry registers those exact Antigravity IDs again and the
+# deployed image includes that revision. The staging failure showed that a route
+# accepted by LiteLLM can still fail CLIProxyAPI's provider lookup.
+# Likewise, wait to re-enable the live `gemini-3.8-flash-tiered` ID until the
+# pinned registry contains that exact name; it currently registers a different ID.
+ANTIGRAVITY_FLASH_IMAGE = Route(
+    Model(id="gemini-3.1-flash-image", display_name="Gemini 3.1 Flash Image", reasoning=False), ANTIGRAVITY_MESSAGES
 )
 ANTIGRAVITY_GPT_OSS_120B_MEDIUM = Route(
     Model(
@@ -698,9 +701,9 @@ ANTIGRAVITY_GPT_OSS_120B_MEDIUM = Route(
 ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
+    ANTIGRAVITY_GEMINI_FLASH,
+    ANTIGRAVITY_GEMINI_FLASH_LITE,
     ANTIGRAVITY_FLASH_IMAGE,
-    ANTIGRAVITY_PRO,
-    ANTIGRAVITY_PRO_LOW,
     ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
 )
 GROQ_CHAT = Upstream(Provider.GROQ, "groq", "chat", supports_function_calling=True)

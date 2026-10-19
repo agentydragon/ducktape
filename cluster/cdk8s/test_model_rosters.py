@@ -10,6 +10,8 @@ from cluster.cdk8s.model_selections import STAGING_APP_MODELS, TESTING_APP_MODEL
 from model_catalog.catalog import (
     ANTHROPIC_API_ROUTES,
     ANTHROPIC_SUBSCRIPTION_ROUTES,
+    ANTIGRAVITY_GEMINI_FLASH,
+    ANTIGRAVITY_GEMINI_FLASH_LITE,
     ANTIGRAVITY_ROUTES,
     CHATGPT_RESPONSES_ROUTES,
     GEMINI_EMBEDDING_ALIAS,
@@ -120,10 +122,33 @@ def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
     assert not direct.reasoning_efforts
 
 
-def test_flash_lite_remains_direct_google_only() -> None:
-    flash_lite = [route for route in GEMINI_ROUTES if route.model.id == "gemini-3.5-flash-lite"]
-    assert [route.id for route in flash_lite] == ["google/goog-generate/gemini-3.5-flash-lite"]
-    assert all(route.model.id != "gemini-3.5-flash-lite" for route in ANTIGRAVITY_ROUTES)
+def test_antigravity_google_routes_are_served_and_selected_for_both_harnesses() -> None:
+    routes = (ANTIGRAVITY_GEMINI_FLASH, ANTIGRAVITY_GEMINI_FLASH_LITE)
+    assert [route.model.id for route in routes] == ["gemini-3-flash", "gemini-3.5-flash-lite"]
+    assert all(route in ANTIGRAVITY_ROUTES for route in routes)
+    assert all(route in STAGING_APP_MODELS.claude and route in STAGING_APP_MODELS.codex for route in routes)
+    assert all(route in KEY_MODEL_LANES["antigravity_client_models"].allowed for route in routes)
+    assert all(model_entry(route)["model_name"] == route.id for route in routes)
+    assert [route.model.limits for route in routes] == [
+        TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
+        TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
+    ]
+    for route in routes:
+        limits = route.model.limits
+        assert isinstance(limits, TokenLimits)
+        assert model_entry(route)["model_info"]["max_output_tokens"] == limits.max_output_tokens
+    assert not {"gemini-pro-agent", "gemini-3.1-pro-low"} & {route.model.id for route in ANTIGRAVITY_ROUTES}
+
+
+def test_flash_lite_keeps_distinct_google_account_routes() -> None:
+    direct = [route for route in GEMINI_ROUTES if route.model.id == "gemini-3.5-flash-lite"]
+    assert [route.id for route in direct] == ["google/goog-generate/gemini-3.5-flash-lite"]
+    assert direct[0].id != ANTIGRAVITY_GEMINI_FLASH_LITE.id
+    assert ANTIGRAVITY_GEMINI_FLASH_LITE.id == "antigravity/ant-messages/gemini-3.5-flash-lite"
+    assert direct[0].model.limits == TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536)
+    assert ANTIGRAVITY_GEMINI_FLASH_LITE.model.limits == TokenLimits(
+        max_input_tokens=1_048_576, max_output_tokens=65_535
+    )
 
 
 @pytest.mark.parametrize("publish_limits", [False, True])

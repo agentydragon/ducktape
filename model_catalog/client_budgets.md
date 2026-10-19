@@ -71,7 +71,8 @@ The public-coder projection currently preserves:
 | Direct Google Gemini routes                     |         1048576 |       65536 |
 | Antigravity Claude Opus / Sonnet                |          200000 |       64000 |
 | Antigravity Gemini 3.8 Flash                    |         1048576 |       65536 |
-| Antigravity Pro High / Pro Low / Flash Lite 3.5 |         1048576 |       65535 |
+| Antigravity Gemini 3 Flash                      |         1048576 |       65536 |
+| Antigravity Gemini 3.5 Flash-Lite               |         1048576 |       65535 |
 | Antigravity GPT-OSS 120B Medium                 |          114000 |       32768 |
 
 These are the preserved client choices. Google's fresh metadata also distinguishes
