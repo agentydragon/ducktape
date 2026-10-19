@@ -1,33 +1,23 @@
 # Tana Export Toolkit
 
-Utilities for transforming Tana JSON exports into Markdown or TanaPaste formats and for
-materialising saved searches. The package bundles CLI helpers plus a reusable library of
-parsers/renderers under the `tana.export` namespace.
+Transforms Tana JSON exports into Markdown or TanaPaste and materialises saved searches: CLI
+helpers plus a library under `tana.export`.
 
-## Development
+```bash
+bazel run //tana/export:convert_bin -- --help
+```
 
-See the repository root AGENTS.md for the standard Bazel workflow.
-
-`bazel run //tana/export:convert_bin -- --help`
-
-Key layout (`tana/`):
-
-- `domain/` — data models, constants, and type definitions.
-- `graph/` — `TanaGraph` workspace representation and structural helpers, including the
-  JSON loader (`load_workspace`).
-- `query/` — read/query helpers (filters, search parser/evaluator/materializer).
-- `render/` — Markdown/TanaPaste formatting utilities.
-- `export/` — CLI entry points and higher-level workflows.
-- `mcp_server/` — container packaging for the internal desktop-backed Tana MCP server.
-- `firebase_resigner/` — sidecar that re-signs the in-pod Tana Desktop's Firebase
-  session when it goes stale.
-- `firebase_session_extractor/` — Rust CLI that extracts a Firebase refresh token from a
-  local Tana Desktop install's IndexedDB.
+- `domain/` — data models, constants, types.
+- `graph/` — `TanaGraph` workspace representation, structural helpers, JSON loader
+  (`load_workspace`).
+- `query/` — filters, search parser/evaluator/materializer.
+- `render/` — Markdown/TanaPaste formatting.
+- `export/` — CLI entry points and workflows.
+- `mcp_server/` — container packaging for the internal desktop-backed Tana MCP server (its public
+  OAuth facade is the shared `mcp-oauth-facade` image, <../x/mcp_oauth_facade/>).
+- `firebase_resigner/` — sidecar re-signing the in-pod Tana Desktop's stale Firebase session.
+- `firebase_session_extractor/` — Rust CLI extracting a Firebase refresh token from a local Tana
+  Desktop install's IndexedDB.
 - `litellm_proxy/` — LiteLLM custom provider for Tana's internal `llmProxy` endpoint
-  (development/demo integration).
-
-The public Authentik-backed MCP OAuth facade is now the shared
-`mcp-oauth-facade` image (`x/mcp_oauth_facade/`); the per-tana facade was
-removed when the facade was generalized.
-
-Tests and golden fixtures are in `testdata/`.
+  (development/demo).
+- `testdata/` — tests and golden fixtures.

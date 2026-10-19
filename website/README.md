@@ -31,18 +31,5 @@ jupyter-nbconvert --to markdown --template basic <...>.ipynb
 
 # Syntax highlighting
 
-See: <https://pandoc.org/MANUAL.html#syntax-highlighting>
-
-It uses [skylighting](https://github.com/jgm/skylighting) library under the hood.
-
-```bash
-pandoc --list-highlighted-languages
-```
-
-```bash
-stack install --flag skylighting-core:executable skylighting-core
-```
-
-```bash
-skylighting --help
-```
+Pandoc's [skylighting](https://pandoc.org/MANUAL.html#syntax-highlighting);
+`pandoc --list-highlighted-languages` lists supported languages.

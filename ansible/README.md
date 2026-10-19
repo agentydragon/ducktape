@@ -16,8 +16,7 @@ cd ansible
 ansible-playbook vps.yaml
 ```
 
-NOTE: running with `--skip-tags` might not work in any reasonable way. I didn't
-assign task particularly with that in mind... :/
+`--skip-tags` is unreliable: tasks were not tagged with it in mind.
 
 ## To deploy gpd
 
