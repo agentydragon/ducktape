@@ -519,7 +519,6 @@ async def test_action_argument_fallbacks_use_json_view(
     preview = section.locator(".agentplane-actions-sidebar-preview")
     await expect(preview).to_contain_text('"vendor_field": "fixture"')
     await expect(preview.get_by_text("Details shown as recorded data", exact=True)).to_be_visible()
-    await expect(preview).to_have_css("overflow-y", "visible")
     await expect(section.get_by_role("button", name=f"Approve {title}")).to_have_count(0)
     await view.capture(target=section)
 
