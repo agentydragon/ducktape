@@ -312,7 +312,32 @@ async def test_usage_surfaces_authoritative_banked_reset_count(tmp_path: Path) -
     assert output.result.available_reset_credit_expiries == [datetime(2026, 9, 20, 9, 0, tzinfo=UTC)]
 
 
-async def test_credit_detail_failure_keeps_the_authoritative_banked_count(tmp_path: Path) -> None:
+async def test_credit_detail_failure_keeps_the_authoritative_banked_count(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    token = _jwt(datetime.now(UTC) + timedelta(days=10))
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps(_auth(token)))
+    usage = {**_USAGE_BODY, "rate_limit_reset_credits": {"available_count": 1}}
+    response_body = "private-reset-credit-id"
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=usage))
+        mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(503, text=response_body))
+        output = await _provider(path).fetch()
+
+    assert isinstance(output.result, FetchSuccess)
+    assert output.result.available_reset_credits == 1
+    assert output.result.available_reset_credit_expiries == []
+    assert any("HTTPStatusError" in record.message and "503" in record.message for record in caplog.records)
+    assert "retaining count only" in caplog.text
+    assert token not in caplog.text
+    assert response_body not in caplog.text
+
+
+async def test_credit_detail_timeout_logs_exception_type_and_keeps_count(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     token = _jwt(datetime.now(UTC) + timedelta(days=10))
     path = tmp_path / "auth.json"
     path.write_text(json.dumps(_auth(token)))
@@ -320,12 +345,15 @@ async def test_credit_detail_failure_keeps_the_authoritative_banked_count(tmp_pa
 
     with respx.mock(assert_all_called=False) as mock:
         mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=usage))
-        mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(503, text="temporarily unavailable"))
+        mock.get(RESET_CREDITS_URL).mock(side_effect=httpx.ConnectTimeout(""))
         output = await _provider(path).fetch()
 
     assert isinstance(output.result, FetchSuccess)
     assert output.result.available_reset_credits == 1
     assert output.result.available_reset_credit_expiries == []
+    assert any("ConnectTimeout" in record.message for record in caplog.records)
+    assert "retaining count only" in caplog.text
+    assert token not in caplog.text
 
 
 async def test_management_api_uses_runtime_codex_auth_index() -> None:
