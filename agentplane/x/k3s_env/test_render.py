@@ -78,7 +78,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     pod = gateway["spec"]["template"]["spec"]
     container = pod["containers"][0]
     assert container["image"] == fixture_chart.RUNNER_GATEWAY_IMAGE
-    assert {port["name"]: port["containerPort"] for port in container["ports"]} == {"grpc": 8080}
+    assert {port["name"]: port["containerPort"] for port in container["ports"]} == {"grpc": 8080, "http": 8081}
     database_env = next(
         entry for entry in container["env"] if entry["name"] == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     )
