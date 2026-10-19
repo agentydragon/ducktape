@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -49,8 +50,14 @@ type Service struct {
 	WatchLease  time.Duration
 }
 
+// maxFilterCommands bounds DispatchFilter.command_ids, the size of a Session's queue.
+const maxFilterCommands = 1000
+
 func inScope(filter *dispatcherpb.DispatchFilter, row *dispatcherpb.Dispatch) bool {
 	if filter == nil {
+		return false
+	}
+	if ids := filter.GetCommandIds(); len(ids) > 0 && !slices.Contains(ids, row.GetCommandId()) {
 		return false
 	}
 	switch scope := filter.GetScope().(type) {
@@ -87,7 +94,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 		Reason string
 	}{}
 	var terminal []TerminalEvent
-	changed := true
+	changed, caughtUp := true, false
 	for {
 		if changed {
 			changed = false
@@ -109,10 +116,20 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 				if written[row.GetCommandId()] == key {
 					continue
 				}
-				if err := stream.Send(&dispatcherpb.WatchDispatchesResponse{Dispatch: row}); err != nil {
+				if err := stream.Send(&dispatcherpb.WatchDispatchesResponse{
+					Frame: &dispatcherpb.WatchDispatchesResponse_Dispatch{Dispatch: row},
+				}); err != nil {
 					return err
 				}
 				written[row.GetCommandId()] = key
+			}
+			if !caughtUp {
+				caughtUp = true
+				if err := stream.Send(&dispatcherpb.WatchDispatchesResponse{
+					Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}},
+				}); err != nil {
+					return err
+				}
 			}
 		}
 		select {
@@ -324,7 +341,10 @@ func (s *Service) list(ctx context.Context, filter *dispatcherpb.DispatchFilter)
 	default:
 		return nil, status.Error(codes.InvalidArgument, "dispatch filter is required")
 	}
-	rows, err := s.Store.ListDispatches(ctx, session, sandbox)
+	if len(filter.GetCommandIds()) > maxFilterCommands {
+		return nil, status.Errorf(codes.InvalidArgument, "dispatch filter names more than %d commands", maxFilterCommands)
+	}
+	rows, err := s.Store.ListDispatches(ctx, session, sandbox, filter.GetCommandIds())
 	if err != nil {
 		return nil, apiError(err)
 	}

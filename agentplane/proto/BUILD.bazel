@@ -32,6 +32,7 @@ proto_library(
     deps = [
         ":event_log_proto",
         ":runner_proto",
+        "@googleapis//google/api:annotations_proto",
         "@protobuf//:timestamp_proto",
     ],
 )
@@ -272,12 +273,14 @@ go_proto_library(
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//devinfra/go:grpc_gateway",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/proto/session_dispatcher",
     proto = ":session_dispatcher_proto",
     deps = [
         ":event_log_go_proto",
         ":runner_go_proto",
+        "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
 

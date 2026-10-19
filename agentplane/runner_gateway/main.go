@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/proto/session_dispatcher"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
@@ -84,6 +87,24 @@ func reportUnexpected(ctx context.Context, failed chan<- error, role string, err
 		err = fmt.Errorf("%s stopped unexpectedly", role)
 	}
 	failed <- fmt.Errorf("%s: %w", role, err)
+}
+
+// serveFacade answers the Dispatcher's HTTP/JSON form on address, forwarding each request over
+// loopback to the gRPC server so the servicer authenticates it.
+func serveFacade(ctx context.Context, address string, grpcListener net.Listener, failed chan<- error) (*http.Server, error) {
+	handler, err := facade.NewHandler(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(grpcListener.Addr().(*net.TCPAddr).Port)),
+		dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return nil, err
+	}
+	// No write timeout: WatchDispatches streams for its lease.
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+	go func() { reportUnexpected(ctx, failed, "HTTP listener", server.Serve(listener)) }()
+	return server, nil
 }
 
 func serve(ctx context.Context, c config) error {
@@ -200,6 +221,12 @@ func serve(ctx context.Context, c config) error {
 	defer listener.Close()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
+	var facadeServer *http.Server
+	if c.HTTPListenAddress != "" {
+		if facadeServer, err = serveFacade(ctx, c.HTTPListenAddress, listener, failed); err != nil {
+			return err
+		}
+	}
 	var result error
 	select {
 	case err := <-failed:
@@ -209,6 +236,13 @@ func serve(ctx context.Context, c config) error {
 	}
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	cancel()
+	if facadeServer != nil {
+		closing, release := context.WithTimeout(context.Background(), 5*time.Second)
+		defer release()
+		if err := facadeServer.Shutdown(closing); err != nil {
+			slog.Warn("HTTP listener did not drain", "error", err)
+		}
+	}
 	stopped := make(chan struct{})
 	go func() { server.GracefulStop(); close(stopped) }()
 	select {

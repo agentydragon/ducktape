@@ -1668,6 +1668,14 @@ go_deps = use_extension(
 )
 go_deps.from_file(go_mod = "//third_party:go.mod")
 
+# grpc-gateway ships BUILD files that load @googleapis, which the isolated go_deps
+# repository cannot see; regenerate them from the checked-in .pb.go files.
+go_deps.gazelle_override(
+    build_file_generation = "clean",
+    directives = ["gazelle:proto disable"],
+    path = "github.com/grpc-ecosystem/grpc-gateway/v2",
+)
+
 # k8s.io/apimachinery's generated BUILD files import kube-openapi, but that
 # dependency is not imported by first-party Go files.
 go_deps.module(
@@ -2029,6 +2037,7 @@ use_repo(
     "com_github_google_uuid",
     "com_github_goretk_gore",
     "com_github_goretk_redress",
+    "com_github_grpc_ecosystem_grpc_gateway_v2",
     "com_github_hashicorp_golang_lru_v2",
     "com_github_invopop_jsonschema",
     "com_github_josharian_intern",

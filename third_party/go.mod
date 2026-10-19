@@ -40,6 +40,9 @@ require (
 // Direct dependencies for Agentplane service configuration
 require github.com/spf13/viper v1.21.0
 
+// Direct dependencies for the generated HTTP facades of agentplane services
+require github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
+
 // Direct dependencies for Agentplane YAML consumers
 require gopkg.in/yaml.v3 v3.0.1
 

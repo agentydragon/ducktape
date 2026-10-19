@@ -6,6 +6,7 @@ package agentplane.proto.session_dispatcher;
 
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
+import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
 
 // One RPC per command, mirroring the runner's. Each stores the command durably and answers with its
@@ -27,10 +28,18 @@ service SessionDispatcher {
   // `ALREADY_EXISTS`. A Sandbox that does not exist fails `NOT_FOUND`.
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   rpc GetSessionOpening(GetSessionOpeningRequest) returns (GetSessionOpeningResponse);
-  rpc GetDispatch(GetDispatchRequest) returns (GetDispatchResponse);
-  // The current Dispatches of a Session or a Sandbox, then each one again whenever it changes.
-  rpc WatchDispatches(WatchDispatchesRequest) returns (stream WatchDispatchesResponse);
-  rpc ListDispatches(ListDispatchesRequest) returns (ListDispatchesResponse);
+  rpc GetDispatch(GetDispatchRequest) returns (GetDispatchResponse) {
+    option (google.api.http) = {get: "/v1/dispatches/{command_id}"};
+  }
+  // The current Dispatches of a Session or a Sandbox, then each one again whenever it changes. A
+  // `CaughtUp` frame follows the current ones, so a caller can tell a Dispatch not held from one
+  // not yet sent.
+  rpc WatchDispatches(WatchDispatchesRequest) returns (stream WatchDispatchesResponse) {
+    option (google.api.http) = {get: "/v1/dispatches:watch"};
+  }
+  rpc ListDispatches(ListDispatchesRequest) returns (ListDispatchesResponse) {
+    option (google.api.http) = {get: "/v1/dispatches"};
+  }
   // Only while the Dispatch is `DELIVERY_STATE_QUEUED_IN_DISPATCHER`: once a delivery began its outcome
   // is the runner's.
   rpc CancelDispatch(CancelDispatchRequest) returns (CancelDispatchResponse);
@@ -127,20 +136,28 @@ message GetDispatchResponse {
   Dispatch dispatch = 1;
 }
 
-// Which Dispatches: one Session's, or one Sandbox's by name. Exactly one is set.
+// Which Dispatches: one Session's, or one Sandbox's by name. Exactly one scope is set.
 message DispatchFilter {
   oneof scope {
     string session_id = 1;
     string sandbox = 2;
   }
+  // When not empty, only these commands within the scope; at most 1000.
+  repeated string command_ids = 3;
 }
 
 message WatchDispatchesRequest {
   DispatchFilter filter = 1;
 }
 
+// The Dispatches in scope when the watch began have all been sent.
+message CaughtUp {}
+
 message WatchDispatchesResponse {
-  Dispatch dispatch = 1;
+  oneof frame {
+    Dispatch dispatch = 1;
+    CaughtUp caught_up = 2;
+  }
 }
 
 message ListDispatchesRequest {

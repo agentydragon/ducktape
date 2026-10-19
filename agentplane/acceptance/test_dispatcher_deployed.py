@@ -164,6 +164,8 @@ async def _dispatch_until(
     )
     try:
         async for response in stream:
+            if not response.HasField("dispatch"):
+                continue
             row = response.dispatch
             if row.state in (pb.DELIVERY_STATE_FAILED, pb.DELIVERY_STATE_UNKNOWN):
                 raise DispatchFailedError(f"{pb.DeliveryState.Name(row.state)}: {row.reason}")
@@ -446,7 +448,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                     if response == grpc.aio.EOF:
                         raise AssertionError("Replica watch missed the Sandbox deletion outcome")
                     assert isinstance(response, pb.WatchDispatchesResponse)
-                    if response.dispatch.state == pb.DELIVERY_STATE_FAILED:
+                    if response.HasField("dispatch") and response.dispatch.state == pb.DELIVERY_STATE_FAILED:
                         assert response.dispatch.reason == "sandbox_deleted"
                         assert response.dispatch.command_id == deletion_command
                         break

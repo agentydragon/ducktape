@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/proto/session_dispatcher"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	_ "github.com/lib/pq"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -115,7 +117,7 @@ func TestAdmissionIsDurableAndIdempotent(t *testing.T) {
 	if _, err := store.Enqueue(ctx, "session-a", "sandbox-a", sandboxUID, input("overflow", "x"), nil); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("cap: %v", err)
 	}
-	rows, err := store.ListDispatches(ctx, "session-a", "")
+	rows, err := store.ListDispatches(ctx, "session-a", "", nil)
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("list: %v, %v", rows, err)
 	}
@@ -389,6 +391,59 @@ func TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts(t *testing.T) {
 	_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "api-b", SessionId: "api-session", Sandbox: "deleted"})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("missing Sandbox status: %v", err)
+	}
+}
+
+type collectedWatch struct {
+	grpc.ServerStream
+	ctx    context.Context
+	frames []*dispatcherpb.WatchDispatchesResponse
+}
+
+func (w *collectedWatch) Context() context.Context { return w.ctx }
+
+func (w *collectedWatch) Send(frame *dispatcherpb.WatchDispatchesResponse) error {
+	w.frames = append(w.frames, frame)
+	return nil
+}
+
+func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer caller-token"))
+	store := testStore(t, 5)
+	for _, id := range []string{"watch-a", "watch-b", "watch-c"} {
+		if _, err := store.Enqueue(ctx, "watch-session", "sandbox-api", sandboxUID, input(id, "x"), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resolver, err := auth.NewResolver(reviewedCaller{}, "dispatcher-audience", []string{"agentplane"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := auth.Account{Namespace: "agentplane", Name: "app"}
+	service := &Service{
+		Store: store, Auth: resolver, Callers: map[auth.Account]struct{}{account: {}},
+		Hub:        &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
+		WatchLease: 100 * time.Millisecond,
+	}
+	watch := &collectedWatch{ctx: ctx}
+	err = service.WatchDispatches(&dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
+		Scope:      &dispatcherpb.DispatchFilter_SessionId{SessionId: "watch-session"},
+		CommandIds: []string{"watch-a", "watch-c", "watch-absent"},
+	}}, watch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, frame := range watch.frames {
+		switch frame := frame.GetFrame().(type) {
+		case *dispatcherpb.WatchDispatchesResponse_Dispatch:
+			got = append(got, frame.Dispatch.GetCommandId())
+		case *dispatcherpb.WatchDispatchesResponse_CaughtUp:
+			got = append(got, "caught-up")
+		}
+	}
+	if want := []string{"watch-a", "watch-c", "caught-up"}; !slices.Equal(got, want) {
+		t.Fatalf("frames %v, want %v", got, want)
 	}
 }
 

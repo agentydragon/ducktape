@@ -46,7 +46,7 @@ type config struct {
 	PodName, PodIP                                      string
 	RunnerTokenFile                                     string
 	Kubeconfig                                          string
-	ListenAddress                                       string
+	ListenAddress, HTTPListenAddress                    string
 	ProxyPort                                           int
 	RunnerControlTargetTemplate                         string
 	DispatcherAudience, GatewayAudience, RunnerAudience string
@@ -68,6 +68,7 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 	flags.StringVar(&c.RunnerTokenFile, "runner-token-file", "", "projected Gateway audience token for cross-replica Runner calls")
 	flags.StringVar(&c.Kubeconfig, "kubeconfig", "", "Kubernetes client config; defaults to in-cluster credentials")
 	flags.StringVar(&c.ListenAddress, "listen-address", ":8080", "gRPC listen address for Dispatcher, Runner proxy and runner Connect")
+	flags.StringVar(&c.HTTPListenAddress, "http-listen-address", "", "HTTP/JSON listen address for the Dispatcher's generated facade; empty serves none")
 	flags.IntVar(&c.ProxyPort, "proxy-port", sandboxapi.ControlServicePort, "port advertised in each Sandbox control EndpointSlice")
 	flags.StringVar(&c.RunnerControlTargetTemplate, "runner-control-target-template", sandboxapi.ControlServiceTargetTemplate(), "target or target template the Dispatcher uses for each Sandbox runner proxy")
 	flags.StringVar(&c.DispatcherAudience, "dispatcher-audience", "", "Dispatcher caller TokenReview audience")

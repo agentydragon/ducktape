@@ -1,5 +1,28 @@
+load("@io_bazel_rules_go//proto:compiler.bzl", "go_proto_compiler")
+
 exports_files([
     "controller_gen.bzl",
     "gopath_codegen.bzl",
     "kubernetes_clients.bzl",
 ])
+
+# Adds the gRPC-Gateway HTTP/JSON facade (`*.pb.gw.go`) to a `go_proto_library` whose services carry
+# `google.api.http` rules. Pair it with `go_proto` and `go_grpc_v2` in `compilers`.
+go_proto_compiler(
+    name = "grpc_gateway",
+    plugin = "@com_github_grpc_ecosystem_grpc_gateway_v2//protoc-gen-grpc-gateway",
+    suffix = ".pb.gw.go",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//utilities",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//grpclog",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+    ],
+)

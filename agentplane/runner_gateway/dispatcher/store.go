@@ -235,7 +235,9 @@ func (s *Store) GetDispatch(ctx context.Context, id string) (*Dispatch, error) {
 	return d, err
 }
 
-func (s *Store) ListDispatches(ctx context.Context, sessionID, sandboxName string) ([]*Dispatch, error) {
+// ListDispatches returns the Dispatches of one Session or Sandbox, oldest first; a non-empty commandIDs
+// narrows them to those commands.
+func (s *Store) ListDispatches(ctx context.Context, sessionID, sandboxName string, commandIDs []string) ([]*Dispatch, error) {
 	if (sessionID == "") == (sandboxName == "") {
 		return nil, errors.New("exactly one dispatch scope is required")
 	}
@@ -243,7 +245,12 @@ func (s *Store) ListDispatches(ctx context.Context, sessionID, sandboxName strin
 	if sandboxName != "" {
 		column, value = "sandbox_name", sandboxName
 	}
-	rows, err := s.DB.QueryContext(ctx, "SELECT "+dispatchColumns+" FROM dispatch WHERE "+column+"=$1 ORDER BY position", value)
+	query, arguments := "SELECT "+dispatchColumns+" FROM dispatch WHERE "+column+"=$1", []any{value}
+	if len(commandIDs) > 0 {
+		query += " AND command_id = ANY($2)"
+		arguments = append(arguments, pq.Array(commandIDs))
+	}
+	rows, err := s.DB.QueryContext(ctx, query+" ORDER BY position", arguments...)
 	if err != nil {
 		return nil, err
 	}

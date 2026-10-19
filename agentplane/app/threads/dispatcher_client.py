@@ -28,7 +28,7 @@ class SessionDispatcherClient:
         return await call_unary(call, request, token_file=self.token_file, timeout_s=self.request_timeout_s)
 
     async def watch_dispatches(self, session_id: UUID) -> AsyncIterator[None]:
-        """Yield once per Dispatch of the Session that changed, until cancelled; anything else raises.
+        """Yield once per frame of the Session's Dispatch watch, until cancelled; anything else raises.
 
         The Dispatcher ends each stream on a lease, which this renews. A new stream starts with every
         Dispatch of the Session again, so a renewal yields once more for each of them.

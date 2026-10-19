@@ -119,6 +119,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway",
     visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
+        "//agentplane/grpc/facade",
         "//agentplane/proto:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/dispatcher",
         "//agentplane/runner_gateway/gateway",
