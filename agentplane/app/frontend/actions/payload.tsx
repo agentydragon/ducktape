@@ -31,7 +31,7 @@ export function ActionText({
     />
   );
   const header = heading && (
-    <strong className="agentplane-operation-heading" data-operation-heading>
+    <strong className="agentplane-operation-heading" data-operation-heading={heading}>
       {heading}
     </strong>
   );
