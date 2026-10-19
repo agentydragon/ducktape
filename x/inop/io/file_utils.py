@@ -1,6 +1,5 @@
 """Shared file utilities for runners."""
 
-import os
 from pathlib import Path
 from typing import ClassVar, Protocol
 
@@ -60,48 +59,6 @@ class FileProvider(Protocol):
         ...
 
 
-class WorkspaceFileProvider:
-    """File provider for local workspace directories."""
-
-    def __init__(self, workspace_path: Path):
-        self.workspace_path = workspace_path
-
-    def list_files(self) -> list[str]:
-        """List all files in the workspace."""
-        if not self.workspace_path or not self.workspace_path.exists():
-            return []
-
-        files = []
-        for root, dirs, filenames in os.walk(self.workspace_path):
-            # Remove directories we want to skip
-            dirs[:] = [d for d in dirs if d not in FileCollectionConfig.SKIP_DIRS]
-
-            for filename in filenames:
-                # Skip certain file extensions
-                if any(filename.endswith(ext) for ext in FileCollectionConfig.SKIP_EXTENSIONS):
-                    continue
-
-                filepath = Path(root) / filename
-                relative_path = filepath.relative_to(self.workspace_path)
-
-                # Skip very large files
-                if filepath.stat().st_size > FileCollectionConfig.MAX_FILE_SIZE_BYTES:
-                    continue
-
-                files.append(str(relative_path))
-
-        return files
-
-    def get_file_content(self, path: str) -> str:
-        """Get content of a file."""
-        filepath = self.workspace_path / path
-        try:
-            with filepath.open(encoding="utf-8") as f:
-                return f.read()
-        except (UnicodeDecodeError, OSError) as e:
-            raise ValueError(f"Cannot read file {path}") from e
-
-
 class DockerFileProvider:
     """File provider for Docker container workspaces."""
 
@@ -154,13 +111,6 @@ class FileCollector:
                 continue
 
         return files
-
-
-def collect_workspace_files(workspace_path: Path) -> dict[str, str]:
-    """Returns dict mapping relative file paths to their contents."""
-    provider = WorkspaceFileProvider(workspace_path)
-    collector = FileCollector(provider)
-    return collector.collect_files()
 
 
 def collect_docker_files(container_files: list[dict[str, str]]) -> dict[str, str]:
