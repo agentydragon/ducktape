@@ -419,22 +419,22 @@ async def _seed_expiring_grant(harness: Harness, *, phase: EnrollmentPhase) -> U
         await session.flush()
     if not is_exchanging:
         async with harness.sessions.begin() as session:
-            interaction = await session.get(EnrollmentInteraction, interaction_id, with_for_update=True)
-            binding = await session.get(CredentialBinding, binding_id, with_for_update=True)
-            grant = await session.get(AuthorizationGrant, grant_id, with_for_update=True)
-            assert interaction is not None
-            assert binding is not None
-            assert grant is not None
-            binding.status = CredentialBindingStatus.ISSUED
-            binding.issued_at = older
-            binding.updated_at = older
-            grant.initial_access_jti = f"legacy-access-{grant_id}"
-            grant.token_family_persisted_at = older
-            interaction.phase = EnrollmentPhase.COMPLETED
-            interaction.browser_binding_digest = None
-            interaction.closure_reason = "authorization_completed"
-            interaction.closed_at = now
-            interaction.updated_at = now
+            locked_interaction = await session.get(EnrollmentInteraction, interaction_id, with_for_update=True)
+            locked_binding = await session.get(CredentialBinding, binding_id, with_for_update=True)
+            locked_grant = await session.get(AuthorizationGrant, grant_id, with_for_update=True)
+            assert locked_interaction is not None
+            assert locked_binding is not None
+            assert locked_grant is not None
+            locked_binding.status = CredentialBindingStatus.ISSUED
+            locked_binding.issued_at = older
+            locked_binding.updated_at = older
+            locked_grant.initial_access_jti = f"legacy-access-{grant_id}"
+            locked_grant.token_family_persisted_at = older
+            locked_interaction.phase = EnrollmentPhase.COMPLETED
+            locked_interaction.browser_binding_digest = None
+            locked_interaction.closure_reason = "authorization_completed"
+            locked_interaction.closed_at = now
+            locked_interaction.updated_at = now
     return grant_id
 
 
