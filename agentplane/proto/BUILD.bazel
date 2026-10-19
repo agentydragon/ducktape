@@ -44,6 +44,9 @@ proto_library(
 
 py_proto_library_with_mypy_stubs(
     name = "session_dispatcher_pb2",
+    # `session_dispatcher_pb2` imports `google.api.annotations_pb2`. Under `aspect_py_binary` (the OCI
+    # images) the module generated from `@googleapis` is not importable, so ship the pip package's.
+    runtime_deps = ["@pypi//googleapis_common_protos"],
     deps = [":session_dispatcher_proto"],
 )
 
