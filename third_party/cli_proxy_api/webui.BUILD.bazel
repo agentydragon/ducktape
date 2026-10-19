@@ -88,6 +88,9 @@ genrule(
 
 filegroup(
     name = "test_sources",
-    srcs = [":sources"] + glob(["tests/**"]),
+    srcs = [
+        ":node_modules/typescript",
+        ":sources",
+    ] + glob(["tests/**"]),
     visibility = ["//visibility:public"],
 )
