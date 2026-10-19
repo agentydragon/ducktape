@@ -839,7 +839,7 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
         arguments = {"to": ["reader@example.com"], "subject": "Long email body", "body": text}
         result = {"content": [], "structuredContent": {"id": "long-draft"}}
     elif kind == "manifest":
-        group, name = "kubernetes_admin", "resources_apply"
+        group, name = "kubernetes_admin", "resources_create_or_update"
         arguments = {
             "resource": "apiVersion: v1\nkind: ConfigMap\ndata:\n"
             + "\n".join(f"  line{index}: Long manifest content" for index in range(48))
@@ -853,6 +853,8 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
         await expect(page.get_by_role("button", name="Show all 48 lines", exact=True)).to_be_visible()
     elif kind == "json":
         await expect(page.get_by_text("Structured content", exact=True)).to_be_visible()
+    elif kind == "manifest":
+        await expect(page.get_by_text("Apply Kubernetes resource", exact=True)).to_be_visible()
     blocks = page.locator('.agentplane-clamped-block:has([data-clamped="true"])')
     block = blocks.last if kind in {"text", "json"} else blocks.first
     await expect(block).to_be_visible()
