@@ -33,7 +33,7 @@ class FakeEgressAdmin(rpc.EgressAdminServicer):
     ) -> AsyncIterator[pb.WatchDecisionsResponse]:
         subject = (request.filter.subject.namespace, request.filter.subject.name)
         self.tokens.append(
-            next((item.value for item in context.invocation_metadata() if item.key == "authorization"), None)
+            next((str(value) for key, value in context.invocation_metadata() or () if key == "authorization"), None)
         )
         if not self.reachable:
             await context.abort(grpc.StatusCode.UNAVAILABLE, "egress proxy unavailable")

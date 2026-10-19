@@ -1959,7 +1959,7 @@ and successful caller authorization after Flux rolls the configuration.
 
 ### `EGRESS_ADMIN_APP_SWITCH` — the app reads egress admin over gRPC
 
-**In flight (operator dispatched 2026-10-19).** Replace the app's HTTP decisions client and SSE
+**In flight ([#11123](https://github.com/agentydragon/ducktape/pull/11123)).** Replace the app's HTTP decisions client and SSE
 change watcher with subject-filtered gRPC snapshots, and use standard gRPC health for its egress
 probe. Python proto targets and test callers move with the client. Merge after
 `EGRESS_ADMIN_ACTIVATION`; once the app image rolls, verify decisions streaming, backend outage
