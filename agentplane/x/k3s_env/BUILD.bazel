@@ -113,7 +113,8 @@ _K3S_BINARY_RLOCATION = "$(rlocationpath " + _K3S_BINARY + ")"
 
 py_test(
     name = "test_render",
-    size = "small",
+    # cdk8s/jsii startup dominates this one-case test on RBE; see debug/render_startup.md.
+    size = "medium",
     srcs = ["test_render.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
