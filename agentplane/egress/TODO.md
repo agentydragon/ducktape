@@ -1,5 +1,13 @@
 # TODO — Agentplane egress proxy
 
+## Evaluate upstream connection reuse
+
+Benchmark pooled `net/http` transports against the per-request transport in `proxy/proxy.go`.
+Preserve per-request authentication and policy checks, DNS address pinning at the actual dial,
+and the existing streaming, revocation, and WebSocket behavior. Use the
+[Iron reuse spike](https://github.com/agentydragon/ducktape/pull/10980) as comparison input before
+choosing a transport replacement; measure the standard-library option first.
+
 ## Review where a projected token is substituted
 
 `projectedWorkloadToken` has the sidecar carry an audience-scoped token to the central proxy in
