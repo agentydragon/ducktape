@@ -89,7 +89,7 @@ def kubernetes_clients(name, api, input_base, importpath, kinds, apply_configura
         "clientset": [":typed", "@io_k8s_client_go//discovery", "@io_k8s_client_go//rest", "@io_k8s_client_go//util/flowcontrol"],
         "listers": [api, "@io_k8s_apimachinery//pkg/labels", "@io_k8s_client_go//listers", "@io_k8s_client_go//tools/cache"],
         "internalinterfaces": [":clientset", "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/runtime", "@io_k8s_client_go//tools/cache"],
-        "informer_version": [api, ":clientset", ":internalinterfaces", ":listers", "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/runtime", "@io_k8s_apimachinery//pkg/watch", "@io_k8s_client_go//tools/cache"],
+        "informer_version": [api, ":clientset", ":internalinterfaces", ":listers", "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/runtime", "@io_k8s_apimachinery//pkg/runtime/schema", "@io_k8s_apimachinery//pkg/watch", "@io_k8s_client_go//tools/cache"],
         "informer_group": [":internalinterfaces", ":informer_version"],
         "informers": [api, ":clientset", ":internalinterfaces", ":informer_group", "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/runtime", "@io_k8s_apimachinery//pkg/runtime/schema", "@io_k8s_client_go//tools/cache"],
     }
