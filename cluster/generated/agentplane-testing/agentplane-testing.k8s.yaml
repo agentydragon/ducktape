@@ -2320,6 +2320,7 @@ spec:
             - --runner-gateway-token-file=/var/run/secrets/agentplane-runner-gateway/token
             - --history-service-target=history-service.agentplane-testing.svc.cluster.local:8080
             - --session-dispatcher-target=session-dispatcher.agentplane-testing.svc.cluster.local:8080
+            - --session-dispatcher-http-url=http://session-dispatcher.agentplane-testing.svc.cluster.local:8081
             - --notifications-url=http://notifications.agentplane-testing.svc.cluster.local:8080
             - --notifications-token-file=/var/run/secrets/agentplane-notifications/token
             - --host=0.0.0.0
@@ -2740,6 +2741,14 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: runner-gateway
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8081"
               protocol: TCP
     - toEndpoints:
         - matchLabels:

@@ -240,6 +240,10 @@ class App(Construct):
                 session_dispatcher_target=(
                     f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
                 ),
+                session_dispatcher_http_url=(
+                    f"http://{session_dispatcher.http_service(namespace).fqdn}:"
+                    f"{session_dispatcher.http_service(namespace).port.number}"
+                ),
                 notifications_url=f"http://{notifications.service(namespace).fqdn}:{notifications.service(namespace).port.number}",
                 notifications_token_file="/var/run/secrets/agentplane-notifications/token",
                 host="0.0.0.0",
@@ -326,6 +330,7 @@ class App(Construct):
                 *self._oidc_egress_rules(),
                 runner_gateway.service(namespace).egress(),
                 session_dispatcher.service(namespace).egress(),
+                session_dispatcher.http_service(namespace).egress(),
                 history_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),
                 egress.admin(namespace).egress(),
