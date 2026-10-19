@@ -105,6 +105,5 @@ def kubernetes_clients(name, api, input_base, importpath, kinds):
             name = package,
             srcs = [":" + package + "_sources"],
             importpath = importpath + "/" + files[0].rpartition("/")[0],
-            visibility = ["//agentplane:__subpackages__"],
             deps = dependencies[package],
         )
