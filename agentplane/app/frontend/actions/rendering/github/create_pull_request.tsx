@@ -7,8 +7,8 @@ import { Code, Stack, Text } from "@mantine/core";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { ActionText } from "../../payload";
 
-// A nonempty description cannot be reviewed safely in a few lines. These calls stay expanded.
-// Other optional arguments must all be displayed, including review requests and edit permissions.
+// Inline card decisions are limited to calls with no description; a compact preview never stands in
+// for reviewing authored text, which remains available in the full argument view.
 const createArgs = {
   owner: z.string().min(1),
   repo: z.string().min(1),
