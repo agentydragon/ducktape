@@ -20,8 +20,11 @@ bb run //devinfra/pr_visuals:retention_bin -- \
 `--endpoint`, `--bucket`, and `--repository` are required. `GITHUB_TOKEN` is read from
 the environment. AWS credentials and region use the standard AWS environment and SDK
 chain. If omitted, `--observed-at` defaults to the current UTC time and `--cutoff` is
-three days earlier. Supply both timestamps to reproduce an observation. The CLI uses
-S3 List/Get and GitHub pull request, compare, and workflow-run reads.
+three days earlier. Supply both timestamps to hold the age window fixed across runs.
+Reads remain live, so this does not reproduce a past bucket or GitHub snapshot. The
+CLI uses S3 List/Get and GitHub pull request, compare, and workflow-run reads. It
+requests 10,000-key listing pages, as supported by SeaweedFS 4.46, and reads metadata
+with at most eight concurrent requests. Progress goes to stderr; stdout is JSON.
 
 The JSON report includes exact object keys for candidate bundles and shared PNGs,
 candidate and retained object counts and bytes, the preserved pointers, unknown keys,
@@ -43,6 +46,12 @@ printed.
 
 ## Publisher race and decision gate
 
+The simplest starting policy is to expire eligible review bundles while retaining
+the deduplicated image pool indefinitely. This avoids the image-reuse race entirely.
+Measure unique-image growth before adding shared-image collection; repeated copies
+no longer drive that pool's size. The planner's image candidates can inform that
+decision without turning them into deletion requests.
+
 Three-day age grace does not make shared-image collection safe. The publisher checks
 whether `assets/<sha256>.png` exists and reuses an old object. A collector can observe
 that old object as unreferenced after the check but before the new review metadata is
@@ -52,8 +61,9 @@ image's age exceeded the grace period.
 Two deletion backends are worth evaluating once coordination is designed:
 
 - A mark-and-sweep worker can recheck the protected-reference graph and delete exact
-  object keys. It needs a bucket-wide coordination protocol with a fencing token that
-  the publisher verifies before committing review metadata or baseline pointers. A
+  object keys. It needs a bucket-wide coordination protocol that rejects stale fencing
+  tokens on publication and collection operations. A publisher-side check before a
+  write is insufficient if the lease can expire between the check and the write. A
   lease timeout by itself is insufficient because a paused writer can outlive its
   lease.
 - A tagger can mark eligible objects and let SeaweedFS S3 Lifecycle expire objects
