@@ -85,7 +85,7 @@ def kubernetes_clients(name, api, input_base, importpath, kinds, apply_configura
     dependencies = {
         "scheme": [api, "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/runtime", "@io_k8s_apimachinery//pkg/runtime/schema", "@io_k8s_apimachinery//pkg/runtime/serializer", "@io_k8s_apimachinery//pkg/util/runtime"],
         "typed": [api, ":applyconfiguration_api", ":scheme", "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/types", "@io_k8s_apimachinery//pkg/watch", "@io_k8s_client_go//gentype", "@io_k8s_client_go//rest"],
-        "applyconfiguration_api": [api, "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/runtime", "@io_k8s_client_go//applyconfigurations/meta/v1:meta"],
+        "applyconfiguration_api": [api, "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/runtime", "@io_k8s_apimachinery//pkg/types", "@io_k8s_client_go//applyconfigurations/meta/v1:meta"],
         "clientset": [":typed", "@io_k8s_client_go//discovery", "@io_k8s_client_go//rest", "@io_k8s_client_go//util/flowcontrol"],
         "listers": [api, "@io_k8s_apimachinery//pkg/labels", "@io_k8s_client_go//listers", "@io_k8s_client_go//tools/cache"],
         "internalinterfaces": [":clientset", "@io_k8s_apimachinery//pkg/apis/meta/v1:meta", "@io_k8s_apimachinery//pkg/runtime", "@io_k8s_client_go//tools/cache"],
