@@ -5,194 +5,154 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
 
 ## Boundaries
 
-- **Generation code is not an application library.** Keep deployment config builders
-  and generated CRD bindings visible only to their cdk8s consumers. Shared model facts
-  and cross-consumer policy live in `//model_catalog`, imported by cdk8s and Nix
-  generation; cluster endpoints, credentials, and environment selections stay here. External tools and
+- **Generation code is not an application library.** Deployment config builders and
+  generated CRD bindings are visible only to their cdk8s consumers. Shared model facts and
+  cross-consumer policy live in `//model_catalog` (imported by cdk8s and Nix); cluster
+  endpoints, credentials and environment selections stay here. External tools and
   acceptance tests read generated artifacts or deployed APIs, not generator internals.
-  Existing narrow visibility grants for cluster validation are explicit test seams, not
-  precedent for runtime imports; public data targets and the synthesis CLI are separate
-  from Python implementation visibility.
-
+  Existing narrow visibility grants for cluster validation are test seams, not precedent
+  for runtime imports; public data targets and the synthesis CLI are separate from Python
+  implementation visibility.
 - **The vocabulary is Kubernetes, cdk8s, Flux and Kustomize objects, plus plain Python
-  values.** Nothing here introduces a concept those do not have: no marker annotation,
-  no "provides" declaration, no registry, no convention a reader must learn on top of the
-  objects' own fields. When a change seems to need one, stop and ask; the operator
-  approves the design before it is built. The same applies to a rule or check that would
-  only work with such a marker. An identity-only reference is allowed: a frozen dataclass
-  of names, keys, ports and labels plus the addresses derived from them, declared once by
-  the producing module and projected into each dialect by methods. A record describing
-  what to build is not. A map that checks hand-written wiring (`crd_layering.OPERATOR_CRDS`)
-  is allowed; a map that chooses wiring is a registry.
-- **Construction runs forward** (§ The Flux graph): inputs are values or constructs
-  built earlier, and every fact a node depends on is in its signature.
-- **Stateful data is never destroyed by a change here.** Databases, PersistentVolumes
-  and anything a person authored survive every conversion and restructuring; caches may
-  be dropped. A Kustomization that owns PVCs carries `deletionPolicy: Orphan`, and an
-  ownership change goes through § Restructuring. Agentplane's rule that deployed
-  state is disposable (<../../agentplane/AGENTS.md>) covers schemas and wire formats, not volumes.
-- **Escape hatches stay.** Every Flux and Kustomize field remains expressible, so an
-  incident `suspend`, the two-step ownership move, a VolSync restore, or a one-off
-  hand-written sibling file is a plain edit and not a fight with the generator. A shape
-  is made unrepresentable only where the operator asked for that; by default the safe
-  procedure is documented and possible, not enforced.
+  values.** No marker annotation, "provides" declaration, registry, or convention layered
+  on top of the objects' own fields — nor a rule/check that only works with one. If a
+  change seems to need one, stop and ask; the operator approves the design first.
+  Allowed: an identity-only reference (frozen dataclass of names, keys, ports, labels plus
+  derived addresses, declared once by the producer, projected into each dialect by
+  methods) — not a record describing what to build; a map that _checks_ hand-written
+  wiring (`cluster/validation/crd_layering.py`'s `OPERATOR_CRDS`) — not one that
+  _chooses_ wiring.
+- **Construction runs forward** (§ The Flux graph): inputs are values or constructs built
+  earlier; every fact a node depends on is in its signature.
+- **Stateful data is never destroyed by a change here.** Databases, PVs and anything a
+  person authored survive every conversion; caches may be dropped. A Kustomization owning
+  PVCs carries `deletionPolicy: Orphan`; ownership changes follow § Restructuring.
+  Agentplane's "deployed state is disposable" (<../../agentplane/AGENTS.md>) covers schemas
+  and wire formats, not volumes.
+- **Escape hatches stay.** Every Flux/Kustomize field stays expressible, so an incident
+  `suspend`, the two-step ownership move, a VolSync restore or a hand-written sibling file
+  is a plain edit. Make a shape unrepresentable only where the operator asked; by default
+  the safe procedure is documented, not enforced.
 
 ## Shape of a generator
 
-Model with constructs, deploy with one props object per environment.
-
-- **Keep shared helpers and single-module components at the package root.** A component
-  with several related modules gets a named subpackage (`agentplane/`, `haku/`,
-  `clickhouse/`, `litellm/`); don't add a directory for one file or an `agents/` layer.
-  Use descriptive module and Bazel target names (`agentplane/actions.py`,
-  `litellm/proxy.py`) without a repeated `_constructs` suffix.
-
-- **One `Environment` per deployed namespace** (`agentplane/environment.py`;
-  `agentplane/staging.py` and `agentplane/testing.py` each hold one frozen instance).
-  Every construct takes the whole environment and reads what it needs
-  (`env.namespace`, `env.replicas.count`, `env.egress.ca_secret_name`), so a value two
-  constructs share is written once. The props object holds data only — never a callable
-  field for "and also build this".
-- **One chart function per environment** (`agentplane/staging.py`'s and `testing.py`'s
-  `chart(app)`), shared by `generate_manifests.py` (synth and write) and the test
-  fixtures (`Testing.synth` in memory). It calls the shared `agentplane/chart.py`'s
-  `environment_chart(app, env)` and adds its environment-only objects to the chart that
-  returns — never `if env.namespace == ...` inside a construct, and never a hook the
-  shared function calls back into. Objects added after it returns are still checked: the
-  fleet rules run when the App synthesizes, not when a chart is built. `haku/charts.py`'s
-  per-directory `*_chart(app)` is the same shape. The entry point holds no environment
-  data.
-- **References, not names.** `Service(selector=deployment)`,
-  `Volume.from_config_map(config_map)`, `Role.from_role_name(...)`; a network rule
-  targets a workload through the constant the owning module exports
-  (`cilium.endpoint_labels(namespace, egress.NAME)`), never the
-  string spelled again. So a helper that builds an object returns it: the caller gets
-  something to reference instead of a name to repeat.
-- **A name carries only what its namespace does not.** In namespace `atuin` the server
-  is `server`, its quota `quota`, its PVC `data`. A namespace's one main workload, and
-  the Service, HTTPRoute and monitors in front of it, may keep the namespace's name
-  (`litellm/litellm`) or be called `app`. Stutter we do not author is accepted: names a
-  Helm chart or operator derives (Helm release names and what the chart builds from
-  them, CloudNativePG's `<cluster>-rw`, the components Seaweed, ClickHouse and
-  Alertmanager append to a CR name), vendored upstream manifests, and names that are an
-  identity outside the namespace (SeaweedFS bucket and IAM names, Postgres database and
-  role names, a Secret mirrored into other namespaces under one name, cross-namespace
-  RBAC named for its consumer, a Role named in Agentplane's grant catalog or kept for
-  existing managed Sandboxes, whose snapshotted grants resolve it by name). A stateful
-  object (PVC, CNPG Cluster, Valkey, VolSync source) keeps its name until it moves for
-  another reason, because renaming it migrates data (<../AGENTS.md> § Migrating stateful
-  Flux Kustomizations).
-- **The service's `Settings` is its deployment contract.** Flags, env vars and settings
-  files are rendered through the binary's pydantic-settings model
-  (`util/settings_contract.py`: `cli_args`, `env_name`, `settings_file`,
-  `checked_value`), so a renamed field fails at synth. The code package owns `Settings`
-  and its `config_file_env`; `cluster/cdk8s` owns where and how it runs. Nothing under
-  `x/` or `haku/` imports `cluster/`. A project's own `deploy/` may hold a props-driven
-  construct (tested with synthetic props); the cluster's instantiation of it lives here.
-  The general rule is that configuration is typed by its consumer's own schema. Where
-  that schema lives in another artifact, a model mirrors it and a test ties the two: a
-  tofu-controller module's inputs are a frozen pydantic model mirroring its
-  `variables.tf` (`gitops_terraform(variables=...)`, `test_terraform_vars.py`), since
-  tofu only warns on an undeclared variable.
-- **What the generator knows, it renders.** A value known at synth is written into the
-  object as a Python constant. Flux `postBuild` substitution is for a value only the
-  cluster has. Substituting a synth-time value costs a Kustomization and a `dependsOn`
-  edge on every consumer, and hides the applied value from the committed manifests and
-  `render_diff.py`, which see only `${VAR}`.
-- **A cluster-wide behavior is configured once, where it runs; objects carry only the
-  exceptions.** Restating the default on each object adds nothing when it matches, and
-  looks like it works where the mechanism never reads it. Reloader runs with
-  `autoReloadAll` and ignores Jobs and CronJobs (`reloader.py`); it reads only a
-  workload's own metadata, never its pod template: a workload that must not restart says
-  `"false"` there, and the rest say nothing. Alloy discovers every ServiceMonitor, PodMonitor and PrometheusRule without a
-  selector, so none carries a label for it.
-- **One shape per job.** Each job this layer does (build a kind, build one variant of a
-  field, amend a pod spec, declare a Flux node) has one mechanism. Before writing a
-  helper, find how the tree already does that job and use that shape; a second shape
-  for the same job is a review finding even when both work. Mechanisms multiply one
-  reasonable PR at a time, and each is another convention every reader must learn.
-- **One helper per repeated shape.** When the same dozen generated-struct lines appear
-  twice, name the shape once: `cilium.py` (`egress_via_gateway`, `dns_egress`,
-  `fqdn_fence`, ...) for this cluster's own facts, `providers/cilium/network_policy.py`'s
-  `EgressRule`/`IngressRule` for the generic shapes; `gateway.https_route`,
-  `probes.http_probe`, `agentplane/migrate_container.py`,
-  `node_scheduling.py`, `pod_policy.py`, `api_resource.custom_resource`.
-  Parameterize the variation the call sites have (SNI list, listener, timeout), not
-  variation nobody uses.
-- **A value that feeds two artifacts lives once.** The web-push hosts feed both the
-  Action Service allowlist and its egress rule from one tuple in `staging.py`. When
-  two artifacts must agree, derive both from one value; never write a test that reads
-  both.
+- **Layout**: shared helpers and single-module components at the package root; a
+  multi-module component gets a named subpackage (`agentplane/`, `haku/`, `clickhouse/`,
+  `litellm/`). No directory for one file, no `agents/` layer, no `_constructs` suffix
+  (`agentplane/actions.py`, `litellm/proxy.py`).
+- **One frozen `Environment` per deployed namespace** (`agentplane/environment.py`;
+  instances in `agentplane/staging.py`, `agentplane/testing.py`). Constructs take the
+  whole environment and read what they need (`env.namespace`, `env.replicas.count`), so
+  shared values are written once. Data only — never a callable "also build this" field.
+- **One chart function per environment** (`staging.py`/`testing.py` `chart(app)`), shared
+  by `generate_manifests.py` and test fixtures. It calls `agentplane/chart.py`'s
+  `environment_chart(app, env)` and adds environment-only objects to the returned chart —
+  never `if env.namespace == ...` in a construct, never a callback hook. Objects added
+  afterwards are still checked (fleet rules run at App synth). `haku/charts.py`'s
+  `*_chart(app)` is the same shape. The entry point holds no environment data.
+- **References, not names**: `Service(selector=deployment)`,
+  `Volume.from_config_map(config_map)`, `Role.from_role_name(...)`; network rules target a
+  workload via the owning module's exported constant
+  (`cilium.endpoint_labels(namespace, egress.NAME)`). Helpers return the object they build.
+- **A name carries only what its namespace does not**: in namespace `atuin`, `server`,
+  `quota`, `data`. The namespace's main workload and its Service/HTTPRoute/monitors may use
+  the namespace name or `app`. Accepted stutter we don't author: Helm/operator-derived
+  names (CNPG `<cluster>-rw`, Seaweed/ClickHouse/Alertmanager suffixes), vendored
+  manifests, and names that are identities outside the namespace (SeaweedFS bucket/IAM,
+  Postgres database/role, Secrets mirrored under one name, cross-namespace RBAC named for
+  its consumer, Roles named in Agentplane's grant catalog or resolved by name from
+  existing managed Sandboxes' snapshotted grants). Stateful objects (PVC, CNPG Cluster,
+  Valkey, VolSync source) keep their name until moved for another reason — renaming
+  migrates data (<../AGENTS.md> § Migrating stateful Flux Kustomizations).
+- **The service's `Settings` is its deployment contract.** Render flags, env vars and
+  settings files through the binary's pydantic-settings model (`util/settings_contract.py`:
+  `cli_args`, `env_name`, `settings_file`, `checked_value`) so a renamed field fails at
+  synth. The code package owns `Settings` and its `config_file_env`; `cluster/cdk8s` owns
+  where it runs. Nothing under `x/` or `haku/` imports `cluster/`. A project's `deploy/`
+  may hold a props-driven construct (tested with synthetic props); the cluster's
+  instantiation lives here. Generally, config is typed by its consumer's schema; where
+  that schema is another artifact, mirror it in a model tied by a test — e.g. a
+  tofu-controller module's inputs are a frozen pydantic model mirroring `variables.tf`
+  (`gitops_terraform(variables=...)`, `test_terraform_vars.py`), since tofu only warns on
+  undeclared variables.
+- **What the generator knows, it renders** as a Python constant. Flux `postBuild`
+  substitution is only for values only the cluster has: it costs a Kustomization plus a
+  `dependsOn` edge per consumer, and the committed manifests and `render_diff.py` see only
+  `${VAR}`.
+- **Cluster-wide behavior is configured once where it runs; objects carry only
+  exceptions.** Reloader runs `autoReloadAll`, ignores Jobs/CronJobs (`reloader.py`), and
+  reads only workload metadata (not the pod template): a workload that must not restart
+  says `"false"` there; others say nothing. Alloy discovers every
+  ServiceMonitor/PodMonitor/PrometheusRule without a selector — no label for it.
+- **One shape per job** (build a kind, a field variant, amend a pod spec, declare a Flux
+  node). Find how the tree already does it before writing a helper; a second shape for the
+  same job is a review finding even if both work.
+- **One helper per repeated shape**: cluster facts in `cilium.py` (`egress_via_gateway`,
+  `dns_egress`, `fqdn_fence`, ...), generic shapes in `providers/cilium/network_policy.py`
+  (`EgressRule`/`IngressRule`); also `gateway.https_route`, `probes.http_probe`,
+  `agentplane/migrate_container.py`, `node_scheduling.py`, `pod_policy.py`,
+  `api_resource.custom_resource`. Parameterize only variation call sites actually have.
+- **A value feeding two artifacts lives once** (web-push hosts: one tuple in
+  `agentplane/staging.py` feeds both the Action Service allowlist and its egress rule).
+  Derive both; never a test reading both.
 - **New Kustomization directories default to cdk8s** when they hold more than a
   `HelmRelease` plus values.
 
 ## The Flux graph
 
-Every Flux `Kustomization` is one function in one shared chart, and its dependencies are
-its parameters. `generate_manifests.py` is the topological order, written out by hand.
+Every Flux `Kustomization` is one function in one shared chart; its dependencies are its
+parameters. `generate_manifests.py` is the hand-written topological order.
 
-- **A node is `name(chart, directory: RenderedDirectory, *predecessors) -> Kustomization`**
-  and writes no file. It returns `flux.flux_kustomization(chart, name, directory, ...)`,
-  which derives `sourceRef`, `path` and `decryption` from the directory and applies our
-  defaults (listed once, in its docstring); the node passes only the `KustomizationSpec`
-  fields that differ, as keywords of the same names and types. The entry point builds the
-  artifact (`artifact_generators.artifact(name, directory, *shared_bases)`) just before
-  the call and writes the directory in the node's argument:
-  `generation.write_directory(root, artifact, *chart_builders, siblings=[...])`
-  synthesizes the charts into the directory's one generated file (<../docs/cdk8s.md>
-  § Shapes of a directory) and writes a `kustomization.yaml` listing it and the
-  hand-written siblings, so a component is written and joined in one statement. It passes
-  every artifact to `write_artifact_generators` last; a parked node's artifact is left
-  out, since nothing packages a suspended directory. A directory keeping a hand-written
-  `kustomization.yaml` is written by its module's `write_manifests` at the top of
-  `generate_manifests()`, and its node takes the artifact in place of a directory, as do
-  the nodes not yet converted to `write_directory`. A node sourcing a `GitRepository`
-  directly takes neither and passes that `sourceRef` and a `path` instead. `dependsOn` is
-  `flux_kustomization_depends_on_many(predecessor, ...)`, which reads name and namespace
-  off the constructs it is handed; the entry carries an explicit `namespace` for that
-  reason. The predecessor is a value the caller already built, never a string, a
-  module-level lookup, or something resolved later.
-- **The entry point calls the nodes in dependency order** and passes each result as a
-  local to the nodes that need it. A wrong order is a `NameError` at synth; a cycle
-  cannot be written. Never add a registry, a sorter, a lazy reference, a class or record
-  that "describes" a node, or a module that builds nodes on import.
-- **A resource chart joins the graph in three steps, in this order**: build the resource
-  chart (`staging.chart(app)`, `haku.charts.console_chart(app)`); then its Kustomization
-  node takes the _values_ derived from that chart, computed at the join in
-  `generate_manifests.py` (`health_checks=flux.health_checks(chart, kinds)`), plus its
-  predecessor Kustomizations; then dependents take the returned Kustomization. The node
-  never takes the `Chart` itself: a Kustomization reads the rendered directory at
-  runtime, not a construct, and a node whose inputs are plain values shows every fact
-  that crosses in its signature and can be tested with hand-supplied values, without
-  importing the workload modules. A second fact that needs to cross is a second
-  parameter, and that is the review signal. Chart before Kustomization before
-  dependents; a Kustomization never builds the chart it describes.
-- **Each object is built from what it reads at runtime, never from what reads it.** A
-  Kustomization is built from its artifact, its path and its predecessors; an artifact
-  from its directory; the `ArtifactGenerator` from all artifacts, last. Building a
-  Kustomization from the artifact inventory, or the inventory from the Kustomizations'
-  `sourceRef` names, is the same mistake facing opposite ways.
-- **A default is policy, not the common value.** `flux_kustomization` defaults a field
-  only where nearly every node agrees and the value is a stance we take for all of them;
-  a per-app choice (`timeout`, `decryption`, `health_checks`) stays on the node. `None`
-  leaves a field unset, so Flux's own default applies; Flux's defaults differ from ours.
-  A literal that is the same _fact_ in two places becomes one local; a block that is the
-  same _value_ everywhere (the SOPS `decryption` entry) may become one module constant.
-- **A node lives with its directory's generator once that directory is fully
-  generated** (`aiquota.aiquota`, `litellm.keys.litellm_keys_tf`); until then it stays in
-  `<area>/flux_kustomizations.py`, one package per area, and moves as part of the
-  conversion. No interim flattening of those packages.
-- **Output routing is by `spec.path`**, with the handful of Kustomizations whose `path`
-  is not their own directory listed explicitly in the writer. Keep those explicit.
-- **A directory's root is written once**: its module's `OUTPUT_DIR` (or a named constant
-  like `BASE_DIR`) is `f"{GENERATED_ROOT}/..."` or `f"{HAND_WRITTEN_ROOT}/..."`, or
-  `f"{PARKED_ROOT}/..."` for a parked one (`manifest_roots.py`), and the artifact in
-  `generate_manifests.py` takes that constant,
-  never the path spelled again. Moving a directory between roots is that one edit, plus
-  the committed files; `GENERATED_ROOT` is right exactly when the generator writes every
-  file the directory holds.
+- **A node is `name(chart, directory: RenderedDirectory, *predecessors) -> Kustomization`**,
+  writes no file, and returns `flux.flux_kustomization(chart, name, directory, ...)`,
+  which derives `sourceRef`, `path`, `decryption` from the directory and applies our
+  defaults (listed in its docstring); the node passes only differing `KustomizationSpec`
+  fields as same-named keywords. The entry point builds the artifact
+  (`artifact_generators.artifact(name, directory, *shared_bases)`) just before the call
+  and passes `generation.write_directory(root, artifact, *chart_builders, siblings=[...])`
+  as the node's argument, which synthesizes the directory's one generated file
+  (<../docs/cdk8s.md> § Shapes of a directory) plus a `kustomization.yaml` listing it and
+  hand-written siblings. Every artifact goes to `write_artifact_generators` last; parked
+  nodes' artifacts are left out. A directory with a hand-written `kustomization.yaml` is
+  written by its module's `write_manifests` at the top of `generate_manifests()`, and its
+  node takes the artifact instead of a directory (as do nodes not yet on
+  `write_directory`). A node sourcing a `GitRepository` directly passes that `sourceRef`
+  and a `path`. `dependsOn` is `flux_kustomization_depends_on_many(predecessor, ...)`,
+  reading name/namespace off the constructs (so the entry carries an explicit
+  `namespace`). Predecessors are already-built values — never strings, module-level
+  lookups, or late resolution.
+- **The entry point calls nodes in dependency order**, passing results as locals; a wrong
+  order is a `NameError`, a cycle unwritable. Never add a registry, sorter, lazy
+  reference, node-describing class/record, or a module that builds nodes on import.
+- **A resource chart joins in order: chart → Kustomization → dependents.** Build the chart
+  (`staging.chart(app)`, `haku.charts.console_chart(app)`); the node takes _values_
+  derived from it at the join in `generate_manifests.py`
+  (`health_checks=flux.health_checks(chart, kinds)`) plus predecessors — never the `Chart`
+  itself, so every crossing fact is a parameter and the node is testable without
+  importing workload modules. A second crossing fact is a second parameter (the review
+  signal). A Kustomization never builds the chart it describes.
+- **Build each object from what it reads at runtime, never from what reads it**:
+  Kustomization from artifact, path, predecessors; artifact from directory;
+  `ArtifactGenerator` from all artifacts, last. Never derive Kustomizations from the
+  artifact inventory or vice versa.
+- **A `flux_kustomization` default is policy, not the common value**: only where nearly
+  every node agrees as a stance; per-app choices (`timeout`, `decryption`,
+  `health_checks`) stay on the node. `None` leaves the field unset (Flux's default, which
+  differs from ours). The same _fact_ twice becomes one local; the same _value_
+  everywhere (SOPS `decryption`) may become a module constant.
+- **A node lives with its directory's generator once fully generated**
+  (`aiquota.aiquota`, `litellm.keys.litellm_keys_tf`); until then in
+  `<area>/flux_kustomizations.py`, moving as part of the conversion. No interim flattening
+  of those packages.
+- **Output routing is by `spec.path`**; Kustomizations whose `path` isn't their own
+  directory are listed explicitly in the writer — keep them explicit.
+- **A directory's root is written once**: its module's `OUTPUT_DIR` (or e.g. `BASE_DIR`)
+  is `f"{GENERATED_ROOT}/..."`, `f"{HAND_WRITTEN_ROOT}/..."` or `f"{PARKED_ROOT}/..."`
+  (`manifest_roots.py`), and `generate_manifests.py` passes that constant. Moving roots is
+  that edit plus the committed files; `GENERATED_ROOT` iff the generator writes every
+  file in the directory.
 
-The worked edge, `monitoring-crds -> ntfy`:
+Worked edge, `monitoring-crds -> ntfy`:
 
 ```python
 # monitoring/flux_kustomizations.py
@@ -243,210 +203,154 @@ ntfy_kustomization = ntfy.ntfy(
 write_artifact_generators(root, ducktape=[..., ntfy_artifact, ...], flux_system=[...])
 ```
 
-The one edge still written as a string is `artifact-generators -> flux-system`
-(`artifact_generators.py`): `gotk-sync.yaml` owns the bootstrap Kustomization, which
-isn't a node in the generated Flux chart.
+The only string edge is `artifact-generators -> flux-system` (`artifact_generators.py`):
+`gotk-sync.yaml` owns the bootstrap Kustomization, which isn't a graph node.
 
-If a typed field cannot represent a directory's YAML, an in-graph dependency cannot be
-passed as a parameter, or finishing a change appears to need another helper, class or
-indirection, stop and ask before changing the design.
+Stop and ask before changing the design if a typed field can't represent a directory's
+YAML, an in-graph dependency can't be a parameter, or finishing seems to need another
+helper, class or indirection.
 
 ## Testing a generator
 
-- **The snapshot is the only pin.** `//cluster/cdk8s:test_generate_manifests`
-  regenerates in memory and asserts every written file equals the committed one at its
-  path, including the single `cluster/k8s/flux/kustomizations.k8s.yaml` chart, and that
-  `cluster/generated` holds nothing else; a change to generated output is a diff in the
-  PR that makes it. No list of files to keep: the data deps carry both whole trees.
+- **The snapshot is the only pin.** `//cluster/cdk8s:test_generate_manifests` regenerates
+  in memory, asserts every written file (including
+  `cluster/k8s/flux/kustomizations.k8s.yaml`) equals the committed one, and that
+  `cluster/generated` holds nothing else. No keep-lists: data deps carry both trees.
 - **Invariants live beside the generator**: tests over the in-memory synth
-  (`agentplane/conftest.py`'s `agentplane_manifests`), or
-  **fleet rules** (`fleet_rules.py`, attached to every App `generation.write_app`
-  writes, so they see all of its charts at once). A rule for every object of a kind is a
-  fleet rule; a rule about one construct's shape is a test in its package; a relation
-  that holds by construction (the Service selector is the Deployment, the ConfigMap is
-  rendered from the Settings model) gets no test.
-- **A value in one place gets no test.** A memory limit, a replica count, a hostname:
-  editing it is the review. Never copy a generator's literal into an assertion.
-- **Code is not its deployment.** A test of code under `x/` or `haku/` never reads
-  `cluster/` or synthesizes a cluster chart. A test under `cluster/` may parse deployed
-  config with the code's model (moot once the generator renders through it) but never
-  exercises code behavior on it. STYLE.md § Testing has the rule.
-- **Synthetic props for construct tests, real environments for invariants.** A
-  construct test builds a `Chart(Testing.app(), ...)` with a small props value and
-  asserts the shape; `test_fleet_rules.py` is the pattern.
+  (`agentplane/conftest.py`'s `agentplane_manifests`) or fleet rules (`fleet_rules.py`,
+  attached to every App `generation.write_app` writes, seeing all its charts). Every object
+  of a kind → fleet rule; one construct's shape → test in its package; a relation holding
+  by construction (selector is the Deployment, ConfigMap rendered from `Settings`) → no
+  test.
+- **A value in one place gets no test** (memory limit, replica count, hostname); never
+  copy a generator literal into an assertion.
+- **Code is not its deployment**: STYLE.md § Testing; here, tests of code under `x/` or
+  `haku/` never read `cluster/` or synthesize a cluster chart.
+- **Construct tests use synthetic props** (`Chart(Testing.app(), ...)`, pattern:
+  `test_fleet_rules.py`); invariants use real environments.
 - **Render identity across a conversion**: `render_diff.py` reconciles the whole Flux
   graph at two revisions (sources, ArtifactGenerator copies, `kustomize build`, before
-  `postBuild`) and diffs every Kustomization's objects, exiting 1 on any difference.
-  From the devshell: `bb run //cluster/cdk8s:render_diff_bin -- origin/devel HEAD --repo "$PWD"`; renders
-  cache under `~/.cache/render-diff` (`--cache-dir` moves it). Its docstring lists the
-  Flux semantics it reproduces.
+  `postBuild`) and exits 1 on any object difference:
+  `bb run //cluster/cdk8s:render_diff_bin -- origin/devel HEAD --repo "$PWD"` (devshell;
+  cache `~/.cache/render-diff`, `--cache-dir` to move). Its docstring lists the Flux
+  semantics it reproduces.
 
 ## Adding a fleet rule
 
-A rule is a plain function `objects -> list[str]` over rendered dicts in
-`fleet_rules.py`, listed in `FleetRules.validate`, with a unit test on synthetic
-objects. Encode what the fleet holds; a rule that fails on `devel` is a policy change
-and lands in its own PR with the violations fixed. Exceptions are explicit parameters at
-the write call (`write_app`'s `unhardened_pods`, `unpinned_https_egress`), never name
-matching inside the rule; synth fails on one whose object is gone or passes.
+A plain function `objects -> list[str]` over rendered dicts in `fleet_rules.py`, listed in
+`FleetRules.validate`, unit-tested on synthetic objects. Encode what the fleet already
+holds; a rule failing on `devel` is a policy change and lands in its own PR with the
+violations fixed. Exceptions are explicit `write_app` parameters (`unhardened_pods`,
+`unpinned_https_egress`), never name matching in the rule; synth fails on an exception
+whose object is gone or now passes.
 
 ## Gotchas
 
-- `Chart.api_objects` is direct children only: walk `chart.node.find_all()` and filter
-  with `ApiObject.is_api_object`.
-- `cdk8s.Testing.synth(chart)` is `chart.to_json()`, which validates the whole app
-  first, so `add_validation` rules run in tests. `from cdk8s import Testing` in a
-  `test_*.py` gets collected by pytest (a class named `Test*`): import it as
-  `Testing as Cdk8sTesting` with that comment.
-- `ApiObject.to_json()` inside a validation is a pure render and safe; mutating the tree
-  there is not.
-- `EphemeralStorageResources` only accepts whole gibibytes (cdk8s-plus `container.ts`:
-  `toGibibytes().toString() + 'Gi'`), and a `JsonPatch` into `containers/N/resources` is
-  silently discarded: container resources are re-rendered from the construct's props
-  after patches apply.
-- `Deployment.scheduling.spread()` is pod anti-affinity, not
-  `topologySpreadConstraints`; custom topology spread in LiteLLM uses typed `k8s` structs
-  in a patch. Pod-level seccomp is a patch (`PodSecurityContextProps` has no field);
-  container-level is typed.
-- `cdk8s_plus_34` defaults: `automount_token=False` on a ServiceAccount and
-  `automount_service_account_token=False` on a workload, both to set for a TokenReview
-  caller; `readOnlyRootFilesystem`/`runAsNonRoot` hardened (a container whose writes
-  are unaudited states `read_only_root_filesystem=False`);
-  `allowPrivilegeEscalation: false` and `privileged: false` always emitted, capabilities
-  never (`pod_policy.harden` drops ALL where unset); the
-  Deployment selector is `cdk8s.io/metadata.addr`, not `app.kubernetes.io/name`
-  (`select=False` plus `deployment.select(LabelSelector.of(labels=...))` keeps a
-  hand-written selector, which is immutable on the live Deployment;
-  `Service(selector=deployment)` still selects the address label, which the pods
-  carry either way); `scheduling.attract(Node.labeled(...))` renders as required node
-  affinity, not `nodeSelector`.
+- `Chart.api_objects` is direct children only: walk `chart.node.find_all()` filtered by
+  `ApiObject.is_api_object`.
+- `cdk8s.Testing.synth(chart)` is `chart.to_json()`, which validates the whole app, so
+  `add_validation` rules run in tests. In a `test_*.py`, `from cdk8s import Testing` gets
+  collected by pytest: import `Testing as Cdk8sTesting` with a comment saying why.
+- `ApiObject.to_json()` inside a validation is a safe pure render; mutating the tree there
+  is not.
+- `EphemeralStorageResources` accepts only whole GiB, and a `JsonPatch` into
+  `containers/N/resources` is silently discarded (resources re-render from props after
+  patches).
+- `Deployment.scheduling.spread()` is pod anti-affinity, not `topologySpreadConstraints`
+  (LiteLLM patches typed `k8s` structs). Pod-level seccomp needs a patch
+  (`PodSecurityContextProps` has no field): `JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault"))`;
+  container-level is typed (`ContainerSecurityContextProps.seccomp_profile=SeccompProfile(type=SeccompProfileType.RUNTIME_DEFAULT)`),
+  never a patch.
+- `cdk8s_plus_34` defaults: `automount_token=False` (ServiceAccount) and
+  `automount_service_account_token=False` (workload) — set both for a TokenReview caller;
+  `readOnlyRootFilesystem`/`runAsNonRoot` hardened (a container with unaudited writes
+  states `read_only_root_filesystem=False`); `allowPrivilegeEscalation: false` and
+  `privileged: false` always emitted, capabilities never (`pod_policy.harden` drops ALL
+  where unset). The Deployment selector is `cdk8s.io/metadata.addr`, not
+  `app.kubernetes.io/name`; `select=False` plus
+  `deployment.select(LabelSelector.of(labels=...))` keeps a hand-written selector
+  (immutable on the live Deployment), and `Service(selector=deployment)` still selects the
+  address label, which pods carry either way. `scheduling.attract(Node.labeled(...))` is
+  required node affinity, not `nodeSelector`.
 - `add_container(env_from=[EnvFrom(config_map=...)])` takes the wrapper, not the
   ConfigMap.
-- `Chart(namespace=...)` would drop `namespace=` from every object's `ApiObjectMetadata`,
-  but it injects the namespace into cluster-scoped objects too (ClusterRole,
-  Bundle) with no opt-out; usable only once cluster-scoped objects get their own chart.
-- `cdk8s import` names a multi-version CRD's _first listed_ version plainly and
-  suffixes the others, regardless of which is the storage version: tofu-controller's
-  `Terraform` is v1alpha1, the cluster's CRs are `TerraformV1Alpha2`
-  (`//cluster/cdk8s/providers/tofu_controller:test_terraform_import` pins it).
-
-## Ecosystem (checked 2026-09-18)
-
-No maintained jsii library covers any CRD this repo uses. What exists (`@opencdk8s/*`,
-`cdk8s-flux`, `@cdk8s-kit/crds`, `cdk8s-grafana`) is dead, Flux v1, grafana-operator
-v4, or bundled `cdk8s import` output, which `cdk8s_import` already produces hermetically
-from the deployed CRD version. `cdk8s-plus` ships three Kubernetes minor lines at a time
-(32/33/34 today), so `cdk8s-plus-34` is current until a 35 line exists. Datree, the one
-validation plugin the cdk8s docs list, is defunct; kubeconform already runs on the
-committed output. Reach for `cdk8s_import`, not a package search.
+- `Chart(namespace=...)` also injects the namespace into cluster-scoped objects
+  (ClusterRole, Bundle) with no opt-out; usable only once those get their own chart.
+- `cdk8s import` names a multi-version CRD's _first listed_ version plainly and suffixes
+  the rest, regardless of storage version: tofu-controller's `Terraform` is v1alpha1; the
+  cluster's CRs are `TerraformV1Alpha2`
+  (`//cluster/cdk8s/providers/tofu_controller:test_terraform_import`).
 
 ## Typed constructs over raw dicts
 
-**Rule**: never build a resource, or a field's value, as a raw untyped dict when a
-typed alternative exists. Three tiers, in order:
+Never build a resource or field value as a raw dict when a typed alternative exists; a raw
+dict fails only at apply, if at all. Tiers, in order:
 
-1. **`cdk8s_plus_34`'s hand-written fluent layer** — `Namespace`, `Role`, `Deployment`,
-   etc. (table below). Richest API (`.add_subjects(...)`, `.from_*_name(...)`, ...),
-   so prefer it when the resource kind has one.
-2. **`cdk8s_plus_34.k8s`** — the schema-generated raw bindings layer, covering _every_
-   core Kubernetes kind and every field, pre-generated inside the same package
-   (`from cdk8s_plus_34 import k8s`). This is not a fallback or an escape hatch: it's
-   the exact same generator `cdk8s_import` runs for CRDs (below), just already run for
-   you against the core API. A resource kind missing from tier 1 — `ResourceQuota`,
-   `LimitRange`, `PodDisruptionBudget` — almost certainly has a `k8s.Kube<Kind>` class
-   with a typed `<Kind>Spec` here; check `dir(cdk8s_plus_34.k8s)` before assuming
-   nothing typed exists. A field missing from an otherwise-typed tier-1 builder (e.g.
-   `Deployment` has no `topologySpreadConstraints`) usually has a typed `k8s.<Struct>`
-   too (`k8s.TopologySpreadConstraint`) — build the raw-patch _value_ (below) from that
-   struct instead of a dict literal.
-3. **CRD type** (own `apiVersion` group, e.g. `external-secrets.io`,
-   `monitoring.coreos.com`): generate real bindings via `cdk8s_import`
-   (`devinfra/js/cdk8s_import.bzl`;
-   `//cluster/cdk8s/providers/{flux,prometheus_operator,gateway_api,cilium,external_secrets,keda,cnpg}`
-   are the examples) — this is the same generator tier 2 already ran for you on the core
-   API, just pointed at the CRD's own schema instead. `providers/<name>/` is the layout
-   for every provider: the `cdk8s_import` declarations colocated with that CRD's generic,
-   cluster-topology-free wrapper functions, once it has one.
+1. **`cdk8s_plus_34` fluent layer** — richest API; prefer when the kind has one.
+2. **`cdk8s_plus_34.k8s`** — generated bindings for _every_ core kind and field (the same
+   generator `cdk8s_import` runs). Not a fallback: kinds missing from tier 1 have
+   `k8s.Kube<Kind>` + `<Kind>Spec`; fields missing from a tier-1 builder have a
+   `k8s.<Struct>` (e.g. `k8s.TopologySpreadConstraint`) to build the patch value from.
+3. **CRDs** (own `apiVersion` group): `cdk8s_import` bindings under
+   `providers/<name>/` (declarations and pins: <../docs/cdk8s.md> § CRD bindings), beside
+   that CRD's generic wrappers. `providers/<name>/` holds only what the CRD schema defines
+   — never a ducktape namespace, secret name, hostname, topology fact, or one caller's use
+   of a field the schema leaves untyped (a freeform `metadata: map[string]string`); those
+   stay in the ducktape module, passed as parameters (`haku_ci/runner.py` owns its KEDA
+   `forgejo-runner` scaler `metadata`, agentydragon/ducktape#7952). Wrapper design: the
+   `cdk8s_builders` skill.
 
-   `providers/<name>/` holds only what the CRD schema itself defines — real typed
-   fields and their real variant shapes. It never holds a ducktape namespace, secret
-   name, hostname, or topology fact, nor one caller's specific use of a field the
-   schema leaves untyped (a plugin system's freeform `metadata: map[string]string`);
-   those stay in the ducktape-specific module that already knows them, passed in as a
-   parameter. Confirmed the hard way: `providers/keda`'s first draft wrapped the
-   `forgejo-runner` KEDA scaler's own `metadata` shape as if it were CRD structure —
-   it wasn't, that's haku-ci's own integration choice, and the fix moved it back to
-   `haku_ci/runner.py` (agentydragon/ducktape#7952). The skill's own conventions
-   (class shape, factories, references) are repo-agnostic; this placement rule is not
-   — it belongs here, not in the skill.
+Check `dir(...)` on the tier before going raw; if inconclusive, grep a clone of
+`https://github.com/cdk8s-team/cdk8s-plus` — `src/*.ts` (tier 1) or `src/imports/k8s.ts`
+(tier 2) — for the `export class`/`export interface`. Record non-obvious finds in the
+list below.
 
-   Put each `cdk8s_import` declaration and any import smoke test in
-   `cluster/cdk8s/providers/<provider>/BUILD.bazel`. Keep pinned upstream CRD
-   schemas in `MODULE.bazel`; generated Python bindings are Bazel outputs and are
-   never checked in.
+A field a tier-1 builder lacks: `ApiObject.of(construct).add_json_patch(JsonPatch.add(path, value))`
+with `value` a tier-2 `k8s.<Struct>` (serializes correctly); a literal dict only when no
+struct exists. CRD-generated `ApiObject` subclasses call `.add_json_patch(...)` directly.
 
-All three give synth-time validation; a raw dict fails only at `kubectl apply`, if at
-all. Check `dir(...)` on the relevant tier — built by cloning `cdk8s-team/cdk8s-plus`
-and reading `src/*.ts`, not guessing — before writing a raw dict anywhere.
+### Typed affordances
 
-**A field still needs `ApiObject.of(construct).add_json_patch(JsonPatch.add(path,
-value))`** when a tier-1 builder is otherwise right for the resource but doesn't expose
-one field — there's no other way to attach an extra field to an already-typed fluent
-construct. But build `value` from the matching tier-2 `k8s.<Struct>` (it serializes
-correctly as a `JsonPatch` value — verified) instead of a raw dict; only fall back to a
-literal dict for a field with no typed struct anywhere. `.add_json_patch(...)` directly
-(no `ApiObject.of()`) is for `cdk8s.ApiObject` subclasses, e.g. CRD-generated classes,
-patching in something even their own generated schema doesn't cover.
-
-### Typed affordances (`cdk8s_plus_34`) — use these
-
-| Kind                                                 | Builder                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Reference existing by name                                                                                                                                                                                            |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Namespace                                            | `Namespace`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | —                                                                                                                                                                                                                     |
-| ServiceAccount                                       | `ServiceAccount`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `.from_service_account_name(scope, id, name, namespace_name=...)`                                                                                                                                                     |
-| Secret                                               | `Secret`, `BasicAuthSecret`, `SshAuthSecret`, `TlsSecret`, `DockerConfigSecret`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `Secret.from_secret_name(scope, id, name)`                                                                                                                                                                            |
-| ConfigMap                                            | `ConfigMap`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `.from_config_map_name(scope, id, name)`                                                                                                                                                                              |
-| PVC / PV                                             | `PersistentVolumeClaim`, `PersistentVolume` (+ AWS/Azure/GCE disk subclasses)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `.from_claim_name`, `.from_persistent_volume_name`                                                                                                                                                                    |
-| Role / ClusterRole                                   | `Role`, `ClusterRole` — pass real `rules=` to the constructor, see below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `.from_role_name`, `.from_cluster_role_name`                                                                                                                                                                          |
-| RoleBinding / ClusterRoleBinding                     | `RoleBinding`, `ClusterRoleBinding` + `.add_subjects(...)`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | subjects: `User.from_name`, `Group.from_name` (any string, incl. `oidc-ksbx-groups:haku`), `ServiceAccount.from_service_account_name`, or a `Role`/`ClusterRole` instance                                             |
-| Deployment / StatefulSet / DaemonSet / Job / CronJob | matching `Workload` subclass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | —                                                                                                                                                                                                                     |
-| Service                                              | `Service`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | —                                                                                                                                                                                                                     |
-| NetworkPolicy (stock k8s)                            | `NetworkPolicy`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | —                                                                                                                                                                                                                     |
-| Ingress                                              | `Ingress`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | —                                                                                                                                                                                                                     |
-| HorizontalPodAutoscaler                              | `HorizontalPodAutoscaler`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | —                                                                                                                                                                                                                     |
-| Probes / handlers                                    | `Probe`, `Handler`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `.from_http_get`, `.from_command`, `.from_tcp_socket`, `.from_grpc`                                                                                                                                                   |
-| Volumes                                              | `Volume`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `.from_config_map`, `.from_secret`, `.from_empty_dir`, `.from_persistent_volume_claim`, `.from_host_path`, `.from_nfs`, `.from_csi`, `.from_aws_elastic_block_store`, `.from_azure_disk`, `.from_gce_persistent_disk` |
-| Any CRD (own `apiVersion` group)                     | `cdk8s_import`-generated bindings                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | —                                                                                                                                                                                                                     |
-| ResourceQuota                                        | tier 2: `k8s.KubeResourceQuota(metadata=k8s.ObjectMeta(...), spec=k8s.ResourceQuotaSpec(hard={...}))` — values are `k8s.Quantity.from_string(...)`/`.from_number(...)`                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                                                                                                                                                     |
-| LimitRange                                           | tier 2: `k8s.KubeLimitRange(spec=k8s.LimitRangeSpec(limits=[k8s.LimitRangeItem(type=..., max=..., min=..., default=..., default_request=...), ...]))`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | —                                                                                                                                                                                                                     |
-| PodDisruptionBudget                                  | tier 2: `k8s.KubePodDisruptionBudget(spec=k8s.PodDisruptionBudgetSpec(min_available=..., selector=...))`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | —                                                                                                                                                                                                                     |
-| Pod-level `securityContext.seccompProfile`           | no tier-1/tier-2 builder on `Deployment`'s `security_context=` — `PodSecurityContextProps` has no `seccomp_profile` field (verified against the installed package: only `ensure_non_root`/`fs_group`/`fs_group_change_policy`/`group`/`sysctls`/`user`). Raw `JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault"))` is the only path. **Container-level** `securityContext.seccompProfile` is different: `ContainerSecurityContextProps.seccomp_profile` is a real, typed tier-1 field — pass `SeccompProfile(type=SeccompProfileType.RUNTIME_DEFAULT)` there directly, never a patch. | —                                                                                                                                                                                                                     |
-
-Anything not in the table: check `dir(cdk8s_plus_34.<Thing>)` (tier 1), then
-`dir(cdk8s_plus_34.k8s)` (tier 2 — `Kube<Kind>` for a resource, or the bare struct name
-for a field value, e.g. `k8s.<Struct>`); if both are inconclusive, clone
-`https://github.com/cdk8s-team/cdk8s-plus` and grep `src/*.ts` (tier 1) or
-`src/imports/k8s.ts` (tier 2) for the kind's `export class`/`export interface` before
-reaching for a raw dict. Add the result to the table.
+- Tier 1 covers Namespace, ServiceAccount, Secret (+ `BasicAuthSecret`, `SshAuthSecret`,
+  `TlsSecret`, `DockerConfigSecret`), ConfigMap, PVC/PV, Role/ClusterRole,
+  RoleBinding/ClusterRoleBinding, all workload kinds, Service, NetworkPolicy, Ingress,
+  HorizontalPodAutoscaler, `Probe`/`Handler`, `Volume` (`.from_*`). Existing objects by
+  name: `.from_<kind>_name(...)` (e.g. `ServiceAccount.from_service_account_name(scope, id, name, namespace_name=...)`).
+- Binding subjects (`.add_subjects`): `User.from_name`, `Group.from_name` (any string,
+  incl. `oidc-ksbx-groups:haku`), `ServiceAccount.from_service_account_name`, or a
+  `Role`/`ClusterRole`.
+- Tier 2 examples: `k8s.KubeResourceQuota(spec=k8s.ResourceQuotaSpec(hard={...}))` with
+  `k8s.Quantity.from_string(...)`/`.from_number(...)`;
+  `k8s.KubeLimitRange(spec=k8s.LimitRangeSpec(limits=[k8s.LimitRangeItem(...)]))`;
+  `k8s.KubePodDisruptionBudget(spec=k8s.PodDisruptionBudgetSpec(...))`.
 
 #### RBAC rules go through the typed constructor, not a `/rules` patch
 
-`Role`/`ClusterRole`'s `rules=` takes `RolePolicyRule`/`ClusterRolePolicyRule`, each
-`resources`/`endpoints` a list of real `IApiResource`/`IApiEndpoint` — not dicts. Fully
-typed, including `resourceNames`:
+`Role`/`ClusterRole` `rules=` takes `RolePolicyRule`/`ClusterRolePolicyRule` whose
+`resources` are `IApiResource`s:
 
-- **Resource type, no name scoping**: `ApiResource.<CONSTANT>` (60+ constants — `dir(cdk8s_plus_34.ApiResource)`) or `ApiResource.custom(api_group=..., resource_type=...)` for anything else, subresources included (`"pods/exec"`, `"serviceaccounts/token"`).
-- **Scoped to one named object**: pass that kind's own `from_*_name` reference (`Secret.from_secret_name(...)`, `Role.from_role_name(...)`, ...) as the `IApiResource` — its `resource_name` is already wired.
-- **Scoped to a name with no typed kind covering it** (e.g. `serviceaccounts/token`): `ApiResource.custom()` never sets `resource_name`. Implement `IApiResource` directly — `@jsii.implements(cdk8s_plus_34.IApiResource)` on a small class with `api_group`/`resource_type`/`resource_name` properties, same as `Secret.from_secret_name` does internally. Needs `@pypi//jsii` as an explicit `BUILD.bazel` dep. Example: `api_resource.py`'s `_NamedApiResource`; the plain
-  `ApiResource.custom()` cast lives once in `api_resource.custom_resource`; named resources use
-  `api_resource.named_resource`.
-- **Caveat, not an excuse to go raw**: synthesis emits **one output rule per `IApiResource` entry**, always — `RolePolicyRule(resources=[a, b], ...)` becomes two rules, never one rule listing two resource types (`role.ts`'s `synthesizeRules()`; no typed way around it). RBAC-equivalent (Kubernetes unions all rules), so a hand-written file's rule _grouping_ won't survive conversion unchanged — only its permissions. Expect that diff.
+- Unscoped: `ApiResource.<CONSTANT>`, or `api_resource.custom_resource(api_group, resource_type)`
+  (the one `ApiResource.custom()` cast) for others incl. subresources (`pods/exec`).
+- One named object of a typed kind: that kind's `from_*_name` reference.
+- Named, no typed kind (e.g. `serviceaccounts/token` — `ApiResource.custom()` never sets
+  `resource_name`): `api_resource.named_resource(...)` (a `@jsii.implements` class; such a
+  class needs `@pypi//jsii` as an explicit dep).
+- Synthesis emits one rule per `IApiResource` (`role.ts` `synthesizeRules()`): a
+  hand-written file's rule grouping won't survive conversion, only its permissions. Expect
+  that diff; it is not a reason to go raw.
+
+### Ecosystem (checked 2026-09-18)
+
+No maintained jsii library covers any CRD here (`@opencdk8s/*`, `cdk8s-flux`,
+`@cdk8s-kit/crds`, `cdk8s-grafana` are dead, Flux v1, grafana-operator v4, or bundled
+`cdk8s import` output). Use `cdk8s_import`, not a package search. `cdk8s-plus-34` is
+current until a 35 line exists (it ships three minors). Datree is defunct; kubeconform
+already checks committed output.
 
 ## `image-pins/kustomization.yaml`: the `:tag` Setters marker, not the bare form
 
-Where a converted directory uses a hand-written (never generated) `image-pins/`
-Component, it pins the real tag via a placeholder `newTag:` plus a Flux image-automation
-Setters marker comment, one entry per image:
+A hand-written `image-pins/` Component pins each image via placeholder `newTag:` plus a
+Setters marker:
 
 ```yaml
 images:
@@ -454,55 +358,31 @@ images:
     newTag: <tag> # {"$imagepolicy": "flux-system:<name>:tag"}
 ```
 
-The marker's trailing `:tag` is load-bearing: it tells Setters to write back only the
-bare tag value into the marked `newTag:` field. Omit it and Setters instead rewrites the
-_whole_ marked field to the full `repository:tag` reference — which corrupted a
-`newTag:`-only field into `repository:repository:tag` on its very first write-back and
-took `litellm` down (`InvalidImageName`), a real incident, not a theoretical one. See
-<https://fluxcd.io/flux/components/image/imageupdateautomations/> § "Field-specific
-update markers". Don't repeat this explanation per directory; point back here instead.
+The trailing `:tag` is load-bearing: without it Setters writes the full `repository:tag`
+into the field, which once produced `repository:repository:tag` and took `litellm` down
+(`InvalidImageName`). Point here rather than re-explaining per directory.
 
-A bare-tag field (an `*_IMAGE_TAG` env value) takes the placeholder too, and the Component
-copies the pinned tag into it with a block-style `replacements` rule that splits the
-container `image` on `:` (`images:` runs first); see `agents/airlock/image-pins`.
-
-The `images:` transformer matches by image `name:` across **every resource in the
-Kustomization's rendered output**, not just one Deployment — relevant when a directory's
-chart shares one image across multiple resources (e.g. `app/`'s runner `SandboxTemplate`
-alongside its Deployment): one `image-pins` entry patches all of them.
+A bare-tag field (an `*_IMAGE_TAG` env value) also takes the placeholder; the Component
+copies the pinned tag in with a block-style `replacements` rule splitting the container
+`image` on `:` (`images:` runs first) — see `cluster/k8s/agents/airlock/image-pins`.
+`images:` matches by name across every resource in the Kustomization's output, so one
+entry patches e.g. both `app/`'s runner `SandboxTemplate` and its Deployment.
 
 ## Restructuring which Kustomization owns an object: land it in two steps
 
-Converting a directory to cdk8s often changes which Flux `Kustomization` renders a
-given object (e.g. folding `namespace`/`credentials` into `app`). **Never do this in
-one step.** Deleting the old Kustomization and having the new one claim the same
-objects in the same PR is a race: Flux's default `deletionPolicy: MirrorPrune` prunes
-everything the old CR managed once it's gone, and nothing guarantees the new
-Kustomization re-claims those objects (updates `kustomize.toolkit.fluxcd.io/name`)
-first. **Confirmed, not theoretical**: this race deleted `ha-mcp`'s entire namespace
-(Deployment, Service, ConfigMap, RBAC, CiliumNetworkPolicy, ServiceMonitor) when its
-`namespace`/`credentials` Kustomizations folded into `app` (#7150). Stateless objects
-self-heal; a `PersistentVolumeClaim` can permanently lose its volume (depends on
-`reclaimPolicy`) and won't auto-rebind to an orphaned `PersistentVolume`.
+Never move objects between Flux Kustomizations in one step: the old CR's default
+`MirrorPrune` can delete them before the new one adopts them. This deleted `ha-mcp`'s
+whole namespace (#7150); a PVC can permanently lose its volume and won't rebind to an
+orphaned PV.
 
-Fix: `//cluster/cdk8s/providers/flux:kustomization`'s `KustomizationSpec` has
-`deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN`. Land in two changes:
+1. Set `deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN`
+   (`//cluster/cdk8s/providers/flux:kustomization`) on the old Kustomization(s), nothing
+   else; merge and let it reconcile.
+2. Then delete the old Kustomization(s); the new one's SSA apply adopts the objects.
 
-1. Set `deletionPolicy: Orphan` on the _old_ Kustomization(s) being folded away, nothing
-   else. Merge and let it reconcile to protect against deletion during the handoff.
-2. Only then: delete the old Kustomization(s), let the new one render and claim the
-   same objects. Flux's SSA apply adopts them (updates the ownership label); the old
-   owner's deletion can no longer delete the transferred objects.
-
-Live-cluster ownership concern, not manifest content — `kustomize build`/`flux build
---dry-run` render correctly either way and can't catch it. Verify via the live cluster
-(`kubectl get <kind> -n <namespace> -o jsonpath='{.metadata.uid}'` unchanged = adopted,
-not recreated), not by diffing rendered YAML.
-
-Adoption can also change operator-generated Service selectors. Follow
+`kustomize build`/`flux build --dry-run` can't catch this; verify on the live cluster that
+`.metadata.uid` is unchanged (adopted, not recreated). Adoption can also change
+operator-generated Service selectors: follow
 [the ownership-label traffic checks](../AGENTS.md#migrating-stateful-flux-kustomizations)
-and verify service continuity separately from object survival.
-
-Complementary, resource-level tool: `kustomize.toolkit.fluxcd.io/prune: "disabled"`
-annotation, for a single object dropped from a still-live Kustomization's output (no CR
-deletion involved) — exempts it from pruning regardless of ownership-label timing.
+and verify service continuity separately. For one object dropped from a still-live
+Kustomization, annotate it `kustomize.toolkit.fluxcd.io/prune: "disabled"`.
