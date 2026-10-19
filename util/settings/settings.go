@@ -3,15 +3,14 @@
 // A settings struct has one exported field per setting, each tagged `yaml:"snake_case_key"`. The
 // setting is that key in the file named by <prefix>CONFIG_FILE and the environment variable
 // <prefix><KEY UPPER-CASED>. The environment overrides the file, which overrides the defaults the
-// caller passes in. A field is a scalar, or a list or map that the environment gives as JSON (a
-// struct inside one carries json tags). A field whose Go name does not spell its key, such as
+// caller passes in. Lists and maps are file-only and carry `env:"-"` tags.
+// A scalar field whose Go name does not spell its key, such as
 // LiteLLMURL for litellm_url, carries an `env:"KEY"` tag; Load refuses a struct whose environment
 // names and keys differ.
 package settings
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -53,7 +52,6 @@ func Load[T any](options Options, defaults T, environ []string) (T, error) {
 	}
 	envOptions := env.Options{
 		Environment: environment, Prefix: options.Prefix, UseFieldNameByDefault: true,
-		FuncMap: jsonParsers(settingsType),
 	}
 	fields, err := env.GetFieldParamsWithOptions(&loaded, envOptions)
 	if err != nil {
@@ -83,29 +81,6 @@ func Load[T any](options Options, defaults T, environ []string) (T, error) {
 	return loaded, nil
 }
 
-// jsonParsers makes each list and map field read as strict JSON.
-func jsonParsers(settingsType reflect.Type) map[reflect.Type]env.ParserFunc {
-	parsers := map[reflect.Type]env.ParserFunc{}
-	for field := range settingsType.Fields() {
-		if kind := field.Type.Kind(); kind == reflect.Slice || kind == reflect.Map {
-			parsers[field.Type] = parseJSONAs(field.Type)
-		}
-	}
-	return parsers
-}
-
-func parseJSONAs(valueType reflect.Type) env.ParserFunc {
-	return func(text string) (any, error) {
-		value := reflect.New(valueType)
-		decoder := json.NewDecoder(strings.NewReader(text))
-		decoder.DisallowUnknownFields()
-		if decoder.Decode(value.Interface()) != nil || !errors.Is(decoder.Decode(new(any)), io.EOF) {
-			return nil, errors.New("not a JSON value of its type")
-		}
-		return value.Elem().Interface(), nil
-	}
-}
-
 // checkNames refuses a struct whose environment names are not its YAML keys upper-cased: the file
 // and the environment would otherwise name one setting two ways.
 func checkNames(settingsType reflect.Type, fields []env.FieldParams) error {
@@ -118,7 +93,9 @@ func checkNames(settingsType reflect.Type, fields []env.FieldParams) error {
 		if key == "" || key == "-" {
 			return fmt.Errorf("settings field %s.%s has no yaml key", settingsType, field.Name)
 		}
-		want[strings.ToUpper(key)] = true
+		if field.Tag.Get("env") != "-" {
+			want[strings.ToUpper(key)] = true
+		}
 	}
 	got := map[string]bool{}
 	for _, field := range fields {
@@ -169,5 +146,5 @@ func parseFailure(settingsType reflect.Type, err error) error {
 		field, _ := settingsType.FieldByName(parseError.Name)
 		failed = append(failed, field.Tag.Get("yaml"))
 	}
-	return fmt.Errorf("settings must be a value of their type, a list or map as JSON: %s", strings.Join(failed, ", "))
+	return fmt.Errorf("settings must be a value of their type: %s", strings.Join(failed, ", "))
 }

@@ -14,18 +14,18 @@ const (
 )
 
 type modelConfig struct {
-	Model                    string `json:"model" yaml:"model"`
-	TotalContextBudgetTokens int    `json:"total_context_budget_tokens" yaml:"total_context_budget_tokens"`
+	Model                    string `yaml:"model"`
+	TotalContextBudgetTokens int    `yaml:"total_context_budget_tokens"`
 }
 
 type config struct {
-	AllowedServiceAccountNamespaces []string          `yaml:"allowed_service_account_namespaces"`
+	AllowedServiceAccountNamespaces []string          `env:"-" yaml:"allowed_service_account_namespaces"`
 	TokenAudience                   string            `yaml:"token_audience"`
 	LogLLMRequests                  bool              `yaml:"log_llm_requests"`
-	Models                          []modelConfig     `yaml:"models"`
+	Models                          []modelConfig     `env:"-" yaml:"models"`
 	LiteLLMURL                      string            `env:"LITELLM_URL" yaml:"litellm_url"`
 	LiteLLMKey                      string            `env:"LITELLM_KEY" yaml:"litellm_key"`
-	LogLevels                       map[string]string `yaml:"log_levels"`
+	LogLevels                       map[string]string `env:"-" yaml:"log_levels"`
 	Host                            string            `yaml:"host"`
 	Port                            int               `yaml:"port"`
 	Kubeconfig                      string            `yaml:"kubeconfig"`

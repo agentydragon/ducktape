@@ -33,13 +33,12 @@ models:
 		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=env-secret",
 		"AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=false",
 		"AGENTPLANE_LLM_INGRESS_PORT=7070",
-		`AGENTPLANE_LLM_INGRESS_ALLOWED_SERVICE_ACCOUNT_NAMESPACES=["env-namespace"]`,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.TokenAudience != "env-audience" || c.Port != 7070 || c.LiteLLMKey != "env-secret" || c.LogLLMRequests ||
-		len(c.AllowedServiceAccountNamespaces) != 1 || c.AllowedServiceAccountNamespaces[0] != "env-namespace" ||
+		len(c.AllowedServiceAccountNamespaces) != 1 || c.AllowedServiceAccountNamespaces[0] != "yaml-namespace" ||
 		c.LiteLLMURL != "http://127.0.0.1:8100/prefix" || len(c.Models) != 1 || c.Models[0].TotalContextBudgetTokens != 8192 {
 		t.Fatalf("unexpected merged config: %+v", c)
 	}

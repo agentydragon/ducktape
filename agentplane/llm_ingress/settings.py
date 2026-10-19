@@ -13,7 +13,7 @@ from util.yaml_file_settings import YamlFileSettings
 
 
 class Settings(YamlFileSettings):
-    """Each field is a key of the YAML settings file and an `AGENTPLANE_LLM_INGRESS_*` environment variable."""
+    """Fields are YAML keys; scalar fields also accept `AGENTPLANE_LLM_INGRESS_*` environment overrides."""
 
     config_file_env: ClassVar[str] = "AGENTPLANE_LLM_INGRESS_CONFIG_FILE"
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_LLM_INGRESS_")

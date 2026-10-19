@@ -12,17 +12,17 @@ import (
 const prefix = "TEST_SERVICE_"
 
 type model struct {
-	Name   string `json:"name" yaml:"name"`
-	Budget int    `json:"budget" yaml:"budget"`
+	Name   string `yaml:"name"`
+	Budget int    `yaml:"budget"`
 }
 
 type sample struct {
 	DatabaseURL string            `yaml:"database_url"`
 	ListenPort  int               `yaml:"listen_port"`
 	Verbose     bool              `yaml:"verbose"`
-	Namespaces  []string          `yaml:"namespaces"`
-	Models      []model           `yaml:"models"`
-	Levels      map[string]string `yaml:"levels"`
+	Namespaces  []string          `env:"-" yaml:"namespaces"`
+	Models      []model           `env:"-" yaml:"models"`
+	Levels      map[string]string `env:"-" yaml:"levels"`
 	Backend     string            `env:"BACKEND_URL" yaml:"backend_url"`
 }
 
@@ -50,18 +50,17 @@ namespaces: [from-file]
 models:
   - {name: from-file, budget: 1}
 backend_url: http://file.test
+levels: {root: DEBUG}
 `)
 	got, err := load(
 		prefix+"CONFIG_FILE="+path, prefix+"LISTEN_PORT=2222", prefix+"VERBOSE=false",
-		prefix+`NAMESPACES=["from-env"]`, prefix+`LEVELS={"root":"DEBUG"}`,
-		prefix+`MODELS=[{"name":"from-env","budget":3}]`,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := sample{
-		ListenPort: 2222, Verbose: false, Namespaces: []string{"from-env"},
-		Models: []model{{Name: "from-env", Budget: 3}}, Levels: map[string]string{"root": "DEBUG"},
+		ListenPort: 2222, Verbose: false, Namespaces: []string{"from-file"},
+		Models: []model{{Name: "from-file", Budget: 1}}, Levels: map[string]string{"root": "DEBUG"},
 		Backend: "http://file.test",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -103,16 +102,20 @@ func TestASettingsFileThatIsNamedMustExistAndHoldOneDocument(t *testing.T) {
 
 func TestErrorsNeverCarryTheValuesGiven(t *testing.T) {
 	const secret = "never-print-this"
-	for name, attempt := range map[string]func() (sample, error){
-		"scalar":        func() (sample, error) { return load(prefix + "LISTEN_PORT=" + secret) },
-		"list":          func() (sample, error) { return load(prefix + "NAMESPACES=" + secret) },
-		"unknown field": func() (sample, error) { return load(prefix + `MODELS=[{"name":"x","extra":"` + secret + `"}]`) },
+	_, err := load(prefix + "LISTEN_PORT=" + secret)
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("missing or unsafe parse error: %v", err)
+	}
+}
+
+func TestCollectionsAreFileOnly(t *testing.T) {
+	path := writeFile(t, "namespaces: [from-file]\nmodels: [{name: from-file, budget: 1}]\nlevels: {root: DEBUG}\n")
+	for _, setting := range []string{
+		`NAMESPACES=["from-env"]`, `NAMESPACES=one,two`,
+		`MODELS=[{"name":"from-env","budget":3}]`, `LEVELS={"root":"INFO"}`,
 	} {
-		_, err := attempt()
-		if err == nil {
-			t.Errorf("%s: accepted", name)
-		} else if strings.Contains(err.Error(), secret) {
-			t.Errorf("%s: the error carries the value: %v", name, err)
+		if _, err := load(prefix+"CONFIG_FILE="+path, prefix+setting); err == nil {
+			t.Errorf("accepted collection environment override %s", setting)
 		}
 	}
 }
