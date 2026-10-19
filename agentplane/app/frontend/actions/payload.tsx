@@ -17,7 +17,7 @@ export function ActionText({
   const label = heading ?? "Action text";
   return (
     <Stack gap={4}>
-      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }} data-operation-heading={heading}>
         {label}
       </Text>
       <ClampedBlock maxHeightRem={OUTPUT_MAX_HEIGHT_REM} lines={lineCount(text)} label={label}>

@@ -890,10 +890,10 @@ async def test_kubernetes_applied_manifest_receipt(view: VisualPage, app: Agentp
     )
     await app.mount_app("/actions")
     page = view.page
-    await expect(page.get_by_text("Apply ConfigMap apps/settings", exact=True)).to_be_visible()
-    await expect(page.get_by_text("Manifest · ConfigMap apps/settings", exact=True)).to_be_visible()
-    await expect(page.get_by_text("Resource 1 · ConfigMap apps/settings", exact=True)).to_be_visible()
-    await expect(page.get_by_text("Resource 2 · Secret apps/token", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Apply Kubernetes resource", exact=True)).to_be_visible()
+    await expect(page.locator('[data-operation-heading="Manifest · ConfigMap apps/settings"]')).to_be_visible()
+    await expect(page.locator('[data-operation-heading="Resource 1 · ConfigMap apps/settings"]')).to_be_visible()
+    await expect(page.locator('[data-operation-heading="Resource 2 · Secret apps/token"]')).to_be_visible()
     await expect(page.locator(".cm-editor").first).to_be_visible()
     await view.check(context="Kubernetes apply summary with formatted manifest and returned resources")
     await view.capture(target=page.locator("#app"))
@@ -924,7 +924,7 @@ async def test_kubernetes_yaml_result_receipt(view: VisualPage, app: AgentplaneF
     )
     await app.mount_app("/actions")
     page = view.page
-    await expect(page.get_by_text("Resource · ConfigMap apps/settings", exact=True)).to_be_visible()
+    await expect(page.locator('[data-operation-heading="Resource · ConfigMap apps/settings"]')).to_be_visible()
     await expect(page.get_by_text("Structured content", exact=True)).to_have_count(0)
     await view.check(context="Kubernetes YAML and its equivalent structured result shown once")
     await view.capture(target=page.locator("#app"))
