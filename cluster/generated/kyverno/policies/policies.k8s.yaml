@@ -47,6 +47,10 @@ spec:
                 namespace: seaweedfs
           - subjects:
               - kind: ServiceAccount
+                name: piraeus-operator
+                namespace: piraeus-datastore
+          - subjects:
+              - kind: ServiceAccount
                 name: authentik
                 namespace: authentik
           - subjects:

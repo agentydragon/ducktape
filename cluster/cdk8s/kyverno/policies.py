@@ -76,6 +76,7 @@ def require_gitops_chart(app: App) -> Chart:
         ("monitoring-operator", "monitoring"),
         ("grafana-operator", "monitoring"),
         ("seaweedfs-operator", "seaweedfs"),
+        ("piraeus-operator", "piraeus-datastore"),
         # Authentik (creates outpost Deployments from provider CRs)
         ("authentik", "authentik"),
         # Stakater Reloader (triggers rolling restarts on secret changes)
