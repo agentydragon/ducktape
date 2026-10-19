@@ -18,7 +18,7 @@ Dots show all recorded samples; diamonds and the values at right show medians.
 Each panel has its own linear scale. The shaded SeaweedFS SSD row is a historical
 reference from **2026-07-11**; the other rows are the fresh **2026-10-19 HDD** run,
 including its SeaweedFS filesystem control. SeaweedFS Forgejo samples come from two
-separate fresh-PVC retries later that morning, shown as distinct rows; the original
+fresh-PVC retries later that morning, pooled into one row; the original
 initialization failure is retained below. The direct filesystem cells were not rerun.
 
 The historical row reads the preserved
@@ -43,18 +43,18 @@ has five samples.
 | Piraeus FILE_THIN HDD, two protocol-C copies |                20.760 |               1.660 |             0.140 |
 
 The end-to-end workload used a single disposable Forgejo instance and 20 samples per
-operation. Values are median seconds from the raw CSVs. SeaweedFS uses the separate
-[`forgejo-seaweedfs-ovh-retry-1.csv`](results/forgejo-seaweedfs-ovh-retry-1.csv) and
-[`forgejo-seaweedfs-ovh-retry-2.csv`](results/forgejo-seaweedfs-ovh-retry-2.csv)
-runs; the other three cells come from the initial batch.
+operation per run. Values are median seconds from the raw CSVs. SeaweedFS pools both
+successful retries in [`forgejo-seaweedfs-ovh.csv`](results/forgejo-seaweedfs-ovh.csv):
+160 rows, or **40 samples per operation**, with an `attempt` column retaining run
+identity. Medians use all pooled observations, rather than averaging run medians.
+The other three cells come from the initial batch and have 20 samples per operation.
 
 | Storage arm                                  | version | contents read | contents write | tiny `git push` |
 | -------------------------------------------- | ------: | ------------: | -------------: | --------------: |
 | local-path-ovh-hdd                           |   0.378 |         0.415 |          0.752 |           1.140 |
 | Piraeus FILE_THIN HDD, one copy              |   0.350 |         0.376 |          0.777 |           1.115 |
 | Piraeus FILE_THIN HDD, two protocol-C copies |   0.348 |         0.368 |          0.840 |           1.130 |
-| seaweedfs-ovh, fresh-PVC retry 1             |   0.355 |         0.413 |          2.290 |           1.595 |
-| seaweedfs-ovh, fresh-PVC retry 2             |   0.407 |         0.494 |          2.448 |           1.715 |
+| seaweedfs-ovh, pooled fresh-PVC retries      |   0.389 |         0.461 |          2.376 |           1.615 |
 
 In this run, the Piraeus one-copy Git metadata and the Forgejo app timings were close to
 the local-path control. The two-copy arm raised the direct `dd conv=fsync` batch median
@@ -181,8 +181,9 @@ PVC trial rather than a controlled reproduction of the original remount failure.
 See [runtime](results/seaweedfs-hdd-retry-2/runtime.txt),
 [startup replacement](results/seaweedfs-hdd-retry-2/pod-replacement.txt),
 [HDD placement](results/seaweedfs-hdd-retry-2/media-check-after.txt), and
-[cleanup](results/seaweedfs-hdd-retry-2/cleanup-proof.txt) evidence. Both successful
-retries remain separate in the plot; their samples are not pooled.
+[cleanup](results/seaweedfs-hdd-retry-2/cleanup-proof.txt) evidence. The two successful
+retries share one dataset and plot row, with 40 samples per Forgejo operation.
+The run-specific evidence and per-run medians above retain their provenance.
 
 ## Plot regeneration
 

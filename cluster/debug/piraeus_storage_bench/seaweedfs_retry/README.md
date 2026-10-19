@@ -43,8 +43,9 @@ configuration. `run.sh` bounds a non-ready Forgejo startup to four minutes and
 stops sooner after three restarts or two minutes of stationary non-running
 state. It saves status/events and CSI/FUSE log lines scoped to this PVC and Pod
 if startup fails. Successful runs emit 20 samples each for version,
-contents-read, contents-write and tiny Git push. The raw 80-row CSV is copied to
-the benchmark results root only after row counts and HTTP status are checked.
+contents-read, contents-write and tiny Git push. After row counts and HTTP status
+are checked, the 80 rows are added to the pooled results CSV with their `attempt`
+number. The runner refuses an attempt already present in that CSV.
 
 The default `seaweedfs-ovh` class is media-blind. The run therefore captures
 the new PVC collection's Seaweed volume rows before and after the workload and
@@ -56,7 +57,7 @@ fresh PVC's first application mount. This retry succeeded on that first mount
 with no Forgejo restarts. It recorded 20 successful 2xx samples for each
 operation; the scoped collection was on HDD-only Seaweed volume servers with
 replica placement `001` both before and after measurement. The raw CSV is
-[`forgejo-seaweedfs-ovh-retry-1.csv`](../results/forgejo-seaweedfs-ovh-retry-1.csv).
+[`forgejo-seaweedfs-ovh.csv`](../results/forgejo-seaweedfs-ovh.csv), filtered to `attempt=1`.
 Medians in seconds were 0.3553805 for version, 0.4133175 for contents read,
 2.289788 for contents write and 1.595 for tiny Git push. This is a measurement
 on one fresh PVC and does not explain the earlier startup failure or establish

@@ -5,7 +5,8 @@ That selector constrained the namespace to
 `piraeus-storage-bench-20261019-seaweed-retry2`, owner label to
 `seaweedfs-hdd-retry-2`, private data to
 `/tmp/piraeus-storage-seaweed-retry2-private`, and outputs to this directory
-and [`forgejo-seaweedfs-ovh-retry-2.csv`](../forgejo-seaweedfs-ovh-retry-2.csv).
+and, after pooling, [`forgejo-seaweedfs-ovh.csv`](../forgejo-seaweedfs-ovh.csv)
+with `attempt=2`.
 The fixture, Forgejo values and client Job were copied privately with only the
 namespace/owner references changed. The Forgejo chart was 17.1.1 and the app
 image was 15.0.8-rootless; the workload script, image digests, storage classes,

@@ -15,7 +15,7 @@ private_dir=${PIRAEUS_BENCH_PRIVATE_DIR:-/tmp/piraeus-storage-seaweed-retry$atte
 retry_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 root=$(CDPATH= cd -- "$retry_dir/.." && pwd)
 results="$root/results/seaweedfs-hdd-retry-$attempt"
-csv="$root/results/forgejo-seaweedfs-ovh-retry-$attempt.csv"
+csv="$root/results/forgejo-seaweedfs-ovh.csv"
 chart="$private_dir/helm/verify/forgejo-17.1.1.tgz"
 chart_digest=sha256:a99352bc5167aba8b58f0de386e777e7fe742bdd573daf82f38986239ff52128
 chart_archive_sha=26aa3120e020b67593ce6e2266c457ee925ff514f606563e184b09ed6581e18f
@@ -24,8 +24,14 @@ db_digest=sha256:51bc94428be3df3e234447278e33803544a93d27a57a4b6af737f218d6472d1
 valkey_digest=sha256:a0dbf4c1d5708782907c10e2c72deff317518518b5288a58416981d9db95d30b
 
 if [ -e "$csv" ]; then
-  echo "refusing to overwrite existing retry CSV: $csv" >&2
-  exit 1
+  if [ "$(head -n 1 "$csv")" != target,operation,http_status,seconds,attempt ]; then
+    echo "unexpected pooled CSV header: $csv" >&2
+    exit 1
+  fi
+  if awk -F, -v attempt="$attempt" 'NR > 1 && $5 == attempt {found=1} END {exit !found}' "$csv"; then
+    echo "refusing to overwrite recorded attempt $attempt in $csv" >&2
+    exit 1
+  fi
 fi
 mkdir -m 700 -p "$private_dir" "$results" "$private_dir/helm/cache" "$private_dir/helm/config" "$private_dir/helm/data" "$private_dir/helm/verify"
 chmod 700 "$private_dir"
@@ -247,8 +253,12 @@ if [ "$rows" -ne 80 ] || [ "$(awk -F, 'NR>1 {if ($1!="seaweedfs-ovh" || $3+0<200
   exit 26
 fi
 collect_placement after
-cp "$private_dir/forgejo-seaweedfs-raw.csv" "$csv"
-awk -F, 'NR>1 {count[$2]++} END {for (op in count) printf "%s\t%d\n",op,count[op]}' "$csv" | sort >"$results/sample-counts.tsv"
+{
+  if [ -e "$csv" ]; then cat "$csv"; else printf 'target,operation,http_status,seconds,attempt\n'; fi
+  awk -v attempt="$attempt" 'NR > 1 {print $0 "," attempt}' "$private_dir/forgejo-seaweedfs-raw.csv"
+} >"$private_dir/forgejo-seaweedfs-pooled.csv"
+cp "$private_dir/forgejo-seaweedfs-pooled.csv" "$csv"
+awk -F, 'NR>1 {count[$2]++} END {for (op in count) printf "%s\t%d\n",op,count[op]}' "$private_dir/forgejo-seaweedfs-raw.csv" | sort >"$results/sample-counts.tsv"
 printf 'completed_at_utc=%s\naccepted_rows=%s\n' "$(date -u +%FT%TZ)" "$rows" >>"$results/runtime.txt"
 kubectl -n "$namespace" delete job piraeus-storage-bench-forgejo --wait=true
 kubectl -n "$namespace" get pods -l app.kubernetes.io/name=piraeus-storage-bench-forgejo -o json | jq -e '.items | length == 0' >/dev/null
