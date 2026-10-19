@@ -14,7 +14,7 @@ import { useConsoleView } from "./routing";
 export default function App(): JSX.Element {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { view, agentEnrollmentId, toolCallId, navigate } = useConsoleView();
+  const { view, toolCallId, navigate } = useConsoleView();
 
   useEffect(() => {
     if (view === "approvalsEmbed") return;
@@ -62,7 +62,6 @@ export default function App(): JSX.Element {
         uiUrl={config.haku_ui_url}
         launchAvailable={config.launch_routine_url != null}
         view={view}
-        agentEnrollmentId={agentEnrollmentId}
         toolCallId={toolCallId}
         onNavigate={navigate}
       />

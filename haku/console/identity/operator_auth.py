@@ -50,10 +50,8 @@ logger = logging.getLogger(__name__)
 AUTHENTIK_CLIENT_NAME = "authentik"
 SESSION_USER_KEY = "operator"
 OPERATOR_SESSION_MAX_AGE_SECONDS = 60 * 60
-_AGENT_ENROLLMENT_PATH_PREFIX = "/auth/agent-enrollment/"
 _MAX_RETURN_TO_LENGTH = 2048
-# Backend and protocol paths are not page continuations. `/auth/` has one exception for the
-# operator enrollment interaction.
+# Backend and protocol paths are not page continuations.
 _BACKEND_PATH_PREFIXES = ("/api/", "/auth/", "/mcp", "/healthz", "/.well-known/")
 # One automatic restart after a stale or superseded attempt, tracked in its own short-lived cookie
 # so the marker cannot be lost to (or evict) anything else the browser holds.
@@ -246,23 +244,12 @@ def _redirect_uri(request: Request) -> str:
     return f"{base}/auth/callback"
 
 
-def _is_enrollment_interaction_path(path: str) -> bool:
-    if not path.startswith(_AGENT_ENROLLMENT_PATH_PREFIX):
-        return False
-    try:
-        UUID(path.removeprefix(_AGENT_ENROLLMENT_PATH_PREFIX))
-    except ValueError:
-        return False
-    return True
-
-
 def _validated_return_to(value: str) -> str:
     """Accept a local console page to continue to, never a general redirect target.
 
-    Two shapes qualify: the agent-enrollment interaction the enrollment entry point sends the
-    browser through, and any SPA path — so a tab that re-authenticates comes back where it was
-    instead of at the root. Backslashes are refused outright because browsers normalize them to
-    slashes, which would turn `/\\evil.example` into a protocol-relative URL after this check.
+    SPA paths let a tab that re-authenticates return where it was instead of at the root.
+    Backslashes are refused outright because browsers normalize them to slashes, which would turn
+    `/\\evil.example` into a protocol-relative URL after this check.
     """
     if len(value) > _MAX_RETURN_TO_LENGTH or any(ord(character) < 32 or ord(character) == 127 for character in value):
         raise HTTPException(status_code=400, detail="invalid operator login continuation")
@@ -271,7 +258,7 @@ def _validated_return_to(value: str) -> str:
     parsed = urlsplit(value)
     if parsed.scheme or parsed.netloc or parsed.fragment or not parsed.path.startswith("/"):
         raise HTTPException(status_code=400, detail="invalid operator login continuation")
-    if parsed.path.startswith(_BACKEND_PATH_PREFIXES) and not _is_enrollment_interaction_path(parsed.path):
+    if parsed.path.startswith(_BACKEND_PATH_PREFIXES):
         raise HTTPException(status_code=400, detail="invalid operator login continuation")
     return urlunsplit(("", "", parsed.path, parsed.query, ""))
 

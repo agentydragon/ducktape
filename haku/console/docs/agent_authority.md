@@ -1,12 +1,13 @@
-# Canonical Agent authority and enrollment
+# Canonical Agent authority
 
 The durable Postgres graph for Console Agent identities and the authorization records retained from
 the retired MCP OAuth flow. The Console's Agent-facing MCP protocol endpoint and FastMCP adapter
 have been removed; the remaining identity code supports configured Agents and the operator-owned
 approval/audit ledger. The operator browser login remains at `/auth/*`.
 
-Alembic revision `0081` is the single forward-only database baseline. It directly installs one
-graph shared by interactive OAuth and configured static Agents:
+Alembic revision `0081` is the single forward-only database baseline. It installs the durable graph
+used by configured static Agents and retains identity and grant records from the retired interactive
+OAuth flow:
 
 ```text
 Operator -> IdentityAnchor -> OidcIdentity
@@ -19,8 +20,8 @@ ToolCallPrincipal -> exactly one of operator_id | binding_id
 
 - `Operator`, `Agent`, and every authority-bearing relationship use local immutable UUIDs. An exact
   verified `(issuer, subject)` identifies an OIDC identity; a configured Authentik trust-domain
-  anchor is the only path by which identities at the browser and MCP issuers converge on one
-  Operator. Username is presentation only.
+  anchor governs how browser and retained MCP-issuer identity records converge on one Operator.
+  Username is presentation only.
 - OAuth `client_id` describes client software/registration metadata. It is never the Agent,
   Operator, grant, or credential binding, and unauthenticated DCR does not create an Agent.
 - Every Agent has a required normalized non-empty display name, globally unique by its normalized
@@ -47,10 +48,11 @@ ToolCallPrincipal -> exactly one of operator_id | binding_id
 
 The Console Recall integration and `recall_index_ids` profile field were removed.
 
-## Retired MCP OAuth admission
+## Retired MCP OAuth admission and browser enrollment
 
-The Console no longer accepts MCP OAuth authorization, callback, or tool requests. Existing Agent,
-credential-binding, Kubernetes grant, and tool-call rows remain durable; this rollout does not
+The Console no longer accepts MCP OAuth authorization, callback, or tool requests, and no longer
+serves the browser enrollment flow those requests initiated. Existing Agent, credential-binding,
+authorization-grant, Kubernetes-grant, and tool-call rows remain durable; retiring the flow does not
 delete stored identity or tool-call data. Kubernetes grants are no longer listed, revoked, or used
 for authorization. The old DCR/token-state table also remains until after outgoing replicas have
 left, since they can still initialize it during the rolling deployment.
@@ -76,9 +78,9 @@ The runtime caller is `RuntimeActor` (`OperatorActor | AgentActor`). Only the au
 `AgentActor(agent_id, operator_id, binding_id, access_profile_id)` from durable state. Operators
 may change an OAuth Agent's profile later under Settings; configured static Agent profiles remain
 owned by deployment configuration so the manually approved public Coder identity cannot be granted
-standing authority through the UI. Profile selection is required for every new enrollment,
-reconnection, Settings mutation, and static-Agent definition. Only pre-migration durable Agents may
-have a null assignment, which fails closed until an Operator selects a profile. Agents can
+standing authority through the UI. Profile selection is required for Settings mutations and
+static-Agent definitions. Only pre-migration durable Agents may have a null assignment, which fails
+closed until an Operator selects a profile. Agents can
 submit/read only their own calls; Operators can read/decide all and only calls they own; Agents
 never approve themselves. Repository operations have no unscoped or `None` actor mode.
 

@@ -146,8 +146,8 @@ class StaticAgentEntry(BaseModel):
     # Authentik's stable OIDC `sub`/user_id seed. It is resolved to an Operator UUID once at
     # startup and is never live request authority.
     operator_subject: str = Field(min_length=1)
-    # Static Agents choose an explicit capability profile. OAuth/DCR Agents select one in the
-    # browser enrollment decision alongside their display name.
+    # Static Agents choose an explicit capability profile. Legacy OAuth/DCR Agent records retain
+    # the profile selected during the now-retired browser enrollment flow.
     access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
 
     @field_validator("display_name")

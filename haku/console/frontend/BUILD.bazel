@@ -603,26 +603,11 @@ ts_library(
 )
 
 ts_library(
-    name = "agent_enrollment_panel",
-    srcs = ["agent_enrollment_panel.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":toast",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "haku_ui_embed",
     srcs = ["haku_ui_embed.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":agent_enrollment_panel",
         ":approval_state",
         ":bridge",
         ":client",
@@ -704,7 +689,6 @@ ts_library(
 filegroup(
     name = "tailwind_content_srcs",
     srcs = [
-        "agent_enrollment_panel.tsx",
         "app.tsx",
         "approval_state.ts",
         "approvals_embed_page.tsx",

@@ -315,10 +315,7 @@ def _seed_login_flow(client, *, return_to: str | None, binding: str = "test-brow
     return state
 
 
-@pytest.mark.parametrize(
-    "return_to",
-    ["/auth/agent-enrollment/d9377996-7f17-4dcb-a746-3f401e0b1413?browser_nonce=opaque-value", "/_console/tool-calls"],
-)
+@pytest.mark.parametrize("return_to", ["/_console/tool-calls"])
 def test_callback_returns_to_the_page_the_login_started_from(make_operator_client, return_to: str) -> None:
     with make_operator_client() as client:
         state = _seed_login_flow(client, return_to=return_to)
@@ -342,8 +339,7 @@ async def test_callback_without_a_continuation_returns_to_the_root(make_operator
     "return_to",
     [
         "https://attacker.example/",
-        "//attacker.example/auth/agent-enrollment/d9377996-7f17-4dcb-a746-3f401e0b1413",
-        "/auth/agent-enrollment/not-a-uuid",
+        "/auth/agent-enrollment/d9377996-7f17-4dcb-a746-3f401e0b1413",
         "/auth/login",
         "/api/config",
         "/mcp",

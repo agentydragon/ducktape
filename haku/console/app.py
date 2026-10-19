@@ -32,7 +32,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from haku.console import capabilities
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
-from haku.console.identity import enrollment_routes, operator_auth, operator_login_flow
+from haku.console.identity import agent_routes, operator_auth, operator_login_flow
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
@@ -236,8 +236,7 @@ def create_app(
     operator_only = [Depends(operator_auth.require_operator), Depends(operator_auth.require_operator_mutation_origin)]
     app.include_router(capabilities.router, dependencies=operator_only)
     app.include_router(approval.router, dependencies=operator_only)
-    app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
-    app.include_router(enrollment_routes.entry_router)
+    app.include_router(agent_routes.router, dependencies=operator_only)
 
     @app.get("/api/deployment", dependencies=operator_only)
     async def deployment() -> DeploymentInfo:

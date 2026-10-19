@@ -191,45 +191,6 @@ async def test_settings_tab(settings_view: VisualPage, tab: str, ready_text: str
     await settings_view.capture()
 
 
-async def test_agent_enrollment(
-    visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str
-) -> None:
-    async with _fixture(
-        visual, "agent-enrollment", color_scheme, width=1200, height=900, capture_name=capture_name
-    ) as view:
-        await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
-        await _close_approvals(view)
-        await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await view.page.wait_for_selector("[aria-label='Loading Agent enrollment']", state="hidden")
-        await view.capture()
-
-
-async def test_agent_enrollment_reconnect(
-    visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str
-) -> None:
-    async with _fixture(
-        visual, "agent-enrollment-reconnect", color_scheme, width=1200, height=900, capture_name=capture_name
-    ) as view:
-        await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
-        await _close_approvals(view)
-        await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await view.page.wait_for_selector("[aria-label='Loading Agent enrollment']", state="hidden")
-        await view.capture()
-
-
-async def test_agent_enrollment_mobile(
-    visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str
-) -> None:
-    async with _fixture(
-        visual, "agent-enrollment", color_scheme, width=390, height=760, capture_name=capture_name
-    ) as view:
-        await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
-        await _close_approvals(view)
-        await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await view.page.wait_for_selector("[aria-label='Loading Agent enrollment']", state="hidden")
-        await view.capture()
-
-
 async def test_history(history_view: VisualPage) -> None:
     view = history_view
     await view.page.locator("[aria-label='Full'] >> nth=0").click()

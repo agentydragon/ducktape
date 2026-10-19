@@ -2,8 +2,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-  AGENT_ENROLLMENT_PATH_PREFIX,
-  agentEnrollmentIdForPathname,
   APPROVALS_EMBED_PATH,
   CONSOLE_ROOT_PATH,
   HOME_PATH,
@@ -20,9 +18,7 @@ describe("viewForPathname", () => {
   it("reserves only the _console namespace for trusted pages", () => {
     expect(viewForPathname(SETTINGS_PATH)).toBe("settings");
     expect(viewForPathname(APPROVALS_EMBED_PATH)).toBe("approvalsEmbed");
-    expect(viewForPathname(`${AGENT_ENROLLMENT_PATH_PREFIX}/10000000-0000-4000-8000-000000000001`)).toBe(
-      "agentEnrollment"
-    );
+    expect(viewForPathname(`${SETTINGS_PATH}/agents/enroll/10000000-0000-4000-8000-000000000001`)).toBe("notFound");
     expect(viewForPathname(TOOL_CALLS_PATH)).toBe("toolCalls");
     expect(viewForPathname(`${CONSOLE_ROOT_PATH}/unknown`)).toBe("notFound");
     expect(viewForPathname(CONSOLE_ROOT_PATH)).toBe("embed");
@@ -39,13 +35,6 @@ describe("viewForPathname", () => {
     expect(toolCallIdForPathname(`${TOOL_CALLS_PATH}/8de5eb42-a3ce-4c83-9b13-59678c399ba3`)).toBeNull();
     expect(toolCallIdForPathname(`${TOOL_CALLS_PATH}/tc_short`)).toBeNull();
     expect(viewForPathname(`${TOOL_CALLS_PATH}/tc_short`)).toBe("notFound");
-  });
-
-  it("accepts only canonical UUIDv4 Agent enrollment routes", () => {
-    const id = "10000000-0000-4000-8000-000000000001";
-    expect(agentEnrollmentIdForPathname(`${AGENT_ENROLLMENT_PATH_PREFIX}/${id}`)).toBe(id);
-    expect(agentEnrollmentIdForPathname(`${AGENT_ENROLLMENT_PATH_PREFIX}/not-an-interaction`)).toBeNull();
-    expect(viewForPathname(`${AGENT_ENROLLMENT_PATH_PREFIX}/not-an-interaction`)).toBe("notFound");
   });
 
   it("returns every non-console path, including the old history path, to haku-ui", () => {

@@ -30,7 +30,6 @@ import {
 import { ScreenshotSession } from "./screenshot_capture";
 import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant";
 import { SettingsPanel } from "./settings_panel";
-import { AgentEnrollmentPanel, type EnrollmentChoice } from "./agent_enrollment_panel";
 import { toastError, toastSuccess } from "./toast";
 import { useToolCallDecision } from "./tool_call_decision";
 import { redirectToOperatorLogin } from "./operator_login";
@@ -88,16 +87,12 @@ export function HakuUiEmbed({
   uiUrl,
   launchAvailable,
   view,
-  agentEnrollmentId,
-  agentEnrollmentInitialChoice,
   toolCallId,
   onNavigate,
 }: {
   uiUrl: string;
   launchAvailable: boolean;
   view: ConsoleView;
-  agentEnrollmentId: string | null;
-  agentEnrollmentInitialChoice?: EnrollmentChoice;
   toolCallId?: string | null;
   onNavigate: (view: ConsoleNavigationView) => void;
 }): JSX.Element {
@@ -384,7 +379,7 @@ export function HakuUiEmbed({
     document.title =
       view === "embed"
         ? frameTitleRef.current
-        : view === "settings" || view === "agentEnrollment"
+        : view === "settings"
           ? "Settings · Haku"
           : view === "toolCalls"
             ? "Past tool calls · Haku"
@@ -636,14 +631,6 @@ export function HakuUiEmbed({
           className={`haku-ui-frame ${view === "embed" ? "" : "haku-ui-frame-hidden"}`}
         />
         {view === "settings" && <SettingsPanel />}
-        {view === "agentEnrollment" && agentEnrollmentId !== null && (
-          <AgentEnrollmentPanel
-            key={`${agentEnrollmentId}:${agentEnrollmentInitialChoice}`}
-            interactionId={agentEnrollmentId}
-            initialChoice={agentEnrollmentInitialChoice}
-            onReturnToSettings={() => onNavigate("settings")}
-          />
-        )}
         {view === "toolCalls" && <ToolCallsPage />}
         {view === "notFound" && (
           <section className="haku-page" aria-label="Not found">

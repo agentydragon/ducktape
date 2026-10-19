@@ -12,11 +12,11 @@ surfaces. The complete threat model and enforcement inventory are in <../docs/se
 
 This README is the component map, not a second copy of every contract:
 
-- <docs/agent_authority.md> — canonical Agent identity, credentials, enrollment, profiles, and
+- <docs/agent_authority.md> — canonical Agent identity, credentials, profiles, and
   actor-scoped authority.
 - <docs/containment.md> — iframe isolation, trusted chrome, Agent UI bridge actions, consent, and browser-side
   exfiltration bounds.
-- <docs/oauth_browser_surfaces.md> — account-link and Agent-enrollment browser boundaries.
+- <docs/oauth_browser_surfaces.md> — Operator-login and third-party OAuth document boundaries.
 - <../docs/security.md> — threat model and security invariants.
 - <../../cluster/k8s/haku/console/README.md> — deployment topology, migration release work, routing,
   credentials, and one-time connection bootstrap.
@@ -46,13 +46,14 @@ The Console's Agent-facing MCP endpoint, Operator browser MCP client, and OAuth 
 are retired. New MCP calls cannot enter the ledger. Existing rows and their operator decisions stay
 in Postgres for audit.
 
-### Canonical Agent authority and enrollment
+### Canonical Agent authority
 
 The canonical contract is <docs/agent_authority.md>. In short: `Operator`, `Agent`, credential
 bindings, names, profiles, and tool-call principals are durable local identities; every
-Agent call record keeps exact binding provenance; and browser enrollment must converge with the
-upstream Agent OAuth principal before a binding becomes active. Access profiles select auto-approval
-policy and any configured in-process server access; missing assignments fail closed.
+Agent call record keeps exact binding provenance. Settings lists existing Agents and allows
+Operators to change OAuth Agent profiles; configured static Agent profiles remain deployment-owned.
+Access profiles select auto-approval policy and any configured in-process server access; missing
+assignments fail closed.
 
 ### In-process execution backend
 

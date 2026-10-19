@@ -76,25 +76,6 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
       ],
     });
   }
-  if (url.includes("/api/agent-enrollment/")) {
-    return jsonResponse({
-      operator_display_name: "Rai",
-      client_software: "Claude Desktop",
-      redirect_host: "localhost:6274",
-      requested_scopes: ["openid", "offline_access", "mcp:tools"],
-      suggested_agent_name: "Claude Desktop — laptop",
-      reconnectable_agents: [
-        {
-          agent_id: "40000000-0000-4000-8000-000000000004",
-          display_name: "Claude Desktop",
-          access_profile_id: "haku_v1",
-        },
-      ],
-      access_profiles: ["manual_review", "haku_v1"],
-      default_access_profile_id: "manual_review",
-      form_token: "form-token-for-screenshot",
-    });
-  }
   // The framed Haku UI's origin, plus whether the launch-routine capability is configured (kept
   // null since no scene needs it enabled).
   if (url.includes("/api/config")) {

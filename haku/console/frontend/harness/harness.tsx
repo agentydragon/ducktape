@@ -18,19 +18,10 @@ import { SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data";
 const noop = () => {};
 const noopNavigate = (_view: ConsoleNavigationView) => {};
 
-const ENROLLMENT_ID = "10000000-0000-4000-8000-000000000001";
-
-function ConsoleFixture({ view, reconnect = false }: { view: ConsoleView; reconnect?: boolean }) {
+function ConsoleFixture({ view }: { view: ConsoleView }) {
   return (
     <AgentNamesProvider>
-      <HakuUiEmbed
-        uiUrl="https://haku-ui.test/"
-        launchAvailable
-        view={view}
-        agentEnrollmentId={view === "agentEnrollment" ? ENROLLMENT_ID : null}
-        agentEnrollmentInitialChoice={reconnect ? "reconnect" : undefined}
-        onNavigate={noopNavigate}
-      />
+      <HakuUiEmbed uiUrl="https://haku-ui.test/" launchAvailable view={view} onNavigate={noopNavigate} />
     </AgentNamesProvider>
   );
 }
@@ -95,10 +86,6 @@ function fixtureElement(fixture: string) {
       return <ApprovalsEmbedPage />;
     case "settings":
       return <ConsoleFixture view="settings" />;
-    case "agent-enrollment":
-      return <ConsoleFixture view="agentEnrollment" />;
-    case "agent-enrollment-reconnect":
-      return <ConsoleFixture view="agentEnrollment" reconnect />;
     case "history":
     case "history-paged":
       return <ConsoleFixture view="toolCalls" />;

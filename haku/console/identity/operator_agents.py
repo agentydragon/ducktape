@@ -1,4 +1,4 @@
-"""Browser-route access to the app's Agent enrollment service and the acting Operator's roster."""
+"""Dependency for Operator-authenticated Agent management routes."""
 
 from __future__ import annotations
 

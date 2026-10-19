@@ -89,18 +89,15 @@ py_library(
 )
 
 py_library(
-    name = "enrollment_routes",
-    srcs = ["enrollment_routes.py"],
+    name = "agent_routes",
+    srcs = ["agent_routes.py"],
     deps = [
         ":agent",
         ":enrollment",
-        ":naming",
         ":operator_agents",
         ":operator_auth",
-        "//haku/console:settings",
         "@pypi//fastapi",
         "@pypi//pydantic",
-        "@pypi//starlette",
     ],
 )
 
@@ -117,16 +114,17 @@ py_test(
 )
 
 py_test(
-    name = "test_enrollment_routes",
-    srcs = ["test_enrollment_routes.py"],
+    name = "test_agent_routes",
+    srcs = ["test_agent_routes.py"],
     deps = [
         ":agent",
+        ":agent_routes",
         ":enrollment",
-        ":enrollment_routes",
         ":operator_auth",
         "//:conftest",
         "//haku/console:conftest",
         "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//pytest_bazel",
     ],
 )

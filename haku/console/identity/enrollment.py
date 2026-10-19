@@ -1,4 +1,4 @@
-"""Typed application boundary for the browser half of Agent enrollment."""
+"""Typed Agent authority values, including retained legacy OAuth interaction records."""
 
 from __future__ import annotations
 
