@@ -551,6 +551,7 @@ data "talos_machine_configuration" "kimsufi" {
     local.kimsufi_cloud_provider_external_patches[each.key],
     local.nebula_machine_patches[each.key],
     [local.talos_node_logging_patch],
+    local.drbd_canary_machine_config_patches[each.key],
   )
 }
 
