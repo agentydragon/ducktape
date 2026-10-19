@@ -1,3 +1,4 @@
+import type { ActionPresentation } from "./presentation";
 import { Anchor, Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
@@ -256,3 +257,26 @@ function GmailThreadsResult({ result }: { result: z.infer<typeof gmailThreadsRes
 }
 
 export const gmailThreadsResult: ResultPreview = defineResultPreview(gmailThreadsResultSchema, GmailThreadsResult);
+
+// These static views need no Gmail read lookup. Subject/label resolution for thread and message
+// actions stays on the submitted-data fallback until Agentplane has an explicit lookup surface.
+export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
+  [
+    "drafts_create",
+    {
+      label: gmailDraftLabel,
+      call: gmailDraftCall,
+      pane: { collapsed: gmailDraftCollapsed, opened: gmailDraftOpened },
+      details: { arguments: gmailDraftDetails, result: gmailDraftResult },
+    },
+  ],
+  [
+    "threads_list",
+    {
+      label: gmailThreadSearchLabel,
+      pane: { collapsed: gmailThreadSearchCollapsed, opened: gmailThreadSearchOpened },
+      details: { arguments: gmailThreadSearchOpened, result: gmailThreadsResult },
+      offersCardDecisionButtons: offersCardDecisionButtonsThreadSearch,
+    },
+  ],
+]);

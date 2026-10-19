@@ -1,3 +1,4 @@
+import type { ActionPresentation } from "./presentation";
 import { Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
@@ -35,3 +36,14 @@ export const calendarNodeArgumentsPreview: ArgumentsPreview = definePreview(
   calendarNodeArguments,
   CalendarNodeArguments
 );
+
+export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
+  [
+    "get_or_create_calendar_node",
+    {
+      label: calendarNodeLabel,
+      pane: { opened: calendarNodeArgumentsPreview },
+      details: { arguments: calendarNodeArgumentsPreview },
+    },
+  ],
+]);

@@ -1,3 +1,4 @@
+import type { ActionPresentation } from "./presentation";
 import { Badge, Code, Group, Stack, Table, Text } from "@mantine/core";
 import { z } from "zod";
 
@@ -204,3 +205,46 @@ export const sandboxExecResult: ResultPreview = defineResultPreview(execution, (
     )}
   </Stack>
 ));
+
+export const sandboxRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
+  [
+    "exec",
+    {
+      label: sandboxExecLabel,
+      pane: { opened: sandboxExecArguments },
+      details: { arguments: sandboxExecArguments, nativeResult: sandboxExecResult },
+    },
+  ],
+  [
+    "create",
+    {
+      label: sandboxCreateLabel,
+      pane: { opened: sandboxCreateArguments },
+      details: { arguments: sandboxCreateArguments, nativeResult: sandboxInfoResult },
+    },
+  ],
+  [
+    "get",
+    {
+      label: sandboxGetLabel,
+      pane: { opened: sandboxNamedArguments },
+      details: { arguments: sandboxNamedArguments, nativeResult: sandboxInfoResult },
+    },
+  ],
+  [
+    "dispose",
+    {
+      label: sandboxDisposeLabel,
+      pane: { opened: sandboxNamedArguments },
+      details: { arguments: sandboxNamedArguments, nativeResult: sandboxDisposeResult },
+    },
+  ],
+  [
+    "list",
+    {
+      label: sandboxListLabel,
+      pane: { opened: sandboxListArguments },
+      details: { arguments: sandboxListArguments, nativeResult: sandboxListResult },
+    },
+  ],
+]);

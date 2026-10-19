@@ -17,6 +17,7 @@ ts_library(
         ":gmail",
         ":grocy",
         ":kubernetes_admin",
+        ":presentation",
         ":result_entry",
         ":sandbox",
         ":ssh",
@@ -41,11 +42,15 @@ ts_library(
 
 ts_library(
     name = "github",
-    srcs = ["github/create_pull_request.tsx"],
+    srcs = [
+        "github/create_pull_request.tsx",
+        "github/index.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":chips",
         ":entry",
+        ":presentation",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
@@ -59,6 +64,7 @@ ts_library(
     deps = [
         ":chips",
         ":entry",
+        ":presentation",
         ":result_entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -75,6 +81,7 @@ ts_library(
     deps = [
         ":chips",
         ":entry",
+        ":presentation",
         ":result_entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -87,6 +94,7 @@ ts_library(
     name = "kubernetes_admin",
     srcs = [
         "kubernetes_admin/events_list.tsx",
+        "kubernetes_admin/index.ts",
         "kubernetes_admin/pods_exec.tsx",
         "kubernetes_admin/pods_get.tsx",
         "kubernetes_admin/pods_list_in_namespace.tsx",
@@ -101,6 +109,7 @@ ts_library(
     deps = [
         ":chips",
         ":entry",
+        ":presentation",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -134,10 +143,14 @@ ts_library(
 
 ts_library(
     name = "ssh",
-    srcs = ["ssh/exec.tsx"],
+    srcs = [
+        "ssh/exec.tsx",
+        "ssh/index.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":entry",
+        ":presentation",
         ":result_entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -156,6 +169,7 @@ ts_library(
     deps = [
         ":chips",
         ":entry",
+        ":presentation",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -195,11 +209,22 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":entry",
+        ":presentation",
         ":result_entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
         "//agentplane/app/frontend:command_view",
+    ],
+)
+
+ts_library(
+    name = "presentation",
+    srcs = ["presentation.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":result_entry",
     ],
 )

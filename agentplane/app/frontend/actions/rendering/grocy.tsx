@@ -1,3 +1,4 @@
+import type { ActionPresentation } from "./presentation";
 import { Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
@@ -143,3 +144,35 @@ function SystemInfo({ result }: { result: z.infer<typeof systemInfo> }): JSX.Ele
 }
 
 export const systemInfoResult: ResultPreview = defineResultPreview(systemInfo, SystemInfo);
+
+// Only actions whose Haku renderers need no lookups are registered here. Lookup-backed Grocy
+// actions are absent entirely and use Agentplane's unported generic presentation.
+export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
+  [
+    "products_list",
+    {
+      label: productsListLabel,
+      pane: { opened: productsListArguments },
+      details: { arguments: productsListArguments, result: productsListResult },
+      offersCardDecisionButtons: offersCardDecisionButtonsProductsList,
+    },
+  ],
+  [
+    "quantity_units_list",
+    {
+      label: quantityUnitsListLabel,
+      pane: { opened: quantityUnitsListArguments },
+      details: { arguments: quantityUnitsListArguments, result: quantityUnitsListResult },
+      offersCardDecisionButtons: offersCardDecisionButtonsQuantityUnitsList,
+    },
+  ],
+  [
+    "get_system_info",
+    {
+      label: systemInfoLabel,
+      pane: { opened: systemInfoArguments },
+      details: { arguments: systemInfoArguments, result: systemInfoResult },
+      offersCardDecisionButtons: offersCardDecisionButtonsSystemInfo,
+    },
+  ],
+]);
