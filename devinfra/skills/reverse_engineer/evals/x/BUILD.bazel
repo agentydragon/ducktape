@@ -55,7 +55,7 @@ py_library(
 py_binary(
     name = "run_bin",
     main_module = "devinfra.skills.reverse_engineer.evals.x.run",
-    deps = [":run"],
+    deps = [":run"] + _INSPECT_PROVIDER_DEPS,
 )
 
 # Judge floor/ceiling sanity checks. NOT an agent eval — these only
@@ -74,21 +74,21 @@ py_library(
 py_binary(
     name = "validate_judge_bin",
     main_module = "devinfra.skills.reverse_engineer.evals.x.validate_judge",
-    deps = [":validate_judge"],
+    deps = [":validate_judge"] + _INSPECT_PROVIDER_DEPS,
 )
 
 py_binary(
     name = "validate_empty",
     args = ["--case=empty"],
     main_module = "devinfra.skills.reverse_engineer.evals.x.validate_judge",
-    deps = [":validate_judge"],
+    deps = [":validate_judge"] + _INSPECT_PROVIDER_DEPS,
 )
 
 py_binary(
     name = "validate_reference",
     args = ["--case=reference"],
     main_module = "devinfra.skills.reverse_engineer.evals.x.validate_judge",
-    deps = [":validate_judge"],
+    deps = [":validate_judge"] + _INSPECT_PROVIDER_DEPS,
 )
 
 # No Bazel `:view` target on purpose — Inspect's view server mounts its
