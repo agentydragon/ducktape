@@ -69,9 +69,16 @@ type ObservationPage struct {
 	Settled []CursorRange
 }
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db           *sql.DB
+	settleDeltas bool
+}
 
-func NewStore(db *sql.DB) *Store { return &Store{db: db} }
+// NewStore returns a store over db. With settleDeltas, Append removes an item's streamed delta entries
+// once its completion provably holds their concatenation; only the runner ingress sets it.
+func NewStore(db *sql.DB, settleDeltas bool) *Store {
+	return &Store{db: db, settleDeltas: settleDeltas}
+}
 
 func transaction(ctx context.Context, db *sql.DB, opts *sql.TxOptions, f func(*sql.Tx) error) error {
 	tx, err := db.BeginTx(ctx, opts)
@@ -222,8 +229,8 @@ func (s *Store) OpenedSessions(ctx context.Context, afterPosition uint64, limit 
 }
 
 // Append replays exact duplicates or extends the prefix, serializing concurrent writers by Session ID,
-// and returns the Session's last cursor. Validation and the new checkpoint commit together; on any error
-// the entire batch rolls back. An empty batch is a checkpoint read, not an inferred runner high-water mark.
+// and returns the Session's last cursor. Validation, settlement of the items the batch completes, and
+// the new checkpoint commit together; on any error the entire batch rolls back. An empty batch is a checkpoint read, not an inferred runner high-water mark.
 func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*eventlogpb.EventEntry) (uint64, error) {
 	var lastCursor uint64
 	err := transaction(ctx, s.db, nil, func(tx *sql.Tx) error {
@@ -231,7 +238,7 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 		if err != nil {
 			return err
 		}
-		appended := false
+		var appended []*eventlogpb.EventEntry
 		for _, entry := range entries {
 			cursor, sourceID := entry.GetCursor(), entry.GetOrigin().GetSourceId()
 			if cursor == 0 || sourceID == "" || entry.GetOrigin().GetSequence() != cursor {
@@ -257,9 +264,16 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 				sessionID, cursor, payload); err != nil {
 				return err
 			}
-			row.sourceID, row.lastCursor, appended = &sourceID, cursor, true
+			row.sourceID, row.lastCursor, appended = &sourceID, cursor, append(appended, entry)
 		}
-		if appended {
+		if s.settleDeltas {
+			for _, entry := range appended {
+				if err := settleCompletion(ctx, tx, sessionID, entry); err != nil {
+					return err
+				}
+			}
+		}
+		if len(appended) > 0 {
 			if _, err := tx.ExecContext(ctx, "UPDATE session_history SET source_id = $2, last_cursor = $3 WHERE id = $1",
 				sessionID, *row.sourceID, row.lastCursor); err != nil {
 				return err
@@ -647,4 +661,97 @@ func observationKind(entry *eventlogpb.EventEntry) string {
 		return string(field.Name())
 	}
 	return ""
+}
+
+// settlementSpanLimit bounds how far back an item's start may lie before the item is kept whole rather
+// than read in one transaction.
+const settlementSpanLimit = 20_000
+
+// settleCompletion settles the item field the entry completes, if it completes one and its stored span
+// qualifies: it stores the settlement and deletes the entries in its ranges.
+func settleCompletion(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, completion *eventlogpb.EventEntry) error {
+	item := completionTarget(completion)
+	if item == nil {
+		return nil
+	}
+	span := []*eventlogpb.EventEntry{completion}
+	var floor uint64
+	started := false
+	for upper := completion.GetCursor(); !started || upper > floor; {
+		batch, err := entriesBefore(ctx, tx, sessionID, upper, 256)
+		if err != nil {
+			return err
+		}
+		if len(batch) == 0 || len(span)+len(batch) > settlementSpanLimit {
+			return nil
+		}
+		for _, stored := range batch {
+			if started && stored.cursor < floor {
+				break
+			}
+			span = append(span, stored.entry)
+			if id, isStart := startedItem(stored.entry); !started && isStart && id == item.itemID {
+				// The item's native start frame precedes its derived ItemStarted.
+				floor, started = slices.Min(append([]uint64{stored.cursor}, stored.entry.GetEvent().GetSourceSequences()...)), true
+			}
+		}
+		upper = batch[len(batch)-1].cursor
+	}
+	slices.Reverse(span)
+	if settled := settle(span); settled != nil {
+		return recordSettlement(ctx, tx, sessionID, settled)
+	}
+	return nil
+}
+
+type storedEntry struct {
+	cursor uint64
+	entry  *eventlogpb.EventEntry
+}
+
+// entriesBefore returns up to limit stored entries below cursor, nearest first.
+func entriesBefore(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, cursor uint64, limit int) ([]storedEntry, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT cursor, payload FROM session_event
+		WHERE session_id = $1 AND cursor < $2 ORDER BY cursor DESC LIMIT $3`, sessionID, cursor, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var batch []storedEntry
+	for rows.Next() {
+		var stored storedEntry
+		var payload []byte
+		if err := rows.Scan(&stored.cursor, &payload); err != nil {
+			return nil, err
+		}
+		stored.entry = &eventlogpb.EventEntry{}
+		if err := proto.Unmarshal(payload, stored.entry); err != nil {
+			return nil, err
+		}
+		batch = append(batch, stored)
+	}
+	return batch, rows.Err()
+}
+
+// recordSettlement stores settled and deletes the entries in its ranges.
+func recordSettlement(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, settled *historypb.SettledDeltas) error {
+	payload, err := marshal(settled)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO session_event_settlement (session_id, completion_cursor, payload) VALUES ($1, $2, $3)",
+		sessionID, settled.GetCompletionCursor(), payload); err != nil {
+		return err
+	}
+	for _, cursorRange := range settled.GetRanges() {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO session_event_settled_range (session_id, first_cursor, last_cursor, completion_cursor)
+			VALUES ($1, $2, $3, $4)`, sessionID, cursorRange.GetFirst(), cursorRange.GetLast(), settled.GetCompletionCursor()); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM session_event WHERE session_id = $1 AND cursor >= $2 AND cursor <= $3",
+			sessionID, cursorRange.GetFirst(), cursorRange.GetLast()); err != nil {
+			return err
+		}
+	}
+	return nil
 }

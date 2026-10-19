@@ -151,9 +151,14 @@ py_test(
 
 go_library(
     name = "storage",
-    srcs = ["store.go"],
+    srcs = [
+        "delta_templates.go",
+        "settlement.go",
+        "store.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/storage",
     deps = [
+        "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:history_service_go_proto",
         "//agentplane/proto:runner_go_proto",
@@ -163,9 +168,26 @@ go_library(
 )
 
 go_test(
+    name = "settlement_test",
+    srcs = [
+        "delta_templates_test.go",
+        "settlement_helpers_test.go",
+        "settlement_test.go",
+    ],
+    embed = [":storage"],
+    deps = [
+        "//agentplane/history_service/testing/spans",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:history_service_go_proto",
+    ],
+)
+
+go_test(
     name = "store_integration_test",
     size = "medium",
     srcs = [
+        "settlement_helpers_test.go",
         "store_integration_test.go",
         "store_integration_testmain_test.go",
     ],
@@ -173,6 +195,7 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/history_service/migrations",
+        "//agentplane/history_service/testing/spans",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:history_service_go_proto",

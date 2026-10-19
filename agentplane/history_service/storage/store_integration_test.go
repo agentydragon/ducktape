@@ -30,7 +30,7 @@ func testDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func testStore(t *testing.T) *Store { return NewStore(testDB(t)) }
+func testStore(t *testing.T) *Store { return NewStore(testDB(t), false) }
 
 func entryFrom(source string, cursor uint64, resumed bool) *eventlogpb.EventEntry {
 	return &eventlogpb.EventEntry{
@@ -171,7 +171,7 @@ func removeEntries(t *testing.T, db *sql.DB, sessionID uuid.UUID, removed ...uin
 
 func TestAppendReplaysDuplicatesAndReadsPages(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db)
+	store := NewStore(db, false)
 	sessionID := opened(t, store)
 	if _, err := store.BindWriter(t.Context(), sessionID, testWriter); err != nil {
 		t.Fatal(err)
@@ -182,15 +182,15 @@ func TestAppendReplaysDuplicatesAndReadsPages(t *testing.T) {
 		t.Fatalf("last cursor %d", last)
 	}
 	// A second replica replays the prefix and extends it.
-	if last := appendEntries(t, NewStore(db), sessionID, entry(1), resumed, native); last != 3 {
+	if last := appendEntries(t, NewStore(db, false), sessionID, entry(1), resumed, native); last != 3 {
 		t.Fatalf("last cursor %d", last)
 	}
-	page := readPage(t, NewStore(db), sessionID, 1, 2)
+	page := readPage(t, NewStore(db, false), sessionID, 1, 2)
 	if page.LastCursor != 3 {
 		t.Fatalf("last cursor %d", page.LastCursor)
 	}
 	assertEntries(t, page.Entries, resumed, native)
-	page = readPage(t, NewStore(db), sessionID, 3, 128)
+	page = readPage(t, NewStore(db, false), sessionID, 3, 128)
 	if page.LastCursor != 3 {
 		t.Fatalf("last cursor %d", page.LastCursor)
 	}
@@ -219,7 +219,7 @@ func TestBadBatchRollsBackAndConflictingDuplicateIsRejected(t *testing.T) {
 
 func TestTwoReplicaWritersSerializeOnTheHistoryRow(t *testing.T) {
 	db := testDB(t)
-	left, right := NewStore(db), NewStore(db)
+	left, right := NewStore(db, false), NewStore(db, false)
 	sessionID := opened(t, left)
 	var wg sync.WaitGroup
 	results := make([]uint64, 2)
@@ -314,7 +314,7 @@ func notifications(t *testing.T, db *sql.DB, operate func()) map[string]int {
 
 func TestHistoryNotifiesAfterCommitAndNotAfterRollbackOrNoOp(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db)
+	store := NewStore(db, false)
 	sessionID := uuid.New()
 	for _, step := range []struct {
 		name    string
@@ -389,7 +389,7 @@ func TestObservationPagesSeekTheRetainedPrefix(t *testing.T) {
 
 func TestFeedSnapshotNeedsCoveredBoundHistoryAndCannotRegress(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db)
+	store := NewStore(db, false)
 	sessionID := opened(t, store)
 	if readPage(t, store, sessionID, 0, 128).FeedState != nil {
 		t.Fatal("a fresh Session has a feed state")
@@ -410,11 +410,11 @@ func TestFeedSnapshotNeedsCoveredBoundHistoryAndCannotRegress(t *testing.T) {
 
 	feed.Attached.HarnessState = runnerpb.HarnessState_HARNESS_STATE_RUNNING
 	record(feed)
-	assertFeedState(t, NewStore(db), sessionID, feed)
+	assertFeedState(t, NewStore(db, false), sessionID, feed)
 
 	// A stopped snapshot at the cursor of a running one belongs to the previous run.
 	record(stoppedAt(sessionID, 1))
-	assertFeedState(t, NewStore(db), sessionID, feed)
+	assertFeedState(t, NewStore(db, false), sessionID, feed)
 
 	appendEntries(t, store, sessionID, entryFrom("source", 2, true))
 	feed.Attached.LastCursor = 2
@@ -489,7 +489,7 @@ func TestReopeningASealNeedsASnapshotThatReachesIt(t *testing.T) {
 
 func TestRemovedCursorsAreReportedWhereAPageReachesThem(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db)
+	store := NewStore(db, false)
 	sessionID := opened(t, store)
 	appendEntries(t, store, sessionID, entries(1, 5)...)
 	removeEntries(t, db, sessionID, 3, 5)
@@ -532,5 +532,97 @@ func TestRemovedCursorsAreReportedWhereAPageReachesThem(t *testing.T) {
 		if got := observationPage(t, store, sessionID, nil, test.after, test.limit); !reflect.DeepEqual(got, test.want) {
 			t.Errorf("%s: got %v, want %v", test.name, got, test.want)
 		}
+	}
+}
+
+func settledRanges(page *historypb.ReadSessionEventsResponse) []CursorRange {
+	var result []CursorRange
+	for _, settlement := range page.Settlements {
+		result = append(result, settlementRanges(settlement)...)
+	}
+	return result
+}
+
+func TestSettlingStoreDropsMatchedChunksOnceTheirItemCompletes(t *testing.T) {
+	store := NewStore(testDB(t), true)
+	sessionID := opened(t, store)
+	// Cursors 1-2 start the item, 3-6 are two chunk pairs, 7-8 complete it; the completion arrives in a
+	// later batch.
+	span := textSpan("Hel", "lo").Entries
+	if last := appendEntries(t, store, sessionID, span[:6]...); last != 6 {
+		t.Fatalf("last cursor %d", last)
+	}
+	if got := cursors(readPage(t, store, sessionID, 0, 128)); !reflect.DeepEqual(got, []uint64{1, 2, 3, 4, 5, 6}) {
+		t.Fatalf("cursors before the completion %v", got)
+	}
+	if last := appendEntries(t, store, sessionID, span[6:]...); last != 8 {
+		t.Fatalf("last cursor %d", last)
+	}
+	page := readPage(t, store, sessionID, 0, 128)
+	if got := cursors(page); !reflect.DeepEqual(got, []uint64{1, 2, 7, 8}) || !reflect.DeepEqual(settledRanges(page), []CursorRange{{3, 6}}) ||
+		page.Settlements[0].CompletionCursor != 8 {
+		t.Fatalf("cursors %v, settled %v", got, settledRanges(page))
+	}
+	// A runner replaying the whole span, settled chunks included, is still an exact duplicate.
+	if last := appendEntries(t, store, sessionID, span...); last != 8 {
+		t.Fatalf("last cursor %d", last)
+	}
+	replay := append(append([]*eventlogpb.EventEntry{}, span[:6]...), entry(7))
+	_, err := store.Append(t.Context(), sessionID, replay)
+	assertError(t, err, ErrConflict)
+	// A page whose window holds the gap or the completion reports the settlement.
+	for after, want := range map[uint64][]uint64{2: {7}, 7: {8}} {
+		page := readPage(t, store, sessionID, after, 1)
+		if got := cursors(page); !reflect.DeepEqual(got, want) || !reflect.DeepEqual(settledRanges(page), []CursorRange{{3, 6}}) {
+			t.Errorf("after %d: cursors %v, settled %v", after, got, settledRanges(page))
+		}
+	}
+	if got := settledRanges(readPage(t, store, sessionID, 0, 2)); got != nil {
+		t.Fatalf("a page before the gap reports settlement %v", got)
+	}
+	native, started, completed := "native", "item_started", "item_completed"
+	if got, want := observationPage(t, store, sessionID, nil, pointer(0), 30), (ObservationPage{
+		8, []Observation{{1, native}, {2, started}, {7, native}, {8, completed}}, []CursorRange{{3, 6}},
+	}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("observations %v, want %v", got, want)
+	}
+	if got, want := observationPage(t, store, sessionID, nil, nil, 2), (ObservationPage{
+		8, []Observation{{7, native}, {8, completed}}, nil,
+	}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("tail observations %v, want %v", got, want)
+	}
+	if got := observationPage(t, store, sessionID, nil, nil, 3).Settled; !reflect.DeepEqual(got, []CursorRange{{3, 6}}) {
+		t.Fatalf("tail settled %v", got)
+	}
+}
+
+func TestAnItemWithoutNativeFramesCompletesUnsettled(t *testing.T) {
+	store := NewStore(testDB(t), true)
+	sessionID := opened(t, store)
+	var batch []*eventlogpb.EventEntry
+	for i, event := range []*eventpb.Event{
+		{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: "test-reply"}}},
+		{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: "test-reply", Text: "Hi"}}},
+		{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
+			ItemId: "test-reply", Outcome: &eventpb.ItemCompleted_Text{Text: "Hi"},
+		}}},
+	} {
+		cursor := uint64(i + 1)
+		batch = append(batch, &eventlogpb.EventEntry{Cursor: cursor, Origin: &eventlogpb.EventOrigin{SourceId: "source", Sequence: cursor}, Event: event})
+	}
+	if last := appendEntries(t, store, sessionID, batch...); last != 3 {
+		t.Fatalf("last cursor %d", last)
+	}
+	if page := readPage(t, store, sessionID, 0, 128); len(page.Entries) != 3 || settledRanges(page) != nil {
+		t.Fatalf("entries %d, settled %v", len(page.Entries), settledRanges(page))
+	}
+}
+
+func TestDefaultStoreKeepsEveryEntry(t *testing.T) {
+	store := testStore(t)
+	sessionID := opened(t, store)
+	appendEntries(t, store, sessionID, textSpan("Hel", "lo").Entries...)
+	if page := readPage(t, store, sessionID, 0, 128); len(page.Entries) != 8 || settledRanges(page) != nil {
+		t.Fatalf("entries %d, settled %v", len(page.Entries), settledRanges(page))
 	}
 }
