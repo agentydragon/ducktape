@@ -420,8 +420,8 @@ async def test_go_proxy_finishes_an_admitted_request_after_sigterm(
             pending = asyncio.create_task(slow_status())
             await asyncio.wait_for(upstream.slow_started.wait(), 10)
             running.terminate()
-            await running.health(503)
-            # The readiness endpoint turns 503 before the proxy listener finishes shutting down.
+            await running.health(serving=False)
+            # Readiness turns NOT_SERVING before the proxy listener finishes shutting down.
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
                     try:
