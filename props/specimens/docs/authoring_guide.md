@@ -48,33 +48,25 @@ Each `.yaml` file contains:
 
 **Do NOT duplicate this information in README.md or other files.**
 
-### 2. Verify File Paths Match Bundle Structure
+### 2. Verify File Paths Match the Snapshot
 
-**File paths in issue files must match the hydrated bundle structure exactly.**
+**File paths in issue files are relative to the snapshot's code root**, the root of
+its `:specimen_code_tar`:
 
-When a snapshot bundle is created with `include: [adgn/]`, the hydrated snapshot will have paths like:
+- **Local snapshot** (`code_srcs = glob(["code/**/*"])`): the snapshot's `code/`
+  directory. `props/specimens/ducktape/2026-07-11-00/code/haku/console/app.py` is
+  cited as `haku/console/app.py`.
+- **External snapshot** (`code_srcs` names an `http_archive` filegroup): the
+  archive's root after its `strip_prefix`, i.e. the repo root at the commit the
+  archive in `MODULE.bazel` pins.
 
-- `adgn/src/adgn/agent/agent.py`
-- `adgn/tests/props/test_foo.py`
+Keep every directory under that root in the path: a ducktape snapshot whose `code/`
+holds `adgn/` cites `adgn/src/adgn/agent/agent.py`, not `src/adgn/agent/agent.py`.
 
-**NOT** like:
-
-- `src/adgn/agent/agent.py` ❌
-- `tests/props/test_foo.py` ❌
-
-**Verification steps:**
-
-1. **Check the provenance comments** in `BUILD.bazel` for include/exclude paths
-
-2. **Verify paths match** by hydrating the snapshot and listing files:
-
-   ```bash
-   adgn-properties snapshot exec <snapshot-slug> -- ls -la
-   ```
-
-3. **Use paths as they appear** in the hydrated bundle - include all directory prefixes from the `include` patterns.
-
-**Common mistake:** Writing issue files for `ducktape/` snapshots without the `adgn/` prefix when the bundle includes `adgn/`.
+Read each cited range at that location. The snapshot's
+`bbr test //props/specimens/<project>/<YYYY-MM-DD-NN>:test_specimen` fails on a path
+missing from the code tar or a range past the end of its file, but cannot tell
+whether an in-bounds range cites the right lines.
 
 ### 3. Issue File Templates
 

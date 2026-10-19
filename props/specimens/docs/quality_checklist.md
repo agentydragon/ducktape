@@ -18,7 +18,7 @@ Before committing a snapshot, verify all of these criteria:
 - [ ] **Proper structure**: Uses correct YAML structure with `rationale`, `should_flag`, and `occurrences` fields
 - [ ] **Brief code citations**: No long code blocks (>10 lines), reader can look up details. Use brief verbal descriptions when sufficient
 - [ ] **Proper grouping**: Issues grouped by logical problem, not by location
-- [ ] **Accurate line ranges**: Line ranges verified using `adgn-properties snapshot exec <slug> -- sed -n '<start>,<end>p' <file>` to ensure cited lines match what the issue describes
+- [ ] **Accurate line ranges**: Cited lines read at the snapshot's code root (authoring_guide.md §2) and match what the issue describes
 - [ ] **Calibrated rationale**: Detail level matches obviousness (see authoring_guide.md §7). Obvious Pareto improvements (dead code, wrong types, stdlib replacements) need only 1-2 sentences. Complex tradeoffs or judgment calls need substantiation
 - [ ] **No unnecessary justification**: Don't explain why types/less-code/safety are good—everyone knows. Only justify when there's a tradeoff or the improvement is non-obvious
 - [ ] **Concise rationale**: Rationale is between 10-5000 characters (after whitespace stripping). If over limit, trim unnecessary detail or reconsider if this is actually multiple distinct issues
@@ -58,5 +58,5 @@ Before committing a snapshot, verify all of these criteria:
 
 ### Source Integration
 
-- [ ] **File paths match source**: File paths in issues match the hydrated source structure (include directory prefixes if applicable)
-- [ ] **File size reasonable**: No files >2MB in hydrated snapshot
+- [ ] **File paths match source**: File paths are relative to the snapshot's code root, keeping every directory prefix under it (authoring_guide.md §2)
+- [ ] **File size reasonable**: No files >2MB in the snapshot's code

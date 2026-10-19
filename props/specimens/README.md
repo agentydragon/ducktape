@@ -85,8 +85,8 @@ This gives ~100+ training examples from 5 snapshots instead of just 5.
 Specimens are loaded into the props database via sync. The `ADGN_PROPS_SPECIMENS_ROOT` environment variable (set by `props/.envrc`) points to this directory.
 
 ```bash
-# Sync specimens to database
-props db sync
+# Sync one specimen's built bundle to the database
+props db sync-specimen --code-tar <specimen_code.tar> --data-yaml <specimen_data.yaml>
 
 # Run one specimen's validation test
 bbr test //props/specimens/<project>/<YYYY-MM-DD-NN>:test_specimen
@@ -99,7 +99,7 @@ When adding new specimens or issues:
 1. **Research first**: Complete all investigation before authoring (no open questions)
 2. **One logical issue per file**: Group by problem type, not by location
 3. **Objective descriptions**: Describe facts and technical rationale, not opinions
-4. **Verify file paths**: Match hydrated bundle structure exactly
+4. **Verify file paths**: Relative to the snapshot's code root (<docs/authoring_guide.md> §2)
 5. **Detection standard**: "If a high-quality reviewer saw these files, would failing to find this be a failure?"
 
 See <AGENTS.md> for detailed authoring instructions.
@@ -121,7 +121,7 @@ Current split distribution:
 2. **Annotate**: Add issue files describing all quality problems
 3. **Validate**: Verify paths, ranges, and detection expectations
 4. **Freeze**: Commit to this repo (immutable training data)
-5. **Sync**: Load into database via `adgn-properties db sync`
+5. **Sync**: Load into database via `props db sync-specimen`
 6. **Train**: Use for critic optimization and prompt tuning
 7. **Evaluate**: Measure recall/precision on validation split
 

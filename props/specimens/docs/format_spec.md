@@ -433,7 +433,7 @@ class FalsePositiveOccurrence(BaseModel):
 
 ### File Paths
 
-- Must match hydrated bundle structure exactly
+- Relative to the snapshot's code root: its `code/` directory, or an external archive's root (authoring_guide.md §2)
 - Use forward slashes (Unix-style paths)
 
 ### Line Ranges
