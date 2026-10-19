@@ -269,7 +269,6 @@ spec:
               - public-coder-agent
               - study-casino
               - tofu-state
-              - vm-images-publisher
     - group: seaweed.seaweedfs.com
       kind: S3Identity
       namespaceSelector:
@@ -300,7 +299,6 @@ spec:
               - public-coder-agent
               - study-casino
               - tofu-state
-              - vm-images-publisher
     - group: seaweed.seaweedfs.com
       kind: S3Credentials
       namespaceSelector:
@@ -331,7 +329,6 @@ spec:
               - public-coder-agent
               - study-casino
               - tofu-state
-              - vm-images-publisher
   to:
     - group: seaweed.seaweedfs.com
       kind: Seaweed
