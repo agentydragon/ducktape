@@ -42,44 +42,164 @@ silently mix backend types or reuse its discard tuning without new measurements.
 
 ## Proposed allocation and order
 
-The following **starting acceptance budgets** support a sparse 50 GiB test volume.
-They are not final capacity reservations for production workloads or a promise
-that Forgejo's current 200 GiB claim will fit. Size application pools from
-measured data, growth and resync headroom before a migration; choose any logical
-overcommit explicitly and test physical-exhaustion behavior.
+For OVH, replace the evacuated whole-device XFS data filesystem with one
+whole-device LVM physical volume and VG, named `data_ssd` or `data_hdd`:
 
-| Node                                   | Proposed first local pool                                      | Allocation route and prerequisite                                                                                                                                                                                                                                                         |
-| -------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ovh-ns1001419`                        | SSD: 64 GiB thin data in a 96 GiB raw region                   | First SSD candidate: only 12.06 GB observed data use; evacuate its SeaweedFS data and study-casino replica, then rebuild the **data disk** layout. Leave the install/etcd disk untouched.                                                                                                 |
-| `ovh-ns104952`                         | SSD: 64 GiB thin data in a 96 GiB raw region                   | Repeat after the first SSD succeeds. Preserve/restore legacy XFS for SeaweedFS, CNPG and Valkey.                                                                                                                                                                                          |
-| `ovh-ns104963`                         | SSD: 64 GiB thin data in a 96 GiB raw region                   | Repeat after replica health is restored; its testing PostgreSQL singleton requires an accepted outage or prior migration.                                                                                                                                                                 |
-| `ovh-ns102453`                         | HDD: 128 GiB thin data in a 192 GiB raw region                 | First HDD candidate: DRBD already prepared and the 4 TB data device has the most headroom. Evacuate/restore SeaweedFS, ClickHouse and all local PVC consumers before rebuilding its data layout.                                                                                          |
-| `ovh-ns103656`                         | HDD, size pending legacy capacity budget                       | Its 1890 GiB local-path requests exceed the roughly 1862 GiB data filesystem. Agree growth/reprovisioning limits before taking capacity away.                                                                                                                                             |
-| `ovh-ns103711`                         | HDD, size pending legacy capacity budget                       | Its 2368 GiB local-path requests exceed the roughly 1862 GiB data filesystem; this includes live 1800 GiB SeaweedFS and 500 GiB ClickHouse claims. Same capacity gate.                                                                                                                    |
-| `wyrm2` (later NixOS phase)            | New dedicated SSD and HDD virtual disks, initially 96 GiB each | Resolve Atlas read access/headroom and actual media, choose unused slots, then attach. Each can initially hold a 64 GiB thin pool plus metadata/reserve. Existing OpenEBS VGs stay with OpenEBS.                                                                                          |
-| `optiplex`                             | SSD after adding capacity                                      | Prefer an additional SSD if the hardware permits; otherwise plan a larger-NVMe replacement with backup/restore. The sole current 256 GB disk has only 60.75 GB filesystem free, insufficient for a new 96 GiB region without reducing existing usage. Client enrollment can precede this. |
-| `iguana`, `rugged` (later NixOS phase) | Local SSD pools after an online inventory                      | First enroll as clients after kernel validation. Establish dedicated capacity, encryption/unlock ownership and suspend/disconnect behavior before adding local pools.                                                                                                                     |
+```text
+Install disk: existing Talos partitions and /var, unchanged
+Data disk: LVM PV -> data_ssd or data_hdd
+  localpath      ordinary, fully allocated LV -> XFS -> existing local-path mount
+  piraeus        thin pool -> LINSTOR-managed thin LVs and DRBD volumes
+  free extents   explicit growth reserve for either consumer
+```
 
-The raw-region budget includes VG metadata and unallocated extension reserve;
-do not allocate its full capacity as thin data. Keep at least 25% of each new VG
-unallocated after thin data/metadata creation. The exact device geometry and
-thin-metadata sizes belong in each allocation change, verified before formatting.
+There is no separate legacy filesystem partition or nested VG. The `localpath`
+LV holds existing local-path PVC directories (SeaweedFS data, databases and other
+consumers), not Piraeus files. Keep its current mount name for the first conversion:
+`seaweedfs-data` on SSD, `local-path-ovh-hdd` on HDD. Names in new LVM objects are
+provider-neutral. Any mount-path rename is a separate coordinated change.
 
-For OVH, retain a legacy XFS partition at the existing mount path and carve a
-separate raw LVM region on the **evacuated data device**. Talos owns partition
-layout/mounts; LINSTOR owns its dedicated VG/thin pool. Use stable identities from
-the inventory, explicit bounded sizes and one owner per region. Validate this
-layout on a disposable disk first. Do not point LINSTOR automatic device setup at
-an occupied whole disk or use an unsupported in-place filesystem shrink.
+XFS retains the current filesystem and project-quota capability; it is not a
+Piraeus requirement. Its inability to shrink means moving capacity from this LV
+to the thin pool later still requires evacuation/recreation or removing the LV
+after its consumers migrate. LVM makes unallocated space reusable without changing
+partition boundaries; it does not make XFS shrinkable. Ext4 is an alternative if
+offline shrinking becomes a requirement, with a separately tested maintenance path.
 
-The SSD proposal leaves roughly 323 GiB legacy capacity on each 450 GB data
-device, compared with 311/316 GiB of current declared local-path requests.
-Those margins are small relative to declared requests; actual usage is much
-lower, but it is not a durable capacity reservation. Recheck current usage and
-growth, verify the preserved XFS size, and enlarge the legacy budget or reduce
-the proposed Piraeus allocation if that gate fails. Do not force the example size.
-The two smaller HDD nodes remain consumers until their capacity budget is settled;
-the rollout is not complete until compatible local capacity is arranged there.
+All sizes below are **GiB**, including the converted physical device capacities.
+Thin-data sizes remain starting acceptance budgets, not final workload sizing or
+a promise that Forgejo's current 200 GiB claim fits. Reserve 1 GiB thin metadata
+and 1 GiB metadata spare initially; free extents are approximate after that allowance
+and before small VG overhead. Recheck actual geometry during allocation.
+
+| Talos hardware / nodes                     | Data disk GiB |   `localpath` LV GiB | `piraeus` thin data GiB |  Approximate free VG GiB | Decision                                                                         |
+| ------------------------------------------ | ------------: | -------------------: | ----------------------: | -----------------------: | -------------------------------------------------------------------------------- |
+| 450 GB SSD: `ovh-ns104952`, `ovh-ns104963` |         419.2 |                  320 |                      64 |                       33 | Growth-budget gate: existing requests total 311/316 GiB.                         |
+| 512 GB SSD: `ovh-ns1001419`                |         476.9 |                  352 |                      64 |                       59 | First SSD conversion; smallest observed data footprint.                          |
+| 4 TB HDD: `ovh-ns102453`                   |        3726.0 |                 2816 |                     128 |                      780 | First HDD conversion; existing requests total 2536 GiB.                          |
+| 2 TB HDD: `ovh-ns103656`, `ovh-ns103711`   |        1863.0 |    1536, conditional |        128, conditional |                      197 | Illustrative target only; do not convert until legacy capacity/growth is agreed. |
+| OptiPlex: single 256 GB system NVMe        |         238.5 | Keep existing `/var` |    None on current disk | None outside filesystems | Enroll as client first; add a dedicated SSD for a local pool.                    |
+
+The 2 TB example would reduce the legacy filesystem below requests of 1890/2368
+GiB, including an 1800 GiB SeaweedFS claim on `103711`. Measured use is lower, but
+that alone does not justify reducing capacity. Keep both nodes' current disks
+unchanged until per-consumer growth limits, migrations or additional capacity
+resolve this. Likewise, the 450 GB SSD legacy margins need an explicit growth
+check, not merely a successful restore today. Do not force any example size.
+
+Keep at least 32 GiB of free VG extents on SSD and 64 GiB on HDD at initial
+allocation, in addition to thin metadata/spare. This replaces the earlier dedicated
+Piraeus-region percentage budget: the VG now also contains the large legacy LV.
+Thin-pool extension and legacy-LV growth both spend that shared reserve and need
+one capacity policy; do not let independent automation race to consume it.
+
+### Talos configuration shape
+
+Example for `ovh-ns1001419`, after evacuation and an explicitly reviewed wipe.
+These documents replace its existing whole-disk `UserVolumeConfig`; they are not
+an in-place conversion patch. Talos 1.14 documents both
+[VG/LV provisioning](https://docs.siderolabs.com/talos/v1.14/configure-your-talos-cluster/storage-and-disk-management/lvm)
+and [user volumes on LVs](https://docs.siderolabs.com/talos/v1.14/configure-your-talos-cluster/storage-and-disk-management/disk-management/user).
+The current Terraform configuration-generation default is still Talos 1.12.3,
+despite these nodes running 1.14.0. Advance the affected nodes' generation target
+and verify provider support for these kinds before rendering the real machine
+configs; preserve the separate durable machine-secrets version contract.
+
+```yaml
+apiVersion: v1alpha1
+kind: LVMVolumeGroupConfig
+name: data_ssd
+provisioning:
+  volumeSelector:
+    match: disk.serial == '1951A3449505'
+---
+apiVersion: v1alpha1
+kind: LVMLogicalVolumeConfig
+name: localpath
+type: linear
+provisioning:
+  volumeGroup: data_ssd
+  minSize: 352GiB
+  maxSize: 352GiB
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: seaweedfs-data
+volumeType: disk
+provisioning:
+  diskSelector:
+    match: "'/dev/mapper/data_ssd-localpath' in disk.symlinks"
+filesystem:
+  type: xfs
+  projectQuotaSupport: true
+```
+
+Use the same documents with these substitutions. The selected serial is always
+the inventory's data disk, never the install disk. Verify it again before wiping.
+
+| Node            | Data-disk serial     | VG         |     Localpath GiB | User-volume / mount suffix |
+| --------------- | -------------------- | ---------- | ----------------: | -------------------------- |
+| `ovh-ns1001419` | `1951A3449505`       | `data_ssd` |               352 | `seaweedfs-data`           |
+| `ovh-ns104952`  | `BTPF8304019P450RGN` | `data_ssd` |               320 | `seaweedfs-data`           |
+| `ovh-ns104963`  | `BTPF8256009U450RGN` | `data_ssd` |               320 | `seaweedfs-data`           |
+| `ovh-ns102453`  | `V3H370PN`           | `data_hdd` |              2816 | `local-path-ovh-hdd`       |
+| `ovh-ns103656`  | `K5H8UMLA`           | `data_hdd` | 1536, conditional | `local-path-ovh-hdd`       |
+| `ovh-ns103711`  | `K5H48V6A`           | `data_hdd` | 1536, conditional | `local-path-ovh-hdd`       |
+
+All six substituted document sets passed `talosctl` 1.14.2 offline validation
+with `--mode metal --strict`. This checks syntax/config constraints, not runtime
+device matching, provisioning or Talos/LINSTOR interoperability.
+
+Talos owns PV/VG membership, activation, the ordinary `localpath` LV and its
+filesystem/mount. A separately reviewed bootstrap creates `data_ssd/piraeus` or
+`data_hdd/piraeus` with the fixed initial thin-data/metadata budgets. Talos's
+`LVMLogicalVolumeConfig` supports ordinary/RAID LVs, not thin-pool creation;
+do not declare the thin pool as a linear LV. LINSTOR owns the thin volumes inside
+that pool. Verify shared-VG discovery, locking, reboot ordering and reconciliation
+on disposable storage before using this division of ownership.
+
+Piraeus then registers the prepared pool, for example on SSD nodes:
+
+```yaml
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: ssd-pools
+spec:
+  nodeSelector:
+    storage.allegedly.works/piraeus-pool: ssd
+  storagePools:
+    - name: ssd
+      lvmThinPool:
+        volumeGroup: data_ssd
+        thinPool: piraeus
+```
+
+The pool label is new, proposed configuration, applied only after pool preparation.
+For HDD use `hdd`, `data_hdd`, and the matching selector. Omit `source.hostDevices`:
+this is registration of a prepared pool, not permission for Piraeus to initialize
+the disk or legacy LV. The operator's
+[pool reference](https://piraeus.io/docs/v2/reference/linstorsatelliteconfiguration/)
+requires the backing thin pool to exist in this mode. Pool creation/extension
+ownership and repeatable bootstrap are part of the LVM canary deliverable; do not
+claim this registration manifest creates the proposed 64/128 GiB pool itself.
+
+For OptiPlex, retain every system partition and its current local-path directory.
+Once an additional SSD is identified, select only that new disk into `data_ssd`,
+omit `localpath` and its user-volume documents, and dedicate the VG to the thin
+pool plus reserve. Initial thin data can use 75% of usable VG space minus metadata/
+spare, leaving at least 25% free; choose the absolute size after hardware inventory.
+If a second drive is impossible, a larger system-disk replacement gets a separate
+layout proposal with bounded EPHEMERAL and a raw LVM partition. The current `/var`
+free space is not raw unallocated capacity, so do not use it as a block pool.
+
+Convert `1001419` first, then `104952` and `104963` serially after restoration
+gates; `104963`'s testing PostgreSQL singleton needs an accepted outage or prior
+migration. Convert `102453` first among HDDs after evacuating every consumer.
+The two smaller HDDs remain clients until their capacity gate is resolved.
+Keep later NixOS allocation independent: wyrm2 needs dedicated SSD/HDD virtual
+disks after Atlas capacity/slots are verified, preserving OpenEBS ownership;
+iguana/rugged need online disk and encryption/unlock inventory first.
 
 Do not change the install-disk layout to obtain its apparently free `/var`
 space as part of this rollout. Do not delete the eight unmatched wyrm2 SSD LVs
@@ -126,8 +246,10 @@ testing this design; neither tested three-node two-copy movement or WAN boundari
       Add four explicit classes, suitable host-network/Nebula firewall reachability,
       a port allocation range larger than the 20-port canary, and protected monitoring.
       Account for control-plane taints and temporarily offline satellites.
-- [ ] **LVM canary:** prove the bounded raw-region/legacy-XFS layout and pool
-      ownership on disposable Talos storage before production disk conversion.
+- [ ] **LVM canary:** prove the shared-VG/ordinary-localpath-LV/thin-pool layout,
+      repeatable pool bootstrap and ownership on disposable Talos storage before
+      production disk conversion. Verify host LVM reconciliation preserves LINSTOR
+      volumes, locking and activation work across reboot, and mount readiness gates consumers.
       Arrange that capacity independently of NixOS enrollment or Atlas availability.
 - [ ] **Pool allocation changes:** one node per reviewed destructive conversion;
       record exact device identities, all current consumers, replica/writer state,
