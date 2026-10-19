@@ -83,9 +83,6 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
             </span>
           )}
           {quota.error !== null && <span className="aiquota-badge aiquota-badge-error">Error</span>}
-          <span className="aiquota-freshness">
-            checked {formatAge((now - Date.parse(provider.last_output.fetched_at)) / 1000)} ago
-          </span>
         </div>
       </header>
 

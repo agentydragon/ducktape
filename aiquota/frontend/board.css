@@ -149,7 +149,7 @@
   width: 9px;
 }
 
-/* Everything about the reading itself — how fresh it is, and any warning about it. */
+/* Provider errors and stale-data warnings. */
 .aiquota-card-status {
   align-items: center;
   display: flex;
@@ -158,12 +158,6 @@
   justify-content: flex-end;
   /* Stays in the corner even when it is too wide to share the title's line and wraps below it. */
   margin-left: auto;
-}
-
-.aiquota-freshness {
-  color: var(--aiquota-muted);
-  font-size: 0.7rem;
-  white-space: nowrap;
 }
 
 .aiquota-badge {

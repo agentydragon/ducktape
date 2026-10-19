@@ -49,6 +49,7 @@ async def view(
 )
 async def test_dashboard(view: VisualPage, scene: str) -> None:
     await expect(view.page.locator(".aiquota-card").first).to_be_attached()
+    await expect(view.page.get_by_role("status")).to_have_text("Quota stream live")
     if scene == "reset_credit_expiry_unavailable":
         await expect(view.page.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text("2 banked resets")
         await expect(view.page.get_by_text("expiry dates unavailable", exact=True)).to_be_visible()
@@ -63,6 +64,7 @@ async def test_live_subscription(visual: VisualHarness) -> None:
         page = view.page
         await expect(page.locator("html")).to_have_attribute("data-quota-stream", "connected")
         await expect(page.get_by_text("Loading quota data…")).to_be_visible()
+        await expect(page.get_by_role("status")).to_contain_text("Connecting")
         await expect(page.get_by_role("button", name="Reconnect")).to_be_disabled()
         await expect(page.locator("html")).to_have_attribute("data-quota-stream", "connected")
         await page.evaluate(
@@ -71,8 +73,10 @@ async def test_live_subscription(visual: VisualHarness) -> None:
         )
         await expect(page.locator(".aiquota-card").first).to_be_visible()
         await expect(page.get_by_role("button", name="Reconnect")).to_be_enabled()
+        await expect(page.get_by_role("status")).to_have_text("Quota stream live")
         await page.evaluate("window.dispatchEvent(new Event('quota-fixture-error'))")
         await expect(page.get_by_text("Connection interrupted. Reconnecting to live updates…")).to_be_visible()
+        await expect(page.get_by_role("status")).to_have_text("Quota stream unavailable")
         await expect(page.locator(".aiquota-card").first).to_be_visible()
         await view.capture("live-reconnecting", target=page.locator("#app"))
         await page.evaluate(
@@ -90,6 +94,7 @@ async def test_live_subscription(visual: VisualHarness) -> None:
             _FIXTURES["hot"],
         )
         await expect(page.get_by_role("button", name="Reconnect")).to_be_enabled()
+        await expect(page.get_by_role("status")).to_have_text("Quota stream live")
 
 
 if __name__ == "__main__":

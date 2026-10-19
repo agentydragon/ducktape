@@ -15,8 +15,33 @@ class Stream extends EventTarget {
     super();
     Stream.instances.push(this);
   }
-  view(fetchedAt: string): void {
-    this.dispatchEvent(new MessageEvent("view", { data: JSON.stringify({ fetched_at: fetchedAt, providers: [] }) }));
+  view(fetchedAt: string, resets = 1): void {
+    this.dispatchEvent(
+      new MessageEvent("view", {
+        data: JSON.stringify({
+          fetched_at: fetchedAt,
+          providers: [
+            {
+              provider: "codex",
+              last_output: {
+                fetched_at: fetchedAt,
+                result: {
+                  kind: "success",
+                  windows: [],
+                  available_reset_credits: resets,
+                  reset_credit_expiry_lookup_failed: false,
+                },
+              },
+              last_success: null,
+              currently_over_plan: false,
+              paid_credits_active: false,
+              extra_status: "hidden",
+              burn: null,
+            },
+          ],
+        }),
+      })
+    );
   }
 }
 
@@ -46,11 +71,14 @@ describe("quota subscription", () => {
   it("receives initial and replacement snapshots without fetching or polling", () => {
     const stream = Stream.instances[0];
     expect(stream.url).toBe("/v1/events");
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("Connecting");
     act(() => stream.view("2026-01-15T12:00:00Z"));
-    const initial = container.querySelector(".aiquota-snapshot")?.textContent;
-    expect(initial).toBeTruthy();
-    act(() => stream.view("2026-01-16T12:00:00Z"));
-    expect(container.querySelector(".aiquota-snapshot")?.textContent).not.toBe(initial);
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Quota stream live");
+    expect(container.textContent).toContain("1 banked reset");
+    act(() => stream.view("2026-01-16T12:00:00Z", 2));
+    expect(container.textContent).toContain("2 banked resets");
+    expect(container.textContent).not.toContain("checked");
+    expect(container.textContent).not.toContain("Snapshot");
     act(() => {
       vi.advanceTimersByTime(600_000);
     });
@@ -61,12 +89,14 @@ describe("quota subscription", () => {
   it("retains the snapshot through a disconnect and clears the error on recovery", () => {
     const stream = Stream.instances[0];
     act(() => stream.view("2026-01-15T12:00:00Z"));
-    const initial = container.querySelector(".aiquota-snapshot")?.textContent;
+    const initial = container.querySelector(".aiquota-card")?.textContent;
     act(() => stream.onerror?.());
     expect(container.querySelector(".aiquota-notice")?.textContent).toContain("Reconnecting");
-    expect(container.querySelector(".aiquota-snapshot")?.textContent).toBe(initial);
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Quota stream unavailable");
+    expect(container.querySelector(".aiquota-card")?.textContent).toBe(initial);
     act(() => stream.view("2026-01-16T12:00:00Z"));
     expect(container.querySelector(".aiquota-notice")).toBeNull();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Quota stream live");
   });
 
   it("closes a replaced subscription and ignores its late callbacks", () => {
@@ -75,13 +105,13 @@ describe("quota subscription", () => {
     act(() => container.querySelector<HTMLButtonElement>("button")?.click());
     expect(previous.close).toHaveBeenCalledOnce();
     const current = Stream.instances[1];
-    act(() => current.view("2026-01-16T12:00:00Z"));
-    const latest = container.querySelector(".aiquota-snapshot")?.textContent;
+    act(() => current.view("2026-01-16T12:00:00Z", 2));
+    const latest = container.querySelector(".aiquota-card")?.textContent;
     act(() => {
       previous.view("2026-01-14T12:00:00Z");
       previous.onerror?.();
     });
-    expect(container.querySelector(".aiquota-snapshot")?.textContent).toBe(latest);
+    expect(container.querySelector(".aiquota-card")?.textContent).toBe(latest);
     expect(container.querySelector(".aiquota-notice")).toBeNull();
     act(() => root.unmount());
     expect(current.close).toHaveBeenCalledOnce();

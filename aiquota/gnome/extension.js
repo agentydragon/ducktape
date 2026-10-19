@@ -136,13 +136,6 @@ function effectiveState(state) {
   };
 }
 
-function formatFreshness(lastFetch) {
-  if (lastFetch == null) return "no successful refresh yet";
-  const ageSeconds = Math.max(0, (Date.now() - lastFetch) / 1000);
-  const age = ageSeconds < 60 ? `${Math.round(ageSeconds)}s` : formatDuration(ageSeconds);
-  return `${isStaleFetch(lastFetch) ? "stale, " : ""}updated ${age} ago`;
-}
-
 function formatCheckFailure(error, lastCheck, haveWindows) {
   const prefix = haveWindows ? "last refresh failed" : "check failed";
   if (lastCheck == null) return `${prefix}: ${error}`;
@@ -635,9 +628,13 @@ const QuotaIndicator = GObject.registerClass(
 
     _renderStreamStatus() {
       if (!this._statusRow) return;
-      this._statusRow.visible = this._streamStatus !== "connected";
-      if (!this._statusRow.visible) return;
-      const label = this._streamStatus === "disconnected" ? "Quota stream disconnected" : "Connecting to quota stream";
+      this._statusRow.visible = true;
+      const label =
+        this._streamStatus === "connected"
+          ? "Quota stream live"
+          : this._streamStatus === "disconnected"
+            ? "Quota stream disconnected"
+            : "Connecting to quota stream";
       const detail = this._streamError ? ` · ${this._streamError.slice(0, 120)}` : "";
       this._statusRow._summaryLabel.set_text(`${label}${detail}`);
     }
@@ -1047,7 +1044,8 @@ const QuotaIndicator = GObject.registerClass(
       if (resets) parts.push(resets);
       const extraStr = formatExtraSpend(extraSpend);
       if (extraStr) parts.push(extraStr);
-      if (!state.error) parts.push(formatFreshness(state.lastFetch));
+      if (!state.error && state.lastFetch == null) parts.push("no successful refresh yet");
+      else if (!state.error && isStaleFetch(state.lastFetch)) parts.push("stale");
       item.label.set_text(parts.join(" · "));
     }
 

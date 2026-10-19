@@ -67,7 +67,7 @@ createRoot(root).render(
       quotas={quotas}
       now={Date.parse(quotas.fetched_at)}
       error={null}
-      refreshing={false}
+      connecting={false}
       onRefresh={() => undefined}
     />
   )

@@ -55,7 +55,7 @@ export function App(): JSX.Element {
       quotas={quotas}
       now={now}
       error={error}
-      refreshing={connecting}
+      connecting={connecting}
       onRefresh={() => {
         if (stopped) globalThis.location.reload();
         else setSubscription((value) => value + 1);

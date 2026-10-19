@@ -1,5 +1,5 @@
 /**
- * The standalone dashboard page at aiquota.allegedly.works: a title, the snapshot's age beside
+ * The standalone dashboard page at aiquota.allegedly.works: a title, the stream status beside
  * the control that reconnects the live subscription, and the board itself.
  *
  * Only the chrome lives here. Everything that renders quota state is `QuotaBoard`, which the
@@ -9,20 +9,19 @@
 import { type JSX } from "react";
 
 import { QuotaBoard } from "./board";
-import { formatAge } from "./format";
 import type { QuotasView } from "./quotas";
 
 export function Dashboard({
   quotas,
   now,
   error,
-  refreshing,
+  connecting,
   onRefresh,
 }: {
   quotas: QuotasView | null;
   now: number;
   error: string | null;
-  refreshing: boolean;
+  connecting: boolean;
   onRefresh: () => void;
 }): JSX.Element {
   return (
@@ -30,18 +29,15 @@ export function Dashboard({
       <header className="aiquota-page-heading">
         <h1>AI quota</h1>
         <div className="aiquota-page-status">
-          {quotas && (
-            <span className="aiquota-snapshot">
-              Snapshot {new Date(quotas.fetched_at).toLocaleString()} ·{" "}
-              {formatAge((now - Date.parse(quotas.fetched_at)) / 1000)} ago
-            </span>
-          )}
+          <span className="aiquota-connection" role="status">
+            {connecting ? "Connecting to quota stream…" : error ? "Quota stream unavailable" : "Quota stream live"}
+          </span>
           <button
             type="button"
             className="aiquota-refresh"
             onClick={onRefresh}
-            disabled={refreshing}
-            aria-busy={refreshing}
+            disabled={connecting}
+            aria-busy={connecting}
             aria-label="Reconnect"
             title="Reconnect"
           >

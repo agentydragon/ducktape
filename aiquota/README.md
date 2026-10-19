@@ -72,7 +72,9 @@ instead of enabling the local provider defaults.
 Remote results use the normal local `~/.cache/aiquota/quotas.json` cache. The
 CLI can use the last cached snapshot while offline, and the desktop daemon
 publishes its cached snapshot to GNOME while reporting that the live stream is
-disconnected.
+disconnected. The browser and GNOME popup display stream connection status instead
+of routine snapshot-age counters. Provider errors and stale-data warnings remain
+visible even when the stream is live.
 
 Responses use `Cache-Control: no-store`. The service keeps the most recent
 snapshot in process memory (default 120 seconds). One background quota collector

@@ -39,8 +39,7 @@ h1 {
   margin: 0;
 }
 
-/* When the snapshot line is too wide to sit beside the title it wraps below it, still in the
-   corner, rather than pushing the refresh control off the row. */
+/* Keep connection status and the reconnect control together when the heading wraps. */
 .aiquota-page-status {
   align-items: center;
   display: flex;
@@ -48,7 +47,7 @@ h1 {
   margin-left: auto;
 }
 
-.aiquota-snapshot {
+.aiquota-connection {
   color: var(--aiquota-muted);
   font-size: 0.75rem;
   text-align: right;
