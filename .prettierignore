@@ -33,9 +33,10 @@ cluster/generated/**
 cluster/k8s/ssh-mcp/flux-kustomization.yaml
 cluster/k8s/ssh-mcp/kustomization.yaml
 
-# controller-gen owns these Sandbox CRD snapshots; test_generate checks exact output.
+# controller-gen owns these Agentplane CRD snapshots; test_generate checks exact output.
 agentplane/crds/manifests/crd-sandboxes.yaml
 agentplane/crds/manifests/crd-sandboxtemplates.yaml
+agentplane/crds/manifests/crd-egresscredentials.yaml
 
 # kubeconform schemas dumped from the Agentplane CRDs by `bb run //agentplane/crds:generate_bin`
 cluster/schemas/**

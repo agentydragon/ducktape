@@ -1118,8 +1118,8 @@ spec:
   description: A GitHub personal access token belonging to the bot account agentydragon-agent. Requests carrying it act as that account and are attributable to it. The proxy does not narrow what the token itself may do — the rule's hosts and methods are the only limit it adds, so treat anything the token can reach on those hosts as reachable.
   source:
     secretRef:
-      name: agentplane-github-pat
       key: token
+      name: agentplane-github-pat
   targets:
     - header: Authorization
       method: schemeToken
@@ -1136,8 +1136,8 @@ spec:
   description: The shared BuildBuddy API key, copied into this environment's isolated egress-credentials namespace by ESO. BuildBuddy uses this key for its JSON-over-HTTP API and gRPC services, presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry. Its authority is the account's BuildBuddy permissions; the egress policy limits where it is sent.
   source:
     secretRef:
-      name: buildbuddy-api-key
       key: api-key
+      name: buildbuddy-api-key
   targets:
     - header: x-buildbuddy-api-key
       method: wholeValue
@@ -1151,8 +1151,8 @@ spec:
   description: Direct Ollama inference and model metadata at http://ollama.ollama.svc.cluster.local:11435. Uses the existing token-authenticated proxy, not the unauthenticated Ollama port. Shared local GPUs; avoid unbounded or concurrent load experiments.
   source:
     secretRef:
-      name: ollama-direct-token
       key: token
+      name: ollama-direct-token
   targets:
     - header: Authorization
       method: schemeToken
@@ -1167,8 +1167,8 @@ spec:
   description: The shared LiteLLM cheap-experiments virtual key at http://litellm.litellm.svc.cluster.local:4000. LiteLLM enforces its model allowlist and shared spending budget; this is not an admin key.
   source:
     secretRef:
-      name: litellm-key-cheap-experiments
       key: api-key
+      name: litellm-key-cheap-experiments
   targets:
     - header: Authorization
       method: schemeToken

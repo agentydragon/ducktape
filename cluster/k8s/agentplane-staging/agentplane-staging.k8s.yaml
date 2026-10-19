@@ -1139,8 +1139,8 @@ spec:
   description: A GitHub personal access token belonging to the bot account agentydragon-agent. Requests carrying it act as that account and are attributable to it. The proxy does not narrow what the token itself may do — the rule's hosts and methods are the only limit it adds, so treat anything the token can reach on those hosts as reachable.
   source:
     secretRef:
-      name: agentplane-github-pat
       key: token
+      name: agentplane-github-pat
   targets:
     - header: Authorization
       method: schemeToken
@@ -1157,8 +1157,8 @@ spec:
   description: The shared BuildBuddy API key, copied into this environment's isolated egress-credentials namespace by ESO. BuildBuddy uses this key for its JSON-over-HTTP API and gRPC services, presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry. Its authority is the account's BuildBuddy permissions; the egress policy limits where it is sent.
   source:
     secretRef:
-      name: buildbuddy-api-key
       key: api-key
+      name: buildbuddy-api-key
   targets:
     - header: x-buildbuddy-api-key
       method: wholeValue
@@ -1172,8 +1172,8 @@ spec:
   description: Direct Ollama inference and model metadata at http://ollama.ollama.svc.cluster.local:11435. Uses the existing token-authenticated proxy, not the unauthenticated Ollama port. Shared local GPUs; avoid unbounded or concurrent load experiments.
   source:
     secretRef:
-      name: ollama-direct-token
       key: token
+      name: ollama-direct-token
   targets:
     - header: Authorization
       method: schemeToken
@@ -1188,8 +1188,8 @@ spec:
   description: The shared LiteLLM cheap-experiments virtual key at http://litellm.litellm.svc.cluster.local:4000. LiteLLM enforces its model allowlist and shared spending budget; this is not an admin key.
   source:
     secretRef:
-      name: litellm-key-cheap-experiments
       key: api-key
+      name: litellm-key-cheap-experiments
   targets:
     - header: Authorization
       method: schemeToken
@@ -8163,8 +8163,8 @@ spec:
   description: "The password of the `haku` account on the internal Forgejo, the service user that owns haku-state and haku's mirrors. Requests carrying it act as that account with its full authority -- it is the account's own password, not a scoped token, so it reaches every repository haku can reach and the web UI besides. The proxy narrows nothing but the host: treat a sandbox bound to this as holding haku's Forgejo account."
   source:
     secretRef:
-      name: haku-forgejo-git
       key: password
+      name: haku-forgejo-git
   targets:
     - header: Authorization
       method: basicPassword
@@ -8270,8 +8270,8 @@ spec:
   description: The password of the `finance-agent` account on the internal Forgejo, the service user that owns the finance-agent repo (tf/gitops/finance-agent) -- Rai's personal financial-leash agent workspace. Requests carrying it act as that account with its full authority, but the account owns exactly one repo, so the blast radius is that repo alone.
   source:
     secretRef:
-      name: finance-agent-git-creds
       key: password
+      name: finance-agent-git-creds
   targets:
     - header: Authorization
       method: basicPassword
@@ -8306,8 +8306,8 @@ spec:
   description: "A Google OAuth access token minted and refreshed by Airlock (cluster/k8s/agents/airlock), mirrored into this namespace by ESO: the token of Airlock's `google` provider, whose scopes are all `.readonly` (Gmail, Calendar, Drive, Drive Activity, Tasks, Contacts, Docs, Sheets, Slides, YouTube). What the token was actually granted is whatever the operator consented to at Airlock, which can be narrower than that list -- an API outside it answers 403 `insufficientPermissions`. `google-readonly`'s rules restrict where the proxy presents it."
   source:
     secretRef:
-      name: google-access-token
       key: access_token
+      name: google-access-token
   targets:
     - header: Authorization
       method: schemeToken
@@ -8434,8 +8434,8 @@ spec:
   description: The app password of `agentplane-grocy-sf-readonly`, an Authentik service account admitted to the grocy-sf application (tf/gitops/agent-machine-access/grocy-sf.tf), copied into this namespace by ESO. Send it as HTTP Basic under that username. Grocy knows the account as a user with no permissions, and the `grocy-sf-reads` PolicySet presents the password only on GETs to Grocy's read routes.
   source:
     secretRef:
-      name: grocy-sf-readonly
       key: password
+      name: grocy-sf-readonly
   targets:
     - header: Authorization
       method: basicPassword
@@ -8520,8 +8520,8 @@ spec:
   description: A long-lived token of `agentplane-reader`, a Home Assistant user in the read-only group, which the Home Assistant provisioner (homeassistant/provisioner) creates and keeps valid; ESO copies it into this namespace. Home Assistant refuses that user every service call, and the `home-assistant-reads` PolicySet presents the token only on GETs of entity states and their history.
   source:
     secretRef:
-      name: home-assistant-readonly
       key: token
+      name: home-assistant-readonly
   targets:
     - header: Authorization
       method: schemeToken
@@ -8607,8 +8607,8 @@ spec:
   description: The static bearer of the central ActivityWatch server's read route (cluster/docs/activitywatch/README.md), copied into this namespace by ESO. The route's own proxy admits it on GETs and on POST to its query endpoint (with or without the trailing slash) only, so it cannot write; what it reads is every device's window titles, URLs and AFK history.
   source:
     secretRef:
-      name: activitywatch-read-token
       key: token
+      name: activitywatch-read-token
   targets:
     - header: Authorization
       method: schemeToken
@@ -8650,8 +8650,8 @@ spec:
   description: aiquota's shared API bearer (aiquota.py), mirrored into this namespace by reflector. The API behind it serves only reads -- the Claude and Codex subscription quotas and each provider's raw usage response -- and `aiquota-read`'s rule presents it only on GETs under /v1/.
   source:
     secretRef:
-      name: aiquota-api-bearer-agentplane-staging
       key: bearer-token
+      name: aiquota-api-bearer-agentplane-staging
   targets:
     - header: Authorization
       method: schemeToken
@@ -8737,8 +8737,8 @@ spec:
   description: Typed AIQuota history ClickHouse reader; HTTP Basic password for aiquota_history_reader.
   source:
     secretRef:
-      name: clickhouse-aiquota-history-credentials
       key: password
+      name: clickhouse-aiquota-history-credentials
   targets:
     - header: Authorization
       method: basicPassword
@@ -8861,8 +8861,8 @@ spec:
   description: The Authentik JWT of Haku's mailbox account (haku@allegedly.works on the Stalwart server, cluster/k8s/haku/mailbox), rotated by authentik-jwt-rotation and copied into this namespace by ESO. It reads and changes the contents of that one mailbox over JMAP; it cannot send mail or administer the server (haku/docs/security.md).
   source:
     secretRef:
-      name: haku-mail-token
       key: jwt
+      name: haku-mail-token
   targets:
     - header: Authorization
       method: schemeToken
@@ -8995,8 +8995,8 @@ spec:
   description: The HTTP Basic password of pgweb's `plaid` user (cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres role that can only SELECT from the Plaid mirror -- every linked account's balances, transactions and holdings -- and Agentplane's egress rules present the password only on pgweb's query API.
   source:
     secretRef:
-      name: plaid-pgweb-auth
       key: password
+      name: plaid-pgweb-auth
   targets:
     - header: Authorization
       method: basicPassword
@@ -9223,8 +9223,8 @@ spec:
   description: Public coder's existing static-Agent Haku Console bearer, also used by its Kubernetes authorization proxy. No change of Haku identity or approval policy.
   source:
     secretRef:
-      name: public-coder-haku-console
       key: token
+      name: public-coder-haku-console
   targets:
     - header: Authorization
       method: schemeToken
@@ -9310,8 +9310,8 @@ spec:
   description: The existing read-only ClickHouse public_coder_analytics password. Present as the Basic password with that username.
   source:
     secretRef:
-      name: public-coder-clickhouse
       key: password
+      name: public-coder-clickhouse
   targets:
     - header: Authorization
       method: basicPassword
@@ -9396,8 +9396,8 @@ spec:
   description: The existing public-coder Matrix bot login password, only in the exact login password field. Login responses can contain session tokens; this does not hide those from the client.
   source:
     secretRef:
-      name: public-coder-matrix
       key: password
+      name: public-coder-matrix
   targets:
     - field: password
       method: jsonField
@@ -9431,8 +9431,8 @@ spec:
   description: The shared Brave Search API key, substituted only at Brave's API in X-Subscription-Token.
   source:
     secretRef:
-      name: brave-search
       key: api-key
+      name: brave-search
   targets:
     - header: X-Subscription-Token
       method: wholeValue
