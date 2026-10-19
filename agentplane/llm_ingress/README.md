@@ -76,8 +76,12 @@ These are configured harness overrides, not a catalog of every known model capac
 
 ## Contract tests
 
-`test_ingress` starts the Bazel-built Go process against fake Kubernetes and LiteLLM HTTP servers.
-It exercises the deployed YAML/flag/environment configuration path and the actual network listener.
+The Go ingress tests exercise request filtering, TokenReview response policy, proxy errors, streaming,
+and cancellation with `httptest` servers. A typed TokenReview fake is used for handler behavior;
+it checks ingress interpretation and does not establish Kubernetes token-validation or Pod-binding
+semantics. One smoke test starts the Bazel-built binary with YAML, flag, and environment settings
+against a narrow TokenReview HTTP fixture and fake LiteLLM, covering client-go wiring and the real
+listener configuration path.
 
 ```sh
 bbr test //agentplane/llm_ingress/...

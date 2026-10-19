@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -30,28 +30,6 @@ py_library(
         "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
-    ],
-)
-
-py_test(
-    name = "test_ingress",
-    size = "medium",
-    srcs = ["test_ingress.py"],
-    data = [":server"],
-    deps = [
-        ":models",
-        "//:conftest",
-        "//agentplane:sandbox_resource",
-        "//agentplane/testing:fake_apiserver",
-        "//util:net",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//aiohttp",
-        "@pypi//httpx",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -100,7 +78,17 @@ go_binary(
 )
 
 go_test(
-    name = "config_test",
-    srcs = ["config_test.go"],
+    name = "ingress_test",
+    srcs = [
+        "config_test.go",
+        "ingress_test.go",
+    ],
+    data = [":server"],
     embed = [":server_lib"],
+    deps = [
+        "//agentplane/workload_auth/go/auth",
+        "@io_bazel_rules_go//go/runfiles",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
 )
