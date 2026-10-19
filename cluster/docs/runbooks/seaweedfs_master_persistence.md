@@ -112,6 +112,23 @@ port-forward. It exercises the real operator, Raft recovery and S3 data path;
 it does not validate ClusterIP routing, production SSD placement or cross-node
 failure isolation. Check those production properties separately.
 
+The [2026-10-19 rehearsal](https://app.buildbuddy.io/invocation/51c19584-9230-41ec-9a8b-d184bc7b9df3)
+passed against SeaweedFS 4.46, operator 1.0.39 (chart 0.1.42), and Kubernetes
+1.34.1. It verified both followers' cold conversion and same-PVC/PV restart,
+retention of the existing Raft WAL prefix and TopologyId, S3 baseline reads and
+fresh writes while the original leader was absent, and another current-leader
+deletion after all members were persistent. Final controller adoption, operator
+reconciliation and restoration of RollingUpdate preserved all three converted
+Pod UIDs. Production runs Kubernetes 1.35.1; this is rehearsal evidence, not live
+migration acceptance.
+
+A separate [SIGSTOP experiment](https://app.buildbuddy.io/invocation/d36367cb-aa14-48fe-ac81-a0b5fafc5d3f)
+did **not** pass S3 write acceptance: the surviving masters elected a leader,
+but clients retained TCP connections to the frozen process and a write timed
+out. Pod termination closes those connections; the passing deletion rehearsal
+does not establish availability during a network blackhole or frozen process.
+Do not treat persistence as a fix for that failure mode.
+
 1. Save the exact original suspension fields, including whether a field is
    absent. The current ownership chain starts at the self-managed
    `flux-system/flux-system` Kustomization, which declares both child
