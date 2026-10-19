@@ -63,10 +63,7 @@ sh_binary(
     srcs = ["devkit.sh"],
     data = [
         ":aiquota_zip",
-        # In-repo CLI so the spawned gnome-shell extension hits the local
-        # build instead of whatever `aiquota` is on PATH (whole point of
-        # devkit is to iterate without re-installing).
-        "//aiquota",
+        "//aiquota:desktop_bin",
     ],
     deps = ["@bazel_tools//tools/bash/runfiles"],
 )

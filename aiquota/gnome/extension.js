@@ -9,8 +9,18 @@ import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 
-const POLL_INTERVAL_SECONDS = 120;
 const STALE_AFTER_SECONDS = 5 * 60;
+const BUS_NAME = "works.allegedly.AiQuota";
+const OBJECT_PATH = "/works/allegedly/AiQuota";
+const INTERFACE_NAME = "works.allegedly.AiQuota1";
+const INTERFACE_INFO = Gio.DBusNodeInfo.new_for_xml(
+  `<node><interface name="${INTERFACE_NAME}">
+    <method name="GetView"><arg name="view" type="s" direction="out"/></method>
+    <signal name="ViewChanged"><arg name="view" type="s"/></signal>
+    <property name="Status" type="s" access="read"/>
+    <property name="Error" type="s" access="read"/>
+  </interface></node>`
+).lookup_interface(INTERFACE_NAME);
 
 // Pace deviation thresholds, in signed percentage points (used% − expected%).
 const PACE_COOL_BELOW = -10;
@@ -38,17 +48,9 @@ function errorMessage(error) {
   return error?.message ?? String(error);
 }
 
-function aiQuotaBinPath(extensionPath) {
-  const override = GLib.getenv("AI_QUOTA_BIN");
-  if (override) return override;
-  const sibling = `${extensionPath}/aiquota`;
-  if (GLib.file_test(sibling, GLib.FileTest.IS_EXECUTABLE)) return sibling;
-  return "aiquota";
-}
-
-function executablePath(path) {
-  if (path.includes("/")) return path;
-  return GLib.find_program_in_path(path) ?? path;
+function unpackString(value, fallback = null) {
+  const unpacked = value?.deep_unpack();
+  return typeof unpacked === "string" ? unpacked : fallback;
 }
 
 function formatDuration(seconds) {
@@ -223,8 +225,8 @@ function formatCompactDollars(usd) {
 }
 
 // The "currently burning extra" decision lives in the Python view model
-// (see aiquota/render/view_model.py) and is delivered to us by
-// `aiquota gnome-extension-json` as state.currentlyOverPlan. Don't
+// (see aiquota/render/view_model.py) and is delivered to us by the desktop
+// daemon as state.currentlyOverPlan. Don't
 // reintroduce a local copy: see aiquota/AGENTS.md.
 function formatExtraSpend(extra) {
   if (!extra || !extra.is_enabled || !(extra.used_usd > 0)) return null;
@@ -344,15 +346,24 @@ const QuotaIndicator = GObject.registerClass(
       super._init(0.0, "AI Quota Tracker", false);
 
       this._iconsDir = `${extension.path}/icons`;
-      this._binPath = aiQuotaBinPath(extension.path);
-      this._execPath = executablePath(this._binPath);
       this._popupTickId = null;
-      this._refreshInFlight = false;
-      this._refreshProc = null;
       this._destroyed = false;
+      this._proxy = null;
+      this._daemonConnectPending = false;
+      this._proxySignalIds = [];
+      this._getterCancellable = null;
+      this._ownerGeneration = 0;
+      this._viewSignalSequence = 0;
+      this._streamStatus = "starting";
+      this._streamError = "";
+      this._remoteView = "";
+      this._statusRow = null;
 
       const fixturePath = GLib.getenv("AI_QUOTA_FIXTURE");
       if (fixturePath) {
+        this._fixtureMode = true;
+        this._streamStatus = "connected";
+        this._streamError = "";
         // Provider visibility derived from which keys are present in the fixture.
         const [ok, bytes] = GLib.file_get_contents(fixturePath);
         if (!ok) throw new Error(`fixture not readable: ${fixturePath}`);
@@ -365,15 +376,12 @@ const QuotaIndicator = GObject.registerClass(
         return;
       }
 
-      // The subprocess response is the source of truth for provider visibility.
+      this._fixtureMode = false;
+      // The daemon view is the source of truth for provider visibility.
       // Start empty so an unconfigured provider (for example z.ai when using
       // the remote API) is never shown as a misleading empty entry.
       this._initUI({});
-      this._refresh();
-      this._timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, POLL_INTERVAL_SECONDS, () => {
-        this._refresh();
-        return GLib.SOURCE_CONTINUE;
-      });
+      this._connectDaemon();
     }
 
     // Set up per-provider state, build panel + popup, wire menu open handler.
@@ -401,6 +409,8 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _loadFixtureData(data) {
+      this._streamStatus = "connected";
+      this._streamError = "";
       // Test fixtures specify currentlyOverPlan / extraStatus explicitly so
       // we never re-derive policy on the JS side (see aiquota/AGENTS.md).
       const loadLastSuccess = (snap) => {
@@ -455,6 +465,12 @@ const QuotaIndicator = GObject.registerClass(
       this._testIface = Gio.DBusExportedObject.wrapJSObject(
         '<node><interface name="works.allegedly.AiQuotaTest">' +
           '<method name="Reload"><arg type="s" direction="in" name="path"/></method>' +
+          '<method name="SetStreamStatus"><arg type="s" direction="in" name="status"/><arg type="s" direction="in" name="error"/></method>' +
+          '<method name="SetViewForTest"><arg type="s" direction="in" name="view"/></method>' +
+          '<method name="ConnectDaemon"/>' +
+          '<method name="FetchView"/>' +
+          '<method name="GetCurrentView"><arg type="s" direction="out" name="view"/></method>' +
+          '<method name="GetDaemonOwner"><arg type="s" direction="out" name="owner"/></method>' +
           '<method name="OpenMenu"/>' +
           '<method name="WaitForPaint"/>' +
           '<method name="CloseMenu"/>' +
@@ -466,6 +482,12 @@ const QuotaIndicator = GObject.registerClass(
             if (!ok) throw new Error(`fixture not readable: ${path}`);
             this._loadFixtureData(JSON.parse(decodeBytes(bytes)));
           },
+          SetStreamStatus: (status, error) => this._setStreamState(status, error),
+          SetViewForTest: (view) => this._acceptView(view),
+          ConnectDaemon: () => this._connectDaemon(),
+          FetchView: () => this._fetchView(),
+          GetCurrentView: () => this._remoteView,
+          GetDaemonOwner: () => this._proxy?.g_name_owner ?? "",
           WaitForPaintAsync: (_params, invocation) => {
             const signal = global.stage.connect("after-paint", () => {
               global.stage.disconnect(signal);
@@ -497,6 +519,138 @@ const QuotaIndicator = GObject.registerClass(
       );
     }
 
+    _connectDaemon() {
+      if (this._proxy || this._daemonConnectPending || this._destroyed) return;
+      this._daemonConnectPending = true;
+      Gio.DBusProxy.new_for_bus(
+        Gio.BusType.SESSION,
+        Gio.DBusProxyFlags.NONE,
+        INTERFACE_INFO,
+        BUS_NAME,
+        OBJECT_PATH,
+        INTERFACE_NAME,
+        null,
+        (source, result) => {
+          if (this._destroyed) return;
+          try {
+            const proxy = Gio.DBusProxy.new_for_bus_finish(result);
+            this._daemonConnectPending = false;
+            this._proxy = proxy;
+            this._proxySignalIds.push(
+              proxy.connect("g-signal", (_proxy, sender, name, parameters) => {
+                if (name !== "ViewChanged" || (sender && sender !== proxy.g_name_owner)) return;
+                this._viewSignalSequence++;
+                const [rawView] = parameters.deep_unpack();
+                this._acceptView(rawView);
+              })
+            );
+            this._proxySignalIds.push(proxy.connect("g-properties-changed", () => this._readProperties()));
+            this._proxySignalIds.push(
+              proxy.connect("notify::g-name-owner", () => {
+                this._ownerGeneration++;
+                this._getterCancellable?.cancel();
+                this._getterCancellable = null;
+                if (proxy.g_name_owner) {
+                  this._setStreamState("connecting", "");
+                  this._readProperties();
+                  this._fetchView();
+                } else {
+                  this._setStreamState("disconnected", "AIQuota daemon is not running");
+                }
+              })
+            );
+
+            this._readProperties();
+            if (proxy.g_name_owner) this._fetchView();
+            else this._setStreamState("disconnected", "AIQuota daemon is not running");
+          } catch (error) {
+            this._daemonConnectPending = false;
+            this._setStreamState("disconnected", errorMessage(error));
+          }
+        }
+      );
+    }
+
+    _readProperties() {
+      if (!this._proxy) return;
+      const status = unpackString(this._proxy.get_cached_property("Status"));
+      const error = unpackString(this._proxy.get_cached_property("Error"));
+      if (status !== null) this._streamStatus = status;
+      if (error !== null) this._streamError = error;
+      this._renderPanel();
+      this._renderPopup();
+    }
+
+    _setStreamState(status, error) {
+      this._streamStatus = status;
+      this._streamError = error;
+      this._renderPanel();
+      this._renderPopup();
+    }
+
+    _fetchView() {
+      const proxy = this._proxy;
+      const owner = proxy?.g_name_owner;
+      if (!owner || this._destroyed) return;
+      this._getterCancellable?.cancel();
+      const cancellable = new Gio.Cancellable();
+      const ownerGeneration = this._ownerGeneration;
+      const signalSequence = this._viewSignalSequence;
+      this._getterCancellable = cancellable;
+      proxy.call("GetView", null, Gio.DBusCallFlags.NONE, 15000, cancellable, (source, result) => {
+        let rawView;
+        try {
+          [rawView] = proxy.call_finish(result).deep_unpack();
+        } catch (error) {
+          const stale =
+            this._destroyed ||
+            this._getterCancellable !== cancellable ||
+            cancellable.is_cancelled() ||
+            this._proxy !== proxy ||
+            this._ownerGeneration !== ownerGeneration ||
+            proxy.g_name_owner !== owner ||
+            this._viewSignalSequence !== signalSequence;
+          if (this._getterCancellable === cancellable) this._getterCancellable = null;
+          if (!stale) this._setStreamState("disconnected", errorMessage(error));
+          return;
+        }
+        const stale =
+          this._destroyed ||
+          this._getterCancellable !== cancellable ||
+          cancellable.is_cancelled() ||
+          this._proxy !== proxy ||
+          this._ownerGeneration !== ownerGeneration ||
+          proxy.g_name_owner !== owner ||
+          this._viewSignalSequence !== signalSequence;
+        if (this._getterCancellable === cancellable) this._getterCancellable = null;
+        if (stale) return;
+        if (rawView) this._acceptView(rawView);
+      });
+    }
+
+    _renderStreamStatus() {
+      if (!this._statusRow) return;
+      this._statusRow.visible = this._streamStatus !== "connected";
+      if (!this._statusRow.visible) return;
+      const label = this._streamStatus === "disconnected" ? "Quota stream disconnected" : "Connecting to quota stream";
+      const detail = this._streamError ? ` · ${this._streamError.slice(0, 120)}` : "";
+      this._statusRow._summaryLabel.set_text(`${label}${detail}`);
+    }
+
+    _acceptView(rawView) {
+      try {
+        if (typeof rawView !== "string" || rawView.length === 0) return;
+        const data = JSON.parse(rawView);
+        if (!data || !Array.isArray(data.providers)) throw new Error("invalid AIQuota view");
+        this._remoteView = rawView;
+        this._loadViewData(data);
+        this._renderPanel();
+        this._renderPopup();
+      } catch (error) {
+        this._setStreamState("disconnected", errorMessage(error));
+      }
+    }
+
     _unexportTestInterface() {
       if (this._testBusOwnerId) {
         Gio.bus_unown_name(this._testBusOwnerId);
@@ -522,6 +676,12 @@ const QuotaIndicator = GObject.registerClass(
         box.add_child(provBox);
       }
       this._panelBox = box;
+      this._emptyLabel = new St.Label({
+        text: "AI quota",
+        style_class: "quota-empty-label",
+        y_align: Clutter.ActorAlign.CENTER,
+      });
+      box.add_child(this._emptyLabel);
       this.add_child(box);
     }
 
@@ -535,6 +695,9 @@ const QuotaIndicator = GObject.registerClass(
 
     _buildPopup() {
       this.menu.removeAll();
+      this._statusRow = this._makeTextRow();
+      this._statusRow._summaryLabel.add_style_class_name("quota-stream-status");
+      this.menu.addMenuItem(this._statusRow);
       for (const p of this._providers) {
         p.header = new PopupMenu.PopupSeparatorMenuItem(p.label);
         const { windows } = effectiveState(p.state);
@@ -696,7 +859,7 @@ const QuotaIndicator = GObject.registerClass(
       };
     }
 
-    _loadSubprocessData(data) {
+    _loadViewData(data) {
       const providerIds = new Set(
         (Array.isArray(data.providers) ? data.providers : [])
           .map((provider) => provider?.provider)
@@ -771,6 +934,7 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderPanel() {
+      this._emptyLabel.visible = this._providers.length === 0 && this._streamStatus !== "connected";
       for (const p of this._providers) this._renderProvider(p.state, p.icon, p.paceLabel);
     }
 
@@ -826,6 +990,7 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderPopup() {
+      this._renderStreamStatus();
       for (const p of this._providers) {
         this._renderProviderHeader(p.header, p.label, p.state);
         this._renderCreditRow(p.creditRow, p.state);
@@ -954,76 +1119,20 @@ const QuotaIndicator = GObject.registerClass(
       this._popupTickId = null;
     }
 
-    _refresh() {
-      if (this._refreshInFlight) return;
-      this._refreshInFlight = true;
-
-      let proc;
-      try {
-        proc = Gio.Subprocess.new(
-          [this._execPath, "gnome-extension-json"],
-          Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-        );
-      } catch (e) {
-        this._refreshInFlight = false;
-        console.error(`[aiquota] spawn ${this._binPath} threw: ${errorMessage(e)}`);
-        for (const p of this._providers) p.state.error = errorMessage(e);
-        this._renderPanel();
-        this._renderPopup();
-        return;
-      }
-
-      this._refreshProc = proc;
-      proc.communicate_utf8_async(null, null, (_proc, res) => {
-        this._refreshInFlight = false;
-        if (this._refreshProc === proc) this._refreshProc = null;
-        if (this._destroyed) return;
-
-        try {
-          const [, stdout, stderr] = proc.communicate_utf8_finish(res);
-          const exitStatus = proc.get_if_exited() ? proc.get_exit_status() : "signal";
-          if (!proc.get_successful()) {
-            const stderrText = stderr ?? "";
-            console.warn(`[aiquota] ${this._binPath} exited ${exitStatus}: ${stderrText}`);
-            const failedAt = Date.now();
-            for (const p of this._providers) {
-              p.state.error = `aiquota exited ${exitStatus}`;
-              p.state.lastCheck = failedAt;
-            }
-          } else {
-            const data = JSON.parse(stdout);
-            this._loadSubprocessData(data);
-          }
-        } catch (e) {
-          console.error(`[aiquota] refresh ${this._binPath} failed: ${errorMessage(e)}`);
-          const failedAt = Date.now();
-          for (const p of this._providers) {
-            p.state.error = errorMessage(e);
-            p.state.lastCheck = failedAt;
-          }
-        }
-
-        this._renderPanel();
-        this._renderPopup();
-      });
-    }
-
     destroy() {
       this._destroyed = true;
-      if (this._refreshProc) {
-        this._refreshProc.force_exit();
-        this._refreshProc = null;
+      this._getterCancellable?.cancel();
+      this._getterCancellable = null;
+      if (this._proxy) {
+        for (const signalId of this._proxySignalIds) this._proxy.disconnect(signalId);
       }
-      this._refreshInFlight = false;
+      this._proxySignalIds = [];
+      this._proxy = null;
       this._unexportTestInterface();
       this._stopPopupTick();
       if (this._menuOpenId) {
         this.menu.disconnect(this._menuOpenId);
         this._menuOpenId = null;
-      }
-      if (this._timerId) {
-        GLib.source_remove(this._timerId);
-        this._timerId = null;
       }
       super.destroy();
     }

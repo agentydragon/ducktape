@@ -46,6 +46,11 @@
   color: #bebebe;
 }
 
+.quota-empty-label {
+  font-size: 10pt;
+  color: #bebebe;
+}
+
 .quota-pace.quota-cool {
   color: #4a90d9;
 }
@@ -154,6 +159,11 @@
 
 .quota-popup-header-error {
   color: #f5c211;
+}
+
+.quota-stream-status {
+  color: #f5c211;
+  font-size: 0.9em;
 }
 
 .quota-popup-forecast {

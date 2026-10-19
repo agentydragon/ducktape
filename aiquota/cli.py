@@ -31,9 +31,9 @@ def _service(ctx: typer.Context) -> QuotaService:
 def fetch(ctx: typer.Context) -> None:
     """Fetch and display quota status in human-readable form (same info as the GNOME popup).
 
-    Goes through the same cached path as `gnome-extension-json`, so the
-    terminal and GNOME popup agree within the cache TTL. The cache refreshes
-    itself when older than `CACHE_TTL` (see aiquota/cache.py).
+    Goes through the same cached path as the desktop daemon, so the terminal
+    and GNOME popup agree within the cache TTL. The cache refreshes itself
+    when older than `CACHE_TTL` (see aiquota/cache.py).
     """
     quotas = asyncio.run(_service(ctx).fetch_all())
     print(render_human.render(quotas))
@@ -48,7 +48,7 @@ def tmux(ctx: typer.Context) -> None:
 
 @app.command(name="gnome-extension-json")
 def gnome_extension_json(ctx: typer.Context) -> None:
-    """Emit the JSON view consumed by the GNOME shell extension.
+    """Emit the normalized JSON view for command-line inspection.
 
     Raw quota fields plus derived view-model bits (`currently_over_plan`,
     `extra_status`) so the extension and the CLI can't drift on policy

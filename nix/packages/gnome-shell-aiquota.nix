@@ -19,13 +19,18 @@ python314Packages.buildPythonApplication {
     with python314Packages;
     [
       atomicwrites
+      dbus-next
       httpx
+      httpx-sse
       platformdirs
       pydantic
       typer
     ]
     ++ [ claudeApi ];
-  pythonImportsCheck = [ "aiquota.cli" ];
+  pythonImportsCheck = [
+    "aiquota.cli"
+    "aiquota.desktop"
+  ];
   doCheck = false;
   dontUsePytestCheck = true;
 
@@ -35,7 +40,6 @@ python314Packages.buildPythonApplication {
     extDir="$out/share/gnome-shell/extensions/$uuid"
     mkdir -p "$extDir"
     unzip -o ${extensionZip} -d "$extDir"
-    ln -s ../../../../bin/aiquota "$extDir/aiquota"
   '';
 
   passthru.extensionUuid = "aiquota@allegedly.works";

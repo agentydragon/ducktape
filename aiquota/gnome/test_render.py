@@ -5,9 +5,9 @@ is started once per module: boot.sh inside it brings up Xvfb, the
 postinst-equivalent caches, and a long-lived dbus session bus, then
 blocks. A single gnome-shell is started inside that container (also
 once per module) and the extension exports a session-bus interface
-(works.allegedly.AiQuotaTest, gated on AI_QUOTA_FIXTURE) that
-lets this driver swap fixture state, open/close the popup menu, and
-query the menu's screen geometry.
+(works.allegedly.AiQuotaTest, gated on AI_QUOTA_FIXTURE) that lets this driver
+swap fixture state, select connection state, open/close the popup, and query
+the menu's screen geometry.
 
 Each fixture renders to a single PNG capturing both the panel
 indicator (with menu open, so the button shows its active state) and
@@ -26,10 +26,14 @@ fixture opens its menu and screenshots successfully.
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
+import re
+import shlex
+import time
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -39,7 +43,7 @@ from testcontainers.core.container import DockerContainer
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_fixture_data
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
-from util.testing.gnome import GnomeSession, capture_panel_menu
+from util.testing.gnome import GnomeSession, capture_panel_menu, exec_output
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -56,6 +60,86 @@ _EXTENSION_UUID = "aiquota@allegedly.works"
 
 _TEST_DBUS_DEST = "works.allegedly.AiQuotaTest"
 _TEST_DBUS_PATH = "/works/allegedly/AiQuotaTest"
+_FAKE_DBUS_DEST = "works.allegedly.AiQuotaFake"
+_FAKE_DBUS_PATH = "/works/allegedly/AiQuotaFake"
+_FAKE_DBUS_SERVICE = r"""
+const Gio = imports.gi.Gio;
+const GLib = imports.gi.GLib;
+const name = "works.allegedly.AiQuota";
+const path = "/works/allegedly/AiQuota";
+const controlName = "works.allegedly.AiQuotaFake";
+const controlPath = "/works/allegedly/AiQuotaFake";
+const mainXml = `<node><interface name="works.allegedly.AiQuota1">
+  <method name="GetView"><arg name="view" type="s" direction="out"/></method>
+  <signal name="ViewChanged"><arg name="view" type="s"/></signal>
+  <property name="Status" type="s" access="read"/>
+  <property name="Error" type="s" access="read"/>
+</interface></node>`;
+const controlXml = `<node><interface name="works.allegedly.AiQuotaFake">
+  <method name="SetView"><arg name="view" type="s" direction="in"/></method>
+  <method name="SetViewSilently"><arg name="view" type="s" direction="in"/></method>
+  <method name="ReleaseGetView"/>
+  <method name="ReleaseName"/>
+  <method name="AcquireName"/>
+  <method name="GetCounters">
+    <arg name="calls" type="u" direction="out"/>
+    <arg name="replies" type="u" direction="out"/>
+    <arg name="pending" type="u" direction="out"/>
+  </method>
+  <method name="Stop"/>
+</interface></node>`;
+let currentView = JSON.stringify({fetched_at: "2026-10-18T12:00:00Z", providers: []});
+let getCalls = 0;
+let replies = 0;
+let pendingViews = [];
+let nameOwner = 0;
+let controlOwner = 0;
+const loop = GLib.MainLoop.new(null, false);
+const service = Gio.DBusExportedObject.wrapJSObject(mainXml, {
+  GetViewAsync(_parameters, invocation) {
+    getCalls += 1;
+    pendingViews.push({invocation, view: currentView});
+  },
+  get Status() { return "connected"; },
+  get Error() { return ""; },
+});
+service.export(Gio.DBus.session, path);
+const control = Gio.DBusExportedObject.wrapJSObject(controlXml, {
+  SetView(view) {
+    currentView = view;
+    service.emit_signal("ViewChanged", new GLib.Variant("(s)", [view]));
+  },
+  SetViewSilently(view) { currentView = view; },
+  ReleaseGetView() {
+    const pending = pendingViews.shift();
+    if (!pending) throw new Error("no GetView reply is pending");
+    replies += 1;
+    pending.invocation.return_value(new GLib.Variant("(s)", [pending.view]));
+  },
+  ReleaseName() {
+    if (nameOwner) {
+      Gio.bus_unown_name(nameOwner);
+      nameOwner = 0;
+    }
+  },
+  AcquireName() {
+    if (!nameOwner) nameOwner = Gio.bus_own_name(Gio.BusType.SESSION, name, Gio.BusNameOwnerFlags.NONE, null, null, null);
+  },
+  GetCounters() { return [getCalls, replies, pendingViews.length]; },
+  Stop() {
+    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      if (nameOwner) Gio.bus_unown_name(nameOwner);
+      if (controlOwner) Gio.bus_unown_name(controlOwner);
+      loop.quit();
+      return GLib.SOURCE_REMOVE;
+    });
+  },
+});
+control.export(Gio.DBus.session, controlPath);
+nameOwner = Gio.bus_own_name(Gio.BusType.SESSION, name, Gio.BusNameOwnerFlags.NONE, null, null, null);
+controlOwner = Gio.bus_own_name(Gio.BusType.SESSION, controlName, Gio.BusNameOwnerFlags.NONE, null, null, null);
+loop.run();
+"""
 
 
 def test_extension_metadata_supports_gnome_50() -> None:
@@ -157,6 +241,155 @@ def test_render(render_session: tuple[GnomeSession, Path], undeclared_dir: Path,
     except (TimeoutError, RuntimeError) as e:
         session.save_log(undeclared_dir / f"{fixture_name}.shell.log")
         pytest.fail(f"{fixture_name}: {e}")
+
+
+def test_render_disconnected_stream(render_session: tuple[GnomeSession, Path], undeclared_dir: Path) -> None:
+    session, output_dir = render_session
+    try:
+        session.close_menu()
+        session.reload(f"/fixtures/{FIXTURE_NAMES[0]}.json")
+        session.call("SetStreamStatus", "disconnected", "Connection to quota API was lost")
+        session.wait_for_paint()
+        geometry = session.open_menu()
+        try:
+            capture_panel_menu(
+                session,
+                output_dir,
+                geometry=geometry,
+                name="stream_disconnected.png",
+                title="AI quota GNOME extension",
+                label="stream disconnected",
+            )
+        finally:
+            session.close_menu()
+    except (TimeoutError, RuntimeError) as e:
+        session.save_log(undeclared_dir / "stream_disconnected.shell.log")
+        pytest.fail(f"stream disconnected: {e}")
+
+
+def test_render_disconnected_without_snapshot(render_session: tuple[GnomeSession, Path], undeclared_dir: Path) -> None:
+    session, output_dir = render_session
+    try:
+        session.close_menu()
+        session.reload(f"/fixtures/{FIXTURE_NAMES[0]}.json")
+        empty_view = json.dumps({"fetched_at": "2026-10-18T12:00:00Z", "providers": []})
+        session.call("SetViewForTest", empty_view)
+        session.call("SetStreamStatus", "disconnected", "AIQuota daemon is not running")
+        session.wait_for_paint()
+        geometry = session.open_menu()
+        try:
+            capture_panel_menu(
+                session,
+                output_dir,
+                geometry=geometry,
+                name="stream_disconnected_without_snapshot.png",
+                title="AI quota GNOME extension",
+                label="stream disconnected without snapshot",
+            )
+        finally:
+            session.close_menu()
+    except (TimeoutError, RuntimeError) as e:
+        session.save_log(undeclared_dir / "stream_disconnected_without_snapshot.shell.log")
+        pytest.fail(f"stream disconnected without snapshot: {e}")
+
+
+def _string_reply(reply: bytes) -> str:
+    output = reply.decode().strip()
+    parsed = ast.literal_eval(output)
+    if not isinstance(parsed, tuple) or len(parsed) != 1 or not isinstance(parsed[0], str):
+        raise RuntimeError(f"Unexpected D-Bus string reply: {output!r}")
+    return parsed[0]
+
+
+def _fake_daemon_call(session: GnomeSession, method: str, *args: str) -> bytes:
+    result = session.exec(
+        f"gdbus call --session --timeout 10 --dest {shlex.quote(_FAKE_DBUS_DEST)} "
+        f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} "
+        f"--method {shlex.quote(_FAKE_DBUS_DEST + '.' + method)} " + " ".join(shlex.quote(arg) for arg in args)
+    )
+    stdout, stderr = exec_output(result)
+    if result.exit_code != 0:
+        raise RuntimeError(f"fake daemon {method} failed: {(stdout + stderr).decode(errors='replace')}")
+    return stdout
+
+
+def _fake_daemon_counters(session: GnomeSession) -> tuple[int, int, int]:
+    output = _fake_daemon_call(session, "GetCounters")
+    match = re.search(rb"\(uint32 (\d+), uint32 (\d+), uint32 (\d+)\)", output)
+    if match is None:
+        raise RuntimeError(f"fake daemon returned invalid counters: {output!r}")
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def _wait_until(check: Callable[[], bool], description: str) -> None:
+    deadline = time.monotonic() + 15
+    while True:
+        if check():
+            return
+        if time.monotonic() >= deadline:
+            raise TimeoutError(description)
+        time.sleep(0.2)
+
+
+def _view_json(revision: int) -> str:
+    return json.dumps({"fetched_at": f"2026-10-18T12:00:0{revision}Z", "providers": []})
+
+
+def test_view_signal_wins_getter_and_owner_restart_invalidates_reply(render_session: tuple[GnomeSession, Path]) -> None:
+    session, _ = render_session
+    service = shlex.quote(_FAKE_DBUS_SERVICE)
+    session.exec(f"gjs -c {service} >/tmp/aiquota-fake-daemon.log 2>&1 &")
+    try:
+        _wait_until(
+            lambda: (
+                session.exec(
+                    f"gdbus introspect --session --dest {shlex.quote(_FAKE_DBUS_DEST)} "
+                    f"--object-path {shlex.quote(_FAKE_DBUS_PATH)}"
+                ).exit_code
+                == 0
+            ),
+            "fake AIQuota D-Bus service did not start",
+        )
+        session.call("ConnectDaemon")
+        _wait_until(lambda: _fake_daemon_counters(session)[0] == 1, "extension did not request initial view")
+
+        signal_view = _view_json(2)
+        _fake_daemon_call(session, "SetView", signal_view)
+        _wait_until(
+            lambda: _string_reply(session.call("GetCurrentView")) == signal_view, "extension did not adopt ViewChanged"
+        )
+        _fake_daemon_call(session, "ReleaseGetView")
+        assert _string_reply(session.call("GetCurrentView")) == signal_view
+        assert _fake_daemon_counters(session) == (1, 1, 0)
+
+        _fake_daemon_call(session, "SetViewSilently", _view_json(3))
+        session.call("FetchView")
+        _wait_until(lambda: _fake_daemon_counters(session)[0] == 2, "extension did not start second getter")
+        _fake_daemon_call(session, "SetViewSilently", _view_json(4))
+        _fake_daemon_call(session, "ReleaseName")
+        _wait_until(
+            lambda: _string_reply(session.call("GetDaemonOwner")) == "", "extension did not observe daemon shutdown"
+        )
+        _fake_daemon_call(session, "ReleaseGetView")
+        assert _string_reply(session.call("GetCurrentView")) == signal_view
+
+        _fake_daemon_call(session, "AcquireName")
+        _wait_until(lambda: _fake_daemon_counters(session)[0] == 3, "extension did not rehydrate after restart")
+        _fake_daemon_call(session, "ReleaseGetView")
+        restarted_view = _view_json(4)
+        _wait_until(
+            lambda: _string_reply(session.call("GetCurrentView")) == restarted_view,
+            "extension did not adopt restarted daemon's current view",
+        )
+        assert _fake_daemon_counters(session) == (3, 3, 0)
+    finally:
+        session.exec(
+            f"if gdbus introspect --session --dest {shlex.quote(_FAKE_DBUS_DEST)} "
+            f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} >/dev/null 2>&1; then "
+            f"gdbus call --session --dest {shlex.quote(_FAKE_DBUS_DEST)} "
+            f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} "
+            f"--method {shlex.quote(_FAKE_DBUS_DEST + '.Stop')} >/dev/null; fi"
+        )
 
 
 if __name__ == "__main__":

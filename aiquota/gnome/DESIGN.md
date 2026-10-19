@@ -182,15 +182,14 @@ Defer to v2 (see `TODO.md`). When implemented, surface as a third popup field: "
 
 ## Architecture
 
-The extension has no HTTP/auth code — it calls `aiquota gnome-extension-json` (the Python
-CLI) via `GLib.spawn_command_line_sync` and renders the JSON output. The CLI emits the
-view-model schema from `aiquota/render/view_model.py`, which carries raw quota fields plus
-derived policy bits (`currently_over_plan`, `extra_status`) so policy decisions never
-diverge between the CLI and the extension (see `aiquota/AGENTS.md`). Provider
-enable/disable and API key paths are configured in `~/.config/aiquota/config.toml` (see
-`aiquota/config.py`).
-Pace thresholds, poll interval, and render constants live in `extension.js` as plain
-constants.
+The extension has no HTTP/auth code. The per-user `aiquota-desktop-daemon` owns one
+authenticated event stream and publishes full view-model snapshots over the session
+D-Bus. The CLI can use the same API and cache for one-shot output. The shared
+`aiquota/render/view_model.py` model carries raw quota fields plus derived policy bits
+(`currently_over_plan`, `extra_status`) so policy decisions never diverge between the CLI
+and the extension (see `aiquota/AGENTS.md`). Remote API access is configured in
+`~/.config/aiquota/config.toml` (see `aiquota/config.py`). Pace thresholds and render
+constants live in `extension.js` as plain constants.
 
 ## Implementation notes
 

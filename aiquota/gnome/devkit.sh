@@ -58,14 +58,11 @@ if [[ ! -f "$zip_path" ]]; then
   exit 1
 fi
 
-# The whole point of devkit is to exercise the in-repo aiquota — both the
-# extension *and* the CLI it subprocesses. Resolve the bazel-built py_binary
-# launcher and hand it to the extension via AI_QUOTA_BIN so the spawn doesn't
-# fall back to whatever `aiquota` happens to be on PATH (typically a stale
-# home-manager install of the released wheel).
-aiquota_bin="$(rlocation "_main/aiquota/aiquota")"
-if [[ ! -x "$aiquota_bin" ]]; then
-  echo "ERROR: aiquota py_binary not found in runfiles at $aiquota_bin" >&2
+# Resolve the in-repo desktop daemon so the extension and live API client use
+# this checkout while running inside the isolated D-Bus session.
+aiquota_daemon_bin="$(rlocation "_main/aiquota/desktop_bin")"
+if [[ ! -x "$aiquota_daemon_bin" ]]; then
+  echo "ERROR: aiquota desktop daemon not found in runfiles at $aiquota_daemon_bin" >&2
   exit 1
 fi
 
@@ -125,33 +122,28 @@ export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-1}"
 export MESA_LOADER_DRIVER_OVERRIDE="${MESA_LOADER_DRIVER_OVERRIDE:-llvmpipe}"
 export __NV_DISABLE_EXPLICIT_SYNC="${__NV_DISABLE_EXPLICIT_SYNC:-1}"
 
-# Wrapper around the bazel-built aiquota so the spawned CLI always reads the
-# *real* config.toml regardless of XDG_CONFIG_HOME passthrough. Belt-and-
-# suspenders: export AI_QUOTA_BIN (extension.js's preferred path) and also
-# prepend a $tmpdir/bin/aiquota symlink to PATH so the spawn's default
-# fallback still lands here if env doesn't survive.
-real_aiquota_config="$real_conf/aiquota/config.toml"
-if [[ ! -e "$real_aiquota_config" ]]; then
-  echo "WARN: $real_aiquota_config not found — providers needing config will error" >&2
-fi
-wrapper="$tmpdir/aiquota-wrapper.sh"
-cat >"$wrapper" <<EOF
-#!/usr/bin/env bash
-exec $(printf %q "$aiquota_bin") --config $(printf %q "$real_aiquota_config") "\$@"
-EOF
-chmod +x "$wrapper"
-mkdir -p "$tmpdir/bin"
-ln -sf "$wrapper" "$tmpdir/bin/aiquota"
-export AI_QUOTA_BIN="$wrapper"
-export PATH="$tmpdir/bin:$PATH"
-echo ">> AI_QUOTA_BIN=$AI_QUOTA_BIN"
-
 # --- launch the devkit shell ----------------------------------------------
 echo ">> launching gnome-shell --devkit (Ctrl-C to exit)"
-exec dbus-run-session -- sh -c '
+exec dbus-run-session -- bash -c '
   set -eu
+  daemon_pid=""
+  shell_pid=""
+  cleanup() {
+    trap - EXIT INT TERM
+    if [[ -n "$shell_pid" ]] && kill -0 "$shell_pid" 2>/dev/null; then
+      kill "$shell_pid" 2>/dev/null || true
+    fi
+    if [[ -n "$daemon_pid" ]] && kill -0 "$daemon_pid" 2>/dev/null; then
+      kill "$daemon_pid" 2>/dev/null || true
+    fi
+    if [[ -n "$daemon_pid" ]]; then wait "$daemon_pid" 2>/dev/null || true; fi
+  }
+  trap cleanup EXIT INT TERM
   gsettings set org.gnome.shell disable-user-extensions false
   gsettings set org.gnome.shell enabled-extensions "$1"
+
+  "$2" &
+  daemon_pid=$!
 
   runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
   nested_wayland_name="aiquota-$$"
@@ -163,13 +155,6 @@ exec dbus-run-session -- sh -c '
 
   gnome-shell --devkit --unsafe-mode --wayland --wayland-display="$nested_wayland_name" &
   shell_pid=$!
-  cleanup() {
-    trap - EXIT INT TERM
-    if kill -0 "$shell_pid" 2>/dev/null; then
-      kill "$shell_pid" 2>/dev/null || true
-    fi
-  }
-  trap cleanup EXIT INT TERM
 
   for _ in $(seq 1 300); do
     if [[ -S "$runtime_dir/$nested_wayland_name" ]]; then
@@ -189,4 +174,4 @@ exec dbus-run-session -- sh -c '
 
   echo ">> nested Wayland display is $nested_wayland_name"
   wait "$shell_pid"
-' sh "['aiquota@allegedly.works']"
+' sh "['aiquota@allegedly.works']" "$aiquota_daemon_bin"

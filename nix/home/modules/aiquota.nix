@@ -48,5 +48,26 @@ in
         bearer_token = "${config.sops.placeholder.aiquota_api_bearer}"
       '';
     };
+
+    systemd.user.services.aiquota-remote-api = lib.mkIf cfg.remoteApi.enable {
+      Unit = {
+        Description = "AIQuota live desktop view";
+        After = [
+          "sops-nix.service"
+          "graphical-session.target"
+        ];
+        Requires = [ "sops-nix.service" ];
+        PartOf = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "simple";
+        ExecStart = "${ducktapePackages.aiquota}/bin/aiquota-desktop-daemon";
+        UMask = "0077";
+        NoNewPrivileges = true;
+        Restart = "on-failure";
+        RestartSec = 5;
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    };
   };
 }

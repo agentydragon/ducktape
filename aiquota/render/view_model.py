@@ -4,7 +4,7 @@ The extension and the CLI used to each carry their own copy of policy
 decisions like "is the user currently burning extra spend" — and predictably
 drifted (see aiquota/AGENTS.md). This module is the single source of truth
 for those derived booleans; the GNOME extension consumes them via the
-`aiquota gnome-extension-json` subcommand instead of re-deriving locally.
+desktop daemon's D-Bus view instead of re-deriving locally.
 
 String formatting that depends on a live countdown (reset times, pace,
 forecasts) stays on the extension side so the popup can tick once per

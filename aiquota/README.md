@@ -61,16 +61,18 @@ Do not put the bearer token in browser code or an OAuth session.
 
 ## Local clients
 
-The CLI and GNOME extension can use the same API through
+The CLI and desktop daemon use the same API through
 `~/.config/aiquota/config.toml`. Home Manager materializes that file with the
 bearer token and configures it for `https://aiquota.allegedly.works`; the token
-is not kept in the source tree. Local clients require this configuration file;
-without it they fail instead of enabling the local provider defaults.
+is not kept in the source tree. GNOME receives the daemon's live view over the
+session D-Bus. The daemon starts only when `ducktape.aiquota.remoteApi.enable`
+is set. Local clients require this configuration file; without it they fail
+instead of enabling the local provider defaults.
 
-Remote results use the normal local `~/.cache/aiquota/quotas.json` cache. A fresh
-cache avoids a network request, and an unavailable API falls back to the last
-cached snapshot so the CLI and GNOME panel still show the most recent known
-quotas while offline.
+Remote results use the normal local `~/.cache/aiquota/quotas.json` cache. The
+CLI can use the last cached snapshot while offline, and the desktop daemon
+publishes its cached snapshot to GNOME while reporting that the live stream is
+disconnected.
 
 Responses use `Cache-Control: no-store`. The service keeps the most recent
 snapshot in process memory (default 120 seconds). One background quota collector
