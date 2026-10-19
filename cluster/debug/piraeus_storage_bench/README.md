@@ -12,14 +12,23 @@ RWO volume, not RWX, and this is not an HA or failover-tested result.
 
 ## Results
 
-![Filesystem and Forgejo latency samples with medians](results/overview.svg)
+![HDD canary and historical SeaweedFS SSD latency samples with medians](results/overview.svg)
 
 Dots show all recorded samples; diamonds and the values at right show medians.
-Each panel has its own linear scale. Missing SeaweedFS application results are
-marked explicitly.
+Each panel has its own linear scale. The shaded SeaweedFS SSD row is a historical
+reference from **2026-07-11**; the other rows are the fresh **2026-10-19 HDD** run,
+including its SeaweedFS filesystem control. The failed October SeaweedFS Forgejo
+cell remains marked as missing.
 
-All plotted samples were collected on fresh PVCs during this run, including the
-SeaweedFS filesystem control.
+The historical row reads the preserved
+[`direct-storage-ssd-control.csv`](../results/rook_ceph_forgejo_2026_07_11/direct-storage-ssd-control.csv)
+and [`forgejo-e2e-ssd-control.csv`](../results/rook_ceph_forgejo_2026_07_11/forgejo-e2e-ssd-control.csv),
+selecting only `seaweedfs-ssd`. It has five samples per filesystem operation and 20
+per Forgejo operation. July used **two Forgejo replicas sharing RWX**, while October
+used **one active replica**. Media, dates, and run conditions differ; the July row
+provides historical context. See the [original investigation](../git_storage_latency_and_ha.md).
+
+The tables below contain the October measurements.
 
 The direct workload used five balanced, interleaved rounds per arm. Values below are
 median seconds from [`direct-filesystem.csv`](results/direct-filesystem.csv); each cell
@@ -61,7 +70,7 @@ across XFS, ext4, and FUSE. The Git commit and push workloads do not explicitly 
 local-clone optimizations, so it is not cold-read throughput; `/proc/uptime` also has
 about 10 ms resolution, limiting interpretation of near-zero clone times.
 
-## Setup and comparability
+## October setup and comparability
 
 - The direct benchmark Job and every Forgejo app/client that ran were placed on
   `ovh-ns102453`. The local-path HDD control is same-host storage. The direct workload
@@ -99,9 +108,8 @@ about 10 ms resolution, limiting interpretation of near-zero clone times.
   `sha256:a99352bc5167aba8b58f0de386e777e7fe742bdd573daf82f38986239ff52128`) and the
   same actual app image `15.0.8-rootless` / image ID in every cell. The chart's
   `appVersion` metadata says 15.0.3; the running container image is the recorded 15.0.8.
-  This differs from the older Forgejo measurements in
-  [`../git_storage_latency_and_ha.md`](../git_storage_latency_and_ha.md), so compare
-  only within this fresh run.
+  The historical reference in the figure comes from the separate July deployment
+  described in [`../git_storage_latency_and_ha.md`](../git_storage_latency_and_ha.md).
 - PostgreSQL 18.1 ran as one disposable CNPG instance on `ovh-ns104952`, with a fixed
   5 GiB `local-path-ovh-ssd` volume; each Forgejo cell had a separate database. Valkey
   9.1.2 also stayed on that node with no PVC; `--save ""` and `--appendonly no`
@@ -130,6 +138,7 @@ The plot reads only the committed CSVs. From the repository root in the Nix devs
 ```sh
 bb run //cluster/debug/piraeus_storage_bench:plot_results_bin -- \
   --results-dir "$PWD/cluster/debug/piraeus_storage_bench/results" \
+  --historical-dir "$PWD/cluster/debug/results/rook_ceph_forgejo_2026_07_11" \
   --output "$PWD/cluster/debug/piraeus_storage_bench/results/overview.svg"
 ```
 
