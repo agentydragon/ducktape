@@ -4,7 +4,7 @@ Code quality and architecture issues identified in the adgn codebase.
 
 ## Issues
 
-Issues are documented in individual `.libsonnet` files in the `issues/` directory.
+Issues are documented in individual YAML files in the `issues/` directory.
 
 ## Scope
 
