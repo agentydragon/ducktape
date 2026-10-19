@@ -2,45 +2,7 @@
 # Cluster utility scripts (non-validation).
 # Validators are in //cluster/validation/.
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-
-py_test(
-    name = "test_seaweedfs_master_persistence_prepare",
-    srcs = ["test_seaweedfs_master_persistence_prepare.py"],
-    deps = [
-        ":seaweedfs_master_persistence",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "seaweedfs_master_canary",
-    srcs = ["seaweedfs_master_canary.py"],
-    deps = [
-        "@pypi//boto3",
-        "@pypi//botocore",
-        "@pypi//kubernetes",
-    ],
-)
-
-py_binary(
-    name = "seaweedfs_master_canary_bin",
-    main_module = "cluster.scripts.seaweedfs_master_canary",
-    deps = [":seaweedfs_master_canary"],
-)
-
-py_library(
-    name = "seaweedfs_master_persistence",
-    srcs = ["seaweedfs_master_persistence.py"],
-)
-
-py_binary(
-    name = "seaweedfs_master_persistence_bin",
-    main_module = "cluster.scripts.seaweedfs_master_persistence",
-    deps = [":seaweedfs_master_persistence"],
-)
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 # Verify Authentik authentication works end-to-end
 py_binary(
@@ -69,39 +31,5 @@ py_binary(
     deps = [
         ":nebula_mesh",
         "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_seaweedfs_master_persistence",
-    size = "large",
-    srcs = ["test_seaweedfs_master_persistence.py"],
-    data = [
-        "@seaweed_adminscript_crd//file",
-        "@seaweed_bucket_crd//file",
-        "@seaweed_bucketlifecyclepolicy_crd//file",
-        "@seaweed_operator_role//file",
-        "@seaweed_resourcereferencegrant_crd//file",
-        "@seaweed_s3credentials_crd//file",
-        "@seaweed_s3identity_crd//file",
-        "@seaweed_s3oidcprovider_crd//file",
-        "@seaweed_s3policy_crd//file",
-        "@seaweed_s3policybinding_crd//file",
-        "@seaweed_seaweed_crd//file",
-        "@seaweed_seaweedbackup_crd//file",
-        "@seaweed_seaweedcsidriver_crd//file",
-        "@seaweed_seaweedrestore_crd//file",
-    ],
-    requires_docker = True,
-    deps = [
-        ":seaweedfs_master_persistence",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//boto3",
-        "@pypi//botocore",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@pypi//testcontainers",
     ],
 )

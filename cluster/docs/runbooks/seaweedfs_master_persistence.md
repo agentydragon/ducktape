@@ -24,10 +24,66 @@ requires rebuilding that member from the surviving quorum, not deleting all
 claims. Four GiB is a requested allocation; local-path does not enforce a disk
 quota. Monitor the underlying node filesystem.
 
-## Existing-cluster adoption
+## 2026-10-19 execution record
 
-This is a maintenance plan, not an executed migration. Review the live operator
-version and rehearse the replacement and recovery gates before scheduling it.
+The migration completed at 08:20 UTC on Kubernetes 1.35.1, with SeaweedFS 4.46
+and operator 1.0.39 (chart 0.1.42). Configuration came from PR #11074, commit
+`c532a68f42cf9599c7fb18961e8e096c5eaf2baa`.
+
+| Master | Node            | Claim                                 |
+| ------ | --------------- | ------------------------------------- |
+| 0      | `ovh-ns104963`  | `seaweedfs-master-seaweedfs-master-0` |
+| 1      | `ovh-ns104952`  | `seaweedfs-master-seaweedfs-master-1` |
+| 2      | `ovh-ns1001419` | `seaweedfs-master-seaweedfs-master-2` |
+
+All three claims were Bound, independent 4 GiB `local-path-ovh-ssd` volumes.
+The original TopologyId `44018856-e2c1-48e4-bbda-b26b90bd801e` and MaxVolumeId
+1116 were preserved. Masters 1 and 2 passed same-PVC/PV restart checks, including
+recovery logs and preservation of their existing Raft WAL prefixes. Original
+leader 0 was converted last. With it absent, persistent master 1 became leader
+and baseline S3 reads plus fresh 256 KiB PUT/GET checks passed before recreation.
+After all masters were persistent, current leader 1 was deleted again; master 0
+became leader and the same S3 checks passed before master 1 was recreated on its
+unchanged PVC/PV, preserving its WAL prefix.
+
+The final StatefulSet UID was `6f6920bd-cd3e-4e5c-b0f7-8847740d2b0c`, with
+revision `seaweedfs-master-84b8d5ccf9`. Adoption, operator reconciliation and
+restoration of RollingUpdate preserved the three converted Pod UIDs. Final
+checks found three Ready and updated replicas with zero container restarts.
+The original Helm/Flux suspension fields and operator replica count were
+restored, with reconciled generations and Ready conditions verified. Final S3
+checks passed, the retained baseline object's hash was unchanged, and only the
+migration's disposable canary was deleted, with HEAD returning 404.
+
+Checks ran at maintenance checkpoints, not continuously; the actual request
+interruption duration was not measured. The frozen-process limitation described
+below remains unresolved. Temporary migration/rehearsal code is retained in the
+history of PRs #11086 and #11088 rather than installed as permanent tooling.
+
+### Preparation incident
+
+At 07:23 and 07:24 UTC, raw DELETE requests intended as dry-runs actually deleted
+the original StatefulSet and master 1. The requests put `dryRun=All` in the query
+but supplied nonempty DeleteOptions bodies without `dryRun`. The
+[Kubernetes 1.35.1 handler](https://github.com/kubernetes/kubernetes/blob/v1.35.1/staging/src/k8s.io/apiserver/pkg/endpoints/handlers/delete.go)
+decodes the body instead of the query when a body exists. A raw DELETE dry-run
+must include `"dryRun": ["All"]` in its DeleteOptions body; a query parameter
+alone is insufficient in this case.
+
+The original masters 0 and 2 survived and retained quorum. The operator recreated
+the persistent StatefulSet, whose immutable-volume reconciliation prevented
+recreation of master 1. The controller was changed to OnDelete, master 1 was
+restored with its persistent claim, and original identity and S3 checks passed.
+The controlled migration then paused the owners/operator, orphaned that new
+controller and followed the rehearsed sequence below. This incident is separate
+from the successful disposable rehearsal; no continuous availability measurement
+establishes the absence of user-visible errors during it.
+
+## Existing-cluster adoption procedure
+
+This records the version-specific procedure used for the conversion. It is not
+a procedure to rerun on the already-persistent cluster. Review the live operator
+version and rehearse replacement and recovery before another conversion.
 Enabling persistence adds an immutable StatefulSet claim template: applying the
 Seaweed CR alone cannot convert the existing master StatefulSet.
 
@@ -72,15 +128,14 @@ copy of an active Raft directory.
    from the masters' Raft recovery logs/state. Save the baseline outside
    SeaweedFS. Confirm all three masters, filers and volume servers are healthy
    and no node maintenance or other master rollout is active.
-3. Establish a bounded S3 canary using a dedicated disposable object. The
-   `//cluster/scripts:seaweedfs_master_canary_bin` tool has `start`, `check`, and
-   `finish` phases with the same `--state`, `--secret-namespace`, `--secret-name`,
-   `--endpoint`, `--bucket`, and `--baseline-key` arguments. `start` saves a
-   random 256 KiB payload and its unique object key outside SeaweedFS; each
-   `check` reads it before rewriting, verifies its contents, and verifies the
-   retained baseline object's hash. `finish` checks again and deletes only its
-   own canary. Preserve the state and payload until cleanup. Credentials stay
-   out of logs. A successful HTTP probe alone is not storage acceptance.
+3. Establish a bounded S3 canary using a dedicated disposable object. Save a
+   random 256 KiB payload, its unique object key and a retained baseline object's
+   hash outside SeaweedFS. At each checkpoint, read the canary before rewriting,
+   compare its contents, perform a fresh PUT/GET comparison and verify the
+   baseline hash. At completion, check again, delete only the owned canary and
+   require HEAD to return 404. Preserve the state and payload until cleanup;
+   keep credentials out of logs. A successful HTTP probe alone is not storage
+   acceptance.
 4. Verify `local-path-ovh-ssd` exists with `Delete`,
    `WaitForFirstConsumer` and the OVH/SSD topology, and that three SSD nodes
    have capacity. The class is already owned by Flux `local-path-provisioner`.
@@ -96,14 +151,13 @@ server-assigned metadata/status and preserve the Seaweed controller owner
 reference. Rehearse its creation and subsequent operator reconciliation in an
 isolated cluster before using it here.
 
-The `//cluster/scripts:seaweedfs_master_persistence_bin` tool accepts saved JSON
-snapshots through `--statefulset` and `--seaweed`, writes the proposed final
-controller to `--output`, and writes each member's PVC/Pod pair to
-`--members-output DIR`. It rejects mismatched ownership, existing claim
-templates, unsupported persistence fields and overlapping mounts. Review that
-output against fresh live snapshots before use; generating it does not mutate
-Kubernetes or copy Raft files. The disposable real-Kubernetes rehearsal target is
-`//cluster/scripts:test_seaweedfs_master_persistence`.
+Derive each member's PVC/Pod pair from the reviewed final controller's claim and
+Pod templates. Preserve selector, member hostname, peer subdomain, image, flags
+and placement constraints. Give each member its own claim and omit controller
+ownership and revision labels until final adoption. Reject mismatched Seaweed
+ownership, unexpected existing claims, unsupported persistence fields and
+overlapping mounts. Compare the proposed manifests to fresh live snapshots;
+do not copy another member's Raft files.
 
 The rehearsal runs three master members on one Kubernetes node with independent
 local-path claims. The remote executor lacks kube-proxy's kernel support, so the
