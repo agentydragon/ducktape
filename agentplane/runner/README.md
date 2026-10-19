@@ -50,11 +50,10 @@ same Go process.
 ## Release and image inputs
 
 `package.nix` installs the released executable from the `agentplane-runner` artifact pin.
-Both image workflows build the exact source commit through BuildBuddy and override
-that artifact for the image build. The first Go release must pass the normal artifact
-publication and pin synchronization before a standalone Nix build can use the released
-binary; a previous wheel pin fails the package's ELF check instead of being installed
-as an executable. No existing Session files are deleted during this transition.
+Image builds use this pin through the normal artifact publication and pin synchronization
+flow. The first Go binary release must be published and synced before the images can build;
+a previous wheel pin fails the package's ELF check instead of being installed as an
+executable. No existing Session files are deleted during this transition.
 
 ## VM workspace disk
 

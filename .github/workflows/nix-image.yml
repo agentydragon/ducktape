@@ -31,21 +31,9 @@ on:
         required: false
         type: boolean
         default: false
-      build_runner_binary:
-        description: Build the Agentplane runner from this checkout and override its release pin.
-        required: false
-        type: boolean
-        default: false
-      source_commit:
-        description: Exact checked-out commit to build (defaults to the triggering commit).
-        required: false
-        type: string
-        default: ""
     secrets:
       SOPS_AGE_KEY:
         required: true
-      BUILDBUDDY_API_KEY:
-        required: false
 
 jobs:
   image:
@@ -54,7 +42,6 @@ jobs:
     timeout-minutes: 60
     env:
       IMAGE: ${{ inputs.image }}
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
       - uses: actions/checkout@v7
 
@@ -62,25 +49,8 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: Build current runner binary
-        if: inputs.build_runner_binary
-        id: runner-binary
-        uses: ./.github/actions/build-agentplane-runner
-        with:
-          source_commit: ${{ inputs.source_commit || github.sha }}
-
       - name: Build image
-        env:
-          RUNNER_BINARY: ${{ steps.runner-binary.outputs.binary }}
-        run: |
-          set -euo pipefail
-          if [[ -n "$RUNNER_BINARY" ]]; then
-            ARTIFACT_OVERRIDES="$(jq -cn --arg binary "$RUNNER_BINARY" '{"agentplane-runner": $binary}')"
-            DUCKTAPE_ARTIFACT_OVERRIDES="$ARTIFACT_OVERRIDES" \
-              nix build ".#${{ inputs.attr }}" --impure --print-build-logs
-          else
-            nix build ".#${{ inputs.attr }}" --print-build-logs
-          fi
+        run: nix build ".#${{ inputs.attr }}" --print-build-logs
 
       - name: Smoke test
         if: inputs.smoke != ''

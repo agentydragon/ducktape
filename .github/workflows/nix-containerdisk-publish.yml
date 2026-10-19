@@ -16,11 +16,6 @@ on:
         description: Full Forgejo registry image name, without a tag
         required: true
         type: string
-      build_runner_binary:
-        description: Build the Agentplane runner binary from this checkout before building the guest image
-        required: false
-        type: boolean
-        default: false
       attic:
         description: Cache the built image in Attic on devel
         required: false
@@ -44,8 +39,6 @@ on:
     secrets:
       SOPS_AGE_KEY:
         required: true
-      BUILDBUDDY_API_KEY:
-        required: false
 
 permissions:
   contents: read
@@ -59,8 +52,6 @@ jobs:
     env:
       FLAKE_OUTPUT: ${{ inputs.flake_output }}
       IMAGE: ${{ inputs.image }}
-      IMAGE_NAME: ${{ inputs.image_name }}
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -71,25 +62,8 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: Build runner binary from this checkout
-        if: inputs.build_runner_binary
-        id: runner-binary
-        uses: ./.github/actions/build-agentplane-runner
-        with:
-          source_commit: ${{ inputs.source_commit || github.sha }}
-
       - name: Build containerDisk image
-        env:
-          RUNNER_BINARY: ${{ steps.runner-binary.outputs.binary }}
-        run: |
-          set -euo pipefail
-          if [[ -n "$RUNNER_BINARY" ]]; then
-            ARTIFACT_OVERRIDES="$(jq -cn --arg binary "$RUNNER_BINARY" '{"agentplane-runner": $binary}')"
-            DUCKTAPE_ARTIFACT_OVERRIDES="$ARTIFACT_OVERRIDES" \
-              nix build ".#$FLAKE_OUTPUT" --impure --print-build-logs
-          else
-            nix build ".#$FLAKE_OUTPUT" --print-build-logs
-          fi
+        run: nix build ".#$FLAKE_OUTPUT" --print-build-logs
 
       - name: Push to Attic
         if: inputs.attic && github.event_name != 'pull_request_target' && github.ref_name == 'devel'
@@ -103,31 +77,6 @@ jobs:
         shell: bash
         run: |
           echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
-
-      - name: Prepare non-deployable prototype image artifact
-        if: inputs.build_runner_binary && (github.event_name == 'pull_request_target' || github.ref_name != 'devel')
-        shell: bash
-        run: |
-          set -euo pipefail
-          archive="$RUNNER_TEMP/$IMAGE_NAME.tar"
-          cp -L result "$archive"
-          sha256sum "$archive" > "$archive.sha256"
-          {
-            echo "### Prototype image artifact"
-            echo "Feature branch image is retained as a workflow artifact and was not pushed to the registry."
-            echo "SHA-256: \`$(cut -d ' ' -f 1 "$archive.sha256")\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload non-deployable prototype image artifact
-        if: inputs.build_runner_binary && (github.event_name == 'pull_request_target' || github.ref_name != 'devel')
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ inputs.image_name }}-${{ inputs.source_commit || github.sha }}
-          path: |
-            ${{ runner.temp }}/${{ inputs.image_name }}.tar
-            ${{ runner.temp }}/${{ inputs.image_name }}.tar.sha256
-          if-no-files-found: error
-          retention-days: 14
 
       # Keep feature-branch/manual runs from publishing a tag that Flux would
       # consider deployable. workflow_dispatch on devel remains useful for a

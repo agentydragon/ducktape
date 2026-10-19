@@ -6,15 +6,11 @@ on:
   push:
     branches: [devel]
     paths:
-      - ".github/actions/build-agentplane-runner/action.yml"
-      - "agentplane/runner/BUILD.bazel"
-      - "agentplane/runner/go/**"
       - "agentplane/runner/image.nix"
-      - "agentplane/runner/package.nix"
       - "agentplane/images/sandbox.nix"
       - "nix/lib/nix-ld-image.nix"
-      # The runner change also reaches the image from the exact Go source below; the pin moves
-      # separately when the release workflow publishes the binary.
+      # The runner arrives as a released executable, so a runner change reaches the image when its
+      # pin moves.
       - "nix/artifact-pins.json"
       - "flake.lock"
       - "nix/flake/packages.nix"
@@ -32,18 +28,14 @@ on:
   pull_request:
     paths:
       # keep-sorted start
-      - ".github/actions/build-agentplane-runner/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-image.yml"
       - ".github/workflows/nix-image.yml"
       - ".pre-commit-config.yaml"
       - "agentplane/images/sandbox.nix"
-      - "agentplane/runner/BUILD.bazel"
       - "agentplane/runner/ducktape_image_smoke.sh"
       - "agentplane/runner/ducktape_tools_check.nix"
-      - "agentplane/runner/go/**"
       - "agentplane/runner/image.nix"
-      - "agentplane/runner/package.nix"
       - "flake.lock"
       - "flake.nix"
       - "nix/artifact-pins.json"
@@ -54,11 +46,6 @@ on:
       - "ruff.toml"
       # keep-sorted end
   workflow_dispatch:
-    inputs:
-      build_runner_binary:
-        description: Build the runner binary from this checkout instead of the release pin
-        type: boolean
-        default: false
 
 concurrency:
   group: runner-image-${{ github.ref }}
@@ -78,11 +65,8 @@ jobs:
       image: git.allegedly.works/ducktape-ci/${{ matrix.variant }}
       registry: forgejo
       attic: true
-      build_runner_binary: ${{ github.event_name != 'workflow_dispatch' || inputs.build_runner_binary }}
-      source_commit: ${{ github.sha }}
       # Starts each executable the runner SandboxTemplate names, once, as the image's own user.
       # Nothing here runs a turn: that is //agentplane/acceptance, run by hand after a bump.
       smoke: bash agentplane/runner/ducktape_image_smoke.sh "${{ matrix.variant }}"
     secrets:
       SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
