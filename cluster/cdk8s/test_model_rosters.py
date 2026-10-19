@@ -125,6 +125,7 @@ def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
 def test_antigravity_google_routes_are_served_and_selected_for_both_harnesses() -> None:
     routes = (ANTIGRAVITY_GEMINI_FLASH, ANTIGRAVITY_GEMINI_FLASH_LITE)
     assert [route.model.id for route in routes] == ["gemini-3-flash", "gemini-3.5-flash-lite"]
+    assert all(route.reasoning_efforts == ("minimal", "low", "medium", "high") for route in routes)
     assert all(route in ANTIGRAVITY_ROUTES for route in routes)
     assert all(route in STAGING_APP_MODELS.claude and route in STAGING_APP_MODELS.codex for route in routes)
     assert all(route in KEY_MODEL_LANES["antigravity_client_models"].allowed for route in routes)

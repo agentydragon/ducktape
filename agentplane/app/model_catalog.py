@@ -15,7 +15,9 @@ class ModelOption(BaseModel):
     model: str = Field(description="The route name a session opens with; opaque to the operator.")
     display_name: str = Field(description='Short human name for the session form, e.g. "Sonnet 5".')
     reasoning_efforts: list[str] = Field(
-        description="Reasoning effort values supported by this model; empty means unsupported."
+        description=(
+            "Reasoning effort values exposed for this model across its configured harnesses; empty means unsupported."
+        )
     )
 
 

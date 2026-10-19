@@ -281,6 +281,9 @@ def test_claude_picker_offers_environment_models_and_keeps_ingress(
         assert all(
             options[route.id]["display_name"].endswith(" — Google Antigravity") for route in STAGING_APP_MODELS.claude
         )
+        assert all(
+            options[route.id]["reasoning_efforts"] == ["low", "medium", "high"] for route in STAGING_APP_MODELS.claude
+        )
     assert all(preset["harness"] == "HARNESS_CODEX" for preset in config["thread_presets"].values())
     # The Anthropic Messages endpoint remains available to Claude sessions.
     assert any(doc["kind"] == "Service" and doc["metadata"]["name"] == "llm-ingress" for doc in docs)

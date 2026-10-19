@@ -244,6 +244,7 @@ class RouteAlias:
 
 _ANTHROPIC_EFFORTS = ("low", "medium", "high", "max")
 _CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
+_ANTIGRAVITY_GEMINI_EFFORTS = ("minimal", "low", "medium", "high")
 
 # ChatGPT/Codex-subscription models behind CLIProxyAPI, exposed on both wire surfaces
 # for clients that need them. OpenClaw uses the Responses surface below because it is
@@ -668,6 +669,7 @@ ANTIGRAVITY_GEMINI_FLASH = Route(
     ),
     ANTIGRAVITY_MESSAGES,
     publish_limits=True,
+    reasoning_efforts=_ANTIGRAVITY_GEMINI_EFFORTS,
 )
 ANTIGRAVITY_GEMINI_FLASH_LITE = Route(
     Model(
@@ -678,6 +680,7 @@ ANTIGRAVITY_GEMINI_FLASH_LITE = Route(
     ),
     ANTIGRAVITY_MESSAGES,
     publish_limits=True,
+    reasoning_efforts=_ANTIGRAVITY_GEMINI_EFFORTS,
 )
 # Re-enable `gemini-pro-agent` and `gemini-3.1-pro-low` only after the pinned
 # CLIProxyAPI model registry registers those exact Antigravity IDs again and the
