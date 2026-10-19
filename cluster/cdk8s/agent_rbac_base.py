@@ -225,7 +225,7 @@ def _add_cluster_roles(chart: Chart) -> None:
             "prometheusrules",
         ),
         _read("gateway.networking.k8s.io", "gateways", "httproutes", "tlsroutes", "grpcroutes"),
-        _read("postgresql.cnpg.io", "clusters"),
+        _read("postgresql.cnpg.io", "clusters", "backups"),
         _read("infra.contrib.fluxcd.io", "terraforms"),
         _read("image.toolkit.fluxcd.io", "imagepolicies", "imagerepositories", "imageupdateautomations"),
         _read("notification.toolkit.fluxcd.io", "receivers", "alerts", "providers"),

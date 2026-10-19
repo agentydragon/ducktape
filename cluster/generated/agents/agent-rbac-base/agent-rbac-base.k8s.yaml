@@ -382,6 +382,7 @@ rules:
       - postgresql.cnpg.io
     resources:
       - clusters
+      - backups
     verbs:
       - get
       - list
