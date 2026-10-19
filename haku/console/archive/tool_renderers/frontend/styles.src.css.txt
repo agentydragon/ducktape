@@ -1,0 +1,1173 @@
+@import "tailwindcss";
+@import "@mantine/core/styles.css";
+@import "@mantine/notifications/styles.css";
+/* Tailwind v4 scans the class names listed in this generated index (see BUILD:
+   tailwind_content_index) so utility classes used in the .tsx survive the build. */
+@source "./tailwind_content.txt";
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+    --haku-page-bg: #fbfaf6;
+    --haku-panel-bg: #fffdf8;
+    --haku-border: #d8d0df;
+    /* Neutral gray code surface (matches the neutral dark-mode code bg below), not a tint. */
+    --haku-code-bg: var(--mantine-color-gray-1);
+    --haku-code-fg: var(--mantine-color-gray-9);
+    /* JSON syntax-highlight hues — muted so a code block reads as structured data, not a rainbow. */
+    --haku-json-key: #1971c2;
+    --haku-json-string: #2f9e44;
+    --haku-json-number: #e8590c;
+    --haku-json-literal: #9c36b5;
+    /* Muted comment hue for the shell grammar (hostexec `cmd`), separate from the JSON hues. */
+    --haku-code-comment: var(--mantine-color-gray-6);
+    --haku-backdrop: rgb(21 74 70 / 55%);
+    --haku-shell-shadow: rgb(36 31 43 / 20%);
+    --haku-shell-muted-bg: #f4f0f7;
+    --haku-shell-active-bg: #e7f4ef;
+  }
+  :root[data-mantine-color-scheme="dark"] {
+    /* Follow Mantine's neutral dark surfaces, as used by the location popover. The
+       shell used to tint every page and card dark green, which made this chrome
+       feel unrelated to both that popover and Haku's lavender/cream mark. */
+    --haku-page-bg: var(--mantine-color-dark-8);
+    --haku-panel-bg: var(--mantine-color-dark-7);
+    --haku-border: var(--mantine-color-dark-4);
+    --haku-code-bg: var(--mantine-color-dark-6);
+    --haku-code-fg: var(--mantine-color-gray-1);
+    --haku-backdrop: rgb(0 0 0 / 68%);
+    --haku-shell-shadow: rgb(0 0 0 / 45%);
+    --haku-shell-muted-bg: var(--mantine-color-dark-6);
+    --haku-shell-active-bg: var(--mantine-color-dark-5);
+    /* Lighter JSON hues for the dark code surface. */
+    --haku-json-key: #74c0fc;
+    --haku-json-string: #8ce99a;
+    --haku-json-number: #ffc078;
+    --haku-json-literal: #eebefa;
+    --haku-code-comment: var(--mantine-color-gray-5);
+  }
+  body {
+    margin: 0;
+    background: var(--haku-page-bg);
+    color: var(--mantine-color-text);
+  }
+}
+
+.haku-approval-embed {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--haku-page-bg);
+  color: var(--mantine-color-text);
+}
+
+.haku-approval-embed-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+}
+
+.haku-approval-embed-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.85rem;
+}
+
+.haku-approval-embed-list {
+  width: min(32rem, 100%);
+  margin: 0 auto;
+}
+
+/* Rendered item markdown (marked → sanitized HTML). Tailwind's typography plugin
+   isn't vendored, so the prose elements are styled explicitly here; the container
+   carries the `md` class (the inner tags come from dangerouslySetInnerHTML, which
+   Tailwind can't scan). */
+.md {
+  overflow-wrap: break-word;
+}
+.md p {
+  margin: 0.5rem 0;
+}
+.md ul,
+.md ol {
+  margin: 0.4rem 0;
+  padding-left: 1.3rem;
+}
+.md li {
+  margin: 0.2rem 0;
+}
+.md code {
+  background: var(--haku-code-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+.md a {
+  color: var(--mantine-color-anchor);
+  overflow-wrap: anywhere;
+}
+.md pre {
+  margin: 0.5rem 0;
+  overflow: auto;
+  border-radius: 4px;
+  background: var(--haku-code-bg);
+  padding: 0.65rem;
+}
+.md pre code {
+  background: transparent;
+  padding: 0;
+  white-space: pre;
+}
+.md blockquote {
+  margin: 0.5rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--haku-border);
+  color: var(--mantine-color-dimmed);
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.haku-confirm-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(32rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  margin: 0;
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+  color: var(--mantine-color-text);
+}
+
+.haku-confirm-dialog::backdrop {
+  background: var(--haku-backdrop);
+}
+
+.haku-url-preview {
+  border: 1px solid var(--haku-border);
+  background: var(--haku-code-bg);
+  color: var(--haku-code-fg);
+}
+
+.haku-console-shell {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  background: var(--haku-page-bg);
+}
+
+.haku-shell-rail {
+  position: relative;
+  grid-column: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 6px;
+  border-right: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+}
+
+.haku-shell-rail-top,
+.haku-shell-rail-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.haku-shell-rail-divider {
+  width: 32px;
+  margin: 3px 0;
+  border-top: 1px solid var(--haku-border);
+}
+
+.haku-shell-content {
+  position: relative;
+  grid-column: 2;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.haku-ui-frame {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.haku-ui-frame-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.haku-shell-drawer {
+  position: fixed;
+  top: 8px;
+  bottom: 8px;
+  left: 64px;
+  min-height: 0;
+  display: flex;
+  pointer-events: auto;
+}
+
+/* Shared with standalone tool-preview screenshots so cards render at the real drawer width. */
+.haku-shell-panels {
+  width: min(32rem, calc(100vw - 72px));
+}
+
+.haku-shell-approvals {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.haku-shell-indicator-popover {
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 8px;
+  width: min(22rem, calc(100vw - 72px));
+  pointer-events: auto;
+}
+
+/* Console-owned pages occupy the same content cell as the persistent iframe. */
+.haku-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--haku-page-bg);
+  color: var(--mantine-color-text);
+}
+
+.haku-page-header {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+}
+
+.haku-page-bar,
+.haku-page-list {
+  width: 100%;
+  max-width: 56rem;
+  margin: 0 auto;
+}
+
+.haku-page-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+}
+
+.haku-page-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.haku-page-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.haku-settings-tabs-list {
+  width: 100%;
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.haku-settings-tabs-list::-webkit-scrollbar {
+  display: none;
+}
+
+.haku-settings-tabs-list [role="tab"] {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.haku-settings-tab-short {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .haku-settings-tabs-list {
+    justify-content: space-between;
+  }
+
+  .haku-settings-tabs-list [role="tab"] {
+    padding-inline: 0.45rem;
+    font-size: var(--mantine-font-size-xs);
+  }
+
+  .haku-settings-tab-long {
+    display: none;
+  }
+
+  .haku-settings-tab-short {
+    display: inline;
+  }
+}
+
+/* Full-page cards sit on a solid page background, not floating over the iframe like the
+   approvals panel's — so drop the panel's lift shadow and let the border alone delineate them. */
+.haku-page .haku-shell-card {
+  box-shadow: none;
+}
+
+.haku-conversation-list-item {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--haku-border);
+  padding: 0.65rem 0.75rem;
+  background: var(--haku-panel-bg);
+  color: var(--mantine-color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.haku-conversation-list {
+  gap: 0;
+  padding-top: 0.25rem;
+}
+
+.haku-conversation-list-item:hover,
+.haku-conversation-list-item:focus-visible {
+  outline: none;
+  background: var(--haku-shell-active-bg);
+}
+
+.haku-conversation-list-item-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.haku-conversation-preview {
+  min-width: 0;
+  margin: 0.5rem 0;
+}
+
+.haku-conversation-preview-text {
+  min-width: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.haku-conversation-open {
+  white-space: nowrap;
+}
+
+/* The Conversations list header launcher: the harness picker beside the new-conversation icon.
+   Fixed width on desktop; the max-width:768px block below stacks the launcher under the title and
+   lets the picker flex to fill the row, so the action stays on-screen on a narrow phone. */
+.haku-conversation-launcher-select {
+  width: 260px;
+}
+
+.haku-conversation-detail-header {
+  align-items: flex-start;
+}
+
+.haku-conversation-detail-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.haku-conversation-detail-actions-mobile {
+  display: none;
+}
+
+.haku-conversation-detail-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.haku-conversation-transcript-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* A turn boundary spans the transcript column, unlike the messages it separates. */
+.haku-conversation-turn-boundary {
+  align-self: stretch;
+}
+
+/* Bootstrap narration is about the session rather than said by either party in it, so it spans
+   the column instead of taking a side the way a message does. */
+.haku-conversation-narration {
+  align-self: stretch;
+  background: var(--haku-panel-bg);
+}
+
+/* A session with nothing but narration is not a chat log growing up from the bottom — it is a
+   page with one thing on it. Undo the transcript's bottom-anchoring (`> :first-child` below)
+   for that case only, or a provisioning session shows a screenful of blank above its own
+   progress. With a transcript underneath, the anchoring is still right and stays. */
+.haku-conversation-messages > .haku-conversation-narration:only-child {
+  margin-top: 0;
+}
+
+/* Every line is kept (a repeat is not a replay), so the log scrolls within a bounded height
+   rather than pushing the transcript off the page. Wrapping is `anywhere` because a setup line
+   is often one long unbroken path or URL, which would otherwise scroll the page sideways. */
+.haku-conversation-narration-log {
+  max-height: 18rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.haku-conversation-messages {
+  min-height: 100%;
+}
+
+.haku-conversation-messages > :first-child {
+  margin-top: auto;
+}
+
+/* The operator's prompt, as a messenger-style bubble on the right; its text stays left-aligned. */
+.haku-conversation-prompt {
+  align-self: flex-end;
+  max-width: min(80%, 40rem);
+  background: var(--haku-shell-active-bg);
+  border-radius: 14px 14px 4px 14px;
+  padding: 0.45rem 0.85rem;
+}
+
+.haku-conversation-queued-prompt {
+  align-self: flex-end;
+  max-width: min(80%, 40rem);
+  border: 1px dashed color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 14px 14px 4px 14px;
+  padding: 0.45rem 0.85rem;
+}
+
+/* The agent's prose sits flush left with no chrome of its own — the transcript is mostly this,
+ * so it gets the page rather than a card on it. */
+.haku-conversation-assistant {
+  align-self: flex-start;
+  width: min(100%, 46rem);
+}
+
+.haku-conversation-thinking {
+  align-self: flex-start;
+  width: min(100%, 46rem);
+}
+
+/* The session waking itself: a margin note between exchanges, not anyone speaking. */
+.haku-conversation-wake {
+  align-self: flex-start;
+  width: min(100%, 46rem);
+}
+
+/* No card of its own: while folded a call is one plain line, so consecutive calls read as a run of
+ * working notes rather than a stack of boxes. The negative margins pull adjacent working lines
+ * back through the list's gap. */
+.haku-conversation-tool-call {
+  align-self: flex-start;
+  width: min(100%, 46rem);
+}
+
+.haku-conversation-tool-call + .haku-conversation-tool-call,
+.haku-conversation-thinking + .haku-conversation-tool-call,
+.haku-conversation-tool-call + .haku-conversation-thinking {
+  margin-top: -0.55rem;
+}
+
+.haku-conversation-tool-call-name {
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.haku-conversation-tool-call-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.haku-conversation-tool-call-summary::-webkit-details-marker {
+  display: none;
+}
+
+.haku-conversation-tool-call-summary::before {
+  content: "▸";
+  color: var(--mantine-color-dimmed);
+  flex: 0 0 auto;
+}
+
+.haku-conversation-tool-call[open] > .haku-conversation-tool-call-summary::before {
+  content: "▾";
+}
+
+/* One line while folded: the snippet takes what the status marker leaves and ellipsizes. */
+.haku-conversation-tool-call-snippet {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Code identifies itself as code — a command, a path, a pattern — while a prose description reads
+ * as prose. */
+.haku-conversation-tool-call-snippet-mono {
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.haku-conversation-tool-call-status,
+.haku-tool-call-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.haku-conversation-tool-call-status svg,
+.haku-tool-call-status svg {
+  display: block;
+}
+
+/* Expanded content indents under the chevron so it visibly belongs to its line, since there is no
+ * box to group it. */
+.haku-conversation-tool-call-body {
+  margin-top: 0.5rem;
+  margin-left: 0.35rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--haku-border);
+}
+
+.haku-conversation-markdown {
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.45;
+}
+
+.haku-conversation-markdown h1,
+.haku-conversation-markdown h2,
+.haku-conversation-markdown h3,
+.haku-conversation-markdown h4,
+.haku-conversation-markdown h5,
+.haku-conversation-markdown h6 {
+  margin: 0.65rem 0 0.35rem;
+  font-size: 1em;
+  line-height: 1.35;
+}
+
+.haku-conversation-composer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+}
+
+.haku-conversation-composer-inner {
+  width: 100%;
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0.75rem 1rem;
+}
+
+@media (max-width: 600px) {
+  .haku-conversation-detail-header {
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .haku-conversation-detail-header > :first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .haku-conversation-detail-meta,
+  .haku-conversation-detail-actions-desktop {
+    display: none;
+  }
+
+  .haku-conversation-detail-actions-mobile {
+    display: block;
+  }
+
+  .haku-conversation-detail-actions {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+  }
+
+  .haku-conversation-detail-header h1 {
+    font-size: clamp(1.75rem, 9vw, 2.5rem);
+    line-height: 1.15;
+  }
+
+  .haku-conversation-prompt {
+    max-width: 92%;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Below tablet width let the picker flex to fill the row while keeping the new-conversation
+     action reachable without horizontal scroll. */
+  .haku-conversation-list-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .haku-conversation-launcher {
+    width: 100%;
+  }
+
+  .haku-conversation-launcher-select {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .haku-conversation-launcher > button {
+    flex: 0 0 auto;
+  }
+}
+
+.haku-shell-header {
+  flex: 0 0 auto;
+}
+
+.haku-shell-panel-nav {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.haku-shell-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.1rem 0.15rem 0.75rem 0.1rem;
+}
+
+.haku-shell-card {
+  border: 1px solid var(--haku-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--haku-panel-bg) 88%, var(--haku-shell-muted-bg));
+  box-shadow: 0 10px 32px var(--haku-shell-shadow);
+  padding: 0.75rem;
+}
+
+.haku-empty-state {
+  border-block: 1px solid var(--haku-border);
+  padding: 0.75rem;
+  background: var(--haku-panel-bg);
+}
+
+/* Tool calls are the audit stream's rows. Their payloads can still expand below the summary, but
+   the call itself should not look like a dashboard card nested inside another dashboard card. */
+.haku-tool-call {
+  border-block: 1px solid var(--haku-border);
+  padding: 0.7rem 0;
+  background: var(--haku-panel-bg);
+}
+
+.haku-tool-call-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.haku-tool-call-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.haku-tool-call-summary-actions {
+  flex: 0 0 auto;
+}
+
+.haku-mcp-server-name,
+.haku-mcp-server-name-text {
+  min-width: 0;
+}
+
+.haku-status-dot {
+  display: block;
+  flex: 0 0 auto;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--haku-panel-bg);
+}
+
+.haku-status-dot[data-color="teal"] {
+  background: var(--mantine-color-teal-5);
+}
+
+.haku-status-dot[data-color="red"] {
+  background: var(--mantine-color-red-5);
+}
+
+.haku-status-dot[data-color="orange"] {
+  background: var(--mantine-color-orange-5);
+}
+
+.haku-status-dot[data-color="gray"] {
+  background: var(--mantine-color-gray-5);
+}
+
+.haku-status-dot[data-color="blue"] {
+  background: var(--mantine-color-blue-5);
+}
+
+.haku-status-dot[data-color="yellow"] {
+  background: var(--mantine-color-yellow-5);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .haku-status-dot[data-status="busy"] {
+    animation: haku-status-dot-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes haku-status-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+
+/* Provisioning is a live resource read, so its useful shape is a compact status table. The age
+   marker only appears when the read is old enough to question, rather than spending a column on
+   a timestamp that is normally fresh. */
+.haku-provisioning {
+  width: min(100%, 46rem);
+  border-block: 1px solid var(--haku-border);
+  padding: 0.7rem 0;
+  background: var(--haku-panel-bg);
+}
+
+.haku-provisioning-header {
+  min-width: 0;
+}
+
+.haku-provisioning-header > .mantine-Group-root:first-child {
+  min-width: 0;
+}
+
+.haku-provisioning-step {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.haku-provisioning-stale {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.haku-provisioning-table {
+  margin-top: 0.5rem;
+  table-layout: fixed;
+}
+
+.haku-provisioning-table th {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.haku-provisioning-table th:first-child {
+  width: 9rem;
+}
+
+.haku-provisioning-table th:nth-child(2) {
+  width: 7.5rem;
+}
+
+.haku-provisioning-table td {
+  min-width: 0;
+  padding-block: 0.45rem;
+  overflow-wrap: anywhere;
+}
+
+.haku-provisioning-status {
+  white-space: nowrap;
+}
+
+.haku-provisioning-detail,
+.haku-provisioning-name,
+.haku-provisioning-detail-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.haku-provisioning-note {
+  margin-top: 0.45rem;
+  overflow-wrap: anywhere;
+}
+
+/* Inventory surfaces are rows, not a stack of miniature cards. Mantine owns the table semantics;
+   these rules only give it Haku's compact rhythm and a readable mobile collapse. */
+.haku-dense-table-wrap {
+  width: 100%;
+  border-block: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+}
+
+.haku-dense-table {
+  min-width: 40rem;
+}
+
+.haku-dense-table thead th {
+  min-height: 2rem;
+  color: var(--mantine-color-dimmed);
+  background: var(--haku-shell-muted-bg);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.haku-dense-table tbody td {
+  min-width: 0;
+  padding-block: 0.65rem;
+  overflow-wrap: anywhere;
+}
+
+.haku-dense-table .haku-dense-primary {
+  min-width: 10rem;
+}
+
+.haku-dense-table .haku-dense-secondary {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+}
+
+.haku-dense-table .haku-dense-status {
+  min-width: 10rem;
+  white-space: nowrap;
+}
+
+.haku-dense-table .haku-dense-status .mantine-Badge-root {
+  flex-shrink: 0;
+}
+
+.haku-dense-table .haku-dense-action {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.haku-dense-table .haku-dense-action > * {
+  margin-left: auto;
+}
+
+@media (max-width: 700px) {
+  .haku-dense-table {
+    min-width: 0;
+  }
+
+  .haku-dense-table thead {
+    display: none;
+  }
+
+  .haku-dense-table,
+  .haku-dense-table tbody,
+  .haku-dense-table tr,
+  .haku-dense-table td {
+    display: block;
+  }
+
+  .haku-dense-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "primary primary"
+      "secondary secondary"
+      "extra extra"
+      "status action";
+    gap: 0.2rem 0.75rem;
+    padding: 0.65rem 0.75rem;
+    border-top: 1px solid var(--haku-border);
+  }
+
+  .haku-dense-table tbody tr:first-child {
+    border-top: 0;
+  }
+
+  .haku-dense-table tbody td {
+    padding: 0;
+    border: 0;
+  }
+
+  .haku-dense-table td[data-slot="primary"] {
+    grid-area: primary;
+  }
+
+  .haku-dense-table td[data-slot="status"] {
+    grid-area: status;
+  }
+
+  .haku-dense-table .haku-dense-status {
+    min-width: 0;
+  }
+
+  .haku-dense-table td[data-slot="secondary"] {
+    grid-area: secondary;
+  }
+
+  .haku-dense-table td[data-slot="action"] {
+    grid-area: action;
+  }
+
+  .haku-dense-table td[data-slot="extra"] {
+    grid-area: extra;
+  }
+
+  .haku-dense-table tr.haku-session-row-termination-pending {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "primary"
+      "secondary"
+      "status"
+      "action";
+  }
+
+  .haku-dense-table tr.haku-session-row-termination-pending td[data-slot="action"] {
+    text-align: left;
+  }
+
+  .haku-dense-table tr.haku-session-row-termination-pending .haku-dense-action > * {
+    margin-left: 0;
+  }
+
+  .haku-provisioning-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .haku-provisioning-header > .mantine-Group-root:first-child {
+    flex: 1 1 100%;
+  }
+
+  .haku-provisioning-table thead {
+    display: none;
+  }
+
+  .haku-provisioning-table,
+  .haku-provisioning-table tbody,
+  .haku-provisioning-table tr,
+  .haku-provisioning-table td {
+    display: block;
+  }
+
+  .haku-provisioning-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "resource status"
+      "detail detail";
+    gap: 0.2rem 0.75rem;
+    padding-block: 0.45rem;
+    border-top: 1px solid var(--haku-border);
+  }
+
+  .haku-provisioning-table tbody tr:first-child {
+    border-top: 0;
+  }
+
+  .haku-provisioning-table td {
+    padding: 0;
+    border: 0;
+  }
+
+  .haku-provisioning-resource {
+    grid-area: resource;
+  }
+
+  .haku-provisioning-status {
+    grid-area: status;
+  }
+
+  .haku-provisioning-detail {
+    grid-area: detail;
+  }
+}
+
+/* The card's identity header: title + action line + rationale/error subheads. The status marker
+   and Brief/Full selector float top-right (`haku-card-head-actions`) so the text wraps under them
+   on the first line(s) and reclaims the full card width below, rather than every line being
+   narrowed to leave the badge's column empty. `flow-root` contains the float within the header. */
+.haku-card-head {
+  display: flow-root;
+}
+
+.haku-card-head-actions {
+  float: right;
+  margin-left: var(--mantine-spacing-sm);
+  margin-bottom: 0.35rem;
+}
+
+/* The tight vertical rhythm the flex Stack used to give the stacked text lines (the float is the
+   first child, so the title — the first non-float line — takes no top margin). */
+.haku-card-head > :not(.haku-card-head-actions) + :not(.haku-card-head-actions) {
+  margin-top: 2px;
+}
+
+.haku-shell-countdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.45rem;
+}
+
+.haku-shell-countdown-track {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mantine-color-dimmed) 24%, transparent);
+}
+
+.haku-shell-countdown-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--mantine-color-teal-5);
+  transition: width 200ms linear;
+}
+
+.haku-shell-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.haku-shell-field {
+  min-width: 0;
+}
+
+.haku-shell-field-label {
+  display: block;
+  margin: 0 0 0.18rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--mantine-color-dimmed);
+  text-transform: uppercase;
+}
+
+/* Inline (icon) form: the icon stands in for the label on the value's own line. */
+.haku-shell-field-inline {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.haku-shell-field-icon {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 0.1rem;
+  color: var(--mantine-color-dimmed);
+  display: inline-flex;
+}
+
+.haku-shell-field-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.haku-shell-mono,
+.haku-shell-disclosure code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.82rem;
+}
+
+/* CodeBlock's CodeMirror wrapper. The `.cm-editor` inside carries the border/bg/radius
+   (code_block.tsx's HAKU_THEME); the json/yaml token hues come from the --haku-json-* vars via
+   CodeMirror's HighlightStyle. */
+.haku-codeblock {
+  margin: 0;
+}
+
+/* Stands in for a code block whose editor has not been built yet (code_block.tsx): the same
+   chrome, holding the space the editor will take, so scrolling into it is not a layout jump. */
+.haku-codeblock-placeholder {
+  background-color: var(--haku-code-bg);
+  border: 1px solid var(--haku-border);
+  border-radius: 6px;
+}
+
+.haku-shell-disclosure {
+  border-top: 1px solid var(--haku-border);
+  padding-top: 0.55rem;
+}
+
+.haku-shell-disclosure summary {
+  cursor: pointer;
+  color: var(--mantine-color-dimmed);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* Fields revealed under a disclosure (e.g. the Metadata block) need room below the summary. */
+.haku-shell-disclosure-body {
+  margin-top: 0.55rem;
+}
+
+@media (max-width: 520px) {
+  .haku-shell-rail {
+    top: 4px;
+  }
+  .haku-shell-drawer {
+    top: 4px;
+    right: 4px;
+    bottom: 4px;
+    left: 60px;
+    width: auto;
+  }
+  .haku-shell-indicator-popover {
+    left: calc(100% + 4px);
+    width: calc(100vw - 64px);
+  }
+}

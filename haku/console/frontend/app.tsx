@@ -2,22 +2,19 @@ import { Loader, Text } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
 import { type ConfigResponse, displayableError, fetchConfig } from "./client";
-import { AgentNamesProvider } from "./agent_names";
 import { HakuUiEmbed } from "./haku_ui_embed";
-import { ApprovalsEmbedPage } from "./approvals_embed_page";
 import { useConsoleView } from "./routing";
 
 // The trusted outer shell: a full-page frame for Haku's own UI (a sandboxed cross-origin iframe)
 // plus the Agent UI bridge that brokers the iframe's privileged requests (opening links, launching a run).
 // Product chrome lives in haku-ui; only the trusted confirm + capability firing are here.
-// Console-owned read surfaces have their own routes (routing.ts). See README + docs/containment.md.
+// Settings has a console-owned route (routing.ts). See README + docs/containment.md.
 export default function App(): JSX.Element {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { view, toolCallId, navigate } = useConsoleView();
+  const { view, navigate } = useConsoleView();
 
   useEffect(() => {
-    if (view === "approvalsEmbed") return;
     let alive = true;
     fetchConfig()
       .then((c) => {
@@ -30,13 +27,6 @@ export default function App(): JSX.Element {
       alive = false;
     };
   }, [view]);
-
-  if (view === "approvalsEmbed")
-    return (
-      <AgentNamesProvider>
-        <ApprovalsEmbedPage />
-      </AgentNamesProvider>
-    );
 
   // The initial config load is the one thing rendered by the shell itself; a failure
   // leaves nothing to frame, so it gets a persistent page-level message — except while the
@@ -57,14 +47,11 @@ export default function App(): JSX.Element {
   // launch_routine_url is set iff the launch capability is configured (it's the routine's
   // page URL); pass that as whether the shell can honor a requestLaunch from the iframe.
   return (
-    <AgentNamesProvider>
-      <HakuUiEmbed
-        uiUrl={config.haku_ui_url}
-        launchAvailable={config.launch_routine_url != null}
-        view={view}
-        toolCallId={toolCallId}
-        onNavigate={navigate}
-      />
-    </AgentNamesProvider>
+    <HakuUiEmbed
+      uiUrl={config.haku_ui_url}
+      launchAvailable={config.launch_routine_url != null}
+      view={view}
+      onNavigate={navigate}
+    />
   );
 }

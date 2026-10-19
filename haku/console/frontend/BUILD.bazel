@@ -3,12 +3,10 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
-load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
-load("//util:data_uri.bzl", "data_uri_module")
 load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 load(":vitest.bzl", "haku_vitest_test")
 
@@ -29,52 +27,6 @@ js_openapi_schema(
     generator = "//haku/console:export_schema_bin",
 )
 
-# The exact input schemas advertised by the in-process MCP servers. Keep both the generated
-# TypeScript declarations and their source JSON: :mcp_tool_schema turns each catalog entry into
-# a runtime Zod validator derived from FastMCP's advertised structural contract.
-js_json_schema(
-    name = "mcp_tool_arguments",
-    out = "api/mcp_tool_arguments.d.ts",
-    generator = "//haku/console/mcp:export_tool_schemas_bin",
-    schema_out = "api/mcp_tool_arguments.schema.json",
-)
-
-# The exact output (result) schemas advertised by the in-process MCP servers, emitted by the
-# same exporter with `--results`. :mcp_tool_result_schema mirrors :mcp_tool_schema for results,
-# so per-tool result widgets validate against FastMCP's advertised output contract rather than
-# restating it. grocy-sf contributes its reflected batch and read tools; its OpenAPI tool widgets
-# stay hand-authored.
-js_json_schema(
-    name = "mcp_tool_results",
-    out = "api/mcp_tool_results.d.ts",
-    args = ["--results"],
-    generator = "//haku/console/mcp:export_tool_schemas_bin",
-    schema_out = "api/mcp_tool_results.schema.json",
-)
-
-ts_library(
-    name = "mcp_tool_schema",
-    srcs = ["mcp_tool_schema.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":mcp_tool_arguments",
-        "//:node_modules/zod",
-    ],
-)
-
-ts_library(
-    name = "mcp_tool_result_schema",
-    srcs = ["mcp_tool_result_schema.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":mcp_tool_results",
-        ":mcp_tool_schema",
-        "//:node_modules/zod",
-    ],
-)
-
 ts_library(
     name = "client",
     srcs = ["client.ts"],
@@ -88,84 +40,10 @@ ts_library(
 )
 
 ts_library(
-    name = "agent_names",
-    srcs = ["agent_names.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "operator_login",
     srcs = ["operator_login.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-)
-
-ts_library(
-    name = "mcp_result",
-    srcs = ["mcp_result.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = ["//:node_modules/zod"],
-)
-
-ts_library(
-    name = "mcp_client",
-    srcs = ["mcp_client.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":mcp_result",
-        ":operator_login",
-        "//:node_modules/@modelcontextprotocol/sdk",
-    ],
-)
-
-ts_library(
-    name = "calendar_client",
-    srcs = ["calendar_client.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":mcp_client",
-        ":mcp_tool_result_schema",
-    ],
-)
-
-ts_library(
-    name = "gmail_client",
-    srcs = ["gmail_client.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":mcp_client",
-        ":mcp_tool_result_schema",
-    ],
-)
-
-ts_library(
-    name = "grocy_client",
-    srcs = ["grocy_client.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":mcp_client",
-        "//:node_modules/zod",
-    ],
-)
-
-ts_library(
-    name = "tana_client",
-    srcs = ["tana_client.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [":mcp_client"],
 )
 
 ts_library(
@@ -174,7 +52,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
         "//:node_modules/@haku/console-bridge",
     ],
 )
@@ -228,17 +105,6 @@ ts_library(
 )
 
 ts_library(
-    name = "coalesced_refresh",
-    srcs = ["coalesced_refresh.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "periodic_refresh",
     srcs = ["periodic_refresh.ts"],
     isolated_typecheck = True,
@@ -264,21 +130,6 @@ ts_library(
 )
 
 ts_library(
-    name = "tool_call_decision",
-    srcs = ["tool_call_decision.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":agent_names",
-        ":approval_state",
-        ":client",
-        ":toast",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "open_external",
     srcs = ["open_external.ts"],
     isolated_typecheck = True,
@@ -296,19 +147,6 @@ ts_library(
     ],
 )
 
-# Gmail's and Google Calendar's official multicolor icon SVGs (MODULE.bazel's `gmail_icon_svg` /
-# `google_calendar_icon_svg` http_files), turned into TS data-URI constants at build time —
-# not checked in as base64 source, and not a runtime fetch to google.com either.
-data_uri_module(
-    name = "brand_icon_data",
-    consts = {
-        "GMAIL_ICON_DATA_URI": "@gmail_icon_svg//file",
-        "GOOGLE_CALENDAR_ICON_DATA_URI": "@google_calendar_icon_svg//file",
-    },
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-)
-
 ts_library(
     name = "icons",
     srcs = [
@@ -321,7 +159,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":brand_icon_data",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -425,97 +262,6 @@ ts_library(
 )
 
 ts_library(
-    name = "tool_arguments_field",
-    srcs = ["tool_arguments_field.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":code_block",
-        ":field",
-        ":json_preview",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//haku/console/frontend/tool_rendering",
-        "//haku/console/frontend/tool_rendering:variant",
-    ],
-)
-
-ts_library(
-    name = "json_preview",
-    srcs = ["json_preview.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":code_block",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//haku/console/frontend/tool_rendering:variant",
-    ],
-)
-
-ts_library(
-    name = "tool_result_field",
-    srcs = ["tool_result_field.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":code_block",
-        ":field",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//haku/console/frontend/tool_rendering",
-        "//haku/console/frontend/tool_rendering:result_entry",
-        "//haku/console/frontend/tool_rendering:variant",
-    ],
-)
-
-ts_library(
-    name = "tool_call_meta",
-    srcs = ["tool_call_meta.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":field",
-        ":time",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "tool_call_card",
-    srcs = ["tool_call_card.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":approval_state",
-        ":tool_arguments_field",
-        ":tool_call_meta",
-        ":tool_result_field",
-        ":variant_control",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//haku/console/frontend/tool_rendering",
-        "//haku/console/frontend/tool_rendering:actions",
-        "//haku/console/frontend/tool_rendering:variant",
-    ],
-)
-
-ts_library(
-    name = "pending_tool_call_actions",
-    srcs = ["pending_tool_call_actions.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":theme",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "variant_control",
     srcs = ["variant_control.tsx"],
     isolated_typecheck = True,
@@ -525,7 +271,6 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//haku/console/frontend/tool_rendering:variant",
     ],
 )
 
@@ -536,51 +281,16 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
-        ":client",
         ":code_block",
         ":field",
         ":icons",
-        ":pending_tool_call_actions",
         ":routing",
         ":theme",
         ":time",
-        ":tool_call_card",
         ":variant_control",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "tool_calls_page",
-    srcs = ["tool_calls_page.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":approval_state",
-        ":client",
-        ":coalesced_refresh",
-        ":pending_tool_call_actions",
-        ":periodic_refresh",
-        ":toast",
-        ":tool_call_card",
-        ":tool_call_decision",
-        ":variant_control",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-haku_vitest_test(
-    name = "tool_calls_page_test",
-    srcs = ["tool_calls_page.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":client",
-        ":tool_calls_page",
-        "//:node_modules/vitest",
     ],
 )
 
@@ -625,26 +335,7 @@ ts_library(
         ":settings_panel",
         ":shell_chrome",
         ":toast",
-        ":tool_call_decision",
-        ":tool_calls_page",
         "//:node_modules/@haku/console-bridge",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "approvals_embed_page",
-    srcs = ["approvals_embed_page.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":approval_state",
-        ":client",
-        ":periodic_refresh",
-        ":shell_chrome",
-        ":tool_call_decision",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -656,8 +347,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":agent_names",
-        ":approvals_embed_page",
         ":client",
         ":haku_ui_embed",
         ":routing",
@@ -691,33 +380,20 @@ filegroup(
     srcs = [
         "app.tsx",
         "approval_state.ts",
-        "approvals_embed_page.tsx",
-        "calendar_client.ts",
         "client.ts",
         "confirm_dialog.tsx",
         "field.tsx",
-        "gmail_client.ts",
-        "grocy_client.ts",
         "haku_ui_embed.tsx",
         "icons.tsx",
         "index.html",
         "main.tsx",
         "open_external.ts",
-        "pending_tool_call_actions.tsx",
         "routing.ts",
         "settings_panel.tsx",
         "shell_chrome.tsx",
-        "tana_client.ts",
         "theme.ts",
         "toast.ts",
-        "tool_arguments_field.tsx",
-        "tool_call_card.tsx",
-        "tool_call_decision.ts",
-        "tool_call_meta.tsx",
-        "tool_calls_page.tsx",
-        "tool_result_field.tsx",
         "variant_control.tsx",
-        "//haku/console/frontend/tool_rendering:tailwind_srcs",
     ],
 )
 
@@ -791,27 +467,17 @@ ts_library(
     tags = ["no-lint"],
     tsconfig = TSCONFIG,
     deps = [
-        ":agent_names",
-        ":approval_state",
-        ":approvals_embed_page",
         ":client",
         ":haku_ui_embed",
         ":routing",
-        ":settings_panel",
         ":shell_chrome",
         ":theme",
-        ":tool_calls_page",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/notifications",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
-        "//haku/console/frontend/tool_rendering",
-        "//haku/console/frontend/tool_rendering/google_calendar:fixtures",
-        "//haku/console/frontend/tool_rendering/grocy:fixtures",
-        "//haku/console/frontend/tool_rendering/screenshot:mcp_mock",
-        "//haku/console/frontend/tool_rendering/screenshot:visual_network_ledger",
     ],
 )
 
@@ -845,7 +511,6 @@ filegroup(
 
 py_visual_test(
     name = "screenshots",
-    # medium: each of the 4 shards measures 35s alone and up to 63s with nine runs at once; `small` is 60s.
     size = "medium",
     harness = ":screenshot_harness_js",
     inline_page = True,
@@ -873,21 +538,10 @@ py_visual_test(
 
 # ── Unit tests ─────────────────────────────────────────────────────────────────
 #
-# One ts_library per spec, exactly as under tool_rendering/: each spec declares what it imports,
+# One ts_library per spec: each spec declares what it imports,
 # is type-checked against those deps' declarations as it compiles, and hands vitest the emitted
 # `.test.js`. There is no separate whole-project type-check target to keep the file list in step
 # with; `vitest_suite` below fails the package's load for a spec file it does not list.
-
-haku_vitest_test(
-    name = "approval_state_test",
-    srcs = ["approval_state.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":approval_state",
-        ":client",
-        "//:node_modules/vitest",
-    ],
-)
 
 haku_vitest_test(
     name = "async_resource_test",
@@ -942,16 +596,6 @@ haku_vitest_test(
 )
 
 haku_vitest_test(
-    name = "calendar_client_test",
-    srcs = ["calendar_client.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":calendar_client",
-        "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
     name = "client_test",
     srcs = ["client.test.ts"],
     isolated_typecheck = True,
@@ -986,17 +630,6 @@ haku_vitest_test(
 )
 
 haku_vitest_test(
-    name = "gmail_client_test",
-    srcs = ["gmail_client.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":gmail_client",
-        ":mcp_tool_result_schema",
-        "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
     name = "haku_ui_embed_test",
     srcs = ["haku_ui_embed.test.ts"],
     isolated_typecheck = True,
@@ -1005,36 +638,6 @@ haku_vitest_test(
         ":haku_ui_embed",
         ":routing",
         ":screenshot_grant",
-        "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
-    name = "mcp_result_test",
-    srcs = ["mcp_result.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":mcp_result",
-        "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
-    name = "mcp_tool_result_schema_test",
-    srcs = ["mcp_tool_result_schema.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":mcp_tool_result_schema",
-        "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
-    name = "mcp_tool_schema_test",
-    srcs = ["mcp_tool_schema.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":mcp_tool_schema",
         "//:node_modules/vitest",
     ],
 )
@@ -1086,41 +689,6 @@ haku_vitest_test(
     deps = [
         ":client",
         ":settings_panel",
-        "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
-    name = "shell_chrome_test",
-    srcs = ["shell_chrome.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":shell_chrome",
-        "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
-    name = "tana_client_test",
-    srcs = ["tana_client.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":tana_client",
-        "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
-    name = "tool_call_decision_test",
-    srcs = ["tool_call_decision.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":client",
-        ":tool_call_decision",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
     ],
 )

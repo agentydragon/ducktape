@@ -24,12 +24,8 @@ from haku.console.identity.authorization import StaticAgentDefinition, fingerpri
 from haku.console.settings import Settings
 
 _SCHEMA_CONSOLE_CONFIG = """\
-auto_approval_policies:
-  - id: schema-manual-review
-    type: never
 access_profiles:
   - id: schema
-    auto_approval_policy: schema-manual-review
 default_access_profile_id: schema
 """
 
@@ -50,7 +46,6 @@ def _placeholder_settings(*, config_file: Path) -> Settings:
         ),
         operator_identity=OperatorIdentityConfig(trust_domain="schema.invalid/authentik-user-id/v1"),
         config_file=config_file,
-        max_wait_for_result_ms=60_000,
     )
 
 

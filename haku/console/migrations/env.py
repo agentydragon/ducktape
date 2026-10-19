@@ -1,4 +1,4 @@
-"""Alembic environment for haku-console's MCP approval database.
+"""Alembic environment for haku-console's identity and historical data database.
 
 Connection is injected programmatically by ``haku.console.database_migrate``.
 """

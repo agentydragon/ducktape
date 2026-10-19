@@ -4,8 +4,7 @@ The console authenticates the operator's browser itself via the Authentik author
 storing the identity in a signed session cookie. Agent credentials do not authenticate to browser
 routes.
 
-`require_operator` guards the entire browser API (approvals, decisions, audit history, and account
-linking) with a DB-revalidated canonical Operator session.
+`require_operator` guards the browser API with a DB-revalidated canonical Operator session.
 
 The static SPA (served by nginx) stays public; on a 401 the frontend redirects to `/auth/login`,
 carrying the page it was on as `return_to` so re-authenticating does not lose the operator's place.
@@ -43,7 +42,6 @@ from haku.console.identity.operator_login_flow import (
 )
 from haku.console.oauth.callback_page import render_callback_page
 from haku.console.settings import Settings
-from haku.console.tool_call_actor import OperatorActor
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +57,11 @@ LOGIN_RETRY_COOKIE_NAME = "haku_console_login_retry"
 _LOGIN_RETRY_COOKIE_MAX_AGE_SECONDS = 120
 
 router = APIRouter(prefix="/auth", tags=["operator-auth"])
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorActor:
+    operator_id: UUID
 
 
 class OperatorResponse(BaseModel):
@@ -124,9 +127,9 @@ def _rejected(conn: HTTPConnection, reason: str, **detail: object) -> None:
     """Record why an operator session was refused.
 
     Without this, every refusal reaches the browser as one indistinguishable 401 — an expired
-    absolute deadline, a cookie the browser never sent, and a disabled identity all look identical,
-    which is exactly the ambiguity that made a failed MCP account reconnect undiagnosable. Logs the
-    reason and the route only: never the cookie payload, a token, or an OAuth callback parameter.
+    absolute deadline, a cookie the browser never sent, and a disabled identity all look identical.
+    Logs the reason and the route only: never the cookie payload, a token, or an OAuth callback
+    parameter.
     """
     logger.info(
         "operator session rejected: reason=%s method=%s path=%s%s",
@@ -186,22 +189,10 @@ def signed_operator_session(conn: HTTPConnection) -> SignedOperatorSession | Non
 
 async def operator_session(conn: HTTPConnection) -> OperatorSession | None:
     """The DB-revalidated browser session, or ``None`` when malformed, stale, or disabled."""
-    return await operator_session_for_identity_store(conn, _identity_store(conn))
-
-
-async def operator_session_for_identity_store(
-    conn: HTTPConnection, identity_store: PostgresOperatorIdentityStore
-) -> OperatorSession | None:
-    """Resolve a session against an explicitly supplied identity store.
-
-    The normal ``operator_session`` signature intentionally exposes only the request connection so
-    FastAPI can use it directly as a dependency. MCP's protocol adapter supplies its store
-    explicitly because it is constructed outside FastAPI's dependency graph.
-    """
     signed = signed_operator_session(conn)
     if signed is None:
         return None  # already logged with its distinguishing reason
-    identity = await identity_store.resolve_active_session(
+    identity = await _identity_store(conn).resolve_active_session(
         operator_id=signed.operator_id, identity_id=signed.identity_id
     )
     if identity is None:

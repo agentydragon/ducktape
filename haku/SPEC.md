@@ -12,5 +12,5 @@ one means **handing it off** (e.g. a prepared prompt taken into a Claude scaffol
 does the work under its own permissions). **Haku executing things itself is a later
 direction** (`PLAN.md` → _Future_), not the current contract.
 
-A tool call waiting on approval reaches the operator only through the console's own approval
-surfaces; the console sends no out-of-console notifications.
+The console does not accept, execute, or expose tool calls. Historical tool-call records
+remain in Postgres for audit.

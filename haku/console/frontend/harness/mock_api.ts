@@ -1,13 +1,5 @@
-// Installs a canned-response `fetch` for the screenshot harness so data-fetching surfaces
-// (the history view) render populated instead of an error. MUST be imported before any
-// module that captures `globalThis.fetch` (openapi-fetch does so when client.ts builds its
-// client) — harness.tsx imports this first. Paired with the `base_href` of the `:screenshots`
-// py_visual_test so the relative "/api/…" URL parses in the origin-less in-memory page.
-import { SAMPLE_DEPLOYMENT, SAMPLE_PENDING, SAMPLE_TOOL_CALLS } from "./sample_data";
-import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock";
-import { ensureLedger, recordViolation, tracked } from "../tool_rendering/screenshot/visual_network_ledger";
-import { GOOGLE_CALENDAR_MCP_FIXTURES } from "../tool_rendering/google_calendar/fixtures";
-import { GROCY_MCP_FIXTURES } from "../tool_rendering/grocy/fixtures";
+// Deterministic API responses for shell screenshots. Import before modules that capture fetch.
+import { SAMPLE_DEPLOYMENT } from "./sample_data";
 
 function requestUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") return input;
@@ -18,8 +10,6 @@ function requestUrl(input: RequestInfo | URL): string {
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 }
-
-const fixture = (window as unknown as { __FIXTURE__?: string }).__FIXTURE__;
 
 async function respond(input: RequestInfo | URL, init: RequestInit | undefined, url: string): Promise<Response | null> {
   if (url.includes("/api/agent-enrollment/agents/") && init?.method === "PUT") {
@@ -76,71 +66,19 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
       ],
     });
   }
-  // The framed Haku UI's origin, plus whether the launch-routine capability is configured (kept
-  // null since no scene needs it enabled).
   if (url.includes("/api/config")) {
-    return jsonResponse({
-      launch_routine_url: null,
-      haku_ui_url: "https://haku-ui.test",
-    });
+    return jsonResponse({ launch_routine_url: null, haku_ui_url: "https://haku-ui.test" });
   }
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
-  // Far enough out that the shell's session warning stays hidden; `session-expiring` drives the
-  // warned state through ShellChrome props instead, so every other scene renders the calm rail.
   if (url.includes("/auth/me")) {
     return jsonResponse({ username: "agentydragon", expires_at: "2126-07-20T21:00:00Z" });
-  }
-  if (url.includes("/api/approvals/pending")) return jsonResponse({ approvals: SAMPLE_PENDING });
-  const mcpResponse = await mockOperatorMcpFetch(input, init, url, {
-    ...GOOGLE_CALENDAR_MCP_FIXTURES,
-    ...GROCY_MCP_FIXTURES,
-  });
-  if (mcpResponse !== null) return mcpResponse;
-  if (url.includes("/api/tool-calls")) {
-    // Mirrors the real GET /api/tool-calls's `auto_approved` server-side filter (mcp/approval.py)
-    // so the history screenshot scenes exercise the same request the frontend actually sends.
-    const autoApproved = new URLSearchParams(url.split("?")[1] ?? "").get("auto_approved");
-    const matching =
-      autoApproved === null
-        ? SAMPLE_TOOL_CALLS
-        : SAMPLE_TOOL_CALLS.filter((call) => (call.approval_policy_id != null) === (autoApproved === "true"));
-    // The `history-paged` scene needs a ledger deeper than one page — that is what shows the "Load
-    // older calls" affordance and the placeholders standing in for rows not near the viewport yet.
-    // Repeated after filtering, so the page is deep enough under the default `auto_approved=false`
-    // the history view sends.
-    const ledger =
-      fixture === "history-paged"
-        ? Array.from({ length: 26 }, (_unused, index) => ({
-            ...matching[index % matching.length],
-            tool_call_id: `tc_paged_${index}`,
-          }))
-        : matching;
-    // Mirrors the real endpoint's keyset paging (mcp/approval.py): `cursor` is the opaque position
-    // handed out as `next_cursor`, and a full page always offers one.
-    const query = new URLSearchParams(url.split("?")[1] ?? "");
-    const limit = Number(query.get("limit") ?? 100);
-    const cursor = query.get("cursor");
-    const start = cursor === null ? 0 : ledger.findIndex((call) => call.tool_call_id === cursor) + 1;
-    const toolCalls = ledger.slice(start, start + limit);
-    return jsonResponse({
-      tool_calls: toolCalls,
-      next_cursor: toolCalls.length === limit ? toolCalls[toolCalls.length - 1].tool_call_id : null,
-    });
   }
   return null;
 }
 
-ensureLedger();
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = requestUrl(input);
-  return tracked(url, async () => {
-    const response = await respond(input, init, url);
-    if (response !== null) return response;
-    // A route no mock matches must fail the run, loudly and by name — falling through to the real
-    // fetch could only reject in the hermetic sandbox, and answering silently would let a new
-    // surface's unmocked request render an empty state nobody chose. The empty answer below keeps
-    // the page deterministic for the scene's other assertions while the ledger fails the test.
-    recordViolation(`unmatched route: ${url}`);
-    return jsonResponse({});
-  });
+  const response = await respond(input, init, url);
+  if (response !== null) return response;
+  throw new Error(`Unmatched screenshot API request: ${url}`);
 }) as typeof fetch;

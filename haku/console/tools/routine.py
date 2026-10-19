@@ -20,15 +20,6 @@ class LaunchRoutineResult(BaseModel):
     session_url: str = Field(description="claude.ai/code URL of the launched Haku session.")
 
 
-class LaunchRoutineArguments(BaseModel):
-    """Stored request shape retained for rendering historical approval rows."""
-
-    text: str | None = Field(
-        default=None,
-        description="Optional per-run routine instructions; omit or leave blank to use the routine's saved default.",
-    )
-
-
 def _upstream_detail(resp: httpx.Response) -> str:
     """Best-effort human-readable reason from an upstream error response."""
     try:

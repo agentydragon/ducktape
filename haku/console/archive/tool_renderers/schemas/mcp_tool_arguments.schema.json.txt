@@ -1,0 +1,2280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "gmail": {
+      "additionalProperties": false,
+      "properties": {
+        "drafts_create": {
+          "additionalProperties": false,
+          "properties": {
+            "bcc": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Bcc recipient email addresses."
+            },
+            "body": {
+              "description": "Plain-text message body.",
+              "type": "string"
+            },
+            "cc": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "subject": {
+              "type": "string"
+            },
+            "thread_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Existing Gmail thread ID to draft a reply within."
+            },
+            "to": {
+              "description": "Recipient email addresses.",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "to",
+            "subject",
+            "body"
+          ],
+          "type": "object"
+        },
+        "drafts_delete": {
+          "additionalProperties": false,
+          "properties": {
+            "draft_id": {
+              "description": "ID of the draft to delete (from drafts_list/drafts_get).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "draft_id"
+          ],
+          "type": "object"
+        },
+        "drafts_get": {
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "description": "The format to return the draft in.\nminimal: Returns only email message ID and labels; does not return the email headers, body, or payload.; full: Returns the full email message data with body content parsed in the `payload` field; the `raw` field is not used. Format cannot be used when accessing the api using the gmail.metadata scope.; raw: Returns the full email message data with body content in the `raw` field as a base64url encoded string; the `payload` field is not used. Format cannot be used when accessing the api using the gmail.metadata scope.; metadata: Returns only email message ID, labels, and email headers.",
+              "enum": [
+                "minimal",
+                "full",
+                "raw",
+                "metadata"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "description": "The ID of the draft to retrieve.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "drafts_list": {
+          "additionalProperties": false,
+          "properties": {
+            "includeSpamTrash": {
+              "description": "Include drafts from `SPAM` and `TRASH` in the results.",
+              "type": "boolean"
+            },
+            "maxResults": {
+              "description": "Maximum number of drafts to return. This field defaults to 100. The maximum allowed value for this field is 500. (format: uint32)",
+              "type": "integer"
+            },
+            "pageToken": {
+              "description": "Page token to retrieve a specific page of results in the list.",
+              "type": "string"
+            },
+            "q": {
+              "description": "Only return draft messages matching the specified query. Supports the same query format as the Gmail search box. For example, `\"from:someuser@example.com rfc822msgid: is:unread\"`.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "drafts_update": {
+          "additionalProperties": false,
+          "properties": {
+            "bcc": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Bcc recipient email addresses."
+            },
+            "body": {
+              "description": "Plain-text message body.",
+              "type": "string"
+            },
+            "cc": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "draft_id": {
+              "description": "ID of the draft to replace (from drafts_list/drafts_get).",
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "thread_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Existing Gmail thread ID to keep the draft within."
+            },
+            "to": {
+              "description": "Recipient email addresses.",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "draft_id",
+            "to",
+            "subject",
+            "body"
+          ],
+          "type": "object"
+        },
+        "filters_create": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "description": "Action a filter performs on its matched messages (`users.settings.filters` `action`).",
+              "properties": {
+                "addLabelIds": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "forward": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Email address to forward matched messages to."
+                },
+                "removeLabelIds": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "type": "object"
+            },
+            "criteria": {
+              "description": "Message-matching criteria for a filter (`users.settings.filters` `criteria`).",
+              "properties": {
+                "excludeChats": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "from": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "The sender."
+                },
+                "hasAttachment": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "negatedQuery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Gmail search query, only return messages NOT matching it."
+                },
+                "query": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Gmail search query, only return messages matching it."
+                },
+                "size": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Message size in bytes; paired with `size_comparison`."
+                },
+                "sizeComparison": {
+                  "anyOf": [
+                    {
+                      "description": "`sizeComparison` for `FilterCriteria.size` \u2014 whether the size is under or over.",
+                      "enum": [
+                        "smaller",
+                        "larger"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "subject": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "to": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "The recipient."
+                }
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "criteria",
+            "action"
+          ],
+          "type": "object"
+        },
+        "filters_delete": {
+          "additionalProperties": false,
+          "properties": {
+            "filter_id": {
+              "description": "ID of the filter to delete (from filters_list/filters_get).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "filter_id"
+          ],
+          "type": "object"
+        },
+        "filters_get": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "The ID of the filter to be fetched.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "filters_list": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "labels_create": {
+          "additionalProperties": false,
+          "properties": {
+            "label_list_visibility": {
+              "default": "labelShow",
+              "enum": [
+                "labelShow",
+                "labelShowIfUnread",
+                "labelHide"
+              ],
+              "type": "string"
+            },
+            "message_list_visibility": {
+              "default": "show",
+              "enum": [
+                "show",
+                "hide"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "description": "New label name; use '/' to nest (e.g. 'receipts/amazon').",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "labels_delete": {
+          "additionalProperties": false,
+          "properties": {
+            "label_id": {
+              "description": "ID of the label to delete; it is removed from every thread.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "label_id"
+          ],
+          "type": "object"
+        },
+        "labels_get": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "The ID of the label to retrieve.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "labels_list": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "labels_patch": {
+          "additionalProperties": false,
+          "properties": {
+            "label_id": {
+              "description": "ID of the label to update (from labels_list/labels_get).",
+              "type": "string"
+            },
+            "label_list_visibility": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "labelShow",
+                    "labelShowIfUnread",
+                    "labelHide"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "message_list_visibility": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "show",
+                    "hide"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "New label name."
+            }
+          },
+          "required": [
+            "label_id"
+          ],
+          "type": "object"
+        },
+        "messages_get": {
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "description": "The format to return the message in.\nminimal: Returns only email message ID and labels; does not return the email headers, body, or payload.; full: Returns the full email message data with body content parsed in the `payload` field; the `raw` field is not used. Format cannot be used when accessing the api using the gmail.metadata scope.; raw: Returns the full email message data with body content in the `raw` field as a base64url encoded string; the `payload` field is not used. Format cannot be used when accessing the api using the gmail.metadata scope.; metadata: Returns only email message ID, labels, and email headers.",
+              "enum": [
+                "minimal",
+                "full",
+                "raw",
+                "metadata"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "description": "The ID of the message to retrieve. This ID is usually retrieved using `messages.list`. The ID is also contained in the result when a message is inserted (`messages.insert`) or imported (`messages.import`).",
+              "type": "string"
+            },
+            "metadataHeaders": {
+              "description": "When given and format is `METADATA`, only include headers specified.",
+              "items": {
+                "description": "When given and format is `METADATA`, only include headers specified.",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "threads_get": {
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "description": "The format to return the messages in.\nfull: Returns the full email message data with body content parsed in the `payload` field; the `raw` field is not used. Format cannot be used when accessing the api using the gmail.metadata scope.; metadata: Returns only email message IDs, labels, and email headers.; minimal: Returns only email message IDs and labels; does not return the email headers, body, or payload.",
+              "enum": [
+                "full",
+                "metadata",
+                "minimal"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "description": "The ID of the thread to retrieve.",
+              "type": "string"
+            },
+            "metadataHeaders": {
+              "description": "When given and format is METADATA, only include headers specified.",
+              "items": {
+                "description": "When given and format is METADATA, only include headers specified.",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "threads_list": {
+          "additionalProperties": false,
+          "properties": {
+            "includeSpamTrash": {
+              "description": "Include threads from `SPAM` and `TRASH` in the results.",
+              "type": "boolean"
+            },
+            "labelIds": {
+              "description": "Only return threads with labels that match all of the specified label IDs.",
+              "items": {
+                "description": "Only return threads with labels that match all of the specified label IDs.",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "maxResults": {
+              "description": "Maximum number of threads to return. This field defaults to 100. The maximum allowed value for this field is 500. (format: uint32)",
+              "type": "integer"
+            },
+            "pageToken": {
+              "description": "Page token to retrieve a specific page of results in the list.",
+              "type": "string"
+            },
+            "q": {
+              "description": "Only return threads matching the specified query. Supports the same query format as the Gmail search box. For example, `\"from:someuser@example.com rfc822msgid: is:unread\"`. Parameter cannot be used when accessing the api using the gmail.metadata scope.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "threads_modify_labels": {
+          "additionalProperties": false,
+          "properties": {
+            "add": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Label names to add to every thread; created if new."
+            },
+            "remove": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Label names to remove from every thread; must exist."
+            },
+            "thread_ids": {
+              "description": "Gmail thread IDs to modify in one batch.",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "thread_ids"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "drafts_create",
+        "drafts_delete",
+        "drafts_get",
+        "drafts_list",
+        "drafts_update",
+        "filters_create",
+        "filters_delete",
+        "filters_get",
+        "filters_list",
+        "labels_create",
+        "labels_delete",
+        "labels_get",
+        "labels_list",
+        "labels_patch",
+        "messages_get",
+        "threads_get",
+        "threads_list",
+        "threads_modify_labels"
+      ],
+      "type": "object"
+    },
+    "google_calendar": {
+      "additionalProperties": false,
+      "properties": {
+        "create_event": {
+          "additionalProperties": false,
+          "properties": {
+            "attendees": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Attendee email addresses to invite."
+            },
+            "calendar_id": {
+              "default": "primary",
+              "description": "Target calendar; 'primary' is the operator's main calendar.",
+              "type": "string"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Event body text."
+            },
+            "end": {
+              "description": "Mirrors the Google Calendar API's `EventDateTime` \u2014 exactly one of `date`\n(all-day) or `date_time` (+`time_zone`) is set. Snake-case tool-arg surface (Haku passes\nthese); `_EventDateTime` below is the camelCase request-body twin.",
+              "properties": {
+                "date": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "All-day event date, YYYY-MM-DD."
+                },
+                "date_time": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Timed event instant, RFC3339 (e.g. 2026-09-15T09:00:00-07:00)."
+                },
+                "time_zone": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "IANA time zone (e.g. America/Los_Angeles). Required when date_time is set."
+                }
+              },
+              "type": "object"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "recurrence": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "RFC 5545 RRULE content lines, one per item (for example 'RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12'). DTSTART and DTEND come from start/end. COUNT includes the first occurrence. Only RRULE is currently supported."
+            },
+            "reminders": {
+              "anyOf": [
+                {
+                  "items": {
+                    "properties": {
+                      "method": {
+                        "default": "popup",
+                        "enum": [
+                          "popup",
+                          "email"
+                        ],
+                        "type": "string"
+                      },
+                      "minutes_before_start": {
+                        "description": "Minutes before the event start; Google's max is 4 weeks.",
+                        "maximum": 40320,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "minutes_before_start"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Overrides the calendar's default reminders. Omit to use the calendar default."
+            },
+            "start": {
+              "description": "Mirrors the Google Calendar API's `EventDateTime` \u2014 exactly one of `date`\n(all-day) or `date_time` (+`time_zone`) is set. Snake-case tool-arg surface (Haku passes\nthese); `_EventDateTime` below is the camelCase request-body twin.",
+              "properties": {
+                "date": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "All-day event date, YYYY-MM-DD."
+                },
+                "date_time": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Timed event instant, RFC3339 (e.g. 2026-09-15T09:00:00-07:00)."
+                },
+                "time_zone": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "IANA time zone (e.g. America/Los_Angeles). Required when date_time is set."
+                }
+              },
+              "type": "object"
+            },
+            "summary": {
+              "description": "Event title.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary",
+            "start",
+            "end"
+          ],
+          "type": "object"
+        },
+        "delete_event": {
+          "additionalProperties": false,
+          "properties": {
+            "calendar_id": {
+              "default": "primary",
+              "description": "Calendar the event belongs to; 'primary' is the operator's main calendar.",
+              "type": "string"
+            },
+            "event_id": {
+              "description": "Google Calendar event or recurring-series master ID to delete.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id"
+          ],
+          "type": "object"
+        },
+        "get_event": {
+          "additionalProperties": false,
+          "properties": {
+            "calendar_id": {
+              "default": "primary",
+              "description": "Source calendar; 'primary' is the operator's main calendar.",
+              "type": "string"
+            },
+            "event_id": {
+              "description": "Google Calendar event or instance ID.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id"
+          ],
+          "type": "object"
+        },
+        "list_event_instances": {
+          "additionalProperties": false,
+          "properties": {
+            "calendar_id": {
+              "default": "primary",
+              "description": "Source calendar; 'primary' is the operator's main calendar.",
+              "type": "string"
+            },
+            "max_results": {
+              "default": 50,
+              "description": "Maximum instances per page.",
+              "maximum": 250,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "page_token": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "`next_page_token` from a previous response."
+            },
+            "recurring_event_id": {
+              "description": "Recurring-series master event ID.",
+              "type": "string"
+            },
+            "time_max": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "RFC3339 upper bound for instance start time."
+            },
+            "time_min": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "RFC3339 lower bound for instance end time."
+            }
+          },
+          "required": [
+            "recurring_event_id"
+          ],
+          "type": "object"
+        },
+        "list_events": {
+          "additionalProperties": false,
+          "properties": {
+            "calendar_id": {
+              "default": "primary",
+              "description": "Source calendar; 'primary' is the operator's main calendar.",
+              "type": "string"
+            },
+            "expand_recurring": {
+              "default": false,
+              "description": "Expand recurring series into instances instead of returning series masters.",
+              "type": "boolean"
+            },
+            "max_results": {
+              "default": 50,
+              "description": "Maximum events per page.",
+              "maximum": 250,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "page_token": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "`next_page_token` from a previous response."
+            },
+            "query": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Free-text search query."
+            },
+            "time_max": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "RFC3339 upper bound for event start time."
+            },
+            "time_min": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "RFC3339 lower bound for event end time."
+            }
+          },
+          "type": "object"
+        },
+        "update_event": {
+          "additionalProperties": false,
+          "properties": {
+            "attendees": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Attendee email addresses. Omit to leave the event's existing attendees unchanged."
+            },
+            "calendar_id": {
+              "default": "primary",
+              "description": "Calendar the event belongs to; 'primary' is the operator's main calendar.",
+              "type": "string"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Event body text. Omit to leave it unchanged."
+            },
+            "end": {
+              "anyOf": [
+                {
+                  "description": "Mirrors the Google Calendar API's `EventDateTime` \u2014 exactly one of `date`\n(all-day) or `date_time` (+`time_zone`) is set. Snake-case tool-arg surface (Haku passes\nthese); `_EventDateTime` below is the camelCase request-body twin.",
+                  "properties": {
+                    "date": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "All-day event date, YYYY-MM-DD."
+                    },
+                    "date_time": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Timed event instant, RFC3339 (e.g. 2026-09-15T09:00:00-07:00)."
+                    },
+                    "time_zone": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "IANA time zone (e.g. America/Los_Angeles). Required when date_time is set."
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Omit to leave the existing end unchanged."
+            },
+            "event_id": {
+              "description": "Google Calendar event or recurring-series master ID to update.",
+              "type": "string"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Omit to leave the existing location unchanged."
+            },
+            "recurrence": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "RFC 5545 RRULE content lines, one per item (for example 'RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12'). Omit to leave the event's existing recurrence unchanged. Only RRULE is currently supported."
+            },
+            "reminders": {
+              "anyOf": [
+                {
+                  "items": {
+                    "properties": {
+                      "method": {
+                        "default": "popup",
+                        "enum": [
+                          "popup",
+                          "email"
+                        ],
+                        "type": "string"
+                      },
+                      "minutes_before_start": {
+                        "description": "Minutes before the event start; Google's max is 4 weeks.",
+                        "maximum": 40320,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "minutes_before_start"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Overrides the calendar's default reminders. Omit to leave the event's existing reminders unchanged; an empty list reverts to the calendar default."
+            },
+            "start": {
+              "anyOf": [
+                {
+                  "description": "Mirrors the Google Calendar API's `EventDateTime` \u2014 exactly one of `date`\n(all-day) or `date_time` (+`time_zone`) is set. Snake-case tool-arg surface (Haku passes\nthese); `_EventDateTime` below is the camelCase request-body twin.",
+                  "properties": {
+                    "date": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "All-day event date, YYYY-MM-DD."
+                    },
+                    "date_time": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Timed event instant, RFC3339 (e.g. 2026-09-15T09:00:00-07:00)."
+                    },
+                    "time_zone": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "IANA time zone (e.g. America/Los_Angeles). Required when date_time is set."
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Omit to leave the existing start unchanged."
+            },
+            "summary": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Event title. Omit to leave it unchanged."
+            }
+          },
+          "required": [
+            "event_id"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "create_event",
+        "delete_event",
+        "get_event",
+        "list_event_instances",
+        "list_events",
+        "update_event"
+      ],
+      "type": "object"
+    },
+    "grocy-sf": {
+      "additionalProperties": false,
+      "properties": {
+        "locations_list": {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "default": "brief",
+              "description": "`brief` returns only `id` + `name`. `full` returns every column.",
+              "enum": [
+                "brief",
+                "full"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "product_groups_list": {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "default": "brief",
+              "description": "`brief` returns only `id` + `name`. `full` returns every column.",
+              "enum": [
+                "brief",
+                "full"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "products_create": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "description": "Products to create. Max 100 per call.",
+              "items": {
+                "description": "One product to create via ``products_create``.",
+                "properties": {
+                  "consume_qu": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Consume quantity unit. Name or ID. Defaults to `stock_qu`."
+                  },
+                  "default_best_before_days": {
+                    "description": "Auto-fill best-before date when `stock_add` omits it. -1 = never expires, 0 = best-before today, N > 0 = today + N days. Required \u2014 there is no default. A caller that hasn't considered this product's shelf life must still pick a value (e.g. `0` for consciously same-day, `-1` for shelf-stable) rather than silently getting one; 0 is not a fallback here, only a valid, deliberate choice.",
+                    "type": "integer"
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Free-text description."
+                  },
+                  "due_type": {
+                    "default": 1,
+                    "description": "How to treat the best-before date. 1 (default) = 'best before' (possibly still safe after date, `get_expired_stock` ignores these). 2 = 'expiration' (unsafe after date, `get_expired_stock` returns these). Use 2 for perishables (meat, dairy, medicine).",
+                    "enum": [
+                      1,
+                      2
+                    ],
+                    "type": "integer"
+                  },
+                  "location": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "Default storage location. Name or ID."
+                  },
+                  "min_stock_amount": {
+                    "default": 0,
+                    "description": "Threshold (in stock QU) below which `get_below_minimum_stock` flags this product. 0 disables.",
+                    "type": "number"
+                  },
+                  "name": {
+                    "description": "Product name. Must be unique across all products.",
+                    "type": "string"
+                  },
+                  "parent_product": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Parent product. Name or ID. Marks this product as a **variant / sub-product** of the parent \u2014 e.g. two brands of milk both sharing a generic `Milk` parent. This unlocks: (a) stock aggregation \u2014 `stock_get` and the overview roll every variant's amount (with QU conversion) into the parent's row; (b) substitution on consume \u2014 `stock_consume` with `allow_subproduct_substitution=True` on the parent falls back to any variant when the parent itself is short (FIFO across variants); (c) shared low-stock rules when `cumulate_min_stock_amount_of_sub_products=1` on the parent. Typical setup pairs this with `no_own_stock=1` on the parent so it's a pure umbrella. Single-level nesting only \u2014 a variant cannot itself have variants, and a product that already has variants cannot become a variant."
+                  },
+                  "product_group": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Product group / category. Name or ID."
+                  },
+                  "purchase_qu": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Purchase quantity unit. Name or ID. Defaults to `stock_qu`. When different from `stock_qu`, Grocy auto-creates a product-specific factor=1 conversion (unless one already exists); update it afterwards if the real factor is not 1."
+                  },
+                  "stock_qu": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "Stock quantity unit. Name or ID. The unit Grocy stores stock totals in."
+                  }
+                },
+                "required": [
+                  "name",
+                  "stock_qu",
+                  "location",
+                  "default_best_before_days"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "products_edit": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "description": "Product edits. Max 100 per call.",
+              "items": {
+                "description": "One product edit operation for ``products_edit``.",
+                "properties": {
+                  "clear_fields": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "description": "Nullable product fields that ``products_edit.clear_fields`` can null out.\n\nOther product fields are NOT NULL in Grocy's schema and cannot be cleared\n\u2014 to remove a product entirely, use ``product_delete``.",
+                          "enum": [
+                            "description",
+                            "product_group",
+                            "parent_product",
+                            "calories"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Fields to explicitly null out. Only the values in `EditProductField` are nullable in Grocy's schema; everything else is NOT NULL."
+                  },
+                  "consume_qu": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New consume quantity unit. Name or ID."
+                  },
+                  "default_best_before_days": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Auto-fill best-before date when `stock_add` omits it. -1 = never expires, 0 = best-before today, N > 0 = today + N days."
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New free-text description."
+                  },
+                  "due_type": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          1,
+                          2
+                        ],
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "How to treat the best-before date. 1 (default) = 'best before' (possibly still safe after date, `get_expired_stock` ignores these). 2 = 'expiration' (unsafe after date, `get_expired_stock` returns these). Use 2 for perishables (meat, dairy, medicine)."
+                  },
+                  "location": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New default storage location. Name or ID."
+                  },
+                  "min_stock_amount": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New low-stock threshold (in stock QU). 0 disables."
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New name."
+                  },
+                  "parent_product": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New parent product (variant link). Parent product. Name or ID. Marks this product as a **variant / sub-product** of the parent \u2014 e.g. two brands of milk both sharing a generic `Milk` parent. This unlocks: (a) stock aggregation \u2014 `stock_get` and the overview roll every variant's amount (with QU conversion) into the parent's row; (b) substitution on consume \u2014 `stock_consume` with `allow_subproduct_substitution=True` on the parent falls back to any variant when the parent itself is short (FIFO across variants); (c) shared low-stock rules when `cumulate_min_stock_amount_of_sub_products=1` on the parent. Typical setup pairs this with `no_own_stock=1` on the parent so it's a pure umbrella. Single-level nesting only \u2014 a variant cannot itself have variants, and a product that already has variants cannot become a variant."
+                  },
+                  "product": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "Product to edit. Name or ID."
+                  },
+                  "product_group": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New product group. Name or ID."
+                  },
+                  "purchase_qu": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New purchase quantity unit. Name or ID."
+                  },
+                  "stock_qu": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New stock quantity unit. Name or ID."
+                  }
+                },
+                "required": [
+                  "product"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "products_list": {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "default": "brief",
+              "description": "`brief` returns only `id` + `name`. `full` returns every column.",
+              "enum": [
+                "brief",
+                "full"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "quantity_units_list": {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "default": "brief",
+              "description": "`brief` returns only `id` + `name`. `full` returns every column.",
+              "enum": [
+                "brief",
+                "full"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "shopping_list_get": {
+          "additionalProperties": false,
+          "properties": {
+            "shopping_list": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "description": "Shopping list. Name or ID."
+            }
+          },
+          "required": [
+            "shopping_list"
+          ],
+          "type": "object"
+        },
+        "shopping_list_item_edit": {
+          "additionalProperties": false,
+          "properties": {
+            "amount": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "New amount."
+            },
+            "clear_fields": {
+              "anyOf": [
+                {
+                  "items": {
+                    "description": "Nullable shopping-list-item fields that ``shopping_list_item_edit.clear_fields`` can null out.\n\nOther fields (``amount``, ``done``, ``shopping_list_id``) are NOT NULL in\nGrocy's schema. To re-point an item at a different product, remove\nit via ``shopping_list_items_remove`` and re-add via\n``shopping_list_items_add``.",
+                    "enum": [
+                      "note"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Fields to explicitly null out. Only the values in `EditShoppingListField` are nullable (just `note`); `amount` and `done` are NOT NULL. To change which product an item points at, remove the item with `shopping_list_items_remove` and re-add it via `shopping_list_items_add`."
+            },
+            "done": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Mark the item done (checked) or not."
+            },
+            "item_id": {
+              "description": "Shopping-list item ID (from `shopping_list_get`).",
+              "type": "integer"
+            },
+            "note": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "New free-text note."
+            }
+          },
+          "required": [
+            "item_id"
+          ],
+          "type": "object"
+        },
+        "shopping_list_items_add": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "description": "Items to add. Max 100 per call.",
+              "items": {
+                "description": "One shopping-list item to add via ``shopping_list_items_add``.\n\nThree valid shapes: product-only (``product`` set), note-only (``note``\nset), or product + note (e.g. \"Milk \u2014 buy the organic brand\"). At\nleast one of the two must be provided.",
+                "properties": {
+                  "amount": {
+                    "default": 1,
+                    "description": "Quantity to buy, in the product's stock QU.",
+                    "type": "number"
+                  },
+                  "note": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Free-text note. May accompany a `product` to qualify it, or stand alone for note-only items."
+                  },
+                  "product": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Product to add. Name or ID. Omit for note-only items."
+                  },
+                  "shopping_list": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "Target shopping list. Name or ID."
+                  }
+                },
+                "required": [
+                  "shopping_list"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "shopping_list_items_remove": {
+          "additionalProperties": false,
+          "properties": {
+            "item_ids": {
+              "description": "Shopping-list item IDs to remove (from `shopping_list_get`). Max 100 per call.",
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "item_ids"
+          ],
+          "type": "object"
+        },
+        "shopping_lists_list": {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "default": "brief",
+              "description": "`brief` returns only `id` + `name`. `full` returns every column.",
+              "enum": [
+                "brief",
+                "full"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "stock_add": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "description": "Stock additions. Max 100 per call.",
+              "items": {
+                "description": "One stock addition for ``stock_add``.",
+                "properties": {
+                  "amount": {
+                    "description": "Amount to add, in `qu` units.",
+                    "type": "number"
+                  },
+                  "best_before_date": {
+                    "anyOf": [
+                      {
+                        "format": "date",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Best-before / expiration date in `YYYY-MM-DD` format. Omit to use the product's `default_best_before_days`. Use `2999-12-31` for never-expires."
+                  },
+                  "location": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "Storage location to add to. Name or ID."
+                  },
+                  "note": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Free-text note attached to the resulting stock entry."
+                  },
+                  "price": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Per-unit price. Omit to use the last recorded price."
+                  },
+                  "product": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "Product. Name or ID."
+                  },
+                  "qu": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "Quantity unit. Name or ID. Must match the product's stock QU or have a defined conversion (see the `quantity_unit_conversions` entity). Product-specific conversions override global ones; a missing-conversion error names usable substitutes."
+                  }
+                },
+                "required": [
+                  "product",
+                  "amount",
+                  "qu",
+                  "location"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "stock_consume": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "description": "Stock consumptions. Max 100 per call.",
+              "items": {
+                "description": "One stock consumption for ``stock_consume``.",
+                "properties": {
+                  "allow_subproduct_substitution": {
+                    "default": false,
+                    "description": "If this product has **variants** configured via `parent_product`, let Grocy consume from the variants' stock when the parent itself is short. FIFO across variants. Common pattern: a generic parent (often with `no_own_stock=1`) has several branded variants; consuming the parent uses whichever brand is on hand.",
+                    "type": "boolean"
+                  },
+                  "amount": {
+                    "description": "Amount to consume, in `qu` units.",
+                    "type": "number"
+                  },
+                  "location": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "Location to consume from. Name or ID. Use `stock_get` first if you don't know where the product is."
+                  },
+                  "product": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "Product. Name or ID."
+                  },
+                  "qu": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "Quantity unit. Name or ID. Must match the product's stock QU or have a defined conversion (see the `quantity_unit_conversions` entity). Product-specific conversions override global ones; a missing-conversion error names usable substitutes."
+                  },
+                  "spoiled": {
+                    "default": false,
+                    "description": "Mark the consumption as spoilage rather than normal use.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "product",
+                  "amount",
+                  "qu",
+                  "location"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "stock_entry_edit": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "description": "Entry edits. Max 100 per call.",
+              "items": {
+                "description": "One stock-entry edit for ``stock_entry_edit``.",
+                "properties": {
+                  "amount": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New amount, in the entry's stock QU."
+                  },
+                  "best_before_date": {
+                    "anyOf": [
+                      {
+                        "format": "date",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New best-before / expiration date in `YYYY-MM-DD` format. Omit to keep the current value. Use `2999-12-31` for never-expires."
+                  },
+                  "clear_fields": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "description": "Nullable stock-entry fields that ``stock_entry_edit.clear_fields`` can null out.\n\nOther stock-entry fields (``amount``, ``location_id``, ``open``) are NOT\nNULL in Grocy's schema and must be assigned a value if changed.\n\n``best_before_date`` is intentionally excluded: setting it to NULL makes\nthe product invisible in Grocy's stock overview. Use\n``best_before_date=\"2999-12-31\"`` for never-expires instead.",
+                          "enum": [
+                            "price",
+                            "purchased_date",
+                            "note"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Fields to explicitly null out. Only the values in `EditStockEntryField` are nullable in Grocy's schema; everything else is NOT NULL and must be assigned a value if changed."
+                  },
+                  "entry_id": {
+                    "description": "Stock-entry ID (from `stock_entries_list`).",
+                    "type": "integer"
+                  },
+                  "location": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New storage location. Name or ID."
+                  },
+                  "note": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New free-text note."
+                  },
+                  "open": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Mark the entry as opened or unopened."
+                  },
+                  "price": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New per-unit price."
+                  },
+                  "purchased_date": {
+                    "anyOf": [
+                      {
+                        "format": "date",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "New purchase date in `YYYY-MM-DD` format."
+                  }
+                },
+                "required": [
+                  "entry_id"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "stock_get": {
+          "additionalProperties": false,
+          "properties": {
+            "locations": {
+              "description": "Locations (name or ID) to restrict to. Empty list = no location filter.",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "products": {
+              "description": "Products (name or ID) to restrict to. Empty list = no product filter.",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "locations_list",
+        "product_groups_list",
+        "products_create",
+        "products_edit",
+        "products_list",
+        "quantity_units_list",
+        "shopping_list_get",
+        "shopping_list_item_edit",
+        "shopping_list_items_add",
+        "shopping_list_items_remove",
+        "shopping_lists_list",
+        "stock_add",
+        "stock_consume",
+        "stock_entry_edit",
+        "stock_get"
+      ],
+      "type": "object"
+    },
+    "haku_routine": {
+      "additionalProperties": false,
+      "properties": {
+        "launch_routine": {
+          "additionalProperties": false,
+          "description": "Stored request shape retained for rendering historical approval rows.",
+          "properties": {
+            "text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional per-run routine instructions; omit or leave blank to use the routine's saved default.",
+              "title": "Text"
+            }
+          },
+          "title": "LaunchRoutineArguments",
+          "type": "object"
+        }
+      },
+      "required": [
+        "launch_routine"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "gmail",
+    "google_calendar",
+    "grocy-sf",
+    "haku_routine"
+  ],
+  "title": "McpToolArguments",
+  "type": "object"
+}

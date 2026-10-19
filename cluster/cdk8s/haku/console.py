@@ -60,9 +60,9 @@ from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.settings_file import SettingsFile
 from haku.console.config import CONFIG_FILE_ENV
-from haku.console.mcp_config import ConsoleConfigFile
+from haku.console.identity.config import ConsoleConfigFile
 from haku.console.settings import Settings
-from util.settings_contract import checked_value, env_name
+from util.settings_contract import env_name
 
 NAMESPACE = "haku-console"
 NAME = "haku-console"
@@ -125,7 +125,7 @@ class Console(Construct):
             self,
             "config",
             metadata=ApiObjectMetadata(name="config", namespace=NAMESPACE),
-            model=ConsoleConfigFile,
+            model=console_config.RollingConsoleConfig,
             content=console_config.config(),
             path="/etc/haku-console/config/config.yaml",
             supplied=[path for path in self._supplied if path[0] in ConsoleConfigFile.model_fields],
@@ -218,11 +218,6 @@ class Console(Construct):
                 (
                     env_name(Settings, "static_image_tag_file"),
                     EnvValue.from_value(f"{_STATIC_METADATA_DIR}/{_IMAGE_TAG_KEY}"),
-                ),
-                # Must leave margin below the public route's request timeout.
-                (
-                    env_name(Settings, "max_wait_for_result_ms"),
-                    EnvValue.from_value(str(checked_value(Settings, "max_wait_for_result_ms", 60_000))),
                 ),
                 *database_env(self).items(),
                 # The static Agents' bearers; the durable Agent UUIDs and display names are in

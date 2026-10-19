@@ -4,8 +4,7 @@ import type { components, paths } from "./api/schema";
 import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login";
 
 // Same-origin typed client (nginx serves this bundle and proxies /api). Types are generated from
-// the backend's OpenAPI schema: //haku/console/frontend:schema. Exported so the per-integration
-// client files (gmail_client.ts, grocy_client.ts) share this one instance.
+// the backend's OpenAPI schema: //haku/console/frontend:schema.
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
 
 // App-owned operator auth: the /api/* guards answer 401 when there is no operator session, while
@@ -23,13 +22,10 @@ export type ConfigResponse = components["schemas"]["ConfigResponse"];
 export type OperatorResponse = components["schemas"]["OperatorResponse"];
 export type DeploymentInfo = components["schemas"]["DeploymentInfo"];
 export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
-export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionResponse"];
-type ApprovalDecisionRequest = components["schemas"]["ApprovalDecisionRequest"];
-export type ToolCallRecord = components["schemas"]["ToolCallRecord"];
 export type AgentView = components["schemas"]["AgentView"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
 // FastAPI error responses are `{detail: string}`; surface that real reason, falling back when the
-// body isn't shaped that way. Shared with the per-integration client files.
+// body isn't shaped that way. Shared by the console API helpers.
 export function errorDetail(error: unknown, fallback: string): string {
   if (error && typeof error === "object" && "detail" in error) {
     const { detail } = error as { detail: unknown };
@@ -87,77 +83,4 @@ export async function launchRoutine(text?: string): Promise<LaunchRoutineResult>
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to launch routine"));
   return data;
-}
-
-export async function fetchPendingApprovals(): Promise<ToolCallRecord[]> {
-  const { data, error } = await api.GET("/api/approvals/pending");
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load pending approvals"));
-  return data.approvals ?? [];
-}
-
-export async function fetchToolCall(toolCallId: string): Promise<ToolCallRecord> {
-  const { data, error } = await api.GET("/api/tool-calls/{tool_call_id}", {
-    params: { path: { tool_call_id: toolCallId } },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load tool call"));
-  return data;
-}
-
-/** One page of the ledger, plus the position to resume from (null once the page is the last). */
-export interface ToolCallPage {
-  records: ToolCallRecord[];
-  nextCursor: string | null;
-}
-
-// The tool-call audit ledger for the history view: newest first, one page at a time. A record
-// carries its whole arguments and result payload — megabytes for a few hundred of them — so the
-// page follows `next_cursor` instead of asking for the ledger's cap up front. `showAutoApproved`
-// false filters server-side; discarding client-side would starve the page of older manual calls
-// once auto-approved traffic fills the window.
-export async function fetchToolCalls(
-  limit: number,
-  showAutoApproved: boolean,
-  cursor: string | null = null
-): Promise<ToolCallPage> {
-  const { data, error } = await api.GET("/api/tool-calls", {
-    params: {
-      query: {
-        newest_first: true,
-        limit,
-        auto_approved: showAutoApproved ? undefined : false,
-        cursor: cursor ?? undefined,
-      },
-    },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load tool calls"));
-  return { records: data.tool_calls ?? [], nextCursor: data.next_cursor ?? null };
-}
-
-async function decideToolCall(
-  toolCallId: string,
-  body: ApprovalDecisionRequest,
-  fallback: string
-): Promise<ToolCallRecord> {
-  const { data, error } = await api.POST("/api/tool-calls/{tool_call_id}/decision", {
-    params: { path: { tool_call_id: toolCallId } },
-    body,
-  });
-  if (error || !data) throw new Error(errorDetail(error, fallback));
-  return data.tool_call;
-}
-
-export async function approveToolCall(toolCallId: string, decisionNote?: string): Promise<ToolCallRecord> {
-  return decideToolCall(
-    toolCallId,
-    { decision: "approve", decision_note: decisionNote ?? null },
-    "Failed to approve tool call"
-  );
-}
-
-export async function denyToolCall(toolCallId: string, decisionNote?: string): Promise<ToolCallRecord> {
-  return decideToolCall(
-    toolCallId,
-    { decision: "deny", decision_note: decisionNote ?? null },
-    "Failed to deny tool call"
-  );
 }

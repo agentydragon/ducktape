@@ -2,44 +2,24 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-  APPROVALS_EMBED_PATH,
   CONSOLE_ROOT_PATH,
   HOME_PATH,
   rememberedEmbedPath,
   rememberEmbedPath,
   SETTINGS_PATH,
-  TOOL_CALLS_PATH,
-  toolCallIdForPathname,
-  toolCallPath,
   viewForPathname,
 } from "./routing";
 
 describe("viewForPathname", () => {
-  it("reserves only the _console namespace for trusted pages", () => {
+  it("reserves settings and the rest of the console namespace", () => {
     expect(viewForPathname(SETTINGS_PATH)).toBe("settings");
-    expect(viewForPathname(APPROVALS_EMBED_PATH)).toBe("approvalsEmbed");
     expect(viewForPathname(`${SETTINGS_PATH}/agents/enroll/10000000-0000-4000-8000-000000000001`)).toBe("notFound");
-    expect(viewForPathname(TOOL_CALLS_PATH)).toBe("toolCalls");
     expect(viewForPathname(`${CONSOLE_ROOT_PATH}/unknown`)).toBe("notFound");
     expect(viewForPathname(CONSOLE_ROOT_PATH)).toBe("embed");
   });
 
-  it("resolves a deep-linked tool call to the shell, which opens the drawer on that call", () => {
-    const id = "tc_0123456789abcdef01234567";
-    expect(toolCallPath(id)).toBe(`${TOOL_CALLS_PATH}/${id}`);
-    expect(toolCallIdForPathname(toolCallPath(id))).toBe(id);
-    // Not the history page: a pending call is decided in the approvals drawer, which floats over
-    // the ordinary embed view.
-    expect(viewForPathname(`${TOOL_CALLS_PATH}/${id}`)).toBe("embed");
-    // Tool call ids are `tc_` + 24 hex, not UUIDs like the other id-bearing console routes.
-    expect(toolCallIdForPathname(`${TOOL_CALLS_PATH}/8de5eb42-a3ce-4c83-9b13-59678c399ba3`)).toBeNull();
-    expect(toolCallIdForPathname(`${TOOL_CALLS_PATH}/tc_short`)).toBeNull();
-    expect(viewForPathname(`${TOOL_CALLS_PATH}/tc_short`)).toBe("notFound");
-  });
-
-  it("returns every non-console path, including the old history path, to haku-ui", () => {
+  it("returns paths outside the console namespace to haku-ui", () => {
     expect(viewForPathname(HOME_PATH)).toBe("embed");
-    expect(viewForPathname("/tool-calls")).toBe("embed");
     expect(viewForPathname("/garden/a.md")).toBe("embed");
   });
 });

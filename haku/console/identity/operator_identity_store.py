@@ -29,9 +29,10 @@ class PostgresOperatorIdentityStore:
     """Resolve trusted external identities to canonical Operator UUIDs.
 
     Every create path takes the same transaction-scoped advisory lock for an anchor key. This makes
-    first contact from the browser and MCP issuers converge on one Operator even when they arrive at
-    different replicas concurrently. Hash collisions only serialize unrelated first-contact work;
-    correctness still comes from the unique database constraints and the locked re-read.
+    separate issuer-qualified identities for the same Authentik user converge on one Operator even
+    when they arrive at different replicas concurrently. Hash collisions only serialize unrelated
+    first-contact work; correctness still comes from the unique database constraints and the locked
+    re-read.
     """
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession], trust: OperatorIdentityTrust) -> None:
