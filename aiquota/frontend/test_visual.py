@@ -47,8 +47,11 @@ async def view(
         for scene in ("hot", "paid_credits")
     ],
 )
-async def test_dashboard(view: VisualPage) -> None:
+async def test_dashboard(view: VisualPage, scene: str) -> None:
     await expect(view.page.locator(".aiquota-card").first).to_be_attached()
+    if scene == "reset_credit_expiry_unavailable":
+        await expect(view.page.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text("2 banked resets")
+        await expect(view.page.get_by_text("expiry dates unavailable", exact=True)).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 

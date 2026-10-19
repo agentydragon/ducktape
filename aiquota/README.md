@@ -132,7 +132,10 @@ redeems a credit. When the companion detail endpoint names an expiry for a
 currently available credit, those surfaces display it as a _known_ expiry. The
 historical credit rows above remain available for analytics, but their detail
 list may be capped or omitted and is not used as the live count or assumed to
-be a complete expiry list.
+be a complete expiry list. If fetching or parsing that supplemental detail fails,
+`reset_credit_expiry_lookup_failed` marks the partial result while preserving the
+count and quota windows; a successful lookup with no expiry dates leaves the flag
+false.
 
 The same usage response can include a separate `credits` balance for paid
 usage beyond the included quota. AIQuota shows that balance in provider credits

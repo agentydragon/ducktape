@@ -24,6 +24,7 @@ export type EffectiveQuota = {
   paidCredits: PaidCredits | null;
   resetCredits: number | null;
   resetCreditExpiries: string[];
+  resetCreditExpiryLookupFailed: boolean;
   /** When the shown numbers come from an older snapshot: when that snapshot was taken. */
   staleSince: string | null;
   error: string | null;
@@ -46,6 +47,7 @@ export function effectiveQuota(provider: ProviderView): EffectiveQuota {
     paidCredits: null,
     resetCredits: null,
     resetCreditExpiries: [],
+    resetCreditExpiryLookupFailed: false,
     staleSince: null,
     error,
   };
@@ -69,5 +71,6 @@ function shown(result: components["schemas"]["FetchSuccess"]): Omit<EffectiveQuo
     paidCredits: result.paid_credits ?? null,
     resetCredits: result.available_reset_credits ?? null,
     resetCreditExpiries: result.available_reset_credit_expiries ?? [],
+    resetCreditExpiryLookupFailed: result.reset_credit_expiry_lookup_failed ?? false,
   };
 }

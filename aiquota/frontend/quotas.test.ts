@@ -74,6 +74,25 @@ describe("effectiveQuota", () => {
     expect(quota.staleSince).toBeNull();
   });
 
+  it("retains the banked reset count when supplemental expiry details failed", () => {
+    const quota = effectiveQuota(
+      provider({
+        last_output: {
+          fetched_at: FETCHED_AT,
+          result: {
+            kind: "success",
+            windows: [window()],
+            available_reset_credits: 2,
+            reset_credit_expiry_lookup_failed: true,
+          },
+        },
+      })
+    );
+
+    expect(quota.resetCredits).toBe(2);
+    expect(quota.resetCreditExpiryLookupFailed).toBe(true);
+  });
+
   it("drops windows the provider marked as not for display", () => {
     const quota = effectiveQuota(
       provider({

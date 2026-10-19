@@ -108,6 +108,7 @@ function effectiveState(state) {
       paidCredits: state.paidCredits,
       availableResetCredits: state.availableResetCredits,
       availableResetCreditExpiries: state.availableResetCreditExpiries,
+      resetCreditExpiryLookupFailed: state.resetCreditExpiryLookupFailed,
       staleAge,
     };
   }
@@ -119,6 +120,7 @@ function effectiveState(state) {
       paidCredits: null,
       availableResetCredits: null,
       availableResetCreditExpiries: [],
+      resetCreditExpiryLookupFailed: false,
       staleAge: null,
     };
   }
@@ -129,6 +131,7 @@ function effectiveState(state) {
     paidCredits: snap.paidCredits,
     availableResetCredits: snap.availableResetCredits,
     availableResetCreditExpiries: snap.availableResetCreditExpiries,
+    resetCreditExpiryLookupFailed: snap.resetCreditExpiryLookupFailed,
     staleAge: ageSeconds,
   };
 }
@@ -242,10 +245,11 @@ function formatKnownExpiry(expiry) {
   return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-function formatBankedResets(count, expiries) {
+function formatBankedResets(count, expiries, expiryLookupFailed) {
   if (count == null) return null;
   const knownExpiries = (expiries ?? []).map(formatKnownExpiry).filter((expiry) => expiry != null);
   const label = `${count} banked reset${count === 1 ? "" : "s"}`;
+  if (expiryLookupFailed) return `${label} · expiry dates unavailable`;
   return knownExpiries.length ? `${label} · known expiries: ${knownExpiries.join(", ")}` : label;
 }
 
@@ -321,6 +325,7 @@ function emptyProviderState() {
     paidCredits: null,
     availableResetCredits: null,
     availableResetCreditExpiries: [],
+    resetCreditExpiryLookupFailed: false,
     currentlyOverPlan: false,
     extraStatus: "none",
     paidCreditsActive: false,
@@ -422,6 +427,7 @@ const QuotaIndicator = GObject.registerClass(
           paidCredits: snap.paidCredits ?? null,
           availableResetCredits: snap.availableResetCredits ?? null,
           availableResetCreditExpiries: snap.availableResetCreditExpiries ?? [],
+          resetCreditExpiryLookupFailed: snap.resetCreditExpiryLookupFailed === true,
           fetchedAt,
         };
       };
@@ -437,6 +443,7 @@ const QuotaIndicator = GObject.registerClass(
           paidCredits: node?.paidCredits ?? null,
           availableResetCredits: node?.availableResetCredits ?? null,
           availableResetCreditExpiries: node?.availableResetCreditExpiries ?? [],
+          resetCreditExpiryLookupFailed: node?.resetCreditExpiryLookupFailed === true,
           currentlyOverPlan: node?.currentlyOverPlan === true,
           extraStatus: node?.extraStatus ?? "none",
           paidCreditsActive: node?.paidCreditsActive === true,
@@ -853,6 +860,7 @@ const QuotaIndicator = GObject.registerClass(
         paidCredits: snap.result.paid_credits ?? null,
         availableResetCredits: snap.result.available_reset_credits ?? null,
         availableResetCreditExpiries: snap.result.available_reset_credit_expiries ?? [],
+        resetCreditExpiryLookupFailed: snap.result.reset_credit_expiry_lookup_failed === true,
         fetchedAt: snap.fetched_at ? new Date(snap.fetched_at).getTime() : null,
       };
     }
@@ -888,6 +896,7 @@ const QuotaIndicator = GObject.registerClass(
           paidCredits: isSuccess ? (result.paid_credits ?? null) : null,
           availableResetCredits: isSuccess ? (result.available_reset_credits ?? null) : null,
           availableResetCreditExpiries: isSuccess ? (result.available_reset_credit_expiries ?? []) : [],
+          resetCreditExpiryLookupFailed: isSuccess && result.reset_credit_expiry_lookup_failed === true,
           // Derived policy bits from the Python view model — single source of truth.
           currentlyOverPlan: pq.currently_over_plan === true,
           extraStatus: pq.extra_status ?? "none",
@@ -1013,8 +1022,14 @@ const QuotaIndicator = GObject.registerClass(
       item.label.remove_style_class_name("quota-popup-header-error");
       item.label.remove_style_class_name("quota-popup-header-stale");
 
-      const { windows, extraSpend, availableResetCredits, availableResetCreditExpiries, staleAge } =
-        effectiveState(state);
+      const {
+        windows,
+        extraSpend,
+        availableResetCredits,
+        availableResetCreditExpiries,
+        resetCreditExpiryLookupFailed,
+        staleAge,
+      } = effectiveState(state);
       const haveWindows = windows.length > 0;
       const parts = [title];
       if (state.error) {
@@ -1024,7 +1039,11 @@ const QuotaIndicator = GObject.registerClass(
         item.label.add_style_class_name("quota-popup-header-stale");
       }
       if (staleAge != null) parts.push(`(stale ${formatAge(staleAge)})`);
-      const resets = formatBankedResets(availableResetCredits, availableResetCreditExpiries);
+      const resets = formatBankedResets(
+        availableResetCredits,
+        availableResetCreditExpiries,
+        resetCreditExpiryLookupFailed
+      );
       if (resets) parts.push(resets);
       const extraStr = formatExtraSpend(extraSpend);
       if (extraStr) parts.push(extraStr);

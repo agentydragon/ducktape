@@ -1,0 +1,9 @@
+# The live reset-credit count remains authoritative when its supplemental
+# expiry-detail lookup fails.
+codex:
+  short: { usedPercent: 30, resetSeconds: 12600, windowSeconds: 18000 }
+  long: { usedPercent: 30, resetSeconds: 423360, windowSeconds: 604800 }
+  availableResetCredits: 2
+  resetCreditExpiryLookupFailed: true
+  lastFetch: 1
+  error: null

@@ -47,19 +47,35 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     out_result = pv.last_output.result
     error = out_result.error if not isinstance(out_result, FetchSuccess) else None
 
-    windows, extra, paid_credits, reset_credits, reset_credit_expiries, stale_age = _effective_windows(pv, now)
+    (
+        windows,
+        extra,
+        paid_credits,
+        reset_credits,
+        reset_credit_expiries,
+        reset_credit_expiry_lookup_failed,
+        stale_age,
+    ) = _effective_windows(pv, now)
     credit_line = _format_paid_credits(paid_credits, pv.paid_credits_active)
 
     if error and not windows:
         return _header(
-            pv.provider, error, pv.last_output.fetched_at, now, reset_credits, reset_credit_expiries, stale_age, tz
+            pv.provider,
+            error,
+            pv.last_output.fetched_at,
+            now,
+            reset_credits,
+            reset_credit_expiries,
+            reset_credit_expiry_lookup_failed,
+            stale_age,
+            tz,
         ) + (f"  {credit_line}" if credit_line else "")
 
     if pv.currently_over_plan or pv.paid_credits_active:
         # Mirror the GNOME popup's text-only active-extra view: while burning,
         # bars are noise, but both reset countdowns still matter.
         lines = [
-            f"{_provider_label(pv.provider, reset_credits, reset_credit_expiries, tz)}  "
+            f"{_provider_label(pv.provider, reset_credits, reset_credit_expiries, tz, reset_credit_expiry_lookup_failed)}  "
             f"{credit_line if pv.paid_credits_active else _format_extra_active(extra)}"
         ]
         lines.append(_active_windows_line(windows))
@@ -67,7 +83,17 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
         return "\n".join(lines)
 
     lines = [
-        _header(pv.provider, error, pv.last_output.fetched_at, now, reset_credits, reset_credit_expiries, stale_age, tz)
+        _header(
+            pv.provider,
+            error,
+            pv.last_output.fetched_at,
+            now,
+            reset_credits,
+            reset_credit_expiries,
+            reset_credit_expiry_lookup_failed,
+            stale_age,
+            tz,
+        )
     ]
     if credit_line:
         lines.append(f"  {credit_line}")
@@ -100,7 +126,7 @@ def _burn_lines(pv: ProviderView, now: datetime, tz: tzinfo | None) -> list[str]
 
 def _effective_windows(
     pv: ProviderView, now: datetime
-) -> tuple[list[QuotaWindow], ExtraSpend | None, PaidCredits | None, int | None, list[datetime], str | None]:
+) -> tuple[list[QuotaWindow], ExtraSpend | None, PaidCredits | None, int | None, list[datetime], bool, str | None]:
     out_result = pv.last_output.result
     # If the latest call gave us nothing usable, fall back to the prior
     # successful snapshot — stale-but-real numbers beat "no data".
@@ -113,11 +139,12 @@ def _effective_windows(
             out_result.paid_credits,
             out_result.available_reset_credits,
             out_result.available_reset_credit_expiries,
+            out_result.reset_credit_expiry_lookup_failed,
             None,
         )
     if pv.last_success is not None:
         return _stale_windows(pv.last_success, now)
-    return [], None, None, None, [], None
+    return [], None, None, None, [], False, None
 
 
 def _column_widths(providers: list[ProviderView], now: datetime) -> _ColumnWidths:
@@ -125,7 +152,7 @@ def _column_widths(providers: list[ProviderView], now: datetime) -> _ColumnWidth
     for pv in providers:
         if pv.currently_over_plan or pv.paid_credits_active:
             continue
-        windows, _, _, _, _, _ = _effective_windows(pv, now)
+        windows, _, _, _, _, _, _ = _effective_windows(pv, now)
         rows.extend(_window_row(window) for window in windows)
     return _ColumnWidths(
         reset=max((len(row.reset) for row in rows), default=0),
@@ -135,13 +162,14 @@ def _column_widths(providers: list[ProviderView], now: datetime) -> _ColumnWidth
 
 def _stale_windows(
     snap: SuccessfulProviderFetch, now: datetime
-) -> tuple[list[QuotaWindow], ExtraSpend | None, PaidCredits | None, int | None, list[datetime], str]:
+) -> tuple[list[QuotaWindow], ExtraSpend | None, PaidCredits | None, int | None, list[datetime], bool, str]:
     return (
         [_refreshed_window(window, now) for window in snap.result.windows if window.display],
         snap.result.extra_spend,
         snap.result.paid_credits,
         snap.result.available_reset_credits,
         snap.result.available_reset_credit_expiries,
+        snap.result.reset_credit_expiry_lookup_failed,
         format_age((now - snap.fetched_at).total_seconds()),
     )
 
@@ -161,10 +189,11 @@ def _header(
     now: datetime,
     reset_credits: int | None,
     reset_credit_expiries: list[datetime],
+    reset_credit_expiry_lookup_failed: bool,
     stale_age: str | None,
     tz: tzinfo | None,
 ) -> str:
-    parts = [_provider_label(provider, reset_credits, reset_credit_expiries, tz)]
+    parts = [_provider_label(provider, reset_credits, reset_credit_expiries, tz, reset_credit_expiry_lookup_failed)]
     if error is None:
         if stale_age is not None:
             parts.append(f"(stale {stale_age})")
@@ -178,12 +207,18 @@ def _header(
 
 
 def _provider_label(
-    provider: str, reset_credits: int | None, reset_credit_expiries: list[datetime], tz: tzinfo | None
+    provider: str,
+    reset_credits: int | None,
+    reset_credit_expiries: list[datetime],
+    tz: tzinfo | None,
+    reset_credit_expiry_lookup_failed: bool,
 ) -> str:
     if reset_credits is None:
         return provider
     noun = "reset" if reset_credits == 1 else "resets"
     label = f"{provider} · {reset_credits} banked {noun}"
+    if reset_credit_expiry_lookup_failed:
+        return f"{label} · expiry dates unavailable"
     if expiries := format_known_reset_credit_expiries(reset_credit_expiries, tz):
         return f"{label} · known expiries: {expiries}"
     return label

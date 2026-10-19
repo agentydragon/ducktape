@@ -57,6 +57,9 @@ class FetchSuccess(BaseModel):
     # Expiries from the best-effort reset-credit detail endpoint. This can be
     # incomplete even when `available_reset_credits` is authoritative.
     available_reset_credit_expiries: list[datetime] = Field(default_factory=list)
+    # True only when the supplemental detail lookup or its response parsing
+    # failed. An empty expiry list on success does not imply lookup failure.
+    reset_credit_expiry_lookup_failed: bool = False
 
     @field_validator("windows")
     @classmethod

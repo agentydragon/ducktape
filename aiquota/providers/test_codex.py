@@ -124,7 +124,10 @@ def test_usage_response_parses_null_additional_rate_limits() -> None:
     assert usage.rate_limit is not None
     assert usage.rate_limit.primary_window is not None
     assert usage.rate_limit.primary_window.used_percent == 96
-    assert _to_success(usage).paid_credits is None
+    result = _to_success(usage)
+    assert result.paid_credits is None
+    assert result.available_reset_credits == 0
+    assert result.reset_credit_expiry_lookup_failed is False
 
 
 def test_paid_credit_balance_is_distinct_from_banked_resets() -> None:
@@ -272,6 +275,8 @@ async def test_weekly_primary_window_preserves_provider_duration(tmp_path: Path)
     assert output.result.windows[0].name is None
     assert output.result.windows[1].name == "GPT-5.3-Codex-Spark"
     assert not output.result.windows[1].display
+    assert output.result.available_reset_credits is None
+    assert output.result.reset_credit_expiry_lookup_failed is False
 
 
 async def test_usage_surfaces_authoritative_banked_reset_count(tmp_path: Path) -> None:
@@ -310,6 +315,7 @@ async def test_usage_surfaces_authoritative_banked_reset_count(tmp_path: Path) -
     assert isinstance(output.result, FetchSuccess)
     assert output.result.available_reset_credits == 3
     assert output.result.available_reset_credit_expiries == [datetime(2026, 9, 20, 9, 0, tzinfo=UTC)]
+    assert output.result.reset_credit_expiry_lookup_failed is False
 
 
 async def test_credit_detail_failure_keeps_the_authoritative_banked_count(
@@ -327,8 +333,10 @@ async def test_credit_detail_failure_keeps_the_authoritative_banked_count(
         output = await _provider(path).fetch()
 
     assert isinstance(output.result, FetchSuccess)
+    assert len(output.result.windows) == 1
     assert output.result.available_reset_credits == 1
     assert output.result.available_reset_credit_expiries == []
+    assert output.result.reset_credit_expiry_lookup_failed is True
     assert any("HTTPStatusError" in record.message and "503" in record.message for record in caplog.records)
     assert "retaining count only" in caplog.text
     assert token not in caplog.text
@@ -349,11 +357,59 @@ async def test_credit_detail_timeout_logs_exception_type_and_keeps_count(
         output = await _provider(path).fetch()
 
     assert isinstance(output.result, FetchSuccess)
+    assert len(output.result.windows) == 1
     assert output.result.available_reset_credits == 1
     assert output.result.available_reset_credit_expiries == []
     assert any("ConnectTimeout" in record.message for record in caplog.records)
     assert "retaining count only" in caplog.text
     assert token not in caplog.text
+    assert output.result.reset_credit_expiry_lookup_failed is True
+
+
+async def test_credit_detail_parse_failure_keeps_the_authoritative_banked_count(tmp_path: Path) -> None:
+    token = _jwt(datetime.now(UTC) + timedelta(days=10))
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps(_auth(token)))
+    usage = {**_USAGE_BODY, "rate_limit_reset_credits": {"available_count": 2}}
+    malformed_details = {
+        "credits": [
+            {
+                "id": "bad-expiry",
+                "reset_type": "codexRateLimits",
+                "status": "available",
+                "granted_at": "2026-09-01T09:00:00Z",
+                "expires_at": "not-a-date",
+            }
+        ]
+    }
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=usage))
+        mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(200, json=malformed_details))
+        output = await _provider(path).fetch()
+
+    assert isinstance(output.result, FetchSuccess)
+    assert len(output.result.windows) == 1
+    assert output.result.available_reset_credits == 2
+    assert output.result.available_reset_credit_expiries == []
+    assert output.result.reset_credit_expiry_lookup_failed is True
+
+
+async def test_empty_credit_details_are_not_a_lookup_failure(tmp_path: Path) -> None:
+    token = _jwt(datetime.now(UTC) + timedelta(days=10))
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps(_auth(token)))
+    usage = {**_USAGE_BODY, "rate_limit_reset_credits": {"available_count": 1}}
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=usage))
+        mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(200, json={"credits": []}))
+        output = await _provider(path).fetch()
+
+    assert isinstance(output.result, FetchSuccess)
+    assert output.result.available_reset_credits == 1
+    assert output.result.available_reset_credit_expiries == []
+    assert output.result.reset_credit_expiry_lookup_failed is False
 
 
 async def test_management_api_uses_runtime_codex_auth_index() -> None:

@@ -60,6 +60,13 @@
     5h: 100% ↻ 1h30m  7d:  38% ↻ 3d14h
   '''
 # ---
+# name: test_renders_shared_fixture[reset_credit_expiry_unavailable]
+  '''
+  codex · 2 banked resets · expiry dates unavailable
+    5h:  30%  ↻ 3h30m  Δ+0%  on pace
+    7d:  30%  ↻ 4d21h  Δ+0%  on pace
+  '''
+# ---
 # name: test_renders_shared_fixture[stale_fallback]
   '''
   claude  last refresh failed 2m ago: HTTP 503 Service Unavailable  (stale 1d0h)

@@ -403,17 +403,18 @@ async def _with_reset_credit_expiries(
         return result
     try:
         details = await fetch_details()
+        expiries = _available_credit_expiries(details)
     except httpx.HTTPStatusError as error:
         logger.warning(
             "codex reset-credit detail fetch failed (%s, HTTP %d); retaining count only",
             type(error).__name__,
             error.response.status_code,
         )
-        return result
+        return result.model_copy(update={"reset_credit_expiry_lookup_failed": True})
     except Exception as error:
         logger.warning("codex reset-credit detail fetch failed (%s); retaining count only", type(error).__name__)
-        return result
-    return result.model_copy(update={"available_reset_credit_expiries": _available_credit_expiries(details)})
+        return result.model_copy(update={"reset_credit_expiry_lookup_failed": True})
+    return result.model_copy(update={"available_reset_credit_expiries": expiries})
 
 
 class CodexProvider(Provider):

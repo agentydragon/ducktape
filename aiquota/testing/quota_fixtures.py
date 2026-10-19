@@ -18,7 +18,16 @@ from aiquota.models import (
     SuccessfulProviderFetch,
 )
 
-FIXTURE_NAMES = ("empty", "tints", "hot", "exhausted", "extra_enabled_not_burning", "stale_fallback", "paid_credits")
+FIXTURE_NAMES = (
+    "empty",
+    "tints",
+    "hot",
+    "exhausted",
+    "extra_enabled_not_burning",
+    "stale_fallback",
+    "paid_credits",
+    "reset_credit_expiry_unavailable",
+)
 PROVIDER_ORDER = ("claude", "codex", "zai")
 DEFAULT_NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 
@@ -73,6 +82,7 @@ def _success(node: dict[str, Any]) -> FetchSuccess:
         paid_credits=PaidCredits.model_validate(node["paidCredits"]) if node.get("paidCredits") is not None else None,
         available_reset_credits=node.get("availableResetCredits"),
         available_reset_credit_expiries=node.get("availableResetCreditExpiries", []),
+        reset_credit_expiry_lookup_failed=node.get("resetCreditExpiryLookupFailed", False),
     )
 
 

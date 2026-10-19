@@ -23,3 +23,10 @@ def test_fetch_success_rejects_duplicate_durations() -> None:
 
     with pytest.raises(ValidationError):
         FetchSuccess(windows=windows)
+
+
+def test_reset_credit_expiry_lookup_failure_round_trips_as_explicit_state() -> None:
+    failed = FetchSuccess(available_reset_credits=2, reset_credit_expiry_lookup_failed=True)
+
+    assert FetchSuccess.model_validate_json(failed.model_dump_json()) == failed
+    assert FetchSuccess(available_reset_credits=2).reset_credit_expiry_lookup_failed is False

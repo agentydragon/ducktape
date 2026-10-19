@@ -95,7 +95,11 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
         <PaidCreditsStrip credits={quota.paidCredits} active={paidCreditsActive} windows={quota.windows} now={now} />
       )}
       {quota.resetCredits !== null && (
-        <ResetCreditsStrip count={quota.resetCredits} expiries={quota.resetCreditExpiries} />
+        <ResetCreditsStrip
+          count={quota.resetCredits}
+          expiries={quota.resetCreditExpiries}
+          expiryLookupFailed={quota.resetCreditExpiryLookupFailed}
+        />
       )}
       {provider.burn && <BurnStrip burn={provider.burn} now={now} />}
 
@@ -241,13 +245,25 @@ function OverPlanStrip({
  * other facts about the future rather than in the status badges. The expiries come from a
  * best-effort detail endpoint that can name fewer credits than the count — hence "known".
  */
-function ResetCreditsStrip({ count, expiries }: { count: number; expiries: string[] }): JSX.Element {
+function ResetCreditsStrip({
+  count,
+  expiries,
+  expiryLookupFailed,
+}: {
+  count: number;
+  expiries: string[];
+  expiryLookupFailed: boolean;
+}): JSX.Element {
   return (
     <div className={`aiquota-strip${count > 0 ? " aiquota-strip-resets" : ""}`}>
       <p className="aiquota-strip-line">
         ↻ {count} banked reset{count === 1 ? "" : "s"}
       </p>
-      {expiries.length > 0 && <p className="aiquota-strip-note">Known expiries: {formatKnownExpiries(expiries)}</p>}
+      {expiryLookupFailed ? (
+        <p className="aiquota-strip-note">expiry dates unavailable</p>
+      ) : (
+        expiries.length > 0 && <p className="aiquota-strip-note">Known expiries: {formatKnownExpiries(expiries)}</p>
+      )}
     </div>
   );
 }
