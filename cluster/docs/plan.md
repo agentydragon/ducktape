@@ -27,22 +27,6 @@ editing a route.
 
 ## Next Actions
 
-- [ ] **Wire gecko's bootstrap image to autoprovision (stable `latest` key).**
-      gecko's `gecko-root` DataVolume hardcodes a specific
-      `bootstrap/<sha>.qcow2` URL, so when that object's SeaweedFS chunks were
-      lost on 2026-06-02 it needed a manual re-pin (#1980, to the readable
-      `da37375538…` = current `devel.latest.txt` target). The
-      `vm-images-publisher` already writes a `bootstrap/<ref>.latest.txt`
-      pointer, but a DataVolume can't dereference a pointer file. To make this
-      self-healing: have `publish.sh` also `aws s3 cp` to a stable key
-      (`bootstrap/<ref>.latest.qcow2`, overwritten each publish) and point
-      gecko's DataVolume at that — then refreshing the image is just a publish + DV recreate, no manifest edit. Caveat: the DataVolume `source` is a
-      one-shot seed and is gecko's root disk, so recreating it wipes the disk
-      (re-seed, not in-place upgrade). The dead `bootstrap/3b9e37c50911…qcow2`
-      phantom (+ sidecar) has been deleted, but several orphan
-      `bootstrap/<sha>.qcow2.sha256` sidecars with no surviving qcow2 still
-      linger in the `vm-images` bucket and could be swept too. See
-      <lessons_learned/2026_06_02_seaweedfs_volume_loss_ovh_rename.md>.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). Currently
       only `grocy-{sf,vallejo}` and `tana-mcp` have volsync backups; the

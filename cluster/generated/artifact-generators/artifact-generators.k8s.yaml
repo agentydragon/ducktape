@@ -774,11 +774,6 @@ spec:
       name: vector-talos-logs
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/vm-images-publisher/**"
-          to: "@artifact/cluster/k8s/vm-images-publisher/"
-      name: vm-images-publisher
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/vpa/**"
           to: "@artifact/cluster/generated/vpa/"
       name: vpa

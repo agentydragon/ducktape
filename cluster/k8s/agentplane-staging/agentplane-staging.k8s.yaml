@@ -6466,7 +6466,6 @@ spec:
         - public-coder-agent
         - study-casino
         - tana-mcp
-        - vm-images-publisher
     - type: kubernetes_role_binding
       role:
         kind: Role

@@ -95,7 +95,6 @@ spec:
       resources:
         - attic
         - drivefs-artifacts
-        - vm-images
         - loom-gym
       sid: ListReadableBuckets
     - actions:
@@ -104,7 +103,6 @@ spec:
       resources:
         - attic/*
         - drivefs-artifacts/*
-        - vm-images/*
         - loom-gym/*
       sid: ReadBucketObjects
     - actions:

@@ -247,10 +247,6 @@ from cluster.cdk8s.sshpiper_crds import flux_kustomizations as sshpiper_crds_flu
 from cluster.cdk8s.study_casino import app as study_casino_app
 from cluster.cdk8s.tofu_controller import release as tofu_controller_release
 from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
-from cluster.cdk8s.vm_images_publisher import (
-    flux_kustomizations as vm_images_publisher_flux_kustomizations,
-    publisher as vm_images_publisher_publisher,
-)
 from cluster.cdk8s.website import website
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
@@ -301,7 +297,6 @@ def generate_manifests(root: Path) -> None:
     forgejo_db.write_manifests(root)
     forgejo_cache.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
-    vm_images_publisher_publisher.write_manifests(root)
     forgejo_app.write_manifests(root)
     home_assistant_app.write_manifests(root)
     home_assistant_backup.write_manifests(root)
@@ -1022,10 +1017,6 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_csi_driver.seaweedfs_csi(
         flux_chart, write_directory(root, seaweedfs_csi_artifact, seaweedfs_csi_driver.chart)
     )
-    vm_images_publisher_artifact = artifact("vm-images-publisher", vm_images_publisher_publisher.OUTPUT_DIR)
-    vm_images_publisher_kustomization = vm_images_publisher_flux_kustomizations.vm_images_publisher(
-        flux_chart, vm_images_publisher_artifact, seaweedfs_operator_kustomization
-    )
     kubectl_passthrough_mcp_artifact = artifact("kubectl-passthrough-mcp", kubectl_passthrough_mcp.OUTPUT_DIR)
     kubectl_passthrough_mcp.kubectl_passthrough_mcp(
         flux_chart, write_directory(root, kubectl_passthrough_mcp_artifact, kubectl_passthrough_mcp.chart)
@@ -1731,7 +1722,6 @@ def generate_manifests(root: Path) -> None:
         "public-coder-agent": public_coder_agent_access_kustomization,
         "study-casino": study_casino_kustomization,
         "tana-mcp": tana_mcp_kustomization,
-        "vm-images-publisher": vm_images_publisher_kustomization,
     }
     binding_delegation.add_flux_kustomizations(
         flux_chart, staging.ENV, namespace_dependencies, staging_assignable_grants
@@ -1886,7 +1876,6 @@ def generate_manifests(root: Path) -> None:
             talos_cloud_controller_manager_artifact,
             user_agentydragon_artifact,
             vector_talos_logs_artifact,
-            vm_images_publisher_artifact,
             vpa_artifact,
             website_artifact,
             home_switch_module,

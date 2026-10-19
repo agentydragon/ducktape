@@ -70,13 +70,14 @@ around in `nix/nixos.nix`:
    `sops-nix.service` (`systemd --user`), which never starts without a session.
    Worked around with `users.users.codex.linger = true`.
 
-## Deploy
+## Historical deployment notes
 
-- Build/refresh the bootstrap qcow2 (`cluster/k8s/vm-images-publisher/`) if a newer
-  base is wanted; the VM currently pins the same SHA as gecko.
-- Boot the VM, then `nixos-rebuild switch ...#agent-box` (pause before activating
-  per house rule).
-- First `forgejo-agentydragon-repos` reconcile mutates the real Forgejo repos
+This directory is archival. Its CDI image and credential point at the retired
+`vm-images` SeaweedFS bucket. Port the VM to an OCI `containerDisk` image before
+adding it back to Flux; see <../../docs/kubevirt_vm_image_artifacts.md>.
+- The former flow booted the VM, then ran
+  `nixos-rebuild switch ...#agent-box` (pause before activating per house rule).
+- Its first `forgejo-agentydragon-repos` reconcile mutates the real Forgejo repos
   (adopt + collaborators) — watch the initial Terraform plan/apply. Settings were
   matched to the live repos to keep the import diff-free; collaborator grants are
   additive.

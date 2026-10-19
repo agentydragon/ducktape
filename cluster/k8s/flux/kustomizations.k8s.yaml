@@ -2224,31 +2224,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: vm-images-publisher
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  deletionPolicy: WaitForTermination
-  dependsOn:
-    - name: seaweedfs-operator
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/vm-images-publisher
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: vm-images-publisher
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: kubectl-passthrough-mcp
   namespace: ducktape-flux
 spec:
@@ -4928,27 +4903,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed RoleBinding reconciliation in vm-images-publisher.
-  name: agentplane-staging-binding-delegation-vm-images-publisher
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: vm-images-publisher
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/vm-images-publisher
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     description: Static agent diagnostics in activitywatch; policy shared with managed agents.
   name: agent-namespace-rbac-activitywatch
   namespace: ducktape-flux
@@ -5651,27 +5605,6 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/tana-mcp
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    description: Static agent diagnostics in vm-images-publisher; policy shared with managed agents.
-  name: agent-namespace-rbac-vm-images-publisher
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: claude-rbac
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/agents/namespace-rbac/vm-images-publisher
   prune: true
   retryInterval: 1m
   sourceRef:

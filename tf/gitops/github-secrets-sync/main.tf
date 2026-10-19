@@ -147,6 +147,6 @@ resource "github_actions_variable" "props_registry_url" {
 # Data sources for harbor_ci_robot, attic_push_token, and
 # vm_images_s3_credentials were removed (no `removed` block needed for data
 # sources — just delete). The GitHub Actions secrets VM_IMAGES_S3_* are no
-# longer needed since publishing moved in-cluster (see
-# cluster/k8s/vm-images-publisher/). Removing the resource blocks here will
-# destroy the GitHub secrets on the next tofu apply.
+# longer needed after the qcow2 publisher moved in-cluster. The in-cluster
+# vm-images publisher has since been retired; active VM images publish as OCI.
+# Removing the resource blocks here destroys the GitHub secrets on next apply.

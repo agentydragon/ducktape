@@ -120,7 +120,7 @@ TENANTS = {
     "public-coder-agent",  # public_coder/backup.py
     "study-casino",  # study_casino/app.py
     "tofu-state",  # tofu_state/db.py
-    "vm-images-publisher",  # vm_images_publisher/publisher.py
+    "vm-images-publisher",  # Keep grant until Flux finishes deleting its SeaweedFS CRs.
 }
 _HOSTNAME = "kubernetes.io/hostname"
 

@@ -2,8 +2,8 @@
 # After first boot, deploy the real host config:
 #   nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#<host>
 #
-# Aggressively trimmed for closure size — the bootstrap image is uploaded to
-# SeaweedFS and pulled by CDI on every VM provision. See
+# Aggressively trimmed for closure size. The legacy SeaweedFS/CDI publisher is
+# retired; new stateless KubeVirt VM images use OCI containerDisk. See
 # <cluster/docs/kubevirt_vm_image_artifacts.md>.
 {
   pkgs,

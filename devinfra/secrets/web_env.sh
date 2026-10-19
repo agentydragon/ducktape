@@ -45,7 +45,7 @@ try_export DUCKTAPE_OTEL_BEARER_TOKEN "$REPO_ROOT/secrets/alloy-otlp-bearer-toke
 try_export DUCKTAPE_CI_READ_GITHUB_TOKEN "$REPO_ROOT/secrets/github-ci-read-pat.yaml" '["github_token"]' "CI read PAT (agentydragon) — read GHA runs and artifacts"
 
 # SeaweedFS S3 access via the public gateway (s3.allegedly.works). The
-# claude-reader identity has Read+List on attic, drivefs-artifacts, vm-images,
+# claude-reader identity has Read+List on attic and drivefs-artifacts,
 # wayback-archive, and loom-gym — plus Write+Tagging on loom-gym only
 # (eval-run uploads). Exported as standard AWS_* so `aws s3`
 # and boto3 work with no flags (e.g. `aws s3 ls s3://attic/`). NOTE: this makes

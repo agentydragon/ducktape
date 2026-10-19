@@ -51,5 +51,4 @@ NAMESPACE_DIAGNOSTICS = {
     "public-coder-agent": AgentReadable.METADATA,
     "study-casino": AgentReadable.LOGS,
     "tana-mcp": AgentReadable.LOGS,
-    "vm-images-publisher": AgentReadable.METADATA,
 }

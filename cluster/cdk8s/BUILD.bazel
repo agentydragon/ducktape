@@ -1636,8 +1636,6 @@ py_library(
         "//cluster/cdk8s/tofu_controller:release",
         "//cluster/cdk8s/tofu_state:db",
         "//cluster/cdk8s/tofu_state:namespace",
-        "//cluster/cdk8s/vm_images_publisher:flux_kustomizations",
-        "//cluster/cdk8s/vm_images_publisher:publisher",
         "//cluster/cdk8s/website",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",

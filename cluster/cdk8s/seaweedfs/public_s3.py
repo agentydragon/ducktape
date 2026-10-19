@@ -61,7 +61,7 @@ _LABELS = {**_PODS.selector, "app.kubernetes.io/part-of": "seaweedfs"}
 _CLAUDE_READER = "claude-reader"
 _CLAUDE_READER_POLICY = "claude-reader-buckets"
 # Buckets claude-reader may list and read.
-_CLAUDE_READABLE_BUCKETS = ("attic", drivefs_artifacts_bucket.NAME, "vm-images", loom_gym_bucket.NAME)
+_CLAUDE_READABLE_BUCKETS = ("attic", drivefs_artifacts_bucket.NAME, loom_gym_bucket.NAME)
 
 
 def _external_identity(scope: Construct, name: str, *, secret: str, access_key: str, secret_key: str) -> None:
