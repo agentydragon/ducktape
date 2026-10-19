@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+	"github.com/anthropics/anthropic-sdk-go"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"
@@ -57,7 +58,7 @@ type claudeAdapter struct {
 	modelChanges    map[string]claudeChange
 	effortChanges   map[string]claudeChange
 	messageID       string
-	blockItems      map[int]string
+	blockItems      map[int64]string
 	adapterID       string
 }
 
@@ -72,7 +73,7 @@ func New(host harness.AdapterHost, launch harness.LaunchConfig) harness.Adapter 
 		host: host, launch: launch, nativeSessionID: nativeID,
 		pending:      make(map[string]claudePendingInput),
 		modelChanges: make(map[string]claudeChange), effortChanges: make(map[string]claudeChange),
-		blockItems: make(map[int]string), adapterID: uuid.NewString(),
+		blockItems: make(map[int64]string), adapterID: uuid.NewString(),
 	}
 }
 
@@ -462,33 +463,86 @@ func (a *claudeAdapter) answerControlRequest(ctx context.Context, frame claudeWi
 }
 
 func (a *claudeAdapter) handleStreamEvent(ctx context.Context, frame claudeWireFrame, sourceSequence uint64, sources []uint64) error {
-	switch frame.Event.Type {
-	case "message_start":
+	switch event := frame.Event.AsAny().(type) {
+	case anthropic.MessageStartEvent:
+		// SDK response decoding is lenient; preserve strict native-field validation.
+		type fields anthropic.Message
+		var message fields
+		if err := json.Unmarshal([]byte(event.Message.RawJSON()), &message); err != nil {
+			return err
+		}
+		if !event.Message.JSON.ID.Valid() {
+			return errors.New("Claude message_start is missing message.id")
+		}
 		a.mu.Lock()
-		a.messageID = frame.Event.Message.ID
-		a.blockItems = make(map[int]string)
+		a.messageID = event.Message.ID
+		a.blockItems = make(map[int64]string)
 		a.mu.Unlock()
 		if frame.UserMessageUUID != "" {
 			return a.confirmMessageStart(ctx, frame.UserMessageUUID, sourceSequence)
 		}
-	case "content_block_start":
+	case anthropic.ContentBlockStartEvent:
+		type fields anthropic.ContentBlockStartEvent
+		var strict fields
+		if err := json.Unmarshal([]byte(event.RawJSON()), &strict); err != nil {
+			return err
+		}
+		if !event.JSON.Index.Valid() || !event.JSON.ContentBlock.Valid() {
+			return errors.New("Claude content_block_start is missing index or content_block")
+		}
+		block, err := decodeClaudeBlock([]byte(event.ContentBlock.RawJSON()))
+		if err != nil {
+			return err
+		}
 		a.mu.Lock()
 		messageID := a.messageID
-		itemID := claudeItemID(frame.Event.ContentBlock, frame.Event.Index, messageID)
-		a.blockItems[frame.Event.Index] = itemID
+		itemID := claudeItemID(block, int(event.Index), messageID)
+		a.blockItems[event.Index] = itemID
 		a.mu.Unlock()
-		return a.startItem(ctx, itemID, frame.Event.ContentBlock, sources)
-	case "content_block_delta":
+		return a.startItem(ctx, itemID, block, sources)
+	case anthropic.ContentBlockDeltaEvent:
+		type fields anthropic.ContentBlockDeltaEvent
+		var strict fields
+		if err := json.Unmarshal([]byte(event.RawJSON()), &strict); err != nil {
+			return err
+		}
+		if !event.JSON.Index.Valid() || !event.JSON.Delta.Valid() {
+			return errors.New("Claude content_block_delta is missing index or delta")
+		}
 		a.mu.Lock()
-		itemID := a.blockItems[frame.Event.Index]
+		itemID := a.blockItems[event.Index]
 		a.mu.Unlock()
-		switch frame.Event.Delta.Type {
-		case "text_delta":
-			return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: itemID, Text: frame.Event.Delta.Text}}, sources)
-		case "thinking_delta":
-			return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: itemID, Text: frame.Event.Delta.Thinking}}, sources)
-		case "input_json_delta":
-			return a.emit(ctx, &eventpb.Event_ToolArgumentsDelta{ToolArgumentsDelta: &eventpb.ToolArgumentsDelta{ItemId: itemID, PartialJson: frame.Event.Delta.PartialJSON}}, sources)
+		switch delta := event.Delta.AsAny().(type) {
+		case anthropic.TextDelta:
+			type fields anthropic.TextDelta
+			var strict fields
+			if err := json.Unmarshal([]byte(delta.RawJSON()), &strict); err != nil {
+				return err
+			}
+			if !delta.JSON.Text.Valid() {
+				return errors.New("Claude text_delta is missing text")
+			}
+			return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: itemID, Text: delta.Text}}, sources)
+		case anthropic.ThinkingDelta:
+			type fields anthropic.ThinkingDelta
+			var strict fields
+			if err := json.Unmarshal([]byte(delta.RawJSON()), &strict); err != nil {
+				return err
+			}
+			if !delta.JSON.Thinking.Valid() {
+				return errors.New("Claude thinking_delta is missing thinking")
+			}
+			return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: itemID, Text: delta.Thinking}}, sources)
+		case anthropic.InputJSONDelta:
+			type fields anthropic.InputJSONDelta
+			var strict fields
+			if err := json.Unmarshal([]byte(delta.RawJSON()), &strict); err != nil {
+				return err
+			}
+			if !delta.JSON.PartialJSON.Valid() {
+				return errors.New("Claude input_json_delta is missing partial_json")
+			}
+			return a.emit(ctx, &eventpb.Event_ToolArgumentsDelta{ToolArgumentsDelta: &eventpb.ToolArgumentsDelta{ItemId: itemID, PartialJson: delta.PartialJSON}}, sources)
 		}
 	}
 	return nil
@@ -542,20 +596,17 @@ func (a *claudeAdapter) handleAssistant(ctx context.Context, frame claudeWireFra
 				return err
 			}
 		}
-		switch block.Type {
-		case "text":
+		switch block := block.AsAny().(type) {
+		case anthropic.TextBlock:
 			if err := a.emit(ctx, &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{ItemId: itemID, Outcome: &eventpb.ItemCompleted_Text{Text: block.Text}}}, sources); err != nil {
 				return err
 			}
-		case "thinking":
+		case anthropic.ThinkingBlock:
 			if err := a.emit(ctx, &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{ItemId: itemID, Outcome: &eventpb.ItemCompleted_Text{Text: block.Thinking}}}, sources); err != nil {
 				return err
 			}
-		case "tool_use":
-			arguments := string(block.Input)
-			if len(block.Input) == 0 {
-				arguments = "{}"
-			}
+		case anthropic.ToolUseBlock:
+			arguments := block.JSON.Input.Raw()
 			if err := a.emit(ctx, &eventpb.Event_ToolArguments{ToolArguments: &eventpb.ToolArguments{ItemId: itemID, ArgumentsJson: arguments}}, sources); err != nil {
 				return err
 			}
@@ -568,20 +619,16 @@ func (a *claudeAdapter) handleUser(ctx context.Context, frame claudeWireFrame, s
 	if frame.IsReplay {
 		return a.confirmReplayedUserMessage(ctx, frame, sourceSequence)
 	}
-	blocks, err := claudeBlocks(frame.Message.Content)
+	results, err := claudeToolResults(frame.Message.Content)
 	if err != nil {
 		return err
 	}
-	hasToolResult := false
-	for _, block := range blocks {
-		if block.Type != "tool_result" {
-			continue
-		}
+	hasToolResult := len(results) > 0
+	for _, block := range results {
 		output, err := block.resultText()
 		if err != nil {
 			return err
 		}
-		hasToolResult = true
 		if err := a.emit(ctx, &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
 			ItemId: block.ToolUseID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: output, Succeeded: !block.IsError}},
 		}}, []uint64{sourceSequence}); err != nil {
@@ -674,15 +721,15 @@ func (a *claudeAdapter) handleResult(ctx context.Context, frame claudeWireFrame,
 	return a.emit(ctx, &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{TurnId: session.ActiveTurnID, Status: status, Error: errorText}}, sources)
 }
 
-func (a *claudeAdapter) startItem(ctx context.Context, itemID string, block claudeBlock, sources []uint64) error {
+func (a *claudeAdapter) startItem(ctx context.Context, itemID string, block anthropic.ContentBlockUnion, sources []uint64) error {
 	var kind eventpb.ItemKind
 	var toolName string
-	switch block.Type {
-	case "text":
+	switch block := block.AsAny().(type) {
+	case anthropic.TextBlock:
 		kind = eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT
-	case "thinking":
+	case anthropic.ThinkingBlock:
 		kind = eventpb.ItemKind_ITEM_KIND_REASONING
-	case "tool_use":
+	case anthropic.ToolUseBlock:
 		kind, toolName = eventpb.ItemKind_ITEM_KIND_TOOL_CALL, block.Name
 	default:
 		return nil
@@ -765,70 +812,16 @@ func (a *claudeAdapter) peekStartedLocked(started []claudeStartedInput) ([]claud
 	return confirmed, nil
 }
 
-type claudeWireFrame struct {
-	Type            string            `json:"type"`
-	ParentToolUseID *string           `json:"parent_tool_use_id"`
-	RequestID       string            `json:"request_id"`
-	CommandUUID     string            `json:"command_uuid"`
-	State           string            `json:"state"`
-	UUID            string            `json:"uuid"`
-	IsReplay        bool              `json:"isReplay"`
-	UserMessageUUID string            `json:"user_message_uuid"`
-	Subtype         string            `json:"subtype"`
-	IsError         bool              `json:"is_error"`
-	Result          string            `json:"result"`
-	TerminalReason  string            `json:"terminal_reason"`
-	SessionID       string            `json:"session_id"`
-	DurationMS      int64             `json:"duration_ms"`
-	NumTurns        int               `json:"num_turns"`
-	Request         claudeRequest     `json:"request"`
-	Response        claudeResponse    `json:"response"`
-	Event           claudeStreamEvent `json:"event"`
-	Message         claudeWireMessage `json:"message"`
-}
-
-type claudeWireMessage struct {
-	ID      string          `json:"id"`
-	Content json.RawMessage `json:"content"`
-}
-
-type claudeRequest struct {
-	Subtype  string          `json:"subtype"`
-	ToolName string          `json:"tool_name"`
-	Input    json.RawMessage `json:"input"`
-}
-
-type claudeResponse struct {
-	Subtype   string `json:"subtype"`
-	RequestID string `json:"request_id"`
-	Error     string `json:"error"`
-}
-
-type claudeStreamEvent struct {
-	Type    string `json:"type"`
-	Index   int    `json:"index"`
-	Message struct {
-		ID string `json:"id"`
-	} `json:"message"`
-	ContentBlock claudeBlock `json:"content_block"`
-	Delta        struct {
-		Type        string `json:"type"`
-		Text        string `json:"text"`
-		Thinking    string `json:"thinking"`
-		PartialJSON string `json:"partial_json"`
-	} `json:"delta"`
-}
-
-func claudeItemID(block claudeBlock, index int, messageID string) string {
-	if block.Type == "tool_use" {
-		return block.ID
+func claudeItemID(block anthropic.ContentBlockUnion, index int, messageID string) string {
+	if tool, ok := block.AsAny().(anthropic.ToolUseBlock); ok {
+		return tool.ID
 	}
 	return fmt.Sprintf("%s#%d", messageID, index)
 }
 
-func claudeHistoryItemID(block claudeBlock, index int, messageID string) string {
-	switch block.Type {
-	case "text", "thinking", "tool_use":
+func claudeHistoryItemID(block anthropic.ContentBlockUnion, index int, messageID string) string {
+	switch block.AsAny().(type) {
+	case anthropic.TextBlock, anthropic.ThinkingBlock, anthropic.ToolUseBlock:
 		return claudeItemID(block, index, messageID)
 	default:
 		return ""

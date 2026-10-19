@@ -2025,6 +2025,7 @@ use_repo(
     "cc_mvdan_garble",
     "co_honnef_go_tools",
     "com_github_akhenakh_mgrs",
+    "com_github_anthropics_anthropic_sdk_go",
     "com_github_beorn7_perks",
     "com_github_blacktop_go_dwarf",
     "com_github_blacktop_go_macho",
