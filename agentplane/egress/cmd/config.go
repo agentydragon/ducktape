@@ -1,33 +1,20 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
-	"io"
-	"maps"
 	"net/netip"
-	"os"
-	"reflect"
 	"slices"
-	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
-	"github.com/caarlos0/env/v11"
-	"gopkg.in/yaml.v3"
+	"github.com/agentydragon/ducktape/util/settings"
 )
 
-const (
-	settingPrefix = "AGENTPLANE_EGRESS_"
-	configFileEnv = settingPrefix + "CONFIG_FILE"
-)
+const settingPrefix = "AGENTPLANE_EGRESS_"
 
-// config is the proxy's deployment contract. Each setting is a YAML key of the file named by
-// AGENTPLANE_EGRESS_CONFIG_FILE, an AGENTPLANE_EGRESS_* environment variable and a --kebab-case flag,
-// and a flag overrides the environment, which overrides the file. A list or map given as an
-// environment variable or a flag is JSON.
+// config is the proxy's deployment contract: each setting is a YAML key of the file named by
+// AGENTPLANE_EGRESS_CONFIG_FILE and the AGENTPLANE_EGRESS_* environment variable of the same name,
+// loaded by util/settings.
 type config struct {
 	RulesNamespace                  string            `yaml:"rules_namespace"`
 	CredentialsNamespace            string            `yaml:"credentials_namespace"`
@@ -62,117 +49,15 @@ func defaultConfig() config {
 	}
 }
 
-// environmentOptions makes env read each field from AGENTPLANE_EGRESS_<FIELD NAME IN UPPER SNAKE
-// CASE>, the field's YAML key upper-cased, and a list or map as JSON.
-func environmentOptions(environment map[string]string) env.Options {
-	return env.Options{
-		Environment: environment, Prefix: settingPrefix, UseFieldNameByDefault: true,
-		FuncMap: map[reflect.Type]env.ParserFunc{
-			reflect.TypeFor[[]string]():          parseJSON[[]string],
-			reflect.TypeFor[map[string]string](): parseJSON[map[string]string],
-			reflect.TypeFor[[]netip.Prefix]():    parseJSON[[]netip.Prefix],
-		},
-	}
-}
-
-func parseJSON[T any](text string) (any, error) {
-	var value T
-	decoder := json.NewDecoder(strings.NewReader(text))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(&value) != nil || !errors.Is(decoder.Decode(new(any)), io.EOF) {
-		return nil, errors.New("not a JSON value of its type")
-	}
-	return value, nil
-}
-
-// loadConfig applies defaults, then the settings file, then environ, then args.
-func loadConfig(args, environ []string) (config, error) {
-	c := defaultConfig()
-	environment := make(map[string]string, len(environ))
-	for _, item := range environ {
-		if name, value, found := strings.Cut(item, "="); found {
-			environment[name] = value
-		}
-	}
-	if path := environment[configFileEnv]; path != "" {
-		if err := readSettingsFile(path, &c); err != nil {
-			return config{}, err
-		}
-	}
-	options := environmentOptions(environment)
-	flagged, err := flagValues(options, args)
+func loadConfig(environ []string) (config, error) {
+	c, err := settings.Load(settings.Options{Prefix: settingPrefix}, defaultConfig(), environ)
 	if err != nil {
 		return config{}, err
-	}
-	maps.Copy(environment, flagged)
-	if err := env.ParseWithOptions(&c, options); err != nil {
-		return config{}, settingsError(err)
 	}
 	if err := c.validate(); err != nil {
 		return config{}, err
 	}
 	return c, nil
-}
-
-// settingsError names the settings that failed to parse and never carries their text: the database
-// URL holds a password.
-func settingsError(err error) error {
-	var aggregate env.AggregateError
-	if !errors.As(err, &aggregate) {
-		return err
-	}
-	var failed []string
-	for _, failure := range aggregate.Errors {
-		var parseFailure env.ParseError
-		if !errors.As(failure, &parseFailure) {
-			return failure
-		}
-		field, _ := reflect.TypeFor[config]().FieldByName(parseFailure.Name)
-		failed = append(failed, field.Tag.Get("yaml"))
-	}
-	return fmt.Errorf("settings must be a value of their type, a list or map as JSON: %s", strings.Join(failed, ", "))
-}
-
-// readSettingsFile decodes a file that must exist and hold exactly one document of known keys.
-func readSettingsFile(path string, c *config) error {
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("%s=%s is not a readable file", configFileEnv, path)
-	}
-	decoder := yaml.NewDecoder(bytes.NewReader(contents))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(c); err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("invalid settings file %s: %w", path, err)
-	}
-	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-		return fmt.Errorf("settings file %s must hold one document", path)
-	}
-	return nil
-}
-
-// flagValues reads each setting's --kebab-case flag and returns the ones given, keyed by the
-// environment variable that gives the same setting.
-func flagValues(options env.Options, args []string) (map[string]string, error) {
-	fields, err := env.GetFieldParamsWithOptions(&config{}, options)
-	if err != nil {
-		return nil, err
-	}
-	flags := flag.NewFlagSet("agentplane-egress", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	given := map[string]string{}
-	for _, field := range fields {
-		flags.Func(strings.ReplaceAll(strings.ToLower(field.OwnKey), "_", "-"), field.OwnKey, func(value string) error {
-			given[field.Key] = value
-			return nil
-		})
-	}
-	if err := flags.Parse(args); err != nil {
-		return nil, fmt.Errorf("invalid command-line flags: %w", err)
-	}
-	if flags.NArg() != 0 {
-		return nil, errors.New("unexpected positional arguments")
-	}
-	return given, nil
 }
 
 // bounded is an integer setting and the inclusive range it must fall in.

@@ -46,7 +46,7 @@ const (
 )
 
 func main() {
-	c, err := loadConfig(os.Args[1:], os.Environ())
+	c, err := loadConfig(os.Environ())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "egress-proxy:", err)
 		os.Exit(2)
@@ -56,7 +56,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "egress-proxy:", err)
 		os.Exit(2)
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, c); err != nil {
