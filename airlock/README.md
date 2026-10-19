@@ -38,32 +38,11 @@ operator session.
 ## Running
 
 ```bash
-bazel run //airlock:server
+bazel run //airlock:server_bin
 ```
 
-`CONFIG_PATH` must point to a YAML config file (see below). Authentik client
-credentials and the session signing key are read from the `airlock-oidc-config`
-Kubernetes Secret provisioned by `tf/gitops/sso-providers`. Upstream OAuth
-provider client IDs and secrets are supplied as `<PROVIDER_NAME>_CLIENT_ID`
-and `<PROVIDER_NAME>_CLIENT_SECRET` environment variables.
-
-## Key modules
-
-| Module                | Purpose                                                          |
-| --------------------- | ---------------------------------------------------------------- |
-| `models.py`           | OAuth provider status and deployment metadata models             |
-| `config.py`           | Server and upstream OAuth-provider configuration                 |
-| `app.py`              | FastAPI app factory, session middleware, and uvicorn main        |
-| `auth.py`             | Authentik code flow, session creation, and browser authorization |
-| `oauth/provider.py`   | Provider configuration plus authorize/token/refresh operations   |
-| `oauth/routes.py`     | Browser authorization and callback routes                        |
-| `oauth/k8s_client.py` | Kubernetes Secret token storage                                  |
-| `oauth/refresh.py`    | Background refresh and orphaned-secret cleanup                   |
-| `frontend/`           | React and Mantine provider-status and connect/reconnect UI       |
-
-## Configuration
-
-Set `CONFIG_PATH` to a YAML file (default: `/etc/airlock/config.yaml`).
+Config is YAML at `CONFIG_PATH` (default `/etc/airlock/config.yaml`; `session_seconds` caps the
+browser session, default 8 h):
 
 ```yaml
 public_base_url: https://airlock.example.com
@@ -85,17 +64,11 @@ oauth:
         name: example-access-token
 ```
 
-### Environment variables
+Required env: `AIRLOCK_OIDC_{CLIENT_ID,CLIENT_SECRET,SESSION_SECRET}` (from the
+`airlock-oidc-config` Secret provisioned by `tf/gitops/sso-providers`; the last signs the session
+cookie), and per provider `<NAME>_CLIENT_ID` / `<NAME>_CLIENT_SECRET`, where `<NAME>` is the
+provider `name` uppercased with `-` → `_` (`google-write` → `GOOGLE_WRITE_CLIENT_ID`).
 
-| Variable                        | Required | Description                                                   |
-| ------------------------------- | -------- | ------------------------------------------------------------- |
-| `CONFIG_PATH`                   | no       | Path to YAML config file (default `/etc/airlock/config.yaml`) |
-| `<PROVIDER_NAME>_CLIENT_ID`     | yes      | Client ID for each configured provider                        |
-| `<PROVIDER_NAME>_CLIENT_SECRET` | yes      | Client secret for each configured provider                    |
-| `AIRLOCK_OIDC_CLIENT_ID`        | yes      | Authentik client ID from `airlock-oidc-config`                |
-| `AIRLOCK_OIDC_CLIENT_SECRET`    | yes      | Authentik confidential client secret                          |
-| `AIRLOCK_OIDC_SESSION_SECRET`   | yes      | Signs the Airlock browser session cookie                      |
-| `session_seconds` in YAML       | no       | Maximum browser session lifetime (default 8 hours)            |
-
-`<PROVIDER_NAME>` is the provider's `name` uppercased, with `-` as `_` (`google-write` →
-`GOOGLE_WRITE_CLIENT_ID`). All other settings live in the YAML config file.
+Code: `auth.py` (Authentik code flow, sessions), `oauth/` (`provider.py` authorize/token/refresh,
+`routes.py`, `k8s_client.py` Secret storage, `refresh.py` background refresh and orphaned-Secret
+cleanup), `frontend/`.
