@@ -75,6 +75,7 @@ around in `nix/nixos.nix`:
 This directory is archival. Its CDI image and credential point at the retired
 `vm-images` SeaweedFS bucket. Port the VM to an OCI `containerDisk` image before
 adding it back to Flux; see <../../docs/kubevirt_vm_image_artifacts.md>.
+
 - The former flow booted the VM, then ran
   `nixos-rebuild switch ...#agent-box` (pause before activating per house rule).
 - Its first `forgejo-agentydragon-repos` reconcile mutates the real Forgejo repos
