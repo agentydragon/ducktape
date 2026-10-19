@@ -1,0 +1,3 @@
+│ DrbdOptions/Disk/rs-discard-granularity │ 1048576 │
+│ DrbdOptions/Net/protocol                │ C       │
+│ DrbdOptions/auto-rs-discard-granularity │ false   │

@@ -1,0 +1,1 @@
+rs-discard-granularity 1048576;

@@ -1,0 +1,2 @@
+rs-discard-granularity 1048576;
+protocol C;

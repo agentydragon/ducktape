@@ -1,0 +1,7 @@
+target	component	node	image	image_id	pvc_expected	pvc_actual
+local-path-ovh-hdd	forgejo	ovh-ns102453	code.forgejo.org/forgejo/forgejo:15.0.8-rootless	code.forgejo.org/forgejo/forgejo@sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34	repo-local-path	repo-local-path
+local-path-ovh-hdd	benchmark-client	ovh-ns102453	code.forgejo.org/forgejo/forgejo:15.0.8-rootless	code.forgejo.org/forgejo/forgejo@sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34	-	-
+piraeus-file-thin-one	forgejo	ovh-ns102453	code.forgejo.org/forgejo/forgejo:15.0.8-rootless	code.forgejo.org/forgejo/forgejo@sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34	repo-piraeus-one	repo-piraeus-one
+piraeus-file-thin-one	benchmark-client	ovh-ns102453	code.forgejo.org/forgejo/forgejo:15.0.8-rootless	code.forgejo.org/forgejo/forgejo@sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34	-	-
+piraeus-file-thin-two-protocol-c	forgejo	ovh-ns102453	code.forgejo.org/forgejo/forgejo:15.0.8-rootless	code.forgejo.org/forgejo/forgejo@sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34	repo-piraeus-two	repo-piraeus-two
+piraeus-file-thin-two-protocol-c	benchmark-client	ovh-ns102453	code.forgejo.org/forgejo/forgejo:15.0.8-rootless	code.forgejo.org/forgejo/forgejo@sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34	-	-

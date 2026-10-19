@@ -1,0 +1,42 @@
+[
+  {
+    "node_name": "ovh-ns102453",
+    "state": {
+      "in_use": true
+    },
+    "volumes": [
+      {
+        "storage_pool_name": "local-canary",
+        "state": {
+          "disk_state": "UpToDate",
+          "replication_states": {
+            "ovh-ns103656": {
+              "replication_state": "SyncSource",
+              "done_percentage": 1.7000000476837158
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "node_name": "ovh-ns103656",
+    "state": {
+      "in_use": false
+    },
+    "volumes": [
+      {
+        "storage_pool_name": "local-canary",
+        "state": {
+          "disk_state": "SyncTarget(3.00%)",
+          "replication_states": {
+            "ovh-ns102453": {
+              "replication_state": "SyncTarget",
+              "done_percentage": 3.0
+            }
+          }
+        }
+      }
+    ]
+  }
+]

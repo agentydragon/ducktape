@@ -1,0 +1,2 @@
+source-role=Primary
+target-role=Secondary

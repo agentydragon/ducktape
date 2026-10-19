@@ -1,0 +1,235 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: piraeus-storage-bench-20261019
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+  annotations:
+    description: Disposable single-writer storage evaluation for local HDD, SeaweedFS, and Piraeus.
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: piraeus-bench-file-thin-one-1mib-20261019
+  annotations:
+    description: Disposable one-copy 1MiB-discard FILE_THIN Piraeus benchmark volume with auto-diskful cleanup.
+provisioner: linstor.csi.linbit.com
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  linstor.csi.linbit.com/storagePool: local-canary
+  linstor.csi.linbit.com/resourceGroup: piraeus-bench-file-thin-one-1mib-20261019
+  linstor.csi.linbit.com/placementCount: "1"
+  linstor.csi.linbit.com/allowRemoteVolumeAccess: "true"
+  DrbdOptions/auto-diskful: "1"
+  DrbdOptions/auto-diskful-allow-cleanup: "true"
+  DrbdOptions/auto-rs-discard-granularity: "false"
+  DrbdOptions/Disk/rs-discard-granularity: "1048576"
+  DrbdOptions/Net/protocol: "C"
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: piraeus-bench-file-thin-two-1mib-20261019
+  annotations:
+    description: Disposable two-copy protocol-C 1MiB-discard FILE_THIN Piraeus benchmark volume on the two prepared HDD workers.
+provisioner: linstor.csi.linbit.com
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  linstor.csi.linbit.com/storagePool: local-canary
+  linstor.csi.linbit.com/resourceGroup: piraeus-bench-file-thin-two-1mib-20261019
+  linstor.csi.linbit.com/placementCount: "2"
+  linstor.csi.linbit.com/allowRemoteVolumeAccess: "true"
+  DrbdOptions/auto-rs-discard-granularity: "false"
+  DrbdOptions/Disk/rs-discard-granularity: "1048576"
+  DrbdOptions/Net/protocol: "C"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: repo-local-path
+  namespace: piraeus-storage-bench-20261019
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path-ovh-hdd
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: repo-seaweedfs
+  namespace: piraeus-storage-bench-20261019
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: seaweedfs-ovh
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: repo-piraeus-one
+  namespace: piraeus-storage-bench-20261019
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: piraeus-bench-file-thin-one-1mib-20261019
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: repo-piraeus-two
+  namespace: piraeus-storage-bench-20261019
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: piraeus-bench-file-thin-two-1mib-20261019
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: piraeus-storage-bench-db
+  namespace: piraeus-storage-bench-20261019
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  bootstrap:
+    initdb:
+      database: bench_seed
+      owner: bench
+      secret:
+        name: piraeus-storage-bench-db-app
+  affinity:
+    nodeSelector:
+      kubernetes.io/hostname: ovh-ns104952
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    storageClass: local-path-ovh-ssd
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: piraeus-bench-local-path
+  namespace: piraeus-storage-bench-20261019
+spec:
+  name: bench_local_path
+  owner: bench
+  cluster:
+    name: piraeus-storage-bench-db
+  databaseReclaimPolicy: delete
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: piraeus-bench-seaweedfs
+  namespace: piraeus-storage-bench-20261019
+spec:
+  name: bench_seaweedfs
+  owner: bench
+  cluster:
+    name: piraeus-storage-bench-db
+  databaseReclaimPolicy: delete
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: piraeus-bench-file-thin-one
+  namespace: piraeus-storage-bench-20261019
+spec:
+  name: bench_file_thin_one
+  owner: bench
+  cluster:
+    name: piraeus-storage-bench-db
+  databaseReclaimPolicy: delete
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: piraeus-bench-file-thin-two
+  namespace: piraeus-storage-bench-20261019
+spec:
+  name: bench_file_thin_two
+  owner: bench
+  cluster:
+    name: piraeus-storage-bench-db
+  databaseReclaimPolicy: delete
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: piraeus-storage-bench-valkey
+  namespace: piraeus-storage-bench-20261019
+  labels:
+    app.kubernetes.io/name: piraeus-storage-bench-valkey
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: piraeus-storage-bench-valkey
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: piraeus-storage-bench-valkey
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: ovh-ns104952
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      containers:
+        - name: valkey
+          image: valkey/valkey:9-alpine
+          args: ["--save", "", "--appendonly", "no"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: piraeus-storage-bench-valkey
+  namespace: piraeus-storage-bench-20261019
+spec:
+  selector:
+    app.kubernetes.io/name: piraeus-storage-bench-valkey
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis

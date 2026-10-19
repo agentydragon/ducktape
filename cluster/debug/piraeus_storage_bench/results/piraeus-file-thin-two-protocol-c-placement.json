@@ -1,0 +1,28 @@
+[
+  {
+    "node_name": "ovh-ns102453",
+    "state": {
+      "in_use": true
+    },
+    "volumes": [
+      {
+        "storage_pool_name": "local-canary",
+        "disk_state": "UpToDate",
+        "replication_states": ["Established"]
+      }
+    ]
+  },
+  {
+    "node_name": "ovh-ns103656",
+    "state": {
+      "in_use": false
+    },
+    "volumes": [
+      {
+        "storage_pool_name": "local-canary",
+        "disk_state": "UpToDate",
+        "replication_states": ["Established"]
+      }
+    ]
+  }
+]

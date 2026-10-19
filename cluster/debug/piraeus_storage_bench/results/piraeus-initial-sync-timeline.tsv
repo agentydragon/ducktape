@@ -1,0 +1,8 @@
+attempt	observed_at_utc	event
+fresh-declared-1MiB	2026-10-19T05:10:43Z	direct Job created; waiting for storage gate
+fresh-declared-1MiB	2026-10-19T05:11:09Z	Pod ready; volume gate remained closed
+fresh-declared-1MiB	2026-10-19T05:11:29Z	two-copy sync progress 12.98 percent
+fresh-declared-1MiB	2026-10-19T05:11:56Z	two-copy sync progress 38.17 percent
+fresh-declared-1MiB	2026-10-19T05:12:35Z	two-copy sync progress 75.38 percent
+fresh-declared-1MiB	2026-10-19T05:13:01Z	both copies UpToDate
+fresh-declared-1MiB	2026-10-19T05:14:41Z	direct workload gate released after stable checks

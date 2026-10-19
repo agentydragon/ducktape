@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: piraeus-storage-bench-forgejo
+  namespace: piraeus-storage-bench-20261019
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: piraeus-storage-bench-forgejo
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: ovh-ns102453
+      containers:
+        - name: benchmark
+          image: code.forgejo.org/forgejo/forgejo:15.0.8-rootless
+          command: [/bin/sh, /scripts/forgejo-bench.sh]
+          env:
+            - name: TARGET_NAME
+              value: REPLACE_TARGET_NAME
+            - name: FORGEJO_URL
+              value: http://forgejo-bench-http.piraeus-storage-bench-20261019.svc.cluster.local:3000
+            - name: FORGEJO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: piraeus-storage-bench-db-app
+                  key: username
+            - name: FORGEJO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: piraeus-storage-bench-db-app
+                  key: password
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: piraeus-storage-bench-scripts
+            defaultMode: 0555

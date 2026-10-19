@@ -18,6 +18,11 @@ every operation and in every storage cell tested.
 
 Reproduction harness and raw CSVs: <gitlab_gitaly_storage_bench/>.
 
+A later single-writer RWO canary compared local-path HDD, the deployed-default SeaweedFS
+class, and one- and two-copy Piraeus FILE_THIN volumes:
+<piraeus_storage_bench/README.md>. It is a separate storage experiment; the two-copy
+Piraeus arm was not failure-tested and is not an HA-equivalent Forgejo topology.
+
 ---
 
 ## 1. SeaweedFS attribution (2026-07-10)

@@ -1,0 +1,4 @@
+before_target	flushed_at_utc	db	keys_before	flush_result	keys_after	method
+piraeus-file-thin-one	not-recorded	0	6	OK	0	manual reset after Seaweed init failure and app teardown; timestamp not captured
+piraeus-file-thin-one	2026-10-19T05:27:31Z	0	0	OK	0	run-forgejo-arm.sh safe-boundary reset
+piraeus-file-thin-two-protocol-c	2026-10-19T05:30:12Z	0	6	OK	0	run-forgejo-arm.sh safe-boundary reset

@@ -1,0 +1,4 @@
+repo-local-path	pvc-268d39ce-1c16-4d79-87e6-ac07492bec11		Bound
+repo-seaweedfs	pvc-140b6ccf-121a-401f-ba31-88d65fc93ff2	/buckets/pvc-140b6ccf-121a-401f-ba31-88d65fc93ff2	Bound
+repo-piraeus-one	pvc-493309de-16d9-4c95-84e4-00fd6b02dec3	pvc-493309de-16d9-4c95-84e4-00fd6b02dec3	Bound
+repo-piraeus-two	pvc-4128406b-cdaa-48d9-a4f1-b18eb15d7542	pvc-4128406b-cdaa-48d9-a4f1-b18eb15d7542	Bound

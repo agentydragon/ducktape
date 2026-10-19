@@ -1,0 +1,5 @@
+│ DrbdOptions/Disk/rs-discard-granularity │ 1048576 │
+│ DrbdOptions/Net/protocol                │ C       │
+│ DrbdOptions/auto-diskful                │ 1       │
+│ DrbdOptions/auto-diskful-allow-cleanup  │ true    │
+│ DrbdOptions/auto-rs-discard-granularity │ false   │

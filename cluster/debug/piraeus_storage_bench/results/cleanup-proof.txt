@@ -1,0 +1,99 @@
+--- pre-cleanup snapshot captured_at_utc=2026-10-19T05:35:20Z ---
+`du -sx` values below are in 1 KiB blocks.
+
+Remaining benchmark namespace Pods/Jobs:
+NAME                                                READY   STATUS    RESTARTS   AGE   IP            NODE           NOMINATED NODE   READINESS GATES
+pod/piraeus-storage-bench-db-1                      1/1     Running   0          35m   10.244.0.85   ovh-ns104952   <none>           <none>
+pod/piraeus-storage-bench-valkey-5577bc6b96-nrhq9   1/1     Running   0          35m   10.244.0.97   ovh-ns104952   <none>           <none>
+
+Benchmark PVs:
+pvc-0b4b7909-bfb8-4c7b-8bde-bd63f20bbe59	Bound	Retain	piraeus-storage-bench-20261019	repo-piraeus-one	linstor.csi.linbit.com	pvc-0b4b7909-bfb8-4c7b-8bde-bd63f20bbe59
+pvc-463bdab0-f1ab-48e4-8fbb-cd1d456b473b	Bound	Retain	piraeus-storage-bench-20261019	repo-piraeus-two	linstor.csi.linbit.com	pvc-463bdab0-f1ab-48e4-8fbb-cd1d456b473b
+pvc-7ca31b48-b08e-4a49-a903-8f53e382191e	Bound	Delete	piraeus-storage-bench-20261019	repo-local-path	non-csi
+pvc-9f975d2e-d479-4609-a06c-5af63fef0c00	Bound	Delete	piraeus-storage-bench-20261019	repo-seaweedfs	seaweedfs-csi-driver	/buckets/pvc-9f975d2e-d479-4609-a06c-5af63fef0c00
+
+Benchmark VolumeAttachments:
+
+Exact Piraeus resource definitions:
+{
+  "name": "pvc-0b4b7909-bfb8-4c7b-8bde-bd63f20bbe59",
+  "node_name": "ovh-ns102453",
+  "in_use": false,
+  "volumes": [
+    {
+      "storage_pool_name": "local-canary",
+      "disk_state": "UpToDate",
+      "replication_states": []
+    }
+  ]
+}
+{
+  "name": "pvc-463bdab0-f1ab-48e4-8fbb-cd1d456b473b",
+  "node_name": "ovh-ns102453",
+  "in_use": false,
+  "volumes": [
+    {
+      "storage_pool_name": "local-canary",
+      "disk_state": "UpToDate",
+      "replication_states": [
+        "Established"
+      ]
+    }
+  ]
+}
+{
+  "name": "pvc-463bdab0-f1ab-48e4-8fbb-cd1d456b473b",
+  "node_name": "ovh-ns103656",
+  "in_use": false,
+  "volumes": [
+    {
+      "storage_pool_name": "local-canary",
+      "disk_state": "UpToDate",
+      "replication_states": [
+        "Established"
+      ]
+    }
+  ]
+}
+
+ovh-ns102453 canary directory allocation: 85508	/var/mnt/local-path-ovh-hdd/linstor-canary
+
+ovh-ns103656 canary directory allocation: 47680	/var/mnt/local-path-ovh-hdd/linstor-canary
+ovh-ns102453	pvc-0b4b7909-bfb8-4c7b-8bde-bd63f20bbe59	[{"name":"pvc-0b4b7909-bfb8-4c7b-8bde-bd63f20bbe59","role":"Secondary","suspended":false,"devices":[{"volume":0,"disk-state":"UpToDate","open":false,"client":false,"quorum":true,"upper-pending":0,"lower-pending":0}],"connections":[]}]
+ovh-ns102453	pvc-463bdab0-f1ab-48e4-8fbb-cd1d456b473b	[{"name":"pvc-463bdab0-f1ab-48e4-8fbb-cd1d456b473b","role":"Secondary","suspended":false,"devices":[{"volume":0,"disk-state":"UpToDate","open":false,"client":false,"quorum":true,"upper-pending":0,"lower-pending":0}],"connections":[{"connection-state":"Connected","peer-role":"Secondary","peer_devices":[{"replication-state":"Established","peer-disk-state":"UpToDate","out-of-sync":0,"pending":0,"unacked":0}]}]}]
+ovh-ns103656	pvc-0b4b7909-bfb8-4c7b-8bde-bd63f20bbe59	[]
+ovh-ns103656	pvc-463bdab0-f1ab-48e4-8fbb-cd1d456b473b	[{"name":"pvc-463bdab0-f1ab-48e4-8fbb-cd1d456b473b","role":"Secondary","suspended":false,"devices":[{"volume":0,"disk-state":"UpToDate","open":false,"client":false,"quorum":true,"upper-pending":0,"lower-pending":0}],"connections":[{"connection-state":"Connected","peer-role":"Secondary","peer_devices":[{"replication-state":"Established","peer-disk-state":"UpToDate","out-of-sync":0,"pending":0,"unacked":0}]}]}]
+
+--- post-cleanup verification captured_at_utc=2026-10-19T05:37:19Z ---
+namespace: absent
+benchmark PVs: none
+benchmark StorageClasses: none
+benchmark LINSTOR resources: none
+benchmark LINSTOR groups: none
+
+LINSTOR nodes and pools:
+│ ovh-ns102453 │ LINUX    │ SATELLITE │ 10.42.0.15:3367 (SSL) │ Online │
+│ ovh-ns103656 │ LINUX    │ SATELLITE │ 10.42.0.13:3367 (SSL) │ Online │
+│ DfltDisklessStorPool │ ovh-ns102453 │ DISKLESS  │                                            │              │               │ False        │ Ok    │ ovh-ns102453;DfltDisklessStorPool │
+│ DfltDisklessStorPool │ ovh-ns103656 │ DISKLESS  │                                            │              │               │ False        │ Ok    │ ovh-ns103656;DfltDisklessStorPool │
+│ local-canary         │ ovh-ns102453 │ FILE_THIN │ /var/mnt/local-path-ovh-hdd/linstor-canary │     1.85 TiB │      3.64 TiB │ True         │ Ok    │ ovh-ns102453;local-canary         │
+│ local-canary         │ ovh-ns103656 │ FILE_THIN │ /var/mnt/local-path-ovh-hdd/linstor-canary │   800.95 GiB │      1.82 TiB │ True         │ Ok    │ ovh-ns103656;local-canary         │
+
+Provider pods:
+NAME                                                   READY   STATUS    RESTARTS       AGE    IP             NODE           NOMINATED NODE   READINESS GATES
+linstor-affinity-controller-775764f64f-46l7p           1/1     Running   0              119m   10.244.4.174   ovh-ns102453   <none>           <none>
+linstor-controller-685fbf8dbf-26rj9                    1/1     Running   0              119m   10.244.4.120   ovh-ns102453   <none>           <none>
+linstor-csi-controller-6878b7f87b-zqbks                6/6     Running   0              119m   10.244.4.130   ovh-ns102453   <none>           <none>
+linstor-csi-node-5xfsm                                 3/3     Running   3 (117m ago)   165m   10.42.0.13     ovh-ns103656   <none>           <none>
+linstor-csi-node-p85w7                                 3/3     Running   0              165m   10.42.0.15     ovh-ns102453   <none>           <none>
+linstor-satellite.ovh-ns102453-4fmsl                   2/2     Running   0              149m   10.42.0.15     ovh-ns102453   <none>           <none>
+linstor-satellite.ovh-ns103656-jf59b                   2/2     Running   2 (118m ago)   165m   10.42.0.13     ovh-ns103656   <none>           <none>
+piraeus-operator-controller-manager-56b47446d6-4hxl7   1/1     Running   0              119m   10.244.4.78    ovh-ns102453   <none>           <none>
+
+Worker node readiness:
+ovh-ns102453	True	false
+ovh-ns103656	True	false
+ovh-ns102453 canary allocation after cleanup: 0	/var/mnt/local-path-ovh-hdd/linstor-canary
+ovh-ns103656 canary allocation after cleanup: 0	/var/mnt/local-path-ovh-hdd/linstor-canary
+Retained original StorageClass `local-canary`: present, LINSTOR CSI, Retain, WaitForFirstConsumer.
+Retained LINSTOR CSI node DaemonSet: 2 desired / 2 ready, on the prepared worker selector.

@@ -1,0 +1,26 @@
+captured_at_utc=2026-10-19T05:34:26Z
+forgejo-bench-85f5f75df-rqf44	ovh-ns102453	forgejo	code.forgejo.org/forgejo/forgejo:15.0.8-rootless	code.forgejo.org/forgejo/forgejo@sha256:8f97b55ca162ef3b538c6c78a2a077df9f2143c41d80b2bc6b6920f8d430df34
+piraeus-storage-bench-db-1	ovh-ns104952	postgres	ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie	ghcr.io/cloudnative-pg/postgresql@sha256:51bc94428be3df3e234447278e33803544a93d27a57a4b6af737f218d6472d12
+piraeus-storage-bench-valkey-5577bc6b96-nrhq9	ovh-ns104952	valkey	docker.io/valkey/valkey:9-alpine	docker.io/valkey/valkey@sha256:a0dbf4c1d5708782907c10e2c72deff317518518b5288a58416981d9db95d30b
+
+Forgejo /data mount and Git control from running Piraeus two-copy app Pod:
+git version 2.52.0
+core.fsync: unset
+Filesystem           Type       1K-blocks      Used Available Use% Mounted on
+/dev/drbd1000        ext4          996780       436    927532   0% /data
+
+PostgreSQL server version:
+18.1 (Debian 18.1-1.pgdg13+2)
+
+Valkey server version:
+valkey_version=9.1.2
+
+PVCs:
+piraeus-storage-bench-db-1	local-path-ovh-ssd	pvc-c5176f42-83e3-4a43-acc9-e57c5def1fdd	ReadWriteOnce	Bound
+repo-local-path	local-path-ovh-hdd	pvc-7ca31b48-b08e-4a49-a903-8f53e382191e	ReadWriteOnce	Bound
+repo-piraeus-one	piraeus-bench-file-thin-one-1mib-20261019	pvc-0b4b7909-bfb8-4c7b-8bde-bd63f20bbe59	ReadWriteOnce	Bound
+repo-piraeus-two	piraeus-bench-file-thin-two-1mib-20261019	pvc-463bdab0-f1ab-48e4-8fbb-cd1d456b473b	ReadWriteOnce	Bound
+repo-seaweedfs	seaweedfs-ovh	pvc-9f975d2e-d479-4609-a06c-5af63fef0c00	ReadWriteMany	Bound
+
+PVC evidence columns below: claim_name, storage_class, PV_name, access_modes, phase.
+Direct-job mounted filesystem types observed during its run: local-path-ovh-hdd=xfs; seaweedfs-ovh=fuse.seaweedfs; Piraeus FILE_THIN=ext4.
