@@ -88,8 +88,8 @@ Specimens are loaded into the props database via sync. The `ADGN_PROPS_SPECIMENS
 # Sync specimens to database
 props db sync
 
-# Run the specimens validation test
-bazel test //props/core:test_production_specimens
+# Run one specimen's validation test
+bbr test //props/specimens/<project>/<YYYY-MM-DD-NN>:test_specimen
 ```
 
 ## Authoring Guidelines

@@ -1,48 +1,15 @@
 # Create a new specimen
 
-@README.md
+Scaffold a new specimen. Structure and file formats come from
+`props/specimens/docs/format_spec.md` and `props/specimens/docs/authoring_guide.md`;
+read them first and do not restate them here.
 
-## Single source of truth
+Ask for what the docs require and offer defaults: the source (in-repo commit,
+or an external repo pinned with `http_archive` in `MODULE.bazel`), the
+included and excluded paths, the project name, and the split.
 
-- Do not restate rules or schemas in this command.
-- Treat @README.md (Specimens format) as normative for structure and file set.
-
-## What this command does
-
-Interactively scaffold a new specimen under `specimens/` per @README.md. Ask user for inputs, then create:
-
-- `specimens/YYYY-MM-DD-<slug>/`
-  - `issues/` directory (for YAML issue files)
-  - `README.md` (with optional Seed issues section)
-  - `covered.md` / `not_covered_yet.md` / `false_positives.md` (optional; narrative stays in README)
-
-## Inputs (ask interactively)
-
-- Source (choose one):
-  - git: url, ref
-  - github: org, repo, ref
-  - local: root (default ".")
-- Scope
-  - repo (entire source), or
-  - include globs (comma‑separated), and optional exclude globs
-- Seed issues (optional): capture initial issues of interest from user
-- Slug (optional); if omitted, pick a reasonable one yourself; normalize to [a‑z0‑9-_], max ~40 chars
-
-## Output
-
-- New directory under @specimens named YYYY‑MM‑DD‑<slug>/ with required scaffold files.
-- Short summary of the path created.
-
-## Procedure
-
-1. Ensure `specimens/` exists relative to this package root.
-2. Ask for inputs above; confirm before writing.
-3. Compute today (`YYYY‑MM‑DD`) and slug (provided or derived), and target_dir = `specimens/${today}-${slug}`.
-4. If target dir exists: choose a different slug, ask user to confirm.
-5. Create directory structure with `issues/` subdirectory.
-6. After confirmation, write the files and print a concise summary.
-
-## Notes
-
-- Keep this command DRY; when specifics change, @README.md is the only place to update.
-- Prefer concise, confirmation‑oriented prompts (offer sensible defaults). Avoid duplicating policy text from @README.md.
+Create `props/specimens/<project>/<YYYY-MM-DD-NN>/` with a `BUILD.bazel` calling
+`specimen_targets()` (provenance as comments), the `code/` tree for an in-repo
+source (rename nested `BUILD.bazel` files with the `.specimen` suffix), and an
+empty `issues/` directory. Then run
+`bbr test //props/specimens/<project>/<YYYY-MM-DD-NN>:test_specimen`.

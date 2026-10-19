@@ -21,4 +21,4 @@ When authoring or editing a snapshot:
 - Keep one logical issue type per YAML file, grouping repeated occurrences in
   `occurrences`.
 - Cite only files and line ranges present in the frozen snapshot.
-- Validate with `bbr test //props/core:test_production_specimens`.
+- Validate with the snapshot's `bbr test //props/specimens/<project>/<YYYY-MM-DD-NN>:test_specimen`.
