@@ -5,8 +5,9 @@
 Run Codex on the example clip with a prompt, persistent annotation files, and
 small deterministic helpers for extraction, rendering, validation, and export.
 Keep one agent conversation for the clip, ideally entirely within one context
-window. The agent should place points, see exactly what those points look like
-on the source images, correct them, and carry identities across frames.
+window. The agent should segment every identifiable pixel of each neuron's body
+and branches, see exactly what those masks look like on the source images,
+correct them, and carry identities across frames.
 
 The first question is whether this workflow produces useful annotations on the
 actual sample. A successful, repeated procedure can become a skill with the
@@ -30,14 +31,20 @@ commands live in `debug/sample_inspection.md`.
 
 1. Inspect a timeline overview and full-resolution frames. Choose a clear anchor
    frame and a small group of separable target features for the initial trial.
-2. Save proposed coordinates and persistent IDs as structured annotations.
+2. Save separate full-resolution body and branch masks under each persistent
+   neuron ID, following `annotation_format.md`. Record uncertain pixels
+   separately. Both masks belong to the same neuron across frames.
 3. Render those exact saved annotations over the original pixels. Show the agent
    both raw and annotated views, with matching zooms, readable IDs, and colors.
-   Use thin rings or crosshairs so the mark does not obscure the feature.
+   Show the combined mask and each part separately. Use distinct fill/outline
+   styling within the neuron's color so body and branches are distinguishable
+   and underlying pixels remain visible.
 4. Require the agent to open the rendered images, inspect placement and identity,
-   and correct missed, duplicate, misplaced, or misidentified features. Render and
-   inspect again after changes. An output path or a successful renderer exit is
-   not evidence that the agent visually checked the result.
+   and correct missing pixels, leaked background, wrong boundaries, body/branch
+   classification, and identity errors at crossings. Check fine branches and
+   tips at pixel-preserving zoom. Render and inspect again after changes. An
+   output path or a successful renderer exit is not evidence that the agent
+   visually checked the result.
 5. Extend the same identities through neighboring frames in both directions.
    Compare raw and annotated crops across frames, including before and after
    pose changes. Add newly visible targets; record ambiguity and disappearance.
@@ -47,7 +54,7 @@ commands live in `debug/sample_inspection.md`.
    affected visual checks.
 
 The agent may request crops, zooms, or image alignment to help comparison.
-Classical tracking can later propose positions if manual annotation is the
+Classical tracking or segmentation can later propose masks if annotation is the
 bottleneck; its proposals go through the same visible correction loop.
 
 ## One conversation and one context window
@@ -73,27 +80,27 @@ Build only the helpers the trial actually needs:
 
 - Extract lossless frames and source presentation timestamps with `ffmpeg` and
   `ffprobe`; generate labeled contact sheets.
-- Validate annotation files; render full frames, crops, and temporal comparison
-  sheets from a selected saved revision.
+- Validate and losslessly encode pixel masks; rasterize edits and render full
+  frames, crops, per-part views, and temporal comparisons from a saved revision.
 - Export that same revision to JSON, CSV, and an annotated MP4.
 
 Give every displayed crop its source frame, dimensions, crop origin, scale, and
-revision. Store coordinates in original-frame pixels; helpers map them into
-display coordinates. Test those transforms with known points before relying on
-the model's clicks. Start with centers and display radii; add contours only if
-the task needs cell boundaries.
+revision. Store masks on the original-frame pixel grid; helpers map them into
+display coordinates. Test crop/zoom mappings and mask encoding with known pixel
+regions before relying on annotations. Allow tracing and brush edits without
+making the model emit individual pixel coordinates as text.
 
-Rendering uses the source pixels and saved coordinates. Image generation is not
+Rendering uses the source pixels and saved masks. Image generation is not
 part of the overlay pipeline.
 
 ## Proposed outputs
 
-| Artifact           | Contents                                                                                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `annotations.json` | Versioned source manifest, ID/color table, per-frame observations, and review records.                            |
-| `tracks.csv`       | One row per tracked neuron per frame: ID, frame index, source timestamp, position, visibility, and review status. |
-| `annotated.mp4`    | Original frame order and presentation timing, with a distinct persistent color and ID label for each neuron.      |
-| `review.json`      | Checked revision and frame coverage, opened overlay paths, remaining ambiguities, and any incomplete work.        |
+| Artifact           | Contents                                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `annotations.json` | Versioned source manifest, ID/color table, per-frame body/branch/uncertainty pixel masks, and review state.              |
+| `tracks.csv`       | One row per neuron per frame: ID, index, source timestamp, body centroid, part areas, visibility, and review status.     |
+| `annotated.mp4`    | Original frames and timing with persistent neuron colors and IDs, distinct body/branch styling, and visible uncertainty. |
+| `review.json`      | Checked revision and frame coverage, opened overlay paths, remaining ambiguities, and any incomplete work.               |
 
 Use zero-based frame indices and source image coordinates: pixel `(0, 0)` is the
 center of the top-left pixel, `x` increases rightward, and `y` downward. Retain the
@@ -103,10 +110,10 @@ Video timestamps are not automatically biological acquisition times.
 Assign arbitrary IDs within a clip, not anatomical names or cross-clip
 identities. Keep one ID/color assignment across every frame and export. Record
 visibility as `visible`, `uncertain`, `not_visible`, or `out_of_frame`; missing
-observations have null coordinates. Record uncertain associations explicitly
-rather than forcing an identity through a pose change. Distinguish proposed,
-agent-reviewed, and human-reviewed annotations. Model self-review does not imply
-human verification.
+observations have empty masks and null derived centroids. Record ambiguous
+boundaries and associations explicitly rather than forcing an identity through
+a pose change. Distinguish proposed, agent-reviewed, and human-reviewed
+annotations. Model self-review does not imply human verification.
 
 ## Paving and acceptance
 
@@ -115,11 +122,12 @@ human verification.
       provider/model, context and token limits, and acceptance criteria.
 - [ ] Implement and exercise the minimal media and annotation helpers via Bazel.
 - [ ] Run the draft prompt on a short sequence including a pose change. Include
-      a deliberately misplaced point to check that visual feedback supports
+      deliberately mislabeled pixels to check that visual feedback supports
       detecting and correcting an error; report the correction honestly.
-- [ ] Review representative annotations against the raw frames. Record misses,
-      duplicates, localization error, identity switches, unresolved cases, token
-      use, and whether the run stayed in one context window.
+- [ ] Review representative masks against the raw frames. Record missed branch
+      pixels, background leakage, body/branch classification errors, identity
+      switches, unresolved cases, token use, and context-window behavior. Measure
+      per-part pixel overlap and thin-branch coverage if reference masks exist.
 - [ ] Amend the prompt and helpers where the run required improvisation; repeat
       from a fresh output directory and Codex session. Each individual run still
       processes its sequence in one conversation.
@@ -128,10 +136,11 @@ human verification.
 - [ ] Package the demonstrated procedure as a skill, with the tested helpers
       and known limits. Re-run from its instructions before calling it paved.
 
-Before hand-off, machine checks must establish valid coordinates, unique
-`(track_id, frame_index)` observations, existing ID references, a stable and
-distinct color map, and review coverage for the exported revision. Check the
-encoded video's frame count, dimensions, timing, and overlays against that
+Before hand-off, machine checks must establish exact mask-encoding round trips,
+valid integer pixel bounds, pairwise disjoint body/branch/uncertainty masks within
+each neuron, unique `(neuron_id, frame_index)` observations, existing ID references,
+a stable and distinct color map, and review coverage for the exported revision.
+Check the encoded video's frame count, dimensions, timing, and overlays against that
 revision. Synthetic fixtures can exercise these contracts without committing
 the user's media. Biological correctness still needs inspection against the
 source images; no recall or identity-accuracy target has been demonstrated yet.
