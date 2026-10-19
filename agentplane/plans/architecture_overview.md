@@ -293,13 +293,18 @@ Candidates; each still needs the operator's go.
   it, no Membership objects". A tag lives and dies with its Sandbox, an archive takes it along,
   and a rule matches it the same way in every direction, as it does direct and `allSandboxes`
   targets; membership then picks no direction, and a recreated Sandbox has only the tags its
-  manifest or preset gives it. Against the membership CRs, git cannot cleanly tag a Sandbox it did
-  not create, since Flux applies whole objects that it then owns and prunes (not tried). Setting a
-  tag is a grant that Kubernetes RBAC cannot limit by label or value, so an admission rule keeps tag
-  writes to GitOps and the app's provisioning path, the v1 membership administration already agreed
+  manifest or preset gives it. Against the membership CRs, git cannot cleanly tag a Sandbox the app
+  created: Flux would own the whole object, delete it when the entry leaves git, and try to recreate
+  it from a partial manifest after an archive (not tried). On a Sandbox git creates, git and the app
+  can each own different tags, since server-side apply tracks each label key separately and Flux
+  takes back only fields edited with `kubectl` (kustomize-controller's field-manager cleanup); a tag
+  git declares is reverted if changed live. Setting a tag is a grant that Kubernetes RBAC cannot
+  limit by label or value, so an admission rule keeps tag writes to GitOps and the app's provisioning
+  path, the v1 membership administration already agreed
   in the [agent communication plan](multiagent_communication.md#target-collections-and-launch-enrollment).
   A label per collection lets watchers and `kubectl` select on it; a spec list keeps requesters
-  writing spec. This takes the membership CR out of #10987.
+  writing spec, and keeps the split ownership only if declared `x-kubernetes-list-type: set`, since a
+  plain list is owned whole. This takes the membership CR out of #10987.
 - **Drop a Sandbox's workspace without deleting the Sandbox.** Deferred by the operator, "not needed
   for this plan" (23:32). The Sandbox owns `<sandbox>-workspace`, and a missing one blocks the next
   start with `VolumeLayoutMismatch` (`sandbox_controller/workspace.go`), so deleting the Sandbox is
