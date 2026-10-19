@@ -253,6 +253,23 @@ Sandboxes, which can resume, stay CRs and stay few. It is D2 with an explicit ar
 no restore: the operator would not ask for "given just history records and no Sandbox or PVC
 anymore, make a new Sandbox and make it restore and continue that history" (09:53).
 
+What each operation leaves:
+
+|                                                                             | Retire                             | Archive         | Delete |
+| --------------------------------------------------------------------------- | ---------------------------------- | --------------- | ------ |
+| Sandbox CR and children (ServiceAccount, control Service, bindings, Leases) | Kept, stopped                      | Gone            | Gone   |
+| State and workspace PVCs                                                    | Kept; the workspace can be dropped | Gone            | Gone   |
+| Dispatcher queue rows                                                       | Kept                               | Gone            | Gone   |
+| History transcript and app Thread                                           | Kept                               | Kept, read-only | Gone   |
+| Archive row (namespace, name, UID, tags)                                    | None                               | Written         | None   |
+| Can run again                                                               | Yes                                | No              | No     |
+
+Deleting a Sandbox today is an archive without the archive row. Archive and delete are both a
+Kubernetes delete of the Sandbox; what differs is what the Sandbox Controller's finalizer asks
+History to do before it releases. A Sandbox field could carry that, as a PersistentVolume's reclaim
+policy does: `Archive` by default, today's behavior plus the row, or `Delete`, which also purges the
+transcript and Threads.
+
 ## Right under every direction
 
 Candidates; each still needs the operator's go.
