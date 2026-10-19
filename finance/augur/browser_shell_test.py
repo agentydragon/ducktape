@@ -18,7 +18,7 @@ import pytest_bazel
 from playwright.async_api import Browser, Page
 
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
+from util.net import bind_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
@@ -70,14 +70,13 @@ def page_errors(page: Page) -> list[str]:
 def augur_server(tmp_path: Path) -> Iterator[str]:
     out = undeclared_outputs_dir()
     server_log = (out / "augur-server.log").open("w")
-    port = pick_free_port("127.0.0.1")
+    listener = bind_free_port()
+    port = listener.getsockname()[1]
     server = subprocess.Popen(
         [
             str(get_required_path("_main/finance/augur/dev")),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
+            "--fd",
+            str(listener.fileno()),
             "--config",
             str(get_required_path("_main/finance/augur/api/testdata/config.yaml")),
         ],
@@ -93,7 +92,9 @@ def augur_server(tmp_path: Path) -> Iterator[str]:
         },
         stdout=server_log,
         stderr=server_log,
+        pass_fds=[listener.fileno()],
     )
+    listener.close()  # the server holds its own copy
     origin = f"http://127.0.0.1:{port}"
     deadline = time.monotonic() + 30
     try:

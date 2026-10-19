@@ -84,7 +84,6 @@ from agentplane.sandboxes.testing.fake_inventory import (
     seed_runner,
 )
 from agentplane.subjects import ServiceAccountRef
-from util.net import pick_free_port
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -210,11 +209,11 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
         FederatedOperatorActions(
             DirectFederationSettings(
                 service_url=AnyHttpUrl("http://test-actions.invalid"),
-                login_jwks_uri=f"http://127.0.0.1:{pick_free_port()}/jwks",
+                login_jwks_uri="http://login-keys.test.invalid/jwks",
                 target=OperatorOidcSettings(
                     issuer="https://login.test.invalid/application/o/actions/",
                     audience="test-actions",
-                    jwks_uri=f"http://127.0.0.1:{pick_free_port()}/jwks",
+                    jwks_uri="http://actions-keys.test.invalid/jwks",
                 ),
                 scope="openid",
             ),
@@ -244,13 +243,12 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
 
 
 async def test_threads_the_history_service_cannot_list_are_said_so_in_the_frame(
-    engine: AsyncEngine, tmp_path: Path
+    engine: AsyncEngine, tmp_path: Path, refused_address: str
 ) -> None:
     """The sandbox stream still carries the sandbox, and so its lifecycle controls, when the Runner
     History Service cannot say which Sessions ran in it."""
     (token := tmp_path / "token").write_text("test-token")
-    port = pick_free_port()
-    async with HistoryServiceClient(f"127.0.0.1:{port}", token_file=token, request_timeout_s=0.5) as unreachable:
+    async with HistoryServiceClient(refused_address, token_file=token, request_timeout_s=0.5) as unreachable:
         frame = await threads_frame(ThreadStore(engine, Summaries(unreachable)), "runner-1", include_archived=False)
     assert frame == ThreadsUnavailable(code="UNAVAILABLE")
 

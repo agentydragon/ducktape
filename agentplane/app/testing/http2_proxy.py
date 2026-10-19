@@ -4,7 +4,10 @@ import asyncio
 import base64
 import hashlib
 import ipaddress
+import os
+import socket
 import ssl
+import tempfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -19,7 +22,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from third_party.containers import nginx_unprivileged
-from util.net import pick_free_port
+from util.net import bind_free_port
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
@@ -73,10 +76,43 @@ class Ingress:
         assert exit_code == 0, output
 
 
+async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    try:
+        while data := await reader.read(65536):
+            writer.write(data)
+            await writer.drain()
+    # A reset is how one side ends a connection here, as an nginx reload does on purpose.
+    except ConnectionError:
+        pass
+    finally:
+        writer.close()
+
+
+@asynccontextmanager
+async def _forwarding(listener: socket.socket, upstream: Path) -> AsyncIterator[None]:
+    """Accept on `listener` and relay each connection, bytes untouched, to the Unix socket `upstream`."""
+
+    async def relay(client_reader: asyncio.StreamReader, client_writer: asyncio.StreamWriter) -> None:
+        try:
+            upstream_reader, upstream_writer = await asyncio.open_unix_connection(upstream)
+        # nginx is not listening yet: the client's TLS handshake fails and its readiness loop retries.
+        except FileNotFoundError, ConnectionRefusedError:
+            client_writer.close()
+            return
+        await asyncio.gather(_pipe(client_reader, upstream_writer), _pipe(upstream_reader, client_writer))
+
+    async with await asyncio.start_server(relay, sock=listener):
+        yield
+
+
 @asynccontextmanager
 async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIterator[Ingress]:
     await asyncio.to_thread(load_oci_image, nginx_unprivileged.IMAGE)
-    port = pick_free_port()
+    # nginx in a host-network container can neither inherit a held socket nor bind port 0, so it listens on
+    # a Unix socket in a directory of this test's own, and a held TCP port forwards to it. Under /tmp: the
+    # test's TMPDIR can be longer than a socket path may be.
+    sockets_directory = tempfile.TemporaryDirectory(prefix="http2-ingress-", dir="/tmp")
+    sockets = Path(sockets_directory.name)
     (certificate.directory / "nginx.conf").write_text(
         dedent(f"""\
             pid /tmp/test-nginx.pid;
@@ -89,7 +125,7 @@ async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIt
                 client_body_temp_path /tmp/client_temp;
                 proxy_temp_path /tmp/proxy_temp;
                 server {{
-                    listen 127.0.0.1:{port} ssl;
+                    listen unix:/sockets/nginx.sock ssl;
                     http2 on;
                     ssl_certificate /test/certificate.pem;
                     ssl_certificate_key /test/key.pem;
@@ -107,22 +143,27 @@ async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIt
     )
     container = (
         LoggedContainer(nginx_unprivileged.IMAGE.tag, test_name="conversation-http2-ingress")
-        .with_kwargs(network_mode="host")
+        # Our uid, so this process may connect to the socket nginx creates; group 0, which the image's own
+        # writable paths are granted to for running as an arbitrary user.
+        .with_kwargs(network_mode="host", user=f"{os.getuid()}:0")
         .with_volume_mapping(str(certificate.directory), "/test", mode="ro")
+        .with_volume_mapping(str(sockets), "/sockets", mode="rw")
         .with_command("nginx -c /test/nginx.conf -g 'daemon off;'")
     )
-    url = f"https://127.0.0.1:{port}"
+    listener = bind_free_port()
+    url = f"https://127.0.0.1:{listener.getsockname()[1]}"
     context = ssl.create_default_context(cafile=str(certificate.directory / "certificate.pem"))
-    with container:
-        async with asyncio.timeout(30), httpx.AsyncClient(verify=context, http2=True, timeout=2) as client:
-            while True:
-                try:
-                    response = await client.get(f"{url}/models")
-                # A slow first answer is not a failed start: the 30 s budget decides that.
-                except httpx.ConnectError, httpx.TimeoutException:
-                    await asyncio.sleep(0.1)
-                    continue
-                response.raise_for_status()
-                assert response.http_version == "HTTP/2"
-                break
-        yield Ingress(url, container)
+    with sockets_directory, container:
+        async with _forwarding(listener, sockets / "nginx.sock"):
+            async with asyncio.timeout(30), httpx.AsyncClient(verify=context, http2=True, timeout=2) as client:
+                while True:
+                    try:
+                        response = await client.get(f"{url}/models")
+                    # A slow first answer is not a failed start: the 30 s budget decides that.
+                    except httpx.ConnectError, httpx.TimeoutException:
+                        await asyncio.sleep(0.1)
+                        continue
+                    response.raise_for_status()
+                    assert response.http_version == "HTTP/2"
+                    break
+            yield Ingress(url, container)

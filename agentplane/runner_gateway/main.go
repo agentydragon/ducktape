@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -214,7 +215,7 @@ func serve(ctx context.Context, c config) error {
 	g.RegisterRunnerControl(server)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
-	listener, err := net.Listen("tcp", c.ListenAddress)
+	listener, err := listen(c.ListenAddress)
 	if err != nil {
 		return err
 	}
@@ -267,4 +268,20 @@ func main() {
 		slog.Error("Runner Gateway stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+// listen opens the gRPC listener: "fd:N" serves on inherited listening socket N, which a test
+// holds from choosing its port to serving on it; anything else is a TCP address to bind.
+func listen(address string) (net.Listener, error) {
+	descriptor, inherited := strings.CutPrefix(address, "fd:")
+	if !inherited {
+		return net.Listen("tcp", address)
+	}
+	fd, err := strconv.Atoi(descriptor)
+	if err != nil {
+		return nil, fmt.Errorf("listen address %q: %w", address, err)
+	}
+	file := os.NewFile(uintptr(fd), address)
+	defer file.Close()
+	return net.FileListener(file)
 }

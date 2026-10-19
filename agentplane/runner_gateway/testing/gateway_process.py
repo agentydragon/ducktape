@@ -22,7 +22,7 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.guest_config import Endpoint
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.net import pick_free_port
+from util.net import bind_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -202,7 +202,8 @@ async def run_gateway(
     migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
     await asyncio.to_thread(_migrate, database_url, migration_log)
 
-    port = pick_free_port()
+    listener = bind_free_port()
+    port = listener.getsockname()[1]
     binary = get_required_path(own_repo_rlocation(_GATEWAY_BINARY))
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
     arguments = [
@@ -210,7 +211,7 @@ async def run_gateway(
         f"--sandbox-namespace={namespace}",
         f"--runner-token-file={runner_proxy_token_file}",
         f"--kubeconfig={kubeconfig}",
-        f"--listen-address=127.0.0.1:{port}",
+        f"--listen-address=fd:{listener.fileno()}",
         f"--proxy-port={port}",
         f"--runner-control-target-template=127.0.0.1:{port}",
         f"--dispatcher-audience={dispatcher_audience}",
@@ -229,8 +230,9 @@ async def run_gateway(
     }
     with log_path.open("wb") as log_file:
         process = await asyncio.create_subprocess_exec(
-            *arguments, env=environment, stdout=log_file, stderr=subprocess.STDOUT
+            *arguments, env=environment, stdout=log_file, stderr=subprocess.STDOUT, pass_fds=[listener.fileno()]
         )
+        listener.close()  # the gateway holds its own copy
         service = GatewayProcess(process=process, target=f"127.0.0.1:{port}", log_path=log_path)
         try:
             await _wait_ready(service, timeout_s=startup_timeout_s)

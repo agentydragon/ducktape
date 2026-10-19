@@ -70,6 +70,7 @@ from agentplane.sandboxes.testing.fake_inventory import (
 )
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
+from util.net import bind_refusing_port
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
 from util.testing.postgres_fixtures import (
     database_clones,
@@ -401,3 +402,11 @@ async def notifications_http() -> AsyncIterator[httpx.AsyncClient]:
 def notifications_token_file(tmp_path: Path) -> Path:
     """Read only on a call into `notifications_http`, which these tests never make."""
     return tmp_path / "notifications-token"
+
+
+@pytest.fixture
+def refused_address() -> Iterator[str]:
+    """`127.0.0.1:<port>` that refuses connections for the whole test: the port is held bound and never listens,
+    so nothing else on the host can start answering there."""
+    with bind_refusing_port() as sock:
+        yield f"127.0.0.1:{sock.getsockname()[1]}"

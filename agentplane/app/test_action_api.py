@@ -78,7 +78,7 @@ from agentplane.workload_auth.principal import (
     WorkloadPrincipalRejectedError,
     WorkloadPrincipalResolver,
 )
-from util.net import bind_free_port, pick_free_port
+from util.net import bind_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
@@ -165,6 +165,7 @@ async def review(
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    refused_address: str,
 ) -> AsyncIterator[Review]:
     server = FastMCP("test-review")
     calls: list[str] = []
@@ -328,7 +329,7 @@ async def review(
             if direct_federation
             else ExchangeFederationSettings(
                 service_url=AnyHttpUrl("http://test-actions.invalid"),
-                token_endpoint=AnyHttpUrl(f"http://127.0.0.1:{pick_free_port()}/exchange")
+                token_endpoint=AnyHttpUrl(f"http://{refused_address}/exchange")
                 if operator_connection == "exchange-disconnected"
                 else AnyHttpUrl(f"{idp_origin}/exchange"),
                 login_jwks_uri=f"{idp_origin}/federation-keys?private=test-private-query"

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
@@ -17,7 +18,6 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import dial
 from agentplane.proto import runner_pb2, session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
-from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -127,14 +127,14 @@ async def _cleanup_sandbox(name: str, uid: str) -> None:
 
 @asynccontextmanager
 async def _forward(resource: str = f"service/{SERVICE}") -> AsyncIterator[str]:
-    port = pick_free_port()
+    # An empty local port has kubectl bind one itself, and say which.
     process = await asyncio.create_subprocess_exec(
         "kubectl",
         "-n",
         NAMESPACE,
         "port-forward",
         resource,
-        f"{port}:8080",
+        ":8080",
         "--address=127.0.0.1",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
@@ -143,11 +143,12 @@ async def _forward(resource: str = f"service/{SERVICE}") -> AsyncIterator[str]:
     try:
         async with asyncio.timeout(30):
             while line := await process.stdout.readline():
-                if line.startswith(b"Forwarding from 127.0.0.1:"):
+                if match := re.match(rb"Forwarding from (127\.0\.0\.1:\d+) ->", line):
+                    address = match[1].decode()
                     break
             else:
                 raise RuntimeError("Dispatcher port-forward ended before listening")
-        yield f"127.0.0.1:{port}"
+        yield address
     finally:
         if process.returncode is None:
             process.terminate()

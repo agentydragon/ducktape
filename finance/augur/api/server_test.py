@@ -17,7 +17,7 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
+from util.net import bind_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -33,14 +33,13 @@ def server_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     tmp_path = tmp_path_factory.mktemp("augur_server")
     out = undeclared_outputs_dir()
     server_log = (out / "augur-server.log").open("w")
-    port = pick_free_port("127.0.0.1")
+    listener = bind_free_port()
+    port = listener.getsockname()[1]
     server = subprocess.Popen(
         [
             str(get_required_path("_main/finance/augur/api/server_bin")),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
+            "--fd",
+            str(listener.fileno()),
             "--config",
             str(get_required_path("_main/finance/augur/api/testdata/config.yaml")),
             "--api-only",
@@ -59,7 +58,9 @@ def server_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         },
         stdout=server_log,
         stderr=server_log,
+        pass_fds=[listener.fileno()],
     )
+    listener.close()  # the server holds its own copy
     origin = f"http://127.0.0.1:{port}"
     deadline = time.monotonic() + 30
     try:

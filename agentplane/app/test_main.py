@@ -46,7 +46,7 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandboxes.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
-from util.net import pick_free_port
+from util.net import bind_free_port
 
 APP_ENVIRONMENT = {
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
@@ -283,12 +283,10 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
         notifications_token_file=notifications_token_file,
         system_status=answering_system_status(),
     )
-    port = pick_free_port()
+    sock = bind_free_port()
+    port = sock.getsockname()[1]
     # A budget the test would never wait out: the stream has to end because of the drain, not this.
-    server = AppServer(
-        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=60),
-        drain_of(app),
-    )
+    server = AppServer(uvicorn.Config(app, log_level="warning", timeout_graceful_shutdown=60), drain_of(app))
     async with history_client.new_client() as openings_client:
         serving = asyncio.create_task(
             serve_then_close(
@@ -296,6 +294,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
                 session_openings=SessionOpenings(openings_client, event_logs, retry_interval_s=0.05),
                 database_updates=database_updates,
                 engine=engine,
+                sockets=[sock],
             )
         )
         while not server.started:

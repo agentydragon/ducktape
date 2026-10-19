@@ -24,7 +24,7 @@ from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.server import build_mcp
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
+from util.net import bind_free_port
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +45,15 @@ def _build_model_client(*, api: str, model: str, base_url: str | None = None) ->
 @asynccontextmanager
 async def _serve_mcp(grocy_base_url: str) -> AsyncGenerator[str]:
     """Serve the Grocy MCP server on a local port and yield its URL."""
-    port = pick_free_port()
+    sock = bind_free_port()
     http_client = GrocyClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
     mcp = build_mcp(
         ServerSettings(grocy_url=grocy_base_url), client_provider=borrowed_http_client_provider(http_client)
     )
     app = mcp.http_app(path="/mcp")
 
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    serve_task = asyncio.create_task(server.serve())
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    serve_task = asyncio.create_task(server.serve(sockets=[sock]))
     try:
         for _ in range(50):
             await asyncio.sleep(0.1)
@@ -63,7 +62,7 @@ async def _serve_mcp(grocy_base_url: str) -> AsyncGenerator[str]:
         else:
             raise TimeoutError("MCP server did not start within 5s")
 
-        mcp_url = f"http://127.0.0.1:{port}/mcp"
+        mcp_url = f"http://127.0.0.1:{sock.getsockname()[1]}/mcp"
         logger.info("MCP server ready at %s", mcp_url)
         yield mcp_url
     finally:

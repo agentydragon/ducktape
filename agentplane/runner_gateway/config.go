@@ -67,7 +67,7 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 	flags.StringVar(&c.Namespace, "sandbox-namespace", "", "namespace of Agentplane Sandboxes")
 	flags.StringVar(&c.RunnerTokenFile, "runner-token-file", "", "projected Gateway audience token for cross-replica Runner calls")
 	flags.StringVar(&c.Kubeconfig, "kubeconfig", "", "Kubernetes client config; defaults to in-cluster credentials")
-	flags.StringVar(&c.ListenAddress, "listen-address", ":8080", "gRPC listen address for Dispatcher, Runner proxy and runner Connect")
+	flags.StringVar(&c.ListenAddress, "listen-address", ":8080", "gRPC listen address for Dispatcher, Runner proxy and runner Connect, or fd:N for an inherited listening socket")
 	flags.StringVar(&c.HTTPListenAddress, "http-listen-address", "", "HTTP/JSON listen address for the Dispatcher's generated facade; empty serves none")
 	flags.IntVar(&c.ProxyPort, "proxy-port", sandboxapi.ControlServicePort, "port advertised in each Sandbox control EndpointSlice")
 	flags.StringVar(&c.RunnerControlTargetTemplate, "runner-control-target-template", sandboxapi.ControlServiceTargetTemplate(), "target or target template the Dispatcher uses for each Sandbox runner proxy")

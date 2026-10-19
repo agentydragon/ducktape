@@ -485,7 +485,6 @@ py_test(
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/proto:session_dispatcher_pb2_grpc",
-        "//util:net",
         "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
