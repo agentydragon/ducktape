@@ -70,6 +70,13 @@ class Rehearsal:
     def __init__(self, container: K3SContainer) -> None:
         self.container = container
 
+    def node_exec(self, *command: str) -> bytes:
+        result = self.container.get_wrapped_container().exec_run(list(command))
+        if result.exit_code:
+            raise RuntimeError(f"K3s node command {command} exited {result.exit_code}: {result.output.decode()}")
+        output: bytes = result.output
+        return output
+
     def node_ip(self) -> str:
         (node,) = self.get("nodes")["items"]
         (address,) = [address["address"] for address in node["status"]["addresses"] if address["type"] == "InternalIP"]
@@ -509,22 +516,30 @@ def test_seaweedfs_master_persistence(rehearsal: Rehearsal) -> None:
             for container in rehearsal.get("pod", name)["status"]["containerStatuses"]
             if container["name"] == "master"
         ]
-        rehearsal.kubectl("exec", name, "-c", "master", "--", "sh", "-ec", "kill -STOP $(pidof weed)")
+        container_id = before["containerID"]
+        assert container_id.startswith("containerd://")
+        runtime_id = container_id.removeprefix("containerd://")
+        inspected = json.loads(rehearsal.node_exec("/bin/crictl", "inspect", "--output", "json", runtime_id))
+        assert inspected["status"]["id"] == runtime_id
+        pid = inspected["info"]["pid"]
+        assert isinstance(pid, int)
+        assert pid > 1
+        process_cmdline = rehearsal.node_exec("cat", f"/proc/{pid}/cmdline")
+        assert process_cmdline.split(b"\0", 1)[0].rsplit(b"/", 1)[-1] == b"weed"
+        (undeclared_outputs_dir() / f"{phase}-process.json").write_text(
+            json.dumps({"container_id": container_id, "node_pid": pid}, indent=2)
+        )
+        # weed is PID1 inside its Pod and ignores SIGSTOP sent by a sibling
+        # process. Signal its verified runtime PID from the K3s ancestor namespace.
+        rehearsal.node_exec("sh", "-ec", 'kill -STOP "$1"', "signal", str(pid))
+        assert b"State:\tT" in rehearsal.node_exec("cat", f"/proc/{pid}/status")
         available = [member for member in names if member != name]
         leader = wait_master_agreement(available, timeout_seconds=45)
         assert leader in available
         verify_s3(phase)
-        stopped_state = rehearsal.kubectl(
-            "exec",
-            name,
-            "-c",
-            "master",
-            "--",
-            "sh",
-            "-ec",
-            'for pid in $(pidof weed); do grep "^State:" /proc/$pid/status; done',
-        )
-        assert "\tT" in stopped_state
+        stopped_state = rehearsal.node_exec("cat", f"/proc/{pid}/status")
+        assert b"State:\tT" in stopped_state
+        (undeclared_outputs_dir() / f"{phase}-stopped-process.txt").write_bytes(stopped_state)
         (after,) = [
             container
             for container in rehearsal.get("pod", name)["status"]["containerStatuses"]
@@ -533,7 +548,7 @@ def test_seaweedfs_master_persistence(rehearsal: Rehearsal) -> None:
         assert after["containerID"] == before["containerID"]
         assert after["restartCount"] == before["restartCount"]
         rehearsal.archive(phase)
-        rehearsal.kubectl("exec", name, "-c", "master", "--", "sh", "-ec", "kill -CONT $(pidof weed)")
+        rehearsal.node_exec("sh", "-ec", 'kill -CONT "$1"', "signal", str(pid))
         wait_master_agreement(names)
         return leader
 
