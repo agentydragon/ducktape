@@ -73,7 +73,6 @@ py_test(
         "//agentplane/egress/testing:sidecar_process",
         "//agentplane/egress/testing:tls",
         "//agentplane/testing:fake_apiserver",
-        "//util:net",
         "@pypi//aiohttp",
         "@pypi//grpcio",
         "@pypi//more_itertools",

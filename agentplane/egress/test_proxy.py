@@ -9,7 +9,7 @@ is on what the client and the upstream actually saw.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from ipaddress import ip_network
@@ -50,7 +50,6 @@ from agentplane.testing.fake_apiserver import (
     policy_binding,
     secret,
 )
-from util.net import pick_free_port
 
 
 @dataclass
@@ -100,6 +99,7 @@ def replica_settings(
     api_port: int,
     ca: tuple[Path, Path],
     database_url: str,
+    port_factory: Callable[[], int],
     upstream_ca_file: Path | None = None,
 ) -> Settings:
     """A replica process watching the fake API server on `api_port`, on ports of its own."""
@@ -113,11 +113,11 @@ def replica_settings(
         ca_cert=cert,
         ca_key=key,
         listen_host="127.0.0.1",
-        listen_port=pick_free_port(),
+        listen_port=port_factory(),
         admin_host="127.0.0.1",
-        admin_port=pick_free_port(),
+        admin_port=port_factory(),
         agent_api_host="127.0.0.1",
-        agent_api_port=pick_free_port(),
+        agent_api_port=port_factory(),
         token_audience=AUDIENCE,
         upstream_ca_file=upstream_ca_file,
         # The Go informer's watch period is whole seconds, two at the least.
@@ -178,7 +178,9 @@ class Egress:
 
 
 @pytest.fixture
-async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
+async def egress(
+    tmp_path: Path, history_db_url: str, unused_tcp_port_factory: Callable[[], int]
+) -> AsyncIterator[Egress]:
     interception_ca = make_ca("agentplane-egress-test-interception")
     upstream_ca = make_ca("agentplane-egress-test-upstream")
     async with (
@@ -193,6 +195,7 @@ async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
             api_port=api.port,
             ca=write_ca(interception_ca, tmp_path, "interception"),
             database_url=history_db_url,
+            port_factory=unused_tcp_port_factory,
             upstream_ca_file=write_ca(upstream_ca, tmp_path, "upstream")[0],
         )
         async with go_replica(settings, directory=tmp_path) as running:
@@ -251,12 +254,21 @@ def read_keypair(cert_path: Path, key_path: Path) -> tuple[bytes, bytes]:
     return cert_path.read_bytes(), key_path.read_bytes()
 
 
-async def test_health_reports_ready_only_once_the_tunnel_accepts(tmp_path: Path, history_db_url: str) -> None:
+async def test_health_reports_ready_only_once_the_tunnel_accepts(
+    tmp_path: Path, history_db_url: str, unused_tcp_port_factory: Callable[[], int]
+) -> None:
     """Readiness gates every Service this Pod backs, and the tunnel is the one that carries traffic."""
     ca = write_ca(make_ca("test-readiness-ca"), tmp_path, "readiness")
     async with fake_apiserver() as api:
         seed(api)
-        settings = replica_settings(tmp_path, "readiness", api_port=api.port, ca=ca, database_url=history_db_url)
+        settings = replica_settings(
+            tmp_path,
+            "readiness",
+            api_port=api.port,
+            ca=ca,
+            database_url=history_db_url,
+            port_factory=unused_tcp_port_factory,
+        )
         async with go_replica(settings, directory=tmp_path) as running:
             _, writer = await asyncio.open_connection("127.0.0.1", running.proxy_port)
             writer.close()
@@ -264,7 +276,7 @@ async def test_health_reports_ready_only_once_the_tunnel_accepts(tmp_path: Path,
 
 
 async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
-    tmp_path: Path, history_db_url: str
+    tmp_path: Path, history_db_url: str, unused_tcp_port_factory: Callable[[], int]
 ) -> None:
     ca = make_ca("test-replica-ca")
     cert, key = write_ca(ca, tmp_path, "replica")
@@ -276,7 +288,14 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
         seed(first_api)
         seed(second_api)
         settings = [
-            replica_settings(tmp_path, f"replica-{i}", api_port=fake.port, ca=(cert, key), database_url=history_db_url)
+            replica_settings(
+                tmp_path,
+                f"replica-{i}",
+                api_port=fake.port,
+                ca=(cert, key),
+                database_url=history_db_url,
+                port_factory=unused_tcp_port_factory,
+            )
             for i, fake in enumerate([first_api, second_api])
         ]
         async with (
@@ -328,7 +347,9 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                     assert any(row["reason"] == "unavailable" for row in rows)
 
 
-async def test_go_proxy_finishes_an_admitted_request_after_sigterm(tmp_path: Path, history_db_url: str) -> None:
+async def test_go_proxy_finishes_an_admitted_request_after_sigterm(
+    tmp_path: Path, history_db_url: str, unused_tcp_port_factory: Callable[[], int]
+) -> None:
     """Termination takes the Pod out of rotation at once, yet lets the request already admitted finish."""
     ca = make_ca("test-sigterm-ca")
     cert, key = write_ca(ca, tmp_path, "sigterm")
@@ -338,7 +359,14 @@ async def test_go_proxy_finishes_an_admitted_request_after_sigterm(tmp_path: Pat
         aiohttp.ClientSession() as client,
     ):
         seed(api)
-        settings = replica_settings(tmp_path, "sigterm", api_port=api.port, ca=(cert, key), database_url=history_db_url)
+        settings = replica_settings(
+            tmp_path,
+            "sigterm",
+            api_port=api.port,
+            ca=(cert, key),
+            database_url=history_db_url,
+            port_factory=unused_tcp_port_factory,
+        )
         async with go_replica(settings, directory=tmp_path) as running:
 
             async def slow_status() -> int:
