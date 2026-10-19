@@ -1,49 +1,65 @@
-import { useCallback, useEffect, useState, type JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 
 import { Dashboard } from "./dashboard";
 import type { QuotasView } from "./quotas";
 
-/** The service keeps its snapshot for 120s, so polling faster only re-reads the same one. */
-const POLL_INTERVAL_MS = 120_000;
-/** Reset countdowns are the only thing that moves between polls; tick them like a clock. */
 const TICK_MS = 1_000;
 
 export function App(): JSX.Element {
   const [quotas, setQuotas] = useState<QuotasView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(true);
+  const [connecting, setConnecting] = useState(true);
+  const [stopped, setStopped] = useState(false);
+  const [subscription, setSubscription] = useState(0);
   const [now, setNow] = useState(() => Date.now());
 
-  const refresh = useCallback(async (): Promise<void> => {
-    setRefreshing(true);
-    try {
-      const response = await fetch("/v1/quotas", { credentials: "same-origin", cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(
-          response.status === 401
-            ? "Your OAuth session has expired. Refresh to sign in again."
-            : `Quota API returned ${response.status}.`
-        );
-      }
-      setQuotas((await response.json()) as QuotasView);
-      setError(null);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not load quota data.");
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void refresh();
-    const poll = globalThis.setInterval(() => void refresh(), POLL_INTERVAL_MS);
-    return () => globalThis.clearInterval(poll);
-  }, [refresh]);
+    let active = true;
+    setConnecting(true);
+    setStopped(false);
+    const events = new EventSource("/v1/events");
+    events.addEventListener("view", (event) => {
+      if (!active) return;
+      try {
+        setQuotas(JSON.parse(event.data) as QuotasView);
+        setError(null);
+        setConnecting(false);
+      } catch {
+        setError("Could not read the live quota update.");
+      }
+    });
+    events.onerror = () => {
+      if (!active) return;
+      const closed = events.readyState === EventSource.CLOSED;
+      setStopped(closed);
+      setConnecting(false);
+      setError(
+        closed
+          ? "Live updates stopped. Reload this page to sign in again."
+          : "Connection interrupted. Reconnecting to live updates…"
+      );
+    };
+    return () => {
+      active = false;
+      events.close();
+    };
+  }, [subscription]);
 
   useEffect(() => {
     const tick = globalThis.setInterval(() => setNow(Date.now()), TICK_MS);
     return () => globalThis.clearInterval(tick);
   }, []);
 
-  return <Dashboard quotas={quotas} now={now} error={error} refreshing={refreshing} onRefresh={() => void refresh()} />;
+  return (
+    <Dashboard
+      quotas={quotas}
+      now={now}
+      error={error}
+      refreshing={connecting}
+      onRefresh={() => {
+        if (stopped) globalThis.location.reload();
+        else setSubscription((value) => value + 1);
+      }}
+    />
+  );
 }

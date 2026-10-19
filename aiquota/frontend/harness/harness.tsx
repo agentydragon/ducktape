@@ -12,6 +12,7 @@
 
 import { createRoot } from "react-dom/client";
 
+import { App } from "../app";
 import { Dashboard } from "../dashboard";
 import type { QuotasView } from "../quotas";
 import scenes from "../fixtures/scenes.json";
@@ -23,19 +24,51 @@ import "../page.css";
 // will make assignable to the tagged union — hence the cast rather than a plain annotation.
 const SCENES = scenes as unknown as Record<string, QuotasView>;
 
-const name = new URLSearchParams(globalThis.location.search).get("scene") ?? "";
+const query = new URLSearchParams(globalThis.location.search);
+const name = query.get("scene") ?? "";
 const quotas = SCENES[name];
 if (!quotas) throw new Error(`unknown scene ${JSON.stringify(name)}; have ${Object.keys(SCENES).join(", ")}`);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("harness page has no #root");
 
+if (query.has("live")) {
+  class FixtureEventSource extends EventTarget {
+    static CLOSED = 2;
+    readyState = 1;
+    onerror: (() => void) | null = null;
+    private view = (event: Event): void => {
+      this.dispatchEvent(new MessageEvent("view", { data: (event as MessageEvent).data }));
+    };
+    private error = (): void => {
+      this.onerror?.();
+    };
+    constructor() {
+      super();
+      document.documentElement.dataset.quotaStream = "connected";
+      globalThis.addEventListener("quota-fixture-view", this.view);
+      globalThis.addEventListener("quota-fixture-error", this.error);
+    }
+    close(): void {
+      this.readyState = FixtureEventSource.CLOSED;
+      delete document.documentElement.dataset.quotaStream;
+      globalThis.removeEventListener("quota-fixture-view", this.view);
+      globalThis.removeEventListener("quota-fixture-error", this.error);
+    }
+  }
+  globalThis.EventSource = FixtureEventSource as unknown as typeof EventSource;
+}
+
 createRoot(root).render(
-  <Dashboard
-    quotas={quotas}
-    now={Date.parse(quotas.fetched_at)}
-    error={null}
-    refreshing={false}
-    onRefresh={() => undefined}
-  />
+  query.has("live") ? (
+    <App />
+  ) : (
+    <Dashboard
+      quotas={quotas}
+      now={Date.parse(quotas.fetched_at)}
+      error={null}
+      refreshing={false}
+      onRefresh={() => undefined}
+    />
+  )
 );

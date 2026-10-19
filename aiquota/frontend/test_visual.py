@@ -3,6 +3,7 @@
 import json
 import os
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Literal
 
 import pytest
@@ -18,7 +19,8 @@ from util.testing.visual_capture import VisualHarness, VisualPage
 pytest_plugins = ("util.testing.visual_fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-_SCENES = tuple(json.loads(get_required_path(os.environ["FIXTURE_CATALOG"]).read_bytes()))
+_FIXTURES = json.loads(get_required_path(os.environ["FIXTURE_CATALOG"]).read_bytes())
+_SCENES = tuple(_FIXTURES)
 if not _SCENES:
     raise ValueError("the dashboard fixture catalog is empty")
 
@@ -48,6 +50,43 @@ async def view(
 async def test_dashboard(view: VisualPage) -> None:
     await expect(view.page.locator(".aiquota-card").first).to_be_attached()
     await view.capture(target=view.page.locator("#app"))
+
+
+async def test_live_subscription(visual: VisualHarness) -> None:
+    async with visual.open(
+        query={"scene": "hot", "live": "1"},
+        frozen_now_ms=int(datetime.fromisoformat(_FIXTURES["hot"]["fetched_at"]).timestamp() * 1000),
+    ) as view:
+        page = view.page
+        await expect(page.locator("html")).to_have_attribute("data-quota-stream", "connected")
+        await expect(page.get_by_text("Loading quota data…")).to_be_visible()
+        await expect(page.get_by_role("button", name="Reconnect")).to_be_disabled()
+        await expect(page.locator("html")).to_have_attribute("data-quota-stream", "connected")
+        await page.evaluate(
+            "data => window.dispatchEvent(new MessageEvent('quota-fixture-view', {data: JSON.stringify(data)}))",
+            _FIXTURES["hot"],
+        )
+        await expect(page.locator(".aiquota-card").first).to_be_visible()
+        await expect(page.get_by_role("button", name="Reconnect")).to_be_enabled()
+        await page.evaluate("window.dispatchEvent(new Event('quota-fixture-error'))")
+        await expect(page.get_by_text("Connection interrupted. Reconnecting to live updates…")).to_be_visible()
+        await expect(page.locator(".aiquota-card").first).to_be_visible()
+        await view.capture("live-reconnecting", target=page.locator("#app"))
+        await page.evaluate(
+            "data => window.dispatchEvent(new MessageEvent('quota-fixture-view', {data: JSON.stringify(data)}))",
+            _FIXTURES["paid_credits"],
+        )
+        await expect(page.locator(".aiquota-notice")).to_have_count(0)
+        await expect(page.get_by_text("credits left", exact=False).first).to_be_visible()
+        await view.capture("live-recovered", target=page.locator("#app"))
+        await page.get_by_role("button", name="Reconnect").click()
+        await expect(page.get_by_role("button", name="Reconnect")).to_be_disabled()
+        await expect(page.locator("html")).to_have_attribute("data-quota-stream", "connected")
+        await page.evaluate(
+            "data => window.dispatchEvent(new MessageEvent('quota-fixture-view', {data: JSON.stringify(data)}))",
+            _FIXTURES["hot"],
+        )
+        await expect(page.get_by_role("button", name="Reconnect")).to_be_enabled()
 
 
 if __name__ == "__main__":

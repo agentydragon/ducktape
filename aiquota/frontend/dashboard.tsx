@@ -1,6 +1,6 @@
 /**
  * The standalone dashboard page at aiquota.allegedly.works: a title, the snapshot's age beside
- * the control that fetches a newer one, and the board itself.
+ * the control that reconnects the live subscription, and the board itself.
  *
  * Only the chrome lives here. Everything that renders quota state is `QuotaBoard`, which the
  * Haku Console embeds in its own shell — see board.tsx.
@@ -42,8 +42,8 @@ export function Dashboard({
             onClick={onRefresh}
             disabled={refreshing}
             aria-busy={refreshing}
-            aria-label="Refresh"
-            title="Refresh"
+            aria-label="Reconnect"
+            title="Reconnect"
           >
             <RefreshIcon />
           </button>
