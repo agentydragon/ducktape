@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { z } from "zod";
 
+import type { ActionPresentation } from "../presentation";
 import { Text } from "@mantine/core";
 
 import { Chip } from "../chips";
@@ -61,3 +62,10 @@ export const createPullRequestPane: ArgumentsPreview = definePreview(createPullR
 export function offersCardDecisionButtonsPullRequest(args: unknown): boolean {
   return approvablePullRequest.safeParse(args).success;
 }
+
+export const createPullRequestPresentation: ActionPresentation = {
+  label: createPullRequestLabel,
+  pane: { opened: createPullRequestPane },
+  details: { arguments: createPullRequestPane },
+  offersCardDecisionButtons: offersCardDecisionButtonsPullRequest,
+};

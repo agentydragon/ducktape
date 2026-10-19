@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
+import type { ActionPresentation } from "../presentation";
 import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
@@ -34,3 +35,9 @@ function DeleteLabel({ args }: { args: z.infer<typeof resourcesDeleteArguments> 
 
 export const resourcesDeleteLabel: ArgumentsPreview = definePreview(resourcesDeleteArguments, DeleteLabel);
 export const resourcesDeletePane: ArgumentsPreview = definePreview(resourcesDeleteArguments, Delete);
+
+export const resourcesDeletePresentation: ActionPresentation = {
+  label: resourcesDeleteLabel,
+  pane: { opened: resourcesDeletePane },
+  details: { arguments: resourcesDeletePane },
+};

@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
+import type { ActionPresentation } from "../presentation";
 import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { kubernetesTarget } from "./resource_common";
@@ -38,3 +39,10 @@ function PodsLogLabel({ args }: { args: z.infer<typeof podsLogArguments> }): JSX
 
 export const podsLogLabel: ArgumentsPreview = definePreview(podsLogArguments, PodsLogLabel);
 export const podsLogPreview: ArgumentsPreview = definePreview(podsLogArguments, Logs);
+
+export const podsLogPresentation: ActionPresentation = {
+  label: podsLogLabel,
+  pane: { opened: podsLogPreview },
+  details: { arguments: podsLogPreview },
+  offersCardDecisionButtons: offersCardDecisionButtonsPodsLog,
+};

@@ -260,23 +260,21 @@ export const gmailThreadsResult: ResultPreview = defineResultPreview(gmailThread
 
 // These static views need no Gmail read lookup. Subject/label resolution for thread and message
 // actions stays on the submitted-data fallback until Agentplane has an explicit lookup surface.
-export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
-  [
-    "drafts_create",
-    {
-      label: gmailDraftLabel,
-      call: gmailDraftCall,
-      pane: { collapsed: gmailDraftCollapsed, opened: gmailDraftOpened },
-      details: { arguments: gmailDraftDetails, result: gmailDraftResult },
-    },
-  ],
-  [
-    "threads_list",
-    {
-      label: gmailThreadSearchLabel,
-      pane: { collapsed: gmailThreadSearchCollapsed, opened: gmailThreadSearchOpened },
-      details: { arguments: gmailThreadSearchOpened, result: gmailThreadsResult },
-      offersCardDecisionButtons: offersCardDecisionButtonsThreadSearch,
-    },
-  ],
+export const gmailDraftPresentation: ActionPresentation = {
+  label: gmailDraftLabel,
+  call: gmailDraftCall,
+  pane: { collapsed: gmailDraftCollapsed, opened: gmailDraftOpened },
+  details: { arguments: gmailDraftDetails, result: gmailDraftResult },
+};
+
+export const gmailThreadSearchPresentation: ActionPresentation = {
+  label: gmailThreadSearchLabel,
+  pane: { collapsed: gmailThreadSearchCollapsed, opened: gmailThreadSearchOpened },
+  details: { arguments: gmailThreadSearchOpened, result: gmailThreadsResult },
+  offersCardDecisionButtons: offersCardDecisionButtonsThreadSearch,
+};
+
+export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+  ["drafts_create", gmailDraftPresentation],
+  ["threads_list", gmailThreadSearchPresentation],
 ]);

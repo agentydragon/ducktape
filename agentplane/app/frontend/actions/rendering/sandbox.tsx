@@ -206,45 +206,40 @@ export const sandboxExecResult: ResultPreview = defineResultPreview(execution, (
   </Stack>
 ));
 
-export const sandboxRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
-  [
-    "exec",
-    {
-      label: sandboxExecLabel,
-      pane: { opened: sandboxExecArguments },
-      details: { arguments: sandboxExecArguments, nativeResult: sandboxExecResult },
-    },
-  ],
-  [
-    "create",
-    {
-      label: sandboxCreateLabel,
-      pane: { opened: sandboxCreateArguments },
-      details: { arguments: sandboxCreateArguments, nativeResult: sandboxInfoResult },
-    },
-  ],
-  [
-    "get",
-    {
-      label: sandboxGetLabel,
-      pane: { opened: sandboxNamedArguments },
-      details: { arguments: sandboxNamedArguments, nativeResult: sandboxInfoResult },
-    },
-  ],
-  [
-    "dispose",
-    {
-      label: sandboxDisposeLabel,
-      pane: { opened: sandboxNamedArguments },
-      details: { arguments: sandboxNamedArguments, nativeResult: sandboxDisposeResult },
-    },
-  ],
-  [
-    "list",
-    {
-      label: sandboxListLabel,
-      pane: { opened: sandboxListArguments },
-      details: { arguments: sandboxListArguments, nativeResult: sandboxListResult },
-    },
-  ],
+export const sandboxExecPresentation: ActionPresentation = {
+  label: sandboxExecLabel,
+  pane: { opened: sandboxExecArguments },
+  details: { arguments: sandboxExecArguments, nativeResult: sandboxExecResult },
+};
+
+export const sandboxCreatePresentation: ActionPresentation = {
+  label: sandboxCreateLabel,
+  pane: { opened: sandboxCreateArguments },
+  details: { arguments: sandboxCreateArguments, nativeResult: sandboxInfoResult },
+};
+
+export const sandboxGetPresentation: ActionPresentation = {
+  label: sandboxGetLabel,
+  pane: { opened: sandboxNamedArguments },
+  details: { arguments: sandboxNamedArguments, nativeResult: sandboxInfoResult },
+};
+
+export const sandboxDisposePresentation: ActionPresentation = {
+  label: sandboxDisposeLabel,
+  pane: { opened: sandboxNamedArguments },
+  details: { arguments: sandboxNamedArguments, nativeResult: sandboxDisposeResult },
+};
+
+export const sandboxListPresentation: ActionPresentation = {
+  label: sandboxListLabel,
+  pane: { opened: sandboxListArguments },
+  details: { arguments: sandboxListArguments, nativeResult: sandboxListResult },
+};
+
+export const sandboxRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+  ["exec", sandboxExecPresentation],
+  ["create", sandboxCreatePresentation],
+  ["get", sandboxGetPresentation],
+  ["dispose", sandboxDisposePresentation],
+  ["list", sandboxListPresentation],
 ]);

@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
+import type { ActionPresentation } from "../presentation";
 import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
@@ -56,3 +57,10 @@ function ListLabel({ args }: { args: z.infer<typeof resourcesListArguments> }): 
 
 export const resourcesListLabel: ArgumentsPreview = definePreview(resourcesListArguments, ListLabel);
 export const resourcesListPane: ArgumentsPreview = definePreview(resourcesListArguments, List);
+
+export const resourcesListPresentation: ActionPresentation = {
+  label: resourcesListLabel,
+  pane: { opened: resourcesListPane },
+  details: { arguments: resourcesListPane },
+  offersCardDecisionButtons: offersCardDecisionButtonsResourcesList,
+};

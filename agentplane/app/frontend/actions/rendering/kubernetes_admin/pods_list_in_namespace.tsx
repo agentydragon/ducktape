@@ -2,6 +2,7 @@ import { Code, Text } from "@mantine/core";
 import type { JSX } from "react";
 import type { z } from "zod";
 
+import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { zPodsInNamespaceArguments } from "../../schemas/kubernetes_admin/pods_list_in_namespace";
 
@@ -80,3 +81,14 @@ export const podsInNamespaceCollapsed: ArgumentsPreview = definePreview(
   zPodsInNamespaceArguments,
   PodsInNamespaceCollapsed
 );
+
+export const podsInNamespacePresentation: ActionPresentation = {
+  label: podsInNamespaceLabel,
+  pane: {
+    collapsed: podsInNamespaceCollapsed,
+    opened: podsInNamespacePane,
+    requestTitleIsRedundant: podsInNamespaceTitleIsRedundant,
+  },
+  details: { arguments: podsInNamespaceDetails },
+  offersCardDecisionButtons: offersCardDecisionButtonsPodsInNamespace,
+};

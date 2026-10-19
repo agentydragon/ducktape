@@ -2,6 +2,7 @@ import { Code, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
+import type { ActionPresentation } from "../presentation";
 import { CodeBlock, InlineCode } from "../../../code_block";
 
 import { Chip } from "../chips";
@@ -79,3 +80,15 @@ function PodsDeleteLabel({ args }: { args: z.infer<typeof podsDeleteArguments> }
 
 export const podsDeleteLabel: ArgumentsPreview = definePreview(podsDeleteArguments, PodsDeleteLabel);
 export const podsDeletePane: ArgumentsPreview = definePreview(podsDeleteArguments, NoAdditionalOptions);
+
+export const podsDeletePresentation: ActionPresentation = {
+  label: podsDeleteLabel,
+  pane: { opened: podsDeletePane },
+  details: { arguments: podsDeletePane },
+};
+
+export const podsExecPresentation: ActionPresentation = {
+  label: podsExecLabel,
+  pane: { collapsed: podsExecCollapsed, opened: podsExecPane },
+  details: { arguments: podsExecPane },
+};

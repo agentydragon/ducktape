@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
+import type { ActionPresentation } from "../presentation";
 import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
@@ -34,3 +35,10 @@ function EventsLabel({ args }: { args: z.infer<typeof eventsListArguments> }): J
 
 export const eventsListLabel: ArgumentsPreview = definePreview(eventsListArguments, EventsLabel);
 export const eventsListPane: ArgumentsPreview = definePreview(eventsListArguments, Events);
+
+export const eventsListPresentation: ActionPresentation = {
+  label: eventsListLabel,
+  pane: { opened: eventsListPane },
+  details: { arguments: eventsListPane },
+  offersCardDecisionButtons: offersCardDecisionButtonsEventsList,
+};

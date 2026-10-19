@@ -4,6 +4,7 @@ import { Badge, Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import type { z } from "zod";
 
+import type { ActionPresentation } from "../presentation";
 import { CodeBlock } from "../../../code_block";
 import { CommandCallView, OutputBlock } from "../../../command_view";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "../entry";
@@ -78,3 +79,9 @@ export const execArgumentsPreview: ArgumentsPreview = definePreview(zSshExecArgu
 export const execLabel: ArgumentsPreview = definePreview(zSshExecArguments, ExecLabel);
 export const execCollapsedPreview: ArgumentsPreview = definePreview(zSshExecArguments, ExecCollapsed);
 export const execResultPreview: ResultPreview = defineResultPreview(zSshExecResult, ExecResult);
+
+export const execPresentation: ActionPresentation = {
+  label: execLabel,
+  pane: { collapsed: execCollapsedPreview, opened: execArgumentsPreview },
+  details: { arguments: execArgumentsPreview, result: execResultPreview },
+};

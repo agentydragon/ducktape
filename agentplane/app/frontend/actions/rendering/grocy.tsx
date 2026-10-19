@@ -147,32 +147,29 @@ export const systemInfoResult: ResultPreview = defineResultPreview(systemInfo, S
 
 // Only actions whose Haku renderers need no lookups are registered here. Lookup-backed Grocy
 // actions are absent entirely and use Agentplane's unported generic presentation.
-export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
-  [
-    "products_list",
-    {
-      label: productsListLabel,
-      pane: { opened: productsListArguments },
-      details: { arguments: productsListArguments, result: productsListResult },
-      offersCardDecisionButtons: offersCardDecisionButtonsProductsList,
-    },
-  ],
-  [
-    "quantity_units_list",
-    {
-      label: quantityUnitsListLabel,
-      pane: { opened: quantityUnitsListArguments },
-      details: { arguments: quantityUnitsListArguments, result: quantityUnitsListResult },
-      offersCardDecisionButtons: offersCardDecisionButtonsQuantityUnitsList,
-    },
-  ],
-  [
-    "get_system_info",
-    {
-      label: systemInfoLabel,
-      pane: { opened: systemInfoArguments },
-      details: { arguments: systemInfoArguments, result: systemInfoResult },
-      offersCardDecisionButtons: offersCardDecisionButtonsSystemInfo,
-    },
-  ],
+export const productsListPresentation: ActionPresentation = {
+  label: productsListLabel,
+  pane: { opened: productsListArguments },
+  details: { arguments: productsListArguments, result: productsListResult },
+  offersCardDecisionButtons: offersCardDecisionButtonsProductsList,
+};
+
+export const quantityUnitsListPresentation: ActionPresentation = {
+  label: quantityUnitsListLabel,
+  pane: { opened: quantityUnitsListArguments },
+  details: { arguments: quantityUnitsListArguments, result: quantityUnitsListResult },
+  offersCardDecisionButtons: offersCardDecisionButtonsQuantityUnitsList,
+};
+
+export const systemInfoPresentation: ActionPresentation = {
+  label: systemInfoLabel,
+  pane: { opened: systemInfoArguments },
+  details: { arguments: systemInfoArguments, result: systemInfoResult },
+  offersCardDecisionButtons: offersCardDecisionButtonsSystemInfo,
+};
+
+export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+  ["products_list", productsListPresentation],
+  ["quantity_units_list", quantityUnitsListPresentation],
+  ["get_system_info", systemInfoPresentation],
 ]);

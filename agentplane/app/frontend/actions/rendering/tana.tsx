@@ -37,13 +37,12 @@ export const calendarNodeArgumentsPreview: ArgumentsPreview = definePreview(
   CalendarNodeArguments
 );
 
-export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
-  [
-    "get_or_create_calendar_node",
-    {
-      label: calendarNodeLabel,
-      pane: { opened: calendarNodeArgumentsPreview },
-      details: { arguments: calendarNodeArgumentsPreview },
-    },
-  ],
+export const calendarNodePresentation: ActionPresentation = {
+  label: calendarNodeLabel,
+  pane: { opened: calendarNodeArgumentsPreview },
+  details: { arguments: calendarNodeArgumentsPreview },
+};
+
+export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+  ["get_or_create_calendar_node", calendarNodePresentation],
 ]);
