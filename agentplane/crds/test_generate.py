@@ -16,6 +16,8 @@ from agentplane.crds.generate import (
     CRDS_DIR,
     EGRESS_CRDS,
     EGRESS_GENERATED_CRDS,
+    POLICY_CRDS,
+    POLICY_GENERATED_CRDS,
     SANDBOX_CRDS,
     SANDBOX_GENERATED_CRDS,
     generated_files,
@@ -33,14 +35,36 @@ def test_committed_files_are_generated() -> None:
     egress_generated = get_required_path(EGRESS_GENERATED_CRDS)
     sandbox_crds = {name: (sandbox_generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
     egress_crds = {name: (egress_generated / source).read_text() for name, source in EGRESS_CRDS.items()}
-    egress_manifest = CRDS_DIR / "crd-egresscredentials.yaml"
+    policy_generated = get_required_path(POLICY_GENERATED_CRDS)
+    policy_crds = {name: (policy_generated / source).read_text() for name, source in POLICY_CRDS.items()}
     for relative, content in generated_files(
-        {name: _committed(CRDS_DIR / name) for name in CRD_FILES}, sandbox_crds, egress_crds
+        {name: _committed(CRDS_DIR / name) for name in CRD_FILES}, sandbox_crds, egress_crds, policy_crds
     ):
-        if relative == egress_manifest:
-            expected = undeclared_outputs_dir() / relative.name
-            expected.write_text(content)
+        (undeclared_outputs_dir() / relative.name).write_text(content)
         assert content == _committed(relative), f"{relative} is stale"
+
+
+def test_policybinding_schema_preserves_validation_and_condition_ownership() -> None:
+    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-policybindings.yaml"))
+    version = crd["spec"]["versions"][0]
+    assert version["subresources"] == {"status": {}}
+    properties = version["schema"]["openAPIV3Schema"]["properties"]
+    conditions = properties["status"]["properties"]["conditions"]
+    assert conditions["x-kubernetes-list-type"] == "map"
+    assert conditions["x-kubernetes-list-map-keys"] == ["type"]
+    validator = Draft4Validator(properties["spec"], registry=Registry())
+    subject = {"namespace": "workloads", "name": "runner"}
+    assert validator.is_valid({"subject": subject, "policySets": ["basic"]})
+    for invalid in (
+        {"subject": {}, "policySets": ["basic"]},
+        {"subject": {"namespace": "", "name": "runner"}, "policySets": ["basic"]},
+        {"subject": {"namespace": "workloads", "name": ""}, "policySets": ["basic"]},
+        {"subject": subject, "policySets": []},
+        {"subject": subject, "policySets": [""]},
+        {"subject": subject},
+        {"policySets": ["basic"]},
+    ):
+        assert not validator.is_valid(invalid), invalid
 
 
 @pytest.mark.parametrize(

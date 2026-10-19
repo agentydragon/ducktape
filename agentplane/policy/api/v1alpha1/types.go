@@ -35,6 +35,9 @@ type PolicySetSpec struct {
 }
 
 type Status struct {
+	// Each reader applies only its own condition type with its own field manager.
+	// +listType=map
+	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
@@ -55,18 +58,34 @@ type PolicySetList struct {
 }
 
 type ServiceAccountRef struct {
+	// +kubebuilder:validation:MinLength=1
 	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
 }
 
 type PolicyBindingSpec struct {
-	Subject    ServiceAccountRef `json:"subject"`
-	PolicySets []string          `json:"policySets"`
-	ExpiresAt  *metav1.Time      `json:"expiresAt,omitempty"`
+	// The ServiceAccount this binding grants to. Native bindings also carry its UID so that
+	// recreating a same-named account replaces the grant.
+	Subject ServiceAccountRef `json:"subject"`
+	// PolicySet names in this binding's namespace.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:MinLength=1
+	PolicySets []string `json:"policySets"`
+	// The Policy Controller deletes the binding at this instant. Do not set it on a GitOps-owned
+	// binding, which GitOps would recreate.
+	ExpiresAt *metav1.Time `json:"expiresAt,omitempty"`
 }
 
 // +genclient
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Namespaced,path=policybindings,singular=policybinding
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Subject",type=string,JSONPath=".spec.subject.name"
+// +kubebuilder:printcolumn:name="Expires",type=string,JSONPath=".spec.expiresAt"
+// +kubebuilder:printcolumn:name="Kubernetes",type=string,JSONPath=".status.conditions[?(@.type==\"KubernetesReady\")].status"
+// +kubebuilder:printcolumn:name="Egress",type=string,JSONPath=".status.conditions[?(@.type==\"EgressReady\")].status"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 type PolicyBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

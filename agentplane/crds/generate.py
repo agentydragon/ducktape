@@ -1,8 +1,7 @@
 """Go-derived Agentplane CRDs, written by `bb run //agentplane/crds:generate_bin`.
 
-Sandbox and EgressCredential CRDs are generated from Go API types by controller-gen. PolicySet and
-PolicyBinding remain authored in `manifests/`; `PolicyBinding.spec.subject` is `ServiceAccountRef`,
-so its schema block is generated from that model. Flux packages the CRDs directly from
+Sandbox, EgressCredential and PolicyBinding CRDs are generated from Go API types by controller-gen.
+PolicySet remains authored in `manifests/`. Flux packages the CRDs directly from
 `agentplane/crds/manifests` (`cluster/cdk8s/agentplane_crds.py`).
 """
 
@@ -10,14 +9,10 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from pathlib import Path
-from textwrap import indent
 from typing import Any, cast
 
 import yaml
-from more_itertools import one
-from pydantic import TypeAdapter
 
-from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -36,70 +31,8 @@ SANDBOX_CRDS = {
 EGRESS_CRDS = {"crd-egresscredentials.yaml": "agentplane.allegedly.works_egresscredentials.yaml"}
 SANDBOX_GENERATED_CRDS = "_main/agentplane/sandboxes/api/generated_crds"
 EGRESS_GENERATED_CRDS = "_main/agentplane/egress/api/v1alpha1/generated_crds"
-# The spec field holding a binding CRD's subject; an array field's items are the subject.
-_SUBJECT_FIELDS = {"crd-policybindings.yaml": "subject"}
-
-
-class _FlowSequenceDumper(yaml.SafeDumper):
-    """Block mappings over `[a, b]` sequences, the CRDs' house style."""
-
-
-_FlowSequenceDumper.add_representer(
-    list, lambda dumper, data: dumper.represent_sequence("tag:yaml.org,2002:seq", data, flow_style=True)
-)
-
-
-def _crd_property(schema: dict[str, Any]) -> dict[str, Any]:
-    kept = {key: value for key, value in schema.items() if key not in ("title", "additionalProperties")}
-    return {"type": kept.pop("type"), **kept}
-
-
-def subject_schema() -> dict[str, Any]:
-    """`ServiceAccountRef` as a CRD structural schema.
-
-    Dropped from the model's schema: `title`; `additionalProperties: false`, which the API server
-    rejects in a CRD (it prunes unknown fields instead); and the model docstring, since each CRD
-    describes the field in its binding's own terms.
-    """
-    model = TypeAdapter(ServiceAccountRef).json_schema()
-    if "$defs" in model:
-        raise ValueError("ServiceAccountRef nests a model, and a CRD schema cannot hold a $ref")
-    return {
-        "type": model["type"],
-        "required": model["required"],
-        "properties": {name: _crd_property(prop) for name, prop in model["properties"].items()},
-    }
-
-
-def _child(node: yaml.Node, key: str) -> yaml.Node:
-    pairs: list[tuple[yaml.Node, yaml.Node]] = node.value
-    return one(value for key_node, value in pairs if key_node.value == key)
-
-
-def _subject_node(crd: yaml.Node, field: str) -> yaml.Node:
-    versions: list[yaml.Node] = _child(_child(crd, "spec"), "versions").value
-    node = one(versions)
-    for key in ("schema", "openAPIV3Schema", "properties", "spec", "properties", field):
-        node = _child(node, key)
-    return _child(node, "items") if _child(node, "type").value == "array" else node
-
-
-def with_subject_schema(crd_text: str, field: str) -> str:
-    """`crd_text` with the subject block under `spec.<field>` (its items, for an array) regenerated.
-
-    The block is the trailing keys of that mapping; keys written by hand, such as `description`,
-    precede it and stay.
-    """
-    node = _subject_node(yaml.compose(crd_text), field)
-    generated = subject_schema()
-    keys = [key_node.value for key_node, _ in node.value]
-    first = min(keys.index(key) for key in generated)
-    if extra := set(keys[first:]) - set(generated):
-        raise ValueError(f"{field}: hand-written keys {extra} sit inside the generated block")
-    start = node.value[first][0].start_mark
-    lines = crd_text.splitlines(keepends=True)
-    block = yaml.dump(generated, Dumper=_FlowSequenceDumper, sort_keys=False)
-    return "".join(lines[: start.line]) + indent(block, " " * start.column) + "".join(lines[node.end_mark.line :])
+POLICY_GENERATED_CRDS = "_main/agentplane/policy/api/v1alpha1/generated_crds"
+POLICY_CRDS = {"crd-policybindings.yaml": "agentplane.allegedly.works_policybindings.yaml"}
 
 
 def _generated_crd(generated: str) -> dict[str, Any]:
@@ -132,7 +65,10 @@ def _sandbox_crd(generated: str) -> str:
 
 
 def generated_files(
-    crds: Mapping[str, str], sandbox_crds: Mapping[str, str], egress_crds: Mapping[str, str]
+    crds: Mapping[str, str],
+    sandbox_crds: Mapping[str, str],
+    egress_crds: Mapping[str, str],
+    policy_crds: Mapping[str, str],
 ) -> Iterator[tuple[Path, str]]:
     """(repo-relative path, content) of each generated CRD."""
     for crd_file, committed in crds.items():
@@ -143,8 +79,8 @@ def generated_files(
             generated = egress_crds[crd_file]
             text = yaml.safe_dump(_generated_crd(generated), sort_keys=False)
             yield CRDS_DIR / crd_file, text
-        elif field := _SUBJECT_FIELDS.get(crd_file):
-            text = with_subject_schema(committed, field)
+        elif crd_file in POLICY_CRDS:
+            text = yaml.safe_dump(_generated_crd(policy_crds[crd_file]), sort_keys=False)
             yield CRDS_DIR / crd_file, text
         else:
             yield CRDS_DIR / crd_file, committed
@@ -156,8 +92,10 @@ def main() -> None:
     egress_generated = get_required_path(EGRESS_GENERATED_CRDS)
     sandbox_crds = {name: (sandbox_generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
     egress_crds = {name: (egress_generated / source).read_text() for name, source in EGRESS_CRDS.items()}
+    policy_generated = get_required_path(POLICY_GENERATED_CRDS)
+    policy_crds = {name: (policy_generated / source).read_text() for name, source in POLICY_CRDS.items()}
     for relative, content in generated_files(
-        {name: (root / CRDS_DIR / name).read_text() for name in CRD_FILES}, sandbox_crds, egress_crds
+        {name: (root / CRDS_DIR / name).read_text() for name in CRD_FILES}, sandbox_crds, egress_crds, policy_crds
     ):
         (root / relative).write_text(content)
 

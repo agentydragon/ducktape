@@ -2,8 +2,8 @@
 
 A subject is a Kubernetes ServiceAccount: the one a workload's Pod runs as, which is what both the
 egress proxy and the Action Service authenticate it by, and what the Kubernetes API server
-authorizes. `PolicyBinding` carries this model's JSON schema
-as its subject, spliced in by `bb run //agentplane/crds:generate_bin`.
+authorizes. The CRD schema is generated from the Go `ServiceAccountRef` type under
+`agentplane/policy/api/v1alpha1`; this model is the Python representation of that wire value.
 
 Every sandbox runs as a ServiceAccount of its own, so a binding names no Sandbox and follows no Pod
 owner, and an agent hosted outside this cluster is a subject on the same terms as one inside it.
