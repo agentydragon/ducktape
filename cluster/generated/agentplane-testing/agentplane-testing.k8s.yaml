@@ -863,10 +863,9 @@ spec:
           imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 3
-            httpGet:
-              path: /livez
+            grpc:
               port: 8081
-              scheme: HTTP
+              service: livez
             initialDelaySeconds: 30
             periodSeconds: 30
           name: proxy
@@ -882,10 +881,8 @@ spec:
               protocol: TCP
           readinessProbe:
             failureThreshold: 3
-            httpGet:
-              path: /healthz
+            grpc:
               port: 8081
-              scheme: HTTP
             initialDelaySeconds: 3
             periodSeconds: 10
           resources:

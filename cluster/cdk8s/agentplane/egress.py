@@ -64,7 +64,7 @@ from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SE
 from cluster.cdk8s.litellm import proxy as litellm_proxy
 from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
 from cluster.cdk8s.ollama import app as ollama
-from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
@@ -80,6 +80,9 @@ _PROXY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate"
 _LABELS = {"app.kubernetes.io/name": NAME}
 PROXY_PORT = 8888
+# The health service whose verdict is "the process answers", whatever the index says; keep equal to
+# `LivenessService` in agentplane/egress/admin/grpc_health.go.
+_LIVENESS_HEALTH_SERVICE = "livez"
 # The API server's own ServiceAccount token audience (Talos `--api-audiences`, equal to
 # `--service-account-issuer`): an issuer ID, not an address; never "fix" it to the Service DNS name.
 # The sidecar projects and the proxy reviews this exact string, so a mismatch with the cluster shows
@@ -836,8 +839,10 @@ class Egress(Construct):
             image=f"{_PROXY_IMAGE}:{_PLACEHOLDER_TAG}",
             env_variables={**setting_env, env_name(Settings, "database_url"): self.database_url, **self.container_env},
             extra_ports=[self.admin.container_port()],
-            readiness=http_probe("/healthz", port=self.admin.pod_port, initial_delay_seconds=3, period_seconds=10),
-            liveness=http_probe("/livez", port=self.admin.pod_port, initial_delay_seconds=30, period_seconds=30),
+            readiness=grpc_probe(port=self.admin.pod_port, initial_delay_seconds=3, period_seconds=10),
+            liveness=grpc_probe(
+                port=self.admin.pod_port, service=_LIVENESS_HEALTH_SERVICE, initial_delay_seconds=30, period_seconds=30
+            ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(256), limit=self.memory_limit),

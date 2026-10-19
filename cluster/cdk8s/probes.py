@@ -25,10 +25,11 @@ def http_probe(
     )
 
 
-def grpc_probe(*, port: int, initial_delay_seconds: int, period_seconds: int = 10) -> Probe:
-    """Calls the standard `grpc.health.v1.Health/Check` for the whole server (service `""`)."""
+def grpc_probe(*, port: int, initial_delay_seconds: int, period_seconds: int = 10, service: str | None = None) -> Probe:
+    """Calls the standard `grpc.health.v1.Health/Check` for `service`, the whole server when unset."""
     return Probe.from_grpc(
         port=port,
+        service=service,
         initial_delay_seconds=Duration.seconds(initial_delay_seconds),
         period_seconds=Duration.seconds(period_seconds),
     )

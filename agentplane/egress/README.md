@@ -314,4 +314,4 @@ replacement is ready, and a voluntary eviction keeps one.
 Both replicas are pinned to the `hil-ovh` zone by node selector with no anti-affinity or topology
 spread, so they may share a node; the PDB limits voluntary evictions, not involuntary failures.
 Testing runs one replica with `Recreate`. Both use a 60-second
-termination grace, readiness on `/healthz` and liveness on `/livez`.
+termination grace and gRPC health probes on the admin listener: readiness on the empty service, liveness on `livez`.
