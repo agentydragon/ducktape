@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
+  name: piraeus-datastore
+spec: {}
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: piraeus-operator
+  namespace: flux-system
+spec:
+  type: oci
+  url: oci://ghcr.io/piraeusdatastore/piraeus-operator
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: piraeus-operator
+  namespace: piraeus-datastore
+spec:
+  chart:
+    spec:
+      chart: piraeus
+      sourceRef:
+        kind: HelmRepository
+        name: piraeus-operator
+        namespace: flux-system
+      version: 2.12.0
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
+  timeout: 10m
+  values:
+    installCRDs: true
+    nodeSelector:
+      topology.kubernetes.io/region: hil
+    podDisruptionBudget:
+      enabled: false

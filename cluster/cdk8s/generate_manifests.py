@@ -50,6 +50,7 @@ from cluster.cdk8s import (
     ntfy,
     nvidia_device_plugin,
     nvidia_runtimeclass,
+    piraeus,
     platform_monitoring,
     proxmox_proxy,
     reflector,
@@ -409,6 +410,16 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         write_directory(root, openebs_lvm_artifact, openebs_lvm_storage.chart),
         snapshot_controller_crds_kustomization,
+    )
+    piraeus_operator_artifact = artifact("piraeus-operator", piraeus.OPERATOR_OUTPUT_DIR)
+    piraeus_operator_kustomization = piraeus.operator_kustomization(
+        flux_chart, write_directory(root, piraeus_operator_artifact, piraeus.operator_chart)
+    )
+    piraeus_cluster_artifact = artifact("piraeus-cluster", piraeus.CLUSTER_OUTPUT_DIR)
+    piraeus_cluster_kustomization = piraeus.cluster_kustomization(
+        flux_chart,
+        write_directory(root, piraeus_cluster_artifact, piraeus.cluster_chart),
+        piraeus_operator_kustomization,
     )
     sshpiper_crds_kustomization = sshpiper_crds_flux_kustomizations.sshpiper_crds(flux_chart)
     talos_cloud_controller_manager_artifact = artifact(
@@ -1712,6 +1723,8 @@ def generate_manifests(root: Path) -> None:
         "oci-cache": oci_cache_kustomization,
         "ollama": ollama_kustomization,
         "openebs": openebs_lvm_kustomization,
+        "piraeus-operator": piraeus_operator_kustomization,
+        "piraeus-cluster": piraeus_cluster_kustomization,
         "plaid-mcp": plaid_mcp_kustomization,
         "proxmox-proxy": proxmox_proxy_kustomization,
         "public-coder-agent": public_coder_agent_access_kustomization,
@@ -1859,6 +1872,8 @@ def generate_manifests(root: Path) -> None:
             oci_cache_artifact,
             ollama_app_artifact,
             openebs_lvm_artifact,
+            piraeus_operator_artifact,
+            piraeus_cluster_artifact,
             platform_monitoring_artifact,
             proxmox_proxy_artifact,
             reloader_artifact,

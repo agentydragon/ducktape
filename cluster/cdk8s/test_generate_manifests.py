@@ -97,6 +97,59 @@ def test_generated_root_holds_only_generated_files(generated: Path, checkout: Pa
     )
 
 
+def test_piraeus_storage_is_confined_to_the_retained_two_node_canary(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    release = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "HelmRelease" and doc["metadata"].get("name") == "linstor-cluster"
+    )
+    values = release["spec"]["values"]
+    canary_selector = {"storage.allegedly.works/drbd-canary": "true"}
+
+    cluster = values["linstorCluster"]
+    assert cluster["nodeSelector"] == canary_selector
+    assert cluster["properties"] == [{"name": "TcpPortAutoRange", "value": "7900-7919"}]
+    assert cluster["highAvailabilityController"] == {"enabled": False}
+    assert cluster["nfsServer"] == {"enabled": False}
+
+    [satellite] = values["linstorSatelliteConfigurations"]
+    assert satellite["nodeSelector"] == canary_selector
+    assert satellite["deletionPolicy"] == "Retain"
+    [pool] = satellite["storagePools"]
+    assert pool == {"name": "local-canary", "fileThinPool": {"directory": "/var/mnt/local-path-ovh-hdd/linstor-canary"}}
+
+    [storage_class] = values["storageClasses"]
+    assert storage_class["name"] == "local-canary"
+    assert storage_class["reclaimPolicy"] == "Retain"
+    assert storage_class["volumeBindingMode"] == "WaitForFirstConsumer"
+    assert storage_class["allowVolumeExpansion"] is True
+    assert storage_class["parameters"] == {
+        "linstor.csi.linbit.com/storagePool": "local-canary",
+        "linstor.csi.linbit.com/placementCount": "1",
+        "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
+    }
+    assert "annotations" not in storage_class
+
+    operator_flux = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "piraeus-operator"
+    )
+    cluster_flux = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "piraeus-cluster"
+    )
+    assert operator_flux["spec"]["prune"] is False
+    assert operator_flux["spec"]["deletionPolicy"] == "Orphan"
+    assert cluster_flux["spec"]["prune"] is False
+    assert cluster_flux["spec"]["deletionPolicy"] == "Orphan"
+    assert cluster_flux["spec"]["dependsOn"] == [{"name": "piraeus-operator", "namespace": "ducktape-flux"}]
+
+
 def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:

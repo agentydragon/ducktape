@@ -49,12 +49,17 @@ expected mounted filesystem; never let a missing mount silently redirect storage
 onto the system disk. Pool creation belongs to the subsequent Piraeus deployment.
 
 For the first tests, budget **20GiB physical allocation per node**, shared with
-the mount's other consumers. This is an experiment stop threshold, not a reserved
-or enforced pool quota. Measure free space and allocated bytes throughout; stop
-before the budget or the mount's existing operational headroom is exhausted.
-Use small volumes for fill/resize tests; a separate 50GiB logical volume tests
-sparse creation without filling it. Both initial pools use HDDs, so their
-performance does not establish SSD performance on other hosts.
+the mount's other consumers. A `FILE_THIN` pool reports the backing filesystem's
+capacity to LINSTOR; the pool directory is not a quota, and LINSTOR can provision
+logical volume sizes against the filesystem's available capacity. The 20GiB
+budget is an external experiment stop threshold, not reserved or enforced space.
+Sparse files consume physical space as they are written, alongside local-path and
+OpenEBS data on the same filesystem. Measure LINSTOR pool capacity, filesystem
+free space, and canary directory allocation throughout; stop before the budget
+or the mount's existing operational headroom is exhausted. Use small volumes
+for fill/resize tests; a separate 50GiB logical volume tests sparse creation
+without filling it. Both initial pools use HDDs, so their performance does not
+establish SSD performance on other hosts.
 
 ## Talos rollout
 
@@ -149,13 +154,18 @@ Talos before claiming the universal class requirement is met.
 
 ## Piraeus deployment and acceptance follow-up
 
-After both hosts pass preparation checks, a separate cdk8s/Flux change must pin
-the operator/CSI components and configure:
+After both hosts pass preparation checks, reconcile the operator and LINSTOR
+configuration declared in `cluster/cdk8s/piraeus.py`. Before provisioning any
+PVC, verify:
 
 - Satellites selected by the canary label, with the Talos-specific module-loader
   overrides. Both initial nodes use extension-provided modules.
-- Explicit advertised replication addresses, ports and network access over the
-  mesh; validate satellite network-namespace lifetime and restart behavior.
+- LINSTOR reports the two Nebula node addresses (`10.42.0.15` and `10.42.0.13`)
+  for host-networked satellites. The controller's canary-only `TcpPortAutoRange`
+  is `7900-7919`; verify those TCP ports are available and reachable over the
+  mesh. Piraeus documents that host networking reconfigures DRBD peer addresses;
+  switching back to the pod network requires resetting paths or rebooting all
+  involved nodes.
 - The two `FILE_THIN` directories above, with capacity monitoring and no pool
   autodiscovery or disk preparation.
 - An opt-in `local-canary` StorageClass: `WaitForFirstConsumer`, one disk-backed
@@ -193,4 +203,5 @@ verified. Never unload an in-use DRBD module or remove a pool directory as a
 shortcut to teardown.
 
 References: [Piraeus Talos integration](https://piraeus.io/docs/v2/how-to/talos/),
+[Piraeus FILE_THIN pool configuration](https://piraeus.io/docs/v2/reference/linstorsatelliteconfiguration/),
 [Talos boot assets](https://docs.siderolabs.com/talos/v1.14/platform-specific-installations/boot-assets).

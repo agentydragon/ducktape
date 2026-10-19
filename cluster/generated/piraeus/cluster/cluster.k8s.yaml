@@ -1,0 +1,93 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: piraeus-charts
+  namespace: flux-system
+spec:
+  type: oci
+  url: oci://ghcr.io/piraeusdatastore/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: linstor-cluster
+  namespace: piraeus-datastore
+spec:
+  chart:
+    spec:
+      chart: linstor-cluster
+      sourceRef:
+        kind: HelmRepository
+        name: piraeus-charts
+        namespace: flux-system
+      version: 1.3.2
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
+  timeout: 10m
+  values:
+    linstorCluster:
+      affinityController:
+        enabled: true
+      controller:
+        enabled: true
+      csiController:
+        enabled: true
+      csiNode:
+        enabled: true
+      highAvailabilityController:
+        enabled: false
+      nfsServer:
+        enabled: false
+      nodeSelector:
+        storage.allegedly.works/drbd-canary: "true"
+      properties:
+        - name: TcpPortAutoRange
+          value: 7900-7919
+    linstorSatelliteConfigurations:
+      - deletionPolicy: Retain
+        name: talos-canary
+        nodeSelector:
+          storage.allegedly.works/drbd-canary: "true"
+        podTemplate:
+          spec:
+            dnsPolicy: ClusterFirstWithHostNet
+            hostNetwork: true
+            initContainers:
+              - $patch: delete
+                name: drbd-shutdown-guard
+              - $patch: delete
+                name: drbd-module-loader
+            volumes:
+              - $patch: delete
+                name: run-systemd-system
+              - $patch: delete
+                name: run-drbd-shutdown-guard
+              - $patch: delete
+                name: systemd-bus-socket
+              - $patch: delete
+                name: lib-modules
+              - $patch: delete
+                name: usr-src
+              - hostPath:
+                  path: /var/etc/lvm/backup
+                  type: DirectoryOrCreate
+                name: etc-lvm-backup
+              - hostPath:
+                  path: /var/etc/lvm/archive
+                  type: DirectoryOrCreate
+                name: etc-lvm-archive
+        storagePools:
+          - fileThinPool:
+              directory: /var/mnt/local-path-ovh-hdd/linstor-canary
+            name: local-canary
+    storageClasses:
+      - allowVolumeExpansion: true
+        name: local-canary
+        parameters:
+          linstor.csi.linbit.com/allowRemoteVolumeAccess: "false"
+          linstor.csi.linbit.com/placementCount: "1"
+          linstor.csi.linbit.com/storagePool: local-canary
+        reclaimPolicy: Retain
+        volumeBindingMode: WaitForFirstConsumer
