@@ -1,0 +1,8 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "forgejo_retention_report",
+    srcs = ["forgejo_retention_report.py"],
+)

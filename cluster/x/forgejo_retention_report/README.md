@@ -1,6 +1,6 @@
 # Forgejo retention report
 
-`//cluster/scripts:forgejo_retention_report` produces Markdown and JSON reports;
+`//cluster/x/forgejo_retention_report` produces Markdown and JSON reports;
 it has no deletion or cleanup-rule installation mode.
 
 Run locally through Bazel with the cluster kubeconfig loaded. The caller needs
@@ -9,7 +9,7 @@ database connection uses local PostgreSQL peer authentication; no registry or
 database password is read or written.
 
 ```bash
-bb run //cluster/scripts:forgejo_retention_report -- \
+bb run //cluster/x/forgejo_retention_report -- \
   --db-pod forgejo-db-ssd-1 \
   --repo /path/to/ducktape=origin/devel \
   --repo /path/to/gaffer-private=origin/main \
