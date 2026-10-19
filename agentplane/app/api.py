@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
-import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
 from dataclasses import dataclass, field
@@ -61,6 +60,7 @@ from agentplane.app.live import (
 )
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.oidc import OIDCSettings, build_oauth
+from agentplane.app.operator_relay import operator_relay
 from agentplane.app.operator_sessions import (
     OperatorSessionMiddleware,
     OperatorSessionStore,
@@ -79,7 +79,7 @@ from agentplane.app.sandbox_models import (
     sandbox_is_ready,
     sandbox_view,
 )
-from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
+from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from agentplane.app.system_status import ComponentStatus, SystemStatusChecker
 from agentplane.app.threads import bridge as runner_bridge
 from agentplane.app.threads.dispatch_stream import DispatchesSnapshot, dispatch_frames
@@ -97,6 +97,7 @@ from agentplane.app.threads.runner_directory import SandboxNotReachableError
 from agentplane.app.threads.store import MAX_PAGE, InvalidPageTokenError, ThreadPage, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
+from agentplane.app.upstream_proxy import UpstreamProxy, response_body
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.postgres.wakeups import WakeupListener
@@ -129,7 +130,6 @@ from agentplane.subjects import ServiceAccountRef
 # gazelle:include_dep @pypi//itsdangerous
 
 router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -161,6 +161,7 @@ class AppServices:
     reviewer: TokenReviewer | None
     operator_actions: FederatedOperatorActions | None
     electric: ElectricProxy | None
+    dispatcher_http: UpstreamProxy | None
     oauth: OAuth | None = field(init=False)
     drain: Drain = field(default_factory=Drain)
 
@@ -316,24 +317,32 @@ def _operator_relay(
     label: str,
     errors: tuple[type[Exception], ...],
 ) -> StreamingResponse:
-    """Relay `chunks` until the operator session ends -- a logout on any replica, or its expiry, which
-    they share through PostgreSQL -- the app drains, or the browser goes. Headers are already sent
-    when `errors` interrupt the upstream, so the SSE connection just ends and EventSource reconnects."""
-    session_id = operator_session_row(request).id
+    return sse_response(operator_relay(request, shutdown, updates, sessions, chunks, label, errors))
 
-    async def session_over() -> None:
-        await sessions.until_ended(session_id, updates.changes[Channel.OPERATOR_SESSIONS])
 
-    async def body() -> AsyncIterator[bytes]:
-        try:
-            async for chunk in shutdown.until(until_done(chunks, session_over)):
-                if await request.is_disconnected():
-                    return
-                yield chunk
-        except errors:
-            logger.warning("%s stream interrupted", label, exc_info=True)
+upstream_router = APIRouter(prefix="/upstream", tags=["upstream"])
 
-    return sse_response(body())
+
+@upstream_router.get("/dispatcher/{path:path}", dependencies=[OperatorLogin])
+async def dispatcher_upstream(
+    request: Request, services: Services, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions, path: str
+) -> StreamingResponse:
+    """The Session Dispatcher's HTTP/JSON reads (`agentplane/proto/session_dispatcher.proto`), unchanged,
+    for as long as the operator session lasts. Its commands are not reachable here: they go through the
+    Thread routes, whose checks the Dispatcher does not make."""
+    proxy = services.dispatcher_http
+    if proxy is None:
+        raise TypeError("the upstream router is mounted without a Dispatcher HTTP upstream")
+    try:
+        upstream = await proxy.open_get(path, request.url.query)
+    except httpx.RequestError as error:
+        raise upstream_http_error(error) from error
+    return StreamingResponse(
+        operator_relay(request, shutdown, updates, sessions, response_body(upstream), "Dispatcher", (httpx.HTTPError,)),
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type"),
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/{name}/console/stream", dependencies=[OperatorLogin])
@@ -1233,6 +1242,7 @@ def create_app(
     operator_actions: FederatedOperatorActions | None = None,
     *,
     electric: ElectricProxy | None,
+    dispatcher_http: UpstreamProxy | None = None,
     event_logs: EventLogStore,
     content: ContentStore,
     database_updates: WakeupListener,
@@ -1305,6 +1315,7 @@ def create_app(
         reviewer=reviewer,
         operator_actions=operator_actions,
         electric=electric,
+        dispatcher_http=dispatcher_http,
     )
     app.state.services = services
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
@@ -1327,6 +1338,8 @@ def create_app(
         app.include_router(api_router, dependencies=[Depends(require_caller)])
     if electric is not None:
         app.include_router(electric_router, dependencies=[Depends(require_caller)])
+    if dispatcher_http is not None:
+        app.include_router(upstream_router, dependencies=[Depends(require_caller)])
     if oidc is not None:
         app.add_middleware(
             OperatorSessionMiddleware,

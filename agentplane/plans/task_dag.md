@@ -1937,16 +1937,14 @@ flowchart LR
 
 ### `DISPATCHER_READS_FACADE` — Dispatcher reads as a generated browser API
 
-**In flight (the operator dispatched it in the delivery-facade thread, 2026-10-19 10:13 UTC; the
-Gateway code is in [#11116](https://github.com/agentydragon/ducktape/pull/11116)).** Serve `GetDispatch`,
-`ListDispatches` and `WatchDispatches` as a generated HTTP/JSON facade from the Runner Gateway process, and replace `app/threads/dispatch_stream.py` and its route with the app's
-generic upstream proxy and a `fetch` stream client in the browser. This builds the machinery every other
-facade reuses. The page treats a command the Dispatcher no longer holds as `DELIVERY_STATE_UNKNOWN`, so the
-watch likely needs a marker that the current Dispatches have been sent; the node's design settles it. It
-lands as the Gateway code with its listener optional, then the manifests once that image is pinned, then
-the app and frontend change that deletes the old route. Exit evidence: missing, invalid and valid
-bearers behave as over gRPC; a stream arrives unbuffered through the app and ends on logout; the generated
-TypeScript types are chosen; one visual scene runs on the streaming stub.
+**In flight (the operator dispatched it in the delivery-facade thread, 2026-10-19 10:13 UTC).** The Runner
+Gateway serves the Dispatcher's RPCs as a generated HTTP/JSON facade ([#11116](https://github.com/agentydragon/ducktape/pull/11116),
+merged) and the app relays its reads under `/upstream/dispatcher/` behind an optional setting. Remaining, in
+order: the manifests that turn the listener on ([#11122](https://github.com/agentydragon/ducktape/pull/11122)) and
+that set the app's URL once its image is pinned, then the browser's `fetch` stream client, which replaces
+`app/threads/dispatch_stream.py` and its route and makes the setting required. This builds the machinery
+every other facade reuses. Exit evidence: missing, invalid and valid bearers behave as over gRPC; the
+generated TypeScript types are chosen; one visual scene runs on the streaming stub.
 
 ### `EGRESS_ADMIN_GRPC` — a gRPC interface beside the egress admin HTTP
 

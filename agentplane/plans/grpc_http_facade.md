@@ -109,13 +109,14 @@ are the app's own logic.
 The app stays the one browser origin. A generic upstream proxy, written once, replaces the per-route
 code:
 
-- It maps one path prefix per upstream (`/api/<service>/...`) to that upstream's operator-facing
-  route prefix. A browser cannot reach a service's workload routes this way.
+- It maps one path prefix per upstream (`/upstream/<service>/...`) to that upstream's facade, `GET`
+  only: a command keeps the app's typed route while the app's Thread checks live there. A browser
+  cannot reach a service's workload routes this way. The Dispatcher's is `app/upstream_proxy.py`.
 - It authenticates as `require_caller` does today, including the exact-Origin check on unsafe
   methods, then forwards with the credential the upstream expects: the app's projected token, read on
   every call, for services that admit the app as a caller; the per-request federated exchange token
   for the Action Service ([operator federation](../docs/operator_federation.md)).
-- A stream ends when the operator session does, as `_operator_relay` ends it now.
+- A stream ends when the operator session does, as `operator_relay` ends every operator stream.
 - It reads no body and keeps no route table; exposure is the upstream's annotations.
 
 Apart from the Action Service, which already validates the exchanged operator token, services keep

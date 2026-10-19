@@ -8,7 +8,6 @@ whose operator sessions are on a connection pool of their own, and whose listene
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -16,7 +15,6 @@ import pytest
 import pytest_bazel
 from fastapi import FastAPI, Request
 from sqlalchemy.engine import make_url
-from starlette.types import Message, Scope
 
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.app.action_federation import FederatedOperatorActions
@@ -26,11 +24,11 @@ from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
-from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
-from agentplane.app.operator_sessions import OperatorSession, OperatorSessionStore, request_session
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
+from agentplane.app.testing.operator_streams import OIDC, EventSource, Upstream, login, logout, with_test_login
 from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
@@ -39,14 +37,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.postgres.wakeups import WakeupListener
 
-APP_URL = "http://test-app.invalid"
-OIDC = OIDCSettings(
-    issuer="https://test-idp.invalid/",
-    client_id="test-app",
-    client_secret="test-client-secret",  # a test literal, not a real credential
-    session_secret="test-session-secret",  # a test literal, not a real credential
-    public_base_url=APP_URL,
-)
+ACTIONS_STREAM = "/actions/stream"
 FIRST = b"event: snapshot\ndata: first\n\n"
 SECOND = b"event: snapshot\ndata: second\n\n"
 KEEPALIVE = b": keepalive\n\n"
@@ -71,26 +62,6 @@ class Tokens:
         return f"test-token-{self.issued}"
 
 
-class Upstream(httpx.AsyncByteStream):
-    """One upstream response body: whatever is put in `frames`, in order, waiting when it runs dry.
-    An exception is raised where it stands, and None ends the body cleanly."""
-
-    def __init__(self, *frames: bytes | Exception | None) -> None:
-        self.frames: asyncio.Queue[bytes | Exception | None] = asyncio.Queue()
-        for frame in frames:
-            self.frames.put_nowait(frame)
-        self.closed = False
-
-    async def __aiter__(self) -> AsyncIterator[bytes]:
-        while (frame := await self.frames.get()) is not None:
-            if isinstance(frame, Exception):
-                raise frame
-            yield frame
-
-    async def aclose(self) -> None:
-        self.closed = True
-
-
 class ActionService:
     """Answers each stream request with the next of `upstreams`, recording the bearer it came with."""
 
@@ -113,47 +84,6 @@ async def operator_actions(app: FastAPI, transport: httpx.AsyncBaseTransport) ->
     async with httpx.AsyncClient(base_url="https://test-actions.invalid", transport=transport) as http:
         app_services(app).operator_actions = StreamActions(OperatorActionServiceClient(http, Tokens()))
         yield
-
-
-class EventSource:
-    """The browser's `/actions/stream` request, carrying `cookie`."""
-
-    def __init__(self, app: FastAPI, cookie: str) -> None:
-        self.messages: list[Message] = []
-        self.chunks: asyncio.Queue[bytes] = asyncio.Queue()
-        self._disconnected = asyncio.Event()
-        scope: Scope = {
-            "type": "http",
-            "asgi": {"version": "3.0", "spec_version": "2.3"},
-            "http_version": "1.1",
-            "method": "GET",
-            "scheme": "http",
-            "path": "/actions/stream",
-            "query_string": b"",
-            "headers": [(b"cookie", f"{INSECURE_COOKIE}={cookie}".encode())],
-        }
-        self._served = asyncio.create_task(app(scope, self._receive, self._send))
-
-    async def _receive(self) -> Message:
-        await self._disconnected.wait()
-        return {"type": "http.disconnect"}
-
-    async def _send(self, message: Message) -> None:
-        self.messages.append(message)
-        if message["type"] == "http.response.body" and message.get("body"):
-            self.chunks.put_nowait(message["body"])
-
-    async def next_chunk(self) -> bytes:
-        async with asyncio.timeout(10):
-            return await self.chunks.get()
-
-    def disconnect(self) -> None:
-        self._disconnected.set()
-
-    async def ended(self) -> list[Message]:
-        async with asyncio.timeout(10):
-            await self._served
-        return self.messages
 
 
 # The app `create_app` builds, over one replica's operator sessions and listener, with a login that
@@ -197,14 +127,7 @@ def serve(
             system_status=answering_system_status(),
         )
 
-        @app.post("/test-login")
-        async def login(request: Request, seconds: float) -> None:
-            request_session(request).log_in(
-                OperatorSession(issuer=OIDC.issuer, subject="test-subject", username="test-operator"),
-                absolute_expires_at=datetime.now(UTC) + timedelta(seconds=seconds),
-            )
-
-        return app
+        return with_test_login(app)
 
     return serving
 
@@ -219,26 +142,11 @@ def other_replica(serve: ServeApp, replica: Replica, db_url: str) -> FastAPI:
     return serve(replica.operator_sessions, create_database_updates(make_url(db_url)))
 
 
-async def login(app: FastAPI, *, seconds: float = 3600) -> str:
-    """A new operator session's cookie."""
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=APP_URL) as browser:
-        (await browser.post("/test-login", params={"seconds": seconds})).raise_for_status()
-        return browser.cookies[INSECURE_COOKIE]
-
-
-async def logout(app: FastAPI, cookie: str) -> None:
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={INSECURE_COOKIE: cookie}
-    ) as browser:
-        response = await browser.post("/auth/logout", headers={"Origin": APP_URL})
-        assert response.status_code == 303, response.text
-
-
 async def test_upstream_status_before_downstream_headers(app: FastAPI) -> None:
     service = ActionService(Upstream(FIRST), status_code=403)
     cookie = await login(app)
     async with operator_actions(app, service.transport()):
-        messages = await EventSource(app, cookie).ended()
+        messages = await EventSource(app, cookie, ACTIONS_STREAM).ended()
     assert messages[0]["status"] == 403
     assert service.upstreams[0].closed
 
@@ -249,7 +157,7 @@ async def test_connect_error_before_downstream_headers(app: FastAPI) -> None:
 
     cookie = await login(app)
     async with operator_actions(app, httpx.MockTransport(fail)):
-        messages = await EventSource(app, cookie).ended()
+        messages = await EventSource(app, cookie, ACTIONS_STREAM).ended()
     assert messages[0]["status"] == 503
 
 
@@ -259,7 +167,7 @@ async def test_stream_cleanup(app: FastAPI, ending: str, caplog: pytest.LogCaptu
     service = ActionService(upstream)
     cookie = await login(app)
     async with operator_actions(app, service.transport()):
-        browser = EventSource(app, cookie)
+        browser = EventSource(app, cookie, ACTIONS_STREAM)
         assert await browser.next_chunk() == FIRST
         if ending == "disconnect":
             browser.disconnect()
@@ -275,7 +183,7 @@ async def test_a_logout_on_another_replica_ends_the_stream(app: FastAPI, other_r
     service = ActionService(Upstream(FIRST))
     cookie = await login(app)
     async with operator_actions(app, service.transport()):
-        browser = EventSource(app, cookie)
+        browser = EventSource(app, cookie, ACTIONS_STREAM)
         assert await browser.next_chunk() == FIRST
         await logout(other_replica, cookie)
         await browser.ended()
@@ -289,7 +197,7 @@ async def test_another_sessions_logout_leaves_the_stream_open(
     service = ActionService(upstream)
     cookie, other = await login(app), await login(app)
     async with operator_actions(app, service.transport()):
-        browser = EventSource(app, cookie)
+        browser = EventSource(app, cookie, ACTIONS_STREAM)
         assert await browser.next_chunk() == FIRST
         heard = asyncio.Event()
         with database_updates.changes[Channel.OPERATOR_SESSIONS].subscribe(heard):
@@ -308,7 +216,7 @@ async def test_the_stream_ends_when_its_session_expires(app: FastAPI) -> None:
     # Long enough to open the stream inside it; nothing but the expiry ends this one.
     cookie = await login(app, seconds=2)
     async with operator_actions(app, service.transport()):
-        browser = EventSource(app, cookie)
+        browser = EventSource(app, cookie, ACTIONS_STREAM)
         assert await browser.next_chunk() == FIRST
         await browser.ended()
     assert service.upstreams[0].closed
@@ -318,7 +226,7 @@ async def test_an_upstream_ended_by_its_token_is_reopened_under_a_new_one(app: F
     service = ActionService(Upstream(FIRST, None), Upstream(SECOND))
     cookie = await login(app)
     async with operator_actions(app, service.transport()):
-        browser = EventSource(app, cookie)
+        browser = EventSource(app, cookie, ACTIONS_STREAM)
         assert [await browser.next_chunk(), await browser.next_chunk()] == [FIRST, SECOND]
         browser.disconnect()
         await browser.ended()
@@ -331,7 +239,7 @@ async def test_a_snapshot_a_reopened_upstream_repeats_is_not_forwarded(app: Fast
     service = ActionService(Upstream(FIRST, None), Upstream(FIRST, None), Upstream(FIRST, KEEPALIVE, SECOND, FIRST))
     cookie = await login(app)
     async with operator_actions(app, service.transport()):
-        browser = EventSource(app, cookie)
+        browser = EventSource(app, cookie, ACTIONS_STREAM)
         # FIRST after SECOND is a change again.
         assert [await browser.next_chunk() for _ in range(4)] == [FIRST, KEEPALIVE, SECOND, FIRST]
         browser.disconnect()
@@ -348,7 +256,7 @@ async def test_a_repeated_snapshot_split_across_chunks_is_still_recognized(app: 
     )
     cookie = await login(app)
     async with operator_actions(app, service.transport()):
-        browser = EventSource(app, cookie)
+        browser = EventSource(app, cookie, ACTIONS_STREAM)
         assert [await browser.next_chunk() for _ in range(3)] == [FIRST, KEEPALIVE, SECOND]
         browser.disconnect()
         await browser.ended()
@@ -359,7 +267,7 @@ async def test_an_upstream_ending_before_its_first_frame_is_not_reopened(app: Fa
     service = ActionService(Upstream(FIRST, None), Upstream(None))
     cookie = await login(app)
     async with operator_actions(app, service.transport()):
-        browser = EventSource(app, cookie)
+        browser = EventSource(app, cookie, ACTIONS_STREAM)
         assert await browser.next_chunk() == FIRST
         await browser.ended()
     assert len(service.authorizations) == 2

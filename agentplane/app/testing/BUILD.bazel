@@ -243,3 +243,15 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "operator_streams",
+    srcs = ["operator_streams.py"],
+    deps = [
+        "//agentplane/app:oidc",
+        "//agentplane/app:operator_sessions",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//starlette",
+    ],
+)

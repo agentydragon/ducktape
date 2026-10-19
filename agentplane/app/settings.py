@@ -86,6 +86,11 @@ class Settings(AppSettingsConfig):
         description="The rotating projected ServiceAccount token for the Session Dispatcher audience.",
     )
     session_dispatcher_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
+    session_dispatcher_http_url: HttpEndpointUrl | None = Field(
+        default=None,
+        description="The Session Dispatcher's HTTP/JSON facade, reached with the same token as its gRPC. "
+        "Serves the browser's reads under `/upstream/dispatcher/`; omit to serve none.",
+    )
     history_service_token_file: Path = Path("/var/run/secrets/agentplane-history-service/token")
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     runner_gateway_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)

@@ -43,6 +43,7 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.background_task import background
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
@@ -194,6 +195,14 @@ async def async_main(settings: Settings) -> None:
                 electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
             )
             system_probes.append(http_health_probe("Electric", electric_http, "/v1/health"))
+        dispatcher_http = None
+        if settings.session_dispatcher_http_url is not None:
+            dispatcher_http = UpstreamProxy(
+                await frontend.enter_async_context(
+                    httpx.AsyncClient(base_url=str(settings.session_dispatcher_http_url))
+                ),
+                settings.session_dispatcher_token_file,
+            )
         app = create_app(
             inventory,
             bridge,
@@ -207,6 +216,7 @@ async def async_main(settings: Settings) -> None:
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=FederatedOperatorActions(settings.action_federation, oidc, actions_http),
             electric=electric,
+            dispatcher_http=dispatcher_http,
             presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
             event_logs=event_logs,
             content=content,

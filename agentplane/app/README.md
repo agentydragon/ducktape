@@ -154,6 +154,13 @@ remains the authority for command outcomes. The browser retains the command loca
 projects its admission or command row; the app adds no command queue. Deploy the Session Dispatcher
 and authorize the app ServiceAccount before rolling out an app image that requires this setting.
 
+With `session_dispatcher_http_url` set, `GET /upstream/dispatcher/…` relays a read of the Dispatcher's
+generated [HTTP/JSON facade](../docs/grpc_services.md#httpjson-facades) as it is, with the app's
+Dispatcher token: the facade's status and body come back unchanged, and a watch (newline-delimited
+JSON) streams unbuffered until the operator session ends, the app drains or the browser goes. It serves
+operator sessions and `GET` only, so commands stay on the typed Thread routes, whose checks the
+Dispatcher does not make. The facade's own authentication runs on every call. Unset, the route is absent.
+
 The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
 runner Pod does not clear the inventory. A row's status mark is derived from those last-observed History
 values and the Sandbox's own state, and reads as unconfirmed whenever the stream, the watch or the
