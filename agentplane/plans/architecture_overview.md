@@ -93,7 +93,7 @@ in the [History README](../history_service/README.md) ("its history outlives the
 RBAC over real objects, and every direction keeps it. The **record machinery** is CRDs,
 conflict-checked writes, watches, Leases and garbage collection: D3 runs a second copy of it and D4
 replaces it. The capabilities were traced to their call sites on 2026-10-18 by the borrowed-Kubernetes
-exploration (#10990), which this section absorbs.
+exploration (#10990, closed after this section absorbed it).
 
 ### Anchored to the cluster in every direction
 
@@ -361,15 +361,14 @@ deleting a Sandbox's history with it as "one other consistent option" (02:04).
 | `session_access` rule shape, `targets` union, one `SandboxCollectionMembership` CR per Sandbox and collection | #10987, plan                                | Only the two target decisions above                                                      |
 | Resync of 300 s, refusal after three missed cycles, `policy_resync_seconds`                                   | #10987                                      | Asked "Shouldn't freshness just come from a k8s watch?" The number is not the operator's |
 | Payloads expire at 30 days, 128 unacknowledged per sender per inbox, idempotency key, recipient states        | [plan](multiagent_communication.md), #10987 | Never answered that batch; later asked for one question at a time                        |
-| History owns membership, keyed by Sandbox UID                                                                 | #10990                                      | Tentatively okay to a database, not to the owner or key; D2 and D4 only                  |
-| Records stay in the outer cluster's Kubernetes API                                                            | #10990 "Take"                               | Treated as open (2026-10-19 01:58); D1 and D2 keep it                                    |
+| History owns membership, keyed by Sandbox UID                                                                 | #10990 (closed)                             | Tentatively okay to a database, not to the owner or key; D2 and D4 only                  |
+| Records stay in the outer cluster's Kubernetes API                                                            | #10990 "Take" (closed)                      | Treated as open (2026-10-19 01:58); D1 and D2 keep it                                    |
 
 ## Open PRs that encode unconfirmed defaults
 
-| PR     | Encodes                                                                      | Handling                                                                                                               |
-| ------ | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| #10987 | The draft send schema with the membership CR, freshness and recipient states | The membership CR is D1 or D3; direct and `allSandboxes` sending is direction-neutral                                  |
-| #10990 | History as default membership owner; records stay in the outer API           | Folded into this file ([what Agentplane borrows](#what-agentplane-borrows-from-kubernetes)); close it once this merges |
+| PR     | Encodes                                                                      | Handling                                                                              |
+| ------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| #10987 | The draft send schema with the membership CR, freshness and recipient states | The membership CR is D1 or D3; direct and `allSandboxes` sending is direction-neutral |
 
 ## Parked
 
