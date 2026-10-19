@@ -68,6 +68,7 @@ func loadConfig() (config, error) {
 		"listen_port",
 		"admin_host",
 		"admin_port",
+		"admin_grpc_audience",
 		"agent_api_host",
 		"agent_api_port",
 		"ca_cert",

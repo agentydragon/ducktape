@@ -121,7 +121,7 @@ func TestADeploymentNamingNoWorkloadNamespaceIsRefused(t *testing.T) {
 }
 
 func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
-	c, err := loadConfig(required(t))
+	c, err := loadTestConfig(t, required(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestAdminGRPCLoadsFromTheFileAndTheEnvironment(t *testing.T) {
 admin_grpc_audience: file-audience
 admin_grpc_callers: [test-ns/test-app, test-ns/test-other]
 `)
-	c, err := loadConfig(required(
+	c, err := loadTestConfig(t, required(
 		t,
 		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"ADMIN_GRPC_AUDIENCE=env-audience",
 	))
@@ -164,7 +164,7 @@ func TestAdminGRPCIsAllOrNothing(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := writeSettings(t, "allowed_service_account_namespaces: [ns]\n"+contents)
-			if _, err := loadConfig(required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+			if _, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
 				t.Fatal("accepted")
 			}
 		})
