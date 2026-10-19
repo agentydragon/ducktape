@@ -64,9 +64,9 @@ there is no checked-in generated client tree or manual regeneration step. Build 
 
 ## Running
 
-Settings are YAML keys of the file named by `AGENTPLANE_EGRESS_CONFIG_FILE`, `AGENTPLANE_EGRESS_*`
-environment variables, and `--kebab-case` flags, each overriding the one before; a key the binary
-does not know is refused (<cmd/config.go>). The proxy needs an interception CA (`ca_cert`,
+Settings are YAML keys of the file named by `AGENTPLANE_EGRESS_CONFIG_FILE` and `AGENTPLANE_EGRESS_*`
+environment variables, which override the file; the binary takes no flags. A key or variable it does
+not know is refused (<cmd/config.go>, loaded by <../../util/settings/settings.go>). The proxy needs an interception CA (`ca_cert`,
 `ca_key`) that the runner containers trust; it signs a short-lived leaf per handshake. Upstream certificates are
 verified against the system roots, or against `upstream_ca_file` when given; the deployment passes
 public roots plus the cluster CA, so a `clusterInternal` rule can reach the API server. Identity and egress policy come from
