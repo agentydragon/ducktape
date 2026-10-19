@@ -417,12 +417,13 @@ async def test_codex_startup_recovers_output_from_a_tool_started_in_an_earlier_t
             )
         )
 
+        before_resume = session.journal.last_cursor
         await session._activate()
         try:
             assert session.ready
             assert session.running
             assert await session.journal.unreconciled_process_lost_turns() == []
-            entries = await session.journal.since(0, limit=128)
+            entries = await session.journal.since(before_resume, limit=128)
             reports = [
                 entry.event.conversation_reconciled
                 for entry in entries
