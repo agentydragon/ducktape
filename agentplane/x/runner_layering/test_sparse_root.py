@@ -61,7 +61,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     resources_dir.mkdir()
     shutil.copyfile(codex_bwrap, resources_dir / "bwrap")
     (resources_dir / "bwrap").chmod(0o555)
-    _extract_oci_rootfs("agentplane/x/runner_layering_spike/tools_rootfs.rloc", child_root)
+    _extract_oci_rootfs("agentplane/x/runner_layering/tools_rootfs.rloc", child_root)
     assert (child_root / "usr/local/bin/workload-tool").is_file()
 
     state_dir = tmp_path / "state"
@@ -70,7 +70,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     private_sentinel.write_text("runner-owned\n")
     workload_proof = Path(spec.cwd) / "workload-image-proof.txt"
     assert not workload_proof.exists()
-    child_exec = get_required_path(own_repo_rlocation("agentplane/x/runner_layering_spike/child_exec_/child_exec"))
+    child_exec = get_required_path(own_repo_rlocation("agentplane/x/runner_layering/child_exec_/child_exec"))
     first_runner = await start_runner(
         codex_binary=child_exec,
         harness_env=[

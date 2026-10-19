@@ -73,7 +73,7 @@ Codex process and a resumed turn, with the child unable to read a runner-only se
    returned `Kernel Loader: failed to load ELF kernel image: ... Invalid Elf magic number`. The
    current kernel path contains a compressed `bzImage`; this checkout has no `vmlinux` output.
    Update: U1 resolved to “cannot boot this host kernel”; do not infer that a different ELF kernel
-   would fail. Pointer: local `bazelisk run //agentplane/x/runner_layering_spike:local_vm_probe` output.
+   would fail. Pointer: local `bazelisk run //agentplane/x/runner_layering:local_vm_probe` output.
 
 3. **2026-10-16 03:00 UTC, first remote integration attempt.** Action: `bbr test
 //agentplane/runner:test_restart`. Type: experiment. Cost: 101 s Bazel elapsed; 79.5 s test.
@@ -156,7 +156,7 @@ SPARSE_ROOT_TOOL_OK` shell tool call, child termination, runner survival, conver
     Linux ran `/init`, Codex printed `codex-cli 0.157.0` in the sparse child chroot, and guest init
     remained alive after Codex exited. Run outside the sandbox to access `/dev/kvm`. Update: U1
     resolved yes for this pinned kernel/VMM pair. The kernel is an experiment input, not a production
-    choice. Pointer: successful `bb run //agentplane/x/runner_layering_spike:local_vm_probe`,
+    choice. Pointer: successful `bb run //agentplane/x/runner_layering:local_vm_probe`,
     BuildBuddy invocation `f63ca51e-cdee-43d8-8670-1f2f46f6d339`.
 
 12. **2026-10-16 05:15 UTC, artifact sizes and build.** Action: build the independent base-initramfs
@@ -173,7 +173,7 @@ SPARSE_ROOT_TOOL_OK` shell tool call, child termination, runner survival, conver
     graph, and profile three local VM launches. Type: local and RBE experiments. Raw result: local
     Firecracker boot passed; the focused RBE test passed in 30.9 s; Bazel `somepath` from
     `local_vm_initramfs` to `tools_rootfs` returned an empty result. `perf stat --repeat 3 -- bb run
-//agentplane/x/runner_layering_spike:local_vm_probe` measured 2.231 ± 0.066 s elapsed (1.716 s
+//agentplane/x/runner_layering:local_vm_probe` measured 2.231 ± 0.066 s elapsed (1.716 s
     task-clock) across three fresh guest boots with warm host/build artifacts. This includes the
     Bazel local-run wrapper, not just guest boot. Update: target graph separation is established;
     distinct tools mounting in the guest and cache-cold packaging remain open. Pointers: local VM

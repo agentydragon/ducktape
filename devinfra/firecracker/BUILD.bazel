@@ -9,7 +9,7 @@ pkg_tar(
     package_dir = "/usr/local/bin",
     remap_paths = {"release-v1.12.1-x86_64/firecracker-v1.12.1-x86_64": "firecracker"},
     visibility = [
-        "//agentplane/x/runner_layering_spike:__pkg__",
+        "//agentplane/x/runner_layering:__pkg__",
         "//devinfra/firecracker:__subpackages__",
     ],
 )

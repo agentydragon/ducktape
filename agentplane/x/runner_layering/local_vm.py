@@ -94,7 +94,7 @@ def main() -> None:
     if not kernel.is_file():
         raise SystemExit(f"kernel image is not available: {kernel}")
 
-    initramfs = get_required_path(own_repo_rlocation("agentplane/x/runner_layering_spike/base-initramfs.cpio"))
+    initramfs = get_required_path(own_repo_rlocation("agentplane/x/runner_layering/base-initramfs.cpio"))
     firecracker_layer = get_required_path(own_repo_rlocation("devinfra/firecracker/firecracker_layer.tar"))
 
     with tempfile.TemporaryDirectory(prefix="agentplane-runner-layering-") as directory:
@@ -103,7 +103,7 @@ def main() -> None:
         harness_root = root / "harness-root"
         tools_root.mkdir()
         harness_root.mkdir()
-        _extract_oci_rootfs("agentplane/x/runner_layering_spike/tools_rootfs.rloc", tools_root)
+        _extract_oci_rootfs("agentplane/x/runner_layering/tools_rootfs.rloc", tools_root)
         for relative in ("opt", "home/agent/.codex", "home/agent/.claude", "workspace", "tmp", "proc"):
             (tools_root / relative).mkdir(parents=True, exist_ok=True)
 
