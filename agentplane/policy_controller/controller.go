@@ -18,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	metav1apply "k8s.io/client-go/applyconfigurations/meta/v1"
 	applyrbacv1 "k8s.io/client-go/applyconfigurations/rbac/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -26,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	policyapplyv1 "github.com/agentydragon/ducktape/agentplane/policy/client/applyconfigurations/api/v1alpha1"
+	policyapply "github.com/agentydragon/ducktape/agentplane/policy/client/apply"
 )
 
 const (
@@ -378,19 +377,10 @@ func (r *Reconciler) applyCondition(ctx context.Context, binding *policyapi.Poli
 	if reason == "Applied" {
 		status = metav1.ConditionTrue
 	}
-	condition := binding.PrepareConditionApply(metav1.Condition{Type: KubernetesReady, Status: status, Reason: reason, Message: message})
-	if condition == nil {
+	configuration := policyapply.PrepareConditionApply(binding, metav1.Condition{Type: KubernetesReady, Status: status, Reason: reason, Message: message})
+	if configuration == nil {
 		return nil
 	}
-	configuration := policyapplyv1.PolicyBinding(binding.Name, binding.Namespace).WithStatus(
-		policyapplyv1.Status().WithConditions(metav1apply.Condition().
-			WithType(condition.Type).
-			WithStatus(condition.Status).
-			WithObservedGeneration(condition.ObservedGeneration).
-			WithLastTransitionTime(condition.LastTransitionTime).
-			WithReason(condition.Reason).
-			WithMessage(condition.Message)),
-	)
 	return r.Status().Apply(ctx, configuration,
 		client.FieldOwner(FieldManager), client.ForceOwnership)
 }

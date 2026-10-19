@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "apply",
+    srcs = ["conditions.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/policy/client/apply",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/client:applyconfiguration_api",
+        "@io_k8s_apimachinery//pkg/api/meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_client_go//applyconfigurations/meta/v1:meta",
+    ],
+)
+
+go_test(
+    name = "apply_test",
+    srcs = ["conditions_test.go"],
+    embed = [":apply"],
+    deps = [
+        "//agentplane/policy/api/v1alpha1",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
+)

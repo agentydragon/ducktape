@@ -8,10 +8,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	policyapplyv1 "github.com/agentydragon/ducktape/agentplane/policy/client/applyconfigurations/api/v1alpha1"
+	policyapply "github.com/agentydragon/ducktape/agentplane/policy/client/apply"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	metav1apply "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
 const (
@@ -77,19 +76,10 @@ func (i *Informer) applyEgressReady(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	condition := binding.PrepareConditionApply(egressReady(i.index.Resolve(binding.Spec.PolicySets)))
-	if condition == nil {
+	configuration := policyapply.PrepareConditionApply(binding, egressReady(i.index.Resolve(binding.Spec.PolicySets)))
+	if configuration == nil {
 		return nil
 	}
-	configuration := policyapplyv1.PolicyBinding(binding.Name, binding.Namespace).WithStatus(
-		policyapplyv1.Status().WithConditions(metav1apply.Condition().
-			WithType(condition.Type).
-			WithStatus(condition.Status).
-			WithObservedGeneration(condition.ObservedGeneration).
-			WithLastTransitionTime(condition.LastTransitionTime).
-			WithReason(condition.Reason).
-			WithMessage(condition.Message)),
-	)
 	_, err = i.bindingsClient.ApplyStatus(ctx, configuration, metav1.ApplyOptions{FieldManager: FieldManager, Force: true})
 	if apierrors.IsNotFound(err) {
 		return nil
