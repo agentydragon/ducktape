@@ -345,9 +345,8 @@ class Agent:
             raise ValueError(
                 "At least one handler required to control the agent loop. "
                 "Without handlers, the agent will loop indefinitely. "
-                "Add a handler:\n"
-                "  • TranscriptHandler(events_path=...) - for logging\n"
-                "  • Custom handler - subclass BaseHandler for console output or specialized control"
+                "Pass a BaseHandler implementation that controls the loop, such as one that "
+                "processes tool calls or terminates after a response."
             )
 
     @property

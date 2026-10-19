@@ -48,11 +48,11 @@ from fastmcp.client import Client
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
-from agent_core.transcript_handler import TranscriptHandler
 from openai_utils.model import OpenAIModelProto, UserMessage
 from x.inop.config import OptimizerConfig
 from x.inop.engine import runner_factory
 from x.inop.engine.models import AgentTaskType, Criterion, GradedRollout, TaskDefinition
+from x.inop.engine.transcript_handler import TranscriptHandler
 from x.inop.grading.grader import grade_rollout
 from x.inop.io.jsonl_logger import JSONLLogger
 from x.inop.io.logging_utils import DualOutputLogging

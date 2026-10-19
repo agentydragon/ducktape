@@ -9,6 +9,19 @@ py_library(
 )
 
 py_library(
+    name = "transcript_handler",
+    testonly = True,
+    srcs = ["transcript_handler.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//openai_utils:model",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
     name = "optimizer",
     testonly = True,
     srcs = ["optimizer.py"],
@@ -16,10 +29,10 @@ py_library(
     deps = [
         ":models",
         ":runner_factory",
+        ":transcript_handler",
         "//agent_core:agent",
         "//agent_core:loop_control",
         "//agent_core:mcp_provider",
-        "//agent_core:transcript_handler",
         "//openai_utils:model",
         "//x/inop:config",
         "//x/inop:model_factory",

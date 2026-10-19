@@ -49,18 +49,6 @@ py_library(
 )
 
 py_library(
-    name = "transcript_handler",
-    srcs = ["transcript_handler.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":events",
-        ":handler",
-        "//openai_utils:model",
-        "@pypi//pydantic_core",
-    ],
-)
-
-py_library(
     name = "model",
     srcs = ["model.py"],
     visibility = ["//:__subpackages__"],
