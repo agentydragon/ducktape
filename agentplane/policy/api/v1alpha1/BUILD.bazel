@@ -28,7 +28,10 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1",
     visibility = ["//visibility:private"],
-    deps = ["@io_k8s_apimachinery//pkg/apis/meta/v1:meta"],
+    deps = [
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+    ],
 )
 
 go_path(

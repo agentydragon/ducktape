@@ -6,6 +6,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type RoleRef struct {
@@ -61,6 +62,10 @@ type CredentialRef struct {
 	Name string `json:"name"`
 }
 
+// +kubebuilder:validation:MinItems=1
+// +kubebuilder:validation:items:MinLength=1
+type ActionNames []string
+
 // ActionPolicy selects an Action evaluator and its inputs.
 // +kubebuilder:validation:XValidation:rule="self.type == 'exact_actions' ? (!has(self.schema) && !has(self.owner) && !has(self.repository) && !has(self.entities)) : self.type == 'argument_schema' ? (has(self.schema) && !has(self.owner) && !has(self.repository) && !has(self.entities)) : self.type == 'github_repository' ? (!has(self.schema) && has(self.owner) && has(self.repository) && !has(self.entities)) : self.type == 'github_public_repository' ? (!has(self.schema) && !has(self.owner) && !has(self.repository) && !has(self.entities)) : !has(self.schema) && !has(self.owner) && !has(self.repository) && has(self.entities)",message="Action policy fields must match type."
 type ActionPolicy struct {
@@ -69,14 +74,12 @@ type ActionPolicy struct {
 	Type string `json:"type"`
 	// Actions lists Action names by ActionGroup key; the policy matches only these.
 	// +kubebuilder:validation:MinProperties=1
-	// +kubebuilder:validation:additionalProperties:MinItems=1
-	// +kubebuilder:validation:additionalProperties:items:MinLength=1
-	Actions map[string][]string `json:"actions"`
+	Actions map[string]ActionNames `json:"actions"`
 	// Schema is a plain JSON Schema over the arguments; properties alone never implies presence, so use required.
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object
-	Schema map[string]any `json:"schema,omitempty"`
+	Schema *runtime.RawExtension `json:"schema,omitempty"`
 	// Owner is the GitHub repository owner.
 	// +kubebuilder:validation:MinLength=1
 	Owner string `json:"owner,omitempty"`
@@ -85,12 +88,10 @@ type ActionPolicy struct {
 	Repository string `json:"repository,omitempty"`
 	// Entities maps Home Assistant entity ids to the services allowed for each.
 	// +kubebuilder:validation:MinProperties=1
-	// +kubebuilder:validation:additionalProperties:MinItems=1
-	// +kubebuilder:validation:additionalProperties:items:MinLength=1
-	Entities map[string][]string `json:"entities,omitempty"`
+	Entities map[string]ActionNames `json:"entities,omitempty"`
 }
 
-// RuleSpec contains the reusable policy rules.
+// PolicySetSpec contains the reusable policy rules.
 type PolicySetSpec struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=256
