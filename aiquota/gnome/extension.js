@@ -346,7 +346,7 @@ const QuotaIndicator = GObject.registerClass(
       super._init(0.0, "AI Quota Tracker", false);
 
       this._iconsDir = `${extension.path}/icons`;
-      this._popupTickId = null;
+      this._displayTickId = null;
       this._destroyed = false;
       this._proxy = null;
       this._daemonConnectPending = false;
@@ -401,11 +401,9 @@ const QuotaIndicator = GObject.registerClass(
       this._menuOpenId = this.menu.connect("open-state-changed", (_menu, open) => {
         if (open) {
           this._renderPopup();
-          this._startPopupTick();
-        } else {
-          this._stopPopupTick();
         }
       });
+      this._startDisplayTick();
     }
 
     _loadFixtureData(data) {
@@ -1101,22 +1099,23 @@ const QuotaIndicator = GObject.registerClass(
       );
     }
 
-    _startPopupTick() {
-      if (this._popupTickId) return;
-      this._popupTickId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
-        if (!this.menu.isOpen) {
-          this._popupTickId = null;
+    _startDisplayTick() {
+      if (this._displayTickId) return;
+      this._displayTickId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
+        if (this._destroyed) {
+          this._displayTickId = null;
           return GLib.SOURCE_REMOVE;
         }
-        this._renderPopup();
+        this._renderPanel();
+        if (this.menu.isOpen) this._renderPopup();
         return GLib.SOURCE_CONTINUE;
       });
     }
 
-    _stopPopupTick() {
-      if (!this._popupTickId) return;
-      GLib.source_remove(this._popupTickId);
-      this._popupTickId = null;
+    _stopDisplayTick() {
+      if (!this._displayTickId) return;
+      GLib.source_remove(this._displayTickId);
+      this._displayTickId = null;
     }
 
     destroy() {
@@ -1129,7 +1128,7 @@ const QuotaIndicator = GObject.registerClass(
       this._proxySignalIds = [];
       this._proxy = null;
       this._unexportTestInterface();
-      this._stopPopupTick();
+      this._stopDisplayTick();
       if (this._menuOpenId) {
         this.menu.disconnect(this._menuOpenId);
         this._menuOpenId = null;

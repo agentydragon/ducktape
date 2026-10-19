@@ -247,7 +247,7 @@ def test_render_disconnected_stream(render_session: tuple[GnomeSession, Path], u
     session, output_dir = render_session
     try:
         session.close_menu()
-        session.reload(f"/fixtures/{FIXTURE_NAMES[0]}.json")
+        session.reload("/fixtures/hot.json")
         session.call("SetStreamStatus", "disconnected", "Connection to quota API was lost")
         session.wait_for_paint()
         geometry = session.open_menu()
