@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/schlunsen/claude-agent-sdk-go/types"
 )
 
 type claudeWireFrame struct {
 	Type            string                            `json:"type"`
 	ParentToolUseID *string                           `json:"parent_tool_use_id"`
-	RequestID       string                            `json:"request_id"`
 	CommandUUID     string                            `json:"command_uuid"`
 	State           string                            `json:"state"`
 	UUID            string                            `json:"uuid"`
@@ -24,8 +24,6 @@ type claudeWireFrame struct {
 	SessionID       string                            `json:"session_id"`
 	DurationMS      int64                             `json:"duration_ms"`
 	NumTurns        int                               `json:"num_turns"`
-	Request         claudeRequest                     `json:"request"`
-	Response        claudeResponse                    `json:"response"`
 	Event           anthropic.MessageStreamEventUnion `json:"event"`
 	Message         claudeWireMessage                 `json:"message"`
 }
@@ -35,16 +33,73 @@ type claudeWireMessage struct {
 	Content json.RawMessage `json:"content"`
 }
 
-type claudeRequest struct {
-	Subtype  string          `json:"subtype"`
-	ToolName string          `json:"tool_name"`
-	Input    json.RawMessage `json:"input"`
+// These extensions cover CLI fields absent from the SDK's subtype structs.
+type claudeInitializeRequest struct {
+	types.SDKControlInitializeRequest
+	AppendSystemPrompt string `json:"appendSystemPrompt,omitempty"`
 }
 
-type claudeResponse struct {
-	Subtype   string `json:"subtype"`
-	RequestID string `json:"request_id"`
-	Error     string `json:"error"`
+type claudeInterruptRequest struct {
+	types.SDKControlInterruptRequest
+	Reason       string `json:"reason"`
+	CancelQueued bool   `json:"cancel_queued"`
+}
+
+type claudeSetModelRequest struct {
+	Subtype string `json:"subtype"`
+	Model   string `json:"model"`
+}
+
+type claudeApplyFlagSettingsRequest struct {
+	Subtype  string `json:"subtype"`
+	Settings struct {
+		EffortLevel string `json:"effortLevel"`
+	} `json:"settings"`
+}
+
+// Override the SDK's map input so decoding never converts native numbers to float64.
+type claudePermissionRequest struct {
+	types.SDKControlPermissionRequest
+	Input json.RawMessage `json:"input"`
+}
+
+// The CLI needs explicit null response/error fields, which the SDK body types omit.
+type claudeControlResponseBody struct {
+	Subtype   string          `json:"subtype"`
+	RequestID string          `json:"request_id"`
+	Response  json.RawMessage `json:"response"`
+	Error     *string         `json:"error"`
+}
+
+type claudePermissionAllow struct {
+	Behavior     types.PermissionBehavior `json:"behavior"`
+	UpdatedInput json.RawMessage          `json:"updatedInput"`
+}
+
+func marshalClaudeControlRequest(requestID string, body any) ([]byte, error) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(types.SDKControlRequest{Type: "control_request", RequestID: requestID, Request: raw})
+}
+
+func decodeClaudeControlResponse(raw json.RawMessage) (claudeControlResponseBody, error) {
+	var packet types.SDKControlResponse
+	var body claudeControlResponseBody
+	if err := json.Unmarshal(raw, &packet); err != nil {
+		return body, err
+	}
+	if packet.Type != "control_response" {
+		return body, fmt.Errorf("expected Claude control_response, got %q", packet.Type)
+	}
+	if err := json.Unmarshal(packet.Response, &body); err != nil {
+		return body, err
+	}
+	if body.Subtype == "error" && body.Error == nil {
+		return body, fmt.Errorf("Claude error response is missing error")
+	}
+	return body, nil
 }
 
 // Claude Code's user tool results accept string content; the API's response block

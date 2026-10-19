@@ -14,6 +14,7 @@ go_library(
         "//agentplane/runner/go/harness",
         "@com_github_anthropics_anthropic_sdk_go//:anthropic-sdk-go",
         "@com_github_google_uuid//:uuid",
+        "@com_github_schlunsen_claude_agent_sdk_go//types",
     ],
 )
 

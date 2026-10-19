@@ -60,8 +60,11 @@ Claude stream events and assistant content blocks use the Anthropic Go SDK's
 discriminated unions. Consumed variants are checked with strict JSON decoding
 because the SDK's response decoder tolerates malformed fields. Tool inputs use
 the SDK's raw-field metadata to preserve whitespace, numeric tokens and explicit
-`null`. Claude Code control frames and user tool results have separate local wire
-types.
+`null`. Claude Code control packets use the standard-library-only
+`claude-agent-sdk-go/types` envelopes and matching subtype structs. Local
+extensions cover `appendSystemPrompt`, interrupt metadata, model/effort changes,
+raw tool inputs and explicit null reply fields. User tool results have their own
+wire type.
 
 The integration fixtures launch this executable and drive its public control and ingress
 protocols. `test_turns.py`, `test_subagents.py`, and `test_restart.py` exercise the real

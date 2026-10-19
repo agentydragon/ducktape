@@ -254,6 +254,34 @@ func TestClaudePermissionReplyRejectsNonObjectInput(t *testing.T) {
 	}
 }
 
+func TestClaudeUnknownControlRequestGetsCorrelatedError(t *testing.T) {
+	host := newAdapterTestHost()
+	adapter := claude.New(host, harness.LaunchConfig{Binary: "/bin/false"})
+	frame := json.RawMessage(`{"type":"control_request","request_id":"future-request","request":{"subtype":"future_control","payload":{"large":9007199254740993}}}`)
+	original := append(json.RawMessage(nil), frame...)
+	if err := adapter.OnFrame(context.Background(), frame, 1); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(frame, original) || len(host.nativeWrites) != 1 {
+		t.Fatalf("unknown control request changed or received no single reply: raw=%s replies=%d", frame, len(host.nativeWrites))
+	}
+	var reply struct {
+		Type     string `json:"type"`
+		Response struct {
+			Subtype   string          `json:"subtype"`
+			RequestID string          `json:"request_id"`
+			Response  json.RawMessage `json:"response"`
+			Error     string          `json:"error"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal(host.nativeWrites[0], &reply); err != nil {
+		t.Fatal(err)
+	}
+	if reply.Type != "control_response" || reply.Response.Subtype != "error" || reply.Response.RequestID != "future-request" || string(reply.Response.Response) != "null" || !strings.Contains(reply.Response.Error, "future_control") {
+		t.Fatalf("unknown control request lost its correlated error or explicit null response: %s", host.nativeWrites[0])
+	}
+}
+
 func TestClaudeToolArgumentsPreserveNativePayload(t *testing.T) {
 	for _, input := range []string{`{ "large": 9007199254740993, "escaped": "\u0061", "text": "<&>" }`, `null`} {
 		t.Run(input, func(t *testing.T) {
