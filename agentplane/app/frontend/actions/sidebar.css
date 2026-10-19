@@ -159,16 +159,17 @@
   -webkit-line-clamp: unset;
 }
 
-.agentplane-actions-sidebar-decision {
-  padding: 0 6px 6px 22px;
-}
-
 .agentplane-actions-sidebar-preview {
   max-height: min(24dvh, 14rem);
   overflow-y: auto;
   overscroll-behavior: contain;
   border-top: 1px solid var(--mantine-color-default-border);
   padding: 8px;
+}
+
+.agentplane-actions-sidebar-preview.is-complete {
+  max-height: none;
+  overflow: visible;
 }
 
 .agentplane-actions-sidebar-preview .agentplane-command-call,
@@ -181,6 +182,14 @@
   max-width: 100%;
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.agentplane-actions-sidebar-review {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: 0 var(--mantine-spacing-xs) var(--mantine-spacing-xs);
 }
 
 .agentplane-actions-sidebar-details {

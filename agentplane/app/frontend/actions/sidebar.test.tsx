@@ -98,7 +98,7 @@ it("keeps the Actions section available and suppresses auto-open until the pendi
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe("/threads/test-thread");
 });
 
-it("expands a compact action preview and only offers a decision on the compact card to eligible actions", async () => {
+it("requires expansion before offering paired decisions to eligible actions", async () => {
   vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
@@ -129,6 +129,8 @@ it("expands a compact action preview and only offers a decision on the compact c
   expect(container.textContent?.match(/List pods in namespace test-namespace/g)).toHaveLength(1);
   expect(container.textContent).toContain("Matching pods where");
   expect(container.textContent).toContain("$ systemctl restart backup");
+  expect(container.querySelector(`button[aria-label="Approve ${pod.title}"]`)).toBeNull();
+  expect(container.querySelector(`button[aria-label="Deny ${pod.title}"]`)).toBeNull();
   const podDisclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${pod.title}"]`);
   if (!podDisclosure) throw new Error("missing pod action disclosure");
   await act(async () => podDisclosure.click());
@@ -143,6 +145,10 @@ it("expands a compact action preview and only offers a decision on the compact c
   const denyButton = container.querySelector<HTMLButtonElement>(`button[aria-label="Deny ${pod.title}"]`);
   expect(approveButton).not.toBeNull();
   expect(denyButton).not.toBeNull();
+  expect(approveButton?.closest(".agentplane-actions-sidebar-review")).not.toBeNull();
+  expect(denyButton?.closest(".agentplane-actions-sidebar-review")).not.toBeNull();
+  expect(approveButton?.closest(".agentplane-actions-sidebar-preview")).toBeNull();
+  expect(denyButton?.closest(".agentplane-actions-sidebar-preview")).toBeNull();
   expect(approveButton?.querySelector("svg")).not.toBeNull();
   expect(denyButton?.querySelector("svg")).not.toBeNull();
   expect(container.textContent).not.toContain("Exact arguments (unredacted)");
@@ -203,16 +209,22 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
   await send(reads);
   expect(container.textContent).toContain("Previous logs");
   for (const read of reads) {
+    expect(container.querySelector(`button[aria-label="Approve ${read.title}"]`)).toBeNull();
+  }
+  for (const read of reads) {
     const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${read.title}"]`);
     if (!disclosure) throw new Error(`missing disclosure for ${read.title}`);
     await act(async () => disclosure.click());
     for (const value of read.visible) expect(container.textContent).toContain(value);
-    expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
+    const approve = container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${read.title}"]`);
+    expect(approve).not.toBeNull();
+    expect(approve?.closest(".agentplane-actions-sidebar-review")).not.toBeNull();
+    expect(approve?.closest(".agentplane-actions-sidebar-preview")).toBeNull();
     expect(container.textContent).not.toContain("Decisions require full review.");
   }
 });
 
-it("offers Approve and Deny on a collapsed card of an opted-in Action, including one from an external caller", async () => {
+it("offers paired decisions after expansion, including for an external caller", async () => {
   vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
@@ -238,6 +250,11 @@ it("offers Approve and Deny on a collapsed card of an opted-in Action, including
   };
   await send([read]);
   expect(container.querySelector(`button[aria-expanded="true"][aria-label^="Collapse"]`)).toBeNull();
+  expect(container.querySelector(`button[aria-label="Approve ${read.title}"]`)).toBeNull();
+  expect(container.querySelector(`button[aria-label="Deny ${read.title}"]`)).toBeNull();
+  const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${read.title}"]`);
+  if (!disclosure) throw new Error("missing action disclosure");
+  await act(async () => disclosure.click());
   expect(container.querySelector(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
   expect(container.querySelector(`button[aria-label="Deny ${read.title}"]`)).not.toBeNull();
 });

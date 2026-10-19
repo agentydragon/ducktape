@@ -122,25 +122,30 @@ function PendingActionList({
                 </Link>
               </Tooltip>
             </div>
-            {!expanded && decision !== null && <div className="agentplane-actions-sidebar-decision">{decision}</div>}
             {expanded && (
-              <Stack className="agentplane-actions-sidebar-preview" gap="xs" data-operation-density="compact">
-                {request.external_grant && (
-                  <Text size="xs" fw={600}>
-                    Authenticated external caller
-                  </Text>
-                )}
-                {openedPreview === undefined ? (
-                  <>
-                    <Text size="xs" c="dimmed">
-                      Details shown as recorded data
+              <>
+                <Stack
+                  className={`agentplane-actions-sidebar-preview${decision !== null || openedPreview === null ? " is-complete" : ""}`}
+                  gap="xs"
+                  data-operation-density="compact"
+                >
+                  {request.external_grant && (
+                    <Text size="xs" fw={600}>
+                      Authenticated external caller
                     </Text>
-                    <ActionJson value={request.arguments} clamp={false} />
-                  </>
-                ) : (
-                  openedPreview
-                )}
-                <Group justify="space-between" wrap="nowrap" gap="xs">
+                  )}
+                  {openedPreview === undefined ? (
+                    <>
+                      <Text size="xs" c="dimmed">
+                        Details shown as recorded data
+                      </Text>
+                      <ActionJson value={request.arguments} clamp={false} />
+                    </>
+                  ) : (
+                    openedPreview
+                  )}
+                </Stack>
+                <div className="agentplane-actions-sidebar-review">
                   {decision ?? (
                     <Text size="xs" c="dimmed">
                       Decisions require full review.
@@ -156,8 +161,8 @@ function PendingActionList({
                       Details <IconArrowRight size={13} aria-hidden="true" />
                     </Link>
                   </Tooltip>
-                </Group>
-              </Stack>
+                </div>
+              </>
             )}
           </div>
         );

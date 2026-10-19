@@ -132,6 +132,7 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
         assert bounds is not None
         await disclosure.click(position={"x": bounds["width"] - 4, "y": bounds["height"] - 3})
         preview = section.locator(".agentplane-actions-sidebar-preview")
+        await expect(preview).to_have_css("overflow-y", "visible")
         await expect(preview.get_by_text("label selector app=demo")).to_be_visible()
         await expect(preview.get_by_text("field selector status.phase=Running")).to_be_visible()
         await expect(preview.get_by_text("List pods in namespace", exact=False)).to_have_count(0)
@@ -141,14 +142,15 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
         await expect(section.get_by_text("app=demo")).to_be_visible()
         await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
         await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
+        await expect(preview.locator("button")).to_have_count(0)
     else:
         await expect(section.get_by_text("Matching pods where")).to_be_visible()
         await expect(
             section.locator(".agentplane-actions-sidebar-collapsed-preview").get_by_text("test-apps")
         ).to_have_count(0)
         await expect(section.get_by_text("test-apps", exact=True)).to_have_count(1)
-        await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
-        await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
+        await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_have_count(0)
+        await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_have_count(0)
     await view.capture(target=section)
 
 
@@ -251,14 +253,16 @@ async def test_action_argument_layouts(
         await section.get_by_role("button", name=f"Expand {title}").click()
         for value in visible:
             await expect(section.get_by_text(value, exact=False)).to_be_visible()
+        preview = section.locator(".agentplane-actions-sidebar-preview")
+        await expect(preview).to_have_css("overflow-y", "visible")
         if (group, name) not in {("kubernetes_admin", "resources_delete"), ("tana", "get_or_create_calendar_node")}:
             await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
             await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
+            await expect(preview.locator("button")).to_have_count(0)
     else:
         await expect(section.get_by_text(overview, exact=False)).to_be_visible()
-        if (group, name) not in {("kubernetes_admin", "resources_delete"), ("tana", "get_or_create_calendar_node")}:
-            await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
-            await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Approve {title}")).to_have_count(0)
+        await expect(section.get_by_role("button", name=f"Deny {title}")).to_have_count(0)
     await view.capture(target=section)
 
 
@@ -515,6 +519,7 @@ async def test_action_argument_fallbacks_use_json_view(
     preview = section.locator(".agentplane-actions-sidebar-preview")
     await expect(preview).to_contain_text('"vendor_field": "fixture"')
     await expect(preview.get_by_text("Details shown as recorded data", exact=True)).to_be_visible()
+    await expect(preview).to_have_css("overflow-y", "visible")
     await expect(section.get_by_role("button", name=f"Approve {title}")).to_have_count(0)
     await view.capture(target=section)
 
