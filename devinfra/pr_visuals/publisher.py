@@ -547,6 +547,7 @@ def _classify_test_assets(
             continue
         comparison = compare_pngs(test.directory / asset.path, baseline_png)
         if comparison.classification == "unchanged":
+            baseline_png.unlink()
             enriched.append(ReviewAsset(path=asset.path, label=asset.label, classification="unchanged"))
             continue
         if comparison.diff_overlay is not None:

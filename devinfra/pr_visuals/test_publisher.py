@@ -905,7 +905,7 @@ def test_build_bundle_classifies_against_baseline(tmp_path: Path) -> None:
     assert by_path["gone.png"]["classification"] == "removed"
     assert metadata["summary"] == {"modified": 1, "new": 1, "removed": 1, "unchanged": 1}
 
-    assert (test_dir / "baseline" / "same.png").exists()
+    assert not (test_dir / "baseline" / "same.png").exists()
     assert (test_dir / "baseline" / "changed.png").exists()
     assert (test_dir / "baseline" / "gone.png").exists()
     assert (test_dir / "diff" / "changed.png").exists()
