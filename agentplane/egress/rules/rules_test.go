@@ -5,25 +5,26 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
 
-	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/egress/docs"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
+	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/proto/egress_rules"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -94,24 +95,42 @@ func binding(account, name string, sets ...string) *policyapi.PolicyBinding {
 	}
 }
 
-// api is the rules API over index, reviewing the accounts table's tokens, with no documentation.
-func api(t *testing.T, accounts map[string]string, index *policy.Index) (http.Handler, *reviews) {
-	t.Helper()
-	return apiServing(t, accounts, index, fstest.MapFS{})
-}
-
-func apiServing(t *testing.T, accounts map[string]string, index *policy.Index, agentDocs fs.FS) (http.Handler, *reviews) {
+// serviceOver is the rules service over index, reviewing the accounts table's tokens.
+func serviceOver(t *testing.T, accounts map[string]string, index *policy.Index) (*Service, *reviews) {
 	t.Helper()
 	reviewed := &reviews{accounts: accounts}
 	hop, err := auth.NewResolver(reviewed, hopAudience, []string{namespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := New(identity.NewVerifier(hop, nil), index, agentDocs)
+	return NewService(identity.NewVerifier(hop, nil), index), reviewed
+}
+
+// api is the rules API over index, with no documentation: its facade forwards to a gRPC server over
+// loopback, as in the proxy.
+func api(t *testing.T, accounts map[string]string, index *policy.Index) (http.Handler, *reviews) {
+	t.Helper()
+	service, reviewed := serviceOver(t, accounts, index)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return handler, reviewed
+	server := grpc.NewServer()
+	egressrulespb.RegisterEgressRulesServer(server, service)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	rulesFacade, err := facade.NewHandler(ctx, listener.Addr().String(), egressrulespb.RegisterEgressRulesHandlerFromEndpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return New(rulesFacade, fstest.MapFS{}), reviewed
+}
+
+// documentation is the rules API serving agentDocs, with no rules behind it.
+func documentation(agentDocs fs.FS) http.Handler {
+	return New(http.NotFoundHandler(), agentDocs)
 }
 
 // githubIndex grants the sandbox account `sb` the GitHub policy and `other` a policy of its own.
@@ -138,41 +157,51 @@ func get(handler http.Handler, path string, headers ...string) *httptest.Respons
 
 func bearer(token string) []string { return []string{"Authorization", "Bearer " + token} }
 
-func TestReadRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
+// document decodes a response body as the JSON the agent reads.
+func document(t *testing.T, response *httptest.ResponseRecorder) any {
+	t.Helper()
+	var decoded any
+	if err := json.Unmarshal(response.Body.Bytes(), &decoded); err != nil {
+		t.Fatalf("%v in %q", err, response.Body)
+	}
+	return decoded
+}
+
+// The names and enum values are what the agent guides tell agents to read, so they are checked
+// against the raw document.
+func TestFacadeAnswersTheRulesAsProtoJSON(t *testing.T) {
 	handler, _ := api(t, map[string]string{"token-sb": "sb"}, githubIndex())
 
 	response := get(handler, "/v1/rules", bearer("token-sb")...)
 
 	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", response.Code)
+		t.Fatalf("status = %d, want 200: %s", response.Code, response.Body)
 	}
-	var got EgressView
-	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
+	decoded := document(t, response)
+	for path, want := range map[string]any{
+		"subject.namespace":                              namespace,
+		"subject.name":                                   "sb",
+		"policies.0.name":                                "github",
+		"policies.0.rules.0.hosts.0":                     "api.github.com",
+		"policies.0.rules.0.methods.values.1":            "POST",
+		"policies.0.rules.0.paths.values.0":              "/repos/**",
+		"policies.0.rules.0.credential.name":             "github-pat",
+		"policies.0.rules.0.credential.description":      description,
+		"policies.0.rules.0.credential.placeholder":      "agentplane-credential-github-pat",
+		"policies.0.rules.0.credential.targets.0.method": "METHOD_SCHEME_TOKEN",
+		"policies.0.rules.0.credential.targets.0.header": "Authorization",
+		"policies.0.rules.0.credential.targets.0.scheme": "Bearer",
+		"policies.0.rules.0.credential.targets.1.method": "METHOD_BASIC_PASSWORD",
+		"policies.0.rules.1.hosts.0":                     "*.example.com",
+		"policies.0.rules.1.methods":                     nil,
+		"policies.0.rules.1.paths":                       nil,
+		"policies.0.rules.1.credential":                  nil,
+	} {
+		if got := at(t, decoded, path); got != want {
+			t.Errorf("%s = %v, want %v", path, got, want)
+		}
 	}
-	want := EgressView{
-		Subject: policyapi.ServiceAccountRef{Namespace: namespace, Name: "sb"},
-		Policies: []PolicyView{{Name: "github", Rules: []RuleView{
-			{
-				Hosts: []string{"api.github.com"}, Methods: []string{"GET", "POST"}, Paths: []string{"/repos/**"},
-				Credential: &CredentialView{
-					Name: "github-pat", Description: description, Placeholder: "agentplane-credential-github-pat",
-					Targets: []egressapi.Target{
-						{Method: egressapi.SchemeToken, Header: "Authorization", Scheme: "Bearer"},
-						{Method: egressapi.BasicPassword, Header: "Authorization"},
-					},
-				},
-			},
-			{Hosts: []string{"*.example.com"}},
-		}}},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("view = %+v, want %+v", got, want)
-	}
-	// The view has to carry the placeholder for the absences below to mean anything.
-	if !strings.Contains(response.Body.String(), "agentplane-credential-github-pat") {
-		t.Fatal("the response does not hold the placeholder")
-	}
+	// The placeholder is present above, so these absences mean something.
 	for _, forbidden := range []string{secretValue, "vault-entry", "credential-key", "secretRef", "token-sb"} {
 		if strings.Contains(response.Body.String(), forbidden) {
 			t.Errorf("%q reached a sandbox-readable response", forbidden)
@@ -180,46 +209,90 @@ func TestReadRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
 	}
 }
 
-func TestReadRulesNamesEachTargetByItsOwnFields(t *testing.T) {
-	index := policy.NewIndex(0)
-	index.PutPolicySet(policySet("all-targets", githubRule))
-	index.PutBinding(binding("sb", "b", "all-targets"))
-	index.PutCredential(resources.Credential{
-		Name: "github-pat", Description: description, Source: resources.AuthenticatedWorkloadToken{},
-		Targets: []resources.Target{
-			resources.WholeValue{Header: "X-Key"},
-			resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"},
-			resources.BasicUsername{Header: "Authorization"},
-			resources.BasicPassword{Header: "Authorization"},
-			resources.BasicWhole{Header: "Authorization"},
-			resources.JSONField{Field: "password"},
-		},
-	})
-	handler, _ := api(t, map[string]string{"token-sb": "sb"}, index)
+func TestFacadeAnswersNoEgressWithAnEmptyList(t *testing.T) {
+	handler, _ := api(t, map[string]string{"token-nobody": "nobody"}, githubIndex())
 
-	response := get(handler, "/v1/rules", bearer("token-sb")...)
+	response := get(handler, "/v1/rules", bearer("token-nobody")...)
 
-	var got struct {
-		Policies []struct {
-			Rules []struct {
-				Credential struct{ Targets []map[string]string }
+	// An empty list, not null: no egress is a normal state, not a missing answer.
+	decoded := document(t, response)
+	policies, ok := at(t, decoded, "policies").([]any)
+	if response.Code != http.StatusOK || at(t, decoded, "subject.name") != "nobody" || !ok || len(policies) != 0 {
+		t.Errorf("%d %s", response.Code, response.Body)
+	}
+}
+
+func TestFacadeFailsClosedWithoutAProvenBearer(t *testing.T) {
+	for name, c := range map[string]struct {
+		headers     []string
+		wantReviews int
+	}{
+		"no Authorization":   {nil, 0},
+		"not a bearer":       {[]string{"Authorization", "Basic abc"}, 0},
+		"two Authorizations": {[]string{"Authorization", "Bearer token-sb", "Authorization", "Bearer token-sb"}, 0},
+		"a forged bearer":    {bearer("forged"), 1},
+		"only a hop bearer":  {[]string{"Proxy-Authorization", "Bearer token-sb"}, 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			handler, reviewed := api(t, map[string]string{"token-sb": "sb"}, githubIndex())
+
+			response := get(handler, "/v1/rules", c.headers...)
+
+			if code := at(t, document(t, response), "code"); response.Code != http.StatusUnauthorized || code != float64(codes.Unauthenticated) {
+				t.Errorf("status %d, code %v; want 401 and Unauthenticated: %s", response.Code, code, response.Body)
 			}
+			if reviewed.calls != c.wantReviews {
+				t.Errorf("%d token reviews, want %d: an unusable header must not reach the API server", reviewed.calls, c.wantReviews)
+			}
+			if strings.Contains(response.Body.String(), "forged") {
+				t.Errorf("the response echoes the rejected token: %s", response.Body)
+			}
+		})
+	}
+}
+
+func TestFacadeIsUnavailableWhenTheBearerCannotBeReviewed(t *testing.T) {
+	handler, _ := api(t, map[string]string{"token-broken": unreachable}, githubIndex())
+
+	response := get(handler, "/v1/rules", bearer("token-broken")...)
+
+	if code := at(t, document(t, response), "code"); response.Code != http.StatusServiceUnavailable || code != float64(codes.Unavailable) {
+		t.Errorf("status %d, code %v; want 503 and Unavailable: an unanswered review says nothing about the caller", response.Code, code)
+	}
+}
+
+func TestFacadeCannotBeAimedAtAnotherSubject(t *testing.T) {
+	handler, _ := api(t, map[string]string{"token-sb": "sb", "token-other": "other"}, githubIndex())
+	request := httptest.NewRequest(http.MethodGet, "/v1/rules?namespace="+namespace+"&name=other", nil)
+	request.Header.Set("Authorization", "Bearer token-sb")
+	request.Header.Set("Proxy-Authorization", "Bearer token-other")
+	request.Header.Set("X-Agentplane-Subject", "other")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	decoded := document(t, response)
+	if at(t, decoded, "subject.name") != "sb" || at(t, decoded, "policies.0.name") != "github" {
+		t.Errorf("view = %s, want sb's alone", response.Body)
+	}
+	if strings.Contains(response.Body.String(), "other") {
+		t.Errorf("another subject's policy reached the response: %s", response.Body)
+	}
+}
+
+func TestOnlyTheAgentRoutesAreServed(t *testing.T) {
+	handler, _ := api(t, map[string]string{"token-sb": "sb"}, githubIndex())
+
+	for _, path := range []string{"/", "/decisions", "/healthz", "/openapi.json", "/v1/decisions", "/docs/agents/"} {
+		if response := get(handler, path, bearer("token-sb")...); response.Code != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", path, response.Code)
 		}
 	}
-	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	// The wire form clients read: the schema promises these fields for each method, and no other.
-	want := []map[string]string{
-		{"method": "wholeValue", "header": "X-Key"},
-		{"method": "schemeToken", "header": "Authorization", "scheme": "Bearer"},
-		{"method": "basicUsername", "header": "Authorization"},
-		{"method": "basicPassword", "header": "Authorization"},
-		{"method": "basicWhole", "header": "Authorization"},
-		{"method": "jsonField", "field": "password"},
-	}
-	if targets := got.Policies[0].Rules[0].Credential.Targets; !reflect.DeepEqual(targets, want) {
-		t.Errorf("targets = %v, want %v", targets, want)
+	request := httptest.NewRequest(http.MethodPost, "/v1/rules", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code == http.StatusOK {
+		t.Errorf("POST /v1/rules = %d, want a refusal", response.Code)
 	}
 }
 
@@ -250,185 +323,6 @@ func at(t *testing.T, document any, path string) any {
 	return document
 }
 
-// The key names are what agents read off the wire. Decoding into the package's own structs ignores
-// their case, so they are checked against the raw document.
-func TestReadRulesWireKeysAreThoseAgentsRead(t *testing.T) {
-	handler, _ := api(t, map[string]string{"token-sb": "sb"}, githubIndex())
-	var document any
-	if err := json.Unmarshal(get(handler, "/v1/rules", bearer("token-sb")...).Body.Bytes(), &document); err != nil {
-		t.Fatal(err)
-	}
-
-	ruleKeys := []string{"credential", "hosts", "methods", "paths"}
-	for path, want := range map[string][]string{
-		"":                              {"policies", "subject"},
-		"subject":                       {"name", "namespace"},
-		"policies.0":                    {"name", "rules"},
-		"policies.0.rules.0":            ruleKeys,
-		"policies.0.rules.0.credential": {"description", "name", "placeholder", "targets"},
-		"policies.0.rules.0.credential.targets.0": {"header", "method", "scheme"},
-		"policies.0.rules.0.credential.targets.1": {"header", "method"},
-		"policies.0.rules.1":                      ruleKeys,
-	} {
-		object, ok := at(t, document, path).(map[string]any)
-		if !ok {
-			t.Errorf("%q is not a JSON object", path)
-			continue
-		}
-		if got := slices.Sorted(maps.Keys(object)); !slices.Equal(got, want) {
-			t.Errorf("keys at %q = %v, want %v", path, got, want)
-		}
-	}
-	// A rule that sets none of these carries the keys as null instead of omitting them.
-	for _, path := range []string{"methods", "paths", "credential"} {
-		if got := at(t, document, "policies.0.rules.1."+path); got != nil {
-			t.Errorf("policies.0.rules.1.%s = %v, want null", path, got)
-		}
-	}
-}
-
-func TestReadRulesKeepsAnEmptyListDistinctFromAnAbsentOne(t *testing.T) {
-	index := policy.NewIndex(0)
-	index.PutPolicySet(policySet("none", policyapi.Rule{
-		Type: resources.EgressRuleType, Hosts: []string{"a.example.com"}, Methods: []string{}, Paths: []string{},
-	}))
-	index.PutBinding(binding("sb", "b", "none"))
-	handler, _ := api(t, map[string]string{"token-sb": "sb"}, index)
-
-	var got EgressView
-	if err := json.Unmarshal(get(handler, "/v1/rules", bearer("token-sb")...).Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-
-	// A rule that admits no method is not one that admits any.
-	if rule := got.Policies[0].Rules[0]; rule.Methods == nil || rule.Paths == nil {
-		t.Errorf("rule = %+v, want empty methods and paths present", rule)
-	}
-}
-
-func TestReadRulesAnswersNoEgressWithAnEmptyList(t *testing.T) {
-	handler, _ := api(t, map[string]string{"token-nobody": "nobody"}, githubIndex())
-
-	response := get(handler, "/v1/rules", bearer("token-nobody")...)
-
-	var got struct {
-		Subject  policyapi.ServiceAccountRef
-		Policies json.RawMessage
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	// An empty list, not null: no egress is a normal state, not a missing answer.
-	if want := (policyapi.ServiceAccountRef{Namespace: namespace, Name: "nobody"}); response.Code != http.StatusOK ||
-		got.Subject != want || string(got.Policies) != "[]" {
-		t.Errorf("%d %s", response.Code, response.Body)
-	}
-}
-
-func TestReadRulesFailsClosedWithoutAProvenBearer(t *testing.T) {
-	for name, c := range map[string]struct {
-		headers     []string
-		wantReviews int
-	}{
-		"no Authorization":   {nil, 0},
-		"not a bearer":       {[]string{"Authorization", "Basic abc"}, 0},
-		"two Authorizations": {[]string{"Authorization", "Bearer token-sb", "Authorization", "Bearer token-sb"}, 0},
-		"a forged bearer":    {bearer("forged"), 1},
-		"only a hop bearer":  {[]string{"Proxy-Authorization", "Bearer token-sb"}, 0},
-	} {
-		t.Run(name, func(t *testing.T) {
-			handler, reviewed := api(t, map[string]string{"token-sb": "sb"}, githubIndex())
-
-			response := get(handler, "/v1/rules", c.headers...)
-
-			if response.Code != http.StatusUnauthorized || response.Header().Get("WWW-Authenticate") != "Bearer" {
-				t.Errorf("status %d, challenge %q; want 401 with a Bearer challenge", response.Code, response.Header().Get("WWW-Authenticate"))
-			}
-			if reviewed.calls != c.wantReviews {
-				t.Errorf("%d token reviews, want %d: an unusable header must not reach the API server", reviewed.calls, c.wantReviews)
-			}
-			if strings.Contains(response.Body.String(), "forged") {
-				t.Errorf("the response echoes the rejected token: %s", response.Body)
-			}
-		})
-	}
-}
-
-func TestReadRulesIsUnavailableWhenTheBearerCannotBeReviewed(t *testing.T) {
-	handler, _ := api(t, map[string]string{"token-broken": unreachable}, githubIndex())
-
-	if response := get(handler, "/v1/rules", bearer("token-broken")...); response.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want 503: an unanswered review says nothing about the caller", response.Code)
-	}
-}
-
-func TestReadRulesCannotBeAimedAtAnotherSubject(t *testing.T) {
-	handler, _ := api(t, map[string]string{"token-sb": "sb", "token-other": "other"}, githubIndex())
-	request := httptest.NewRequest(http.MethodGet, "/v1/rules?namespace="+namespace+"&name=other", strings.NewReader(`{"name":"other"}`))
-	request.Header.Set("Authorization", "Bearer token-sb")
-	request.Header.Set("Proxy-Authorization", "Bearer token-other")
-	request.Header.Set("X-Agentplane-Subject", "other")
-	response := httptest.NewRecorder()
-
-	handler.ServeHTTP(response, request)
-
-	var got EgressView
-	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Subject.Name != "sb" || len(got.Policies) != 1 || got.Policies[0].Name != "github" {
-		t.Errorf("view = %+v, want sb's alone", got)
-	}
-	if strings.Contains(response.Body.String(), "other") {
-		t.Errorf("another subject's policy reached the response: %s", response.Body)
-	}
-}
-
-func TestOnlyTheAgentRoutesAreServed(t *testing.T) {
-	handler, _ := api(t, map[string]string{"token-sb": "sb"}, githubIndex())
-
-	for _, path := range []string{"/", "/decisions", "/healthz", "/docs/agents/"} {
-		if response := get(handler, path, bearer("token-sb")...); response.Code != http.StatusNotFound {
-			t.Errorf("GET %s = %d, want 404", path, response.Code)
-		}
-	}
-	request := httptest.NewRequest(http.MethodPost, "/v1/rules", nil)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusMethodNotAllowed {
-		t.Errorf("POST /v1/rules = %d, want 405", response.Code)
-	}
-}
-
-func TestOpenAPIDescribesTheRulesEndpoint(t *testing.T) {
-	handler, _ := api(t, nil, policy.NewIndex(0))
-
-	response := get(handler, "/openapi.json")
-
-	var document struct {
-		OpenAPI string
-		Paths   map[string]struct {
-			Get struct {
-				Responses map[string]struct {
-					Content map[string]struct {
-						Schema struct {
-							Required   []string
-							Properties map[string]json.RawMessage
-						}
-					}
-				}
-			}
-		}
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &document); err != nil {
-		t.Fatal(err)
-	}
-	ok := document.Paths["/v1/rules"].Get.Responses["200"].Content["application/json"].Schema
-	if !strings.HasPrefix(document.OpenAPI, "3.") || len(ok.Properties) != 2 || len(ok.Required) != 2 {
-		t.Errorf("document = %+v, want an OpenAPI 3 description of the view's subject and policies", document)
-	}
-}
-
 // links finds the Markdown links of a document that point at a path of this API.
 var links = regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
 
@@ -437,7 +331,7 @@ func TestAgentDocumentationGraphIsServed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, _ := apiServing(t, nil, policy.NewIndex(0), agentDocs)
+	handler := documentation(agentDocs)
 
 	pending, visited := []string{"/llms.txt"}, map[string]bool{}
 	for len(pending) > 0 {
@@ -465,7 +359,7 @@ func TestAgentDocumentationGraphIsServed(t *testing.T) {
 }
 
 func TestAgentDocumentationServesOnlyFiles(t *testing.T) {
-	handler, _ := apiServing(t, nil, policy.NewIndex(0), fstest.MapFS{
+	handler := documentation(fstest.MapFS{
 		"llms.txt":         {Data: []byte("# index")},
 		"guides/start.md":  {Data: []byte("# start")},
 		"credentials.md":   {Data: []byte("# credentials")},

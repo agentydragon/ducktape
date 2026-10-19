@@ -4,9 +4,10 @@
 
 Use the Egress rules base URL from your platform instructions. Fetch `GET /v1/rules` through the
 configured proxy with `Authorization: Bearer agentplane-credential-agentplane-workload`.
-The response names your authenticated `subject` and effective policies. Their rules provide hosts,
-methods, paths, and any credential's identity, description, exact placeholder, and presentation
-`targets`. A rule without a credential allows access without substituting one.
+The response names your authenticated `subject` and effective policies. Their rules provide `hosts`,
+`methods` and `paths` (each a `values` list, or `null` for any), and any `credential`'s identity,
+description, exact placeholder, and presentation `targets`. A rule whose `credential` is `null`
+allows access without substituting one. An empty `policies` list means no egress.
 
 PolicySets can bundle egress, Action auto-approval and Kubernetes rules; PolicyBindings attach them
 to a ServiceAccount and may expire. The live rules describe effective egress, not every available
@@ -24,4 +25,3 @@ permissions, or auto-approved Actions before requesting an Action that needs man
 ## Discovery
 
 - [Effective rules](/v1/rules): Your current destinations, request scopes, credential identities, and presentation targets.
-- [OpenAPI](/openapi.json): Rules response schema.

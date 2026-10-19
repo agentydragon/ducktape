@@ -29,8 +29,9 @@ Use the configured proxy and CA trust. Service addresses and authentication are:
 | Actions | {{ actions_service_url }} | `agentplane-credential-agentplane-workload` |
 | Notifications | {{ notifications_service_url }} | `agentplane-credential-agentplane-notifications-workload` |
 
-Each service serves `/llms.txt` for its overview and links to workflow guides, and `/openapi.json`
-for request/response schemas. Read the relevant service's index when starting a workflow, then
+Each service serves `/llms.txt` for its overview and links to workflow guides. Actions and
+Notifications also serve `/openapi.json` for request/response schemas; the egress rules response is
+described in egress `/llms.txt`. Read the relevant service's index when starting a workflow, then
 only the guides needed for that task; you do not need to fetch every index at startup.
 
 | Task | Starting point |

@@ -22,6 +22,7 @@ go_library(
         "//agentplane/egress/proxy",
         "//agentplane/egress/rules",
         "//agentplane/egress/upstream",
+        "//agentplane/grpc/facade",
         "//agentplane/proto:egress_admin_go_proto",
         "//agentplane/proto:egress_rules_go_proto",
         "//agentplane/workload_auth/go/auth",

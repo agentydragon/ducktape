@@ -6,12 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/proto/egress_rules"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -25,14 +23,10 @@ import (
 // table's tokens, and returns a client for it.
 func serveGRPC(t *testing.T, accounts map[string]string, index *policy.Index) (egressrulespb.EgressRulesClient, *reviews) {
 	t.Helper()
-	reviewed := &reviews{accounts: accounts}
-	hop, err := auth.NewResolver(reviewed, hopAudience, []string{namespace})
-	if err != nil {
-		t.Fatal(err)
-	}
+	service, reviewed := serviceOver(t, accounts, index)
 	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer()
-	egressrulespb.RegisterEgressRulesServer(server, NewService(identity.NewVerifier(hop, nil), index))
+	egressrulespb.RegisterEgressRulesServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	connection, err := grpc.NewClient(

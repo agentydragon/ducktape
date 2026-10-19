@@ -210,6 +210,7 @@ py_grpc_service_library(
 proto_library(
     name = "egress_rules_proto",
     srcs = ["egress_rules.proto"],
+    deps = ["@googleapis//google/api:annotations_proto"],
 )
 
 proto_library(
@@ -336,9 +337,11 @@ go_proto_library(
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//devinfra/go:grpc_gateway",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/proto/egress_rules",
     proto = ":egress_rules_proto",
+    deps = ["@org_golang_google_genproto_googleapis_api//annotations"],
 )
 
 go_proto_library(

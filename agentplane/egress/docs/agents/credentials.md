@@ -9,15 +9,16 @@ proxy and CA trust for this call and subsequent protected traffic.
 Choose a rule covering the intended host, HTTP method, and path. Read the credential's description:
 it identifies whose authority you will use. Send its exact `placeholder` according to its `targets`:
 
-- `schemeToken`: use the declared header and scheme, such as `Authorization: Bearer <placeholder>`.
-- `wholeValue`: the entire declared header value is the placeholder.
-- `basicUsername`, `basicPassword`, or `basicWhole`: put the placeholder in the declared Basic
-  authentication component; let your HTTP client encode that component normally.
-- `jsonField`: the entire string value of the named top-level JSON field is the placeholder.
+- `METHOD_SCHEME_TOKEN`: use the declared `header` and `scheme`, such as `Authorization: Bearer <placeholder>`.
+- `METHOD_WHOLE_VALUE`: the entire declared `header` value is the placeholder.
+- `METHOD_BASIC_USERNAME`, `METHOD_BASIC_PASSWORD`, or `METHOD_BASIC_WHOLE`: put the placeholder in the
+  declared Basic authentication component of the `header`; let your HTTP client encode that component
+  normally.
+- `METHOD_JSON_FIELD`: the entire string value of the top-level JSON `field` is the placeholder.
   Follow the rule's body constraints; nested fields and arbitrary interpolation are unsupported.
 
-Use the live schema for complete target definitions. A placeholder must occupy the declared
-component exactly; a substring or a different presentation will not substitute. Do not redact,
+A target carries only the fields its method uses, so a field it lacks is absent. A placeholder must
+occupy the declared component exactly; a substring or a different presentation will not substitute. Do not redact,
 rename, or replace it with `$TOKEN`, `<redacted>`, or a made-up value. Never obtain, print, or
 persist the substituted real credential. A literal placeholder is not the real secret.
 

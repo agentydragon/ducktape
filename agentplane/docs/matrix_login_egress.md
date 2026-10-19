@@ -41,7 +41,7 @@ spec:
 ```
 
 Bind this set only to the intended workload identities. The agent discovers the placeholder
-and the `jsonField` target from `/v1/rules`, then sends `Content-Type: application/json` and a
+and the `jsonField` target (`METHOD_JSON_FIELD` in `/v1/rules`), then sends `Content-Type: application/json` and a
 login object whose `password` value equals that placeholder. The gateway replaces that value
 only after workload authentication and host/method/path/credential authorization. The same
 placeholder on another otherwise-allowed route is refused, not redeemed or forwarded.
@@ -59,6 +59,9 @@ Resource parsing, the agent rules API, the operator API and generated TypeScript
 - `wholeValue`, `basicUsername`, `basicPassword`, `basicWhole`: `method` and `header`.
 - `schemeToken`: `method`, `header` and `scheme`.
 - `jsonField`: `method` and `field`.
+
+The agent rules API names a method by the `Target.Method` enum of its proto (`METHOD_SCHEME_TOKEN`,
+`METHOD_JSON_FIELD`), and leaves a field a variant lacks absent.
 
 There is no target with nullable `header`/`field`/`scheme` siblings. Mixed variants, missing
 required fields and unknown discriminator values are rejected, not normalized or silently pruned

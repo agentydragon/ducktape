@@ -34,7 +34,8 @@ One Go package per concern:
   condition on each `PolicyBinding`. It uses Kubernetes-generated clients, listers and shared
   informers from `client/` and `../policy/client/`; a list-options tweak bounds watch periods.
 - `rules`: the agent-facing `egress.agentplane-staging.svc.cluster.local/v1/rules` API, on its own
-  independently authenticated listener, which also serves the rules as the gRPC `EgressRules` service.
+  independently authenticated listener: the gRPC `EgressRules` service and its generated HTTP/JSON facade,
+  beside the agent documentation.
 - `decision` and `history`: admission records, and their bounded best-effort write to the shared
   PostgreSQL history; `admin` serves that history, a change stream, readiness and liveness, and
   those reads again as the gRPC `EgressAdmin` and standard health services.
@@ -216,16 +217,17 @@ HTTP and health.
 
 ## Rules gRPC API
 
-`EgressRules` (<../proto/egress_rules.proto>) serves `GET /v1/rules` as `GetRules` on the agent API
-listener, which takes gRPC beside HTTP the same way. The answer is the same redacted view, and the
-caller is the ServiceAccount its bearer proves and nothing else: the bearer is read from `authorization`
-metadata as the HTTP API reads its header, and reviewed by the same verifier, so the hop token and the
-projected tokens it accepts there are accepted here.
+`EgressRules` (<../proto/egress_rules.proto>) serves `GetRules` on the agent API listener, which takes
+gRPC beside HTTP. `GET /v1/rules` is its gRPC-Gateway facade (<../grpc/facade/facade.go>), which forwards
+over loopback to that listener so the servicer authenticates every request. The answer is the redacted
+view of the ServiceAccount the bearer proves and nothing else: the bearer is read from `authorization`
+metadata, which the facade fills from the `Authorization` header, and reviewed by the verifier, so the hop
+token and the projected tokens it accepts are accepted on both.
 
 **Deviation** from <../docs/grpc_services.md>: callers are the sandbox workloads themselves, so there is no
-allow-list and no `auth.Resolver` of its own; every bearer is `Unauthenticated` alike, and one that could
-not be reviewed is `Unavailable`. The documentation routes (`/openapi.json`, `/llms.txt`, `/docs/agents/`)
-stay HTTP. It is mounted unconditionally, because it has no setting.
+allow-list and no `auth.Resolver` of its own; every bearer is `Unauthenticated` (`401`) alike, and one that
+could not be reviewed is `Unavailable` (`503`). The documentation routes (`/llms.txt`, `/docs/agents/`)
+stay hand-written HTTP. It is mounted unconditionally, because it has no setting.
 
 ## ServiceAccount permissions
 

@@ -133,8 +133,10 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   Other request headers and bodies cannot select identity. Service port 80 reaches the distinct
   API listener, not proxy port 8888; there is no local proxy dispatch or recursive forwarding.
   Operator admin endpoints are not available through this route.
-  The same listener also serves the view as the gRPC `EgressRules.GetRules`, with the same
-  authentication, subject and redaction.
+  `GET /v1/rules` is the generated HTTP/JSON form of the gRPC `EgressRules.GetRules`
+  (<../proto/egress_rules.proto>), which the same listener also serves: proto-JSON answers, and a
+  bearer that proves no workload fails `401` as a `google.rpc.Status` body (`503` when it could not
+  be reviewed), with the same subject and redaction either way.
 - The admitted host is resolved by the proxy, never by the sandbox. A host with any address that
   is not globally reachable unicast — loopback, private, link-local, carrier-grade NAT, multicast,
   reserved, and the IPv4-mapped IPv6 forms of those — is refused whole with `address-forbidden`;
