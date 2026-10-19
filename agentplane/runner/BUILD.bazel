@@ -687,6 +687,7 @@ py_test(
     srcs = ["test_session.py"],
     deps = [
         ":adapter",
+        ":codex",
         ":config",
         ":conftest",
         ":journal",

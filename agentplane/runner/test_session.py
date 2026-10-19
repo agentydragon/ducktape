@@ -26,7 +26,8 @@ from pydantic import BaseModel
 
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.adapter import HarnessAdapter
-from agentplane.runner.config import RunnerConfig
+from agentplane.runner.codex import CodexAdapter
+from agentplane.runner.config import CodexLaunch, RunnerConfig
 from agentplane.runner.journal import Journal
 from agentplane.runner.observation import Observation
 from agentplane.runner.session import Session
@@ -106,6 +107,16 @@ class FailingReconcileAdapter(NativeThreadAdapter):
     async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
         del turn_id, resumed
         raise RuntimeError("injected reconciliation failure")
+
+
+class RecoveringCodexAdapter(CodexAdapter):
+    """Use real Codex recovery with a stand-in process and handshake."""
+
+    def command(self) -> list[str]:
+        return [sys.executable, "-c", "import sys; sys.stdin.read()"]
+
+    async def handshake(self) -> str:
+        return self._thread_id
 
 
 @dataclass
@@ -356,17 +367,74 @@ async def test_failed_recovery_reconciliation_stops_the_unready_harness(tmp_path
     async with open_session("test-session", record, config=config, make_adapter=FailingReconcileAdapter) as session:
         await session.emit(event_pb2.TurnStarted(turn_id="recovery-turn"), sources=[])
 
-        with pytest.raises(RuntimeError, match="injected reconciliation failure"):
-            await session.ensure_running()
+        await session._activate()
 
         assert not session.running
         assert session.process is None
         assert session.process_id is None
         assert session._process_state == runner_pb2.PROCESS_STATE_UNSPECIFIED
-        assert any(
-            entry.event.HasField("harness_exited") and entry.event.harness_exited.stopped_by_runner
-            for entry in await session.journal.since(0, limit=128)
+        entries = await session.journal.since(0, limit=128)
+        (failure,) = [
+            entry.event.harness_launch_failed for entry in entries if entry.event.HasField("harness_launch_failed")
+        ]
+        assert failure.reason == (
+            "conversation recovery failed for turn 'recovery-turn': RuntimeError('injected reconciliation failure')"
         )
+        assert any(
+            entry.event.HasField("harness_exited") and entry.event.harness_exited.stopped_by_runner for entry in entries
+        )
+
+
+async def test_codex_startup_recovers_output_from_a_tool_started_in_an_earlier_turn(tmp_path: Path) -> None:
+    record = codex_record(tmp_path / "workspace")
+    record.native_session_id = "recorded-thread"
+    launch = CodexLaunch(binary=Path(sys.executable), base_url="http://unused.invalid/v1", api_key="unused")
+    config = RunnerConfig(state_dir=tmp_path / "state", launch=launches.SANDBOX_LAUNCH, codex=launch)
+    async with open_session(
+        "test-session", record, config=config, make_adapter=lambda session: RecoveringCodexAdapter(session, launch)
+    ) as session:
+        await session.emit(event_pb2.TurnStarted(turn_id="old"), sources=[])
+        await session.emit(
+            event_pb2.ItemStarted(
+                item_id="background", kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="commandExecution"
+            ),
+            sources=[],
+        )
+        await session.emit(event_pb2.ToolOutputDelta(item_id="background", text="before\n"), sources=[])
+        await session.turn_completed("old", event_pb2.TURN_STATUS_COMPLETED, "", sources=[])
+        await session.emit(event_pb2.TurnStarted(turn_id="lost"), sources=[])
+        await session.emit(event_pb2.ToolOutputDelta(item_id="background", text="during\n"), sources=[])
+        await session.turn_completed("lost", event_pb2.TURN_STATUS_PROCESS_LOST, "", sources=[])
+        history = session.directory / "codex" / "sessions" / "recorded-thread.jsonl"
+        history.parent.mkdir(parents=True)
+        history.write_text(
+            "".join(
+                json.dumps({"type": "response_item", "payload": payload}) + "\n"
+                for payload in [
+                    {"type": "function_call", "call_id": "background"},
+                    {"type": "function_call_output", "call_id": "background", "output": "before\nduring\n"},
+                ]
+            )
+        )
+
+        await session._activate()
+        try:
+            assert session.ready
+            assert session.running
+            assert await session.journal.unreconciled_process_lost_turns() == []
+            entries = await session.journal.since(0, limit=128)
+            reports = [
+                entry.event.conversation_reconciled
+                for entry in entries
+                if entry.event.HasField("conversation_reconciled")
+            ]
+            assert [report.turn_id for report in reports] == ["old", "lost"]
+            assert reports[-1].items == [
+                event_pb2.ItemRecovery(item_id="background", disposition=event_pb2.RECOVERY_DISPOSITION_RETAINED)
+            ]
+            assert not any(entry.event.HasField("harness_launch_failed") for entry in entries)
+        finally:
+            await session.stop()
 
 
 if __name__ == "__main__":

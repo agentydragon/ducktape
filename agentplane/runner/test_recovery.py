@@ -211,5 +211,66 @@ async def test_recovery_turn_boundaries_survive_reopen_and_page_events(tmp_path:
         assert not items["lost"].completed
 
 
+@pytest.mark.parametrize("completed", [False, True])
+async def test_recovery_keeps_background_tool_evidence_across_turns(tmp_path: Path, completed: bool) -> None:
+    path = tmp_path / "journal.sqlite"
+    async with Journal.open(path, "source") as journal:
+        await journal.append(event_pb2.TurnStarted(turn_id="old"), sources=[])
+        await journal.append(
+            event_pb2.ItemStarted(
+                item_id="background", kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="commandExecution"
+            ),
+            sources=[],
+        )
+        await journal.append(
+            event_pb2.ToolArguments(item_id="background", arguments_json='{"command":"build"}'), sources=[]
+        )
+        await journal.append(event_pb2.ToolOutputDelta(item_id="background", text="before\n"), sources=[])
+        await journal.append(event_pb2.TurnCompleted(turn_id="old", status=event_pb2.TURN_STATUS_COMPLETED), sources=[])
+        await journal.append(event_pb2.TurnStarted(turn_id="last"), sources=[])
+        await journal.append(
+            event_pb2.ItemStarted(item_id="unrelated", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT), sources=[]
+        )
+        for _ in range(130):
+            await journal.append(event_pb2.TextDelta(item_id="unrelated", text="x"), sources=[])
+        await journal.append(
+            event_pb2.TurnCompleted(turn_id="last", status=event_pb2.TURN_STATUS_COMPLETED), sources=[]
+        )
+        await journal.append(event_pb2.TurnStarted(turn_id="lost"), sources=[])
+        await journal.append(event_pb2.ToolOutputDelta(item_id="background", text="during\n"), sources=[])
+        if completed:
+            await journal.append(
+                event_pb2.ItemCompleted(item_id="background", tool=event_pb2.ToolResult(output="complete\n")),
+                sources=[],
+            )
+        await journal.append(
+            event_pb2.TurnCompleted(turn_id="lost", status=event_pb2.TURN_STATUS_PROCESS_LOST), sources=[]
+        )
+        await journal.append(event_pb2.ToolOutputDelta(item_id="background", text="after\n"), sources=[])
+
+    async with Journal.open(path, "source") as journal:
+        assert await journal.recovery_turns() == ["last", "lost"]
+        assert set(await observed_items(journal, "last")) == {"unrelated"}
+        assert await observed_items(journal, "lost") == {
+            "background": ObservedItem(
+                "background",
+                event_pb2.ITEM_KIND_TOOL_CALL,
+                tool_name="commandExecution",
+                arguments='{"command":"build"}',
+                output="complete\n" if completed else "before\nduring\n",
+                completed=completed,
+            )
+        }
+
+
+async def test_recovery_reports_missing_item_start_with_turn_and_cursor(journal: Journal) -> None:
+    await journal.append(event_pb2.TurnStarted(turn_id="lost"), sources=[])
+    entry = await journal.append(event_pb2.ToolOutputDelta(item_id="missing", text="output"), sources=[])
+    with pytest.raises(
+        ValueError, match=f"turn 'lost': item 'missing' at cursor {entry.cursor} has no preceding start"
+    ):
+        await observed_items(journal, "lost")
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

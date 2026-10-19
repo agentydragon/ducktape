@@ -634,12 +634,14 @@ class Journal:
                         attached_after_loss.discard(turn_id)
         return sorted(lost, key=lost.__getitem__)
 
-    async def turn_events(self, turn_id: str) -> AsyncIterator[event_log_pb2.EventEntry]:
+    async def turn_events(
+        self, turn_id: str, *, include_prefix: bool = False
+    ) -> AsyncIterator[event_log_pb2.EventEntry]:
         async with self._reading() as session:
             boundary = await session.get(TurnBoundary, turn_id)
             if boundary is None:
                 raise ValueError(f"unknown recovery turn {turn_id!r}")
-            after = boundary.start_cursor - 1
+            after = 0 if include_prefix else boundary.start_cursor - 1
             through = boundary.end_cursor or self.last_cursor
         while after < through:
             async with self._reading() as session:

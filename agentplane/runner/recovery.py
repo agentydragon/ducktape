@@ -23,9 +23,21 @@ class ObservedItem:
 
 
 async def observed_items(journal: Journal, turn_id: str) -> dict[str, ObservedItem]:
+    item_ids = {
+        item_id async for entry in journal.turn_events(turn_id) if (item_id := _item_id(entry.event)) is not None
+    }
     items: dict[str, ObservedItem] = {}
-    async for entry in journal.turn_events(turn_id):
+    # Background tools can emit in a later turn. Replay their earlier evidence too,
+    # bounded by this turn's end, without pulling unrelated items into its report.
+    async for entry in journal.turn_events(turn_id, include_prefix=True):
         event = entry.event
+        item_id = _item_id(event)
+        if item_id not in item_ids:
+            continue
+        if not event.HasField("item_started") and item_id not in items:
+            raise ValueError(
+                f"cannot recover turn {turn_id!r}: item {item_id!r} at cursor {entry.cursor} has no preceding start"
+            )
         match event.WhichOneof("observation"):
             case "item_started":
                 started = event.item_started
@@ -47,6 +59,18 @@ async def observed_items(journal: Journal, turn_id: str) -> dict[str, ObservedIt
                 else:
                     item.output = completed.tool.output
     return items
+
+
+def _item_id(event: event_pb2.Event) -> str | None:
+    return (
+        event.item_started.item_id
+        or event.text_delta.item_id
+        or event.tool_arguments_delta.item_id
+        or event.tool_arguments.item_id
+        or event.tool_output_delta.item_id
+        or event.item_completed.item_id
+        or None
+    )
 
 
 def compare_item(observed: ObservedItem, recovered: ObservedItem | None) -> event_pb2.ItemRecovery:

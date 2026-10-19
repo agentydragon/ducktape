@@ -437,7 +437,11 @@ class Session:
             await self.emit(event_pb2.HarnessStarted(resumed=self.resuming, pid=process.native_pid), sources=[])
             if self.resuming:
                 for turn_id in await self.journal.recovery_turns():
-                    await self.emit(await adapter.reconcile(turn_id, resumed=True), sources=[])
+                    try:
+                        report = await adapter.reconcile(turn_id, resumed=True)
+                    except Exception as error:
+                        raise RuntimeError(f"conversation recovery failed for turn {turn_id!r}: {error!r}") from error
+                    await self.emit(report, sources=[])
             async with self._lock:
                 await self._reconcile_commands(recovering=True)
                 self._ready = True
