@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -16,6 +15,7 @@ import (
 	"syscall"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/google/uuid"
 )
 
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
@@ -176,14 +176,10 @@ func NewSessionRecord(spec *runnerpb.SessionSpec, setupScript string, totalConte
 	if totalContextBudgetTokens != nil && *totalContextBudgetTokens <= 0 {
 		return SessionRecord{}, errors.New("total context budget must be positive")
 	}
-	sourceID, err := newEventSourceID()
-	if err != nil {
-		return SessionRecord{}, err
-	}
 	record := SessionRecord{
 		Harness: spec.GetHarness(), CWD: spec.GetCwd(), Model: spec.GetModel(),
 		TotalContextBudgetTokens: totalContextBudgetTokens, ReasoningEffort: spec.GetReasoningEffort(),
-		Instructions: spec.GetInstructions(), EventSourceID: sourceID,
+		Instructions: spec.GetInstructions(), EventSourceID: uuid.NewString(),
 	}
 	if setupScript != "" {
 		digest := sha256.Sum256([]byte(setupScript))
@@ -191,17 +187,6 @@ func NewSessionRecord(spec *runnerpb.SessionSpec, setupScript string, totalConte
 		record.SetupScriptSHA256 = &value
 	}
 	return record, nil
-}
-
-func newEventSourceID() (string, error) {
-	var raw [16]byte
-	if _, err := io.ReadFull(rand.Reader, raw[:]); err != nil {
-		return "", err
-	}
-	raw[6] = raw[6]&0x0f | 0x40
-	raw[8] = raw[8]&0x3f | 0x80
-	encoded := hex.EncodeToString(raw[:])
-	return encoded[:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:], nil
 }
 
 func (r SessionRecord) Spec() *runnerpb.SessionSpec {

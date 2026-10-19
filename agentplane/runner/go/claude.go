@@ -121,10 +121,7 @@ func (a *claudeAdapter) Environment() (map[string]string, error) {
 }
 
 func (a *claudeAdapter) Handshake(ctx context.Context) (string, error) {
-	requestID, err := nativeRequestID()
-	if err != nil {
-		return "", err
-	}
+	requestID := nativeRequestID()
 	initialize := map[string]any{"subtype": "initialize"}
 	if instructions := a.host.Session().Instructions; instructions != "" {
 		initialize["appendSystemPrompt"] = instructions
@@ -248,18 +245,12 @@ func (a *claudeAdapter) answeredMessages(ctx context.Context, turnID string) (ma
 
 func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) error {
 	if a.host.Session().ActiveTurnID == "" {
-		turnID, err := newTurnID()
-		if err != nil {
-			return err
-		}
+		turnID := newTurnID()
 		if err := a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: turnID, Model: a.host.Session().Model}}, nil); err != nil {
 			return err
 		}
 	}
-	messageUUID, err := newUUID()
-	if err != nil {
-		return err
-	}
+	messageUUID := uuid.NewString()
 	frame, err := marshalNative(map[string]any{
 		"type": "user", "message": map[string]string{"role": "user", "content": text}, "parent_tool_use_id": nil, "uuid": messageUUID,
 	})
@@ -280,10 +271,7 @@ func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) erro
 
 func (a *claudeAdapter) Interrupt(ctx context.Context, turnID string) error {
 	_ = turnID // Claude interrupts its current native turn; its protocol has no turn id on this request.
-	requestID, err := nativeRequestID()
-	if err != nil {
-		return err
-	}
+	requestID := nativeRequestID()
 	return a.send(ctx, map[string]any{
 		"type": "control_request", "request_id": requestID,
 		"request": map[string]any{"subtype": "interrupt", "cancel_queued": false, "reason": "agentplane"},
@@ -291,14 +279,11 @@ func (a *claudeAdapter) Interrupt(ctx context.Context, turnID string) error {
 }
 
 func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string) error {
-	requestID, err := nativeRequestID()
-	if err != nil {
-		return err
-	}
+	requestID := nativeRequestID()
 	a.mu.Lock()
 	a.modelChanges[requestID] = claudeChange{commandID: commandID, value: model}
 	a.mu.Unlock()
-	err = a.requestAndTranslate(ctx, requestID, map[string]any{
+	err := a.requestAndTranslate(ctx, requestID, map[string]any{
 		"type": "control_request", "request_id": requestID,
 		"request": map[string]any{"subtype": "set_model", "model": model},
 	})
@@ -311,14 +296,11 @@ func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string
 }
 
 func (a *claudeAdapter) ChangeReasoningEffort(ctx context.Context, commandID, effort string) error {
-	requestID, err := nativeRequestID()
-	if err != nil {
-		return err
-	}
+	requestID := nativeRequestID()
 	a.mu.Lock()
 	a.effortChanges[requestID] = claudeChange{commandID: commandID, value: effort}
 	a.mu.Unlock()
-	err = a.requestAndTranslate(ctx, requestID, map[string]any{
+	err := a.requestAndTranslate(ctx, requestID, map[string]any{
 		"type": "control_request", "request_id": requestID,
 		"request": map[string]any{"subtype": "apply_flag_settings", "settings": map[string]string{"effortLevel": effort}},
 	})
@@ -709,10 +691,7 @@ func (a *claudeAdapter) turnID(ctx context.Context, sources []uint64) (string, e
 	if turnID := a.host.Session().ActiveTurnID; turnID != "" {
 		return turnID, nil
 	}
-	turnID, err := newTurnID()
-	if err != nil {
-		return "", err
-	}
+	turnID := newTurnID()
 	if err := a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: turnID, Model: a.host.Session().Model}}, sources); err != nil {
 		return "", err
 	}
@@ -847,20 +826,12 @@ func claudeHistoryItemID(block claudeBlock, index int, messageID string) string 
 	}
 }
 
-func nativeRequestID() (string, error) {
-	id, err := newUUID()
-	if err != nil {
-		return "", err
-	}
-	return "capture-" + strings.ReplaceAll(id, "-", ""), nil
+func nativeRequestID() string {
+	return "capture-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 }
 
-func newTurnID() (string, error) {
-	id, err := newUUID()
-	if err != nil {
-		return "", err
-	}
-	return "turn-" + strings.ReplaceAll(id, "-", ""), nil
+func newTurnID() string {
+	return "turn-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 }
 
 func canonicalJSON(raw json.RawMessage) string {

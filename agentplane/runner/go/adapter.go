@@ -2,10 +2,7 @@ package runner
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"sort"
 
@@ -84,17 +81,6 @@ type Adapter interface {
 	ChangeModel(context.Context, string, string) error
 	ChangeReasoningEffort(context.Context, string, string) error
 	OnFrame(context.Context, json.RawMessage, uint64) error
-}
-
-func newUUID() (string, error) {
-	var raw [16]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return "", err
-	}
-	raw[6] = raw[6]&0x0f | 0x40
-	raw[8] = raw[8]&0x3f | 0x80
-	encoded := hex.EncodeToString(raw[:])
-	return fmt.Sprintf("%s-%s-%s-%s-%s", encoded[:8], encoded[8:12], encoded[12:16], encoded[16:20], encoded[20:]), nil
 }
 
 func marshalNative(value any) (json.RawMessage, error) {

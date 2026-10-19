@@ -182,10 +182,7 @@ func TestClaudeOutboundFramesKeepNativeNullableFields(t *testing.T) {
 	if value, ok := response["error"]; !ok || value != nil {
 		t.Fatalf("Claude success response omitted its null error field: %s", host.nativeWrites[1])
 	}
-	requestID, err := nativeRequestID()
-	if err != nil {
-		t.Fatal(err)
-	}
+	requestID := nativeRequestID()
 	if !strings.HasPrefix(requestID, "capture-") {
 		t.Fatalf("Claude request ID did not match the native driver prefix: %q", requestID)
 	}

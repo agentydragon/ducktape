@@ -16,6 +16,7 @@ import (
 
 var cgroupControllers = []string{"cpu", "io", "memory", "pids"}
 
+// TODO: Consider making aggregate and per-process CPU, memory, PID, and I/O limits configurable.
 const ioLimit = "rbps=52428800 wbps=20971520 riops=1000 wiops=500"
 
 var aggregateCgroupLimits = map[string]string{
