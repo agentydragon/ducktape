@@ -20,12 +20,7 @@ from agentplane.testing.fake_apiserver import (
     secret,
 )
 from util.testing.postgres import DatabaseNames, create_temporary_database
-from util.testing.postgres_fixtures import (
-    database_names,
-    postgres_admin_url,
-    postgres_container,
-    postgres_image,
-)
+from util.testing.postgres_fixtures import database_names, postgres_admin_url, postgres_container, postgres_image
 
 AUDIENCE = "agentplane-egress-test"
 UPSTREAM_HOST = "localhost"
