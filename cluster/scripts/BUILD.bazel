@@ -71,3 +71,37 @@ py_binary(
         "@pypi//pyyaml",
     ],
 )
+
+py_test(
+    name = "test_seaweedfs_master_persistence",
+    size = "large",
+    srcs = ["test_seaweedfs_master_persistence.py"],
+    data = [
+        "@seaweed_adminscript_crd//file",
+        "@seaweed_bucket_crd//file",
+        "@seaweed_bucketlifecyclepolicy_crd//file",
+        "@seaweed_operator_role//file",
+        "@seaweed_resourcereferencegrant_crd//file",
+        "@seaweed_s3credentials_crd//file",
+        "@seaweed_s3identity_crd//file",
+        "@seaweed_s3oidcprovider_crd//file",
+        "@seaweed_s3policy_crd//file",
+        "@seaweed_s3policybinding_crd//file",
+        "@seaweed_seaweed_crd//file",
+        "@seaweed_seaweedbackup_crd//file",
+        "@seaweed_seaweedcsidriver_crd//file",
+        "@seaweed_seaweedrestore_crd//file",
+    ],
+    requires_docker = True,
+    deps = [
+        ":seaweedfs_master_persistence",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//boto3",
+        "@pypi//botocore",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//testcontainers",
+    ],
+)

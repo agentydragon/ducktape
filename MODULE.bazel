@@ -1259,6 +1259,51 @@ http_file(
     urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml"],
 )
 
+# The operator registers every controller's API at startup, even though this
+# rehearsal creates only a Seaweed CR. Keep these additional cached CRDs at the
+# exact operator release so its REST mapper and informers see the same API set.
+http_file(
+    name = "seaweed_bucketlifecyclepolicy_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_bucketlifecyclepolicies.yaml",
+    sha256 = "3b29d932c26caed808eac9453fda90c9a642fbab07fd453363dce494a8e4e7d1",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_bucketlifecyclepolicies.yaml"],
+)
+
+http_file(
+    name = "seaweed_s3oidcprovider_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_s3oidcproviders.yaml",
+    sha256 = "0660330588157c404dea351085b594db0ac3334c3c220d7897168fb8b4eb6ad3",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_s3oidcproviders.yaml"],
+)
+
+http_file(
+    name = "seaweed_seaweedbackup_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_seaweedbackups.yaml",
+    sha256 = "e526908038bc31542fdcebdec8b048146dbd552bfec61b455c7864f8e5dbed47",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_seaweedbackups.yaml"],
+)
+
+http_file(
+    name = "seaweed_seaweedcsidriver_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_seaweedcsidrivers.yaml",
+    sha256 = "338921afd3455c32e156aaf163239293732965eae05a37ebe687007fbc4063e3",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_seaweedcsidrivers.yaml"],
+)
+
+http_file(
+    name = "seaweed_seaweedrestore_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_seaweedrestores.yaml",
+    sha256 = "9253a5faf8caefe7ed7a816d8db006347ab90f3320a09a64be9ddba81cd3c839",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_seaweedrestores.yaml"],
+)
+
+http_file(
+    name = "seaweed_operator_role",
+    downloaded_file_path = "role.yaml",
+    sha256 = "7a1c42a71d3011fc57bb4ca7a3f97582cc37b0c87adc632b6ba2e2131bd1b04f",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/rbac/role.yaml"],
+)
+
 # Match the grafana-operator release deployed by cluster/cdk8s/monitoring/grafana_operator.py
 # (chart `~5.22`, resolved to 5.22.2); the chart ships these CRD files unchanged.
 http_file(
