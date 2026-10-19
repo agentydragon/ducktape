@@ -1602,6 +1602,7 @@ flowchart TD
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     RUNNER_RENAME[Decision, unscheduled: a better name than runner]
+    GO_SERVICES_SETTINGS_LOADER[Blocked: Go services read settings through util/settings]
 ```
 
 ### `RUNNER_RENAME` — a better name than "runner"
@@ -1640,6 +1641,17 @@ sandbox, so it no longer reads as a Session Sandbox: the `sandbox__*` Actions,
 `action_service/sandbox/`, the `agentplane-sandbox` templates and labels, and
 `cluster/cdk8s/agentplane/command_sandbox.py`. The `sandbox__*` tool names are what agents and
 external Connections call, so renaming them is a wire change.
+
+### `GO_SERVICES_SETTINGS_LOADER` — Go services read settings through one loader
+
+**Blocked on the egress `util/settings` loader landing ([#10989](https://github.com/agentydragon/ducktape/pull/10989)
+and [#11080](https://github.com/agentydragon/ducktape/pull/11080)); unscheduled (coordinator, 2026-10-19,
+relaying the operator's 2026-10-18 direction of one settings loader for Go services, file and
+environment, no flags).** Move the Runner Gateway, the Sandbox Controller, the Policy Controller and the
+egress sidecar from flag parsing to `util/settings`, one service per change. Setting names and values stay;
+only how they are read changes. Each manifest change follows its image pin and removes flags only after
+the image that reads the file is pinned (image before config). New settings in the meantime, such as the
+Gateway's `--http-listen-address`, follow how the service reads settings today.
 
 ## 9. Legacy burn-down
 
@@ -1925,6 +1937,19 @@ flowchart LR
 
 ### `DISPATCHER_READS_FACADE` — Dispatcher reads as a generated browser API
 
+**In flight (the operator dispatched it in the delivery-facade thread, 2026-10-19 10:13 UTC; the
+Gateway code is in [#11116](https://github.com/agentydragon/ducktape/pull/11116)).** Serve `GetDispatch`,
+`ListDispatches` and `WatchDispatches` as a generated HTTP/JSON facade from the Runner Gateway process, and replace `app/threads/dispatch_stream.py` and its route with the app's
+generic upstream proxy and a `fetch` stream client in the browser. This builds the machinery every other
+facade reuses. The page treats a command the Dispatcher no longer holds as `DELIVERY_STATE_UNKNOWN`, so the
+watch likely needs a marker that the current Dispatches have been sent; the node's design settles it. It
+lands as the Gateway code with its listener optional, then the manifests once that image is pinned, then
+the app and frontend change that deletes the old route. Exit evidence: missing, invalid and valid
+bearers behave as over gRPC; a stream arrives unbuffered through the app and ends on logout; the generated
+TypeScript types are chosen; one visual scene runs on the streaming stub.
+
+### `EGRESS_ADMIN_GRPC` — a gRPC interface beside the egress admin HTTP
+
 **In flight (the operator dispatched it in the delivery-facade thread, 2026-10-19 10:15 UTC; a worker is
 assigned).** Add a gRPC copy of each egress HTTP API: the decisions list and stream on the admin listener,
 the rules API on the rules listener, and `healthz` and `livez` (the app probes `/healthz` today), each
@@ -1937,8 +1962,8 @@ image is pinned; manifests follow.
 
 **Blocked on `EGRESS_ADMIN_GRPC` reaching the cluster (image pinned, caller settings configured).** Move the
 app's `DecisionsClient`, its egress health probe and every other caller the inventory finds from the HTTP
-admin to the gRPC interface, adding the Python proto targets with it. Event-driven, as now: the decisions stream stays a
-stream.
+admin to the gRPC interface, adding the Python proto targets with it. Event-driven, as now: the decisions
+stream stays a stream.
 
 ### `EGRESS_ADMIN_HTTP_TEARDOWN` — remove the hand-written egress admin HTTP
 
