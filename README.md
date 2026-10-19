@@ -1,157 +1,54 @@
 # Ducktape
 
-Personal infrastructure monorepo. Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2), **vps**, **atlas** (Proxmox/Talos k8s).
+Personal infrastructure monorepo: configuration for **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2), **vps**, **atlas** (Proxmox/Talos k8s).
 
 ## Build System
 
-**Bazel** is the unified build system. Python 3.14+, Rust via Cargo/Bazel.
+**Bazel** builds everything. Python 3.14+, Rust via Cargo/Bazel.
 
-### Python
-
-- Deps: add to `pyproject.toml`, regenerate the lockfile via <devinfra/docs/lockfiles.md>, use `@pypi//pkg` in BUILD
-- Lockfile: `requirements_bazel.txt` (never edit manually)
-- Lint: ruff + mypy via Bazel aspects (default on). `--config=nolint` skips all lint: <devinfra/docs/linting.md>
-
-### Gazelle
-
-Python BUILD files are gazelle-managed and CI fails on drift. After adding, moving,
-or renaming a `.py` file or changing imports, run gazelle rather than hand-editing
-managed `srcs`/`deps` — the devshell has the released binary on PATH:
-
-```bash
-gazelle               # Update BUILD files (or: bb run //devinfra:gazelle)
-gazelle -mode=diff    # Verify convergence (the CI check)
-```
-
-One `py_library` per `.py` file (no aggregators). Reference `//pkg:module` not `//pkg`.
-Bazel auto-generates `__init__.py` stubs via `imports = [".."]`. Conventions:
-[STYLE.md § Gazelle](STYLE.md); mechanism and escape hatches:
-<devinfra/docs/gazelle.md>.
-
-### Rust
-
-Add deps to root `Cargo.toml`, regenerate `Cargo.Bazel.lock` via
-<devinfra/docs/lockfiles.md>, then use `@crates//crate_name` in BUILD deps.
-
-### Remote Cache + RBE
-
-BuildBuddy provides remote caching and remote build execution (RBE). BuildBuddy Remote
-Runners run Bazel commands, which dispatch actions to RBE executors; the selected RBE
-container image provides each action's environment. Results are cached so unchanged
-targets are instant on repeat runs. `bbr` (a wrapper around `bb remote`) runs the whole
-invocation on a runner; `bb run` keeps Bazel local and dispatches only build actions —
-which to reach for is in <AGENTS.md> § Bazel Commands.
-
-Two images, deliberately separate. `ghcr.io/agentydragon/rbe-container-image`
-(<devinfra/rbe_container_image/Dockerfile>) is selected for remote actions through
-BuildBuddy's `container-image` execution property. Its digest participates in each
-action's cache key, so it carries only what Bazel cannot supply from the repo.
-`ghcr.io/agentydragon/buildbuddy-remote-runner`
-(<devinfra/buildbuddy_remote_runner/image.nix>) adds the Nix devtools for the outer
-`bb remote` Bazel invocation. It is pinned in <devinfra/bbr.json>. Setup:
-<devinfra/setup_buildbuddy.sh>.
+- **Python:** deps in `pyproject.toml`, used as `@pypi//pkg`; lockfile `requirements_bazel.txt` is generated (<devinfra/docs/lockfiles.md>). ruff + mypy run as Bazel aspects; `--config=nolint` skips them (<devinfra/docs/linting.md>).
+- **Rust:** deps in root `Cargo.toml`, used as `@crates//name`; regenerate `Cargo.Bazel.lock` per <devinfra/docs/lockfiles.md>.
+- **Gazelle** owns Python BUILD files; CI fails on drift. After adding/moving `.py` files or changing imports run `gazelle` (devshell; or `bb run //devinfra:gazelle`), check with `gazelle -mode=diff`. One `py_library` per `.py` file, referenced as `//pkg:module`; `__init__.py` stubs are generated via `imports = [".."]`. Conventions: [STYLE.md § Gazelle](STYLE.md#gazelle); mechanism: <devinfra/docs/gazelle.md>.
+- **BuildBuddy** provides remote cache and RBE. `bbr` (wraps `bb remote`) runs the whole invocation on a remote runner; `bb run` keeps Bazel local and dispatches only actions (<AGENTS.md> § Bazel Commands). Two images: `ghcr.io/agentydragon/rbe-container-image` (<devinfra/rbe_container_image/Dockerfile>) is the action environment — its digest is in every action cache key, so it holds only what Bazel can't supply; `ghcr.io/agentydragon/buildbuddy-remote-runner` (<devinfra/buildbuddy_remote_runner/image.nix>, pinned in <devinfra/bbr.json>) adds Nix devtools for the outer invocation. Setup: <devinfra/setup_buildbuddy.sh>.
 
 ## Dotfiles
 
-Managed by Nix home-manager in `nix/home/`. **Do NOT edit dotfiles in `~/`**.
-
-Deploy: see <nix/README.md> (NixOS hosts use `sudo nixos-rebuild switch`; standalone non-NixOS configs use `home-manager switch`).
+Nix home-manager in `nix/home/`; **never edit dotfiles in `~/`**. Deploy: <nix/README.md>.
 
 ## Development
 
 ```bash
 nix shell .#precommit -c pre-commit install
 nix shell .#precommit -c pre-commit run --all-files
+bb run //devinfra/lint:buildifier
 ```
 
 ### Lint/Format Exclusions
 
-Exclusions require two files (pre-commit reads `.gitattributes`, ruff reads `ruff.toml`):
-
-1. Add `path/** rules-lint-ignored=true` to `.gitattributes`
-2. If Python, also add to `ruff.toml exclude`
-
-Other gitattributes consumed by pre-commit checks:
-
-- `filename-conventions-ignored=true` — skips kebab-case filename enforcement
-  (defaulted on for `cluster/`, `terraform/`, `tf/`, and a few other trees
-  where kebab-case is conventional).
-- `cluster-manifest-ignored=true` — for YAML files under `cluster/k8s/` that
-  aren't K8s manifests (e.g. `rules_distroless` apt manifests next to a
-  CronJob image's `BUILD.bazel`). The cluster validator skips them from
-  orphan detection and resource parsing.
+`path/** rules-lint-ignored=true` in `.gitattributes`, plus `ruff.toml` `exclude` for Python. Other pre-commit gitattributes: `filename-conventions-ignored=true` (skip kebab-case check; default on for `cluster/`, `terraform/`, `tf/` and a few others), `cluster-manifest-ignored=true` (non-manifest YAML under `cluster/k8s/`).
 
 ## CI
 
-- **GitHub Actions + `bb remote`**: `bazel {build,test}` on a BuildBuddy remote runner with RBE, including lint — over the bazel-diff affected targets on PRs, `//...` on pushes and graph-wide changes
-- **GitHub Actions (non-Bazel)**: ansible-lint, nix, pre-commit, artifact publishing (wheels, container images)
-
-See `.github/workflows/`.
-
-## Common Commands
-
-```bash
-bb run //devinfra/lint:buildifier    # Format Bazel files
-```
-
-Lockfile and generated manifest workflows: <devinfra/docs/lockfiles.md>.
+GitHub Actions running `bazel {build,test}` (including lint) on a BuildBuddy remote runner — bazel-diff affected targets on PRs, `//...` on pushes and graph-wide changes — plus non-Bazel jobs (ansible-lint, nix, pre-commit, artifact publishing). See `.github/workflows/`.
 
 ## Conventions
 
-### `x/` — Experimental
-
-`x/` subdirectories (e.g. `x/bsc/`, `finance/augur/x/`) mark experimental, in-flux, or one-off code that hasn't stabilized. Any directory at any level can have an `x/` subfolder. Don't expect stable APIs or finished design from code under `x/`.
-
-### `TODO.md`
-
-`<dir>/TODO.md` tracks persistent project-level TODOs. Inline code comments are fine for TODOs local to a specific location; cross-cutting or project-wide items go in `TODO.md`. Remove entries once fully completed.
+- **`x/`** at any level: experimental, in-flux or one-off code; no stable API expected.
+- **`TODO.md`**: persistent project-level TODOs; local ones stay inline. Remove entries when done.
+- **`SPEC.md`**: the component's user-facing contract — what it guarantees, not how.
+- **`archive/`**: only historical records carrying a future-relevant lesson; git history is the default archive.
 
 ### `plans/`
 
-`<dir>/plans/` holds future work and work-in-progress design notes; a component with one
-central plan uses `<dir>/PLAN.md` instead (e.g. `loom/PLAN.md`, `haku/PLAN.md`).
+`<dir>/plans/`, or `<dir>/PLAN.md` for one central plan, holds future and in-progress design.
 
-**A plan is a burn-down**: an entry _leaves_ when its work lands (never parked as done),
-and the whole plan is deleted once fully done — at most a short tombstone while an
-active compatibility boundary needs a pointer.
-
-**Nothing outside a plan may cite one** — no code comment, `SPEC.md`, or doc pointing at
-a plan's numbered requirement or step: plans are ephemeral, so such a citation either
-pins the entry permanently or dangles. Citing a doc is fine — needing a stable citable
-identifier is the signal that content is ready to graduate out of the plan.
-
-**Durable content goes somewhere durable**: the invariant at the code site, the
-guarantee in `SPEC.md`, the design in a doc under `<dir>/docs/`. Graduating (parts of)
-a plan into one or more docs is the normal end of plan content, not a failure of the
-plan. The goal the plan exists to reach _is_ plan content — a rule the code does not
-hold to yet leaves with the last step that achieves it. The test is whether the
-statement outlives the work.
+- A plan burns down: entries leave when their work lands; the plan is deleted when done (at most a short tombstone while a compatibility boundary needs a pointer).
+- Nothing outside a plan cites one (code, `SPEC.md`, docs) — a stable citable identifier means the content is ready to graduate.
+- Durable content graduates to the code site, `SPEC.md`, or `<dir>/docs/`. A goal the code doesn't meet yet stays plan content until the last step achieves it.
 
 ### `debug/`
 
-`<project>/debug/<topic>.md` holds an active investigation, RCA work in progress, or a
-reproducible diagnostic procedure. Place it under the project that owns the investigated
-behavior: Agentplane reports in `agentplane/debug/`, cluster infrastructure reports in
-`cluster/debug/`, build tooling reports in `devinfra/debug/`. Root `debug/` may also hold
-host-level investigations without an owning repo project (for example, `debug/atlas/`;
-Atlas is not cluster-owned), as well as repo-wide or cross-project investigations with no
-single owning project. It is not a default inbox. Keep one canonical report and link to
-it from other affected projects.
-
-Delete a resolved note after promoting any durable lesson to the owning project's current
-docs (`cluster/docs/lessons_learned/` for cluster lessons). A `debug/` note follows the same
-prose standard as everything else (<STYLE.md> § Documentation) — being an investigation
-is not a licence for padding or after-the-fact justification.
-
-### `archive/`
-
-Existing `<dir>/archive/` files are historical records that survived because they carry a
-future-relevant lesson. Do not use the directory as a parking lot for completed plans or incident
-archaeology; Git history is the default archive.
-
-### `SPEC.md`
-
-`<dir>/SPEC.md` is the high-level, user-facing specification of what a component guarantees. An outside observer should be able to read it to understand the component's contract without reading the implementation. Keep it at the "what it promises" level — implementation details belong in README.md or the code.
+`<project>/debug/<topic>.md`: an active investigation, in-progress RCA, or reproducible diagnostic procedure, under the project owning the behavior (`agentplane/debug/`, `cluster/debug/`, `devinfra/debug/`). Root `debug/` is for host-level investigations with no owning project (e.g. `debug/atlas/`) and cross-project ones — not a default inbox. One canonical report, linked from other projects. When resolved, promote durable lessons to the owner's docs (`cluster/docs/lessons_learned/` for cluster) and delete it. Same prose standard as any doc (<STYLE.md> § Documentation).
 
 ## License
 
