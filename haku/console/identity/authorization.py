@@ -105,20 +105,6 @@ class StaticAgentDefinitionError(ValueError):
     """Static Agent configuration contradicts durable authority state."""
 
 
-class StaticAgentRejectedError(Exception):
-    """A static binding or fingerprint is not currently authorized."""
-
-
-@dataclass(frozen=True, slots=True)
-class StaticAgentAuthorization:
-    """Canonical runtime identity of one currently authorized static binding."""
-
-    agent_id: UUID
-    binding_id: UUID
-    operator_id: UUID
-    access_profile_id: str | None = None
-
-
 @dataclass(frozen=True, slots=True)
 class LockedActiveAgentBinding:
     """The active identity rows held for one transaction in canonical order."""
@@ -139,9 +125,8 @@ async def lock_active_agent_binding(
 ) -> LockedActiveAgentBinding | None:
     """Revalidate an active binding while locking binding, Agent, then Operator.
 
-    Static bearer activity recording and MCP tool admission share these rows.  Keeping their
-    lock order here prevents PostgreSQL from choosing conflicting orders for joined ``FOR UPDATE``
-    plans.
+    Tool-call service paths revalidate these rows under lock. Keeping their lock order here
+    prevents PostgreSQL from choosing conflicting orders for joined ``FOR UPDATE`` plans.
     """
     binding = await session.get(CredentialBinding, binding_id, with_for_update=lock)
     if binding is None or (agent_id is not None and binding.agent_id != agent_id):
@@ -441,19 +426,14 @@ class PostgresAgentAuthority:
                 processed += len(issued_interactions)
         return processed
 
-    async def reconcile_static_agents(
-        self, definitions: Collection[StaticAgentDefinition]
-    ) -> tuple[StaticAgentAuthorization, ...]:
+    async def reconcile_static_agents(self, definitions: Collection[StaticAgentDefinition]) -> None:
         """Make this complete desired static-Agent set current atomically."""
 
         return await self._database_call(lambda: self._reconcile_static_agents(definitions))
 
-    async def _reconcile_static_agents(
-        self, definitions: Collection[StaticAgentDefinition]
-    ) -> tuple[StaticAgentAuthorization, ...]:
+    async def _reconcile_static_agents(self, definitions: Collection[StaticAgentDefinition]) -> None:
         prepared = await self._prepare_static_definitions(definitions)
         now = await self._now()
-        authorizations: list[StaticAgentAuthorization] = []
         async with self._sessions.begin() as session:
             await self._lock_key(session, "static-agent-reconcile")
             for definition, name in sorted(prepared, key=lambda item: item[0].agent_id.int):
@@ -524,14 +504,6 @@ class PostgresAgentAuthority:
                     if hmac.compare_digest(active_credential.credential_fingerprint, definition.token_fingerprint):
                         # A deployment may rename the configuration slot that supplies an unchanged
                         # credential. The source label is metadata, not credential identity.
-                        authorizations.append(
-                            StaticAgentAuthorization(
-                                agent.agent_id,
-                                active_binding.binding_id,
-                                agent.owner_operator_id,
-                                agent.access_profile_id,
-                            )
-                        )
                         continue
                     active_binding.status = CredentialBindingStatus.REVOKED
                     active_binding.ended_at = now
@@ -595,11 +567,6 @@ class PostgresAgentAuthority:
                         created_at=now,
                     )
                 )
-                authorizations.append(
-                    StaticAgentAuthorization(
-                        agent.agent_id, binding_id, agent.owner_operator_id, agent.access_profile_id
-                    )
-                )
                 if agent.status is AgentStatus.DISABLED:
                     agent.status = AgentStatus.ACTIVE
                     agent.updated_at = now
@@ -625,61 +592,6 @@ class PostgresAgentAuthority:
                 binding.updated_at = now
                 agent.status = AgentStatus.DISABLED
                 agent.updated_at = now
-        return tuple(authorizations)
-
-    async def static_authorization_for_binding(self, *, binding_id: UUID) -> StaticAgentAuthorization:
-        return await self._database_call(lambda: self._static_authorization(binding_id=binding_id, fingerprint=None))
-
-    async def static_authorization_for_fingerprint(
-        self, *, fingerprint: bytes, record_seen: bool = False
-    ) -> StaticAgentAuthorization:
-        """Resolve an active static binding, optionally recording successful actor use.
-
-        Bearer verification uses the read-only default. The request actor resolver sets
-        ``record_seen`` so activity is written only after the exact Operator, Agent, and
-        binding have been revalidated under lock.
-        """
-        if not fingerprint:
-            raise StaticAgentRejectedError
-        return await self._database_call(
-            lambda: self._static_authorization(binding_id=None, fingerprint=fingerprint, record_seen=record_seen)
-        )
-
-    async def _static_authorization(
-        self, *, binding_id: UUID | None, fingerprint: bytes | None, record_seen: bool = False
-    ) -> StaticAgentAuthorization:
-        async with self._sessions.begin() as session:
-            resolved_binding_id: UUID | None
-            if binding_id is not None:
-                resolved_binding_id = binding_id
-            else:
-                assert fingerprint is not None
-                resolved_binding_id = await session.scalar(
-                    select(StaticCredential.binding_id).where(StaticCredential.credential_fingerprint == fingerprint)
-                )
-            if resolved_binding_id is None:
-                raise StaticAgentRejectedError
-            active = await lock_active_agent_binding(session, binding_id=resolved_binding_id, lock=record_seen)
-            if active is None:
-                raise StaticAgentRejectedError
-            binding, agent, operator = active.binding, active.agent, active.operator
-            credential = await session.get(StaticCredential, binding.binding_id)
-            if credential is None:
-                raise StaticAgentRejectedError
-            if (
-                agent.status is not AgentStatus.ACTIVE
-                or binding.kind is not CredentialKind.STATIC
-                or binding.status is not CredentialBindingStatus.ACTIVE
-                or operator.status is not OperatorStatus.ACTIVE
-            ):
-                raise StaticAgentRejectedError
-            if record_seen:
-                now = await self._now()
-                agent.last_seen_at = now
-                agent.updated_at = now
-            return StaticAgentAuthorization(
-                agent.agent_id, binding.binding_id, operator.operator_id, agent.access_profile_id
-            )
 
     @staticmethod
     async def _prepare_static_definitions(

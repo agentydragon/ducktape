@@ -145,8 +145,6 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console:database_schema",
-        "//haku/console:tool_call_actor",
-        "//haku/console/mcp:approval",
         "//util:db_url",
         "//util/testing:sqlalchemy_engines",
         "@pypi//pytest",

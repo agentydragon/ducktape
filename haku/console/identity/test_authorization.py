@@ -38,7 +38,6 @@ from haku.console.identity.authorization import (
     AgentGrantAuthorityUnavailableError,
     PostgresAgentAuthority,
     StaticAgentDefinition,
-    StaticAgentRejectedError,
     _digest,
     fingerprint_static_token,
 )
@@ -52,8 +51,6 @@ from haku.console.identity.enrollment import (
 )
 from haku.console.identity.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.mcp.approval import PostgresToolCallLedger
-from haku.console.tool_call_actor import AgentActor
 from util.db_url import render_postgresql_url
 from util.testing.sqlalchemy_engines import managed_async_engine
 
@@ -149,6 +146,19 @@ def db_url(migrated_db_url: str) -> str:
 
 
 HarnessFactory = Callable[..., Awaitable[Harness]]
+
+
+async def _active_static_binding_id(harness: Harness, agent_id: UUID) -> UUID:
+    async with harness.sessions() as session:
+        binding_id = await session.scalar(
+            select(CredentialBinding.binding_id).where(
+                CredentialBinding.agent_id == agent_id,
+                CredentialBinding.kind == CredentialKind.STATIC,
+                CredentialBinding.status == CredentialBindingStatus.ACTIVE,
+            )
+        )
+    assert binding_id is not None
+    return binding_id
 
 
 @pytest.fixture
@@ -610,7 +620,7 @@ async def test_expiry_sweep_terminates_issued_response_loss(db_url: str, harness
         assert state.agent.status is AgentStatus.ABANDONED
 
 
-async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: str, harness: Harness) -> None:
+async def test_static_reconcile_is_idempotent_and_rotates(db_url: str, harness: Harness) -> None:
     definition = StaticAgentDefinition(
         agent_id=uuid4(),
         display_name="Configured Agent",
@@ -619,41 +629,21 @@ async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: st
         token_fingerprint=fingerprint_static_token("first-token"),
         access_profile_id="no_auto_approval",
     )
-    first, second = await asyncio.gather(
+    await asyncio.gather(
         harness.authority.reconcile_static_agents([definition]), harness.authority.reconcile_static_agents([definition])
     )
-    assert first == second
-    initial = first[0]
-    assert await harness.authority.static_authorization_for_binding(binding_id=initial.binding_id) == initial
 
     with _orm_session(db_url) as session:
         agent = session.get(Agent, definition.agent_id)
         assert agent is not None
-        initial_updated_at = agent.updated_at
         assert agent.last_seen_at is None
-
-    assert (
-        await harness.authority.static_authorization_for_fingerprint(fingerprint=definition.token_fingerprint)
-        == initial
-    )
-    with _orm_session(db_url) as session:
-        agent = session.get(Agent, definition.agent_id)
-        assert agent is not None
-        assert agent.updated_at == initial_updated_at
-        assert agent.last_seen_at is None
-
-    harness.clock.advance(datetime.timedelta(seconds=1))
-    assert (
-        await harness.authority.static_authorization_for_fingerprint(
-            fingerprint=definition.token_fingerprint, record_seen=True
+        bindings = (
+            session.execute(select(CredentialBinding).where(CredentialBinding.agent_id == definition.agent_id))
+            .scalars()
+            .all()
         )
-        == initial
-    )
-    with _orm_session(db_url) as session:
-        agent = session.get(Agent, definition.agent_id)
-        assert agent is not None
-        assert agent.updated_at == harness.clock.now
-        assert agent.last_seen_at == harness.clock.now
+        assert len(bindings) == 1
+        initial_binding_id = bindings[0].binding_id
 
     rotated_definition = StaticAgentDefinition(
         agent_id=definition.agent_id,
@@ -663,11 +653,7 @@ async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: st
         token_fingerprint=fingerprint_static_token("second-token"),
         access_profile_id=definition.access_profile_id,
     )
-    rotated = (await harness.authority.reconcile_static_agents([rotated_definition]))[0]
-    assert rotated.agent_id == initial.agent_id
-    assert rotated.binding_id != initial.binding_id
-    with pytest.raises(StaticAgentRejectedError):
-        await harness.authority.static_authorization_for_binding(binding_id=initial.binding_id)
+    await harness.authority.reconcile_static_agents([rotated_definition])
 
     with _orm_session(db_url) as session:
         bindings = (
@@ -684,61 +670,13 @@ async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: st
             for binding in bindings
         ]
         stored_fingerprints = session.execute(select(StaticCredential.credential_fingerprint)).scalars().all()
+    rotated_binding_id = next(binding_id for binding_id, *_ in binding_rows if binding_id != initial_binding_id)
     assert binding_rows == [
-        (initial.binding_id, 1, None, CredentialBindingStatus.REVOKED),
-        (rotated.binding_id, 2, initial.binding_id, CredentialBindingStatus.ACTIVE),
+        (initial_binding_id, 1, None, CredentialBindingStatus.REVOKED),
+        (rotated_binding_id, 2, initial_binding_id, CredentialBindingStatus.ACTIVE),
     ]
     assert b"first-token" not in stored_fingerprints
     assert b"second-token" not in stored_fingerprints
-
-
-async def test_static_bearer_activity_and_tool_admission_do_not_deadlock(harness: Harness) -> None:
-    """Run the two production lock paths concurrently against migrated PostgreSQL models.
-
-    PostgreSQL reported these statements in real SQLSTATE 40P01 cycles.  The shared helper locks
-    the binding before its Agent in both paths, so every concurrently started pair completes.
-    """
-    token = "deadlock-regression-token"
-    definition = StaticAgentDefinition(
-        agent_id=uuid4(),
-        display_name="Deadlock Regression Agent",
-        operator_id=harness.browser.operator_id,
-        secret_reference="env:DEADLOCK_REGRESSION_TOKEN",
-        token_fingerprint=fingerprint_static_token(token),
-        access_profile_id="no_auto_approval",
-    )
-    authorization = (await harness.authority.reconcile_static_agents([definition]))[0]
-    actor = AgentActor(
-        agent_id=authorization.agent_id,
-        operator_id=authorization.operator_id,
-        binding_id=authorization.binding_id,
-        access_profile_id=authorization.access_profile_id,
-    )
-
-    async def static_activity() -> None:
-        await harness.authority.static_authorization_for_fingerprint(
-            fingerprint=definition.token_fingerprint, record_seen=True
-        )
-
-    async def tool_admission() -> None:
-        async with harness.sessions.begin() as session:
-            assert await PostgresToolCallLedger._require_active_agent_binding(session, actor) == (
-                definition.display_name,
-                definition.access_profile_id,
-            )
-
-    for _ in range(32):
-        barrier = asyncio.Barrier(2)
-
-        async def static_after_barrier(*, _barrier: asyncio.Barrier = barrier) -> None:
-            await _barrier.wait()
-            await static_activity()
-
-        async def admission_after_barrier(*, _barrier: asyncio.Barrier = barrier) -> None:
-            await _barrier.wait()
-            await tool_admission()
-
-        await asyncio.gather(static_after_barrier(), admission_after_barrier())
 
 
 async def test_static_reconcile_ignores_secret_reference_rename(harness: Harness) -> None:
@@ -750,7 +688,8 @@ async def test_static_reconcile_ignores_secret_reference_rename(harness: Harness
         token_fingerprint=fingerprint_static_token("unchanged-token"),
         access_profile_id="no_auto_approval",
     )
-    initial = (await harness.authority.reconcile_static_agents([definition]))[0]
+    await harness.authority.reconcile_static_agents([definition])
+    initial_binding_id = await _active_static_binding_id(harness, definition.agent_id)
 
     renamed_reference = StaticAgentDefinition(
         agent_id=definition.agent_id,
@@ -760,11 +699,10 @@ async def test_static_reconcile_ignores_secret_reference_rename(harness: Harness
         token_fingerprint=definition.token_fingerprint,
         access_profile_id=definition.access_profile_id,
     )
-    reconciled = (await harness.authority.reconcile_static_agents([renamed_reference]))[0]
-
-    assert reconciled == initial
+    await harness.authority.reconcile_static_agents([renamed_reference])
+    assert await _active_static_binding_id(harness, definition.agent_id) == initial_binding_id
     async with harness.sessions() as session:
-        credential = await session.get(StaticCredential, initial.binding_id)
+        credential = await session.get(StaticCredential, initial_binding_id)
         assert credential is not None
         assert credential.secret_reference == definition.secret_reference
 
@@ -779,8 +717,11 @@ async def test_static_agent_access_profile_is_deployment_managed(harness_factory
         token_fingerprint=fingerprint_static_token("deployment-policy-token"),
         access_profile_id="haku_v1",
     )
-    authorization = (await harness.authority.reconcile_static_agents([definition]))[0]
-    assert authorization.access_profile_id == "haku_v1"
+    await harness.authority.reconcile_static_agents([definition])
+    async with harness.sessions() as session:
+        agent = await session.get(Agent, definition.agent_id)
+        assert agent is not None
+        assert agent.access_profile_id == "haku_v1"
 
     with pytest.raises(AgentAccessProfileManagedByDeploymentError):
         await harness.authority.set_access_profile(
@@ -799,13 +740,10 @@ async def test_static_reconcile_revokes_removed_definition_and_restores_stable_s
         token_fingerprint=fingerprint_static_token("first-removable-token"),
         access_profile_id="no_auto_approval",
     )
-    initial = (await harness.authority.reconcile_static_agents([definition]))[0]
+    await harness.authority.reconcile_static_agents([definition])
+    initial_binding_id = await _active_static_binding_id(harness, definition.agent_id)
 
-    assert await harness.authority.reconcile_static_agents([]) == ()
-    with pytest.raises(StaticAgentRejectedError):
-        await harness.authority.static_authorization_for_binding(binding_id=initial.binding_id)
-    with pytest.raises(StaticAgentRejectedError):
-        await harness.authority.static_authorization_for_fingerprint(fingerprint=definition.token_fingerprint)
+    await harness.authority.reconcile_static_agents([])
 
     restored_definition = StaticAgentDefinition(
         agent_id=definition.agent_id,
@@ -815,8 +753,8 @@ async def test_static_reconcile_revokes_removed_definition_and_restores_stable_s
         token_fingerprint=fingerprint_static_token("rotated-after-removal"),
         access_profile_id=definition.access_profile_id,
     )
-    restored = (await harness.authority.reconcile_static_agents([restored_definition]))[0]
-    assert restored.agent_id == initial.agent_id
+    await harness.authority.reconcile_static_agents([restored_definition])
+    restored_binding_id = await _active_static_binding_id(harness, definition.agent_id)
     with _orm_session(db_url) as session:
         bindings = (
             session.execute(
@@ -835,8 +773,8 @@ async def test_static_reconcile_revokes_removed_definition_and_restores_stable_s
         ]
         agent_status = agent.status
     assert binding_rows == [
-        (initial.binding_id, 1, None, CredentialBindingStatus.REVOKED, "static_configuration_removed"),
-        (restored.binding_id, 2, initial.binding_id, CredentialBindingStatus.ACTIVE, None),
+        (initial_binding_id, 1, None, CredentialBindingStatus.REVOKED, "static_configuration_removed"),
+        (restored_binding_id, 2, initial_binding_id, CredentialBindingStatus.ACTIVE, None),
     ]
     assert agent_status is AgentStatus.ACTIVE
 
