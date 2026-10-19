@@ -234,6 +234,8 @@ async def test_action_presentations(
     await sidebar.get_by_role("button", name="Expand ", exact=False).click()
     await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await wait_for_stable(page)
+    await expect(sidebar.locator(".agentplane-code-block-placeholder")).to_have_count(0)
+    await wait_for_stable(page)
     await view.capture(f"{capture_name}-sidebar-expanded", target=sidebar)
 
     # Follow the actual review link so pending detail controls and argument composition are visible too.
@@ -245,6 +247,7 @@ async def test_action_presentations(
     await expect(pending).to_contain_text("Check the exact call before approving.")
     await expect(pending.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await pending.evaluate("element => element.scrollIntoView({block: 'end'})")
+    await expect(pending.locator(".agentplane-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
     await view.capture(f"{capture_name}-pending-detail", target=pending)
 
@@ -269,6 +272,7 @@ async def test_action_presentations(
     await expect(receipt).to_be_visible()
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(receipt).to_contain_text(example.result_text)
+    await expect(receipt.locator(".agentplane-code-block-placeholder")).to_have_count(0)
     await expect(receipt.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await wait_for_stable(page)
@@ -277,7 +281,10 @@ async def test_action_presentations(
     await page.evaluate("window.location.hash = '/actions'")
     await expect(page.get_by_role("radio", name="Not auto-allowed", exact=True)).to_be_checked()
     await expect(page.locator("[data-action-receipt]")).to_have_count(1)
-    await page.locator("[data-action-receipt]").evaluate("element => element.scrollIntoView({block: 'end'})")
+    history = page.locator("[data-action-receipt]")
+    await history.evaluate("element => element.scrollIntoView({block: 'end'})")
+    await expect(history).to_contain_text(example.result_text)
+    await expect(history.locator(".agentplane-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
     await view.capture(f"{capture_name}-history", target=page.locator("[data-action-receipt]"))
 
