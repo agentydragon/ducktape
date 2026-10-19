@@ -57,7 +57,7 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
       : null;
   const combinedCall = renderActionCall(request.action, request.arguments, call ?? undefined);
   return (
-    <Paper withBorder p="md">
+    <Paper withBorder p="md" data-action-receipt={request.id}>
       <Stack gap="sm">
         <ActionCall
           request={request}
@@ -227,7 +227,7 @@ function ActionHistoryRequests({
   }, [includeAutoAllowed, replaceRows]);
   const loadMore = useCallback(async (): Promise<void> => {
     // A ref closes the gap before React commits loadingMore, so one cursor has one request.
-    if (!cursor || pageInFlight.current) return;
+    if (!active.current || !cursor || pageInFlight.current) return;
     pageInFlight.current = true;
     setLoadingMore(true);
     setPageError(null);
