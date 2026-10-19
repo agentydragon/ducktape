@@ -42,7 +42,6 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator, Mapping, Sequence
@@ -52,8 +51,6 @@ from dataclasses import dataclass
 import aiodocker
 import pytest
 import pytest_asyncio
-import uvicorn
-from fastapi import FastAPI
 
 from openai_utils.model import OpenAIModelProto
 from openai_utils.model_metadata import get_model_metadata
@@ -71,8 +68,9 @@ from props.orchestration.docker_executor import DockerExecutor
 from props.registry_proxy.app import create_app as create_registry_proxy_app
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fake_openai_server import FakeOpenAIServer
-from util.net import pick_free_port
+from util.net import bind_free_port
 from util.oci import BazelImage, bazel_crane, push_bazel_image
+from util.testing.asgi import serve_app_in_loop
 
 logger = logging.getLogger(__name__)
 
@@ -141,33 +139,6 @@ def _build_agent_base_env(db_config: DatabaseConfig) -> dict[str, str]:
     return {"PGHOST": E2E_HOST_HOSTNAME, "PGPORT": str(db_config.port), "PGDATABASE": db_config.database}
 
 
-@asynccontextmanager
-async def _serve_app(app: FastAPI, port: int, *, name: str, host: str = "0.0.0.0") -> AsyncIterator[None]:
-    """Run a FastAPI app under uvicorn for the lifetime of the context."""
-    config = uvicorn.Config(app, host=host, port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    task = asyncio.create_task(server.serve())
-
-    while not server.started:
-        await asyncio.sleep(0.01)
-        if task.done():
-            raise RuntimeError(f"{name} failed to start on port {port}: {task.exception()}")
-
-    logger.info("%s started on port %d", name, port)
-
-    try:
-        yield
-    finally:
-        server.should_exit = True
-        try:
-            await asyncio.wait_for(task, timeout=5.0)
-        except TimeoutError:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        logger.info("%s stopped", name)
-
-
 def _set_backend_env(monkeypatch: pytest.MonkeyPatch, db_config: DatabaseConfig, e2e_registry_url: str) -> None:
     """Set env vars needed by the backend's lifespan."""
     monkeypatch.setenv("PROPS_REGISTRY_UPSTREAM_URL", e2e_registry_url)
@@ -193,9 +164,11 @@ async def _make_stack(
 
     try:
         _set_backend_env(monkeypatch, db.config, e2e_registry_url)
-        backend_port = pick_free_port()
-        llm_proxy_port = pick_free_port()
-        registry_proxy_port = pick_free_port()
+        # Containers reach these through the host gateway, so they listen on every interface.
+        backend_socket, llm_proxy_socket, registry_proxy_socket = (bind_free_port("0.0.0.0") for _ in range(3))
+        backend_port, llm_proxy_port, registry_proxy_port = (
+            sock.getsockname()[1] for sock in (backend_socket, llm_proxy_socket, registry_proxy_socket)
+        )
         registry_proxy_config = RegistryProxyConfig(host="localhost", port=registry_proxy_port)
         backend_url = f"http://{E2E_HOST_HOSTNAME}:{backend_port}"
         agent_registry_url = f"http://{E2E_HOST_HOSTNAME}:{registry_proxy_port}"
@@ -228,9 +201,9 @@ async def _make_stack(
 
         async with (
             ensure_agent_network(async_docker_client),
-            _serve_app(create_app(deps=deps), backend_port, name="backend"),
-            _serve_app(create_llm_proxy_app(db=db, config=config), llm_proxy_port, name="llm-proxy"),
-            _serve_app(create_registry_proxy_app(db=db), registry_proxy_port, name="registry-proxy"),
+            serve_app_in_loop(create_app(deps=deps), sock=backend_socket),
+            serve_app_in_loop(create_llm_proxy_app(db=db, config=config), sock=llm_proxy_socket),
+            serve_app_in_loop(create_registry_proxy_app(db=db), sock=registry_proxy_socket),
         ):
             executor = DockerExecutor(
                 async_docker_client,
