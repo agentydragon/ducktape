@@ -23,7 +23,7 @@ type sample struct {
 	Namespaces  []string          `env:"-" yaml:"namespaces"`
 	Models      []model           `env:"-" yaml:"models"`
 	Levels      map[string]string `env:"-" yaml:"levels"`
-	Backend     string            `env:"BACKEND_URL" yaml:"backend_url"`
+	Backend     string            `env:"UPSTREAM" yaml:"backend_url"`
 }
 
 func defaults() sample {
@@ -69,7 +69,7 @@ levels: {root: DEBUG}
 }
 
 func TestAFieldTaggedWithItsEnvironmentNameIsReadFromIt(t *testing.T) {
-	got, err := load(prefix + "BACKEND_URL=http://env.test")
+	got, err := load(prefix + "UPSTREAM=http://env.test")
 	if err != nil || got.Backend != "http://env.test" {
 		t.Fatalf("got %+v, %v", got, err)
 	}
@@ -130,15 +130,5 @@ func TestTheFileIsVettedBeforeItIsDecoded(t *testing.T) {
 	}}, defaults(), []string{prefix + "CONFIG_FILE=" + path})
 	if !errors.Is(err, refusal) || seen != "listen_port: 1\n" {
 		t.Fatalf("got %v after checking %q", err, seen)
-	}
-}
-
-func TestAStructWhoseEnvironmentNamesAreNotItsKeysIsRefused(t *testing.T) {
-	type misnamed struct {
-		BackendURL string `yaml:"backend_url"`
-		LiteLLMURL string `yaml:"litellm_url"`
-	}
-	if _, err := Load(Options{Prefix: prefix}, misnamed{}, nil); err == nil {
-		t.Fatal("LiteLLMURL was accepted for litellm_url")
 	}
 }

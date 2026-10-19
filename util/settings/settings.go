@@ -1,12 +1,11 @@
 // Package settings loads a service's settings from a YAML file and environment variables.
 //
 // A settings struct has one exported field per setting, each tagged `yaml:"snake_case_key"`. The
-// setting is that key in the file named by <prefix>CONFIG_FILE and the environment variable
-// <prefix><KEY UPPER-CASED>. The environment overrides the file, which overrides the defaults the
-// caller passes in. Lists and maps are file-only and carry `env:"-"` tags.
-// A scalar field whose Go name does not spell its key, such as
-// LiteLLMURL for litellm_url, carries an `env:"KEY"` tag; Load refuses a struct whose environment
-// names and keys differ.
+// YAML key is read from the file named by <prefix>CONFIG_FILE. The environment overrides the file,
+// which overrides the defaults the caller passes in. Lists and maps are file-only and carry
+// `env:"-"` tags.
+// Scalar environment names default to the Go field name in upper snake case; an `env:"KEY"`
+// tag overrides that name independently of the YAML key.
 package settings
 
 import (
@@ -44,20 +43,12 @@ func Load[T any](options Options, defaults T, environ []string) (T, error) {
 	if settingsType.Kind() != reflect.Struct {
 		return zero, fmt.Errorf("settings type %s is not a struct", settingsType)
 	}
-	environment := make(map[string]string, len(environ))
-	for _, item := range environ {
-		if name, value, found := strings.Cut(item, "="); found {
-			environment[name] = value
-		}
-	}
+	environment := env.ToMap(environ)
 	envOptions := env.Options{
 		Environment: environment, Prefix: options.Prefix, UseFieldNameByDefault: true,
 	}
 	fields, err := env.GetFieldParamsWithOptions(&loaded, envOptions)
 	if err != nil {
-		return zero, err
-	}
-	if err := checkNames(settingsType, fields); err != nil {
 		return zero, err
 	}
 	configFileEnv := options.Prefix + configFileSuffix
@@ -79,33 +70,6 @@ func Load[T any](options Options, defaults T, environ []string) (T, error) {
 		return zero, parseFailure(settingsType, err)
 	}
 	return loaded, nil
-}
-
-// checkNames refuses a struct whose environment names are not its YAML keys upper-cased: the file
-// and the environment would otherwise name one setting two ways.
-func checkNames(settingsType reflect.Type, fields []env.FieldParams) error {
-	want := map[string]bool{}
-	for field := range settingsType.Fields() {
-		if !field.IsExported() {
-			continue
-		}
-		key, _, _ := strings.Cut(field.Tag.Get("yaml"), ",")
-		if key == "" || key == "-" {
-			return fmt.Errorf("settings field %s.%s has no yaml key", settingsType, field.Name)
-		}
-		if field.Tag.Get("env") != "-" {
-			want[strings.ToUpper(key)] = true
-		}
-	}
-	got := map[string]bool{}
-	for _, field := range fields {
-		got[field.OwnKey] = true
-	}
-	if !maps.Equal(want, got) {
-		return fmt.Errorf("settings %s: the yaml keys upper-cased are %v but the environment names are %v",
-			settingsType, slices.Sorted(maps.Keys(want)), slices.Sorted(maps.Keys(got)))
-	}
-	return nil
 }
 
 // readFile decodes a file that must exist and hold exactly one document of known keys.
