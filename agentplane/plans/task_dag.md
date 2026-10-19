@@ -277,6 +277,7 @@ flowchart TD
     HISTORY_ACCESS_AFTER_DELETION -. may change collection membership storage only .-> SESSION_ACCESS_RULES
     SESSION_ACCESS_RULES --> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN --> HISTORY_SANDBOX_UID
+    HISTORY_SERVICE_GO_PORT[Candidate: port the History Service to Go, section 13] -. operational hold: the UID is recorded in the Go service .-> HISTORY_SANDBOX_UID
     HISTORY_SESSION_KEY_DESIGN -. read API shape .-> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN -. only if re-keyed .-> APP_THREAD_SANDBOX_UID
     HISTORY_SANDBOX_UID --> THREAD_READ_POLICY
@@ -475,7 +476,8 @@ re-keyed, drop the rows whose Sandbox is already deleted?
 
 ### `HISTORY_SANDBOX_UID` — History records and checks the Sandbox UID
 
-**Blocked on `HISTORY_SESSION_KEY_DESIGN`; the first node to dispatch under either alternative.** In order:
+**Blocked on `HISTORY_SESSION_KEY_DESIGN` and, as an operational hold, on `HISTORY_SERVICE_GO_PORT`, which
+it lands in; the first History change to dispatch under either alternative.** In order:
 the namespaced `get serviceaccounts` Role for the History Service lands first, then the code. Add the
 nullable `sandbox_uid` and `SandboxRef.uid`; resolve and cache the pusher's Sandbox UID at bind, fill
 a NULL value from a matching writer and compare a recorded one, refusing a mismatch. A ServiceAccount no
@@ -1961,15 +1963,15 @@ flowchart LR
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
     HISTORY_SERVICE_GO_PORT --> HISTORY_READS_FACADE
     NOTIFICATION_SERVICE_SPLIT --> NOTIFICATION_SERVICE_GO_PORT
-    HISTORY_SERVICE_GO_PORT -. sequencing choice: record the UID in Go if the port goes first .-> HISTORY_SANDBOX_UID
+    HISTORY_SERVICE_GO_PORT -. operational hold: the UID is recorded in the Go service .-> HISTORY_SANDBOX_UID
 ```
 
 ### `HISTORY_SERVICE_GO_PORT` — port the History Service to Go
 
-**Candidate; the Go rewrite recommended it as the next port (2026-10-17), and the operator's pick is not
-recorded here.** Keep the schema and the gRPC contract unchanged so Electric and the existing callers keep
-working; the fold's Python tests pin the port. `HISTORY_SANDBOX_UID` is the next History change and would
-land in Go if the port goes first; otherwise it lands in Python and is ported. The operator picks the order.
+**Candidate; the operator chose it as the next port (2026-10-19).** Keep the schema and the gRPC contract
+unchanged so Electric and the existing callers keep working; the fold's Python tests pin the port.
+`HISTORY_SANDBOX_UID` and the History changes after it wait for the Go service and land there, so no History
+change is written in Python and ported afterwards.
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
 
