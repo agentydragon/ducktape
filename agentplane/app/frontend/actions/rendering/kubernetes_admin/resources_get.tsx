@@ -15,7 +15,7 @@ export function offersCardDecisionButtonsResourcesGet(args: unknown): boolean {
 }
 function GetSummary({ args }: { args: z.infer<typeof resourcesGetArguments> }): JSX.Element {
   return (
-    <Text size="sm">
+    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
       Read with API version <Code>{args.apiVersion}</Code>
     </Text>
   );
@@ -35,7 +35,7 @@ export const resourcesGetSummary: ArgumentsPreview = definePreview(resourcesGetA
 export const resourcesGetPresentation: ActionPresentation = {
   fallbackLabel: "Get Kubernetes resource",
   label: resourcesGetLabel,
-  pane: { collapsed: resourcesGetSummary, opened: resourcesGetSummary },
+  pane: { opened: resourcesGetSummary },
   details: { arguments: resourcesGetSummary, result: kubernetesResourcesResult },
   offersCardDecisionButtons: offersCardDecisionButtonsResourcesGet,
 };

@@ -5,7 +5,6 @@ import { z } from "zod";
 import type { ActionPresentation } from "../presentation";
 import { CodeBlock, InlineCode } from "../../../code_block";
 
-import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { kubernetesTarget } from "./resource_common";
 
@@ -50,7 +49,11 @@ function Opened({ args }: { args: PodsExecArguments }): JSX.Element {
   return (
     <Stack gap="xs">
       <CodeBlock text={commandText(args)} language="bash" />
-      {args.container && <Chip label="container" value={args.container} />}
+      {args.container && (
+        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+          In container <Code>{args.container}</Code>.
+        </Text>
+      )}
     </Stack>
   );
 }
@@ -60,12 +63,8 @@ export const podsExecCollapsed: ArgumentsPreview = definePreview(podsExecArgumen
 export const podsExecPane: ArgumentsPreview = definePreview(podsExecArguments, Opened);
 export const podsExecLabel: ArgumentsPreview = definePreview(podsExecArguments, PodsExecLabel);
 
-function NoAdditionalOptions(): JSX.Element {
-  return (
-    <Text size="sm" c="dimmed">
-      No additional options.
-    </Text>
-  );
+function PodsDeletePane(): JSX.Element {
+  return <></>;
 }
 
 const podsDeleteArguments = z.strictObject({ name: z.string().min(1), namespace: z.string().min(1).optional() });
@@ -79,7 +78,7 @@ function PodsDeleteLabel({ args }: { args: z.infer<typeof podsDeleteArguments> }
 }
 
 export const podsDeleteLabel: ArgumentsPreview = definePreview(podsDeleteArguments, PodsDeleteLabel);
-export const podsDeletePane: ArgumentsPreview = definePreview(podsDeleteArguments, NoAdditionalOptions);
+export const podsDeletePane: ArgumentsPreview = definePreview(podsDeleteArguments, PodsDeletePane);
 
 export const podsDeletePresentation: ActionPresentation = {
   label: podsDeleteLabel,

@@ -41,10 +41,12 @@ function podsInNamespaceFilters(args: z.infer<typeof zPodsInNamespaceArguments>)
 // here, so expanding the card adds information instead of restating its heading.
 function PodsInNamespacePane({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
   const hasFilters = args.fieldSelector !== undefined || args.labelSelector !== undefined;
-  return (
+  return hasFilters ? (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-      {hasFilters ? podsInNamespaceFilters(args) : "No additional filters"}
+      {podsInNamespaceFilters(args)}
     </Text>
+  ) : (
+    <></>
   );
 }
 
@@ -72,7 +74,24 @@ function PodsInNamespaceCollapsed({ args }: { args: z.infer<typeof zPodsInNamesp
   const hasFilters = args.fieldSelector !== undefined || args.labelSelector !== undefined;
   return (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-      {hasFilters ? <>Filters{podsInNamespaceFilters(args)}</> : "No additional filters"}
+      {hasFilters ? (
+        <>
+          Matching pods where{" "}
+          {args.fieldSelector !== undefined && (
+            <>
+              field selector <Code>{args.fieldSelector}</Code>
+            </>
+          )}
+          {args.fieldSelector !== undefined && args.labelSelector !== undefined ? " and " : ""}
+          {args.labelSelector !== undefined && (
+            <>
+              label selector <Code>{args.labelSelector}</Code>
+            </>
+          )}
+        </>
+      ) : (
+        "List every pod in this namespace."
+      )}
     </Text>
   );
 }

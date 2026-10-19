@@ -111,6 +111,10 @@
   min-width: 0;
 }
 
+.agentplane-actions-sidebar-request-label.is-expanded {
+  overflow-wrap: anywhere;
+}
+
 /* A card is an overview: a long command or argument list is cut here, and the full text is one tap away. */
 .agentplane-actions-sidebar-collapsed-preview {
   max-width: 100%;
@@ -135,7 +139,7 @@
 .agentplane-actions-sidebar-name {
   display: block;
   max-width: 100%;
-  font-family: var(--mantine-font-family-monospace);
+  font-family: var(--mantine-font-family);
   font-size: var(--mantine-font-size-xs);
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -143,6 +147,18 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
+}
+
+.agentplane-actions-sidebar-name code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: inherit;
+}
+
+.agentplane-actions-sidebar-request-label.is-expanded .agentplane-actions-sidebar-name {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
 }
 
 .agentplane-actions-sidebar-decision {
@@ -161,6 +177,12 @@
 .agentplane-actions-sidebar-preview .agentplane-command-call-command {
   max-width: 100%;
   overflow-wrap: anywhere;
+}
+
+.agentplane-actions-sidebar-preview code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .agentplane-actions-sidebar-details {

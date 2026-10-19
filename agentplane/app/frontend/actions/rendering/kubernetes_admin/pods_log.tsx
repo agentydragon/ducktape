@@ -1,10 +1,10 @@
 import type { JSX } from "react";
-import { Code, Text } from "@mantine/core";
+import { Code, Stack, Text } from "@mantine/core";
 import { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
-import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
+import { ActionJson } from "../../payload";
 import { kubernetesTarget } from "./resource_common";
 
 const podsLogArguments = z.strictObject({
@@ -19,13 +19,25 @@ export function offersCardDecisionButtonsPodsLog(args: unknown): boolean {
   return podsLogArguments.safeParse(args).success;
 }
 
-function Logs({ args }: { args: z.infer<typeof podsLogArguments> }): JSX.Element {
+function PodsLogCollapsed({ args }: { args: z.infer<typeof podsLogArguments> }): JSX.Element {
   return (
-    <>
-      <Chip label="container" value={args.container ?? "(default)"} />
-      <Chip label="previous" value={args.previous === true ? "yes" : "no"} />
-      <Chip label="tail" value={args.tail ?? 100} />
-    </>
+    <Stack gap="xs">
+      {args.container && (
+        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+          Container <Code>{args.container}</Code>
+        </Text>
+      )}
+      {args.previous === true && <Text size="sm">Previous logs</Text>}
+    </Stack>
+  );
+}
+
+function PodsLogOpened({ args }: { args: z.infer<typeof podsLogArguments> }): JSX.Element {
+  const hasOptions = args.container !== undefined || args.previous !== undefined || args.tail !== undefined;
+  return hasOptions ? (
+    <ActionJson value={{ container: args.container, previous: args.previous, tail: args.tail }} clamp={false} />
+  ) : (
+    <></>
   );
 }
 
@@ -38,11 +50,12 @@ function PodsLogLabel({ args }: { args: z.infer<typeof podsLogArguments> }): JSX
 }
 
 export const podsLogLabel: ArgumentsPreview = definePreview(podsLogArguments, PodsLogLabel);
-export const podsLogPreview: ArgumentsPreview = definePreview(podsLogArguments, Logs);
+export const podsLogCollapsed: ArgumentsPreview = definePreview(podsLogArguments, PodsLogCollapsed);
+export const podsLogPreview: ArgumentsPreview = definePreview(podsLogArguments, PodsLogOpened);
 
 export const podsLogPresentation: ActionPresentation = {
   label: podsLogLabel,
-  pane: { opened: podsLogPreview },
+  pane: { collapsed: podsLogCollapsed, opened: podsLogPreview },
   details: { arguments: podsLogPreview },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsLog,
 };

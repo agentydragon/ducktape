@@ -3,7 +3,6 @@ import { Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { Chip } from "./chips";
 import { definePreview, type ArgumentsPreview } from "./entry";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 
@@ -69,11 +68,7 @@ export function offersCardDecisionButtonsSystemInfo(args: unknown): boolean {
 }
 
 function SystemInfoRequest(): JSX.Element {
-  return (
-    <Text size="sm" c="dimmed">
-      No arguments.
-    </Text>
-  );
+  return <></>;
 }
 
 export const systemInfoLabel: ArgumentsPreview = definePreview(noArguments, SystemInfoLabel);
@@ -115,24 +110,25 @@ const systemInfo = z
   .passthrough();
 
 function SystemInfo({ result }: { result: z.infer<typeof systemInfo> }): JSX.Element {
-  const fields: Array<[string, string]> = [];
+  const fields: string[] = [];
   if (result.grocy_version) {
-    fields.push([
-      "Grocy version",
+    fields.push(
       result.grocy_version.ReleaseDate
         ? `${result.grocy_version.Version} (${result.grocy_version.ReleaseDate})`
-        : result.grocy_version.Version,
-    ]);
+        : result.grocy_version.Version
+    );
   }
-  if (result.php_version) fields.push(["PHP version", result.php_version]);
-  if (result.sqlite_version) fields.push(["SQLite version", result.sqlite_version]);
-  if (result.db_version != null) fields.push(["Database version", String(result.db_version)]);
-  if (result.os) fields.push(["OS", result.os]);
-  if (result.client) fields.push(["Client", result.client]);
+  if (result.php_version) fields.push(`PHP ${result.php_version}`);
+  if (result.sqlite_version) fields.push(`SQLite ${result.sqlite_version}`);
+  if (result.db_version != null) fields.push(`Database ${result.db_version}`);
+  if (result.os) fields.push(`Operating system: ${result.os}`);
+  if (result.client) fields.push(`Client: ${result.client}`);
   return (
     <Stack gap="xs">
-      {fields.map(([label, value]) => (
-        <Chip key={label} label={label} value={value} />
+      {fields.map((field, index) => (
+        <Text key={`${index}-${field}`} size="sm" style={{ overflowWrap: "anywhere" }}>
+          {index === 0 && result.grocy_version ? `Grocy ${field}` : field}
+        </Text>
       ))}
       {fields.length === 0 && (
         <Text size="sm" c="dimmed">

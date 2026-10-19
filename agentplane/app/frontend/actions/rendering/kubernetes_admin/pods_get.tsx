@@ -16,12 +16,9 @@ export function offersCardDecisionButtonsPodsGet(args: unknown): boolean {
 }
 
 // The label already carries the Pod and namespace; the name and namespace are the only arguments.
-function Target(): JSX.Element {
-  return (
-    <Text size="sm" c="dimmed">
-      No additional arguments
-    </Text>
-  );
+function Target({ args }: { args: z.infer<typeof podsGetArguments> }): JSX.Element {
+  void args;
+  return <></>;
 }
 
 function PodsGetLabel({ args }: { args: z.infer<typeof podsGetArguments> }): JSX.Element {

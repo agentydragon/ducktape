@@ -127,7 +127,7 @@ it("expands a compact action preview and only offers a decision on the compact c
   expect(podLabel).toBeDefined();
   expect(podLabel?.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
   expect(container.textContent?.match(/List pods in namespace test-namespace/g)).toHaveLength(1);
-  expect(container.textContent).toContain("Filters");
+  expect(container.textContent).toContain("Matching pods where");
   expect(container.textContent).toContain("$ systemctl restart backup");
   const podDisclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${pod.title}"]`);
   if (!podDisclosure) throw new Error("missing pod action disclosure");
@@ -190,11 +190,18 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
       action: { group: "kubernetes_admin", name: "pods_log" },
       arguments: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
       title: "inspect pod logs",
-      visible: ["sidecar", "previous: yes", "tail: -1"],
+      visible: ['"container": "sidecar"', '"previous": true', '"tail": -1'],
+    },
+    {
+      ...request("decision_pending", 7),
+      action: { group: "gmail", name: "threads_list" },
+      arguments: { q: "from:deployments@example.com", maxResults: 5 },
+      title: "search deployment mail",
+      visible: ["from:deployments@example.com", '"maxResults": 5'],
     },
   ];
   await send(reads);
-
+  expect(container.textContent).toContain("Previous logs");
   for (const read of reads) {
     const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${read.title}"]`);
     if (!disclosure) throw new Error(`missing disclosure for ${read.title}`);

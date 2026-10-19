@@ -1,9 +1,8 @@
 import type { ActionPresentation } from "./presentation";
-import { Stack, Text } from "@mantine/core";
+import { Code, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { Chip } from "./chips";
 import { definePreview, type ArgumentsPreview } from "./entry";
 
 const calendarNodeArguments = z.strictObject({
@@ -14,11 +13,17 @@ const calendarNodeArguments = z.strictObject({
 
 function CalendarNodeArguments({ args }: { args: z.infer<typeof calendarNodeArguments> }): JSX.Element {
   return (
-    <Stack gap={4}>
-      <Chip label="Granularity" value={args.granularity} />
-      {args.date && <Chip label="Date" value={args.date} />}
-      <Chip label="Workspace ID" value={args.workspaceId} />
-    </Stack>
+    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+      Get or create the <Code>{args.granularity}</Code> calendar node
+      {args.date && (
+        <>
+          {" "}
+          for <Code>{args.date}</Code>
+        </>
+      )}
+      {" in workspace "}
+      <Code>{args.workspaceId}</Code>.
+    </Text>
   );
 }
 

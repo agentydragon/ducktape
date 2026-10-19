@@ -96,12 +96,12 @@ function PendingActionList({
                 onClick={() => setExpandedId(expanded ? null : request.id)}
               >
                 {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
-                <div className="agentplane-actions-sidebar-request-label">
+                <div className={`agentplane-actions-sidebar-request-label${expanded ? " is-expanded" : ""}`}>
                   <div className="agentplane-actions-sidebar-name">
                     {actionLabel === undefined ? `${request.action.group} / ${request.action.name}` : actionLabel}
                   </div>
                   {showRequestTitle && (
-                    <Text size="xs" lineClamp={1} title={request.title}>
+                    <Text size="xs" lineClamp={expanded ? undefined : 1} title={request.title}>
                       {request.title}
                     </Text>
                   )}
@@ -124,13 +124,22 @@ function PendingActionList({
             </div>
             {!expanded && decision !== null && <div className="agentplane-actions-sidebar-decision">{decision}</div>}
             {expanded && (
-              <Stack className="agentplane-actions-sidebar-preview" gap="xs">
+              <Stack className="agentplane-actions-sidebar-preview" gap="xs" data-operation-density="compact">
                 {request.external_grant && (
                   <Text size="xs" fw={600}>
                     Authenticated external caller
                   </Text>
                 )}
-                {openedPreview === undefined ? <ActionJson value={request.arguments} /> : openedPreview}
+                {openedPreview === undefined ? (
+                  <>
+                    <Text size="xs" c="dimmed">
+                      Details shown as recorded data
+                    </Text>
+                    <ActionJson value={request.arguments} clamp={false} />
+                  </>
+                ) : (
+                  openedPreview
+                )}
                 <Group justify="space-between" wrap="nowrap" gap="xs">
                   {decision ?? (
                     <Text size="xs" c="dimmed">

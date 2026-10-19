@@ -3,8 +3,7 @@ import { Anchor, Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { ActionText } from "../payload";
-import { Chip } from "./chips";
+import { ActionJson, ActionText } from "../payload";
 import {
   defineCallPreview,
   definePreview,
@@ -35,36 +34,58 @@ function DraftLabel(): JSX.Element {
 
 function DraftCollapsed({ args }: { args: DraftArguments }): JSX.Element {
   return (
-    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-      To {recipients(args)}
-    </Text>
+    <Stack gap="xs">
+      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+        To {recipients(args)}
+        {args.cc && args.cc.length > 0 ? ` · Cc ${args.cc.join(", ")}` : ""}
+        {args.bcc && args.bcc.length > 0 ? ` · Bcc ${args.bcc.join(", ")}` : ""}
+      </Text>
+      <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+        {args.subject || "(no subject)"}
+      </Text>
+      <Text size="sm" lineClamp={3} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+        {args.body || "(empty body)"}
+      </Text>
+      {args.thread_id && (
+        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+          Replying to thread {args.thread_id}
+        </Text>
+      )}
+    </Stack>
   );
 }
 
 function DraftOpened({ args }: { args: DraftArguments }): JSX.Element {
   return (
     <Stack gap="xs">
-      <Chip label="To" value={recipients(args)} />
-      {args.cc && args.cc.length > 0 && <Chip label="Cc" value={args.cc.join(", ")} />}
-      {args.bcc && args.bcc.length > 0 && <Chip label="Bcc" value={args.bcc.join(", ")} />}
-      {args.thread_id && <Chip label="Reply thread" value={args.thread_id} />}
-      <Text size="sm" lineClamp={3} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-        {args.body}
+      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+        To {recipients(args)}
       </Text>
+      {args.cc && args.cc.length > 0 && (
+        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+          Cc {args.cc.join(", ")}
+        </Text>
+      )}
+      {args.bcc && args.bcc.length > 0 && (
+        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+          Bcc {args.bcc.join(", ")}
+        </Text>
+      )}
+      {args.thread_id && (
+        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+          Replying to thread {args.thread_id}
+        </Text>
+      )}
+      <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+        {args.subject || "(no subject)"}
+      </Text>
+      <ActionText text={args.body} clamp={false} />
     </Stack>
   );
 }
 
 function DraftDetails({ args }: { args: DraftArguments }): JSX.Element {
-  return (
-    <Stack gap="xs">
-      <Chip label="To" value={recipients(args)} />
-      {args.cc && args.cc.length > 0 && <Chip label="Cc" value={args.cc.join(", ")} />}
-      {args.bcc && args.bcc.length > 0 && <Chip label="Bcc" value={args.bcc.join(", ")} />}
-      {args.thread_id && <Chip label="Reply thread" value={args.thread_id} />}
-      <ActionText text={args.body} />
-    </Stack>
-  );
+  return <DraftOpened args={args} />;
 }
 
 export const gmailDraftLabel: ArgumentsPreview = definePreview(draftArguments, DraftLabel);
@@ -93,31 +114,29 @@ function ThreadSearchLabel({ args }: { args: ThreadSearchArguments }): JSX.Eleme
 }
 
 function ThreadSearchCollapsed({ args }: { args: ThreadSearchArguments }): JSX.Element {
-  return args.q ? (
-    <Text size="sm" lineClamp={1}>
-      Search: <Code>{args.q}</Code>
-    </Text>
-  ) : (
-    <Text size="sm" c="dimmed">
-      Search all threads.
-    </Text>
-  );
-}
-
-function ThreadSearchOpened({ args }: { args: ThreadSearchArguments }): JSX.Element {
   return (
     <Stack gap="xs">
-      {args.q && <Chip label="Search" value={args.q} />}
-      {args.maxResults != null && <Chip label="Maximum results" value={args.maxResults} />}
-      {args.pageToken && <Chip label="Page token" value={args.pageToken} />}
-      {args.includeSpamTrash != null && <Chip label="Include spam and trash" value={String(args.includeSpamTrash)} />}
-      {!args.q && args.maxResults == null && !args.pageToken && args.includeSpamTrash == null && (
+      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+        {args.q ? (
+          <>
+            Search for <Code>{args.q}</Code>
+          </>
+        ) : (
+          "Search all threads"
+        )}
+        {args.pageToken ? " · continuation page" : ""}
+      </Text>
+      {args.includeSpamTrash === true && (
         <Text size="sm" c="dimmed">
-          Search all threads.
+          Including spam and trash
         </Text>
       )}
     </Stack>
   );
+}
+
+function ThreadSearchOpened({ args }: { args: ThreadSearchArguments }): JSX.Element {
+  return <ActionJson value={args} clamp={false} />;
 }
 
 export const gmailThreadSearchLabel: ArgumentsPreview = definePreview(threadSearchArguments, ThreadSearchLabel);
@@ -177,10 +196,20 @@ function DraftCall({ args, result }: CallPreviewProps<DraftArguments, DraftCallR
       ) : (
         <Text fw={600}>{subject}</Text>
       )}
-      <Chip label="To" value={recipients(args)} />
-      {args.cc && args.cc.length > 0 && <Chip label="Cc" value={args.cc.join(", ")} />}
-      {args.bcc && args.bcc.length > 0 && <Chip label="Bcc" value={args.bcc.join(", ")} />}
-      <ActionText text={args.body} />
+      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+        To {recipients(args)}
+      </Text>
+      {args.cc && args.cc.length > 0 && (
+        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+          Cc {args.cc.join(", ")}
+        </Text>
+      )}
+      {args.bcc && args.bcc.length > 0 && (
+        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+          Bcc {args.bcc.join(", ")}
+        </Text>
+      )}
+      <ActionText text={args.body} clamp={false} />
       {threadHref && (
         <Anchor href={threadHref} target="_blank" rel="noreferrer">
           Reply in Gmail thread

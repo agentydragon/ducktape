@@ -3,7 +3,6 @@ import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
-import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
 const eventsListArguments = z.strictObject({
@@ -16,7 +15,17 @@ export function offersCardDecisionButtonsEventsList(args: unknown): boolean {
 }
 
 function Events({ args }: { args: z.infer<typeof eventsListArguments> }): JSX.Element {
-  return <Chip label="field selector" value={args.fieldSelector ?? "all events"} />;
+  return (
+    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+      {args.fieldSelector ? (
+        <>
+          Show events matching <Code>{args.fieldSelector}</Code>.
+        </>
+      ) : (
+        "Show all events."
+      )}
+    </Text>
+  );
 }
 
 function EventsLabel({ args }: { args: z.infer<typeof eventsListArguments> }): JSX.Element {

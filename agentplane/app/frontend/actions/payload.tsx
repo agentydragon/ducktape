@@ -9,25 +9,32 @@ export function ActionText({
   text,
   language,
   heading,
+  clamp = true,
 }: {
   text: string;
   language?: Language;
   heading?: string;
+  clamp?: boolean;
 }): JSX.Element {
   const label = heading ?? "Action text";
+  const block = <CodeBlock text={text} language={language} />;
   return (
     <Stack gap={4}>
       <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }} data-operation-heading={heading}>
         {label}
       </Text>
-      <ClampedBlock maxHeightRem={OUTPUT_MAX_HEIGHT_REM} lines={lineCount(text)} label={label}>
-        <CodeBlock text={text} language={language} />
-      </ClampedBlock>
+      {clamp ? (
+        <ClampedBlock maxHeightRem={OUTPUT_MAX_HEIGHT_REM} lines={lineCount(text)} label={label}>
+          {block}
+        </ClampedBlock>
+      ) : (
+        block
+      )}
     </Stack>
   );
 }
 
-export function ActionJson({ value }: { value: unknown }): JSX.Element {
+export function ActionJson({ value, clamp = true }: { value: unknown; clamp?: boolean }): JSX.Element {
   const text = useMemo(() => JSON.stringify(value, null, 2), [value]);
-  return <ActionText text={text} language="json" />;
+  return <ActionText text={text} language="json" clamp={clamp} />;
 }

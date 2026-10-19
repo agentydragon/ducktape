@@ -16,7 +16,7 @@ const resourcesDeleteResult = z.literal("Resource deleted successfully");
 
 function Delete({ args }: { args: z.infer<typeof resourcesDeleteArguments> }): JSX.Element {
   return (
-    <Text size="sm">
+    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
       Use API version <Code>{args.apiVersion}</Code>
       {args.gracePeriodSeconds !== undefined && `; request a ${args.gracePeriodSeconds}s grace period`}
     </Text>

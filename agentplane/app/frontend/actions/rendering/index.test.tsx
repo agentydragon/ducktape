@@ -45,7 +45,7 @@ describe("Action presentation slots", () => {
       renderDetailsArguments({ group: "kubernetes_admin", name: "pods_list_in_namespace" }, args)
     );
 
-    expect(collapsed.textContent).toContain("Filters");
+    expect(collapsed.textContent).toContain("Matching pods where");
     expect(collapsed.textContent).not.toContain("namespace prod");
     expect(opened.textContent).toContain("field selector status.phase=Running");
     expect(opened.textContent).toContain("label selector app=web");
@@ -119,13 +119,15 @@ describe("Action presentation slots", () => {
     const listLabel = await mount(renderActionLabel({ group: "kubernetes_admin", name: "resources_list" }, listArgs));
     const listPane = await mount(renderPaneOpened({ group: "kubernetes_admin", name: "resources_list" }, listArgs));
     expect(listLabel.textContent).toContain("List Pod resources in namespace apps");
-    expect(listPane.textContent).toContain("label selector: app=web");
+    expect(listPane.textContent).toContain("label selector app=web");
+    expect(listPane.textContent).toContain("Using API version v1");
     expect(listPane.textContent).not.toContain("apps");
 
     const eventsArgs = { namespace: "apps", fieldSelector: "type=Warning" };
     const eventsLabel = await mount(renderActionLabel({ group: "kubernetes_admin", name: "events_list" }, eventsArgs));
     const eventsPane = await mount(renderPaneOpened({ group: "kubernetes_admin", name: "events_list" }, eventsArgs));
     expect(eventsLabel.textContent).toContain("List events in namespace apps");
+    expect(eventsPane.textContent).toContain("Show events matching");
     expect(eventsPane.textContent).toContain("type=Warning");
     expect(eventsPane.textContent).not.toContain("apps");
   });
@@ -156,10 +158,12 @@ describe("Action presentation slots", () => {
 
     expect(label.textContent).toContain("Gmail: Draft email");
     expect(collapsed.textContent).toContain("reader@example.com");
+    expect(collapsed.textContent).toContain("Release notes");
+    expect(collapsed.textContent).toContain("The release is ready.");
     expect(opened.textContent).toContain("copy@example.com");
     expect(opened.textContent).toContain("The release is ready.");
     expect(details.textContent).toContain("Please review it.");
-    expect(details.textContent).not.toContain("Release notes");
+    expect(details.textContent).toContain("Release notes");
 
     const result = parseCallToolResult({ content: [], structuredContent: { id: "draft-123" }, isError: false });
     if (result === null) throw new Error("the fixture is not a CallToolResult");
@@ -228,9 +232,21 @@ describe("Action presentation slots", () => {
 
     expect(label.textContent).toContain("Gmail: Search threads");
     expect(collapsed.textContent).toContain("from:alerts@example.com");
-    expect(opened.textContent).toContain("Maximum results: 5");
-    expect(opened.textContent).toContain("Include spam and trash");
-    expect(opened.textContent).toContain("false");
+    expect(collapsed.textContent).not.toContain("maxResults");
+    expect(collapsed.textContent).not.toContain("Including spam and trash");
+    expect(opened.textContent).toContain('"maxResults": 5');
+    expect(opened.textContent).toContain('"includeSpamTrash": false');
+
+    const includingSpamAndTrash = await mount(
+      renderPaneCollapsed(action, { q: "from:alerts@example.com", includeSpamTrash: true })
+    );
+    expect(includingSpamAndTrash.textContent).toContain("Including spam and trash");
+    expect(includingSpamAndTrash.textContent).toContain("Search for");
+    const continuationPage = await mount(
+      renderPaneCollapsed(action, { q: "from:alerts@example.com", pageToken: "secret-token" })
+    );
+    expect(continuationPage.textContent).toContain("continuation page");
+    expect(continuationPage.textContent).not.toContain("secret-token");
 
     const result = parseCallToolResult({
       content: [],
@@ -251,7 +267,6 @@ describe("Action presentation slots", () => {
     for (const [name, args, expected] of [
       ["products_list", { detail: "full" }, "Full Product records"],
       ["quantity_units_list", {}, "Quantity unit names"],
-      ["get_system_info", {}, "No arguments."],
     ] as const) {
       const action = { group: "grocy_sf", name };
       const opened = await mount(renderPaneOpened(action, args));
@@ -366,7 +381,7 @@ describe("Action presentation slots", () => {
 
   it.each([
     ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api" }, ["Read with API version apps/v1"]],
-    ["pods_log", { name: "api-0", tail: -1 }, ["container: (default)", "previous: no", "tail: -1"]],
+    ["pods_log", { name: "api-0", tail: -1 }, ['"tail": -1']],
   ] as const)(
     "uses the opened-pane argument widget for %s when optional fields are omitted",
     async (name, args, visible) => {
@@ -553,25 +568,19 @@ const cardDecisionButtonCases: Array<{
     group: "kubernetes_admin",
     name: "pods_list_in_namespace",
     args: { namespace: "prod", fieldSelector: "status.phase=Running", labelSelector: "app=web" },
-    visible: ["Filters", "status.phase=Running", "app=web"],
+    visible: ["Matching pods where", "status.phase=Running", "app=web"],
   },
   {
     group: "kubernetes_admin",
     name: "resources_list",
     args: { apiVersion: "v1", kind: "Pod", fieldSelector: "status.phase=Running", labelSelector: "app=web" },
-    visible: ["API version: v1", "status.phase=Running", "app=web"],
-  },
-  {
-    group: "kubernetes_admin",
-    name: "pods_get",
-    args: { name: "api-0", namespace: "apps" },
-    visible: ["No additional arguments"],
+    visible: ["Using API version v1", "status.phase=Running", "app=web"],
   },
   {
     group: "kubernetes_admin",
     name: "pods_log",
     args: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
-    visible: ["sidecar", "previous: yes", "tail: -1"],
+    visible: ['"container": "sidecar"', '"previous": true', '"tail": -1'],
   },
   {
     group: "kubernetes_admin",
@@ -583,16 +592,15 @@ const cardDecisionButtonCases: Array<{
     group: "kubernetes_admin",
     name: "events_list",
     args: { namespace: "prod", fieldSelector: "type=Warning" },
-    visible: ["field selector", "type=Warning"],
+    visible: ["Show events matching", "type=Warning"],
   },
   { group: "grocy_sf", name: "products_list", args: { detail: "full" }, visible: ["Full Product records"] },
   { group: "grocy_sf", name: "quantity_units_list", args: {}, visible: ["Quantity unit names"] },
-  { group: "grocy_sf", name: "get_system_info", args: {}, visible: ["No arguments."] },
   {
     group: "gmail",
     name: "threads_list",
     args: { q: "from:deployments@example.com", maxResults: 5 },
-    visible: ["from:deployments@example.com", "Maximum results"],
+    visible: ["from:deployments@example.com", '"maxResults": 5'],
   },
   {
     group: "github",
@@ -612,10 +620,9 @@ const cardDecisionButtonCases: Array<{
       "example/repo",
       "Update docs",
       "feature → devel",
-      "description: empty",
-      "draft: yes",
-      "maintainer edits: no",
-      "reviewer1",
+      "Draft pull request.",
+      "Do not allow maintainers to edit.",
+      "Request review from reviewer1.",
     ],
   },
 ];
@@ -628,6 +635,24 @@ describe("opened-pane renderers", () => {
       for (const value of visible) expect(container.textContent).toContain(value);
     }
   );
+
+  it("shows an explicitly supplied maintainer edit permission in compact and opened PR summaries", async () => {
+    const action = { group: "github", name: "create_pull_request" };
+    const args = {
+      owner: "example",
+      repo: "repo",
+      title: "Update docs",
+      head: "feature",
+      base: "devel",
+      body: "",
+      maintainer_can_modify: true,
+    };
+    const collapsed = await mount(renderPaneCollapsed(action, args));
+    const opened = await mount(renderPaneOpened(action, args));
+
+    expect(collapsed.textContent).toContain("Allow maintainers to edit the branch.");
+    expect(opened.textContent).toContain("Allow maintainers to edit the branch.");
+  });
 });
 
 describe("card decision buttons capability", () => {

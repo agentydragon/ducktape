@@ -139,16 +139,85 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
         await expect(section.get_by_text("Requested by", exact=False)).to_have_count(0)
         await expect(section.get_by_text("Check the exact call before approving.", exact=True)).to_have_count(0)
         await expect(section.get_by_text("app=demo")).to_be_visible()
-        await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
         await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
+        await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
     else:
-        await expect(section.get_by_text("Filters")).to_be_visible()
+        await expect(section.get_by_text("Matching pods where")).to_be_visible()
         await expect(
             section.locator(".agentplane-actions-sidebar-collapsed-preview").get_by_text("test-apps")
         ).to_have_count(0)
         await expect(section.get_by_text("test-apps", exact=True)).to_have_count(1)
         await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
-    await view.capture()
+        await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
+    await view.capture(target=section)
+
+
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
+@pytest.mark.parametrize(
+    ("group", "name", "arguments", "visible", "overview"),
+    [
+        (
+            "kubernetes_admin",
+            "pods_list_in_namespace",
+            {
+                "namespace": "test-namespace-" + "n" * 48,
+                "labelSelector": "app=" + "demo-" + "d" * 56,
+                "fieldSelector": "status.phase=Running," + "x" * 48,
+            },
+            ["test-namespace-", "label selector", "status.phase=Running"],
+            "Matching pods where",
+        ),
+        (
+            "gmail",
+            "threads_list",
+            {"q": "from:deployments@example.com " + "query-" * 12, "maxResults": 23},
+            ['"maxResults": 23', "from:deployments@example.com"],
+            "from:deployments@example.com",
+        ),
+        (
+            "kubernetes_admin",
+            "pods_log",
+            {
+                "name": "api-" + "pod-" * 12,
+                "namespace": "apps",
+                "container": "sidecar-" + "container-" * 8,
+                "previous": True,
+                "tail": -1,
+            },
+            ['"container": "sidecar-', '"previous": true', '"tail": -1'],
+            "Previous logs",
+        ),
+    ],
+    ids=["long-target-and-selectors", "gmail-query-limit", "previous-pod-logs"],
+)
+async def test_action_argument_layouts(
+    view: VisualPage,
+    app: AgentplaneFixture,
+    expanded: bool,
+    group: str,
+    name: str,
+    arguments: dict[str, object],
+    visible: list[str],
+    overview: str,
+) -> None:
+    await app.show_action_preview(group, name, arguments)
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    await _open_phone_navigation(page)
+    section = page.locator(".agentplane-actions-sidebar")
+    title = "inspect running demo pods" if name == "pods_list_in_namespace" else f"review {name.replace('_', ' ')}"
+    if expanded:
+        await section.get_by_role("button", name=f"Expand {title}").click()
+        for value in visible:
+            await expect(section.get_by_text(value, exact=False)).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
+    else:
+        await expect(section.get_by_text(overview, exact=False)).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
+    await view.capture(target=section)
 
 
 @DESKTOP_AND_MOBILE
@@ -227,8 +296,8 @@ async def test_sandbox_action_results(
             {"apiVersion": "v1", "kind": "Pod", "namespace": "apps", "labelSelector": "app=web"},
             "app=web",
         ),
-        ("kubernetes_admin", "pods_get", {"name": "web-0", "namespace": "apps"}, "No additional arguments"),
-        ("kubernetes_admin", "pods_log", {"name": "web-0", "previous": True, "tail": -1}, "previous: yes"),
+        ("kubernetes_admin", "pods_get", {"name": "web-0", "namespace": "apps"}, "Get Pod apps/web-0"),
+        ("kubernetes_admin", "pods_log", {"name": "web-0", "previous": True, "tail": -1}, '"tail": -1'),
         (
             "kubernetes_admin",
             "resources_delete",
@@ -285,7 +354,6 @@ async def test_sandbox_action_results(
         ("sandbox", "list", {}, "No arguments."),
         ("grocy_sf", "products_list", {"detail": "full"}, "Full Product records"),
         ("grocy_sf", "quantity_units_list", {}, "Quantity unit names"),
-        ("grocy_sf", "get_system_info", {}, "No arguments."),
         (
             "tana",
             "get_or_create_calendar_node",
@@ -316,7 +384,7 @@ async def test_sandbox_action_results(
         "tana-calendar-node",
     ],
 )
-async def test_compact_action_chips(
+async def test_compact_action_summaries(
     view: VisualPage, app: AgentplaneFixture, group: str, name: str, arguments: dict[str, object], visible: str
 ) -> None:
     await app.show_action_preview(group, name, arguments)
@@ -337,7 +405,7 @@ async def test_compact_action_chips(
     if group == "gmail" and name == "threads_list":
         await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("Gmail: Search threads")
         await expect(
-            section.locator(".agentplane-actions-sidebar-preview").get_by_text("Maximum results: 5", exact=True)
+            section.locator(".agentplane-actions-sidebar-preview").get_by_text('"maxResults": 5', exact=False)
         ).to_be_visible()
     if group == "grocy_sf":
         expected_label = {
@@ -353,15 +421,13 @@ async def test_compact_action_chips(
     await expect(section.get_by_role("link", name=f"View details for {title}")).to_be_visible()
     if group == "kubernetes_admin" and name in {"resources_get", "pods_list_in_namespace", "pods_get", "pods_log"}:
         await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
-    if group == "kubernetes_admin" and name == "pods_log":
-        await expect(section.get_by_text("container: (default)", exact=True)).to_be_visible()
     await view.capture(target=section)
 
 
 @pytest.mark.parametrize(
     ("group", "name"),
-    [("ssh", "list_targets"), ("uncatalogued", "unknown_action")],
-    ids=["unregistered-action", "unknown-action"],
+    [("ssh", "list_targets"), ("uncatalogued", "unknown_action"), ("kubernetes_admin", "resources_get")],
+    ids=["unregistered-action", "unknown-action", "schema-mismatch"],
 )
 async def test_action_argument_fallbacks_use_json_view(
     view: VisualPage, app: AgentplaneFixture, group: str, name: str
@@ -375,6 +441,8 @@ async def test_action_argument_fallbacks_use_json_view(
     await section.get_by_role("button", name=f"Expand {title}").click()
     preview = section.locator(".agentplane-actions-sidebar-preview")
     await expect(preview).to_contain_text('"vendor_field": "fixture"')
+    await expect(preview.get_by_text("Details shown as recorded data", exact=True)).to_be_visible()
+    await expect(section.get_by_role("button", name=f"Approve {title}")).to_have_count(0)
     await view.capture(target=section)
 
 
@@ -396,7 +464,9 @@ async def test_compact_pr_with_description_requires_review(view: VisualPage, app
     section = view.page.locator(".agentplane-actions-sidebar")
     await _open_phone_navigation(view.page)
     await section.get_by_role("button", name="Expand review create pull request").click()
-    await expect(section.get_by_text("description: open Review")).to_be_visible()
+    await expect(
+        section.get_by_text("Important PR description that must be read before approval.", exact=False)
+    ).to_be_visible()
     await expect(section.get_by_role("button", name="Approve review create pull request")).to_have_count(0)
     await expect(section.get_by_role("link", name="View details for review create pull request")).to_be_visible()
     await view.capture(target=section)
