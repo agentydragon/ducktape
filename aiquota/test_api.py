@@ -453,7 +453,7 @@ async def test_event_stream_heartbeats_and_disconnect_cleans_up(monkeypatch: pyt
         client.stream("GET", "/v1/events", headers={"Authorization": "Bearer test-bearer"}) as response,
     ):
         lines = response.aiter_lines().__aiter__()
-        assert (await _read_view(lines))["providers"]
+        assert (await _read_view(lines)).providers
         assert await anext(lines) == ": heartbeat"
         assert await anext(lines) == ""
         assert fetcher.calls == 1  # Heartbeats do not poll providers per client.
