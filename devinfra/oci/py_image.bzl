@@ -67,7 +67,7 @@ _PYTHON_RUNTIME_REPO = "rules_python++python+python_3_14_x86_64-unknown-linux-gn
 _PYTHON_RUNTIME_ROOT = "devinfra/oci/python_runtime/runtime_image_bin.runfiles"
 _PYTHON_INTERPRETER_GROUP = "\\\\.runfiles/[^/]*python_?[0-9]+_[0-9]+(_[0-9]+)?_[a-z0-9_]+[_-](unknown|apple|pc)[_-][^/]*/"
 
-def shared_py_image_layers(name, binary, owner = "1000", group = "1000", preserve_symlinks = False):
+def shared_py_image_layers(name, binary, owner = "1000", group = "1000", aspect_venv = True):
     """Return OCI layers with the binary's interpreter resolved from the shared runtime tree.
 
     Keep each binary's runfiles tree and alias its interpreter repository to the shared
@@ -78,7 +78,8 @@ def shared_py_image_layers(name, binary, owner = "1000", group = "1000", preserv
         binary: Local label of the py_binary.
         owner: UID for image files.
         group: GID for image files.
-        preserve_symlinks: Retain build-time symlinks used by rules_python's script bootstrap.
+        aspect_venv: Whether the binary uses Aspect's startup-created venv. Native
+            rules_python interpreter links are supplied by the runtime alias layer.
 
     Returns:
         Ordered labels for shared interpreter, binary default/packages, and the runfiles alias.
@@ -89,23 +90,30 @@ def shared_py_image_layers(name, binary, owner = "1000", group = "1000", preserv
         group = group,
         owner = owner,
         layer_groups = {"binary_interpreter": _PYTHON_INTERPRETER_GROUP},
-        preserve_symlinks = preserve_symlinks,
+        # Recreate only the native interpreter link in the runtime alias layer.
+        exclude = "\\\\.venv/bin/python3$$" if not aspect_venv else None,
     )
 
     pkg = native.package_name()
     binary_name = binary.split(":")[-1]
     alias_name = name + "_runtime_alias"
+    symlinks = {
+        "{}/{}.runfiles/{}".format(pkg, binary_name, _PYTHON_RUNTIME_REPO): "/{}/{}".format(
+            _PYTHON_RUNTIME_ROOT,
+            _PYTHON_RUNTIME_REPO,
+        ),
+    }
+    if not aspect_venv:
+        symlinks["{}/{}.runfiles/_main/{}/_{}.venv/bin/python3".format(pkg, binary_name, pkg, binary_name)] = "/{}/{}/bin/python3".format(
+            _PYTHON_RUNTIME_ROOT,
+            _PYTHON_RUNTIME_REPO,
+        )
     pkg_tar(
         name = alias_name,
         create_parents = False,
         owner = owner + "." + group,
         package_dir = "/",
-        symlinks = {
-            "{}/{}.runfiles/{}".format(pkg, binary_name, _PYTHON_RUNTIME_REPO): "/{}/{}".format(
-                _PYTHON_RUNTIME_ROOT,
-                _PYTHON_RUNTIME_REPO,
-            ),
-        },
+        symlinks = symlinks,
     )
 
     return [

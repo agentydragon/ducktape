@@ -491,10 +491,10 @@ py_library(
 # (devinfra/ci/image_targets.json) and run by the Deployment in cluster/k8s/agentplane-staging.
 app_layers_oci_tars = shared_py_image_layers(
     name = "app_layers",
+    aspect_venv = False,
     binary = ":main_bin",
     group = "1000",
     owner = "1000",
-    preserve_symlinks = True,
 )
 
 py_image_bytecode_layer(
