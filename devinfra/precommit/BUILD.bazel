@@ -65,3 +65,9 @@ py_library(
         "@pypi//pygit2",
     ],
 )
+
+py_library(
+    name = "run_kubeconform",
+    srcs = ["run_kubeconform.py"],
+    deps = ["@pypi//pyyaml"],
+)
