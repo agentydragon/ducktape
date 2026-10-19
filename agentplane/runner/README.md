@@ -42,10 +42,10 @@ The production build and release target is `//agentplane/runner:runner_release`.
 The binary includes the supervisor and SQLite; the native Claude/Codex executables,
 workspace tools and CA certificates are supplied by the runtime image.
 
-The Python implementation and Rust helper remain test-only reference implementations
-for existing in-process integration tests. Bazel prevents production targets from
-linking them. Shared real-harness scenarios in `test_go_native.py` and subprocess
-restart scenarios in `test_restart.py` exercise the Go executable.
+The integration fixtures launch this executable and drive its public control and ingress
+protocols. `test_turns.py`, `test_subagents.py`, and `test_restart.py` exercise the real
+native harnesses; App, History, Gateway, and Notification integration tests use the
+same Go process.
 
 ## Release and image inputs
 
@@ -101,14 +101,13 @@ runs the runner as its own process so a crash takes its harnesses with it. No te
 image (<image.nix>), which carries nixpkgs' harnesses rather than these pinned ones; its header
 says what to run after a bump.
 
-`test_journal.py` gates real SQLite commits and injects failure/cancellation before or after commit,
-checking transaction visibility, atomic coalesced receipts, immutable ids, and replay without cursor
-reuse. `test_session.py` drives the stdout reader with a scripted process: a burst commits once, a
-lone line does not wait for more, and nothing is written to the harness or handed to a request
-before the frames it follows commit. `test_journal_process.py` kills a real writer and replays its
-exact published prefix from a new process; `test_restart.py` also exercises the real runner and
-both native harnesses. These are not physical power-loss tests. `test_store.py` retains a separate
-fsync-boundary storage image for session metadata and directory discovery.
+`go/persistence_test.go` checks retained-state compatibility, command deduplication,
+transaction publication, coalesced receipts, rollback, and seals. `go/session_test.go`
+checks native reply publication after translation commits and final frames at EOF.
+`go/transport_test.go` exercises real loopback gRPC replay, durable acknowledgements,
+the ingress window, and seal ordering. `go/process_test.go` checks parent-death fencing,
+native descendants, inherited state ownership, and cancellation during blocked input.
+These are not physical power-loss tests.
 
 ## Native continuation evidence
 

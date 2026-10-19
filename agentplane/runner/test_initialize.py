@@ -8,10 +8,10 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest_bazel
+from google.protobuf.json_format import Parse
 
 from agentplane.proto import runner_pb2
-from agentplane.runner.config import RunnerConfig
-from agentplane.runner.initialization import InitializationLog
+from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.driver import RunnerDriver, running
 from agentplane.runner.testing.gateway import Gateway
 
@@ -19,24 +19,23 @@ from agentplane.runner.testing.gateway import Gateway
 # gazelle:include_dep @pypi//protobuf
 
 
-def bootstrapped(config: RunnerConfig, script: str) -> RunnerConfig:
+def bootstrapped(config: RunnerTestConfig, script: str) -> RunnerTestConfig:
     return replace(config, launch=replace(config.launch, bootstrap=script))
 
 
 def recorded(state: Path) -> list[runner_pb2.InitializationEvent]:
-    log = InitializationLog(state / "initialization" / "events.jsonl")
-    try:
-        return list(log.since(0))
-    finally:
-        log.close()
+    return [
+        Parse(line, runner_pb2.InitializationEvent())
+        for line in (state / "initialization" / "events.jsonl").read_text().splitlines()
+    ]
 
 
 async def test_bootstrap_runs_before_the_first_harness_and_not_again(
-    config: RunnerConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
+    config: RunnerTestConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
 ) -> None:
     script = "mkdir -p workspaces\nprintf 'ready\\n' | tee -a workspaces/public-coder-ready\n"
-    async with running(bootstrapped(config, script), gateway) as runner:
-        driver = RunnerDriver(gateway, runner)
+    async with running(bootstrapped(config, script), gateway):
+        driver = RunnerDriver(gateway)
         first = await driver.attach("bootstrap-1", spec=spec)
         second = await driver.attach("bootstrap-2", spec=spec)
 
@@ -50,15 +49,15 @@ async def test_bootstrap_runs_before_the_first_harness_and_not_again(
 
 
 async def test_open_acknowledges_while_runner_bootstrap_is_still_held(
-    config: RunnerConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
+    config: RunnerTestConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
 ) -> None:
     # The script blocks writing to this pipe until the test reads it, so its first step is observable.
     config.state_dir.mkdir()
     os.mkfifo(config.state_dir / "started")
     script = "printf 'first\\n' > started\nwhile [ ! -f continue ]; do sleep 0.01; done\nprintf 'second\\n' >&2\n"
-    async with running(bootstrapped(config, script), gateway) as runner:
+    async with running(bootstrapped(config, script), gateway):
         assert await asyncio.to_thread((config.state_dir / "started").read_text) == "first\n"
-        driver = RunnerDriver(gateway, runner)
+        driver = RunnerDriver(gateway)
         assert await driver.list_sessions() == []
         opening = asyncio.create_task(driver.attach("early-1", spec=spec))
         opened = await opening
@@ -73,7 +72,7 @@ async def test_open_acknowledges_while_runner_bootstrap_is_still_held(
 
 
 async def test_an_initialized_sandbox_records_a_bootstrap_conflict_after_open(
-    config: RunnerConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
+    config: RunnerTestConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
 ) -> None:
     script = "printf 'first\\n' | tee -a initialized\n"
     async with running(bootstrapped(config, script), gateway):
@@ -93,7 +92,7 @@ async def test_an_initialized_sandbox_records_a_bootstrap_conflict_after_open(
 
 
 async def test_a_failed_bootstrap_settles_admitted_commands_and_never_reruns(
-    config: RunnerConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
+    config: RunnerTestConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
 ) -> None:
     script = "echo run >> runs\necho broken >&2\nexit 7\n"
     async with running(bootstrapped(config, script), gateway):

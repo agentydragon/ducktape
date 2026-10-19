@@ -18,7 +18,7 @@ Three consumers: the live-capture probe in <../capture/README.md>, which runs a 
 real model; the [scripted harness tests](#scripted-harness-tests), which drive the same run facades
 against a loopback model the test controls; and the runner in <../runner/README.md>, which reuses
 the frame constructors and launch configuration behind its harness-neutral protocol over its own
-`harness_process.py` pipe.
+supervised native-process pipe (`../runner/go/process.go` and `../runner/go/supervisor.go`).
 
 ## Scripted harness tests
 

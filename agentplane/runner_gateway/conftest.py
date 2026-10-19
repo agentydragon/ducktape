@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
-from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
+from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, runner_gateway, spec, workspace
 
 
 @pytest.fixture

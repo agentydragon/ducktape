@@ -1,7 +1,7 @@
 """A generated Runner gRPC peer for tests that exercise Python clients and App consumers.
 
-This peer delegates to the Runner's own ``RunnerService``. It deliberately does not
-implement Gateway authentication, Sandbox lookup, or identity fencing.
+This peer forwards calls through the already connected native Runner control tunnel. It
+deliberately does not implement Gateway authentication, Sandbox lookup, or identity fencing.
 """
 
 import asyncio
@@ -17,31 +17,25 @@ from google.protobuf.message import Message
 
 from agentplane.grpc.serving import serving
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner_pb2
-from agentplane.runner.control import RunnerService
-from agentplane.runner.runner import Runner
+from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
 
 TEST_TOKEN = "test-runner-peer-token"
 
 
 class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
-    """The generated Runner service surface, optionally backed by a native Runner."""
+    """The generated Runner service surface, optionally backed by a native process."""
 
     def __init__(self, *, record_metadata: bool) -> None:
-        self.runner: RunnerService | None = None
+        self.runner: RunningRunner | None = None
         self.record_metadata = record_metadata
         self.metadata_calls: list[tuple[str, dict[str, tuple[str, ...]]]] = []
         self._list_sessions_rejections: list[tuple[grpc.StatusCode, str]] = []
 
     @contextmanager
-    def using_runner(self, runner: Runner) -> Iterator[None]:
-        """Temporarily delegate RPCs to the supplied real Runner."""
-        with self.using_service(RunnerService(runner)):
-            yield
-
-    @contextmanager
-    def using_service(self, service: RunnerService) -> Iterator[None]:
-        previous, self.runner = self.runner, service
+    def using_runner(self, runner: RunningRunner) -> Iterator[None]:
+        """Temporarily delegate RPCs through the supplied runner's control connection."""
+        previous, self.runner = self.runner, runner
         try:
             yield
         finally:
@@ -66,52 +60,70 @@ class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
         request: Request,
         context: grpc.aio.ServicerContext,
         response_type: type[Response],
-        invoke: Callable[[RunnerService, Request, grpc.aio.ServicerContext], Awaitable[Response]],
+        invoke: Callable[[runner_control_pb2_grpc.RunnerAsyncStub, Request], Awaitable[Response]],
     ) -> Response:
         self._record(method, context)
         if method == "ListSessions" and self._list_sessions_rejections:
             code, details = self._list_sessions_rejections.pop(0)
             await context.abort(code, details)
-        if self.runner is None:
+        runner = self.runner
+        if runner is None:
             if method == "ListSessions":
                 return response_type()
             await context.abort(grpc.StatusCode.NOT_FOUND, "test peer has no Runner")
-        return await invoke(self.runner, request, context)
+            raise AssertionError("gRPC abort returned")
+        try:
+            return await invoke(await runner.control(), request)
+        except grpc.aio.AioRpcError as error:
+            await context.abort(error.code(), error.details())
+            raise AssertionError("gRPC abort returned")
 
     @override
     async def ListSessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         return await self._forward(
-            "ListSessions", request, context, runner_pb2.ListSessionsResponse, RunnerService.ListSessions
+            "ListSessions", request, context, runner_pb2.ListSessionsResponse, lambda stub, req: stub.ListSessions(req)
         )
 
     @override
     async def GetStatus(
         self, request: runner_pb2.GetStatusRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.RunnerStatus:
-        return await self._forward("GetStatus", request, context, runner_pb2.RunnerStatus, RunnerService.GetStatus)
+        return await self._forward(
+            "GetStatus", request, context, runner_pb2.RunnerStatus, lambda stub, req: stub.GetStatus(req)
+        )
 
     @override
     async def OpenSession(
         self, request: runner_control_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.OpenSessionResponse:
         return await self._forward(
-            "OpenSession", request, context, runner_control_pb2.OpenSessionResponse, RunnerService.OpenSession
+            "OpenSession",
+            request,
+            context,
+            runner_control_pb2.OpenSessionResponse,
+            lambda stub, req: stub.OpenSession(req),
         )
 
     @override
     async def Quiesce(
         self, request: runner_pb2.QuiesceRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.QuiesceResponse:
-        return await self._forward("Quiesce", request, context, runner_pb2.QuiesceResponse, RunnerService.Quiesce)
+        return await self._forward(
+            "Quiesce", request, context, runner_pb2.QuiesceResponse, lambda stub, req: stub.Quiesce(req)
+        )
 
     @override
     async def SubmitInput(
         self, request: runner_control_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.SubmitInputResponse:
         return await self._forward(
-            "SubmitInput", request, context, runner_control_pb2.SubmitInputResponse, RunnerService.SubmitInput
+            "SubmitInput",
+            request,
+            context,
+            runner_control_pb2.SubmitInputResponse,
+            lambda stub, req: stub.SubmitInput(req),
         )
 
     @override
@@ -119,7 +131,11 @@ class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
         self, request: runner_control_pb2.ChangeModelRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.ChangeModelResponse:
         return await self._forward(
-            "ChangeModel", request, context, runner_control_pb2.ChangeModelResponse, RunnerService.ChangeModel
+            "ChangeModel",
+            request,
+            context,
+            runner_control_pb2.ChangeModelResponse,
+            lambda stub, req: stub.ChangeModel(req),
         )
 
     @override
@@ -131,7 +147,7 @@ class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
             request,
             context,
             runner_control_pb2.ChangeReasoningEffortResponse,
-            RunnerService.ChangeReasoningEffort,
+            lambda stub, req: stub.ChangeReasoningEffort(req),
         )
 
     @override
@@ -139,7 +155,11 @@ class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
         self, request: runner_control_pb2.InterruptTurnRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.InterruptTurnResponse:
         return await self._forward(
-            "InterruptTurn", request, context, runner_control_pb2.InterruptTurnResponse, RunnerService.InterruptTurn
+            "InterruptTurn",
+            request,
+            context,
+            runner_control_pb2.InterruptTurnResponse,
+            lambda stub, req: stub.InterruptTurn(req),
         )
 
 
@@ -155,20 +175,19 @@ class Endpoint:
         )
 
     @contextmanager
-    def using_runner(self, runner: Runner) -> Iterator[None]:
+    def using_runner(self, runner: RunningRunner) -> Iterator[None]:
         with self.peer.using_runner(runner):
             yield
 
 
 @asynccontextmanager
 async def runner_peer(
-    token_file: Path, *, runner: Runner | None = None, record_metadata: bool = False, token: str = TEST_TOKEN
+    token_file: Path, *, runner: RunningRunner | None = None, record_metadata: bool = False, token: str = TEST_TOKEN
 ) -> AsyncIterator[Endpoint]:
     """Serve the generated Runner service on an ephemeral loopback port."""
     await asyncio.to_thread(token_file.write_text, token)
     peer = RunnerPeer(record_metadata=record_metadata)
-    if runner is not None:
-        peer.runner = RunnerService(runner)
+    peer.runner = runner
     server = grpc.aio.server()
     runner_control_pb2_grpc.add_RunnerServicer_to_server(peer, server)
     async with serving(server, "127.0.0.1:0", grace_s=0) as port:

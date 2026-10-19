@@ -37,6 +37,7 @@ go_test(
     name = "runner_test",
     srcs = glob(["*_test.go"]),
     embed = [":runner"],
+    exec_properties = {"test.dockerUser": "0:0"},
     deps = [
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",

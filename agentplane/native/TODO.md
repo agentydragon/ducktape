@@ -62,7 +62,7 @@ uuid-less prompt as negative control.
 `native/claude/wire.py:234` describes `UserFrame` as "the replay echo of an input, and tool
 results" (2.1.252). On 2.1.233 compaction also emits a non-replay text `user` frame marked
 `isSynthetic: true` (`haku/cli_protocol/protocol.md:383-388`), a field `UserFrame` does not model.
-By reading, `runner/claude.py` `_on_user` derives nothing from a text-only non-replay frame, so the
+By reading, `runner/go/claude.go` derives nothing from a text-only non-replay frame, so the
 summary would reach only the `Native` log. Settle with the scripted compaction test above.
 
 ## Notification ack id for driver-hosted MCP

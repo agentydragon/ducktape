@@ -3,28 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import os
 import shlex
 import shutil
-import signal
 from collections.abc import Awaitable, Callable
-from contextlib import suppress
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 
-from agentplane.native.claude.testing.messages import AnthropicMessages
-from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import event_pb2, runner_pb2
-from agentplane.runner.harness_process import HarnessProcess
-from agentplane.runner.store import StateOwner
-from agentplane.runner.testing import events, launches
+from agentplane.runner.testing import events
 from agentplane.runner.testing.driver import RunnerDriver
 from agentplane.runner.testing.gateway import Gateway
-from agentplane.runner.testing.process_fixtures import RunnerProcess, runner_environment, wait_for_exit
+from agentplane.runner.testing.process_fixtures import RunnerProcess
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -147,35 +141,20 @@ def driver(gateway: Gateway) -> RunnerDriver:
 
 
 @pytest.fixture
-def contend(
-    harness: runner_pb2.Harness, endpoint: AnthropicMessages | OpenAIResponses, tmp_path: Path, gateway: Gateway
-) -> Callable[[Path], Awaitable[None]]:
-    """Start a runner process on a state directory another process owns: it must exit, refused,
-    without ever connecting."""
+def contend() -> Callable[[Path], Awaitable[None]]:
+    """A competing nonblocking flock must fail while the runner owns its state directory."""
 
     async def attempt(state_dir: Path) -> None:
-        connections = gateway.control.connections
-        contender = await asyncio.create_subprocess_exec(
-            *launches.runner_command(harness, endpoint.origin, state_dir=state_dir, gateway=gateway.endpoint),
-            env=runner_environment(tmp_path / "home"),
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,
-        )
+        descriptor = os.open(state_dir / ".agentplane-runner-owner", os.O_RDONLY)
         try:
-            # Whichever happens first decides: an ownership regression connects, a refusal exits.
-            exited = asyncio.create_task(contender.communicate())
-            connected = asyncio.create_task(gateway.control.wait_connected(connections + 1))
-            await asyncio.wait({exited, connected}, return_when=asyncio.FIRST_COMPLETED)
-            connected.cancel()
-            assert exited.done(), "a contender connected while another process owns the state"
-            _, stderr = exited.result()
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            raise AssertionError("a contender acquired the runner state lock")
         finally:
-            if contender.returncode is None:
-                os.killpg(contender.pid, signal.SIGKILL)
-                await contender.wait()
-        assert contender.returncode != 0
-        assert "runner state directory" in stderr.decode()
-        assert "already owned" in stderr.decode()
+            os.close(descriptor)
 
     return attempt
 
@@ -218,76 +197,6 @@ async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement
     assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [command_id]
     await replacement.until(events.turn_completed)
     events.assert_contiguous([*first.seen, *replacement.seen])
-
-
-async def test_state_fence_survives_native_leader_exit_until_its_child_group_is_stopped(
-    contend: Callable[[Path], Awaitable[None]], start_runner: Callable[..., Awaitable[RunnerProcess]], tmp_path: Path
-) -> None:
-    """A background native tool retains the inherited fence after its harness leader exits."""
-    state_dir = tmp_path / "state"
-    owner = StateOwner(state_dir)
-    process = HarnessProcess(
-        [str(get_required_path(own_repo_rlocation("agentplane/runner/harness_background_child_testonly")))],
-        cwd=tmp_path,
-        environment={},
-        state_owner_descriptor=owner.descriptor,
-        process_isolation=None,
-    )
-    tool_pid: int | None = None
-    owner_descriptor_closed = False
-    try:
-        await process.start()
-        tool_pid = int((await anext(process.line_batches()))[0])
-        # Closing a dead runner's descriptor does not unlock the shared open file description
-        # inherited by the supervisor/native group. ``StateOwner.close`` is intentionally not
-        # used: its orderly-shutdown unlock would release that shared lock for every descendant.
-        os.close(owner.descriptor)
-        owner_descriptor_closed = True
-
-        await contend(state_dir)
-
-        # SIGUSR1 is the supervisor's parent-death signal. The native leader exits on its
-        # graceful group SIGTERM, while this tool ignores it; the supervisor must then force-stop
-        # the remaining group before its inherited lock can be released.
-        os.killpg(process.process.pid, signal.SIGUSR1)
-        await asyncio.wait_for(wait_for_exit(tool_pid), timeout=10)
-        # A successor can acquire the retained state only after the supervisor has dropped the
-        # same inherited descriptor. This is stronger than waiting on its stdout-owning process.
-        successor = await start_runner()
-        await successor.stop()
-    finally:
-        if not owner_descriptor_closed:
-            owner.close()
-        if tool_pid is not None:
-            with suppress(ProcessLookupError):
-                os.killpg(process.native_pid, signal.SIGKILL)
-
-
-async def test_native_leader_exit_stops_background_tool(tmp_path: Path) -> None:
-    """Leader exit must fence tools even while the runner (this test process) stays alive."""
-    owner = StateOwner(tmp_path / "state")
-    process = HarnessProcess(
-        [str(get_required_path(own_repo_rlocation("agentplane/runner/harness_background_child_testonly")))],
-        cwd=tmp_path,
-        environment={},
-        state_owner_descriptor=owner.descriptor,
-        process_isolation=None,
-    )
-    try:
-        await process.start()
-        try:
-            tool_pid = int((await anext(process.line_batches()))[0])
-            # Only the leader dies: no stop/parent-death signal reaches its supervisor.
-            os.kill(process.native_pid, signal.SIGKILL)
-            async with asyncio.timeout(10):
-                await wait_for_exit(tool_pid)
-                assert await process.wait() == 128 + signal.SIGKILL
-        finally:
-            with suppress(ProcessLookupError):
-                os.killpg(process.native_pid, signal.SIGKILL)
-            await process.wait()
-    finally:
-        owner.close()
 
 
 async def test_runner_sigkill_fences_an_active_native_group_before_successor_dispatch(

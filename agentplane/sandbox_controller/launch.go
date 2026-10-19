@@ -19,8 +19,8 @@ const (
 	// LaunchMountPath is the directory the runner container finds LaunchFile in. Must equal the
 	// runner's --launch-file directory in cluster/cdk8s/agentplane/runner_sandbox.py.
 	LaunchMountPath = "/run/agentplane/sandbox"
-	// LaunchFile is the key of the Sandbox's launch ConfigMap that the runner reads
-	// (agentplane/runner/sandbox_launch.py). A VM guest finds the same file on the disk of serial
+	// LaunchFile is the key of the Sandbox's launch ConfigMap that the Go runner reads.
+	// A VM guest finds the same file on the disk of serial
 	// LaunchDiskSerial, which agentplane/runner/vm.nix links into /run/agentplane.
 	LaunchFile       = "launch.json"
 	LaunchDiskSerial = "agentplane-launch"

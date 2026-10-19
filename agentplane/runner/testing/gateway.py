@@ -12,7 +12,6 @@ from typing import override
 
 import grpc
 
-from agentplane.background_task import background
 from agentplane.grpc.serving import serving
 from agentplane.grpc.tunnel import TunnelCaller
 from agentplane.proto import (
@@ -23,17 +22,11 @@ from agentplane.proto import (
     runner_ingress_pb2,
     runner_ingress_pb2_grpc,
 )
-from agentplane.runner.config import ServiceEndpoint
-from agentplane.runner.control import RunnerControlClient, RunnerService
-from agentplane.runner.ingress import IngressPusher
-from agentplane.runner.reconnect import StreamTiming
-from agentplane.runner.runner import Runner
+from agentplane.sandboxes.guest_config import Endpoint
 
 # gazelle:include_dep @pypi//protobuf
 
 BEARER = "test-runner-bearer"
-# Prompt enough that an in-process runner connects at once and survives a test's idle stretches.
-TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.05, backoff_max_s=0.5)
 
 
 class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
@@ -140,23 +133,67 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
 
 
 class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
-    """Commits each Session's entries as they arrive and acknowledges every frame."""
+    """Observes ingress commits, optionally forwarding the runner stream to History."""
 
     def __init__(self) -> None:
         self.committed: dict[str, list[event_log_pb2.EventEntry]] = {}
         self.sealed: dict[str, int] = {}
         self._sealing_incarnation: dict[str, str] = {}
+        self._cursor: dict[str, int] = {}
         self._changed = asyncio.Condition()
+        self._forward_target: tuple[str, str] | None = None
+        self._forward_pause_lock = asyncio.Lock()
+        self._forward_pause_count = 0
+        self._forward_resumed = asyncio.Event()
+        self._forward_resumed.set()
+        self._route_changed = asyncio.Event()
+
+    def forward_to(self, target: str, bearer: str) -> None:
+        """Forward future Push streams to a real ingress and relay its acknowledgements."""
+        if not target or not bearer:
+            raise ValueError("an ingress target and bearer are required")
+        # Local acknowledgements are not History commits. Start observer cursors from scratch;
+        # the runner reconnects and the real ingress supplies the authoritative resume cursor.
+        self.committed.clear()
+        self.sealed.clear()
+        self._sealing_incarnation.clear()
+        self._cursor.clear()
+        self._forward_target = (target, bearer)
+        self._route_changed.set()
+
+    def stop_forwarding(self) -> None:
+        self._forward_target = None
+        self._route_changed.set()
+
+    @asynccontextmanager
+    async def forwarding_paused(self) -> AsyncIterator[None]:
+        """Hold entry and seal frames before History while the independent control stream runs."""
+        async with self._forward_pause_lock:
+            self._forward_pause_count += 1
+            self._forward_resumed.clear()
+        try:
+            yield
+        finally:
+            async with self._forward_pause_lock:
+                self._forward_pause_count -= 1
+                if self._forward_pause_count == 0:
+                    self._forward_resumed.set()
+
+    async def _wait_forwarding_resumed(self) -> None:
+        while True:
+            async with self._forward_pause_lock:
+                if self._forward_pause_count == 0:
+                    return
+                resumed = self._forward_resumed
+            await resumed.wait()
 
     def since(self, session_id: str, cursor: int) -> list[event_log_pb2.EventEntry]:
-        return self.committed.get(session_id, [])[cursor:]
+        return [entry for entry in self.committed.get(session_id, []) if entry.cursor > cursor]
 
     async def wait_beyond(self, session_id: str, cursor: int) -> None:
         """Until an entry follows `cursor`, or the Session's seal is committed."""
         async with self._changed:
-            await self._changed.wait_for(
-                lambda: len(self.committed.get(session_id, [])) > cursor or session_id in self.sealed
-            )
+            await self._changed.wait_for(lambda: self._cursor.get(session_id, 0) > cursor or session_id in self.sealed)
 
     async def wait_sealed(self, session_id: str) -> None:
         async with asyncio.timeout(30), self._changed:
@@ -166,27 +203,62 @@ class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
     async def Push(  # type: ignore[override]
         self, request_iterator: AsyncIterator[runner_ingress_pb2.PushFrame], context: grpc.aio.ServicerContext
     ) -> None:
-        announce = (await anext(request_iterator)).announce
+        first = await anext(request_iterator)
+        announce = first.announce
+        if announce is None:
+            raise ValueError("the first ingress frame must be Announce")
         session_id = announce.session_id
         # A continuation under another incarnation replaces the seal, as the History Service does.
-        if announce.HasField("incarnation_uid") and self._sealing_incarnation.get(
-            session_id, announce.incarnation_uid
-        ) != (announce.incarnation_uid):
+        if (
+            announce.HasField("incarnation_uid")
+            and self._sealing_incarnation.get(session_id, announce.incarnation_uid) != announce.incarnation_uid
+        ):
             del self.sealed[session_id]
         committed = self.committed.setdefault(session_id, [])
+        self._cursor.setdefault(session_id, max((entry.cursor for entry in committed), default=0))
+
+        if self._forward_target is not None:
+            incarnation_uid = announce.incarnation_uid if announce.HasField("incarnation_uid") else None
+            await self._forward(first, request_iterator, context, session_id, incarnation_uid)
+            return
 
         async def acknowledge() -> None:
             await context.write(
-                runner_ingress_pb2.Acknowledgement(cursor=len(committed), sealed=session_id in self.sealed)
+                runner_ingress_pb2.Acknowledgement(cursor=self._cursor[session_id], sealed=session_id in self.sealed)
             )
 
         await acknowledge()
-        async for frame in request_iterator:
+        frames = request_iterator.__aiter__()
+        while True:
+            if self._forward_target is not None:
+                # The runner will reconnect and this next call will be proxied to History.
+                return
+            self._route_changed.clear()
+            next_frame = asyncio.create_task(anext(frames))
+            route_change = asyncio.create_task(self._route_changed.wait())
+            done, _ = await asyncio.wait((next_frame, route_change), return_when=asyncio.FIRST_COMPLETED)
+            if route_change in done and self._forward_target is not None:
+                next_frame.cancel()
+                await asyncio.gather(next_frame, return_exceptions=True)
+                return
+            route_change.cancel()
+            await asyncio.gather(route_change, return_exceptions=True)
+            if next_frame not in done:
+                next_frame.cancel()
+                await asyncio.gather(next_frame, return_exceptions=True)
+                continue
+            try:
+                frame = await next_frame
+            except StopAsyncIteration:
+                return
             match frame.WhichOneof("frame"):
-                case "entry" if frame.entry.cursor > len(committed):
-                    if frame.entry.cursor != len(committed) + 1:
-                        raise ValueError(f"session {session_id}: {frame.entry.cursor=} skips past {len(committed)=}")
+                case "entry" if frame.entry.cursor > self._cursor[session_id]:
+                    if frame.entry.cursor != self._cursor[session_id] + 1:
+                        raise ValueError(
+                            f"session {session_id}: {frame.entry.cursor=} skips past {self._cursor[session_id]=}"
+                        )
                     committed.append(frame.entry)
+                    self._cursor[session_id] = frame.entry.cursor
                 case "sealed":
                     self.sealed[session_id] = frame.sealed.cursor
                     if frame.sealed.HasField("incarnation_uid"):
@@ -195,12 +267,73 @@ class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
             async with self._changed:
                 self._changed.notify_all()
 
+    async def _forward(
+        self,
+        first: runner_ingress_pb2.PushFrame,
+        request_iterator: AsyncIterator[runner_ingress_pb2.PushFrame],
+        context: grpc.aio.ServicerContext,
+        session_id: str,
+        incarnation_uid: str | None,
+    ) -> None:
+        target = self._forward_target
+        if target is None:
+            raise RuntimeError("History ingress forwarding was disabled before the stream started")
+        address, bearer = target
+        pending: dict[int, event_log_pb2.EventEntry] = {}
+        pending_seal: runner_ingress_pb2.PushFrame | None = None
+
+        async def frames() -> AsyncIterator[runner_ingress_pb2.PushFrame]:
+            nonlocal pending_seal
+            yield first
+            async for frame in request_iterator:
+                match frame.WhichOneof("frame"):
+                    case "entry":
+                        await self._wait_forwarding_resumed()
+                        entry = event_log_pb2.EventEntry()
+                        entry.CopyFrom(frame.entry)
+                        pending[entry.cursor] = entry
+                    case "sealed":
+                        await self._wait_forwarding_resumed()
+                        pending_seal = runner_ingress_pb2.PushFrame()
+                        pending_seal.CopyFrom(frame)
+                    case _:
+                        pass
+                yield frame
+
+        async with grpc.aio.insecure_channel(address) as channel:
+            call = runner_ingress_pb2_grpc.RunnerIngressStub(channel).Push(
+                frames(), metadata=(("authorization", f"Bearer {bearer}"),)
+            )
+            async for acknowledgement in call:
+                previous = self._cursor.get(session_id, 0)
+                if acknowledgement.cursor < previous:
+                    raise ValueError(
+                        f"session {session_id}: upstream acknowledgement "
+                        f"{acknowledgement.cursor} moved behind {previous}"
+                    )
+                committed = self.committed.setdefault(session_id, [])
+                for cursor in sorted(cursor for cursor in pending if previous < cursor <= acknowledgement.cursor):
+                    committed.append(pending.pop(cursor))
+                for cursor in tuple(pending):
+                    if cursor <= acknowledgement.cursor:
+                        pending.pop(cursor)
+                self._cursor[session_id] = acknowledgement.cursor
+                if acknowledgement.sealed:
+                    self.sealed[session_id] = acknowledgement.cursor
+                    if pending_seal is not None and pending_seal.sealed.HasField("incarnation_uid"):
+                        self._sealing_incarnation[session_id] = pending_seal.sealed.incarnation_uid
+                    elif incarnation_uid is not None:
+                        self._sealing_incarnation[session_id] = incarnation_uid
+                await context.write(acknowledgement)
+                async with self._changed:
+                    self._changed.notify_all()
+
 
 @dataclass(frozen=True)
 class Gateway:
     control: ControlListener
     ingress: IngressStore
-    endpoint: ServiceEndpoint
+    endpoint: Endpoint
 
 
 @asynccontextmanager
@@ -210,31 +343,4 @@ async def serve_gateway() -> AsyncIterator[Gateway]:
     runner_control_pb2_grpc.add_RunnerControlServicer_to_server(control, server)
     runner_ingress_pb2_grpc.add_RunnerIngressServicer_to_server(ingress, server)
     async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-        yield Gateway(control, ingress, ServiceEndpoint(target=f"127.0.0.1:{port}", bearer=BEARER))
-
-
-@asynccontextmanager
-async def dialing(runner: Runner, gateway: Gateway) -> AsyncIterator[None]:
-    """`runner` keeps its control stream to `gateway` and pushes its Events there, as the runner process
-    does with `--control-target` and `--ingress-target`. Requests go to it once the block starts: a
-    previous runner's connection may not have been seen to end yet."""
-    target, bearer = gateway.endpoint.target, gateway.endpoint.bearer
-    connections = gateway.control.connections
-    async with (
-        background(
-            RunnerControlClient(
-                RunnerService(runner),
-                target=target,
-                bearer=bearer,
-                boot_id=runner.boot_id,
-                timing=TIMING,
-                adopt_incarnation=runner.adopt_incarnation,
-                facts=runner.facts,
-                facts_changed=runner.facts_changed,
-            ).run(),
-            name="runner control stream",
-        ),
-        background(IngressPusher(runner, target=target, bearer=bearer, timing=TIMING).run(), name="ingress push"),
-    ):
-        await gateway.control.wait_connected(connections + 1)
-        yield
+        yield Gateway(control, ingress, Endpoint(target=f"127.0.0.1:{port}", bearer=BEARER))

@@ -6,7 +6,7 @@ pushing to the ingress; the server only reads it, in read-only transactions as i
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import cast
 
@@ -25,9 +25,7 @@ from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.postgres.wakeups import notify
-from agentplane.runner.ingress import IngressPusher
-from agentplane.runner.reconnect import StreamTiming
-from agentplane.runner.runner import Runner
+from agentplane.runner.testing.process import RunningRunner
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 from util.testing.sqlalchemy_engines import managed_async_engine
@@ -120,9 +118,10 @@ async def history_service(
 
 
 @asynccontextmanager
-async def ingest(database_url: str, runner: Runner, *, writer: ServiceAccountRef = WRITER) -> AsyncIterator[None]:
-    """Push every Session `runner` journals into the history database through the ingress, as a
-    deployed runner does."""
+async def ingest(
+    database_url: str, runner: RunningRunner, *, writer: ServiceAccountRef = WRITER
+) -> AsyncIterator[None]:
+    """Forward Go Runner ingress through its test Gateway to the History Service."""
     async with _history_engine(database_url) as engine:
         server = grpc.aio.server()
         add_ingress(
@@ -141,20 +140,11 @@ async def ingest(database_url: str, runner: Runner, *, writer: ServiceAccountRef
             server,
         )
         async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-            task = asyncio.create_task(
-                IngressPusher(
-                    runner,
-                    target=f"127.0.0.1:{port}",
-                    bearer=WRITER_TOKEN,
-                    timing=StreamTiming(backoff_initial_s=0.05, backoff_max_s=0.5),
-                ).run()
-            )
+            runner.gateway.ingress.forward_to(f"127.0.0.1:{port}", WRITER_TOKEN)
             try:
                 yield
             finally:
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await task
+                runner.gateway.ingress.stop_forwarding()
 
 
 async def announce_fold_commit(database_url: str) -> None:

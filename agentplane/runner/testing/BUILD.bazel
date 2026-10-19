@@ -38,6 +38,12 @@ py_library(
 )
 
 py_library(
+    name = "config",
+    srcs = ["config.py"],
+    deps = ["//agentplane/sandboxes:launch"],
+)
+
+py_library(
     name = "events",
     srcs = ["events.py"],
     deps = [
@@ -51,7 +57,7 @@ py_library(
     name = "failure_journal",
     srcs = ["failure_journal.py"],
     deps = [
-        "//agentplane/runner",
+        ":process",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -64,16 +70,16 @@ py_library(
     deps = [
         ":claude_model",
         ":codex_model",
+        ":config",
         ":driver",
         ":failure_journal",
         ":gateway",
         ":launches",
+        ":process",
         ":scripted_model",
         "//agentplane/native/claude/testing:messages",
         "//agentplane/native/codex/testing:responses",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/runner",
-        "//agentplane/runner:config",
         "@pypi//protobuf",
         "@pypi//pytest",
     ],
@@ -82,15 +88,18 @@ py_library(
 py_library(
     name = "launches",
     srcs = ["launches.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: native executable selected by the test launch
+        "@claude_code_cli_linux_x64//:claude",  # keep: native executable selected by the test launch
+    ],
     deps = [
+        ":config",
         "//agentplane/native/claude/testing:model",
         "//agentplane/native/codex/testing:model",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:config",
-        "//agentplane/runner:model_config",
-        "//agentplane/runner:sandbox_launch",
+        "//agentplane/sandboxes:guest_config",
+        "//agentplane/sandboxes:launch",
         "//util/bazel:runfiles",
-        "@pypi//httpx",
         "@pypi//protobuf",
     ],
 )
@@ -102,11 +111,6 @@ py_library(
 )
 
 py_library(
-    name = "storage_image",
-    srcs = ["storage_image.py"],
-)
-
-py_library(
     name = "codex_rollout",
     srcs = ["codex_rollout.py"],
 )
@@ -115,13 +119,13 @@ py_library(
     name = "driver",
     srcs = ["driver.py"],
     deps = [
+        ":config",
         ":gateway",
+        ":process",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/runner",
-        "//agentplane/runner:config",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -132,7 +136,6 @@ py_library(
     name = "gateway",
     srcs = ["gateway.py"],
     deps = [
-        "//agentplane:background_task",
         "//agentplane/grpc:serving",
         "//agentplane/grpc:tunnel",
         "//agentplane/proto:event_log_pb2",
@@ -141,36 +144,9 @@ py_library(
         "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/proto:runner_ingress_pb2",
         "//agentplane/proto:runner_ingress_pb2_grpc",
-        "//agentplane/runner",
-        "//agentplane/runner:config",
-        "//agentplane/runner:control",
-        "//agentplane/runner:ingress",
-        "//agentplane/runner:reconnect",
+        "//agentplane/sandboxes:guest_config",
         "@pypi//grpcio",
         "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "adapters",
-    srcs = ["adapters.py"],
-    deps = [
-        "//agentplane/proto:event_pb2",
-        "//agentplane/runner:adapter",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "sessions",
-    srcs = ["sessions.py"],
-    deps = [
-        "//agentplane/runner:adapter",
-        "//agentplane/runner:config",
-        "//agentplane/runner:harness",
-        "//agentplane/runner:journal",
-        "//agentplane/runner:session",
-        "//agentplane/runner:store",
     ],
 )
 
@@ -185,5 +161,22 @@ py_library(
         "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "process",
+    srcs = ["process.py"],
+    data = ["//agentplane/runner/go/cmd:agentplane-runner"],  # keep: the production subprocess
+    deps = [
+        ":config",
+        ":gateway",
+        ":launches",
+        ":process_fixtures",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_control_pb2_grpc",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/sandboxes:guest_config",
+        "//util/testing:undeclared_outputs",
     ],
 )

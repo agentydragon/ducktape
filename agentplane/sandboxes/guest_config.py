@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, ValidationInfo, field_serializer, field_validator
 
 CA_BUNDLE = Path("/run/agentplane/ca-certificates.crt")
 
@@ -28,8 +27,8 @@ class GuestConfig(BaseModel):
     version: Literal[1]
     control: Endpoint
     ingress: Endpoint
-    llm_base_url: str = Field(min_length=1)
-    proxy_url: str = Field(min_length=1)
+    llm_base_url: AnyHttpUrl
+    proxy_url: AnyHttpUrl
     platform_instructions: str = Field(min_length=1, description="Standing instructions for every Session.")
     console_autologin: bool = Field(
         default=False,
@@ -38,22 +37,18 @@ class GuestConfig(BaseModel):
 
     @field_validator("llm_base_url", "proxy_url")
     @classmethod
-    def http_origin(cls, value: str, info: ValidationInfo) -> str:
-        parsed = urlsplit(value)
+    def http_origin(cls, value: AnyHttpUrl, info: ValidationInfo) -> AnyHttpUrl:
         if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.path not in {"", "/"}
-            or parsed.query
-            or parsed.fragment
+            value.username is not None
+            or value.password is not None
+            or value.path not in {None, "/"}
+            or value.query
+            or value.fragment
+            or value.port == 0
         ):
             raise ValueError(f"{info.field_name} must be an HTTP(S) origin URL")
-        try:
-            port = parsed.port
-        except ValueError as error:
-            raise ValueError(f"{info.field_name} has an invalid port") from error
-        if port == 0:
-            raise ValueError(f"{info.field_name} must not use port 0")
-        return value.rstrip("/")
+        return value
+
+    @field_serializer("llm_base_url", "proxy_url", when_used="json")
+    def serialize_origin(self, value: AnyHttpUrl) -> str:
+        return str(value).rstrip("/")

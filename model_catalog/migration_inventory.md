@@ -77,7 +77,7 @@ The settled boundaries are:
   `RUNNER_CONTEXT_OVERRIDES` into ingress-owned configuration, not runner environment
   or guest-config budget maps. `agentplane/llm_ingress/models.py` owns the shared
   `ModelConfig` contract; `settings.py` owns ingress configuration.
-- `agentplane/runner/model_config.py` performs the authenticated lookup. Runner
+- `agentplane/runner/go/config.go` performs the authenticated lookup. Runner
   configuration selects the harness endpoint/credential, and session handling applies
   the resolved budget in the native adapter's vocabulary. The
   [client-budget description](client_budgets.md#codex-and-agentplane) owns these semantics.

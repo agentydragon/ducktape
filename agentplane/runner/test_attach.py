@@ -12,6 +12,7 @@ import pytest_bazel
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events
 from agentplane.runner.testing.driver import RunnerDriver, SessionSealedError, refusal
+from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -107,7 +108,7 @@ async def test_followers_share_events_and_a_command_delivered_twice_at_once_runs
 
 
 async def test_shutdown_leaves_the_conversation_dormant_until_the_next_input(
-    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    runner: RunningRunner, driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     first = await driver.attach("shutdown-1", spec=spec)
     await first.submit_input("input-1", "Reply with exactly: SEED_OK")
@@ -115,7 +116,7 @@ async def test_shutdown_leaves_the_conversation_dormant_until_the_next_input(
     await model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
     observer = await driver.attach("shutdown-1", after_cursor=first.cursor)
-    await driver.shutdown("shutdown-1")
+    await runner.restart()
     exited = await first.until(events.is_kind("harness_exited"))
     assert exited.event.harness_exited.stopped_by_runner
     await first.drain_until_end()
@@ -159,13 +160,13 @@ async def test_seal_stops_the_running_harness_and_ends_live_followers(
 
 
 async def test_resume_sends_the_model_the_reasoning_of_the_previous_harness(
-    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    runner: RunningRunner, driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     first = await driver.attach("reasoning-1", spec=spec)
     await first.submit_input("input-1", "Reply with exactly: SEED_OK")
     await model.reply(await model.request(), Reasoning("SEED_THOUGHT"), Text("SEED_OK"))
     await first.until(events.turn_completed)
-    await driver.shutdown("reasoning-1")
+    await runner.restart()
     await first.until(events.is_kind("harness_exited"))
     await first.drain_until_end()
 

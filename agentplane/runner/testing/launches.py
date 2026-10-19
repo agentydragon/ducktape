@@ -7,14 +7,12 @@ import os
 from collections.abc import Sequence
 from pathlib import Path
 
-import httpx
-
 from agentplane.native.claude.testing import model as claude_model
 from agentplane.native.codex.testing import model as codex_model
 from agentplane.proto import runner_pb2
-from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig, ServiceEndpoint
-from agentplane.runner.model_config import HttpModelConfigResolver
-from agentplane.runner.sandbox_launch import SandboxIdentity, SandboxLaunch
+from agentplane.runner.testing.config import NativeLaunch, RunnerTestConfig, SandboxLaunch
+from agentplane.sandboxes.guest_config import Endpoint
+from agentplane.sandboxes.launch import SandboxIdentity
 from util.bazel.runfiles import get_required_path
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -23,7 +21,6 @@ from util.bazel.runfiles import get_required_path
 CLAUDE_BINARY = "claude_code_cli_linux_x64/claude"
 CODEX_BINARY = "agentplane_codex_cli_linux_x64/bin/codex"
 RUNNER_BINARY = "_main/agentplane/runner/go/cmd/agentplane-runner_/agentplane-runner"
-GO_RUNNER_BINARY = "_main/agentplane/runner/go/cmd/agentplane-runner_/agentplane-runner"
 TOKEN = "test-key"
 PLATFORM_INSTRUCTIONS = "Test platform guidance."
 SANDBOX = SandboxIdentity(namespace="test-sandboxes", name="test-sandbox", uid="test-sandbox-uid")
@@ -51,28 +48,22 @@ def environment(home: Path) -> dict[str, str]:
     }
 
 
-def unconfigured_models() -> HttpModelConfigResolver:
-    """An ingress that configures no model, so every session uses its harness's defaults."""
-    return HttpModelConfigResolver(transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=b"null")))
-
-
-def config(harness: runner_pb2.Harness, endpoint: str, *, state_dir: Path, home: Path) -> RunnerConfig:
-    return RunnerConfig(
+def config(harness: runner_pb2.Harness, endpoint: str, *, state_dir: Path, home: Path) -> RunnerTestConfig:
+    return RunnerTestConfig(
         state_dir=state_dir,
         launch=SANDBOX_LAUNCH,
         harness_environment=environment(home),
-        model_config_resolver=unconfigured_models(),
         claude=claude_launch(endpoint) if harness == runner_pb2.HARNESS_CLAUDE else None,
         codex=codex_launch(endpoint) if harness == runner_pb2.HARNESS_CODEX else None,
     )
 
 
-def claude_launch(endpoint: str) -> ClaudeLaunch:
-    return ClaudeLaunch(binary=get_required_path(CLAUDE_BINARY), base_url=endpoint, auth_token=TOKEN)
+def claude_launch(endpoint: str) -> NativeLaunch:
+    return NativeLaunch(binary=get_required_path(CLAUDE_BINARY), base_url=endpoint, token=TOKEN)
 
 
-def codex_launch(endpoint: str) -> CodexLaunch:
-    return CodexLaunch(binary=get_required_path(CODEX_BINARY), base_url=f"{endpoint}/v1", api_key=TOKEN)
+def codex_launch(endpoint: str) -> NativeLaunch:
+    return NativeLaunch(binary=get_required_path(CODEX_BINARY), base_url=f"{endpoint}/v1", token=TOKEN)
 
 
 def runner_command(
@@ -80,7 +71,7 @@ def runner_command(
     endpoint: str,
     *,
     state_dir: Path,
-    gateway: ServiceEndpoint,
+    gateway: Endpoint,
     test_debug_checkpoint: tuple[str, str] | None = None,
     bootstrap: str | None = None,
     codex_binary: Path | None = None,
@@ -108,9 +99,47 @@ def runner_command(
         command += ["--codex-binary", str(codex_binary or codex.binary), "--openai-base-url", codex.base_url]
     else:
         raise ValueError(f"unsupported {harness=}")
-    for entry in harness_env:
+    for entry in ("HOME", "PATH", "NO_PROXY", *harness_env):
         command += ["--harness-env", entry]
     if test_debug_checkpoint is not None:
         name, command_id = test_debug_checkpoint
         command += ["--test-debug-checkpoint-name", name, "--test-debug-checkpoint-command-id", command_id]
     return command
+
+
+def command(config: RunnerTestConfig, *, control: Endpoint, ingress: Endpoint) -> list[str]:
+    """Serialize test launch values into the production executable's CLI."""
+    config.state_dir.parent.mkdir(parents=True, exist_ok=True)
+    launch_file = config.state_dir.parent / f"{config.state_dir.name}-launch.json"
+    launch_file.write_text(
+        json.dumps({"sandbox": config.launch.sandbox.model_dump(), "bootstrap": config.launch.bootstrap})
+    )
+    instructions = config.state_dir.parent / f"{config.state_dir.name}-instructions.md"
+    instructions.write_text(config.launch.platform_instructions)
+    result = [
+        str(get_required_path(RUNNER_BINARY)),
+        "--state-dir",
+        str(config.state_dir),
+        "--launch-file",
+        str(launch_file),
+        "--platform-instructions-file",
+        str(instructions),
+        "--control-target",
+        control.target,
+        "--control-bearer",
+        control.bearer,
+        "--ingress-target",
+        ingress.target,
+        "--ingress-bearer",
+        ingress.bearer,
+    ]
+    if config.claude is not None:
+        result += ["--claude-binary", str(config.claude.binary), "--anthropic-base-url", config.claude.base_url]
+    if config.codex is not None:
+        result += ["--codex-binary", str(config.codex.binary), "--openai-base-url", config.codex.base_url]
+    for name, value in config.harness_environment.items():
+        result += ["--harness-env", f"{name}={value}"]
+    if config.debug_checkpoint is not None:
+        name, command_id = config.debug_checkpoint
+        result += ["--test-debug-checkpoint-name", name, "--test-debug-checkpoint-command-id", command_id]
+    return result

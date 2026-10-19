@@ -7,7 +7,6 @@ call report to fixture teardown.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import shutil
@@ -18,7 +17,7 @@ from pathlib import Path
 import pytest
 from google.protobuf.json_format import MessageToDict
 
-from agentplane.runner.runner import Runner
+from agentplane.runner.testing.process import RunningRunner
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -63,25 +62,24 @@ class FailureEvidence:
         self.directory.mkdir(parents=True, exist_ok=True)
         (self.directory / name).write_text(json.dumps(data, indent=2, sort_keys=True))
 
-    def copy_native_history(self, runner: Runner) -> None:
+    def copy_native_history(self, runner: RunningRunner) -> None:
         """Copy each session's harness-owned history (`claude/projects`, `codex/sessions`)."""
-        for session_id, session in runner.sessions.items():
+        for directory in (runner.state_dir / "sessions").glob("*"):
+            session_id = directory.name
             for dialect, history in (("claude", "projects"), ("codex", "sessions")):
-                source = session.directory / dialect / history
+                source = directory / dialect / history
                 if source.exists():
                     shutil.copytree(source, self.directory / session_id / dialect / history, dirs_exist_ok=True)
 
-    async def capture_native_journal(self, runner: Runner) -> None:
+    async def capture_native_journal(self, runner: RunningRunner) -> None:
         """Write a bounded snapshot of each session's native journal."""
         sessions: dict[str, list[dict[str, object]]] = {}
-        for session_id, session in runner.sessions.items():
-            # Bounded: a wedged journal writer holds the lock this read waits on.
-            async with asyncio.timeout(3):
-                entries = await session.journal.since(0, limit=512)
-            sessions[session_id] = [MessageToDict(entry, preserving_proto_field_name=True) for entry in entries]
+        for directory in (runner.state_dir / "sessions").glob("*"):
+            entries = runner.entries(directory.name)[:512]
+            sessions[directory.name] = [MessageToDict(entry, preserving_proto_field_name=True) for entry in entries]
         self.write_json("native-journal.json", sessions)
 
-    async def preserve_runner(self, runner: Runner) -> None:
+    async def preserve_runner(self, runner: RunningRunner) -> None:
         """Keep the runner's native history files and journal snapshot.
 
         Each capture degrades on its own, so a broken history copy still leaves the journal.

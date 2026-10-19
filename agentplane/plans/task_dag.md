@@ -816,7 +816,7 @@ nothing connects them:
 
 - the unit in `agentplane/runner/vm.nix`: `MemoryHigh = "6G"`, `MemoryMax = "7G"`, `CPUQuota = "700%"`,
   `TasksMax = 1024`;
-- the delegated groups in `agentplane/runner/cgroups.py`: aggregate `memory.max` 4 GiB with
+- the delegated groups in `agentplane/runner/go/cgroups.go`: aggregate `memory.max` 4 GiB with
   `cpu.max` 400000/100000 (4 cores) and `pids.max` 768, per-process 3 GiB / 3 cores / 512.
 
 On this 1536Mi / 1 vCPU guest the unit is live — read `memory.max` 7516192768 and

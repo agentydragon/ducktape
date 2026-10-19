@@ -277,15 +277,14 @@ direction alone.
 
 ## Harness process, store and Session identity
 
-Current Agentplane code creates one `HarnessProcess` inside a runner `Session`; the Session record
-stores one Claude session ID or Codex thread ID, and its state directory holds that harness's
-persistent data. Claude's `CLAUDE_CONFIG_DIR` and Codex's `CODEX_HOME` are below the per-Session
-store. A runner restart can create a new process and resume the native conversation from that store.
-This is the current implementation, not an invariant that one process must always own exactly one
-Agentplane Session. See [`session.py`](../runner/session.py),
-[`harness_process.py`](../runner/harness_process.py),
-[`store.py`](../runner/store.py), and the adapters
-([Claude](../runner/claude.py), [Codex](../runner/codex.py)).
+Current Agentplane code creates one supervised native process inside each Go runner `Session`; the
+Session record stores one Claude session ID or Codex thread ID, and its state directory holds that
+harness's persistent data. Claude's `CLAUDE_CONFIG_DIR` and Codex's `CODEX_HOME` are below the
+per-Session store. A runner restart can create a new process and resume the native conversation from
+that store. This is the current implementation, not an invariant that one process must always own
+exactly one Agentplane Session. See [`session.go`](../runner/go/session.go),
+[`process.go`](../runner/go/process.go), [`store.go`](../runner/go/store.go), and the adapters
+([Claude](../runner/go/claude.go), [Codex](../runner/go/codex.go)).
 
 The current lifecycle is Session-scoped: `Runner` keeps a map of `Session` objects; each Session's
 `ensure_running()` creates its own `HarnessProcess` and adapter using that Session's directory, and
@@ -386,9 +385,9 @@ the possibly orphaned native data for reconciliation. A lost response after the 
 commit resolves by the same public ID. Claude's current adapter chooses a native ID before launch;
 that narrower path does not solve the harness-chosen-ID crash window in general. Specify the
 reservation/mapping format, native reconciliation proof, and failure status before implementation.
-Today [`Session._start`](../runner/session.py) writes the native ID only after adapter handshake;
-[`CodexAdapter`](../runner/codex.py) starts a native thread during that handshake, and
-[`ClaudeAdapter`](../runner/claude.py) selects an ID before launch but also persists it afterward.
+Today [`Session.startHarness`](../runner/go/session.go) writes the native ID only after adapter handshake;
+[`CodexAdapter`](../runner/go/codex.go) starts a native thread during that handshake, and
+[`ClaudeAdapter`](../runner/go/claude.go) selects an ID before launch but also persists it afterward.
 Persisting Claude's chosen ID before launch can narrow its case; Codex still needs a proven recovery
 path for an ID assigned by the harness.
 

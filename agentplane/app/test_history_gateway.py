@@ -18,9 +18,9 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.backend import ingest
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
-from agentplane.runner.runner import Runner
+from agentplane.proto import command_pb2, runner_control_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.runner.testing import launches
+from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.testing.runner_peer import runner_peer
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
@@ -56,7 +56,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     event_logs: SeededEventLogStore,
     content: ContentStore,
     database_updates: WakeupListener,
-    runner: Runner,
+    runner: RunningRunner,
     spec: runner_pb2.SessionSpec,
     model: ScriptedModel,
     service_history_db_url: str,
@@ -101,12 +101,11 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
                 with attempt:
                     assert receipt.admission in await event_logs.events(thread, limit=1000)
             await model.reply(await model.request(), Text("FIRST"))
-            journal = runner.sessions[str(thread)].journal
             async for attempt in AsyncRetrying(
                 stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
             ):
                 with attempt:
-                    first_turn = await journal.since(0, limit=1000)
+                    first_turn = runner.entries(str(thread))
                     assert any(entry.event.WhichOneof("observation") == "turn_completed" for entry in first_turn)
             snapshot = await event_logs.feed_state(thread)
             assert snapshot is not None
@@ -118,7 +117,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
             assert len(active.processes) == 1
             starts = [entry for entry in first_turn if entry.event.WhichOneof("observation") == "harness_started"]
             assert starts[-1].event.harness_started.resumed is False
-            await runner.sessions[str(thread)].shutdown()
+            await runner.restart()
             stopped = await runner_client.status()
             assert not stopped.processes
             (stopped_session,) = [row for row in stopped.sessions if row.session_id == str(thread)]
@@ -146,7 +145,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
                 stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
             ):
                 with attempt:
-                    native = await journal.since(0, limit=1000)
+                    native = runner.entries(str(thread))
                     starts = [entry for entry in native if entry.event.WhichOneof("observation") == "harness_started"]
                     assert len(starts) == 2
                     assert starts[0].event.harness_started.resumed is False
@@ -162,34 +161,31 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
             (resumed_session,) = [row for row in resumed.sessions if row.session_id == str(thread)]
             assert resumed_session.native_session_id == native_session_id
             assert len(resumed.processes) == 1
-            await runner.sessions[str(thread)].shutdown()
+            await runner.restart()
             async for attempt in AsyncRetrying(
                 stop=stop_after_delay(15), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
             ):
                 with attempt:
-                    native = await journal.since(0, limit=1000)
+                    native = runner.entries(str(thread))
                     archived = await event_logs.events(thread, limit=1000)
                     assert archived == native
                     assert any(entry.event.HasField("harness_exited") for entry in archived)
 
 
-async def test_runner_client_does_not_fall_back_after_peer_stops(
-    live_index: LiveIndex, tmp_path: Path, runner: Runner
-) -> None:
-    async with runner_peer(tmp_path / "gateway-token", runner=runner) as endpoint:
+async def test_runner_client_does_not_fall_back_after_peer_stops(live_index: LiveIndex, tmp_path: Path) -> None:
+    async with runner_peer(tmp_path / "gateway-token") as endpoint:
         remote = endpoint.client()
         directory = RunnerDirectory(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []
     # Each call through the Sandbox destination dials the peer anew, here after it stopped.
     with pytest.raises(ServiceError):
         await directory.client(SANDBOX).list_sessions()
-    assert not runner.sessions
 
 
 async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
     live_index: LiveIndex,
     tmp_path: Path,
-    runner: Runner,
+    runner: RunningRunner,
     spec: runner_pb2.SessionSpec,
     model: ScriptedModel,
     event_logs: SeededEventLogStore,
@@ -197,9 +193,11 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
     async with runner_peer(tmp_path / "gateway-token", runner=runner) as endpoint:
         remote = endpoint.client()
         session_id = str(uuid4())
-        session = await runner.open_session(session_id, spec, None)
-        await session.command(
-            command_pb2.Command(command_id="resume-without-registry", submit_input=command_pb2.SubmitInput(text="hi"))
+        await (await runner.control()).OpenSession(
+            runner_control_pb2.OpenSessionRequest(session_id=session_id, spec=spec)
+        )
+        await (await runner.control()).SubmitInput(
+            runner_control_pb2.SubmitInputRequest(session_id=session_id, command_id="first", text="hi")
         )
         await model.reply(await model.request(), Text("hello"))
         directory = RunnerDirectory(live_index, remote)
@@ -216,7 +214,7 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
         native_session_id = active.native_session_id
         assert native_session_id
         assert len(status.processes) == 1
-        await session.shutdown()
+        await runner.kill_harness(session_id)
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
         ):
@@ -228,7 +226,6 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
         (dormant,) = [row for row in status.sessions if row.session_id == session_id]
         assert dormant.execution_state == runner_pb2.SESSION_EXECUTION_STATE_DORMANT
         assert dormant.native_session_id == native_session_id
-        journal = session.journal
 
         async with runner_proxy_backed_dispatcher(directory, event_logs, tmp_path / "dispatcher-token") as dispatcher:
             receipt = await dispatcher.unary(
@@ -244,7 +241,7 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
                 stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
             ):
                 with attempt:
-                    entries = await journal.since(0, limit=1000)
+                    entries = runner.entries(session_id)
                     starts = [entry for entry in entries if entry.event.WhichOneof("observation") == "harness_started"]
                     assert len(starts) == 2
                     assert starts[0].event.harness_started.resumed is False

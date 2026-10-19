@@ -7,7 +7,6 @@ Only the model fixture knows the harness dialect.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, cast
@@ -17,14 +16,14 @@ import pytest
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import runner_pb2
-from agentplane.runner.config import RunnerConfig
-from agentplane.runner.runner import Runner
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.claude_model import ClaudeModel
 from agentplane.runner.testing.codex_model import CodexModel
+from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.driver import RunnerDriver
 from agentplane.runner.testing.failure_journal import FailureEvidence
-from agentplane.runner.testing.gateway import Gateway, dialing, serve_gateway
+from agentplane.runner.testing.gateway import Gateway, serve_gateway
+from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.scripted_model import ScriptedModel
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -73,31 +72,33 @@ def spec(harness: runner_pb2.Harness, workspace: Path) -> runner_pb2.SessionSpec
 
 
 @pytest.fixture
-def config(harness: runner_pb2.Harness, endpoint: ModelEndpoint, tmp_path: Path) -> RunnerConfig:
+def config(harness: runner_pb2.Harness, endpoint: ModelEndpoint, tmp_path: Path) -> RunnerTestConfig:
     return launches.config(harness, endpoint.origin, state_dir=tmp_path / "state", home=tmp_path / "home")
 
 
 @pytest.fixture
 async def runner(
-    request: pytest.FixtureRequest, config: RunnerConfig, caplog: pytest.LogCaptureFixture
-) -> AsyncIterator[Runner]:
-    """A started runner whose native evidence a failed test keeps in its undeclared outputs."""
-    caplog.set_level(logging.INFO, logger="httpx")
-    async with Runner(config) as started:
-        await started.startup()
+    request: pytest.FixtureRequest, config: RunnerTestConfig, runner_gateway: Gateway
+) -> AsyncIterator[RunningRunner]:
+    """The production Go runner; failed tests retain its native evidence."""
+    async with RunningRunner(config, runner_gateway) as started:
         yield started
         if (evidence := FailureEvidence.for_failed_call(request)) is not None:
             await evidence.preserve_runner(started)
 
 
 @pytest.fixture
-async def gateway() -> AsyncIterator[Gateway]:
+async def runner_gateway() -> AsyncIterator[Gateway]:
     async with serve_gateway() as gateway:
         yield gateway
 
 
 @pytest.fixture
-async def driver(runner: Runner, gateway: Gateway) -> AsyncIterator[RunnerDriver]:
-    """Drives `runner`, which dials `gateway` for the duration of the test."""
-    async with dialing(runner, gateway):
-        yield RunnerDriver(gateway, runner)
+def gateway(runner_gateway: Gateway) -> Gateway:
+    return runner_gateway
+
+
+@pytest.fixture
+def driver(runner: RunningRunner) -> RunnerDriver:
+    """Drive the running Go executable through its control tunnel."""
+    return RunnerDriver(runner.gateway)

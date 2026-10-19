@@ -3,7 +3,7 @@
 A `SandboxTemplate` with `vm` runs its Sandbox's runner in a NixOS guest under KubeVirt instead of
 in a Pod. The Sandbox Controller owns the lifecycle
 ([`SPEC.md` § VMs](../sandbox_controller/SPEC.md)); the guest is
-[`runner/vm.nix`](../runner/vm.nix) and its seed is [`runner/guest_config.py`](../runner/guest_config.py);
+[`runner/vm.nix`](../runner/vm.nix) and its seed schema is [`sandboxes/guest_config.py`](../sandboxes/guest_config.py);
 the template is [`runner_vm.py`](../../cluster/cdk8s/agentplane/runner_vm.py) and the egress relay is
 [`launcher_relay.py`](../../cluster/cdk8s/agentplane/launcher_relay.py). The traffic diagram is in
 [`agentplane/README.md`](../README.md). Control is the runner's outbound stream
@@ -39,7 +39,7 @@ lost.
   guest, including kubelet's probe of the relay's readiness port.
 - A guest can open TCP to the egress gateway itself; an unauthenticated request there is refused.
   Proxy environment variables in the guest are convenience, not the boundary.
-- The runner dials its control and ingress routes directly (they are the relay's own listeners) and
+- The Go runner dials its control and ingress routes directly (they are the relay's own listeners) and
   everything else through the proxy; harness children proxy everything except loopback.
 - With Kyverno unavailable, only VM launches in the namespace fail: the policy has its own webhook,
   narrowed by `matchConditions` to launcher creates and to updates of Pods carrying the token volume.
@@ -108,7 +108,7 @@ The subsequent conversation-recovery failure is addressed separately in
 [PR #11091](https://github.com/agentydragon/ducktape/pull/11091).
 
 - The runner service is a systemd unit with `MemoryHigh`/`MemoryMax`, `CPUQuota` and `TasksMax`, and
-  delegates a subtree. `agentplane.runner.cgroups` puts agent work under an aggregate group and each
+  delegates a subtree. The Go runner puts agent work under an aggregate cgroup and each
   native harness under its own, with memory, CPU, task and I/O limits and `memory.oom.group`.
 - When a harness subtree exceeds its memory budget, `memory.oom.group` kills that harness and its
   descendants; the Runner remains outside that group and can continue answering RPCs. Acceptance of
@@ -116,7 +116,7 @@ The subsequent conversation-recovery failure is addressed separately in
 - [Tool memory isolation](harness_tool_memory_isolation.md) records optional research on putting
   tighter resource limits around a tool child. That would be a separate resource policy, not a change
   to the Sandbox security boundary.
-- The Rust harness supervisor retains the state-owner descriptor, forwards stop signals and reaps
+- The Go harness supervisor retains the state-owner descriptor, forwards stop signals and reaps
   descendants, so a Runner restart cannot open the same state while old native work continues
   ([runner README](../runner/README.md#sqlite-storage)).
 - Agent processes get no unrestricted guest root and no cgroup administration, so they cannot alter

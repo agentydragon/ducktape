@@ -10,6 +10,7 @@ import pytest_bazel
 from agentplane.proto import runner_pb2
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.driver import RunnerDriver, refusal
+from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -72,7 +73,7 @@ async def test_reopening_a_session_with_another_spec_is_refused(
 
 
 async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
-    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    runner: RunningRunner, driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     first = await driver.attach("instructions-1", spec=with_instructions(spec, INSTRUCTIONS))
     await first.submit_input("input-1", "Reply with exactly: SEED_OK")
@@ -80,7 +81,7 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     assert INSTRUCTIONS in request.system_text
     await model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
-    await driver.shutdown("instructions-1")
+    await runner.restart()
     await first.until(events.is_kind("harness_exited"))
     await first.drain_until_end()
 

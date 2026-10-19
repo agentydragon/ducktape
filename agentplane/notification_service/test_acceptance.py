@@ -18,6 +18,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import update
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.action_service.api import create_app as actions_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator
@@ -40,14 +41,14 @@ from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import Store
-from agentplane.proto import event_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.proto import runner_pb2, session_dispatcher_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
-from agentplane.runner.config import RunnerConfig
 from agentplane.runner.platform_instructions import render_platform_instructions
-from agentplane.runner.runner import Runner
-from agentplane.runner.sandbox_launch import SandboxIdentity
+from agentplane.runner.testing.config import RunnerTestConfig
+from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.testing.gateway_process import run_gateway
+from agentplane.sandboxes.launch import SandboxIdentity
 from agentplane.sandboxes.testing.api_server import NAMESPACE, SANDBOX, SandboxCluster, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -63,7 +64,7 @@ def dispatcher_db_url(postgres_admin_url: str, database_names: DatabaseNames) ->
 
 
 @pytest.fixture
-def config(config: RunnerConfig, cluster: SandboxCluster) -> RunnerConfig:
+def config(config: RunnerTestConfig, cluster: SandboxCluster) -> RunnerTestConfig:
     """The runner starts every Session with the deployment's real platform instructions."""
     platform_instructions = render_platform_instructions(
         egress_api_url="http://egress.test",
@@ -93,7 +94,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     action_engine: AsyncEngine,
     echo_catalog: ActionCatalog,
     echo_executor: RecordingExecutor,
-    runner: Runner,
+    runner: RunningRunner,
     spec: runner_pb2.SessionSpec,
     model: ScriptedModel,
     tmp_path: Path,
@@ -197,17 +198,43 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 headers={"Authorization": f"Bearer {owner_token}"},
             ) as agent:
                 native = remote.runner(destination)
-                session_id = (await native.open_session(session_id=uuid4(), spec=spec)).session_id
-                native_session = runner.sessions[session_id]
+                setup_script = """
+                i=1
+                while [ "$i" -le 130 ]; do
+                    printf 'notification journal seed %s\\n' "$i" >&2
+                    i=$((i + 1))
+                    sleep 0.02
+                done
+                """
+                session_id = (
+                    await native.open_session(session_id=uuid4(), spec=spec, setup_script=setup_script)
+                ).session_id
 
                 async def history_caught_up() -> None:
-                    # Delivery reads entries from History, which copies them behind the native journal.
-                    live_cursor = native_session.journal.last_cursor
+                    # Delivery reads entries from History, which copies them behind the runner journal.
+                    if runner.control_endpoint == runner.gateway.endpoint:
+                        status = await (await runner.control()).ListSessions(runner_pb2.ListSessionsRequest())
+                        summaries = status.sessions
+                    else:
+                        summaries = await remote.runner(destination).list_sessions()
+                    live_cursor = next(summary.last_cursor for summary in summaries if summary.session_id == session_id)
                     changed = asyncio.Event()
                     with history_wakeups.changes[Channel.HISTORY].subscribe(changed):
                         while (await history.read_session_events(session_id, limit=1)).last_cursor < live_cursor:
                             await changed.wait()
                             changed.clear()
+
+                async for attempt in AsyncRetrying(
+                    stop=stop_after_delay(15),
+                    wait=wait_fixed(0.05),
+                    retry=retry_if_exception_type(AssertionError),
+                    reraise=True,
+                ):
+                    with attempt:
+                        (opened,) = [row for row in await native.list_sessions() if row.session_id == session_id]
+                        assert opened.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
+                        assert opened.last_cursor > 128
+                await history_caught_up()
 
                 submitted = await action_http.post(
                     "/v1/action-requests",
@@ -270,18 +297,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 }
                 assert "client_key" not in subscription
                 assert (await agent.post("/v1/subscriptions", json=body)).json() == subscription
-                # Seed through the runner's serialized event path, not a test-owned journal batch
-                # that can collide with the stdout reader's batch. The Dispatcher send path below
-                # exercises a replay after one worker batch; these unrelated events need no RPCs.
-                history_cursor = native_session.journal.last_cursor
-                for index in range(130):
-                    entry = await native_session.emit(
-                        event_pb2.HarnessStderr(text=f"notification journal seed {index + 1}"), sources=[]
-                    )
-                    history_cursor = entry.cursor
-                    if history_cursor > 128:
-                        break
-                assert history_cursor > 128
                 # Subscription preflight requires the live Runner. Disconnect it only after that
                 # succeeds, so the committed notice remains queued during the uncertain retry.
                 await runner_connections.aclose()
@@ -431,15 +446,13 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     f"/v1/inboxes/{inbox_id}/acknowledgement", json={"through_cursor": page["entries"][-1]["cursor"]}
                 )
                 assert ack.json()["acknowledged"] == 2
-                (native_session,) = runner.sessions.values()
-                journal = await native_session.journal.since(0, limit=1000)
+                journal = (await history.read_session_events(session_id, limit=1000)).entries
                 admitted = [
                     entry.event.command_admitted.command.command_id
                     for entry in journal
                     if entry.event.HasField("command_admitted")
                 ]
                 assert admitted.count(page["notice"]["command_id"]) == 1
-                await native_session.shutdown()
 
 
 if __name__ == "__main__":

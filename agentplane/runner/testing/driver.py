@@ -11,9 +11,9 @@ import grpc
 import pytest
 
 from agentplane.proto import event_log_pb2, runner_control_pb2, runner_pb2
-from agentplane.runner.config import RunnerConfig
-from agentplane.runner.runner import Runner
-from agentplane.runner.testing.gateway import Gateway, dialing
+from agentplane.runner.testing.config import RunnerTestConfig
+from agentplane.runner.testing.gateway import Gateway
+from agentplane.runner.testing.process import RunningRunner
 
 # The `Runner` stub types its calls; mypy reads stubs only from direct deps.
 # gazelle:include_dep //agentplane/proto:runner_control_pb2_grpc
@@ -147,15 +147,8 @@ class SessionFollow:
 
 
 class RunnerDriver:
-    def __init__(self, gateway: Gateway, runner: Runner | None = None) -> None:
+    def __init__(self, gateway: Gateway) -> None:
         self.gateway = gateway
-        self._runner = runner
-
-    async def shutdown(self, session_id: str) -> None:
-        """Test-only access to the runner's internal graceful shutdown operation."""
-        if self._runner is None:
-            raise RuntimeError("this driver is not attached to an in-process Runner")
-        await self._runner.sessions[session_id].shutdown()
 
     async def attach(
         self,
@@ -207,9 +200,7 @@ class RunnerDriver:
 
 
 @asynccontextmanager
-async def running(config: RunnerConfig, gateway: Gateway) -> AsyncIterator[Runner]:
-    """A started runner on `config`, dialing `gateway`."""
-    async with Runner(config) as runner:
-        await runner.startup()
-        async with dialing(runner, gateway):
-            yield runner
+async def running(config: RunnerTestConfig, gateway: Gateway) -> AsyncIterator[RunningRunner]:
+    """Start the Go executable on this state directory and test Gateway."""
+    async with RunningRunner(config, gateway) as runner:
+        yield runner

@@ -11,8 +11,8 @@ import pytest
 import pytest_bazel
 
 from agentplane.proto import event_pb2, runner_pb2
-from agentplane.runner.config import RunnerConfig
 from agentplane.runner.testing import events
+from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.driver import RunnerDriver, running
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
@@ -83,7 +83,7 @@ def sample_native(pid: int, directory: Path) -> NativeSample:
 @pytest.mark.parametrize("history_size", [1, 10, 100])
 async def test_native_history_and_resume_resources(
     harness: runner_pb2.Harness,
-    config: RunnerConfig,
+    config: RunnerTestConfig,
     model: ScriptedModel[Any],
     spec: runner_pb2.SessionSpec,
     history_size: int,

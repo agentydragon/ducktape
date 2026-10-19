@@ -16,8 +16,8 @@ from agentplane.proto import runner_pb2
 # gazelle:include_dep @pypi//protobuf
 
 VM_TEMPLATE = "runner-vm"
-# A child of the guest runner's workspace root (`guest_config.WORKSPACE_DIR`); importing it would
-# build the runner's Rust harness supervisor into this test.
+# A child of the guest runner's workspace root (`/state/workspaces`); test code talks to the deployed
+# Go runner over its public protocol.
 GUEST_WORKSPACE = "/state/workspaces/accept"
 PING = "Say exactly the word PING and nothing else. Do not use any tool."
 

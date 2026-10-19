@@ -37,7 +37,7 @@ type guestSeed struct {
 }
 
 // GuestConfiguration reads the KubeVirt guest's public config and Sandbox launch
-// file, then builds the same isolated launch configuration as guest_config.py.
+// file, then builds the isolated launch configuration specified by the shared guest schema.
 // It intentionally does not inherit the runner's environment into harnesses.
 func GuestConfiguration(path, launchPath string) (Config, Endpoint, Endpoint, error) {
 	if path == "" {

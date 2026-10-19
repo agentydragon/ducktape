@@ -81,7 +81,7 @@ async def project_lifecycle(
 def project_attached(attached: runner_pb2.Attached, entry: event_log_pb2.EventEntry) -> None:
     attached.last_cursor = entry.cursor
     event = entry.event
-    # The runner's own rule (runner/session.py `_apply_prefix`): the first outcome settles the launch.
+    # The runner's own rule (runner/go/session.go): the first outcome settles the launch.
     # An announcement from a runner that predates the field leaves it unspecified until then.
     undecided = attached.launch_outcome in (runner_pb2.LAUNCH_OUTCOME_UNSPECIFIED, runner_pb2.LAUNCH_OUTCOME_PENDING)
     match event.WhichOneof("observation"):

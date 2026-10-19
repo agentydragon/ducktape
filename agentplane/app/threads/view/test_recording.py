@@ -3,11 +3,7 @@ linking an observation to the rows it touched."""
 
 from __future__ import annotations
 
-import json
-from collections.abc import Sequence
-from pathlib import Path
-from typing import cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest_bazel
 from sqlalchemy import select
@@ -26,36 +22,9 @@ from agentplane.history_service.fold.views import EntityKind, ThreadOperationalS
 from agentplane.history_service.fold_runner import FOLD_EPOCH
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_pb2, runner_pb2
-from agentplane.runner.codex import CodexAdapter
-from agentplane.runner.config import CodexLaunch
-from agentplane.runner.harness import Harness
-from agentplane.runner.observation import Observation
-from agentplane.runner.session import Session
-from agentplane.runner.store import SessionRecord
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
-
-
-class _HarnessOutputRecorder:
-    """The Codex adapter's session seam, recording observations before database ingestion."""
-
-    def __init__(self) -> None:
-        self.record = SessionRecord(
-            harness=Harness.CODEX,
-            cwd="/workspace",
-            model="gpt-5.4",
-            reasoning_effort="low",
-            instructions="",
-            event_source_id=uuid4(),
-            native_session_id="codex-thread",
-        )
-        self.resuming = True
-        self.active_turn_id = ""
-        self.observations: list[tuple[Observation, list[int]]] = []
-
-    async def emit(self, observation: Observation, *, sources: Sequence[int]) -> None:
-        self.observations.append((observation, list(sources)))
 
 
 async def view_state(history: History, thread: UUID) -> tuple[ThreadCheckpoint, ThreadEntity]:
@@ -106,30 +75,15 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     }
 
 
-async def test_codex_harness_nul_reaches_the_persisted_thread_payload(
+async def test_raw_native_event_and_nul_tool_output_reach_the_persisted_thread_payload(
     event_logs: SeededEventLogStore, history: History
 ) -> None:
-    """An escaped NUL in Codex's stdout frame must survive adapter translation and thread folding."""
+    """The fold preserves raw native evidence and arbitrary tool-output bytes represented as text."""
     thread = await event_logs.seed("sb-1", "s-codex-nul")
     output = "before\x00after"
-    recorder = _HarnessOutputRecorder()
-    adapter = CodexAdapter(
-        cast(Session, recorder), CodexLaunch(binary=Path("/bin/false"), base_url="http://unused", api_key="unused")
-    )
-    harness_line = (
-        r'{"method":"item/commandExecution/outputDelta",'
-        r'"params":{"threadId":"codex-thread","turnId":"turn","itemId":"tool",'
-        r'"delta":"before\u0000after"}}'
-    )
-    harness_frame = json.loads(harness_line)
-
-    await adapter.on_frame(harness_frame, 1)
-
-    assert recorder.observations == [(event_pb2.ToolOutputDelta(item_id="tool", text=output), [1])]
-    observed_output = recorder.observations[0][0]
-    assert isinstance(observed_output, event_pb2.ToolOutputDelta)
+    harness_line = r'{"method":"item/commandExecution/outputDelta","params":{"delta":"before\u0000after"}}'
     native = event_entry(1, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=harness_line))
-    output_delta = event_entry(2, tool_output_delta=observed_output)
+    output_delta = event_entry(2, tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text=output))
     output_delta.event.source_sequences.append(1)
     await history.record(
         thread, [native, output_delta, event_entry(3, turn_started=event_pb2.TurnStarted(turn_id="next"))]

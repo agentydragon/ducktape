@@ -38,7 +38,13 @@ class RunnerProcess:
         """SIGTERM, as a Pod's termination sends it; the runner stops its harnesses before exiting."""
         if self.process.returncode is None:
             self.process.send_signal(signal.SIGTERM)
-            await self.process.wait()
+            try:
+                async with asyncio.timeout(20):
+                    await self.process.wait()
+            except TimeoutError:
+                os.killpg(self.process.pid, signal.SIGKILL)
+                await self.process.wait()
+                raise TimeoutError("Go runner did not stop; a test checkpoint or script may still be held") from None
 
 
 # Bazel's Python is built without os.pidfd_open; the syscall itself is on every kernel this runs on.
@@ -74,8 +80,7 @@ async def wait_for_exit(pid: int) -> None:
 def runner_environment(home: Path) -> dict[str, str]:
     return {
         **launches.environment(home),
-        # The runner binary is a Bazel py_binary inside this test's runfiles tree and finds its
-        # own runfiles through these.
+        # Keep native executable runfiles available to the test launcher.
         **{key: os.environ[key] for key in ("RUNFILES_DIR", "RUNFILES_MANIFEST_FILE") if key in os.environ},
         "ANTHROPIC_AUTH_TOKEN": launches.TOKEN,
         "OPENAI_API_KEY": launches.TOKEN,

@@ -5,7 +5,7 @@ Gaps to close if a workflow needs them; none is committed.
 ## Thread tool schemas generated from their implementations
 
 The thread's shell tool calls have the same hazard: `threads/command_calls.ts` mirrors Claude Code's
-`Bash` input and the arguments `runner/codex.py` records for `commandExecution` by hand, strictly, so
+`Bash` input and the arguments `runner/go/codex.go` records for `commandExecution` by hand, strictly, so
 a field a harness adds sends every such call to the JSON view while the tests still pass.
 
 ## Thread view UX
@@ -27,7 +27,7 @@ a field a harness adds sends every such call to the JSON view while the tests st
   joins their text and whose expanded body shows the original individual items in order.
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
   (`agentplane/proto/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
-  outward into `runner/observation.py`'s `Observation` type, the archive/API layer
+  outward into `runner/go/observation.go`'s `Observation` type, the archive/API layer
   (`app/threads/events/event_log.py`'s `observations()`/`observation_entry()`, `api.py`'s
   `/observations/{cursor}` and `/evidence/{observation_cursor}/frames` routes), and the debug UI
   (`threads/chronological_debug.tsx`'s "Observation N raw frames"). Worth revisiting whether this is a distinction worth

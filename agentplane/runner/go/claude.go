@@ -447,6 +447,7 @@ func (a *claudeAdapter) handleCommandLifecycle(ctx context.Context, frame claude
 		if ok {
 			return a.host.NoopCommand(ctx, pending.commandID, "Claude cancelled the queued user input before taking it", sources)
 		}
+		return nil
 	}
 	a.mu.Unlock()
 	return nil

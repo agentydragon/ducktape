@@ -18,7 +18,7 @@ from agentplane.notification_service.sources.github.client import GitHubClient
 from agentplane.notification_service.sources.github.source import GitHub
 from agentplane.notification_service.store import Store
 from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
-from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
+from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, runner_gateway, spec, workspace
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.reader import SandboxReader
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate

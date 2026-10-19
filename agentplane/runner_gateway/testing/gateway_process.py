@@ -15,13 +15,11 @@ import grpc
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from sqlalchemy.engine import make_url
 
-from agentplane.background_task import background
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
-from agentplane.runner import control as runner_control
-from agentplane.runner.reconnect import StreamTiming
-from agentplane.runner.runner import Runner
+from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.sandboxes.guest_config import Endpoint
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import pick_free_port
@@ -33,7 +31,6 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _GATEWAY_BINARY = "agentplane/runner_gateway/runner-gateway_/runner-gateway"
 _MIGRATOR_BINARY = "agentplane/runner_gateway/migrations/cmd/runner-gateway-queue-migrate_/runner-gateway-queue-migrate"
-_RUNNER_TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.05, backoff_max_s=0.5)
 
 
 def _wire_database_url(database_url: str) -> str:
@@ -106,22 +103,18 @@ class GatewayProcess:
 
     @asynccontextmanager
     async def connected_runner(
-        self, runner: Runner, *, token: str, proxy_client: SandboxControlClient, destination: SandboxDestination
+        self, runner: RunningRunner, *, token: str, proxy_client: SandboxControlClient, destination: SandboxDestination
     ) -> AsyncIterator[None]:
-        """Connect a native Python Runner to this process and wait for proxy readiness."""
-        client = runner_control.RunnerControlClient(
-            runner_control.RunnerService(runner),
-            target=self.target,
-            bearer=token,
-            boot_id=runner.boot_id,
-            timing=_RUNNER_TIMING,
-            adopt_incarnation=runner.adopt_incarnation,
-            facts=runner.facts,
-            facts_changed=runner.facts_changed,
-        )
-        async with background(client.run(), name="native Runner to Gateway"):
+        """Restart the native process against this Gateway and wait for proxy readiness."""
+        previous_control = runner.control_endpoint
+        await runner.restart(control_endpoint=Endpoint(target=self.target, bearer=token))
+        try:
             await self.wait_for_runner(proxy_client, destination)
             yield
+        finally:
+            # The caller's runner fixture still owns the process after this temporary route.
+            # Restarting it restores the public local test peer for teardown and follow-up checks.
+            await runner.restart(control_endpoint=previous_control)
 
     async def stop(self) -> None:
         if self.process.returncode is not None:

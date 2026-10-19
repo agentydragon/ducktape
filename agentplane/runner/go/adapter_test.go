@@ -313,3 +313,30 @@ func uint64Bytes(values []uint64) []byte {
 	encoded, _ := json.Marshal(values)
 	return encoded
 }
+
+func TestClaudeCancellationSettlesOnlyPendingInputOnce(t *testing.T) {
+	ctx := context.Background()
+	host := newAdapterTestHost()
+	adapter := NewClaudeAdapter(host, LaunchConfig{Binary: "/bin/false"})
+	if err := adapter.Submit(ctx, "input-1", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	var request struct {
+		UUID string `json:"uuid"`
+	}
+	if err := json.Unmarshal(host.nativeWrites[0], &request); err != nil {
+		t.Fatal(err)
+	}
+	for index, id := range []string{"unknown", request.UUID, request.UUID} {
+		frame, err := json.Marshal(map[string]string{"type": "command_lifecycle", "state": "cancelled", "command_uuid": id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := adapter.OnFrame(ctx, frame, uint64(index+1)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(host.noops) != 1 || host.noops[0] != "input-1" {
+		t.Fatalf("cancelled input receipts = %v", host.noops)
+	}
+}

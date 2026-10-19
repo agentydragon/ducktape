@@ -200,3 +200,22 @@ py_library(
     ],
     deps = ["@pypi//pydantic"],
 )
+
+py_library(
+    name = "launch",
+    srcs = ["launch.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_guest_config",
+    srcs = ["test_guest_config.py"],
+    deps = [
+        ":conftest",
+        ":guest_config",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

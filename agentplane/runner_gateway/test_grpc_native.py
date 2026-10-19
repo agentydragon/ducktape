@@ -1,9 +1,8 @@
-"""The Python Runner client and both native harnesses, using the Runner's generated gRPC service."""
+"""The generated Runner client against the Go runner and both native harnesses."""
 
 import asyncio
 import shlex
-from collections.abc import AsyncIterator
-from contextlib import aclosing
+from collections.abc import AsyncIterator, Callable
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -17,9 +16,9 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.grpc.calls import ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
-from agentplane.runner.config import RunnerConfig
-from agentplane.runner.runner import Runner, follow_journal
 from agentplane.runner.testing import events, launches
+from agentplane.runner.testing.config import RunnerTestConfig
+from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.testing.runner_peer import runner_peer
@@ -41,12 +40,12 @@ def bootstrap(workspace: Path) -> str | None:
 
 
 @pytest.fixture
-def config(config: RunnerConfig, bootstrap: str | None) -> RunnerConfig:
+def config(config: RunnerTestConfig, bootstrap: str | None) -> RunnerTestConfig:
     return replace(config, launch=replace(config.launch, bootstrap=bootstrap))
 
 
 @pytest.fixture
-async def remote(runner: Runner, token_file: Path) -> AsyncIterator[SandboxControlClient]:
+async def remote(runner: RunningRunner, token_file: Path) -> AsyncIterator[SandboxControlClient]:
     async with runner_peer(token_file, runner=runner) as endpoint:
         yield endpoint.client()
 
@@ -71,7 +70,7 @@ async def submit_input(
 
 
 async def complete_turn(
-    remote: SandboxControlClient, local: Runner, model: ScriptedModel, session_id: str, command_id: str
+    remote: SandboxControlClient, local: RunningRunner, model: ScriptedModel, session_id: str, command_id: str
 ) -> list[event_log_pb2.EventEntry]:
     command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="Reply: GRPC_OK"))
     receipt = await submit_input(remote, session_id, command)
@@ -85,15 +84,9 @@ async def complete_turn(
     assert "Test task guidance." in request.system_text
     assert launches.SANDBOX.uid in request.system_text
     await model.reply(request, Text("GRPC_OK"))
-    entries: list[event_log_pb2.EventEntry] = []
-    async with (
-        asyncio.timeout(20),
-        aclosing(follow_journal(local.sessions[session_id].journal, receipt.cursor - 1)) as journal,
-    ):
-        async for entry in journal:
-            entries.append(entry)
-            if events.turn_completed(entry):
-                break
+    entries = await wait_for_entries(
+        local, session_id, receipt.cursor - 1, lambda rows: any(events.turn_completed(row) for row in rows)
+    )
     assert events.of_kind(entries, "command_admitted") == [receipt]
     assert any(
         command.command_id in e.event.harness_user_message_confirmed.origin_command_ids
@@ -102,8 +95,25 @@ async def complete_turn(
     return entries
 
 
+async def wait_for_entries(
+    runner: RunningRunner, session_id: str, after: int, complete: Callable[[list[event_log_pb2.EventEntry]], bool]
+) -> list[event_log_pb2.EventEntry]:
+    """Wait for acknowledged ingress entries through a public runner observation."""
+    entries: list[event_log_pb2.EventEntry] = []
+    cursor = after
+    async with asyncio.timeout(20):
+        while True:
+            new_entries = runner.entries(session_id, cursor)
+            entries.extend(new_entries)
+            if complete(entries):
+                return entries
+            if new_entries:
+                cursor = new_entries[-1].cursor
+            await runner.gateway.ingress.wait_beyond(session_id, cursor)
+
+
 async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
-    token_file: Path, model: ScriptedModel, spec: runner_pb2.SessionSpec, workspace: Path, runner: Runner
+    token_file: Path, model: ScriptedModel, spec: runner_pb2.SessionSpec, workspace: Path, runner: RunningRunner
 ) -> None:
     bootstrap_marker = workspace / "bootstrap-runs"
     setup_marker = workspace / "setup-runs"
@@ -176,12 +186,13 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         native_session_id = active_session.native_session_id
         assert native_session_id
         assert len(active.processes) == 1
-        await runner.sessions[session].shutdown()
-        journal = runner.sessions[session].journal
-        async with asyncio.timeout(20), aclosing(follow_journal(journal, entries[-1].cursor)) as tail:
-            async for entry in tail:
-                if events.kind(entry) == "harness_exited":
-                    break
+        await runner.kill_harness(session)
+        await wait_for_entries(
+            runner,
+            session,
+            entries[-1].cursor,
+            lambda tail: any(events.kind(entry) == "harness_exited" for entry in tail),
+        )
         assert (await inspect(destination, session)).harness_state == runner_pb2.HARNESS_STATE_STOPPED
         stopped = await destination.status()
         assert not stopped.processes
@@ -225,7 +236,7 @@ async def test_runner_command_does_not_create_unknown_session(remote: SandboxCon
 
 
 async def test_failed_setup_reports_command_failure(
-    remote: SandboxControlClient, runner: Runner, spec: runner_pb2.SessionSpec
+    remote: SandboxControlClient, runner: RunningRunner, spec: runner_pb2.SessionSpec
 ) -> None:
     destination = remote.runner(DESTINATION)
     created = await destination.open_session(session_id=uuid4(), spec=spec, setup_script="exit 42")
@@ -242,17 +253,15 @@ async def test_failed_setup_reports_command_failure(
         command_pb2.Command(command_id="after-failed-setup", submit_input=command_pb2.SubmitInput(text="not run")),
     )
     assert receipt.event.HasField("command_admitted")
-    journal = runner.sessions[created.session_id].journal
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(5), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
-    ):
-        with attempt:
-            entries = await journal.since(receipt.cursor, limit=100)
-            failures = [entry for entry in entries if events.kind(entry) == "command_failed"]
-            assert len(failures) == 1
-            failure = failures[0]
-            assert failure.event.command_failed.command_id == "after-failed-setup"
-            assert "setup" in failure.event.command_failed.reason
+    failures = await wait_for_entries(
+        runner,
+        created.session_id,
+        receipt.cursor,
+        lambda entries: any(events.kind(entry) == "command_failed" for entry in entries),
+    )
+    (failure,) = [entry for entry in failures if events.kind(entry) == "command_failed"]
+    assert failure.event.command_failed.command_id == "after-failed-setup"
+    assert "setup" in failure.event.command_failed.reason
 
 
 async def test_invalid_launch_never_creates(remote: SandboxControlClient) -> None:
@@ -267,7 +276,7 @@ async def test_invalid_launch_never_creates(remote: SandboxControlClient) -> Non
 
 @pytest.mark.parametrize("bootstrap", ["exit 42"])
 async def test_failed_bootstrap_reports_failure_when_input_arrives(
-    remote: SandboxControlClient, runner: Runner, spec: runner_pb2.SessionSpec
+    remote: SandboxControlClient, runner: RunningRunner, spec: runner_pb2.SessionSpec
 ) -> None:
     destination = remote.runner(DESTINATION)
     opened = await destination.open_session(session_id=uuid4(), spec=spec)
@@ -281,18 +290,19 @@ async def test_failed_bootstrap_reports_failure_when_input_arrives(
         opened.session_id,
         command_pb2.Command(command_id="after-failed-bootstrap", submit_input=command_pb2.SubmitInput(text="not run")),
     )
-    journal = runner.sessions[opened.session_id].journal
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(5), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
-    ):
-        with attempt:
-            entries = await journal.since(admission.cursor, limit=100)
-            launch_failures = [entry for entry in entries if events.kind(entry) == "harness_launch_failed"]
-            command_failures = [entry for entry in entries if events.kind(entry) == "command_failed"]
-            assert len(launch_failures) == 1
-            assert len(command_failures) == 1
-            assert "bootstrap failed" in launch_failures[0].event.harness_launch_failed.reason
-            assert command_failures[0].event.command_failed.command_id == "after-failed-bootstrap"
+    entries = await wait_for_entries(
+        runner,
+        opened.session_id,
+        admission.cursor,
+        lambda tail: (
+            any(events.kind(entry) == "harness_launch_failed" for entry in tail)
+            and any(events.kind(entry) == "command_failed" for entry in tail)
+        ),
+    )
+    (launch_failure,) = [entry for entry in entries if events.kind(entry) == "harness_launch_failed"]
+    (command_failure,) = [entry for entry in entries if events.kind(entry) == "command_failed"]
+    assert "bootstrap failed" in launch_failure.event.harness_launch_failed.reason
+    assert command_failure.event.command_failed.command_id == "after-failed-bootstrap"
     assert not (await destination.status()).processes
     assert {row.session_id for row in await destination.list_sessions()} == {opened.session_id}
 

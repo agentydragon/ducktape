@@ -22,7 +22,7 @@ let
   workspaceDevice = "/dev/disk/by-id/virtio-workspace";
   workspaceDir = "/state/workspaces";
   runtimeDir = "/run/agentplane";
-  # The runner reads these files from runtimeDir (agentplane/runner/guest_config.py). Each lives on
+  # The Go runner reads these files from runtimeDir. Each lives on
   # the KubeVirt ConfigMap disk of serial `agentplane-<disk>`, mounted at `${runtimeDir}/<disk>`.
   seedDiskOf = {
     "config.json" = "config";
@@ -32,7 +32,7 @@ let
     "ca-certificates.p12" = "trust";
   };
   seedDisks = lib.unique (lib.attrValues seedDiskOf);
-  # virtiofsd's identity (above); agentplane/runner/guest_config.py runs harnesses as it.
+  # virtiofsd's identity (above); the Go runner runs harnesses as this user.
   agentUser = "agent";
   agentId = 107;
 
