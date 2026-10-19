@@ -269,14 +269,15 @@ record of a Sandbox would be an entity in History Service, and Sandbox CR could 
 without the History Service records disappearing", but "I'm not sure if sandbox controller should be
 involved". It need not be: History already records each Session's writer namespace and name on the
 first push ([History README](../history_service/README.md#which-sandbox-wrote-a-session)) and lacks
-only the UID and tags, and a purge can be a History call the app makes after removing the CR. The
-tags are the one bridge. They stay on the CR, since "history should not be required for the tags
-feature": sending is checked against them with no History involved (23:27). History needs them only
-for read grants, and "never routes to, reads or manages Sandboxes" ([service
-boundaries](../docs/service_boundaries.md)). It could watch Sandboxes' tags and keep the last ones
-it saw once the CR goes, with no finalizer; the only gap is a tag edit made while History is down
-just before a delete, which an app retag fixes. The operator agreed to that (23:29), which relaxes
-the rule to reading Sandbox tags; the rule changes with the change that adds the watch.
+only the UID and tags, and a purge can be a History call the app makes after removing the CR; the
+operator deferred purging (23:33). The tags are the one bridge. They stay on the CR, since "history
+should not be required for the tags feature": sending is checked against them with no History
+involved (23:27). History needs them only for read grants, and "never routes to, reads or manages
+Sandboxes" ([service boundaries](../docs/service_boundaries.md)). It could watch Sandboxes' tags and
+keep the last ones it saw once the CR goes, with no finalizer; the only gap is a tag edit made while
+History is down just before a delete, which an app retag fixes. The operator agreed to that (23:29),
+which relaxes the rule to reading Sandbox tags; the rule changes with the change that adds the
+watch.
 
 ## Right under every direction
 
@@ -422,27 +423,28 @@ Held until one is chosen:
 
 ## What the operator has said
 
-| Date (UTC)       | Operator                                                                                            | Consequence                                         |
-| ---------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| 2026-10-17 03:30 | Sender receipts that tell "was this acked" from "did a notice cover this"                           | Receipts in v1                                      |
-| 2026-10-17 03:41 | OAuth callers get an SA through an Actions connection and send from an actions-sandbox              | No separate OAuth sender path                       |
-| 2026-10-17 04:12 | Messages come with the Sandbox; wake-on-send does not look it up from a Session                     | No Session-to-Sandbox registry                      |
-| 2026-10-17 05:58 | `allSandboxes` in v1, "under some kind of scope of the controller"                                  | Bounded to the PolicySet's namespace                |
-| 2026-10-17 10:56 | Keep read-permission decisions held "for now"                                                       | Read grants stay held                               |
-| 2026-10-18 22:39 | Agent traces and archives should not go into the control-plane etcd                                 | Per-Session data stays out of Kubernetes records    |
-| 2026-10-18 22:46 | Sending and reading transcripts are "really separate capabilities we probably don't need to bundle" | First `session_access` schema carries sending only  |
-| 2026-10-18 23:19 | No need to name a different namespace                                                               | Direct targets are same-namespace                   |
-| 2026-10-18 23:33 | Collections keep covering Sandboxes no longer alive                                                 | Rules out live-members-only collections for reads   |
-| 2026-10-19 01:37 | Python and Go ports can be sequenced in any order relative to the other things                      | Ports are not part of this map                      |
-| 2026-10-19 02:14 | No definite pick yet on where data and objects live                                                 | No direction chosen                                 |
-| 2026-10-19 09:42 | The workspace PVC "should be disposable without history disappearing"                               | A workspace drop is right under every direction     |
-| 2026-10-19 09:50 | Dropping the workspace "should still in principle let a harness start and continue"                 | The drop keeps the Sandbox resumable                |
-| 2026-10-19 09:53 | No restoring a Sandbox from history records alone                                                   | An archive need not be resumable                    |
-| 2026-10-19 10:24 | Freezing an archived Sandbox's collections "would be a bit inconvenient"                            | Archived Sandboxes' tags stay editable              |
-| 2026-10-19 10:43 | Retagging an archived Sandbox can wait, but must stay possible, from the app                        | No importer; tags stored once, matched at read time |
-| 2026-10-19 23:27 | Tags must not need History: sending checks them without it                                          | Tags stay on the Sandbox CR                         |
-| 2026-10-19 23:29 | History may read Sandbox tags                                                                       | History mirrors tags for read grants                |
-| 2026-10-19 23:32 | The workspace drop "can be deferred, not needed for this plan"                                      | Deferred                                            |
+| Date (UTC)       | Operator                                                                                            | Consequence                                                |
+| ---------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 2026-10-17 03:30 | Sender receipts that tell "was this acked" from "did a notice cover this"                           | Receipts in v1                                             |
+| 2026-10-17 03:41 | OAuth callers get an SA through an Actions connection and send from an actions-sandbox              | No separate OAuth sender path                              |
+| 2026-10-17 04:12 | Messages come with the Sandbox; wake-on-send does not look it up from a Session                     | No Session-to-Sandbox registry                             |
+| 2026-10-17 05:58 | `allSandboxes` in v1, "under some kind of scope of the controller"                                  | Bounded to the PolicySet's namespace                       |
+| 2026-10-17 10:56 | Keep read-permission decisions held "for now"                                                       | Read grants stay held                                      |
+| 2026-10-18 22:39 | Agent traces and archives should not go into the control-plane etcd                                 | Per-Session data stays out of Kubernetes records           |
+| 2026-10-18 22:46 | Sending and reading transcripts are "really separate capabilities we probably don't need to bundle" | First `session_access` schema carries sending only         |
+| 2026-10-18 23:19 | No need to name a different namespace                                                               | Direct targets are same-namespace                          |
+| 2026-10-18 23:33 | Collections keep covering Sandboxes no longer alive                                                 | Rules out live-members-only collections for reads          |
+| 2026-10-19 01:37 | Python and Go ports can be sequenced in any order relative to the other things                      | Ports are not part of this map                             |
+| 2026-10-19 02:14 | No definite pick yet on where data and objects live                                                 | No direction chosen                                        |
+| 2026-10-19 09:42 | The workspace PVC "should be disposable without history disappearing"                               | A workspace drop is right under every direction            |
+| 2026-10-19 09:50 | Dropping the workspace "should still in principle let a harness start and continue"                 | The drop keeps the Sandbox resumable                       |
+| 2026-10-19 09:53 | No restoring a Sandbox from history records alone                                                   | An archive need not be resumable                           |
+| 2026-10-19 10:24 | Freezing an archived Sandbox's collections "would be a bit inconvenient"                            | Archived Sandboxes' tags stay editable                     |
+| 2026-10-19 10:43 | Retagging an archived Sandbox can wait, but must stay possible, from the app                        | No importer; tags stored once, matched at read time        |
+| 2026-10-19 23:27 | Tags must not need History: sending checks them without it                                          | Tags stay on the Sandbox CR                                |
+| 2026-10-19 23:29 | History may read Sandbox tags                                                                       | History mirrors tags for read grants                       |
+| 2026-10-19 23:32 | The workspace drop "can be deferred, not needed for this plan"                                      | Deferred                                                   |
+| 2026-10-19 23:33 | No history purge operation yet                                                                      | Purge deferred; history outlives its Sandbox as documented |
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control
