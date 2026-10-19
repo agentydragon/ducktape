@@ -2,67 +2,40 @@
 
 ## Version bumps
 
-A bump is not just the version string: **2026.8.1 took the public-coder agent down
-for ~5 hours across four independent failures**, three of which shared one shape —
-startup detects a pending state migration and hard-fails, only `doctor` performs
-it, and `doctor` refuses to run under Nix. Full diagnosis and the recovery
-runbook: <debug/2026_8_1_recovery/README.md>.
+Read upstream release notes for **state migrations and retired config keys**; expect a
+maintenance window for any instance whose state predates the release. 2026.8.1 took
+public-coder down ~5h; diagnosis and recovery runbook: <debug/2026_8_1_recovery/README.md>.
 
-Before bumping, read the upstream release notes for **state migrations and
-retired config keys**, and expect a maintenance window for any instance whose
-state predates the release.
-
-- **Both images move together.** They share `gateway.nix`, so a bump lands in
-  public-coder and the Haku spike at once. Build both before merging; each has its
-  own image workflow and its own deployment to recover if the bump goes wrong.
-- **An instance cannot repair itself.** `assertConfigWriteAllowedInCurrentMode`
-  aborts `doctor --fix` whenever `OPENCLAW_NIX_MODE=1`, which the wrapper sets. If
-  a release adds a state migration, the gateway refuses to start until it runs and
-  the only tool that runs it refuses to start too. Recovery is a one-off Job with
-  `OPENCLAW_NIX_MODE=0` — and `""` will not do, because `--set-default` expands to
-  `${OPENCLAW_NIX_MODE:-1}`.
-- **Retired config keys are ignored silently.** They keep reading as if they still
-  apply while the behaviour they suppressed comes back — this is how the Control UI
-  started demanding device pairing. Run `openclaw doctor` after a bump and act on
-  "Legacy config keys detected".
-- **`postInstall` does not run.** nix-openclaw supplies a complete custom
-  `installPhase` and never calls `runHook postInstall`, so a hook added there is
-  skipped in silence: the build succeeds having done nothing. Append to
-  `installPhase`. A fail-closed check placed in `postInstall` passes vacuously,
-  which is worse than no check.
-- **The dist patches fail closed, so a bump breaks the image build loudly.**
-  <patches/openclaw-2026.9.5-dist.patch> rewrites hardcoded upstream constants
-  into environment reads and Nix-specific behaviour, matching exact paths and
-  source context rather than silently accepting a changed release. When a
-  release moves one of those lines the build stops with a patch failure, which
-  is the design: re-find the construct in the new dist and update the
-  release-specific patch. Never relax a match to make a bump pass -- the
-  patched behaviour silently reverts to upstream's.
-- Each dist hunk is a downstream Nix/runtime contract, not automatically an
-  upstream bug. Retire a hunk only when the upstream release exposes equivalent
-  behavior and both images pass the affected Nix-mode, plugin, and startup checks.
-- **Verify the built artifact, not the expression.** The `stage_acpx` edge case
-  was invisible until the derivation was actually built and its output inspected;
-  local simulation of the upstream tarball missed it, because the real tree has
-  content the tarball does not. The pinned nix-openclaw installer now makes
-  `dist-runtime` a symlink to `dist`, so do not reintroduce a downstream copy or
-  link workaround unless a future upstream change regresses that invariant.
+- **An instance cannot repair itself.** Startup hard-fails on a pending state migration; only
+  `doctor --fix` runs it, and `assertConfigWriteAllowedInCurrentMode` aborts it under
+  `OPENCLAW_NIX_MODE=1`, which the wrapper sets. Recover with a one-off Job setting
+  `OPENCLAW_NIX_MODE=0` (`""` does not work: `--set-default` expands `${OPENCLAW_NIX_MODE:-1}`).
+- **Retired config keys are ignored silently** and the behaviour they suppressed returns (how
+  the Control UI started demanding device pairing). Run `openclaw doctor` after a bump and act
+  on "Legacy config keys detected".
+- **`postInstall` never runs**: nix-openclaw's custom `installPhase` skips
+  `runHook postInstall`, so hooks (and fail-closed checks) there pass vacuously. Append to
+  `installPhase`.
+- **Dist patches fail closed by design.** <patches/openclaw-2026.9.5-dist.patch> matches exact
+  upstream context; when a release moves a line, re-find the construct and update the
+  release-specific patch. Never loosen a match — the behaviour silently reverts to upstream.
+  Each hunk is a downstream Nix/runtime contract; retire one only when upstream exposes
+  equivalent behaviour and the image passes the affected Nix-mode, plugin and startup checks.
+- **Verify the built derivation's output**, not the expression or a simulated tarball (the
+  `stage_acpx` edge case only showed in the real build). nix-openclaw now makes
+  `dist-runtime` a symlink to `dist`; add no copy/link workaround unless upstream regresses
+  that.
 
 ## Verifying a rollout
 
-There are no probes on these Deployments, so `1/1 Running` means only that a
-process exists. A crash-looping gateway and one that starts but never binds both
-read as healthy. Confirm a listener on the gateway port and an HTTP response:
+The Deployments have no probes, so `1/1 Running` proves nothing. Check for a listener on the
+gateway port (18789 = `0x4965`):
 
 ```bash
-kubectl -n <ns> exec <pod> -c openclaw -- sh -c \
-  'cat /proc/net/tcp /proc/net/tcp6 | grep -c 4965'   # 18789 == 0x4965
+kubectl -n <ns> exec <pod> -c openclaw -- sh -c 'cat /proc/net/tcp /proc/net/tcp6 | grep -c 4965'
 ```
 
-An HTTP 403 from inside the pod is the gateway's own auth response and means it is
-serving; `000` means nothing is listening.
+HTTP 403 from inside the pod is the gateway's auth (serving); `000` means nothing listens.
 
-**Manually suspending a Flux Kustomization does not hold.** These Kustomization
-objects are themselves reconciled by `flux-system`, which clears `spec.suspend`
-and restores `replicas: 1` within a reconcile interval. Scale down and work
-promptly rather than relying on a suspend.
+Suspending these Flux Kustomizations by hand does not hold: `flux-system` reconciles them,
+clearing `spec.suspend` and restoring `replicas: 1`. Scale down and work promptly.
