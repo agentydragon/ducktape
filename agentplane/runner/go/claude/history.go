@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
 	"github.com/anthropics/anthropic-sdk-go"
