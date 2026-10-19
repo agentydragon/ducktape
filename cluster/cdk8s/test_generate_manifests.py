@@ -109,6 +109,8 @@ def test_piraeus_storage_is_confined_to_the_retained_two_node_canary(
     values = release["spec"]["values"]
     canary_selector = {"storage.allegedly.works/drbd-canary": "true"}
 
+    assert values["createInternalTLS"] == "cert-manager"
+    assert values["createApiTLS"] == "cert-manager"
     cluster = values["linstorCluster"]
     assert cluster["nodeSelector"] == canary_selector
     assert cluster["properties"] == [{"name": "TcpPortAutoRange", "value": "7900-7919"}]
@@ -120,6 +122,25 @@ def test_piraeus_storage_is_confined_to_the_retained_two_node_canary(
     assert satellite["deletionPolicy"] == "Retain"
     [pool] = satellite["storagePools"]
     assert pool == {"name": "local-canary", "fileThinPool": {"directory": "/var/mnt/local-path-ovh-hdd/linstor-canary"}}
+
+    listeners = {
+        config["nodeSelector"]["kubernetes.io/hostname"]: config
+        for config in values["linstorSatelliteConfigurations"]
+        if "kubernetes.io/hostname" in config["nodeSelector"]
+    }
+    assert set(listeners) == {"ovh-ns102453", "ovh-ns103656"}
+    for node_name, address in (("ovh-ns102453", "10.42.0.15"), ("ovh-ns103656", "10.42.0.13")):
+        listener = listeners[node_name]
+        assert listener["nodeSelector"] == {**canary_selector, "kubernetes.io/hostname": node_name}
+        patches = {patch["target"]["name"]: patch["patch"] for patch in listener["patches"]}
+        satellite_config = patches["satellite-config"]
+        assert 'type = "ssl"' in satellite_config
+        assert f'bind_address = "{address}"' in satellite_config
+        assert "port = 3367" in satellite_config
+        metrics_config = patches["reactor-config"]
+        assert f'address = "{address}:9942"' in metrics_config
+        assert 'address = ":9942"' not in metrics_config
+        assert "0.0.0.0" not in metrics_config
 
     [storage_class] = values["storageClasses"]
     assert storage_class["name"] == "local-canary"
@@ -147,7 +168,25 @@ def test_piraeus_storage_is_confined_to_the_retained_two_node_canary(
     assert operator_flux["spec"]["deletionPolicy"] == "Orphan"
     assert cluster_flux["spec"]["prune"] is False
     assert cluster_flux["spec"]["deletionPolicy"] == "Orphan"
-    assert cluster_flux["spec"]["dependsOn"] == [{"name": "piraeus-operator", "namespace": "ducktape-flux"}]
+    assert cluster_flux["spec"]["dependsOn"] == [
+        {"name": "piraeus-operator", "namespace": "ducktape-flux"},
+        {"name": "cert-manager", "namespace": "ducktape-flux"},
+    ]
+
+
+def test_piraeus_controller_network_policy_only_admits_api_tls(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    policy = next(
+        document
+        for document in _generated_documents(generated, parsed_yaml_documents)
+        if document.get("kind") == "NetworkPolicy" and document["metadata"].get("name") == "linstor-controller-api"
+    )
+
+    assert policy["metadata"]["namespace"] == "piraeus-datastore"
+    assert policy["spec"]["podSelector"]["matchLabels"] == {"app.kubernetes.io/component": "linstor-controller"}
+    assert policy["spec"]["policyTypes"] == ["Ingress"]
+    assert policy["spec"]["ingress"] == [{"ports": [{"port": 3371, "protocol": "TCP"}]}]
 
 
 def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(

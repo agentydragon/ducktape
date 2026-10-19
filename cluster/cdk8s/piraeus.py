@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from cdk8s import App, Chart
+from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import namespaces
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -18,6 +19,53 @@ CLUSTER_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/cluster"
 _CANARY_LABEL = "storage.allegedly.works/drbd-canary"
 _CANARY_SELECTOR = {_CANARY_LABEL: "true"}
 _POOL_DIRECTORY = "/var/mnt/local-path-ovh-hdd/linstor-canary"
+_CONTROLLER_POD_SELECTOR = {"app.kubernetes.io/component": "linstor-controller"}
+_CANARY_NODES = (("ovh-ns102453", "10.42.0.15"), ("ovh-ns103656", "10.42.0.13"))
+
+
+def _canary_listener_configuration(node_name: str, nebula_address: str) -> dict[str, object]:
+    """Bind the host-network listeners for one canary node to its Nebula address."""
+    return {
+        "name": f"canary-listeners-{node_name}",
+        "nodeSelector": {**_CANARY_SELECTOR, "kubernetes.io/hostname": node_name},
+        "patches": [
+            {
+                "target": {"version": "v1", "kind": "ConfigMap", "name": "satellite-config"},
+                # Keep this stanza in parity with Piraeus Operator v2.12.0's internal-TLS
+                # patch while adding the supported node-specific listener bind address.
+                "patch": f"""apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: satellite-config
+data:
+  linstor_satellite.toml: |
+    [netcom]
+      type = "ssl"
+      bind_address = "{nebula_address}"
+      port = 3367
+      server_certificate = "/etc/linstor/ssl/keystore.jks"
+      key_password = "linstor"
+      keystore_password = "linstor"
+      trusted_certificates = "/etc/linstor/ssl/certificates.jks"
+      truststore_password = "linstor"
+      ssl_protocol = "TLSv1.2"
+""",
+            },
+            {
+                "target": {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"},
+                "patch": f"""apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reactor-config
+data:
+  prometheus.toml: |
+    [[prometheus]]
+    enums = true
+    address = "{nebula_address}:9942"
+""",
+            },
+        ],
+    }
 
 
 def operator_chart(app: App) -> Chart:
@@ -61,6 +109,26 @@ def operator_chart(app: App) -> Chart:
 def cluster_chart(app: App) -> Chart:
     """Declare LINSTOR, the Talos satellite patch and the opt-in local canary class."""
     chart = Chart(app, "piraeus-cluster", disable_resource_name_hashes=True)
+    k8s.KubeNetworkPolicy(
+        chart,
+        "controller-api-ingress",
+        metadata=k8s.ObjectMeta(
+            name="linstor-controller-api",
+            namespace=NAMESPACE,
+            annotations={"description": "Restrict the LINSTOR controller API to mutually authenticated HTTPS."},
+        ),
+        spec=k8s.NetworkPolicySpec(
+            pod_selector=k8s.LabelSelector(match_labels=_CONTROLLER_POD_SELECTOR),
+            policy_types=["Ingress"],
+            # Cilium's local-host exemption keeps node-local health probes on 3370 working.
+            # Ordinary Pods may reach only the API-TLS listener; LINSTOR mTLS authenticates clients.
+            ingress=[
+                k8s.NetworkPolicyIngressRule(
+                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(3371), protocol="TCP")]
+                )
+            ],
+        ),
+    )
     repository = oci_helm_repository(
         chart, "piraeus-charts", "flux-system", url="oci://ghcr.io/piraeusdatastore/helm-charts"
     )
@@ -75,6 +143,10 @@ def cluster_chart(app: App) -> Chart:
         timeout="10m",
         install=RETRY_FAILED_INSTALL,
         values={
+            # The chart and operator create cert-manager resources and private keys at
+            # runtime; no certificate or key material is stored in Git.
+            "createInternalTLS": "cert-manager",
+            "createApiTLS": "cert-manager",
             "linstorCluster": {
                 # Both the controller-side and node-side Piraeus workloads are limited to
                 # the two hosts prepared in cluster/terraform/main/drbd-canary.tf.
@@ -135,7 +207,8 @@ def cluster_chart(app: App) -> Chart:
                             ],
                         }
                     },
-                }
+                },
+                *(_canary_listener_configuration(node_name, address) for node_name, address in _CANARY_NODES),
             ],
             "storageClasses": [
                 {
@@ -167,8 +240,10 @@ def operator_kustomization(chart: Chart, directory: RenderedDirectory) -> Kustom
     )
 
 
-def cluster_kustomization(chart: Chart, directory: RenderedDirectory, operator: Kustomization) -> Kustomization:
-    """Apply the LINSTOR chart only after the separate operator Kustomization is Ready."""
+def cluster_kustomization(
+    chart: Chart, directory: RenderedDirectory, operator: Kustomization, cert_manager: Kustomization
+) -> Kustomization:
+    """Apply LINSTOR only after its CRDs and cert-manager are Ready."""
     return flux_kustomization(
         chart,
         "piraeus-cluster",
@@ -176,5 +251,5 @@ def cluster_kustomization(chart: Chart, directory: RenderedDirectory, operator: 
         timeout="15m",
         prune=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=[flux_kustomization_depends_on(operator)],
+        depends_on=flux_kustomization_depends_on_many(operator, cert_manager),
     )

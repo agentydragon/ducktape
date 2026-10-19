@@ -1,3 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    description: Restrict the LINSTOR controller API to mutually authenticated HTTPS.
+  name: linstor-controller-api
+  namespace: piraeus-datastore
+spec:
+  ingress:
+    - ports:
+        - port: 3371
+          protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: linstor-controller
+  policyTypes:
+    - Ingress
+---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -27,6 +45,8 @@ spec:
   interval: 30m
   timeout: 10m
   values:
+    createApiTLS: cert-manager
+    createInternalTLS: cert-manager
     linstorCluster:
       affinityController:
         enabled: true
@@ -82,6 +102,86 @@ spec:
           - fileThinPool:
               directory: /var/mnt/local-path-ovh-hdd/linstor-canary
             name: local-canary
+      - name: canary-listeners-ovh-ns102453
+        nodeSelector:
+          kubernetes.io/hostname: ovh-ns102453
+          storage.allegedly.works/drbd-canary: "true"
+        patches:
+          - patch: |
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: satellite-config
+              data:
+                linstor_satellite.toml: |
+                  [netcom]
+                    type = "ssl"
+                    bind_address = "10.42.0.15"
+                    port = 3367
+                    server_certificate = "/etc/linstor/ssl/keystore.jks"
+                    key_password = "linstor"
+                    keystore_password = "linstor"
+                    trusted_certificates = "/etc/linstor/ssl/certificates.jks"
+                    truststore_password = "linstor"
+                    ssl_protocol = "TLSv1.2"
+            target:
+              kind: ConfigMap
+              name: satellite-config
+              version: v1
+          - patch: |
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: reactor-config
+              data:
+                prometheus.toml: |
+                  [[prometheus]]
+                  enums = true
+                  address = "10.42.0.15:9942"
+            target:
+              kind: ConfigMap
+              name: reactor-config
+              version: v1
+      - name: canary-listeners-ovh-ns103656
+        nodeSelector:
+          kubernetes.io/hostname: ovh-ns103656
+          storage.allegedly.works/drbd-canary: "true"
+        patches:
+          - patch: |
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: satellite-config
+              data:
+                linstor_satellite.toml: |
+                  [netcom]
+                    type = "ssl"
+                    bind_address = "10.42.0.13"
+                    port = 3367
+                    server_certificate = "/etc/linstor/ssl/keystore.jks"
+                    key_password = "linstor"
+                    keystore_password = "linstor"
+                    trusted_certificates = "/etc/linstor/ssl/certificates.jks"
+                    truststore_password = "linstor"
+                    ssl_protocol = "TLSv1.2"
+            target:
+              kind: ConfigMap
+              name: satellite-config
+              version: v1
+          - patch: |
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: reactor-config
+              data:
+                prometheus.toml: |
+                  [[prometheus]]
+                  enums = true
+                  address = "10.42.0.13:9942"
+            target:
+              kind: ConfigMap
+              name: reactor-config
+              version: v1
     storageClasses:
       - allowVolumeExpansion: true
         name: local-canary

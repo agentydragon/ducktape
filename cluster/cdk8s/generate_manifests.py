@@ -415,12 +415,6 @@ def generate_manifests(root: Path) -> None:
     piraeus_operator_kustomization = piraeus.operator_kustomization(
         flux_chart, write_directory(root, piraeus_operator_artifact, piraeus.operator_chart)
     )
-    piraeus_cluster_artifact = artifact("piraeus-cluster", piraeus.CLUSTER_OUTPUT_DIR)
-    piraeus_cluster_kustomization = piraeus.cluster_kustomization(
-        flux_chart,
-        write_directory(root, piraeus_cluster_artifact, piraeus.cluster_chart),
-        piraeus_operator_kustomization,
-    )
     sshpiper_crds_kustomization = sshpiper_crds_flux_kustomizations.sshpiper_crds(flux_chart)
     talos_cloud_controller_manager_artifact = artifact(
         "talos-cloud-controller-manager", talos_cloud_controller_manager.OUTPUT_DIR
@@ -535,6 +529,13 @@ def generate_manifests(root: Path) -> None:
     cert_manager_artifact = artifact("cert-manager", cert_manager_app.OUTPUT_DIR)
     cert_manager_kustomization = cert_manager_app.cert_manager(
         flux_chart, write_directory(root, cert_manager_artifact, cert_manager_app.chart), monitoring_crds_kustomization
+    )
+    piraeus_cluster_artifact = artifact("piraeus-cluster", piraeus.CLUSTER_OUTPUT_DIR)
+    piraeus_cluster_kustomization = piraeus.cluster_kustomization(
+        flux_chart,
+        write_directory(root, piraeus_cluster_artifact, piraeus.cluster_chart),
+        piraeus_operator_kustomization,
+        cert_manager_kustomization,
     )
     seaweedfs_operator_artifact = artifact("seaweedfs-operator", seaweedfs_operator_release.OUTPUT_DIR)
     seaweedfs_operator_kustomization = seaweedfs_operator_release.seaweedfs_operator(

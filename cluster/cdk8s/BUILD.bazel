@@ -1749,6 +1749,7 @@ py_library(
         ":namespaces",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )

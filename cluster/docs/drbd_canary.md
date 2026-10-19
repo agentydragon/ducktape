@@ -160,12 +160,34 @@ PVC, verify:
 
 - Satellites selected by the canary label, with the Talos-specific module-loader
   overrides. Both initial nodes use extension-provided modules.
+- The LINSTOR chart enables `createInternalTLS: cert-manager` and
+  `createApiTLS: cert-manager`. The cluster Flux unit depends on both the
+  operator (for its CRDs) and cert-manager before applying those resources. The
+  chart creates Issuers and Certificates in `piraeus-datastore`; cert-manager
+  creates the private keys at runtime, so no keys are committed. Controller to
+  Satellite traffic uses mutual TLS on port 3367, and CSI/controller API clients
+  use HTTPS with client certificates on port 3371. The controller still has its
+  plain HTTP API on port 3370 for its health probes. A NetworkPolicy selecting
+  only the operator's `app.kubernetes.io/component=linstor-controller` Pod label
+  admits ordinary Pod ingress only on TCP 3371, where LINSTOR mTLS authenticates
+  clients. Cilium's default local-host exemption lets kubelet probes reach 3370;
+  host-local traffic remains outside this Pod policy. The controller itself does
+  not use host networking.
 - LINSTOR reports the two Nebula node addresses (`10.42.0.15` and `10.42.0.13`)
   for host-networked satellites. The controller's canary-only `TcpPortAutoRange`
   is `7900-7919`; verify those TCP ports are available and reachable over the
   mesh. Piraeus documents that host networking reconfigures DRBD peer addresses;
   switching back to the pod network requires resetting paths or rebooting all
   involved nodes.
+- The host-networked Satellite control listener binds only its node's Nebula
+  address on TLS port 3367; the default plaintext port 3366 is removed by
+  Piraeus' internal-TLS patch. The DRBD Reactor Prometheus endpoint defaults to
+  unauthenticated HTTP on wildcard port 9942, so per-node configuration binds
+  that endpoint to the same Nebula address. Verify the `linstor_satellite.toml`
+  and `prometheus.toml` effective on each host-networked Pod, and confirm the
+  PodMonitor scrapes the Nebula address before relying on these metrics. These
+  explicit binds avoid exposing either listener through public host interfaces;
+  no host firewall policy is added here.
 - The two `FILE_THIN` directories above, with capacity monitoring and no pool
   autodiscovery or disk preparation.
 - An opt-in `local-canary` StorageClass: `WaitForFirstConsumer`, one disk-backed
@@ -204,4 +226,8 @@ shortcut to teardown.
 
 References: [Piraeus Talos integration](https://piraeus.io/docs/v2/how-to/talos/),
 [Piraeus FILE_THIN pool configuration](https://piraeus.io/docs/v2/reference/linstorsatelliteconfiguration/),
+[Piraeus internal TLS](https://piraeus.io/docs/v2/how-to/internal-tls/),
+[Piraeus API TLS](https://piraeus.io/docs/v2/how-to/api-tls/),
+[Piraeus host networking](https://piraeus.io/docs/v2/how-to/drbd-host-networking/),
+[Cilium's local-host NetworkPolicy behavior](https://docs.cilium.io/en/stable/network/kubernetes/concepts/#default-ingress-allow-from-local-host),
 [Talos boot assets](https://docs.siderolabs.com/talos/v1.14/platform-specific-installations/boot-assets).
