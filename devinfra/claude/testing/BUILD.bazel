@@ -3,13 +3,6 @@ load("//devinfra/python:defs.bzl", "py_library")
 package(default_visibility = ["//devinfra/claude:__subpackages__"])
 
 py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = ["@pypi//pytest"],
-)
-
-py_library(
     name = "container_e2e",
     testonly = True,
     srcs = ["container_e2e.py"],

@@ -64,7 +64,6 @@ oci_layout_rloc(
 
 py_binary(
     name = "local_vm_probe",
-    srcs = ["local_vm.py"],
     data = [
         ":base_initramfs",
         ":tools_rootfs",
@@ -74,10 +73,9 @@ py_binary(
         "@claude_code_cli_linux_x64//:claude",
         "@firecracker_vmlinux_6_1_128//file",
     ],
-    main = "local_vm.py",
+    main_module = "agentplane.x.runner_layering.local_vm",
     deps = [
-        "//util/bazel:runfiles",
-        "@pypi//httpx",
+        ":local_vm",
     ],
 )
 

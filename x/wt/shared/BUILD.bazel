@@ -67,13 +67,6 @@ py_library(
 )
 
 py_library(
-    name = "models",
-    srcs = ["models.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [":constants"],
-)
-
-py_library(
     name = "protocol",
     srcs = ["protocol.py"],
     visibility = ["//:__subpackages__"],

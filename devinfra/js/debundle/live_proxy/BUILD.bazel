@@ -69,16 +69,6 @@ py_library(
     deps = [":package_tree"],
 )
 
-py_library(
-    name = "browser_test_lib",
-    srcs = [
-        "browser_runner.py",
-    ],
-    imports = ["../../../.."],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//playwright"],
-)
-
 py_binary(
     name = "serve_bin",
     main_module = "devinfra.js.debundle.live_proxy.serve",
