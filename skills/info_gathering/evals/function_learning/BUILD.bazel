@@ -73,7 +73,6 @@ py_library(
 #         "//skills/eval_infra:transcript",
 #         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
 #         "//skills/info_gathering:info_gathering_skill_spec",
-#         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
 #         "@pypi//agent_framework_anthropic",
 #         "@pypi//agent_framework_claude",
 #         "@pypi//agent_framework_core",

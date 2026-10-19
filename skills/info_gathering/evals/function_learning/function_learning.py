@@ -19,6 +19,7 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -50,7 +51,6 @@ from skills.info_gathering.evals.function_learning.result_types import (
     TurnResult,
 )
 from skills.info_gathering.evals.function_learning.scoring import EVAL_TIMEOUT_S, evaluate_program
-from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths
 from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 from skills.skill_spec import SkillSpec
 
@@ -201,7 +201,11 @@ async def run_game(
     system = build_system_prompt(skill=skill_md)
     opening = first_user_message(secret_fn, turn_limit, description, eval_timeout_s=EVAL_TIMEOUT_S)
 
-    calls_path, summary_path = run_output_paths(f"fl_{function_name}_{'hint' if hint else 'nohint'}", output_dir)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    prefix = f"fl_{function_name}_{'hint' if hint else 'nohint'}_{timestamp}"
+    calls_path = output_dir / f"{prefix}_calls.jsonl"
+    summary_path = output_dir / f"{prefix}_summary.json"
 
     game = GameContext(turn_limit=turn_limit)
     play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
@@ -252,7 +256,7 @@ async def run_game(
 
 async def _async_main(args: argparse.Namespace) -> None:
     output_dir = Path(args.output_dir) if args.output_dir else Path("eval_results") / "function_learning"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
 
     model_client = build_model_client(
         api=args.api, model=args.model, function_invocation_configuration={"max_iterations": _MAX_STEPS}
