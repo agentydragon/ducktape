@@ -50,7 +50,6 @@ from agentplane.testing.fake_apiserver import (
     egress_policy_set,
     fake_apiserver,
     policy_binding,
-    secret,
 )
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kubernetes_apiserver
 from util.kubernetes import CustomObjectsClient
@@ -150,7 +149,12 @@ async def seed_transport_contract(server: KubernetesApiServer) -> str:
             ),
         ),
     )
-    await core.create_namespaced_secret(CREDENTIALS_NAMESPACE, secret(_CONTRACT_CREDENTIAL, {"key": "contract-secret"}))
+    await core.create_namespaced_secret(
+        CREDENTIALS_NAMESPACE,
+        k8s_client.V1Secret(
+            metadata=k8s_client.V1ObjectMeta(name=_CONTRACT_CREDENTIAL), string_data={"key": "contract-secret"}
+        ),
+    )
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(server.api))
     for plural, body in (
         (
@@ -436,18 +440,23 @@ async def test_real_binding_revocation_denies_the_next_connection(egress: Egress
     async with aiohttp.ClientSession() as client:
 
         async def request_status() -> int:
-            async with client.get(
-                egress.url("/contract"),
-                proxy=f"http://127.0.0.1:{egress.proxy_port}",
-                proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
-                ssl=client_tls_context(egress.interception_ca),
-                headers={"x-buildbuddy-api-key": placeholder_of(_CONTRACT_CREDENTIAL)},
-            ) as response:
-                await response.read()
-                return response.status
+            try:
+                async with client.get(
+                    egress.url("/contract"),
+                    proxy=f"http://127.0.0.1:{egress.proxy_port}",
+                    proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
+                    ssl=client_tls_context(egress.interception_ca),
+                    headers={"x-buildbuddy-api-key": placeholder_of(_CONTRACT_CREDENTIAL)},
+                ) as response:
+                    await response.read()
+                    return response.status
+            except aiohttp.ClientHttpProxyError as error:
+                return error.status
 
         assert await request_status() == 200
-        await custom.delete_namespaced_custom_object(GROUP, VERSION, NAMESPACE, POLICY_BINDINGS_PLURAL, BINDING)
+        await custom.delete_namespaced_custom_object(
+            GROUP, VERSION, NAMESPACE, POLICY_BINDINGS_PLURAL, BINDING, body=k8s_client.V1DeleteOptions()
+        )
         async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
             with attempt:
                 assert await request_status() == 403
