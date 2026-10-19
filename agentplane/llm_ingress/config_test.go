@@ -45,7 +45,7 @@ models:
 }
 
 func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
-	for _, value := range []string{"8.0", `"8"`, "true", "null"} {
+	for _, value := range []string{"8.0", `"8"`, "true", "null", "0", "-1"} {
 		t.Run(value, func(t *testing.T) {
 			path := writeSettings(t, "allowed_service_account_namespaces: [test-namespace]\n"+
 				"token_audience: test-audience\n"+

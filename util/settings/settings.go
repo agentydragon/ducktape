@@ -25,18 +25,10 @@ import (
 
 const configFileSuffix = "CONFIG_FILE"
 
-// Options says where a service's settings come from.
-type Options struct {
-	// Prefix starts every environment variable the service reads, and ends in an underscore.
-	Prefix string
-	// CheckFile, when set, vets the settings file's contents before they are decoded.
-	CheckFile func(contents []byte) error
-}
-
 // Load returns defaults overlaid by the settings file, then the environment. It refuses a file key
 // the struct has no setting for and an environment variable with the prefix that names no setting.
 // Its errors name settings and never carry the values given for them.
-func Load[T any](options Options, defaults T, environ []string) (T, error) {
+func Load[T any](prefix string, defaults T, environ []string) (T, error) {
 	var zero T
 	loaded := defaults
 	settingsType := reflect.TypeFor[T]()
@@ -45,24 +37,24 @@ func Load[T any](options Options, defaults T, environ []string) (T, error) {
 	}
 	environment := env.ToMap(environ)
 	envOptions := env.Options{
-		Environment: environment, Prefix: options.Prefix, UseFieldNameByDefault: true,
+		Environment: environment, Prefix: prefix, UseFieldNameByDefault: true,
 	}
 	fields, err := env.GetFieldParamsWithOptions(&loaded, envOptions)
 	if err != nil {
 		return zero, err
 	}
-	configFileEnv := options.Prefix + configFileSuffix
+	configFileEnv := prefix + configFileSuffix
 	known := map[string]bool{configFileEnv: true}
 	for _, field := range fields {
 		known[field.Key] = true
 	}
 	for _, name := range slices.Sorted(maps.Keys(environment)) {
-		if strings.HasPrefix(name, options.Prefix) && !known[name] {
+		if strings.HasPrefix(name, prefix) && !known[name] {
 			return zero, fmt.Errorf("unknown setting %s", name)
 		}
 	}
 	if path := environment[configFileEnv]; path != "" {
-		if err := readFile(path, configFileEnv, options.CheckFile, &loaded); err != nil {
+		if err := readFile(path, configFileEnv, &loaded); err != nil {
 			return zero, err
 		}
 	}
@@ -73,15 +65,10 @@ func Load[T any](options Options, defaults T, environ []string) (T, error) {
 }
 
 // readFile decodes a file that must exist and hold exactly one document of known keys.
-func readFile(path, configFileEnv string, check func([]byte) error, target any) error {
+func readFile(path, configFileEnv string, target any) error {
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("%s=%s is not a readable file", configFileEnv, path)
-	}
-	if check != nil {
-		if err := check(contents); err != nil {
-			return fmt.Errorf("invalid settings file %s: %w", path, err)
-		}
 	}
 	decoder := yaml.NewDecoder(bytes.NewReader(contents))
 	decoder.KnownFields(true)

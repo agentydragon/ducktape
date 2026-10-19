@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -40,7 +39,7 @@ func writeFile(t *testing.T, contents string) string {
 }
 
 func load(environ ...string) (sample, error) {
-	return Load(Options{Prefix: prefix}, defaults(), environ)
+	return Load(prefix, defaults(), environ)
 }
 
 func TestTheEnvironmentOverridesTheFileWhichOverridesTheDefaults(t *testing.T) {
@@ -117,18 +116,5 @@ func TestCollectionsAreFileOnly(t *testing.T) {
 		if _, err := load(prefix+"CONFIG_FILE="+path, prefix+setting); err == nil {
 			t.Errorf("accepted collection environment override %s", setting)
 		}
-	}
-}
-
-func TestTheFileIsVettedBeforeItIsDecoded(t *testing.T) {
-	path := writeFile(t, "listen_port: 1\n")
-	refusal := errors.New("refused by the check")
-	var seen string
-	_, err := Load(Options{Prefix: prefix, CheckFile: func(contents []byte) error {
-		seen = string(contents)
-		return refusal
-	}}, defaults(), []string{prefix + "CONFIG_FILE=" + path})
-	if !errors.Is(err, refusal) || seen != "listen_port: 1\n" {
-		t.Fatalf("got %v after checking %q", err, seen)
 	}
 }

@@ -13,9 +13,19 @@ const (
 	configFileEnv = settingPrefix + "CONFIG_FILE"
 )
 
+// modelBudget rejects YAML's float-to-int coercion for context limits.
+type modelBudget int
+
+func (budget *modelBudget) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.ScalarNode || node.ShortTag() != "!!int" {
+		return errors.New("context budget must be an integer")
+	}
+	return node.Decode((*int)(budget))
+}
+
 type modelConfig struct {
-	Model                    string `json:"model" yaml:"model"`
-	TotalContextBudgetTokens int    `json:"total_context_budget_tokens" yaml:"total_context_budget_tokens"`
+	Model                    string      `json:"model" yaml:"model"`
+	TotalContextBudgetTokens modelBudget `json:"total_context_budget_tokens" yaml:"total_context_budget_tokens"`
 }
 
 type config struct {
@@ -36,7 +46,7 @@ func defaultConfig() config {
 }
 
 func loadConfig(environ []string) (config, error) {
-	c, err := settings.Load(settings.Options{Prefix: settingPrefix, CheckFile: validateYAMLShapes}, defaultConfig(), environ)
+	c, err := settings.Load(settingPrefix, defaultConfig(), environ)
 	if err != nil {
 		return config{}, err
 	}
@@ -44,48 +54,6 @@ func loadConfig(environ []string) (config, error) {
 		return config{}, err
 	}
 	return c, nil
-}
-
-func validateYAMLShapes(contents []byte) error {
-	var document yaml.Node
-	if err := yaml.Unmarshal(contents, &document); err != nil {
-		return err
-	}
-	if len(document.Content) == 0 {
-		return nil
-	}
-	root := document.Content[0]
-	if root.Kind != yaml.MappingNode {
-		return errors.New("settings must be a mapping")
-	}
-	for index := 0; index < len(root.Content); index += 2 {
-		name, value := root.Content[index].Value, root.Content[index+1]
-		switch name {
-		case "allowed_service_account_namespaces":
-			if value.Kind != yaml.SequenceNode {
-				return errors.New("allowed namespaces must be a list")
-			}
-		case "log_levels":
-			if value.Kind != yaml.MappingNode {
-				return errors.New("log_levels must be a mapping")
-			}
-		case "models":
-			if value.Kind != yaml.SequenceNode {
-				return errors.New("models must be a list")
-			}
-			for _, model := range value.Content {
-				if model.Kind != yaml.MappingNode {
-					return errors.New("models must contain mappings")
-				}
-				for modelIndex := 0; modelIndex < len(model.Content); modelIndex += 2 {
-					if model.Content[modelIndex].Value == "total_context_budget_tokens" && model.Content[modelIndex+1].Tag != "!!int" {
-						return errors.New("context budget must be an integer")
-					}
-				}
-			}
-		}
-	}
-	return nil
 }
 
 func validateConfig(c *config) error {
