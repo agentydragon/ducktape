@@ -6,6 +6,7 @@
 package rules
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -57,32 +58,47 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	}
 }
 
-func (s *server) readRules(w http.ResponseWriter, r *http.Request) {
-	token, ok := identity.BearerToken(r.Header.Values("Authorization"))
+var (
+	errInvalidBearer       = errors.New("invalid workload bearer")
+	errIdentityUnavailable = errors.New("workload identity unavailable")
+)
+
+// subjectOf is the ServiceAccount that the Authorization values of an HTTP request or gRPC call prove:
+// errInvalidBearer when they prove none, errIdentityUnavailable when the bearer could not be reviewed.
+func subjectOf(ctx context.Context, verifier *identity.Verifier, authorization []string) (policyapi.ServiceAccountRef, error) {
+	token, ok := identity.BearerToken(authorization)
 	if !ok {
-		reject(w)
-		return
+		return policyapi.ServiceAccountRef{}, errInvalidBearer
 	}
-	principal, err := s.verifier.Identify(r.Context(), token)
+	principal, err := verifier.Identify(ctx, token)
 	if err != nil {
 		var rejection *identity.Rejection
 		if errors.As(err, &rejection) && rejection.Reason == decision.Unavailable {
 			slog.Warn("workload token could not be reviewed", "error", err)
-			writeJSON(w, http.StatusServiceUnavailable, errorBody{"workload identity unavailable"})
-			return
+			return policyapi.ServiceAccountRef{}, errIdentityUnavailable
 		}
-		reject(w)
-		return
+		return policyapi.ServiceAccountRef{}, errInvalidBearer
 	}
-	subject := policyapi.ServiceAccountRef{Namespace: principal.Account.Namespace, Name: principal.Account.Name}
-	writeJSON(w, http.StatusOK, ViewOf(subject, s.index.ListEffectivePolicies(subject)))
+	return policyapi.ServiceAccountRef{Namespace: principal.Account.Namespace, Name: principal.Account.Name}, nil
+}
+
+func (s *server) readRules(w http.ResponseWriter, r *http.Request) {
+	subject, err := subjectOf(r.Context(), s.verifier, r.Header.Values("Authorization"))
+	switch {
+	case errors.Is(err, errIdentityUnavailable):
+		writeJSON(w, http.StatusServiceUnavailable, errorBody{err.Error()})
+	case err != nil:
+		reject(w)
+	default:
+		writeJSON(w, http.StatusOK, ViewOf(subject, s.index.ListEffectivePolicies(subject)))
+	}
 }
 
 // reject answers every bearer that does not prove a workload alike, so a response never says which
 // part was wrong with it.
 func reject(w http.ResponseWriter) {
 	w.Header().Set("WWW-Authenticate", "Bearer")
-	writeJSON(w, http.StatusUnauthorized, errorBody{"invalid workload bearer"})
+	writeJSON(w, http.StatusUnauthorized, errorBody{errInvalidBearer.Error()})
 }
 
 func (s *server) readOpenAPI(w http.ResponseWriter, _ *http.Request) {

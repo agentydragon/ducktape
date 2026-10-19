@@ -1,0 +1,76 @@
+// What a sandbox may know about its own egress: the egress proxy's rules API.
+syntax = "proto3";
+
+package agentplane.proto.egress_rules;
+
+service EgressRules {
+  // The rules of the ServiceAccount the caller's bearer proves, redacted: no credential value, and
+  // no Secret it is read from. The caller is the ServiceAccount of the bearer and nothing else; no
+  // field of the request selects a subject.
+  rpc GetRules(GetRulesRequest) returns (GetRulesResponse);
+}
+
+message GetRulesRequest {}
+
+// Everything the sandbox may reach, as the proxy would decide it right now.
+message GetRulesResponse {
+  // The ServiceAccount this view is of.
+  Subject subject = 1;
+  // Granted egress policies; empty means no egress.
+  repeated Policy policies = 2;
+}
+
+message Subject {
+  string namespace = 1;
+  string name = 2;
+}
+
+message Policy {
+  string name = 1;
+  repeated Rule rules = 2;
+}
+
+message StringList {
+  repeated string values = 1;
+}
+
+message Rule {
+  repeated string hosts = 1;
+  // Absent admits any method.
+  StringList methods = 2;
+  // Absent admits any path.
+  StringList paths = 3;
+  // Present when the proxy substitutes one for this rule.
+  Credential credential = 4;
+}
+
+// How to present a credential the sandbox does not hold: what to send, and where.
+message Credential {
+  string name = 1;
+  // What the credential is and what it can do, as its owner wrote it.
+  string description = 2;
+  // Inert string to send; the proxy swaps the real value in.
+  string placeholder = 3;
+  // Every location the proxy substitutes at.
+  repeated Target targets = 4;
+}
+
+// One exact location a credential may be presented in. The method selects the fields a target
+// carries: header (WHOLE_VALUE, SCHEME_TOKEN, BASIC_USERNAME, BASIC_PASSWORD, BASIC_WHOLE), scheme
+// (SCHEME_TOKEN), field (JSON_FIELD).
+message Target {
+  enum Method {
+    METHOD_UNSPECIFIED = 0;
+    METHOD_WHOLE_VALUE = 1;
+    METHOD_SCHEME_TOKEN = 2;
+    METHOD_BASIC_USERNAME = 3;
+    METHOD_BASIC_PASSWORD = 4;
+    METHOD_BASIC_WHOLE = 5;
+    METHOD_JSON_FIELD = 6;
+  }
+
+  Method method = 1;
+  optional string header = 2;
+  optional string field = 3;
+  optional string scheme = 4;
+}

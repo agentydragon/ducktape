@@ -11,6 +11,8 @@ service EgressAdmin {
   // The `ListDecisions` list on subscribing, then again each time it changes. The proxy ends the
   // stream after its watch lease so the next call is admitted afresh; the caller reconnects.
   rpc WatchDecisions(WatchDecisionsRequest) returns (stream WatchDecisionsResponse);
+  // The proxy's readiness with the facts it rests on, as `/healthz` reports them.
+  rpc GetHealth(GetHealthRequest) returns (GetHealthResponse);
 }
 
 // A ServiceAccount a workload token proved.
@@ -73,4 +75,36 @@ message WatchDecisionsRequest {
 // The whole list as `ListDecisions` returns it, not the change since the last response.
 message WatchDecisionsResponse {
   repeated Decision decisions = 1;
+}
+
+message GetHealthRequest {}
+
+// The body of `/healthz`, with its status code as `ready`.
+message GetHealthResponse {
+  // Whether the proxy can enforce on a complete, current index: the 200 or 503 of `/healthz`.
+  bool ready = 1;
+  bool synced = 2;
+  bool draining = 3;
+  DecisionHistoryHealth decision_history = 4;
+  // How old a resource kind's last refresh may be before the index counts as stale.
+  double stale_after_seconds = 5;
+  // Seconds since each resource kind was last refreshed, to a tenth.
+  map<string, double> refreshed_seconds_ago = 6;
+}
+
+// The decision writer's counters. Accepted and acknowledged count producer events, and a lost event
+// may still have been committed.
+message DecisionHistoryHealth {
+  int64 accepted = 1;
+  int64 acknowledged = 2;
+  int64 dropped_overflow = 3;
+  int64 dropped_unavailable = 4;
+  int64 dropped_expired = 5;
+  int64 dropped_shutdown = 6;
+  int64 write_failures = 7;
+  int64 cleanup_failures = 8;
+  // Whether the latest write succeeded; absent before the first.
+  optional bool available = 9;
+  int64 queued = 10;
+  bool writer_running = 11;
 }

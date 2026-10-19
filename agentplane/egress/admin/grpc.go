@@ -16,34 +16,52 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// Service is the decision reads of the HTTP admin API as gRPC. It takes the same Decisions and
-// Changes, so what the two serve is read from one place.
+// Service is the HTTP admin API's reads as gRPC. It takes the same Decisions, Changes, HistoryHealth
+// and Index, so what the two serve is read from one place.
 //
 // Deviation from the HTTP API: the HTTP admin listener is fenced by network policy alone, while every
 // RPC here admits only the allowed callers, each proving a ServiceAccount by a bearer reviewed on
 // that call (agentplane/docs/grpc_services.md).
 type Service struct {
 	egressadminpb.UnimplementedEgressAdminServer
-	decisions Decisions
-	changes   Changes
-	resolver  *auth.Resolver
-	callers   map[auth.Account]struct{}
-	lease     time.Duration
-	draining  context.Context
-	drain     context.CancelFunc
+	decisions     Decisions
+	changes       Changes
+	historyHealth HistoryHealth
+	index         Index
+	clock         func() time.Time
+	resolver      *auth.Resolver
+	callers       map[auth.Account]struct{}
+	lease         time.Duration
+	draining      context.Context
+	drain         context.CancelFunc
 }
 
-// NewService admits `callers` as `resolver` resolves them, and ends each watch after `lease`: a
-// stream is admitted once, so the lease bounds how long a revoked token keeps reading.
-func NewService(decisions Decisions, changes Changes, resolver *auth.Resolver, callers []auth.Account, lease time.Duration) *Service {
-	allowed := make(map[auth.Account]struct{}, len(callers))
-	for _, caller := range callers {
+// ServiceOptions are what a Service reads and whom it admits.
+type ServiceOptions struct {
+	Decisions     Decisions
+	Changes       Changes
+	HistoryHealth HistoryHealth
+	Index         Index
+	Clock         func() time.Time
+	// Resolver and Callers admit a call: the caller proves a ServiceAccount by a bearer Resolver
+	// reviews, and the ServiceAccount must be one of Callers.
+	Resolver *auth.Resolver
+	Callers  []auth.Account
+	// WatchLease ends each watch after this long: a stream is admitted once, so the lease bounds how
+	// long a revoked token keeps reading.
+	WatchLease time.Duration
+}
+
+func NewService(options ServiceOptions) *Service {
+	allowed := make(map[auth.Account]struct{}, len(options.Callers))
+	for _, caller := range options.Callers {
 		allowed[caller] = struct{}{}
 	}
 	draining, drain := context.WithCancel(context.Background())
 	return &Service{
-		decisions: decisions, changes: changes, resolver: resolver, callers: allowed, lease: lease,
-		draining: draining, drain: drain,
+		decisions: options.Decisions, changes: options.Changes, historyHealth: options.HistoryHealth,
+		index: options.Index, clock: options.Clock, resolver: options.Resolver, callers: allowed,
+		lease: options.WatchLease, draining: draining, drain: drain,
 	}
 }
 
@@ -57,6 +75,26 @@ var errHistoryUnavailable = status.Error(codes.Unavailable, "decision-history-un
 func historyFailure(err error) error {
 	slog.Warn("decision history read failed", "error_type", fmt.Sprintf("%T", err))
 	return errHistoryUnavailable
+}
+
+// GetHealth reports what `/healthz` does: its facts, and its verdict as `ready`.
+func (s *Service) GetHealth(ctx context.Context, _ *egressadminpb.GetHealthRequest) (*egressadminpb.GetHealthResponse, error) {
+	if _, err := s.resolver.RequireAccount(ctx, s.callers); err != nil {
+		return nil, err
+	}
+	body, ready := readHealth(s.index, s.historyHealth, s.clock())
+	return &egressadminpb.GetHealthResponse{
+		Ready: ready, Synced: body.Synced, Draining: body.Draining,
+		DecisionHistory: &egressadminpb.DecisionHistoryHealth{
+			Accepted: int64(body.DecisionHistory.Accepted), Acknowledged: int64(body.DecisionHistory.Acknowledged),
+			DroppedOverflow: int64(body.DecisionHistory.DroppedOverflow), DroppedUnavailable: int64(body.DecisionHistory.DroppedUnavailable),
+			DroppedExpired: int64(body.DecisionHistory.DroppedExpired), DroppedShutdown: int64(body.DecisionHistory.DroppedShutdown),
+			WriteFailures: int64(body.DecisionHistory.WriteFailures), CleanupFailures: int64(body.DecisionHistory.CleanupFailures),
+			Available: body.DecisionHistory.Available, Queued: int64(body.DecisionHistory.Queued),
+			WriterRunning: body.DecisionHistory.WriterRunning,
+		},
+		StaleAfterSeconds: body.StaleAfterSeconds, RefreshedSecondsAgo: body.RefreshedSecondsAgo,
+	}, nil
 }
 
 func (s *Service) ListDecisions(ctx context.Context, request *egressadminpb.ListDecisionsRequest) (*egressadminpb.ListDecisionsResponse, error) {

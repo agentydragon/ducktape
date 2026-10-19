@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
+	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/proto/egress_admin"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
@@ -86,17 +87,19 @@ func followOnTicks(ticks <-chan struct{}, settled chan<- struct{}) fakeChanges {
 	}
 }
 
-// serveGRPC serves the Service on an in-process gRPC server and returns a client for it. Only
-// test-reader is an allowed caller.
-func serveGRPC(t *testing.T, decisions Decisions, changes Changes, lease time.Duration) (egressadminpb.EgressAdminClient, *Service) {
+// serveGRPC serves a Service reading what options holds on an in-process gRPC server and returns a
+// client for it. Only test-reader is an allowed caller.
+func serveGRPC(t *testing.T, options ServiceOptions) (egressadminpb.EgressAdminClient, *Service) {
 	t.Helper()
-	resolver, err := auth.NewResolver(
+	var err error
+	options.Resolver, err = auth.NewResolver(
 		fakeReviews{readerToken: "test-reader", strangerToken: "test-stranger"}, testAudience, []string{callerNamespace},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(decisions, changes, resolver, []auth.Account{{Namespace: callerNamespace, Name: "test-reader"}}, lease)
+	options.Callers = []auth.Account{{Namespace: callerNamespace, Name: "test-reader"}}
+	service := NewService(options)
 	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer()
 	egressadminpb.RegisterEgressAdminServer(server, service)
@@ -112,6 +115,16 @@ func serveGRPC(t *testing.T, decisions Decisions, changes Changes, lease time.Du
 	}
 	t.Cleanup(func() { _ = connection.Close() })
 	return egressadminpb.NewEgressAdminClient(connection), service
+}
+
+func clockAtStart() time.Time { return started }
+
+// unreadIndex fails the test when it is read.
+type unreadIndex struct{ t *testing.T }
+
+func (i unreadIndex) Status(time.Time) policy.Status {
+	i.t.Error("index read before the caller was admitted")
+	return policy.Status{}
 }
 
 func bearing(token string) context.Context {
@@ -134,7 +147,9 @@ func TestEveryRPCAdmitsOnlyAllowedCallersBeforeReadingAnything(t *testing.T) {
 		t.Error("history followed before the caller was admitted")
 		return nil
 	})
-	client, _ := serveGRPC(t, store, changes, time.Hour)
+	client, _ := serveGRPC(t, ServiceOptions{
+		Decisions: store, Changes: changes, Index: unreadIndex{t}, HistoryHealth: fakeHistory{}, Clock: clockAtStart, WatchLease: time.Hour,
+	})
 
 	for _, test := range []struct {
 		name    string
@@ -149,6 +164,10 @@ func TestEveryRPCAdmitsOnlyAllowedCallersBeforeReadingAnything(t *testing.T) {
 			_, err := client.ListDecisions(test.ctx, &egressadminpb.ListDecisionsRequest{Filter: unauthenticated})
 			if status.Code(err) != test.refused {
 				t.Errorf("ListDecisions: %v", err)
+			}
+			_, err = client.GetHealth(test.ctx, &egressadminpb.GetHealthRequest{})
+			if status.Code(err) != test.refused {
+				t.Errorf("GetHealth: %v", err)
 			}
 			stream, err := client.WatchDecisions(test.ctx, &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
 			if err == nil {
@@ -173,7 +192,7 @@ func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
 	refused := record(&subject)
 	refused.Outcome, refused.Reason = decision.Deny, &refusal
 	store := &fakeDecisions{records: []decision.Record{admitted, refused}}
-	client, _ := serveGRPC(t, store, nil, time.Hour)
+	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, WatchLease: time.Hour})
 
 	response, err := client.ListDecisions(bearing(readerToken), &egressadminpb.ListDecisionsRequest{Filter: ofSubject("test-namespace", "test-workload")})
 	if err != nil {
@@ -209,7 +228,7 @@ func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
 
 func TestFilterMustSelectAWholeSubjectOrTheUnauthenticated(t *testing.T) {
 	store := &fakeDecisions{}
-	client, _ := serveGRPC(t, store, nil, time.Hour)
+	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, WatchLease: time.Hour})
 
 	for name, filter := range map[string]*egressadminpb.DecisionFilter{
 		"absent":       nil,
@@ -231,7 +250,7 @@ func TestFilterMustSelectAWholeSubjectOrTheUnauthenticated(t *testing.T) {
 func TestHistoryFailureIsExplicitAndPrivate(t *testing.T) {
 	store := &fakeDecisions{err: errors.New("test private exception must not escape")}
 	ticks, settled := make(chan struct{}), make(chan struct{}, 4)
-	client, _ := serveGRPC(t, store, followOnTicks(ticks, settled), time.Hour)
+	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, Changes: followOnTicks(ticks, settled), WatchLease: time.Hour})
 
 	_, listed := client.ListDecisions(bearing(readerToken), &egressadminpb.ListDecisionsRequest{Filter: unauthenticated})
 	stream, err := client.WatchDecisions(bearing(readerToken), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
@@ -249,7 +268,7 @@ func TestHistoryFailureIsExplicitAndPrivate(t *testing.T) {
 func TestWatchSendsTheListOnSubscribingAndOnlyWhenItChanges(t *testing.T) {
 	store := &changingDecisions{}
 	ticks, settled := make(chan struct{}), make(chan struct{}, 4)
-	client, _ := serveGRPC(t, store, followOnTicks(ticks, settled), time.Hour)
+	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, Changes: followOnTicks(ticks, settled), WatchLease: time.Hour})
 	ctx, cancel := context.WithCancel(bearing(readerToken))
 	defer cancel()
 	stream, err := client.WatchDecisions(ctx, &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
@@ -281,7 +300,7 @@ func TestWatchSendsTheListOnSubscribingAndOnlyWhenItChanges(t *testing.T) {
 
 func TestWatchEndsWhenItsLeaseDoes(t *testing.T) {
 	ticks, settled := make(chan struct{}), make(chan struct{}, 4)
-	client, _ := serveGRPC(t, &changingDecisions{}, followOnTicks(ticks, settled), 20*time.Millisecond)
+	client, _ := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: followOnTicks(ticks, settled), WatchLease: 20 * time.Millisecond})
 	stream, err := client.WatchDecisions(bearing(readerToken), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
 	if err != nil {
 		t.Fatal(err)
@@ -299,7 +318,7 @@ func TestWatchEndsWhenItsLeaseDoes(t *testing.T) {
 
 func TestDrainEndsOpenWatches(t *testing.T) {
 	ticks, settled := make(chan struct{}), make(chan struct{}, 4)
-	client, service := serveGRPC(t, &changingDecisions{}, followOnTicks(ticks, settled), time.Hour)
+	client, service := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: followOnTicks(ticks, settled), WatchLease: time.Hour})
 	stream, err := client.WatchDecisions(bearing(readerToken), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
 	if err != nil {
 		t.Fatal(err)

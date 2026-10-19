@@ -12,6 +12,7 @@ import (
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/proto/egress_admin"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 // adminWatchLease is how long a decision watch runs before the caller subscribes again. The bearer is
@@ -44,8 +45,9 @@ func (c *config) adminGRPCCallers() ([]auth.Account, error) {
 	return callers, nil
 }
 
-// mountAdminGRPC serves the EgressAdmin API on the listener of the admin HTTP server.
-func mountAdminGRPC(adminServer *http.Server, c config, reviews auth.TokenReviews, decisions admin.Decisions, changes admin.Changes) (shutdowner, error) {
+// mountAdminGRPC serves the EgressAdmin API and the standard health service on the listener of the
+// admin HTTP server. It admits the callers and the audience from c; options holds what the service reads.
+func mountAdminGRPC(adminServer *http.Server, c config, reviews auth.TokenReviews, options admin.ServiceOptions) (shutdowner, error) {
 	callers, err := c.adminGRPCCallers()
 	if err != nil {
 		return nil, err
@@ -56,35 +58,16 @@ func mountAdminGRPC(adminServer *http.Server, c config, reviews auth.TokenReview
 			namespaces = append(namespaces, caller.Namespace)
 		}
 	}
-	resolver, err := auth.NewResolver(reviews, c.AdminGRPCAudience, namespaces)
-	if err != nil {
+	if options.Resolver, err = auth.NewResolver(reviews, c.AdminGRPCAudience, namespaces); err != nil {
 		return nil, err
 	}
-	service := admin.NewService(decisions, changes, resolver, callers, adminWatchLease)
+	options.Callers, options.WatchLease = callers, adminWatchLease
+	service := admin.NewService(options)
 	grpcServer := grpc.NewServer()
 	egressadminpb.RegisterEgressAdminServer(grpcServer, service)
+	healthpb.RegisterHealthServer(grpcServer, admin.NewProbes(options.Index, options.Clock))
 	mountGRPC(adminServer, grpcServer)
 	return watchingServer{Server: adminServer, service: service}, nil
-}
-
-// mountGRPC serves gRPC on the HTTP server's listener: an HTTP/2 request of content type
-// application/grpc goes to grpcServer and every other request to the server's own handler. The
-// listener takes cleartext HTTP/2 beside HTTP/1.1 for it.
-//
-// The gRPC server never serves a listener of its own, so only the HTTP server's Shutdown stops it:
-// grpc.Server.GracefulStop cannot drain calls served this way.
-func mountGRPC(server *http.Server, grpcServer *grpc.Server) {
-	rest := server.Handler
-	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
-			grpcServer.ServeHTTP(w, r)
-			return
-		}
-		rest.ServeHTTP(w, r)
-	})
-	server.Protocols = new(http.Protocols)
-	server.Protocols.SetHTTP1(true)
-	server.Protocols.SetUnencryptedHTTP2(true)
 }
 
 // watchingServer ends the watches its gRPC service holds open before the HTTP server shuts down,

@@ -133,6 +133,8 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   Other request headers and bodies cannot select identity. Service port 80 reaches the distinct
   API listener, not proxy port 8888; there is no local proxy dispatch or recursive forwarding.
   Operator admin endpoints are not available through this route.
+  The same listener also serves the view as the gRPC `EgressRules.GetRules`, with the same
+  authentication, subject and redaction.
 - The admitted host is resolved by the proxy, never by the sandbox. A host with any address that
   is not globally reachable unicast — loopback, private, link-local, carrier-grade NAT, multicast,
   reserved, and the IPv4-mapped IPv6 forms of those — is refused whole with `address-forbidden`;
@@ -194,9 +196,11 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   authority; the stream ends when the proxy loses its database connection.
 - The `EgressAdmin` gRPC service, when enabled, serves the same reads with the same records and
   window: `ListDecisions` for a subject or the unauthenticated, `WatchDecisions` for that list on
-  subscribing and again whenever it changes. Unlike the HTTP admin API, every call is admitted only
-  for an allowed ServiceAccount proved by a bearer reviewed on that call, and a watch ends after a
-  bounded lease so a revoked caller stops reading.
+  subscribing and again whenever it changes, and `GetHealth` for what `/healthz` reports. Unlike the
+  HTTP admin API, every call is admitted only for an allowed ServiceAccount proved by a bearer
+  reviewed on that call, and a watch ends after a bounded lease so a revoked caller stops reading.
+  The standard gRPC health service beside it reports the verdicts of `/healthz` (the empty service)
+  and `/livez` (`livez`) to any caller.
 - Responses contain at most 200 recent records by default, ordered by decision time then event
   ID, oldest first within that window. This is not a global causal or insertion order.
 - Logging is diagnostic and best effort, not a mandatory lossless audit. A bounded asynchronous

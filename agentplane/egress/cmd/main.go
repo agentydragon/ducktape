@@ -27,8 +27,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/rules"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/proto/egress_rules"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -237,9 +239,13 @@ func run(ctx context.Context, c config) error {
 		Handler:           admin.New(store, changes, decisions, index, time.Now),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
+	rulesGRPC := grpc.NewServer()
+	egressrulespb.RegisterEgressRulesServer(rulesGRPC, rules.NewService(verifier, index))
+	mountGRPC(agentAPIServer, rulesGRPC)
 	var adminShutdown shutdowner = adminServer
 	if c.adminGRPCEnabled() {
-		if adminShutdown, err = mountAdminGRPC(adminServer, c, reviews.TokenReviews(), store, changes); err != nil {
+		options := admin.ServiceOptions{Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index, Clock: time.Now}
+		if adminShutdown, err = mountAdminGRPC(adminServer, c, reviews.TokenReviews(), options); err != nil {
 			return err
 		}
 	}

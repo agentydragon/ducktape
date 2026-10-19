@@ -47,6 +47,14 @@ func healthyIndex() fakeIndex {
 	return fakeIndex{Available: true, Synced: true, StaleAfter: 15 * time.Minute, Ages: map[policy.Kind]time.Duration{policy.Secrets: 0}}
 }
 
+func staleIndex() fakeIndex {
+	return fakeIndex{Synced: true, StaleAfter: 15 * time.Minute, Ages: map[policy.Kind]time.Duration{policy.Secrets: 20 * time.Minute}}
+}
+
+func drainingIndex() fakeIndex {
+	return fakeIndex{Synced: true, Draining: true, StaleAfter: time.Minute}
+}
+
 func serve(decisions Decisions, changes Changes, health HistoryHealth, index Index) *httptest.Server {
 	return httptest.NewServer(New(decisions, changes, health, index, func() time.Time { return started }))
 }
@@ -197,8 +205,8 @@ func TestHealthzIsTheIndexVerdictWithItsFacts(t *testing.T) {
 		status int
 	}{
 		{"healthy", healthyIndex(), http.StatusOK},
-		{"stale", fakeIndex{Synced: true, StaleAfter: 15 * time.Minute, Ages: map[policy.Kind]time.Duration{policy.Secrets: 20 * time.Minute}}, http.StatusServiceUnavailable},
-		{"draining", fakeIndex{Synced: true, Draining: true, StaleAfter: time.Minute}, http.StatusServiceUnavailable},
+		{"stale", staleIndex(), http.StatusServiceUnavailable},
+		{"draining", drainingIndex(), http.StatusServiceUnavailable},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := serve(nil, nil, overflowed, test.index)

@@ -34,10 +34,10 @@ One Go package per concern:
   condition on each `PolicyBinding`. It uses Kubernetes-generated clients, listers and shared
   informers from `client/` and `../policy/client/`; a list-options tweak bounds watch periods.
 - `rules`: the agent-facing `egress.agentplane-staging.svc.cluster.local/v1/rules` API, on its own
-  independently authenticated listener.
+  independently authenticated listener, which also serves the rules as the gRPC `EgressRules` service.
 - `decision` and `history`: admission records, and their bounded best-effort write to the shared
-  PostgreSQL history; `admin` serves that history, a change stream, readiness and liveness, and the
-  history reads again as the gRPC `EgressAdmin` service.
+  PostgreSQL history; `admin` serves that history, a change stream, readiness and liveness, and
+  those reads again as the gRPC `EgressAdmin` and standard health services.
 - `history_migrations`: the Goose schema of that history (below) and its migrator command.
 
 Also here:
@@ -187,25 +187,44 @@ an informational snapshot of the answering replica, not a global acknowledgement
 
 ## Admin gRPC API
 
-`EgressAdmin` (<../proto/egress_admin.proto>) serves the admin listener's decision reads as gRPC:
-`ListDecisions` is `/decisions`, and `WatchDecisions` is `/decisions/changes` carrying state, the
-`ListDecisions` list on subscribing and again each time it differs. Both read through the same
-`Decisions` and `Changes` as the HTTP handlers. `/healthz` and `/livez` stay HTTP; the rules API stays
-HTTP.
+`EgressAdmin` (<../proto/egress_admin.proto>) serves the admin listener's reads as gRPC:
+`ListDecisions` is `/decisions`, `WatchDecisions` is `/decisions/changes` carrying state, the
+`ListDecisions` list on subscribing and again each time it differs, and `GetHealth` is `/healthz` with
+the same facts (`decisionHistory`, the refresh ages) and the status code as `ready`. All three read
+through the same `Decisions`, `Changes`, history counters and `Index` as the HTTP handlers.
+
+The standard `grpc.health.v1.Health` service is served beside it for Kubernetes' native `grpc` probes:
+the empty service is the verdict of `/healthz` and the service `livez` that of `/livez`, which stays
+`SERVING` while the process answers so a recoverable watch outage never restarts it. Like the HTTP
+probes it admits every caller, because the kubelet sends no bearer; `GetHealth` does not. `Watch` is
+not served.
 
 It shares the admin listener with the HTTP API: the listener takes cleartext HTTP/2 beside HTTP/1.1, and
 an HTTP/2 request of content type `application/grpc` goes to the gRPC server. The gRPC server is mounted
 on the HTTP server as a handler (`grpc.Server.ServeHTTP`), so the HTTP server's `Shutdown` is what stops
 it, after ending the open watches.
 
-**Deviation:** the HTTP admin listener is fenced by network policy alone, while every gRPC call admits
-only the ServiceAccounts in `admin_grpc_callers`, each proving itself by a bearer of audience
-`admin_grpc_audience` that is reviewed on every call, before the history is read
+**Deviation:** the HTTP admin listener is fenced by network policy alone, while every `EgressAdmin`
+call admits only the ServiceAccounts in `admin_grpc_callers`, each proving itself by a bearer of
+audience `admin_grpc_audience` that is reviewed on every call, before anything is read
 (<../docs/grpc_services.md>). A watch is admitted once, so it ends after ten minutes and when the proxy
 drains; the caller subscribes again and is admitted afresh.
 
-The gRPC API is mounted only when `admin_grpc_audience` and `admin_grpc_callers` (`namespace/name`
-entries) are both set; without them the admin listener serves HTTP alone.
+The admin gRPC services are mounted only when `admin_grpc_audience` and `admin_grpc_callers`
+(`namespace/name` entries) are both set; without them the admin listener serves HTTP alone.
+
+## Rules gRPC API
+
+`EgressRules` (<../proto/egress_rules.proto>) serves `GET /v1/rules` as `GetRules` on the agent API
+listener, which takes gRPC beside HTTP the same way. The answer is the same redacted view, and the
+caller is the ServiceAccount its bearer proves and nothing else: the bearer is read from `authorization`
+metadata as the HTTP API reads its header, and reviewed by the same verifier, so the hop token and the
+projected tokens it accepts there are accepted here.
+
+**Deviation** from <../docs/grpc_services.md>: callers are the sandbox workloads themselves, so there is no
+allow-list and no `auth.Resolver` of its own; every bearer is `Unauthenticated` alike, and one that could
+not be reviewed is `Unavailable`. The documentation routes (`/openapi.json`, `/llms.txt`, `/docs/agents/`)
+stay HTTP. It is mounted unconditionally, because it has no setting.
 
 ## ServiceAccount permissions
 

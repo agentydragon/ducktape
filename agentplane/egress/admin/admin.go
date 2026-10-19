@@ -125,21 +125,26 @@ type healthBody struct {
 	RefreshedSecondsAgo map[string]float64 `json:"refreshedSecondsAgo"`
 }
 
-// healthz is healthy only while the index is both complete and still moving. `synced` alone says only
+// readHealth is ready only while the index is both complete and still moving. `synced` alone says only
 // that every kind has listed once, so a proxy whose watches had since wedged would go on answering 200
 // while serving a frozen snapshot of the rules; the ages are the facts and the status the verdict.
-func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
-	status := s.index.Status(s.clock())
-	body := healthBody{
-		Synced: status.Synced, Draining: status.Draining, DecisionHistory: s.historyHealth.Health(),
+func readHealth(index Index, historyHealth HistoryHealth, now time.Time) (body healthBody, ready bool) {
+	status := index.Status(now)
+	body = healthBody{
+		Synced: status.Synced, Draining: status.Draining, DecisionHistory: historyHealth.Health(),
 		StaleAfterSeconds:   status.StaleAfter.Seconds(),
 		RefreshedSecondsAgo: make(map[string]float64, len(status.Ages)),
 	}
 	for kind, age := range status.Ages {
 		body.RefreshedSecondsAgo[string(kind)] = math.Round(age.Seconds()*10) / 10
 	}
+	return body, status.Available
+}
+
+func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
+	body, ready := readHealth(s.index, s.historyHealth, s.clock())
 	code := http.StatusOK
-	if !status.Available {
+	if !ready {
 		code = http.StatusServiceUnavailable
 	}
 	writeJSON(w, code, body)

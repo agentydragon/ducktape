@@ -196,6 +196,11 @@ proto_library(
 )
 
 proto_library(
+    name = "egress_rules_proto",
+    srcs = ["egress_rules.proto"],
+)
+
+proto_library(
     name = "history_service_proto",
     srcs = ["history_service.proto"],
     deps = [
@@ -295,6 +300,16 @@ go_proto_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/proto/egress_admin",
     proto = ":egress_admin_proto",
+)
+
+go_proto_library(
+    name = "egress_rules_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/egress_rules",
+    proto = ":egress_rules_proto",
 )
 
 go_proto_library(

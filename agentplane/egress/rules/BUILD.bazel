@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "rules",
     srcs = [
+        "grpc.go",
         "openapi.go",
         "rules.go",
         "view.go",
@@ -15,13 +16,21 @@ go_library(
         "//agentplane/egress/identity",
         "//agentplane/egress/policy",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/proto:egress_rules_go_proto",
         "@com_github_invopop_jsonschema//:jsonschema",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
 go_test(
     name = "rules_test",
-    srcs = ["rules_test.go"],
+    srcs = [
+        "grpc_test.go",
+        "rules_test.go",
+    ],
     embed = [":rules"],
     deps = [
         "//agentplane/egress/api/v1alpha1",
@@ -30,8 +39,16 @@ go_test(
         "//agentplane/egress/policy",
         "//agentplane/egress/resources",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/proto:egress_rules_go_proto",
         "//agentplane/workload_auth/go/auth",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+        "@org_golang_google_protobuf//proto",
     ],
 )
