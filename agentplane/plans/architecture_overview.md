@@ -71,7 +71,7 @@ D1 and D2 differ only in lifetime; D3 and D4 change the store.
 | Finish with a Sandbox                                                                                                            | Retire it and drop its workspace                                                                                                        | Delete it; its history, membership and grants stay                       | Either                                                                                                                | Either; retired or deleted is a row state                                                    |
 | Haku moves to a fresh Sandbox ([story 4](user_stories.md#4-haku-itself-lives-here): "the sandbox is disposable and Haku is not") | The old Sandbox's threads go if it is deleted, so it stays retired                                                                      | The old threads stay readable                                            | As D1 or D2                                                                                                           | The old threads stay readable                                                                |
 | A coordinator audits its agents, finished ones included                                                                          | Grants on Sandboxes that still exist                                                                                                    | Grants matched on History's record of the writer, apart from live grants | As D1 or D2                                                                                                           | Grants and membership are rows beside the Sandbox rows                                       |
-| Grant a git-authored collection                                                                                                  | Flux applies `PolicySet`s; membership is CRs owned by Sandboxes (#10987)                                                                | Flux applies `PolicySet`s; a reconciler copies the sets into History     | Flux applies to the second plane (`spec.kubeConfig`)                                                                  | tofu-controller or an importer writes rows                                                   |
+| Grant a git-authored collection                                                                                                  | Flux applies `PolicySet`s; membership is CRs owned by Sandboxes (#10987), or tags on them                                               | Flux applies `PolicySet`s; a reconciler copies the sets into History     | Flux applies to the second plane (`spec.kubeConfig`)                                                                  | tofu-controller or an importer writes rows                                                   |
 | Try a CRD change on testing first                                                                                                | Not possible: one cluster-scoped CRD set from `devel` serves both                                                                       | Not possible                                                             | Possible: each plane has its own CRDs                                                                                 | Possible: each environment has its own database                                              |
 | Inspect records with `kubectl`                                                                                                   | Yes                                                                                                                                     | Live ones; retained data through History's API                           | Yes, with the second plane's kubeconfig                                                                               | No; the records service's HTTP API                                                           |
 | 100 Sandboxes a day for a year (the operator, 09:50)                                                                             | 36,500 retired ones stay in the cluster's etcd, about 365 MB, each with its state PVC ([below](#keeping-finished-sandboxes-as-records)) | Only live ones stay                                                      | Off the cluster's etcd, still in every watcher's cache                                                                | Off the cluster's etcd                                                                       |
@@ -255,9 +255,18 @@ Candidates; each still needs the operator's go.
 - **Record the writing Sandbox's UID in History and check it on every push.** D1 deletes by it, D2
   keys grants by it, and D3 and D4 still identify a Sandbox by an ID History must record. The re-key
   is not part of this; only D2's reads might need it (`HISTORY_SESSION_KEY_DESIGN`).
-- **Send v1 with direct and `allSandboxes` targets only.** Every direction can serve them; collection
-  targets wait for membership, which is where the directions differ. This takes the collection
-  targets and the membership CR out of #10987.
+- **Collections as tags on the Sandbox.** The operator (09:58): a collection as "something like a
+  tag on one or more Sandboxes that's just a string, without a UID identity or a k8s object backing
+  it, no Membership objects". A tag lives and dies with its Sandbox, an archive copies it by value,
+  and a rule matches it the same way in every direction, as it does direct and `allSandboxes`
+  targets; membership then picks no direction, and a recreated Sandbox has only the tags its
+  manifest or preset gives it. Against the membership CRs, git cannot cleanly tag a Sandbox it did
+  not create, since Flux applies whole objects that it then owns and prunes (not tried). Setting a
+  tag is a grant that Kubernetes RBAC cannot limit by label or value, so an admission rule keeps tag
+  writes to GitOps and the app's provisioning path, the v1 membership administration already agreed
+  in the [agent communication plan](multiagent_communication.md#target-collections-and-launch-enrollment).
+  A label per collection lets watchers and `kubectl` select on it; a spec list keeps requesters
+  writing spec. This takes the membership CR out of #10987.
 - **Drop a Sandbox's workspace without deleting the Sandbox.** The Sandbox owns
   `<sandbox>-workspace`, and a missing one blocks the next start with `VolumeLayoutMismatch`
   (`sandbox_controller/workspace.go`), so deleting the Sandbox is the only way to free its workspace,
@@ -284,8 +293,8 @@ configurable, or configurable within sane options" (02:19).
   owner reference. D3 then becomes a deployment setting that testing can try first.
 - **Whether history outlives its Sandbox.** The delete cascade can be a setting, per Sandbox or per
   environment. Membership and grants are the catch: Sandbox-owned CRs work only when history dies
-  with the Sandbox, while rows keyed by Sandbox UID work under both settings. Making lifetime
-  configurable therefore settles membership in D2's shape.
+  with the Sandbox, while rows keyed by Sandbox UID, or tags that History copies when a Sandbox is
+  archived or deleted, work under both settings.
 - **Not a setting: database-backed records (D4).** It is a second backend for every record; offering
   both means building both.
 
@@ -295,7 +304,8 @@ Each setting is another mode to test and keep working, so configurability stays 
 
 Held until one is chosen:
 
-- collection membership as Sandbox-owned CRs (#10987: D1, D3) or as History rows (#10990: D2, D4);
+- collection membership as Sandbox-owned CRs (#10987: D1, D3) or as History rows (#10990: D2, D4),
+  unless collections become tags;
 - deleting history with its Sandbox (D1), or archive grants apart from live grants (D2);
 - a retired state that watchers treat specially (D1, D3);
 - the History re-key by Sandbox UID (D2);
@@ -372,7 +382,8 @@ Held until one is chosen:
   makes one Sandbox-owned `SandboxCollectionMembership` CR per Sandbox and collection; #10990
   recommends rows in History's database keyed by Sandbox UID, with git-authored sets reconciled in one
   way. Operator: collections must keep covering Sandboxes "no longer alive" (2026-10-18 23:33); a
-  database is "okay, we could still have some kind of reconciler" (2026-10-19 01:10).
+  database is "okay, we could still have some kind of reconciler" (2026-10-19 01:10); a collection
+  could be a tag on Sandboxes with "no Membership objects" (09:58).
 - **Session-access grants** (who may send to, or read, which Sandbox's Sessions). History's
   configured `reader_accounts` are the only gate on reads, and the Dispatcher trusts the app and
   Notification to authorize their users. Proposed: `session_access` rules in `PolicySet`s, assigned by
@@ -403,11 +414,12 @@ Held until one is chosen:
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control
-plane "if it came to it" (22:54), membership in a database with a reconciler (2026-10-19 01:10), and
-deleting a Sandbox's history with it as "one other consistent option" (02:04), and the state PVC and
-metadata as parts "I do not really need to dispose independently, I think" (09:42), and "one valid
-way to cut the knot might be" deleting history with the Sandbox CR and archiving as "some different
-operation that keeps the CR alive" (09:50).
+plane "if it came to it" (22:54), membership in a database with a reconciler (2026-10-19 01:10),
+deleting a Sandbox's history with it as "one other consistent option" (02:04), the state PVC and
+metadata as parts "I do not really need to dispose independently, I think" (09:42), "one valid way
+to cut the knot might be" deleting history with the Sandbox CR and archiving as "some different
+operation that keeps the CR alive" (09:50), and "I guess I could treat a 'collection' as just
+something like a tag" (09:58).
 
 ## Assumed by a lane and never confirmed
 
@@ -421,9 +433,9 @@ operation that keeps the CR alive" (09:50).
 
 ## Open PRs that encode unconfirmed defaults
 
-| PR     | Encodes                                                                      | Handling                                                                              |
-| ------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| #10987 | The draft send schema with the membership CR, freshness and recipient states | The membership CR is D1 or D3; direct and `allSandboxes` sending is direction-neutral |
+| PR     | Encodes                                                                      | Handling                                                                                    |
+| ------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| #10987 | The draft send schema with the membership CR, freshness and recipient states | The membership CR is D1 or D3; direct, `allSandboxes` and tag targets are direction-neutral |
 
 ## Parked
 
