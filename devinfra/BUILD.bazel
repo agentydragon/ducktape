@@ -79,14 +79,6 @@ py_test(
 )
 
 py_library(
-    name = "prettier",
-    srcs = ["prettier.py"],
-    data = [":prettier_bin"],
-    visibility = ["//visibility:public"],
-    deps = ["//util/bazel:runfiles"],
-)
-
-py_library(
     name = "prettier_cli",
     srcs = ["prettier_cli.py"],
     visibility = ["//visibility:public"],
