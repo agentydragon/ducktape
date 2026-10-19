@@ -90,7 +90,11 @@ async def deterministic_browser_context(
             user_data_dir=profile.name,
             headless=True,
             executable_path=chromium_executable(),
-            args=[*DETERMINISTIC_BROWSER_ARGS, *extra_args],
+            # Emulation alone leaves the native widget at scale 1. CDP screenshots then
+            # rescale the compositor to device_scale_factor and back, racing raster updates
+            # (SVG edges varied even across captures of an unchanged page). Paint at the
+            # capture scale from launch so screenshot capture needs no scale transition.
+            args=[*DETERMINISTIC_BROWSER_ARGS, f"--force-device-scale-factor={device_scale_factor}", *extra_args],
             viewport=viewport,
             device_scale_factor=device_scale_factor,
             has_touch=has_touch,

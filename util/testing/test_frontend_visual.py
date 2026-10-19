@@ -1,4 +1,4 @@
-"""Verify the Playwright launcher pins Chromium's generic font families."""
+"""Verify the Playwright launcher pins Chromium's rendering settings."""
 
 from __future__ import annotations
 
@@ -127,6 +127,22 @@ async def test_animations_script_pins_a_page_that_mounts_after_it(playwright: Pl
         play_states = await page.evaluate("document.getAnimations().map(animation => animation.playState)")
 
     assert play_states == ["paused"]
+
+
+@pytest.mark.parametrize("device_scale_factor", [1, 1.5, 2.625, 3])
+async def test_native_and_emulated_device_scales_match(playwright: Playwright, device_scale_factor: float) -> None:
+    async with deterministic_browser_context(
+        playwright, viewport={"width": 412, "height": 915}, frozen_now_ms=0, device_scale_factor=device_scale_factor
+    ) as context:
+        page = await context.new_page()
+        assert await page.evaluate("window.devicePixelRatio") == device_scale_factor
+        session = await context.new_cdp_session(page)
+        # A zero deviceScaleFactor exposes the native scale underneath Playwright's
+        # emulation. CDP screenshots divide the emulated scale by this native scale.
+        await session.send(
+            "Emulation.setDeviceMetricsOverride", {"width": 412, "height": 915, "mobile": False, "deviceScaleFactor": 0}
+        )
+        assert await page.evaluate("window.devicePixelRatio") == device_scale_factor
 
 
 if __name__ == "__main__":

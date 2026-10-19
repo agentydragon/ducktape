@@ -134,6 +134,17 @@ locale, timezone and frozen clock. Harness styles must pin animations before com
 mount; inline pages include that CSS automatically. Capture waits for fonts, image decoding,
 paint and the fixture network ledger, and checks uncaught page errors and escaped requests.
 These are **not** application-readiness conditions: the test must assert its content first.
+
+The launcher pins Chromium's native device scale to the context's emulated scale with
+`--force-device-scale-factor`. Emulation alone changes the DOM's `devicePixelRatio` while
+leaving the native widget at its default scale (1 on RBE). Chromium's [screenshot handler] then rescales the
+compositor for each capture and restores it afterwards. This produced two SVG edge rasters
+on an unchanged mobile page; waiting for fonts and paint frames did not eliminate it.
+Pinning the native scale removes that screenshot-time scale transition. Fractional-scale
+images can change once when adopting the pin, including font metrics and SVG edges.
+
+[screenshot handler]: https://chromium.googlesource.com/chromium/src/+/151.0.7922.34/content/browser/devtools/protocol/page_handler.cc#1476
+
 Capture does not click, scroll, or move the pointer.
 
 Real-server tests may construct `VisualPage` before navigating an existing deterministic
