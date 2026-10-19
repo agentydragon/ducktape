@@ -1469,8 +1469,8 @@ async def test_open_and_input_reply_before_archive_catches_up(
         assert thread_view is not None
         assert thread_view.id == thread_id
         assert thread_view.last_cursor == 0
-        assert thread_view.harness_state == "HARNESS_STATE_STOPPED"
-        assert thread_view.feed_status == "active"
+        assert thread_view.harness_state == "HARNESS_STATE_UNSPECIFIED"
+        assert thread_view.feed_status is None
         listed_threads = await store.list_threads()
         assert [thread.id for thread in listed_threads] == [thread_id]
         assert listed_threads[0].last_cursor == 0
