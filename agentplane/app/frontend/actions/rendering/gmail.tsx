@@ -37,9 +37,17 @@ function DraftCollapsed({ args }: { args: DraftArguments }): JSX.Element {
     <Stack gap="xs">
       <Text size="sm" lineClamp={2} style={{ overflowWrap: "anywhere" }}>
         To {recipients(args)}
-        {args.cc && args.cc.length > 0 ? ` · Cc ${args.cc.join(", ")}` : ""}
-        {args.bcc && args.bcc.length > 0 ? ` · Bcc ${args.bcc.join(", ")}` : ""}
       </Text>
+      {args.cc && args.cc.length > 0 && (
+        <Text size="sm" lineClamp={2} style={{ overflowWrap: "anywhere" }}>
+          Cc {args.cc.join(", ")}
+        </Text>
+      )}
+      {args.bcc && args.bcc.length > 0 && (
+        <Text size="sm" lineClamp={2} style={{ overflowWrap: "anywhere" }}>
+          Bcc {args.bcc.join(", ")}
+        </Text>
+      )}
       <Text size="sm" fw={600} lineClamp={2} style={{ overflowWrap: "anywhere" }}>
         {args.subject || "(no subject)"}
       </Text>

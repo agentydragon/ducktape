@@ -452,16 +452,24 @@ async def test_compact_action_summaries(
     else:
         title = f"review {name.replace('_', ' ')}"
     disclosure = section.get_by_role("button", name=f"Expand {title}")
+    collapsed_summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
     bounds = await disclosure.bounding_box()
     assert bounds is not None
     if group == "gmail" and name == "drafts_create":
-        await expect(section.get_by_text("Deployment review", exact=True)).to_be_visible()
-        await expect(section.get_by_text("Replying to thread existing-thread-123", exact=True)).to_be_visible()
+        await expect(collapsed_summary.get_by_text("Deployment review", exact=True)).to_be_visible()
+        await expect(collapsed_summary.get_by_text("Cc team@example.com", exact=True)).to_be_visible()
+        await expect(
+            collapsed_summary.get_by_text("Replying to thread existing-thread-123", exact=True)
+        ).to_be_visible()
         await view.capture(f"{capture_name}-collapsed", target=section)
     if group == "github" and name == "create_pull_request":
-        await expect(section.get_by_text("Create as a draft.", exact=True)).to_be_visible()
-        await expect(section.get_by_text("Do not allow maintainers to edit the branch.", exact=True)).to_be_visible()
-        await expect(section.get_by_text("Request review from reviewer1, reviewer2.", exact=True)).to_be_visible()
+        await expect(collapsed_summary.get_by_text("Draft pull request.", exact=True)).to_be_visible()
+        await expect(
+            collapsed_summary.get_by_text("Do not allow maintainers to edit the branch.", exact=True)
+        ).to_be_visible()
+        await expect(
+            collapsed_summary.get_by_text("Request review from reviewer1, reviewer2.", exact=True)
+        ).to_be_visible()
         await view.capture(f"{capture_name}-collapsed", target=section)
     await disclosure.click(position={"x": bounds["width"] - 4, "y": bounds["height"] - 3})
     await expect(section.get_by_text(visible)).to_be_visible()
@@ -532,8 +540,9 @@ async def test_compact_pr_with_description_requires_review(
     await app.mount_thread(IDLE_THREAD)
     section = view.page.locator(".agentplane-actions-sidebar")
     await _open_phone_navigation(view.page)
+    collapsed_summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
     await expect(
-        section.get_by_text("Important PR description that must be read before approval.", exact=False)
+        collapsed_summary.get_by_text("Important PR description that must be read before approval.", exact=False)
     ).to_be_visible()
     await expect(section.get_by_role("button", name="Approve review create pull request")).to_have_count(0)
     await view.capture(f"{capture_name}-collapsed", target=section)
