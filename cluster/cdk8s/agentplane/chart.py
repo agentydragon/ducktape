@@ -68,6 +68,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
     egress_database_url = (
         SecretRef(namespace=env.namespace, name="postgres-egress").key("uri").env_value(chart, "egress-database-url")
     )
+    app_account = ServiceAccountRef(namespace=env.namespace, name=app_component.NAME)
     history_database_url = (
         SecretRef(namespace=env.namespace, name="postgres-sandbox-service")
         .key("uri")
@@ -100,14 +101,13 @@ def environment_chart(app: App, env: Environment) -> Chart:
         env,
         database_url=egress_database_url,
         runners=runner_sandbox.pods(env.namespace),
+        admin_grpc_callers=[app_account],
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
         service_cluster_ip=None,
     ).add_platform_resources()
     sandbox_pod.add_tool_config(chart, env)
-    app_caller = {
-        ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace).pods
-    }
+    app_caller = {app_account: app_component.service(env.namespace).pods}
     notifications_caller = {
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }

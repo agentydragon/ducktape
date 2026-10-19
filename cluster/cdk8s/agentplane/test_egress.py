@@ -16,6 +16,7 @@ from cluster.cdk8s.agentplane import binding_delegation, notifications, staging,
 from cluster.cdk8s.agentplane.actions_staging_policies import AGENTPLANE_TESTING_POLICY
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import (
+    ADMIN_GRPC_AUDIENCE,
     BASIC_POLICY,
     DEFAULT_POLICIES,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -78,7 +79,25 @@ def test_egress_uses_go_proxy_and_goose_migration(
     assert "args" not in proxy
     assert proxy_env["AGENTPLANE_EGRESS_RULES_NAMESPACE"]["value"] == namespace
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
+    assert config["admin_grpc_audience"] == ADMIN_GRPC_AUDIENCE
+    assert config["admin_grpc_callers"] == [f"{namespace}/app"]
     assert not {"confdir", "decision_flush_seconds"} & config.keys()
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_app_projects_egress_admin_audience(
+    agentplane_manifests: dict[str, list[dict[str, Any]]], namespace: str
+) -> None:
+    docs = agentplane_manifests[namespace]
+    pod = _by_name(docs, "Deployment", "app")["spec"]["template"]["spec"]
+    container = one(pod["containers"])
+    volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-admin-token")
+    (token,) = volume["projected"]["sources"]
+    assert token["serviceAccountToken"]["audience"] == ADMIN_GRPC_AUDIENCE
+    assert token["serviceAccountToken"]["path"] == "token"
+    assert {mount["name"]: mount["mountPath"] for mount in container["volumeMounts"]}[
+        "egress-admin-token"
+    ] == "/var/run/secrets/agentplane-egress-admin"
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)

@@ -37,6 +37,16 @@ class Settings(YamlFileSettings):
     listen_port: int = Field(default=8888, description="Proxy listener port the sidecars relay to.")
     admin_host: str = Field(default="0.0.0.0", description="Admin listener bind address.")
     admin_port: int = Field(default=8081, description="Admin port serving /decisions and /healthz.")
+    admin_grpc_audience: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Audience of the bearer accepted by the authenticated admin gRPC API; unset disables that API.",
+    )
+    admin_grpc_callers: list[str] | None = Field(
+        default=None,
+        min_length=1,
+        description="ServiceAccounts admitted by the admin gRPC API as namespace/name entries; unset disables it.",
+    )
     agent_api_host: str = Field(default="0.0.0.0", description="Agent-facing rules API bind address.")
     agent_api_port: int = Field(default=8082, description="Agent-facing HTTP port serving /v1/rules.")
     ca_cert: Path = Field(description="PEM certificate of the interception CA the runner containers trust.")

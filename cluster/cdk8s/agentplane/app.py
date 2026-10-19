@@ -278,6 +278,7 @@ class App(Construct):
         for volume, audience, mount_path in [
             ("runner-gateway-token", runner_gateway.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-runner-gateway"),
             ("history-service-token", history_service.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-history-service"),
+            ("egress-admin-token", egress.ADMIN_GRPC_AUDIENCE, "/var/run/secrets/agentplane-egress-admin"),
             (
                 "session-dispatcher-token",
                 session_dispatcher.TOKEN_AUDIENCE,

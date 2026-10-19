@@ -4,7 +4,7 @@ EgressCredential resources and egress PolicySets it reads.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
@@ -48,6 +48,7 @@ from agentplane.crd_group import GROUP
 from agentplane.egress.settings import Settings
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
+from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications
@@ -84,6 +85,8 @@ PROXY_PORT = 8888
 # The sidecar projects and the proxy reviews this exact string, so a mismatch with the cluster shows
 # up as a 401 inside the sandbox, not a proxy denial.
 KUBERNETES_AUDIENCE = "https://localhost:7445"
+# Only the app's authenticated admin gRPC caller receives this audience.
+ADMIN_GRPC_AUDIENCE = "agentplane-egress-admin"
 # Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The credential substituted there, whose placeholder a sandbox's kubeconfig carries (sandbox_pod.py).
@@ -621,6 +624,7 @@ class Egress(Construct):
         *,
         database_url: EnvValue,
         runners: Pods,
+        admin_grpc_callers: Sequence[ServiceAccountRef],
         agent_api_service: ServiceRef | None = None,
         litellm_host: str | None = None,
         litellm_cluster_internal: bool = True,
@@ -658,6 +662,11 @@ class Egress(Construct):
             model=Settings,
             content={
                 "allowed_service_account_namespaces": [env.namespace, *env.egress.external_workload_namespaces],
+                "admin_grpc_audience": ADMIN_GRPC_AUDIENCE,
+                "admin_grpc_callers": [
+                    f"{account.namespace}/{account.name}"
+                    for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
+                ],
                 "projected_token_audiences": [
                     KUBERNETES_AUDIENCE,
                     notifications.TOKEN_AUDIENCE,

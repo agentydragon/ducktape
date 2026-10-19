@@ -798,6 +798,9 @@ data:
     allowed_service_account_namespaces:
       - agentplane-staging
       - public-coder-agent
+    admin_grpc_audience: agentplane-egress-admin
+    admin_grpc_callers:
+      - agentplane-staging/app
     projected_token_audiences:
       - https://localhost:7445
       - agentplane-notifications
@@ -2780,6 +2783,9 @@ spec:
             - mountPath: /var/run/secrets/agentplane-history-service
               name: history-service-token
               readOnly: true
+            - mountPath: /var/run/secrets/agentplane-egress-admin
+              name: egress-admin-token
+              readOnly: true
             - mountPath: /var/run/secrets/agentplane-session-dispatcher
               name: session-dispatcher-token
               readOnly: true
@@ -2868,6 +2874,13 @@ spec:
             sources:
               - serviceAccountToken:
                   audience: agentplane-history-service
+                  expirationSeconds: 3600
+                  path: token
+        - name: egress-admin-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress-admin
                   expirationSeconds: 3600
                   path: token
         - name: session-dispatcher-token
