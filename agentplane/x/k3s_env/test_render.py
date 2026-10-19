@@ -4,6 +4,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest_bazel
+import yaml
 
 from agentplane.x.k3s_env import fixture_chart, fixture_database
 
@@ -62,6 +63,16 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     proxy = next(container for container in egress_pod["containers"] if container["name"] == "proxy")
     assert proxy["image"] == fixture_chart.EGRESS_IMAGE
     assert "args" not in proxy
+    egress_config = yaml.safe_load(_resource(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
+    assert egress_config["admin_grpc_audience"] == "agentplane-egress-admin"
+    assert egress_config["admin_grpc_callers"] == [f"{fixture_chart.NAMESPACE}/app"]
+    app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]
+    token = next(volume for volume in app_pod["volumes"] if volume["name"] == "egress-admin-token")
+    assert token["projected"]["sources"][0]["serviceAccountToken"]["audience"] == "agentplane-egress-admin"
+    assert any(
+        mount["name"] == "egress-admin-token" and mount["mountPath"] == "/var/run/secrets/agentplane-egress-admin"
+        for mount in app_pod["containers"][0]["volumeMounts"]
+    )
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
     egress_migrator = next(container for container in egress_pod["initContainers"] if container["name"] == "migrate")
     assert egress_migrator["image"] == fixture_chart.EGRESS_MIGRATOR_IMAGE

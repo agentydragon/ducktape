@@ -148,6 +148,7 @@ def objects(
         env,
         database_url=egress_database_url,
         runners=runner_sandbox.pods(env.namespace),
+        admin_grpc_callers=[ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)],
         agent_api_service=agent_api,
         litellm_host="litellm.allegedly.works" if litellm_key is not None else None,
         litellm_cluster_internal=litellm_key is None,

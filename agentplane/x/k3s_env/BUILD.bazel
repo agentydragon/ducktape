@@ -128,6 +128,7 @@ py_test(
         ":fixture_database",
         "//:conftest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
