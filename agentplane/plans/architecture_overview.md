@@ -261,14 +261,20 @@ What each operation leaves:
 | State and workspace PVCs                                                    | Kept; the workspace can be dropped | Gone            | Gone   |
 | Dispatcher queue rows                                                       | Kept                               | Gone            | Gone   |
 | History transcript and app Thread                                           | Kept                               | Kept, read-only | Gone   |
-| Archive row (namespace, name, UID, tags)                                    | None                               | Written         | None   |
+| History's record of the Sandbox (namespace, name, UID, tags)                | Kept                               | Kept            | Purged |
 | Can run again                                                               | Yes                                | No              | No     |
 
-Deleting a Sandbox today is an archive without the archive row. Archive and delete are both a
-Kubernetes delete of the Sandbox; what differs is what the Sandbox Controller's finalizer asks
-History to do before it releases. A Sandbox field could carry that, as a PersistentVolume's reclaim
-policy does: `Archive` by default, today's behavior plus the row, or `Delete`, which also purges the
-transcript and Threads.
+Deleting a Sandbox today is an archive without the archive row. The operator (23:24): "history's
+record of a Sandbox would be an entity in History Service, and Sandbox CR could stop existing
+without the History Service records disappearing", but "I'm not sure if sandbox controller should be
+involved". It need not be: History already records each Session's writer namespace and name on the
+first push ([History README](../history_service/README.md#which-sandbox-wrote-a-session)) and lacks
+only the UID and tags, and a purge can be a History call the app makes after removing the CR. The
+tags are the one bridge, since History "never routes to, reads or manages Sandboxes" ([service
+boundaries](../docs/service_boundaries.md)). Either they live in History's Sandbox entity from
+launch, written by the app at launch and on retag, read by Notification's send check, and imported
+when authored in git; or they live on the CR and History copies them when it goes, which needs
+History to read Sandboxes and hold a finalizer of its own, against that rule.
 
 ## Right under every direction
 
