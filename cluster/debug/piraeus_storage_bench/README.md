@@ -12,6 +12,12 @@ RWO volume, not RWX, and this is not an HA or failover-tested result.
 
 ## Results
 
+![Filesystem and Forgejo latency samples with medians](results/overview.svg)
+
+Dots show all recorded samples; diamonds and the values at right show medians.
+Each panel has its own linear scale. Missing SeaweedFS application results are
+marked explicitly.
+
 The direct workload used five balanced, interleaved rounds per arm. Values below are
 median seconds from [`direct-filesystem.csv`](results/direct-filesystem.csv); each cell
 has five samples.
@@ -113,6 +119,19 @@ about 10 ms resolution, limiting interpretation of near-zero clone times.
   setup on this PVC, not universal SeaweedFS incompatibility. See
   `results/seaweed-forgejo-setup-failure.txt` and
   `results/seaweed-csi-pvc-lines.txt`.
+
+## Plot regeneration
+
+The plot reads only the committed CSVs. From the repository root in the Nix devshell:
+
+```sh
+bb run //cluster/debug/piraeus_storage_bench:plot_results_bin -- \
+  --results-dir "$PWD/cluster/debug/piraeus_storage_bench/results" \
+  --output "$PWD/cluster/debug/piraeus_storage_bench/results/overview.svg"
+```
+
+Add `--preview /tmp/piraeus-storage.png` to also render a PNG for inspection.
+The SVG omits its generation timestamp and uses stable IDs for reproducible output.
 
 ## Harness
 

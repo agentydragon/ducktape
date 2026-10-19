@@ -1,0 +1,13 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_binary(
+    name = "plot_results_bin",
+    main_module = "cluster.debug.piraeus_storage_bench.plot_results",
+    deps = [":plot_results"],
+)
+
+py_library(
+    name = "plot_results",
+    srcs = ["plot_results.py"],
+    deps = ["@pypi//matplotlib"],
+)
