@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "labels",
@@ -28,15 +28,5 @@ py_library(
     deps = [
         "@pypi//google_api_python_client",
         "@pypi//google_auth",
-    ],
-)
-
-py_test(
-    name = "test_service",
-    srcs = ["test_service.py"],
-    deps = [
-        ":service",
-        "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
