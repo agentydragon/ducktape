@@ -536,7 +536,7 @@ async def live_egress_decisions(index: Index, decisions: Decisions, shutdown: Sh
                 continue
             try:
                 async with aclosing(decisions.watch(sandbox.service_account)) as snapshots:
-                    pending = asyncio.create_task(anext(snapshots))
+                    pending = asyncio.ensure_future(anext(snapshots))
                     watching = False
                     try:
                         while True:
@@ -552,7 +552,7 @@ async def live_egress_decisions(index: Index, decisions: Decisions, shutdown: Sh
                             yield frame(
                                 "snapshot", DecisionsSnapshot(watching=True, decisions=recent).model_dump(mode="json")
                             )
-                            pending = asyncio.create_task(anext(snapshots))
+                            pending = asyncio.ensure_future(anext(snapshots))
                     finally:
                         pending.cancel()
                         with suppress(asyncio.CancelledError, StopAsyncIteration, DecisionsUnavailableError):

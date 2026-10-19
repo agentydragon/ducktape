@@ -1,7 +1,7 @@
 """Authenticated, subject-filtered decision snapshots from the proxy's admin gRPC service."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from datetime import UTC
 from pathlib import Path
 
@@ -42,7 +42,7 @@ class DecisionsClient:
         self._token_file = token_file
         self._request_timeout_s = request_timeout_s
 
-    async def watch(self, subject: ServiceAccountRef) -> AsyncIterator[list[Decision]]:
+    async def watch(self, subject: ServiceAccountRef) -> AsyncGenerator[list[Decision]]:
         """The initial snapshot and each replacement, until the proxy's authorization lease ends.
 
         Only the first snapshot has a deadline: a quiet subject need not produce another decision.

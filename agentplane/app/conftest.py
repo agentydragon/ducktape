@@ -52,6 +52,8 @@ from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg
+# Generated gRPC messages need their protobuf stubs as a direct mypy dependency.
+# gazelle:include_dep @pypi//protobuf
 # The bridge tests run one script against a local runner over both harnesses; those fixtures live
 # with the runner.
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
