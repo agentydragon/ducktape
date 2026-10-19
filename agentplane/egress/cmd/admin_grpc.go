@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -17,17 +18,14 @@ import (
 // reviewed when a watch opens, so this bounds how long a revoked token keeps reading.
 const adminWatchLease = 10 * time.Minute
 
-// validateAdminGRPC refuses a listener half configured: a port with nobody admitted to it, or an
-// audience and callers that would silently serve nothing.
+// adminGRPCEnabled is whether the admin listener also serves gRPC.
+func (c *config) adminGRPCEnabled() bool { return c.AdminGRPCAudience != "" }
+
+// validateAdminGRPC refuses a gRPC API half configured: an audience with nobody admitted, or callers
+// who could not prove themselves, would silently serve nothing.
 func (c *config) validateAdminGRPC() error {
-	if c.AdminGRPCPort == nil {
-		if c.AdminGRPCAudience != "" || len(c.AdminGRPCCallers) != 0 {
-			return errors.New("admin_grpc_audience and admin_grpc_callers are set only with admin_grpc_port")
-		}
-		return nil
-	}
-	if c.AdminGRPCAudience == "" || len(c.AdminGRPCCallers) == 0 {
-		return errors.New("admin_grpc_port needs admin_grpc_audience and admin_grpc_callers")
+	if c.adminGRPCEnabled() != (len(c.AdminGRPCCallers) != 0) {
+		return errors.New("admin_grpc_audience and admin_grpc_callers are set together or not at all")
 	}
 	_, err := c.adminGRPCCallers()
 	return err
@@ -46,13 +44,8 @@ func (c *config) adminGRPCCallers() ([]auth.Account, error) {
 	return callers, nil
 }
 
-// adminGRPC is the admin API's gRPC listener, served beside the HTTP admin listener.
-type adminGRPC struct {
-	service *admin.Service
-	server  *grpc.Server
-}
-
-func newAdminGRPC(c config, reviews auth.TokenReviews, decisions admin.Decisions, changes admin.Changes) (*adminGRPC, error) {
+// mountAdminGRPC serves the EgressAdmin API on the listener of the admin HTTP server.
+func mountAdminGRPC(adminServer *http.Server, c config, reviews auth.TokenReviews, decisions admin.Decisions, changes admin.Changes) (shutdowner, error) {
 	callers, err := c.adminGRPCCallers()
 	if err != nil {
 		return nil, err
@@ -68,21 +61,40 @@ func newAdminGRPC(c config, reviews auth.TokenReviews, decisions admin.Decisions
 		return nil, err
 	}
 	service := admin.NewService(decisions, changes, resolver, callers, adminWatchLease)
-	server := grpc.NewServer()
-	egressadminpb.RegisterEgressAdminServer(server, service)
-	return &adminGRPC{service: service, server: server}, nil
+	grpcServer := grpc.NewServer()
+	egressadminpb.RegisterEgressAdminServer(grpcServer, service)
+	mountGRPC(adminServer, grpcServer)
+	return watchingServer{Server: adminServer, service: service}, nil
 }
 
-// Shutdown ends the open watches, lets other calls finish, and stops the server when ctx ends.
-func (a *adminGRPC) Shutdown(ctx context.Context) error {
-	a.service.Drain()
-	stopped := make(chan struct{})
-	go func() { a.server.GracefulStop(); close(stopped) }()
-	select {
-	case <-stopped:
-		return nil
-	case <-ctx.Done():
-		a.server.Stop()
-		return ctx.Err()
-	}
+// mountGRPC serves gRPC on the HTTP server's listener: an HTTP/2 request of content type
+// application/grpc goes to grpcServer and every other request to the server's own handler. The
+// listener takes cleartext HTTP/2 beside HTTP/1.1 for it.
+//
+// The gRPC server never serves a listener of its own, so only the HTTP server's Shutdown stops it:
+// grpc.Server.GracefulStop cannot drain calls served this way.
+func mountGRPC(server *http.Server, grpcServer *grpc.Server) {
+	rest := server.Handler
+	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(w, r)
+			return
+		}
+		rest.ServeHTTP(w, r)
+	})
+	server.Protocols = new(http.Protocols)
+	server.Protocols.SetHTTP1(true)
+	server.Protocols.SetUnencryptedHTTP2(true)
+}
+
+// watchingServer ends the watches its gRPC service holds open before the HTTP server shuts down,
+// because Shutdown waits for every call to return.
+type watchingServer struct {
+	*http.Server
+	service *admin.Service
+}
+
+func (s watchingServer) Shutdown(ctx context.Context) error {
+	s.service.Drain()
+	return s.Server.Shutdown(ctx)
 }

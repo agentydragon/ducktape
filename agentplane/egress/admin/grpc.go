@@ -47,7 +47,7 @@ func NewService(decisions Decisions, changes Changes, resolver *auth.Resolver, c
 	}
 }
 
-// Drain ends every open watch, so a graceful stop of the server is not held up until their leases.
+// Drain ends every open watch, so a shutdown that waits for open calls is not held up until their leases.
 func (s *Service) Drain() { s.drain() }
 
 var errHistoryUnavailable = status.Error(codes.Unavailable, "decision-history-unavailable")

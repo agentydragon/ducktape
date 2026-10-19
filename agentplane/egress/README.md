@@ -193,14 +193,19 @@ an informational snapshot of the answering replica, not a global acknowledgement
 `Decisions` and `Changes` as the HTTP handlers. `/healthz` and `/livez` stay HTTP; the rules API stays
 HTTP.
 
-**Deviation:** the HTTP admin listener is fenced by network policy alone, while the gRPC listener
-admits only the ServiceAccounts in `admin_grpc_callers`, each proving itself by a bearer of audience
+It shares the admin listener with the HTTP API: the listener takes cleartext HTTP/2 beside HTTP/1.1, and
+an HTTP/2 request of content type `application/grpc` goes to the gRPC server. The gRPC server is mounted
+on the HTTP server as a handler (`grpc.Server.ServeHTTP`), so the HTTP server's `Shutdown` is what stops
+it, after ending the open watches.
+
+**Deviation:** the HTTP admin listener is fenced by network policy alone, while every gRPC call admits
+only the ServiceAccounts in `admin_grpc_callers`, each proving itself by a bearer of audience
 `admin_grpc_audience` that is reviewed on every call, before the history is read
 (<../docs/grpc_services.md>). A watch is admitted once, so it ends after ten minutes and when the proxy
 drains; the caller subscribes again and is admitted afresh.
 
-The listener is off unless `admin_grpc_port` is set, and then needs `admin_grpc_audience` and
-`admin_grpc_callers` (`namespace/name` entries) too; `admin_grpc_host` defaults to `0.0.0.0`.
+The gRPC API is mounted only when `admin_grpc_audience` and `admin_grpc_callers` (`namespace/name`
+entries) are both set; without them the admin listener serves HTTP alone.
 
 ## ServiceAccount permissions
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
 	"testing"
 	"time"
 
@@ -52,9 +53,12 @@ func (quietChanges) Follow(ctx context.Context, changed func() error) error {
 	return ctx.Err()
 }
 
-func TestShutdownEndsAnOpenWatchInsteadOfWaitingOutItsLease(t *testing.T) {
+func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	c := config{AdminGRPCAudience: "test-audience", AdminGRPCCallers: []string{"test-ns/test-app"}}
-	adminGRPCServer, err := newAdminGRPC(c, acceptingReviews{}, noDecisions{}, quietChanges{})
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /test-live", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "alive") })
+	adminServer := &http.Server{Handler: mux}
+	shutdown, err := mountAdminGRPC(adminServer, c, acceptingReviews{}, noDecisions{}, quietChanges{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +67,25 @@ func TestShutdownEndsAnOpenWatchInsteadOfWaitingOutItsLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	served := make(chan error, 1)
-	go func() { served <- serving("admin gRPC", adminGRPCServer.server.Serve(listener)) }()
+	go func() { served <- serving("admin", adminServer.Serve(listener)) }()
+
+	// HTTP/1.1 and cleartext HTTP/2 that is not gRPC reach the HTTP handler.
+	var h2c http.Protocols
+	h2c.SetUnencryptedHTTP2(true)
+	for name, client := range map[string]*http.Client{
+		"HTTP/1.1": http.DefaultClient, "h2c": {Transport: &http.Transport{Protocols: &h2c}},
+	} {
+		response, err := client.Get("http://" + listener.Addr().String() + "/test-live")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		body, err := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		if err != nil || string(body) != "alive" {
+			t.Fatalf("%s: %q, %v", name, body, err)
+		}
+	}
+
 	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
@@ -84,11 +106,11 @@ func TestShutdownEndsAnOpenWatchInsteadOfWaitingOutItsLease(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := adminGRPCServer.Shutdown(ctx); err != nil {
-		t.Fatalf("shutdown: %v", err)
+	if err := shutdown.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown with a watch open: %v", err)
 	}
 	if err := <-served; err != nil {
-		t.Fatalf("a server stopped on purpose reported %v", err)
+		t.Fatalf("a server shut down on purpose reported %v", err)
 	}
 	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
 		t.Fatalf("the watch ended with %v, want a clean end", err)

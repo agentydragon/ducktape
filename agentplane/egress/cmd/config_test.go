@@ -120,19 +120,18 @@ func TestADeploymentNamingNoWorkloadNamespaceIsRefused(t *testing.T) {
 	}
 }
 
-func TestAdminGRPCIsOffUnlessItsPortIsSet(t *testing.T) {
+func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
 	c, err := loadConfig(required(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.AdminGRPCPort != nil {
-		t.Fatalf("admin gRPC listens on %d without being configured", *c.AdminGRPCPort)
+	if c.adminGRPCEnabled() {
+		t.Fatal("admin gRPC enabled without being configured")
 	}
 }
 
 func TestAdminGRPCLoadsFromTheFileAndTheEnvironment(t *testing.T) {
 	path := writeSettings(t, `allowed_service_account_namespaces: [ns]
-admin_grpc_port: 9000
 admin_grpc_audience: file-audience
 admin_grpc_callers: [test-ns/test-app, test-ns/test-other]
 `)
@@ -147,25 +146,21 @@ admin_grpc_callers: [test-ns/test-app, test-ns/test-other]
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.AdminGRPCPort == nil || *c.AdminGRPCPort != 9000 || c.AdminGRPCAudience != "env-audience" ||
+	if !c.adminGRPCEnabled() || c.AdminGRPCAudience != "env-audience" ||
 		!slices.Equal(callers, []auth.Account{{Namespace: "test-ns", Name: "test-app"}, {Namespace: "test-ns", Name: "test-other"}}) {
 		t.Fatalf("unexpected merged config: %+v", c)
 	}
 }
 
 func TestAdminGRPCIsAllOrNothing(t *testing.T) {
-	const port, audience, callers = "admin_grpc_port: 9000\n", "admin_grpc_audience: test-audience\n", "admin_grpc_callers: [test-ns/test-app]\n"
+	const audience, callers = "admin_grpc_audience: test-audience\n", "admin_grpc_callers: [test-ns/test-app]\n"
 	for name, contents := range map[string]string{
-		"port alone":               port,
-		"port without callers":     port + audience,
-		"port without audience":    port + callers,
-		"audience without port":    audience + callers,
-		"callers without port":     callers,
-		"port out of range":        "admin_grpc_port: 65536\n" + audience + callers,
-		"caller without a slash":   port + audience + "admin_grpc_callers: [test-ns]\n",
-		"caller without namespace": port + audience + "admin_grpc_callers: [/test-app]\n",
-		"caller without a name":    port + audience + "admin_grpc_callers: [test-ns/]\n",
-		"caller with a deep path":  port + audience + "admin_grpc_callers: [test-ns/test-app/extra]\n",
+		"audience without callers": audience,
+		"callers without audience": callers,
+		"caller without a slash":   audience + "admin_grpc_callers: [test-ns]\n",
+		"caller without namespace": audience + "admin_grpc_callers: [/test-app]\n",
+		"caller without a name":    audience + "admin_grpc_callers: [test-ns/]\n",
+		"caller with a deep path":  audience + "admin_grpc_callers: [test-ns/test-app/extra]\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := writeSettings(t, "allowed_service_account_namespaces: [ns]\n"+contents)
