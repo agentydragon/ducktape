@@ -60,7 +60,6 @@ export function CommandCallView(
         maxHeightRem={COMMAND_MAX_HEIGHT_REM}
         lines={lineCount(commandText)}
         label={commandLabel}
-        expandLabel="Show more"
         expansion={expansion}
       >
         <CodeBlock
