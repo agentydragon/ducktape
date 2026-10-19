@@ -30,6 +30,10 @@ also deletes its history records'" (02:04). Sandbox workloads run on Kubernetes 
 ([principles](../docs/principles.md): Kubernetes is a shared baseline); what differs is where records
 and retained data live.
 
+Where a record lives does not change what deleting its Sandbox does to it. On a second plane or in a
+database, whatever names a deleted Sandbox still dangles unless the store keeps a record of that
+Sandbox, so lifetime is an axis of its own rather than a consequence of the store.
+
 ## Four directions
 
 - **D1. The Sandbox is the unit.** History dies with its Sandbox. A finished Sandbox is retired,
@@ -53,18 +57,18 @@ D1 and D2 differ only in lifetime; D3 and D4 change the store.
 
 ## The operator's workflows in each
 
-| Workflow                                                                                                                         | D1                                                                       | D2                                                                            | D3                                                                                                                    | D4                                                                                           |
-| -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Launch a Sandbox                                                                                                                 | As today                                                                 | As today                                                                      | The app writes it to the Agentplane plane; the controller creates its children on the cluster and deletes them itself | The app calls the records service; the controller follows its watch and creates the children |
-| Finish with a Sandbox                                                                                                            | Retire it                                                                | Delete it; its history, membership and grants stay                            | Either                                                                                                                | Either; retired or deleted is a row state                                                    |
-| Haku moves to a fresh Sandbox ([story 4](user_stories.md#4-haku-itself-lives-here): "the sandbox is disposable and Haku is not") | The old Sandbox's threads go if it is deleted, so it stays retired       | The old threads stay readable                                                 | As D1 or D2                                                                                                           | The old threads stay readable                                                                |
-| A coordinator audits its agents, finished ones included                                                                          | Grants on Sandboxes that still exist                                     | Grants matched on History's record of the writer, apart from live grants      | As D1 or D2                                                                                                           | Grants and membership are rows beside the Sandbox rows                                       |
-| Grant a git-authored collection                                                                                                  | Flux applies `PolicySet`s; membership is CRs owned by Sandboxes (#10987) | Flux applies `PolicySet`s; a reconciler copies the sets into History (#10990) | Flux applies to the second plane (`spec.kubeConfig`)                                                                  | tofu-controller or an importer writes rows                                                   |
-| Try a CRD change on testing first                                                                                                | Not possible: one cluster-scoped CRD set from `devel` serves both        | Not possible                                                                  | Possible: each plane has its own CRDs                                                                                 | Possible: each environment has its own database                                              |
-| Inspect records with `kubectl`                                                                                                   | Yes                                                                      | Live ones; retained data through History's API                                | Yes, with the second plane's kubeconfig                                                                               | No; the records service's HTTP API                                                           |
-| Thousands of Sandboxes over time                                                                                                 | Retired ones stay in the cluster's etcd, about 10 MB per thousand        | Only live ones stay                                                           | Off the cluster's etcd                                                                                                | Off the cluster's etcd                                                                       |
+| Workflow                                                                                                                         | D1                                                                       | D2                                                                       | D3                                                                                                                    | D4                                                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Launch a Sandbox                                                                                                                 | As today                                                                 | As today                                                                 | The app writes it to the Agentplane plane; the controller creates its children on the cluster and deletes them itself | The app calls the records service; the controller follows its watch and creates the children |
+| Finish with a Sandbox                                                                                                            | Retire it                                                                | Delete it; its history, membership and grants stay                       | Either                                                                                                                | Either; retired or deleted is a row state                                                    |
+| Haku moves to a fresh Sandbox ([story 4](user_stories.md#4-haku-itself-lives-here): "the sandbox is disposable and Haku is not") | The old Sandbox's threads go if it is deleted, so it stays retired       | The old threads stay readable                                            | As D1 or D2                                                                                                           | The old threads stay readable                                                                |
+| A coordinator audits its agents, finished ones included                                                                          | Grants on Sandboxes that still exist                                     | Grants matched on History's record of the writer, apart from live grants | As D1 or D2                                                                                                           | Grants and membership are rows beside the Sandbox rows                                       |
+| Grant a git-authored collection                                                                                                  | Flux applies `PolicySet`s; membership is CRs owned by Sandboxes (#10987) | Flux applies `PolicySet`s; a reconciler copies the sets into History     | Flux applies to the second plane (`spec.kubeConfig`)                                                                  | tofu-controller or an importer writes rows                                                   |
+| Try a CRD change on testing first                                                                                                | Not possible: one cluster-scoped CRD set from `devel` serves both        | Not possible                                                             | Possible: each plane has its own CRDs                                                                                 | Possible: each environment has its own database                                              |
+| Inspect records with `kubectl`                                                                                                   | Yes                                                                      | Live ones; retained data through History's API                           | Yes, with the second plane's kubeconfig                                                                               | No; the records service's HTTP API                                                           |
+| Thousands of Sandboxes over time                                                                                                 | Retired ones stay in the cluster's etcd, about 10 MB per thousand        | Only live ones stay                                                      | Off the cluster's etcd                                                                                                | Off the cluster's etcd                                                                       |
 
-The 10 MB is arithmetic from staging's object sizes (#10990): a Sandbox with its `PolicyBinding` and
+The 10 MB is arithmetic from staging's object sizes ([size today](#size-today)): a Sandbox with its `PolicyBinding` and
 ServiceAccount, `managedFields` included, is about 10 KB. It is not a measurement.
 
 ## What each costs, how hard it is to back out of, and what it bets on
@@ -74,12 +78,132 @@ ServiceAccount, `managedFields` included, is about 10 KB. It is not a measuremen
 | D1  | The Dispatcher skips retired Sandboxes. A delete cascades, held by the Sandbox Controller's finalizer: a History delete RPC (none exists) keyed by a recorded Sandbox UID, Notification's inboxes and entries, and app Threads from the app's own watch, since no service calls the app. History's and the app's documented promise that history outlives the Sandbox changes                            | Cheap: stop cascading. History deleted meanwhile is gone          | The operator never wants a deleted Sandbox's history back, and retired Sandboxes stay affordable in the cluster's etcd |
 | D2  | The Sandbox UID recorded in History; a membership table with a git reconciler; archive grants apart from live grants; possibly the History re-key, which touches 11 of its 12 tables and the Electric shapes                                                                                                                                                                                             | Moderate: membership and grants move back into Kubernetes objects | Kubernetes and the databases stay consistent through UID keys and a reconciler                                         |
 | D3  | A control plane per environment to run. Children deleted explicitly, since ownership does not cross apiservers. A new Pod-to-Sandbox binding for the Gateway and the launcher relay policy. Token authentication through the primary (not tried). A second client in services that read records and touch cluster objects, such as the app, both controllers, the Gateway, egress and the Action Service | Moderate: the protocol is the same; owner references come back    | Running a control plane costs less than what it buys: a separate etcd, CRDs per environment, CNPG backups              |
-| D4  | The records service with a resumable watch, status, conflict checks, cascade deletion, authorization and audit (#10990 rates the watch hardest); every reader ported; a tofu provider or importer. Reverses the [2026-10-14 decision](../docs/adr_sandbox_session_control.md#decisions) that there is no Sandbox Service                                                                                 | Expensive: re-create the CRDs and port every reader back          | Rebuilding the Kubernetes record machinery pays for itself in lifetime and schema freedom                              |
+| D4  | The records service with a resumable watch, status, conflict checks, cascade deletion, authorization and audit, the watch being the hard piece ([below](#record-machinery-and-what-d3-and-d4-do-with-it)); every reader ported; a tofu provider or importer. Reverses the [2026-10-14 decision](../docs/adr_sandbox_session_control.md#decisions) that there is no Sandbox Service                       | Expensive: re-create the CRDs and port every reader back          | Rebuilding the Kubernetes record machinery pays for itself in lifetime and schema freedom                              |
 
-D3 does not by itself keep records out of memory: the apiserver's watch cache is on by default, and
-whether turning it off covers custom resources was not checked (#10990). The documented promises are
+D3 does not by itself keep records out of memory: the
+[kube-apiserver reference](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/)
+says `--watch-cache` defaults to true and `--watch-cache-sizes` does not apply to CRDs, and whether
+`--watch-cache=false` covers custom resources was not checked. The documented promises are
 in the [History README](../history_service/README.md) ("its history outlives the Sandbox") and the
 [app README](../app/README.md).
+
+## What Agentplane borrows from Kubernetes
+
+"The Kubernetes API" is two things here. The **cluster** is kubelet, Pods, ServiceAccount tokens and
+RBAC over real objects, and every direction keeps it. The **record machinery** is CRDs,
+conflict-checked writes, watches, Leases and garbage collection: D3 runs a second copy of it and D4
+replaces it. The capabilities were traced to their call sites on 2026-10-18 by the borrowed-Kubernetes
+exploration (#10990), which this section absorbs.
+
+### Anchored to the cluster in every direction
+
+- **Workload objects.** The Sandbox Controller creates a Pod or KubeVirt VM, the state and workspace
+  PVCs, the launch ConfigMap, the ServiceAccount and the headless `<sandbox>-control` Service for
+  each Sandbox (`sandbox_controller/`); the Runner Gateway writes the Service's EndpointSlice. They
+  need scheduling, image pulls, kubelet mounts, cluster DNS and Cilium NetworkPolicy.
+- **Workload identity.** Pods get kubelet-projected, Pod-bound tokens: 600 s in Sandbox Pods
+  (`cluster/cdk8s/agentplane/sandbox_pod.py`), 3600 s in service Deployments. Every service
+  TokenReviews each bearer, uncached ([workload authentication](../docs/workload_authentication.md)),
+  and the review includes the bound Pod's existence and UID, so a deleted Pod fails it
+  (`workload_auth/principal.py`). A VM guest holds no token; the relay in its launcher Pod does. A
+  second apiserver holds no Pods, so it cannot do the bound-Pod check: callers keep reviewing
+  against the primary.
+- **RBAC.** Agents run `kubectl` against the real apiserver as their Sandbox's ServiceAccount through
+  the egress proxy ([Sandbox Actions](../action_service/sandbox/README.md)): product behavior, not a
+  record. `PolicySet` `kubernetes_*` rules become native RoleBindings
+  ([policy sets](../docs/adr_policy_sets.md)); the `egress` and `action_auto_approve` rules are
+  evaluated by Agentplane's own readers, not by the apiserver.
+- **Secrets.** Egress credentials are Secrets in an isolated namespace, populated by External
+  Secrets and SOPS, listed and watched by the egress proxy.
+- **KubeVirt.** virt-controller and virt-handler on KVM nodes, the VM on the same apiserver as the
+  Sandbox's other children, and the console through the `subresources.kubevirt.io` aggregated API.
+- **Admission.** The Kyverno policy `<namespace>-launcher-relay` authenticates a launcher Pod by
+  walking its owner chain, launcher Pod to VMI to VM to Sandbox to ServiceAccount, by UID, and
+  injects the relay (`cluster/cdk8s/agentplane/launcher_relay.py`).
+
+### Record machinery, and what D3 and D4 do with it
+
+D1 and D2 keep all of it as it is. D4's costs are a relative judgment.
+
+| Behavior                                                                                                                                                                                                                                                                                                                                          | D3                                                                                                                                                                              | D4                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Five CRD kinds with schema, defaults and CEL rules (idle-suspend consistency, name length, exactly one of Pod or VM), tested against a real apiserver (`crds/test_sandbox_admission.py`)                                                                                                                                                          | Same, with CRDs per plane                                                                                                                                                       | Port or drop each rule at the API edge; medium                                                                                                                                                           |
+| Conflict-checked writes: exclusive create, `uid` and `resourceVersion` preconditions (`sandboxes/inventory.py`, the Dispatcher's wake), server-side apply with one field manager per reader on `PolicyBinding` status (`policy_sets.py`). The idle-suspend wake race relies on `resourceVersion` being object-wide (`sandbox_controller/idle.go`) | Same                                                                                                                                                                            | A version column; low                                                                                                                                                                                    |
+| Status subresource with its own RBAC verb, conditions with `observedGeneration`, a per-reader condition on each `PolicyBinding`                                                                                                                                                                                                                   | Same                                                                                                                                                                            | A separate write path and authorization for status; medium                                                                                                                                               |
+| List-then-watch: one Python engine (`util/kubernetes_watch.py`) for egress, the Action Service, the app and `policy_watch.py`, relisting on any failure and failing closed when stale; controller-runtime caches and a Lease informer in Go                                                                                                       | Same, with a second client per plane                                                                                                                                            | A resumable watch with a "gone, relist" signal; high, the one hard piece, since Postgres watches here send a snapshot then changes and cannot resume ([API aggregation](api_aggregation_exploration.md)) |
+| Leases: `<sandbox>-runner` fences by `leaseTransitions`, names the holding Gateway replica and carries runner facts the controller reads; `dispatcher-<sandbox UID>` beside a Postgres fence; leader election for both controllers                                                                                                                | Move with the Sandbox family                                                                                                                                                    | Compare-and-set epoch with TTL and holder routing; medium, the Dispatcher half is already Postgres                                                                                                       |
+| Ownership and deletion: the Sandbox owns every child, a finalizer holds deletion until the runner has quiesced, garbage collection removes the rest; the Gateway (`runner_gateway/gateway/sandboxes.go`) and the relay policy identify a Pod by its owner chain                                                                                   | Ownership does not cross apiservers (general Kubernetes behavior, not tried): the controller deletes each child kind itself, and the Pod-to-Sandbox check needs another binding | A sweeper per child kind and a held deletion; medium to high                                                                                                                                             |
+| Provenance: the Flux label `kustomize.toolkit.fluxcd.io/name` marks git-owned `PolicyBinding`s and a Sandbox owner marks Sandbox-owned ones (`sandboxes/egress_views.py`); `managedFields` records writers                                                                                                                                        | Same                                                                                                                                                                            | A writer column; low to medium                                                                                                                                                                           |
+| Clients: `kubectl`, Flux, `kubernetes_asyncio` in about 27 non-test Python files, controller-runtime                                                                                                                                                                                                                                              | Kept, with a second kubeconfig                                                                                                                                                  | Lost                                                                                                                                                                                                     |
+
+D3's apiserver would be [kine](https://github.com/k3s-io/kine) on the CNPG cluster, which per its
+README implements the etcd API subset the apiserver needs over SQLite, MySQL, Postgres, NATS or T4,
+or its own etcd. A nodeless apiserver with the Agentplane CRDs already runs in tests
+(`testing/kubernetes_apiserver.py`). Accepting the primary's tokens on it is webhook token
+authentication to the primary, not tried, and its RBAC is a separate set of Roles. It is one more
+control plane to run: certificates, HA, upgrades, backups, monitoring.
+
+### Which kinds could move in D3
+
+A kind stays on the primary when it owns primary objects, is owned by them, or protects them.
+
+- **The Sandbox family** (`Sandbox`, its `PolicyBinding`, its Leases) moves together: the binding and
+  Leases are owned only by the Sandbox, and the Policy Controller already keys native RoleBindings by
+  binding UID in an annotation. The family grows with Sandbox count and holds the hot writes; its
+  cost is its ownership of the workload children.
+- **The catalog** (`PolicySet`, `EgressCredential`, `SandboxTemplate`, the static `PolicyBinding`s)
+  owns nothing and is owned by nothing, so it moves cheaply, and gains nothing from moving except
+  that a reader then watches one plane.
+- **Never:** Pods, VMs, PVCs, Services, EndpointSlices, ServiceAccounts, Secrets, RBAC and admission.
+
+The kinds with a reason to move are tied down by ownership; the kinds that move freely have no reason
+to.
+
+### GitOps glue for D3 and D4
+
+Only the Flux-written kinds that move need glue. Presets need none: they are app settings
+(`cluster/cdk8s/agentplane/app_settings.py`), and a Sandbox carries only a `preset` label. The shared
+permission sets are `PolicySet`s: 39 in staging and 11 in testing, plus one in each delivery
+manifest. Today Flux applies them with the rest of `agentplane-staging`, and the cluster-scoped CRDs
+sit in `agentplane-crds` with `prune: false`, shared by staging and testing.
+
+1. **Flux applies to the second plane.** `spec.kubeConfig` makes a Kustomization apply, health check,
+   prune and delete on the cluster its kubeconfig names; its `secretRef` must be in the
+   Kustomization's namespace, and with `serviceAccountName` Flux impersonates that account on the
+   target ([Flux Kustomization reference](https://fluxcd.io/flux/components/kustomize/kustomizations/)).
+   The typed wrapper has the field (`cluster/cdk8s/providers/flux`), `flux_kustomization` has no
+   keyword for it yet (`cluster/cdk8s/flux.py`), and no manifest sets it. The reference does not say
+   how `dependsOn` or SOPS decryption behave across clusters. Pairs with D3 moving the catalog.
+2. **A mirror reconciler.** Flux keeps applying the catalog to the primary, which stays the reviewed
+   source; a controller copies labelled objects to the second plane with server-side apply and
+   prunes by label. The second plane is a disposable replica, at the cost of one more controller and
+   a staleness window.
+3. **Readers watch both planes.** The catalog stays on the primary and the Sandbox family goes to the
+   second; each reader holds two sources and a freshness gate per source. Pairs with D3 moving only
+   the Sandbox family.
+4. **A git-to-API importer, for D4.** tofu-controller (`tf/gitops/`: Authentik providers, Forgejo
+   tokens) is the precedent, with its state in CNPG; a new target means a provider or an apply job
+   with its own prune rule.
+
+### Size today
+
+Read on staging on 2026-10-18 with `kubectl` as `claude-ai` in a build Sandbox, as list JSON
+including `managedFields`:
+
+| Kind              | Objects | Bytes   |
+| ----------------- | ------- | ------- |
+| `Sandbox`         | 3       | 16.7 KB |
+| `SandboxTemplate` | 3       | 46.2 KB |
+| `PolicySet`       | 40      | 91.7 KB |
+| `PolicyBinding`   | 7       | 20.2 KB |
+| `Lease`           | 9       | 11.9 KB |
+
+That is about 190 KB in staging and about 50 KB in `agentplane-testing`. `claude-ai` cannot list
+`EgressCredential`s; the generator renders 22 for staging. etcd itself was not read. The Leases are
+the records written continuously: the three staging runner Leases had last renewed 17 to 25 hours
+earlier, while the three Dispatcher Leases renewed every 10 s regardless. That is 0.1 write per
+second per Sandbox, 0.17 while its runner is connected, so 100 to 170 per second at 1,000
+Sandboxes; arithmetic, not a measurement at scale.
 
 ## Right under every direction
 
@@ -136,7 +260,7 @@ Held until one is chosen:
 
 - **Agentplane's share of the cluster's control plane.** Read Agentplane's object counts and request
   rates from the staging apiserver's metrics, with a read-only RBAC PR first if `claude-ai` cannot.
-  Separates D1 from D3 at scale; #10990 did not read etcd.
+  Separates D1 from D3 at scale; the [size reading](#size-today) did not read etcd.
 - **A nodeless apiserver on Postgres.** k3s, already pinned for `x/k3s_env`, can keep its datastore in
   Postgres through kine. Install the Agentplane CRDs and try what D3 leaves untried: token
   authentication through a primary, the watch cache turned off for custom resources, and a Flux
@@ -162,8 +286,8 @@ Held until one is chosen:
   and floated a second control plane "if it came to it" (2026-10-18 22:54, 23:02).
 - **Leases.** `dispatcher-<sandbox UID>`, renewed every 10 s (`LeaseRenewInterval`) for every
   Sandbox, suspended or not, and `<sandbox>-runner` from the Gateway while a runner is connected. The
-  Dispatcher also keeps a Postgres `sandbox_ownership` generation fence per Sandbox. #10990 counts 0.1 to 0.17 writes per second per Sandbox and did not
-  check whether the Dispatcher Lease is still needed beside the Postgres row.
+  Dispatcher also keeps a Postgres `sandbox_ownership` generation fence per Sandbox. That is 0.1 to
+  0.17 writes per second per Sandbox ([size today](#size-today)).
 
 ### Databases and runner storage
 
@@ -242,10 +366,10 @@ deleting a Sandbox's history with it as "one other consistent option" (02:04).
 
 ## Open PRs that encode unconfirmed defaults
 
-| PR     | Encodes                                                                      | Handling                                                                              |
-| ------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| #10987 | The draft send schema with the membership CR, freshness and recipient states | The membership CR is D1 or D3; direct and `allSandboxes` sending is direction-neutral |
-| #10990 | History as default membership owner; records stay in the outer API           | Its inventory backs D3 and D4; its membership section is D2                           |
+| PR     | Encodes                                                                      | Handling                                                                                                               |
+| ------ | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| #10987 | The draft send schema with the membership CR, freshness and recipient states | The membership CR is D1 or D3; direct and `allSandboxes` sending is direction-neutral                                  |
+| #10990 | History as default membership owner; records stay in the outer API           | Folded into this file ([what Agentplane borrows](#what-agentplane-borrows-from-kubernetes)); close it once this merges |
 
 ## Parked
 
