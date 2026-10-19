@@ -4,6 +4,11 @@
 
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
+py_binary(
+    name = "forgejo_retention_report",
+    srcs = ["forgejo_retention_report.py"],
+)
+
 # Verify Authentik authentication works end-to-end
 py_binary(
     name = "check_authentik_login",
