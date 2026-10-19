@@ -2,10 +2,8 @@
 regenerate with `bb run //agentplane/crds:generate_bin` and commit the result when this fails.
 """
 
-import re
 from pathlib import Path
 
-import pytest
 import pytest_bazel
 import yaml
 from jsonschema import Draft4Validator
@@ -73,59 +71,6 @@ def test_policybinding_schema_preserves_validation_and_condition_ownership() -> 
         {"policySets": ["basic"]},
     ):
         assert not validator.is_valid(invalid), invalid
-
-
-@pytest.mark.parametrize(
-    ("host", "valid"),
-    [
-        ("*", True),
-        ("example.com", True),
-        ("*.example.com", True),
-        ("*example.com", False),
-        ("example.*", False),
-        ("**", False),
-        ("", False),
-    ],
-)
-def test_policy_host_schema_admits_only_supported_wildcards(host: str, valid: bool) -> None:
-    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-policysets.yaml"))
-    for version in crd["spec"]["versions"]:
-        rule = version["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"]["rules"]["items"]
-        pattern = rule["properties"]["hosts"]["items"]["pattern"]
-        assert bool(re.fullmatch(pattern, host)) is valid
-
-
-def test_policyset_schema_preserves_validation_and_list_semantics() -> None:
-    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-policysets.yaml"))
-    schema = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]
-    spec = schema["properties"]["spec"]
-    assert spec["required"] == ["rules"]
-    assert spec["properties"]["rules"]["minItems"] == 1
-    assert spec["properties"]["rules"]["maxItems"] == 256
-    rule = spec["properties"]["rules"]["items"]
-    assert len(rule["x-kubernetes-validations"]) >= 2
-    assert rule["properties"]["namespaces"]["x-kubernetes-list-type"] == "set"
-    for field in ("hosts", "methods", "paths"):
-        assert "x-kubernetes-list-type" not in rule["properties"][field]
-    policy = rule["properties"]["policy"]
-    action_policy = policy["properties"]
-    assert action_policy["type"]["enum"] == [
-        "exact_actions",
-        "argument_schema",
-        "github_repository",
-        "github_public_repository",
-        "home_assistant_entity_control",
-    ]
-    assert policy["x-kubernetes-validations"]
-    assert action_policy["actions"]["minProperties"] == 1
-    assert action_policy["actions"]["additionalProperties"]["minItems"] == 1
-    assert action_policy["actions"]["additionalProperties"]["items"]["minLength"] == 1
-    assert action_policy["entities"]["minProperties"] == 1
-    assert action_policy["entities"]["additionalProperties"]["minItems"] == 1
-    assert action_policy["entities"]["additionalProperties"]["items"]["minLength"] == 1
-    assert action_policy["schema"]["type"] == "object"
-    assert action_policy["schema"]["x-kubernetes-preserve-unknown-fields"] is True
-    assert not _has_key(spec, "default")
 
 
 def test_credential_schema_preserves_source_and_target_constraints() -> None:

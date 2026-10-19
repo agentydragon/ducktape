@@ -38,7 +38,7 @@ type Rule struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=256
 	// +kubebuilder:validation:items:MaxLength=256
-	// +kubebuilder:validation:items:Pattern=^(\*|(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*)$
+	// +kubebuilder:validation:items:Pattern=`^(\*|(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*)$`
 	Hosts []string `json:"hosts,omitempty"`
 	// Methods lists admitted HTTP methods; omitted means any method.
 	// +kubebuilder:validation:MinItems=1
