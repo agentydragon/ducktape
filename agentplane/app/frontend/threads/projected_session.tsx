@@ -58,7 +58,7 @@ import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
 import { DISCLOSURE_STICKY_Z_INDEX, DisclosureCard } from "../disclosure";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
-import { sandboxReady, sandboxSummary, suspensionReason } from "../sandbox_status";
+import { sandboxReady, sandboxStarting, sandboxSummary, sandboxSuspended, suspensionReason } from "../sandbox_status";
 import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
@@ -1038,7 +1038,7 @@ function ProjectedSessionBody({
   thread,
   history,
   available,
-  canSendWhileSuspended,
+  canQueueCommands,
   onStatusChange,
 }: {
   threadId: string;
@@ -1046,7 +1046,7 @@ function ProjectedSessionBody({
   thread: ThreadView;
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder" | "connection">;
   available: boolean;
-  canSendWhileSuspended: boolean;
+  canQueueCommands: boolean;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
@@ -1071,13 +1071,12 @@ function ProjectedSessionBody({
   const sessionCanAcceptInput =
     syncWritable &&
     !thread.archived &&
-    !["SETUP_STATE_RUNNING", "SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"].includes(thread.setup_state ?? "") &&
+    !["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"].includes(thread.setup_state ?? "") &&
     operational?.status !== "failed";
   const running =
     available && sessionCanAcceptInput && operational?.status === "active" && controls?.harness_state === "running";
-  // A ready Session accepts commands while its native harness is dormant. Suspended Sandboxes
-  // keep the Dispatcher wake path and policy intact.
-  const canSend = sessionCanAcceptInput && (available || canSendWhileSuspended);
+  // Dispatcher admission does not require a running native harness.
+  const canSend = sessionCanAcceptInput && (available || canQueueCommands);
   const activeTurn = controls?.active_turn_id ?? null;
   const threadsLive = useRequiredThreadsLive();
   const status = threadStatusFromSnapshot(
@@ -1254,7 +1253,7 @@ function ProjectedSessionBody({
                     ? "Catching up…"
                     : "Model"
               }
-              disabled={!running}
+              disabled={!canSend}
               onChange={(model) => model && commands.changeModel(model)}
             />
             {effortOptions.length > 0 && (
@@ -1264,7 +1263,7 @@ function ProjectedSessionBody({
                 data={effortOptions}
                 value={controls?.applied_reasoning_effort ?? thread.reasoning_effort ?? null}
                 placeholder="Effort"
-                disabled={!running}
+                disabled={!canSend}
                 onChange={(effort) => effort && commands.changeReasoningEffort(effort)}
               />
             )}
@@ -1329,13 +1328,13 @@ function SyncedThread({
   threadId,
   thread,
   available,
-  canSendWhileSuspended,
+  canQueueCommands,
   onStatusChange,
 }: {
   threadId: string;
   thread: ThreadView;
   available: boolean;
-  canSendWhileSuspended: boolean;
+  canQueueCommands: boolean;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
@@ -1365,7 +1364,7 @@ function SyncedThread({
         thread={thread}
         history={shown}
         available={available}
-        canSendWhileSuspended={canSendWhileSuspended}
+        canQueueCommands={canQueueCommands}
         onStatusChange={onStatusChange}
       />
     </>
@@ -1382,17 +1381,16 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
       : "Sandbox absent from last inventory snapshot. Current availability unknown; controls are disabled.";
   }
   if (sandboxReady(sandbox)) return null;
-  if (sandbox.phase === "Suspended" && sandbox.operating_mode === "Suspended" && inventoryFresh) {
+  if (sandboxSuspended(sandbox) && inventoryFresh) {
     const reason = suspensionReason(sandbox);
     const suspended = reason === null ? "Sandbox is suspended." : `Sandbox is suspended (${reason}).`;
     return sandbox.wake_on_send
-      ? `${suspended} Wake on message is on; submitted messages will queue while it wakes.`
-      : `${suspended} Wake on message is off; submitted messages stay queued until you resume it manually.`;
+      ? `${suspended} Wake on message is on; submitted commands will queue while it wakes.`
+      : `${suspended} Wake on message is off; submitted commands stay queued until you resume it manually.`;
   }
   const summary = sandboxSummary(sandbox);
-  // A wake after a send, or a first start: the controls come back by themselves.
-  if (inventoryFresh && sandbox.operating_mode === "Running" && summary.kind === "pending") {
-    return "Sandbox is starting. Controls return when it is ready.";
+  if (inventoryFresh && sandboxStarting(sandbox)) {
+    return "Sandbox is starting. Submitted commands will queue until it is ready.";
   }
   return `Last observed Sandbox and Pod: ${summary.label}. Showing retained Thread history; controls are disabled.`;
 }
@@ -1419,8 +1417,8 @@ export function ProjectedSession({
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
   const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
-  const canSendWhileSuspended =
-    inventoryFresh && sandbox?.phase === "Suspended" && sandbox.operating_mode === "Suspended";
+  const suspended = sandboxSuspended(sandbox);
+  const canQueueCommands = inventoryFresh && sandbox !== undefined && (suspended || sandboxStarting(sandbox));
   useEffect(() => {
     let current = true;
     setError(null);
@@ -1477,7 +1475,7 @@ export function ProjectedSession({
             <Text role="status" c="dimmed">
               {notice}
             </Text>
-            {canSendWhileSuspended && thread && (
+            {inventoryFresh && suspended && thread && (
               <Button
                 size="compact-xs"
                 variant="light"
@@ -1496,7 +1494,7 @@ export function ProjectedSession({
               threadId={threadId}
               thread={thread}
               available={inventoryFresh && sandboxReady(sandbox)}
-              canSendWhileSuspended={canSendWhileSuspended}
+              canQueueCommands={canQueueCommands}
               onStatusChange={setTabStatus}
             />
           </sync.Thread>
