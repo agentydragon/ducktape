@@ -34,9 +34,14 @@ is lost, use the [recovery procedure](recovery.md); do not resubmit or invent a 
 `decision_pending` means waiting for an operator. An allow decision is not execution success.
 Read `GET /v1/action-requests/{id}` for current decision, execution, and result. Retained events are
 at `GET /v1/action-requests/{id}/events?after_sequence={last_sequence}`; advance that sequence only
-after recording the returned events, and page after the last sequence when needed.
+after recording the returned events, and page after the last sequence when needed. Your requests,
+newest first, are at `GET /v1/action-requests`, optionally with `state`; pass `limit` (at most 128)
+and, for the next page, `after_id` set to the last request ID you already have.
 
-A short synchronous wait is reasonable for an immediately finishing operation. For approval waits,
+Add `wait_seconds` (a number, at most the instance's maximum; over it is refused) and `wait_until`
+(`decision` or `terminal`, the default) to the receipt read to hold it until that condition. A
+deadline returns the current receipt with status 200, which is not a failure and does not cancel
+anything. A short synchronous wait is reasonable for an immediately finishing operation. For approval waits,
 longer execution, or parallel work, use the Notifications service's `/llms.txt` and subscription
 workflow. You may subscribe immediately. An already-finished Action needs a result read, not a new
 subscription. Notifications replay Action history, so completion between submit and subscribe is

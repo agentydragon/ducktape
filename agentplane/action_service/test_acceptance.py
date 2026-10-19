@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from datetime import timedelta
 from typing import Any, cast
 from unittest.mock import create_autospec
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
+import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -26,6 +28,7 @@ from agentplane.action_service.catalog import (
 from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.models import (
     ActionRequestInput,
+    ActionRequestView,
     ActionState,
     CallerPrincipal,
     CancellationOutcome,
@@ -35,10 +38,12 @@ from agentplane.action_service.models import (
     ExecutionResult,
     ExecutionState,
     OperatorPrincipal,
+    ReadPrincipal,
     Verdict,
 )
 from agentplane.action_service.policy_view import SubjectActionPolicyView
 from agentplane.action_service.service import ActionService, ExecutionLease, Executor
+from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.callers import admitted_callers, in_sync_index
 from agentplane.action_service.testing.credentials import OperatorIdp
 from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
@@ -118,6 +123,7 @@ async def _client(
     *,
     catalog: ActionCatalog | None = None,
     reader_accounts: frozenset[ServiceAccountRef] = frozenset(),
+    updates: ActionUpdateBroker | None = None,
 ) -> httpx.AsyncClient:
     app = create_app(
         service,
@@ -125,7 +131,7 @@ async def _client(
         operator_idp.authenticator(),
         catalog or ActionCatalog(),
         callers=admitted_callers(ACCOUNT_A, ACCOUNT_B),
-        updates=ActionUpdateBroker("postgresql://unused-test-listener"),
+        updates=updates or ActionUpdateBroker("postgresql://unused-test-listener"),
         direct_wait_seconds=30,
         max_wait_seconds=30,
         reader_accounts=reader_accounts,
@@ -1004,3 +1010,155 @@ async def test_operator_history_pages_exclude_pending_and_require_operator(
                 "/v1/operator/action-requests", params={"state": "decision_pending"}, headers=_operator(operator_idp)
             )
         ).json()[0]["id"] == requests[3]["id"]
+
+
+async def _submit(client: httpx.AsyncClient, key: str, token: str = "workload-a") -> dict[str, Any]:
+    response = await client.post(
+        "/v1/action-requests",
+        headers=_workload(token),
+        json={
+            "idempotency_key": key,
+            "title": f"test title for {key}",
+            "action": {"group": "agentplane", "name": "echo"},
+            "arguments": {"text": "test"},
+        },
+    )
+    response.raise_for_status()
+    return cast(dict[str, Any], response.json())
+
+
+async def _decide(client: httpx.AsyncClient, idp: OperatorIdp, request: dict[str, Any], verdict: str) -> None:
+    (
+        await client.post(
+            _operator_path(request["id"], "/decision"),
+            headers=_operator(idp),
+            json={
+                "verdict": verdict,
+                "expected_version": request["version"],
+                "idempotency_key": f"decide-{request['id']}",
+            },
+        )
+    ).raise_for_status()
+
+
+class ObservedService(ActionService):
+    """Signals each receipt read, so a test can order a commit after a wait's post-subscription read."""
+
+    def __init__(self, store: ActionStore, catalog: ActionCatalog) -> None:
+        super().__init__(store, catalog, {"agentplane": CountingExecutor()}, dispatches=ChangeSignal())
+        self.reads: asyncio.Queue[ActionRequestView] = asyncio.Queue()
+
+    async def get(self, request_id: UUID, principal: ReadPrincipal) -> ActionRequestView:
+        view = await super().get(request_id, principal)
+        self.reads.put_nowait(view)
+        return view
+
+    async def wait_subscribed(self) -> None:
+        """A wait reads once to authorize and once after subscribing."""
+        async with asyncio.timeout(10):
+            await self.reads.get()
+            await self.reads.get()
+
+
+@pytest.fixture
+async def listening(db_url: str) -> AsyncIterator[ActionUpdateBroker]:
+    updates = ActionUpdateBroker(db_url)
+    async with updates.listener.listen():
+        yield updates
+
+
+async def test_receipt_read_waits_for_the_decision(
+    engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp, listening: ActionUpdateBroker
+) -> None:
+    service = ObservedService(action_store(make_sessionmaker(engine)), echo_catalog)
+    async with service, await _client(service, operator_idp, updates=listening) as client:
+        pending = await _submit(client, "wait-decision")
+        path = f"/v1/action-requests/{pending['id']}"
+        waiting = asyncio.create_task(
+            client.get(path, params={"wait_seconds": 10, "wait_until": "decision"}, headers=_workload("workload-a"))
+        )
+        await service.wait_subscribed()
+        await _decide(client, operator_idp, pending, "deny")
+        async with asyncio.timeout(10):
+            decided = await waiting
+        assert decided.status_code == 200
+        assert decided.json()["state"] == "denied"
+
+        # The deadline returns the current receipt, and an unwaited read stays immediate.
+        other = await _submit(client, "wait-deadline")
+        other_path = f"/v1/action-requests/{other['id']}"
+        expired = await client.get(other_path, params={"wait_seconds": 0.05}, headers=_workload("workload-a"))
+        assert (expired.status_code, expired.json()["state"]) == (200, "decision_pending")
+        assert (await client.get(other_path, headers=_workload("workload-a"))).json()["state"] == "decision_pending"
+
+
+async def test_receipt_wait_is_bounded_owned_and_reauthorized(
+    engine: AsyncEngine,
+    echo_catalog: ActionCatalog,
+    operator_idp: OperatorIdp,
+    listening: ActionUpdateBroker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = ObservedService(action_store(make_sessionmaker(engine)), echo_catalog)
+    async with service, await _client(service, operator_idp, updates=listening) as client:
+        pending = await _submit(client, "wait-guarded")
+        path = f"/v1/action-requests/{pending['id']}"
+        assert (await client.get(path, params={"wait_seconds": 31}, headers=_workload("workload-a"))).status_code == 422
+        assert (
+            await client.get(path, params={"wait_until": "never"}, headers=_workload("workload-a"))
+        ).status_code == 422
+        assert (await client.get(path, params={"wait_seconds": 10}, headers=_workload("workload-b"))).status_code == 404
+
+        waiting = asyncio.create_task(client.get(path, params={"wait_seconds": 10}, headers=_workload("workload-a")))
+        await service.wait_subscribed()
+        monkeypatch.delitem(WORKLOAD_TOKENS, "workload-a")
+        await _decide(client, operator_idp, pending, "deny")
+        async with asyncio.timeout(10):
+            revoked = await waiting
+        assert revoked.status_code == 401
+        assert "state" not in revoked.json()
+
+
+async def test_request_list_pages_newest_first_after_the_last_seen_id(
+    engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
+) -> None:
+    service = ActionService(
+        action_store(make_sessionmaker(engine)),
+        echo_catalog,
+        {"agentplane": CountingExecutor()},
+        dispatches=ChangeSignal(),
+    )
+    async with service, await _client(service, operator_idp) as client:
+        mine = [await _submit(client, f"page-{index}") for index in range(5)]
+        foreign = await _submit(client, "page-foreign", token="workload-b")
+        await _decide(client, operator_idp, mine[1], "deny")
+        newest_first = [request["id"] for request in reversed(mine)]
+        headers = _workload("workload-a")
+
+        assert [row["id"] for row in (await client.get("/v1/action-requests", headers=headers)).json()] == newest_first
+        seen: list[str] = []
+        while True:
+            page = (
+                await client.get(
+                    "/v1/action-requests",
+                    params={"limit": 2, **({"after_id": seen[-1]} if seen else {})},
+                    headers=headers,
+                )
+            ).json()
+            seen += [row["id"] for row in page]
+            if len(page) < 2:
+                break
+        assert seen == newest_first
+
+        # The cursor is a position: it need not match the filters applied to the page after it.
+        after_newest = await client.get(
+            "/v1/action-requests", params={"state": "denied", "after_id": mine[4]["id"]}, headers=headers
+        )
+        assert [row["id"] for row in after_newest.json()] == [mine[1]["id"]]
+
+        for params in ({"after_id": foreign["id"]}, {"after_id": str(uuid4())}):
+            assert (await client.get("/v1/action-requests", params=params, headers=headers)).status_code == 404
+        for limit in (0, 129):
+            assert (
+                await client.get("/v1/action-requests", params={"limit": limit}, headers=headers)
+            ).status_code == 422

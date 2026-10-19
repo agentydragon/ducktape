@@ -166,9 +166,17 @@ class ActionStore:
             return await self._view(session, row, principal)
 
     async def list_requests(
-        self, principal: ReadPrincipal, *, states: Sequence[ActionState] = (), idempotency_key: str | None = None
+        self,
+        principal: ReadPrincipal,
+        *,
+        states: Sequence[ActionState] = (),
+        idempotency_key: str | None = None,
+        limit: int | None = None,
+        after_id: UUID | None = None,
     ) -> list[ActionRequestView]:
-        query = select(ActionRequestRow).order_by(ActionRequestRow.created_at.desc())
+        """Newest first. `after_id` is the last request the caller already has: the page starts after it,
+        wherever it sits relative to the other filters."""
+        query = select(ActionRequestRow).order_by(ActionRequestRow.created_at.desc(), ActionRequestRow.id.desc())
         if isinstance(principal, CallerPrincipal):
             query = query.where(
                 ActionRequestRow.caller_namespace == principal.account.namespace,
@@ -178,7 +186,16 @@ class ActionStore:
             query = query.where(ActionRequestRow.state.in_(states))
         if idempotency_key is not None:
             query = query.where(ActionRequestRow.idempotency_key == idempotency_key)
+        if limit is not None:
+            query = query.limit(limit)
         async with self._sessions() as session:
+            if after_id is not None:
+                anchor = await session.get(ActionRequestRow, after_id)
+                if anchor is None or not _may_read(anchor, principal):
+                    raise ActionNotFoundError(str(after_id))
+                query = query.where(
+                    tuple_(ActionRequestRow.created_at, ActionRequestRow.id) < (anchor.created_at, anchor.id)
+                )
             rows = list(await session.scalars(query))
             return [await self._view(session, row, principal) for row in rows]
 

@@ -436,9 +436,17 @@ class ActionService:
         return subject_view(self._policies, subject)
 
     async def list_requests(
-        self, principal: ReadPrincipal, *, states: tuple[ActionState, ...] = (), idempotency_key: str | None = None
+        self,
+        principal: ReadPrincipal,
+        *,
+        states: tuple[ActionState, ...] = (),
+        idempotency_key: str | None = None,
+        limit: int | None = None,
+        after_id: UUID | None = None,
     ) -> list[ActionRequestView]:
-        return await self._store.list_requests(principal, states=states, idempotency_key=idempotency_key)
+        return await self._store.list_requests(
+            principal, states=states, idempotency_key=idempotency_key, limit=limit, after_id=after_id
+        )
 
     async def history(
         self, principal: OperatorPrincipal, *, limit: int, cursor: str | None, include_auto_allowed: bool = True

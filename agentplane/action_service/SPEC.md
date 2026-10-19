@@ -139,6 +139,8 @@ A receipt wait can return immediately or wait up to the Action Service instance'
 `max_wait_seconds` (30 seconds by default) for either a resolved Decision or an Execution outcome.
 Direct tools initially wait for `direct_wait_seconds` (30 seconds by default), bounded by that same
 maximum, before returning a request ID for a still-running Action.
+The HTTP receipt read takes the same options as `wait_seconds` and `wait_until`; a request above
+the maximum is refused with HTTP 422.
 Allowed but undispatched/running work satisfies the Decision predicate only.
 Denied, cancelled, succeeded, failed, and execution-unknown receipts satisfy both predicates.
 Execution-unknown is a returnable outcome, not proof of success or permission to replay.

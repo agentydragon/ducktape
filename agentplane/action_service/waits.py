@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.action_service.models import ActionRequestView, ActionState, Principal
+from agentplane.action_service.models import ActionRequestView, ActionState, ReadPrincipal
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.updates import ActionUpdateBroker
 
@@ -58,7 +58,7 @@ class ActionWaiter:
         if options.wait_seconds > self._max_wait_seconds:
             raise WaitLimitExceededError(self._max_wait_seconds)
 
-    async def get(self, request_id: UUID, principal: Principal, options: WaitOptions) -> ActionRequestView:
+    async def get(self, request_id: UUID, principal: ReadPrincipal, options: WaitOptions) -> ActionRequestView:
         self.validate(options)
         if options.wait_seconds == 0:
             return await self._service.get(request_id, principal)

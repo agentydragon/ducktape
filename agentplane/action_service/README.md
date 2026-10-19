@@ -299,6 +299,13 @@ failure must not prompt a new Action. Workload authorization is revalidated afte
 before returning data. The generic MCP tool schemas never expand the dynamic Action catalog, and no
 Action output-schema metadata is added.
 
+`GET /v1/action-requests/{id}` takes the same two options as the query parameters `wait_seconds`
+and `wait_until`, with the same bounds (HTTP 422 above `max_wait_seconds`) and the same revalidation
+(HTTP 401 if the bearer no longer authenticates when the wait ends). `GET /v1/action-requests`
+takes `limit` (1 through 128; without it every match is returned) and `after_id`, the last request
+the caller already has: the page starts after it in newest-first order, whatever `state` or
+`idempotency_key` filter applies, and an `after_id` the caller does not own is HTTP 404.
+
 Workflow: list identifiers, fetch one input schema if needed, submit once, then wait/read the
 request ID or resume events. Discovery/read failures cannot submit anything; a wrong caller sees
 the same not-found response as an absent request. Discovery projects no executor configuration,

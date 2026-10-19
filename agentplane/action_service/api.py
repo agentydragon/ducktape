@@ -89,7 +89,8 @@ from agentplane.action_service.service import (
     UnsupportedActionError,
 )
 from agentplane.action_service.store import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
-from agentplane.action_service.updates import ActionUpdateBroker
+from agentplane.action_service.updates import ActionUpdateBroker, UpdatesUnavailableError
+from agentplane.action_service.waits import ActionWaiter, WaitLimitExceededError, WaitOptions
 from agentplane.agent_docs import mount_agent_docs
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
@@ -125,6 +126,8 @@ _Bearer = Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_beare
 IDEMPOTENCY_KEY_FILTER = (
     "Only the request submitted under this idempotency key; recovers a submission whose response was lost."
 )
+PAGE_LIMIT = "At most this many requests. Without it, every matching request is returned."
+PAGE_AFTER = "The id of the last request you already have; the page starts after it, newest first."
 
 
 def _sse_json(rows: Iterable[BaseModel]) -> bytes:
@@ -236,6 +239,8 @@ _ERRORS: dict[type[Exception], tuple[int, str | Callable[[Any], str]]] = {
     ),
     InvalidActionArgumentsError: (status.HTTP_422_UNPROCESSABLE_CONTENT, str),
     ServiceDrainingError: (status.HTTP_503_SERVICE_UNAVAILABLE, "Action Service is draining"),
+    WaitLimitExceededError: (status.HTTP_422_UNPROCESSABLE_CONTENT, str),
+    UpdatesUnavailableError: (status.HTTP_503_SERVICE_UNAVAILABLE, str),
     ConnectionNotFoundError: (status.HTTP_404_NOT_FOUND, "Connection not found"),
     ConnectionConflictError: (status.HTTP_409_CONFLICT, str),
     GrantRejectedError: (status.HTTP_400_BAD_REQUEST, str),
@@ -278,6 +283,7 @@ def create_app(
     reader_accounts: frozenset[ServiceAccountRef] = frozenset(),
 ) -> FastAPI:
     verifier = CallerTokenVerifier(workload_resolver, callers=callers, oauth=oauth)
+    waiter = ActionWaiter(service, updates, max_wait_seconds=max_wait_seconds)
     mcp_app = create_server(
         service, catalog, updates, verifier, direct_wait_seconds=direct_wait_seconds, max_wait_seconds=max_wait_seconds
     ).http_app(path="/mcp", stateless_http=True, json_response=False, host_origin_protection="auto")
@@ -354,12 +360,24 @@ def create_app(
         principal: _Reader,
         state_filter: Annotated[list[ActionState] | None, Query(alias="state")] = None,
         idempotency_key: Annotated[str | None, Query(description=IDEMPOTENCY_KEY_FILTER)] = None,
+        limit: Annotated[int | None, Query(ge=1, le=128, description=PAGE_LIMIT)] = None,
+        after_id: Annotated[UUID | None, Query(description=PAGE_AFTER)] = None,
     ) -> list[ActionRequestView]:
-        return await service.list_requests(principal, states=tuple(state_filter or ()), idempotency_key=idempotency_key)
+        return await service.list_requests(
+            principal, states=tuple(state_filter or ()), idempotency_key=idempotency_key, limit=limit, after_id=after_id
+        )
 
     @app.get("/v1/action-requests/{request_id}")
-    async def get_own_request(request_id: UUID, principal: _Reader) -> ActionRequestView:
-        return await service.get(request_id, principal)
+    async def get_own_request(
+        request_id: UUID, request: Request, principal: _Reader, auth: _Auth, wait: Annotated[WaitOptions, Query()]
+    ) -> ActionRequestView:
+        receipt = await waiter.get(request_id, principal, wait)
+        # The wait outlives the authentication that admitted it.
+        if wait.wait_seconds > 0 and await _reader(request, auth) != principal:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED, "invalid workload bearer", headers={"WWW-Authenticate": "Bearer"}
+            )
+        return receipt
 
     @app.post("/v1/action-requests/{request_id}/cancel")
     async def cancel_own_request(request_id: UUID, principal: _Workload) -> CancellationResult:

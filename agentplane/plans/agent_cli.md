@@ -29,25 +29,25 @@ needs only the Action Service, `agentplane notifications` only the Notification 
 naming the missing variable and leaves the others usable. Output, configuration, errors and exit
 codes below are shared by every group, so another service joins as one more group under them.
 
-| Command                                                                                                                                        | Request                                                                                      |
-| ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `actions groups`                                                                                                                               | `GET /v1/action-groups`                                                                      |
-| `actions list [GROUP]`                                                                                                                         | the same, one Action per line                                                                |
-| `actions show GROUP/ACTION`                                                                                                                    | `GET /v1/action-groups/{group}/actions/{action}`                                             |
-| `actions policy`                                                                                                                               | `GET /v1/action-policy`                                                                      |
-| `actions submit GROUP/ACTION [--key KEY] --title TEXT [--description TEXT] [--arguments JSON\|@FILE\|-] [--wait [--until decision\|terminal]]` | `POST /v1/action-requests`, then `wait`                                                      |
-| `actions get {ID \| --key KEY}`                                                                                                                | `GET /v1/action-requests/{id}` or `?idempotency_key=`                                        |
-| `actions result {ID \| --key KEY}`                                                                                                             | as `get`, then the stored result                                                             |
-| `actions wait {ID \| --key KEY} [--until decision\|terminal]`                                                                                  | `GET /v1/action-requests/{id}` with a wait ([needed](#server-operations-the-contract-needs)) |
-| `actions requests [--state STATE]...`                                                                                                          | `GET /v1/action-requests` ([needs paging](#server-operations-the-contract-needs))            |
-| `actions events ID [--after SEQUENCE]`                                                                                                         | `GET /v1/action-requests/{id}/events`                                                        |
-| `actions cancel ID`                                                                                                                            | `POST /v1/action-requests/{id}/cancel`                                                       |
-| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY]`                      | `POST /v1/subscriptions`                                                                     |
-| `notifications subscriptions`                                                                                                                  | `GET /v1/subscriptions`                                                                      |
-| `notifications subscription ID`                                                                                                                | `GET /v1/subscriptions/{id}`                                                                 |
-| `notifications renew ID [--lifetime-days N]`                                                                                                   | `GET`, then `PATCH` with the read `version`                                                  |
-| `notifications cancel ID`                                                                                                                      | `DELETE /v1/subscriptions/{id}`                                                              |
-| `egress rules`                                                                                                                                 | `GET /v1/rules`                                                                              |
+| Command                                                                                                                                        | Request                                                  |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `actions groups`                                                                                                                               | `GET /v1/action-groups`                                  |
+| `actions list [GROUP]`                                                                                                                         | the same, one Action per line                            |
+| `actions show GROUP/ACTION`                                                                                                                    | `GET /v1/action-groups/{group}/actions/{action}`         |
+| `actions policy`                                                                                                                               | `GET /v1/action-policy`                                  |
+| `actions submit GROUP/ACTION [--key KEY] --title TEXT [--description TEXT] [--arguments JSON\|@FILE\|-] [--wait [--until decision\|terminal]]` | `POST /v1/action-requests`, then `wait`                  |
+| `actions get {ID \| --key KEY}`                                                                                                                | `GET /v1/action-requests/{id}` or `?idempotency_key=`    |
+| `actions result {ID \| --key KEY}`                                                                                                             | as `get`, then the stored result                         |
+| `actions wait {ID \| --key KEY} [--until decision\|terminal]`                                                                                  | `GET /v1/action-requests/{id}?wait_seconds=&wait_until=` |
+| `actions requests [--state STATE]...`                                                                                                          | `GET /v1/action-requests?limit=&after_id=`               |
+| `actions events ID [--after SEQUENCE]`                                                                                                         | `GET /v1/action-requests/{id}/events`                    |
+| `actions cancel ID`                                                                                                                            | `POST /v1/action-requests/{id}/cancel`                   |
+| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY]`                      | `POST /v1/subscriptions`                                 |
+| `notifications subscriptions`                                                                                                                  | `GET /v1/subscriptions`                                  |
+| `notifications subscription ID`                                                                                                                | `GET /v1/subscriptions/{id}`                             |
+| `notifications renew ID [--lifetime-days N]`                                                                                                   | `GET`, then `PATCH` with the read `version`              |
+| `notifications cancel ID`                                                                                                                      | `DELETE /v1/subscriptions/{id}`                          |
+| `egress rules`                                                                                                                                 | `GET /v1/rules`                                          |
 
 Every command takes `--json` and `--timeout`; list commands take `--limit` and `--after`.
 
@@ -73,6 +73,8 @@ typing a caller would have to guess.
 - **`--json`** prints the service's own objects unmodified: no envelope, no renamed or added fields.
   A unary command prints one JSON value. A list or stream command prints one value per line, in
   the service's order. `jq` reads either form, and `jq -s` collects the lines.
+- **`groups --json` is large:** `GET /v1/action-groups` returns every Action's full description and
+  input schema inline. Text mode prints one line per Action.
 - **Without `--json`** prints concise text, one line per item. Text is not a stable interface; a
   script uses `--json`.
 - **Never TTY-dependent.** An agent's shell may or may not allocate a terminal, so output mode,
@@ -247,7 +249,7 @@ once it is `succeeded`, `failed`, `denied`, `cancelled` or `execution_unknown`.
 | Command                    | Server paging                        | CLI                               |
 | -------------------------- | ------------------------------------ | --------------------------------- |
 | `groups`, `list`, `policy` | none; the catalog is bounded         | prints all                        |
-| `requests`                 | none today                           | needs the server change below     |
+| `requests`                 | `after_id`, at most 128 a page       | follows pages; `--after ID`       |
 | `events`                   | `after_sequence`, at most 128 a page | follows pages; `--after SEQUENCE` |
 | `subscriptions`            | `after_id`, 128 a page               | follows pages; `--after ID`       |
 
@@ -266,35 +268,16 @@ a wait, a disconnect or a killed `submit` leaves the Action and any subscription
 `actions cancel` and `notifications cancel` are the two explicit operations, and neither implies
 the other.
 
-## Server operations the contract needs
-
-Both are additive changes to the Action Service HTTP API and land before the commands they serve.
-
-1. **A wait on the receipt.** Today only the MCP tools wait (`wait.wait_seconds`, `wait.wait_until`,
-   capped by `max_wait_seconds`); `GET /v1/action-requests/{id}` answers at once. Give it
-   `wait_seconds` and `wait_until` with the MCP surface's bounds, satisfaction rule, and
-   re-authorization before returning data after a wait. A deadline returns the current receipt.
-   When the Action Service moves behind the facade this becomes a server stream of receipts that
-   ends at the condition; the `wait` command's contract does not change.
-2. **Paging for `GET /v1/action-requests`.** The route returns every matching request, including
-   arguments and results, with no limit (`ActionStore.list_requests`). `requests` needs a limit and
-   a cursor. `get --key` is unaffected: one key, at most one row.
-
-Not required, but the same change may take it: `GET /v1/action-groups` returns every Action's full
-description and input schema inline, so `groups --json` is large. Text mode prints one line per
-Action.
-
 ## Rollout
 
 The order follows [Settings](../AGENTS.md#settings): code lands before the configuration that uses it.
 
-1. The two Action Service changes above.
-2. The CLI, released and carried in the sandbox image (`images/sandbox.nix`), pinned in
+1. The CLI, released and carried in the sandbox image (`images/sandbox.nix`), pinned in
    `nix/artifact-pins.json` as the runner wheel is.
-3. The environment variables: the URLs and credentials from the deployment, and the runner's
+2. The environment variables: the URLs and credentials from the deployment, and the runner's
    per-Session `AGENTPLANE_DESTINATION`, which needs the pinned runner to export it. Until then
    `--destination` serves.
-4. The platform instructions gain a short paragraph naming `agentplane` and its `--help`, and each
+3. The platform instructions gain a short paragraph naming `agentplane` and its `--help`, and each
    workflow guide shows the command beside the route it wraps. The service table, URLs and
    placeholders stay, because `curl` remains supported. Sessions started earlier keep their
    original prompt and keep working through `curl`.
