@@ -64,9 +64,9 @@ buildifier(
 # Runs go vet analyzers on every go_library/go_binary compile action.
 nogo(
     name = "nogo",
-    deps = [":staticcheck_u1000"],
     vet = True,
     visibility = ["//visibility:public"],
+    deps = [":staticcheck_u1000"],
 )
 
 # Staticcheck's U1000 implementation is a lint.Analyzer wrapper. Expose its
@@ -75,8 +75,8 @@ go_library(
     name = "staticcheck_u1000",
     srcs = ["staticcheck_u1000.go"],
     importpath = "github.com/agentydragon/ducktape/devinfra/lint",
-    deps = ["@co_honnef_go_tools//unused:go_default_library"],
     visibility = ["//visibility:public"],
+    deps = ["@co_honnef_go_tools//unused:go_default_library"],
 )
 
 # The pytest-main aspect runs this checker on each py_test's non-conftest srcs.
