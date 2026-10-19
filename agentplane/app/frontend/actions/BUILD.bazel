@@ -183,6 +183,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/react-router",
         "//agentplane/app/frontend:clamped_block",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:command_view",
@@ -239,6 +240,7 @@ agentplane_vitest_test(
         ":testing",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/react-router",
         "//:node_modules/vitest",
     ],
 )

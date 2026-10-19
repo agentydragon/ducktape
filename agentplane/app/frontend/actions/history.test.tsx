@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 
 import { act } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ActionGroupView, ActionRequestView, ActionState } from "./client";
 import { ActionHistory } from "./history";
@@ -17,6 +18,27 @@ import {
   sshExec,
   unmountLast,
 } from "./testing";
+
+let showNextPage: () => Promise<void>;
+beforeEach(() => {
+  const BaseObserver = globalThis.IntersectionObserver;
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class extends BaseObserver {
+      constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+        super(callback, options);
+        this.notify = async () => {
+          await act(async () => callback([{ isIntersecting: true } as IntersectionObserverEntry], this));
+        };
+      }
+      private readonly notify: () => Promise<void>;
+      override observe(target: Element): void {
+        if (target.matches('[data-testid="action-history-sentinel"]')) showNextPage = this.notify;
+        else super.observe(target);
+      }
+    }
+  );
+});
 
 /** The history view over one page of `rows`, reading `groups` (a failure, when a `Response`) as the
  * Action groups; resolves once the page has loaded. */
@@ -36,7 +58,11 @@ async function renderHistory(
     await groupsAnswered;
     return rows instanceof Response ? rows.clone() : { items: rows, next_cursor: null };
   });
-  const container = await renderLive(<ActionHistory />);
+  const container = await renderLive(
+    <MemoryRouter>
+      <ActionHistory />
+    </MemoryRouter>
+  );
   await vi.waitFor(() => expect(container.textContent).not.toContain("Loading actions"));
   return container;
 }
@@ -186,19 +212,18 @@ describe("ActionHistory", () => {
         ? { items: [request("succeeded", 2)], next_cursor: null }
         : { items: [request("denied", 1)], next_cursor: "page2" };
     });
-    const container = await renderLive(<ActionHistory />);
+    const container = await renderLive(
+      <MemoryRouter>
+        <ActionHistory />
+      </MemoryRouter>
+    );
     await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
     await send([]);
-    await vi.waitFor(() => expect(button(container, "Load more")).toBeDefined());
-    await act(async () => button(container, "Load more").click());
+    await vi.waitFor(() => expect(showNextPage).toBeDefined());
+    await showNextPage();
     await vi.waitFor(() => expect(container.textContent).toContain("succeeded"));
-    // The first page on mount and again on each of the stream's two snapshots, then the next page on demand.
-    expect(sent.filter(({ path }) => path === "/actions/history").map(({ query }) => query.get("cursor"))).toEqual([
-      null,
-      null,
-      null,
-      "page2",
-    ]);
+    expect(sent.filter(({ query }) => query.get("cursor") === "page2")).toHaveLength(1);
+    expect(container.textContent).toContain("End of action history.");
     const stream = TestEventSource.current;
     expect(stream?.url).toBe("/actions/stream?state=decision_pending");
     await unmountLast();
@@ -220,14 +245,18 @@ describe("ActionHistory", () => {
         next_cursor: query.has("cursor") ? null : "page2",
       };
     });
-    const container = await renderLive(<ActionHistory />);
+    const container = await renderLive(
+      <MemoryRouter>
+        <ActionHistory />
+      </MemoryRouter>
+    );
     await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
     expect(
       sent
         .filter(({ path }) => path === "/actions/history")
         .every(({ query }) => query.get("include_auto_allowed") === "false")
     ).toBe(true);
-    await act(async () => button(container, "Load more").click());
+    await showNextPage();
     await vi.waitFor(() => expect(container.textContent).toContain("cancelled"));
     const all = container.querySelector<HTMLInputElement>('input[value="all"]')!;
     await act(async () => all.click());
@@ -240,6 +269,73 @@ describe("ActionHistory", () => {
     await act(async () => filtered.click());
     await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
     expect(container.textContent).not.toContain("succeeded");
+  });
+
+  it("refreshes an unfinished receipt beyond the newest page on invalidation", async () => {
+    const older = request("running", 2);
+    const sent = answerApi(({ path, query }) => {
+      if (path === "/action-groups") return [];
+      if (path === `/actions/${older.id}`) return { ...older, state: "succeeded", version: 3 };
+      if (path !== "/actions/history") return undefined;
+      if (query.has("cursor")) return { items: [older], next_cursor: null };
+      return { items: [request("denied", 1)], next_cursor: "page2" };
+    });
+    const container = await renderLive(
+      <MemoryRouter>
+        <ActionHistory />
+      </MemoryRouter>
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
+    await showNextPage();
+    await vi.waitFor(() => expect(container.textContent).toContain("running"));
+    await send([]);
+    await vi.waitFor(() => expect(container.textContent).toContain("succeeded"));
+    expect(sent.some(({ path }) => path === `/actions/${older.id}`)).toBe(true);
+  });
+
+  it("stops automatic pagination after a failure and retries the same cursor explicitly", async () => {
+    let fail = true;
+    const sent = answerApi(({ path, query }) => {
+      if (path === "/action-groups") return [];
+      if (path !== "/actions/history") return undefined;
+      if (!query.has("cursor")) return { items: [request("denied", 1)], next_cursor: "page2" };
+      return fail
+        ? Response.json({ detail: "try again" }, { status: 503 })
+        : { items: [request("succeeded", 2)], next_cursor: null };
+    });
+    const container = await renderLive(
+      <MemoryRouter>
+        <ActionHistory />
+      </MemoryRouter>
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
+    await showNextPage();
+    await vi.waitFor(() => expect(container.textContent).toContain("Retry loading older actions"));
+    expect(sent.filter(({ query }) => query.has("cursor"))).toHaveLength(1);
+    fail = false;
+    await act(async () => button(container, "Retry loading older actions").click());
+    await vi.waitFor(() => expect(container.textContent).toContain("End of action history."));
+    expect(sent.filter(({ query }) => query.get("cursor") === "page2")).toHaveLength(2);
+  });
+
+  it("restores the all-actions filter from its URL", async () => {
+    const sent = answerApi(({ path }) => {
+      if (path === "/action-groups") return [];
+      if (path === "/actions/history") return { items: [], next_cursor: null };
+      return undefined;
+    });
+    const container = await renderLive(
+      <MemoryRouter initialEntries={["/actions?history_filter=all"]}>
+        <ActionHistory />
+      </MemoryRouter>
+    );
+    await vi.waitFor(() => expect(container.textContent).not.toContain("Loading actions"));
+    expect(container.querySelector<HTMLInputElement>('input[value="all"]')?.checked).toBe(true);
+    expect(
+      sent
+        .filter(({ path }) => path === "/actions/history")
+        .every(({ query }) => query.get("include_auto_allowed") === "true")
+    ).toBe(true);
   });
 
   it("draws an MCP group's result the way the tool answered it", async () => {

@@ -1,5 +1,7 @@
-import { type JSX, type ReactNode, useEffect, useRef, useState } from "react";
+import { type JSX, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Badge, Button, Code, Paper, SegmentedControl, Stack, Text } from "@mantine/core";
+
+import { useSearchParams } from "react-router";
 
 import { displayableError } from "../client";
 import { ClampedBlock, lineCount } from "../clamped_block";
@@ -9,7 +11,7 @@ import { useOptionalStreamStatus } from "../stream_status";
 import { followStream, type StreamConnection } from "../live_stream";
 import { ActionCall } from "./call";
 import { parseCallToolResult } from "./call_tool_result";
-import { actionHistory, listActionGroups, type ActionRequestView } from "./client";
+import { actionHistory, getAction, listActionGroups, type ActionRequestView } from "./client";
 import { renderActionCall, renderDetailsResult, renderNativeDetailsResult } from "./rendering/index";
 import { stateLabel } from "./requests";
 
@@ -135,65 +137,129 @@ function useExecutorKinds(): {
 }
 
 /** Decided and terminal ActionRequests: durable receipts, not something an operator still acts on. */
-function ActionHistoryRequests({ includeAutoAllowed }: { includeAutoAllowed: boolean }): JSX.Element {
+function ActionHistoryRequests({
+  includeAutoAllowed,
+  showAll,
+}: {
+  includeAutoAllowed: boolean;
+  showAll: () => void;
+}): JSX.Element {
   const [requests, setRequests] = useState<ActionRequestView[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const rows = useRef<ActionRequestView[]>([]);
   const loadedMore = useRef(false);
+  const pageInFlight = useRef(false);
+  const active = useRef(true);
+  const sentinel = useRef<HTMLDivElement>(null);
   const [connection, setConnection] = useState<StreamConnection | null>(null);
   useOptionalStreamStatus("Actions", connection);
+  const replaceRows = useCallback((update: (previous: ActionRequestView[]) => ActionRequestView[]): void => {
+    setRequests((previous) => {
+      const next = update(previous);
+      rows.current = next;
+      return next;
+    });
+  }, []);
   useEffect(() => {
-    let active = true;
+    active.current = true;
     let generation = 0;
+    let refreshing = false;
+    let refreshAgain = false;
     async function refresh(): Promise<void> {
+      if (refreshing) {
+        refreshAgain = true;
+        return;
+      }
+      refreshing = true;
       const current = ++generation;
       try {
+        // The first page does not contain every still-running receipt after paging.
+        // Refresh those retained rows by identity as well, without rereading all history.
         const page = await actionHistory(undefined, includeAutoAllowed);
-        if (!active || current !== generation) return;
-        setRequests((previous) => {
-          if (!loadedMore.current) return page.items;
-          const older = previous.filter((item) => !page.items.some((newer) => newer.id === item.id));
-          return [...page.items, ...older];
+        const pageIds = new Set(page.items.map((row) => row.id));
+        const unfinished = rows.current.filter(
+          (row) => !pageIds.has(row.id) && ["allowed", "dispatching", "running"].includes(row.state)
+        );
+        const updates = await Promise.all(unfinished.map((row) => getAction(row.id)));
+        if (!active.current || current !== generation) return;
+        replaceRows((previous) => {
+          const fresh = new Map([...updates, ...page.items].map((row) => [row.id, row]));
+          // A page response can race with a newer receipt already seen on another request.
+          for (const row of previous) {
+            const candidate = fresh.get(row.id);
+            if (candidate && row.version > candidate.version) fresh.set(row.id, row);
+          }
+          const latest = page.items.map((row) => fresh.get(row.id)!);
+          if (!loadedMore.current) return latest;
+          const firstPageIds = new Set(page.items.map((row) => row.id));
+          const older = previous.filter((row) => !firstPageIds.has(row.id));
+          return [...latest, ...older.map((row) => fresh.get(row.id) ?? row)];
         });
         if (!loadedMore.current) setCursor(page.next_cursor);
         setError(null);
       } catch (failure) {
-        if (active && current === generation) setError(displayableError(failure));
+        if (active.current && current === generation) setError(displayableError(failure));
       } finally {
-        if (active && current === generation) setLoading(false);
+        refreshing = false;
+        if (active.current && current === generation) {
+          setLoading(false);
+          if (refreshAgain) {
+            refreshAgain = false;
+            void refresh();
+          }
+        }
       }
     }
     const stop = followStream("/actions/stream?state=decision_pending", {
-      // The small pending snapshot also marks a successful resync after a renewed
-      // upstream token or browser reconnect; changed hints alone are not replayable.
       events: { snapshot: () => void refresh() },
       onConnection: setConnection,
     });
     void refresh();
     return () => {
-      active = false;
+      active.current = false;
+      generation++;
       stop();
     };
-  }, [includeAutoAllowed]);
-  async function loadMore(): Promise<void> {
-    if (!cursor || loadingMore) return;
+  }, [includeAutoAllowed, replaceRows]);
+  const loadMore = useCallback(async (): Promise<void> => {
+    // A ref closes the gap before React commits loadingMore, so one cursor has one request.
+    if (!cursor || pageInFlight.current) return;
+    pageInFlight.current = true;
     setLoadingMore(true);
+    setPageError(null);
     try {
       const page = await actionHistory(cursor, includeAutoAllowed);
+      if (!active.current) return;
       loadedMore.current = true;
-      setRequests((previous) => [
-        ...previous,
-        ...page.items.filter((item) => !previous.some((old) => old.id === item.id)),
-      ]);
+      replaceRows((previous) => {
+        const ids = new Set(previous.map((row) => row.id));
+        return [...previous, ...page.items.filter((row) => !ids.has(row.id))];
+      });
+      if (page.next_cursor === cursor) throw new Error("History returned the same page cursor. Please retry.");
       setCursor(page.next_cursor);
     } catch (failure) {
-      setError(displayableError(failure));
+      if (active.current) setPageError(displayableError(failure));
     } finally {
-      setLoadingMore(false);
+      pageInFlight.current = false;
+      if (active.current) setLoadingMore(false);
     }
-  }
+  }, [cursor, includeAutoAllowed, replaceRows]);
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node || !cursor || loading || loadingMore || pageError) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void loadMore();
+      },
+      { root: node.closest(".agentplane-shell-main"), rootMargin: "400px" }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [cursor, loading, loadingMore, pageError, loadMore]);
   const executors = useExecutorKinds();
   const decided = requests.filter((request) => request.state !== "decision_pending");
 
@@ -202,7 +268,18 @@ function ActionHistoryRequests({ includeAutoAllowed }: { includeAutoAllowed: boo
       {error && <Text c="red">{error}</Text>}
       {executors.error && <Alert color="orange">Action group metadata could not be loaded. {executors.error}</Alert>}
       {loading && <Text role="status">Loading actions…</Text>}
-      {!loading && !error && decided.length === 0 && <Text c="dimmed">No decided requests yet.</Text>}
+      {!loading && !error && decided.length === 0 && (
+        <Stack gap="xs">
+          <Text c="dimmed">
+            {includeAutoAllowed ? "No decided actions yet." : "No actions that weren’t auto-allowed yet."}
+          </Text>
+          {!includeAutoAllowed && (
+            <Button variant="subtle" onClick={showAll}>
+              Show all actions
+            </Button>
+          )}
+        </Stack>
+      )}
       {decided.map((request) => (
         <ActionHistoryCard
           key={request.id}
@@ -210,17 +287,35 @@ function ActionHistoryRequests({ includeAutoAllowed }: { includeAutoAllowed: boo
           mcp={executors.kinds?.get(request.action.group) === "mcp"}
         />
       ))}
-      {cursor && (
-        <Button data-testid="action-history-load-more" loading={loadingMore} onClick={() => void loadMore()}>
-          Load more
-        </Button>
-      )}
+      <div ref={sentinel} data-testid="action-history-sentinel">
+        {loadingMore && <Text role="status">Loading older actions…</Text>}
+        {pageError && (
+          <Alert color="red" title="Older actions could not be loaded">
+            <Text size="sm">{pageError}</Text>
+            <Button onClick={() => void loadMore()}>Retry loading older actions</Button>
+          </Alert>
+        )}
+        {!loading && !cursor && decided.length > 0 && (
+          <Text c="dimmed" size="sm">
+            End of action history.
+          </Text>
+        )}
+      </div>
     </Stack>
   );
 }
 
 export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX.Element {
-  const [filter, setFilter] = useState("not-auto-allowed");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filter = searchParams.get("history_filter") === "all" ? "all" : "not-auto-allowed";
+  function setFilter(value: string): void {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (value === "all") next.set("history_filter", "all");
+      else next.delete("history_filter");
+      return next;
+    });
+  }
   return (
     <Stack>
       {embedded && (
@@ -242,7 +337,8 @@ export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX
           { value: "all", label: "All actions" },
         ]}
       />
-      <ActionHistoryRequests key={filter} includeAutoAllowed={filter === "all"} />
+      {/* Each filter starts at its newest page. Its URL survives navigation and browser Back. */}
+      <ActionHistoryRequests key={filter} includeAutoAllowed={filter === "all"} showAll={() => setFilter("all")} />
     </Stack>
   );
 }

@@ -658,26 +658,17 @@ async def test_action_history_raw_receipt(view: VisualPage, app: AgentplaneFixtu
     await view.capture(target=view.page.locator("#app"))
 
 
-async def test_action_history_paging_control(view: VisualPage, app: AgentplaneFixture) -> None:
+@DESKTOP_AND_MOBILE
+async def test_action_history_automatic_paging(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.PAGED_ACTION_HISTORY)
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
-    await view.page.wait_for_selector('[data-testid="action-history-load-more"]', state="attached")
-    await view.check(context="fixture ready")
     page = view.page
-    load_more = page.get_by_test_id("action-history-load-more")
-    await expect(load_more).to_have_text("Load more")
+    await expect(page.get_by_test_id("action-history-sentinel")).to_be_attached()
     await page.locator(".agentplane-shell-main").evaluate("element => { element.scrollTop = element.scrollHeight; }")
-    await wait_for_stable(page)
-    # The final control must retain a gutter at the scroll extent, not be clipped by it.
-    await _focus(page, load_more)
-    bottom_gutter = await load_more.evaluate("""button => {
-        const viewport = button.closest('.agentplane-shell-main').getBoundingClientRect();
-        return viewport.bottom - button.getBoundingClientRect().bottom;
-    }""")
-    assert bottom_gutter >= 8
-    await view.capture(target=view.page.locator("#app"))
+    await expect(page.get_by_text("End of action history.", exact=True)).to_be_attached()
+    await page.get_by_text("End of action history.", exact=True).scroll_into_view_if_needed()
+    await view.capture(target=page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE
