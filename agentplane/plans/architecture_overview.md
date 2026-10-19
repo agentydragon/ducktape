@@ -275,9 +275,8 @@ feature": sending is checked against them with no History involved (23:27). Hist
 for read grants, and "never routes to, reads or manages Sandboxes" ([service
 boundaries](../docs/service_boundaries.md)). It could watch Sandboxes' tags and keep the last ones
 it saw once the CR goes, with no finalizer; the only gap is a tag edit made while History is down
-just before a delete, which an app retag fixes. That relaxes the rule to reading Sandbox tags.
-Without it, the app copies the tags into History when it archives, and a plain `kubectl delete`
-archives without them.
+just before a delete, which an app retag fixes. The operator agreed to that (23:29), which relaxes
+the rule to reading Sandbox tags; the rule changes with the change that adds the watch.
 
 ## Right under every direction
 
@@ -444,6 +443,8 @@ Held until one is chosen:
 | 2026-10-19 09:53 | No restoring a Sandbox from history records alone                                                   | An archive need not be resumable                    |
 | 2026-10-19 10:24 | Freezing an archived Sandbox's collections "would be a bit inconvenient"                            | Archived Sandboxes' tags stay editable              |
 | 2026-10-19 10:43 | Retagging an archived Sandbox can wait, but must stay possible, from the app                        | No importer; tags stored once, matched at read time |
+| 2026-10-19 23:27 | Tags must not need History: sending checks them without it                                          | Tags stay on the Sandbox CR                         |
+| 2026-10-19 23:29 | History may read Sandbox tags                                                                       | History mirrors tags for read grants                |
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control
