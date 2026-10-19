@@ -296,7 +296,7 @@ async def test_action_presentations(
                     "text": example.result if isinstance(example.result, str) else json.dumps(example.result),
                 }
             ],
-            "structuredContent": example.result,
+            **({"structuredContent": example.result} if isinstance(example.result, dict) else {}),
             "isError": False,
         }
     )
