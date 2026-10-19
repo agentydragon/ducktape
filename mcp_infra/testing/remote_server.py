@@ -10,15 +10,13 @@ from fastmcp.mcp_config import RemoteMCPServer
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from util.net import bind_free_port
 from util.testing.asgi import serve_app
 
 
 @asynccontextmanager
 async def as_remote_server(server: FastMCP) -> AsyncIterator[RemoteMCPServer]:
     """Serve a FastMCP instance over HTTP and return its remote-server spec."""
-    listener = bind_free_port()
     mcp_app = server.http_app(path="/")
     app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
-    async with serve_app(app, listener=listener):
-        yield RemoteMCPServer(url=f"{listener.origin}/mcp")
+    async with serve_app(app) as url:
+        yield RemoteMCPServer(url=f"{url}/mcp")

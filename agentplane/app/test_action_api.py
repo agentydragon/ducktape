@@ -505,9 +505,8 @@ def _bind_live_sandbox(policies: PolicyIndex) -> None:
 async def _served(app: FastAPI) -> AsyncIterator[str]:
     """The app on a real socket, in this loop: the in-memory transport waits for a body that never
     ends, and another thread's loop could not use the store's connections."""
-    listener = bind_free_port()
-    async with serve_app_in_loop(app, listener=listener):
-        yield listener.origin
+    async with serve_app_in_loop(app) as url:
+        yield url
 
 
 async def _first_snapshot(client: httpx.AsyncClient, path: str, headers: dict[str, str]) -> SandboxSnapshot:

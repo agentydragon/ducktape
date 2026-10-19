@@ -436,7 +436,6 @@ py_test(
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway/testing:runner_peer",
         "//agentplane/sandboxes/testing:fake_inventory",
-        "//util:net",
         "//util/testing:asgi",
         "//util/testing:pytest_logfile",
         "@pypi//grpcio",

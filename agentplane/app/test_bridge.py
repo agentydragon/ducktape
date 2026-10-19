@@ -73,7 +73,6 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.testing.runner_peer import Endpoint
 from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
 from agentplane.subjects import ServiceAccountRef
-from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -327,9 +326,8 @@ async def app_url(
         notifications_token_file=notifications_token_file,
         system_status=answering_system_status(),
     )
-    listener = bind_free_port()
-    async with serve_app_in_loop(app, listener=listener):
-        yield listener.origin
+    async with serve_app_in_loop(app) as url:
+        yield url
 
 
 async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_event_id(

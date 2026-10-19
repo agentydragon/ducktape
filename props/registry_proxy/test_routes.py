@@ -21,7 +21,6 @@ from starlette.responses import Response
 from props.core.agent_types import AgentType
 from props.core.oci_utils import BUILTIN_TAG
 from props.registry_proxy.routes import _is_grader_builtin_push, _proxy_to_upstream
-from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 
 DOCKER_ACCEPT_TYPES = [
@@ -35,9 +34,8 @@ DOCKER_ACCEPT_TYPES = [
 @contextlib.asynccontextmanager
 async def _run_server(app: FastAPI) -> AsyncIterator[str]:
     """Run a FastAPI app on an ephemeral port, yield the base URL."""
-    listener = bind_free_port()
-    async with serve_app_in_loop(app, listener=listener):
-        yield listener.origin
+    async with serve_app_in_loop(app) as url:
+        yield url
 
 
 async def test_proxy_preserves_multi_valued_accept_headers(monkeypatch: pytest.MonkeyPatch) -> None:

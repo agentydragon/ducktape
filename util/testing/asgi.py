@@ -64,13 +64,18 @@ def _stop(server: uvicorn.Server, thread: threading.Thread) -> None:
 
 
 @asynccontextmanager
-async def serve_app(app: ASGIApp, *, listener: Listener):
-    """Serve ``app`` under uvicorn on ``listener``, from ``bind_free_port``, in a dedicated thread; yield
-    once it's serving; shut down on exit. Taking the listener rather than a port number means the port is
-    never released between choosing it and serving on it; uvicorn closes it on shutdown."""
+async def serve_app(app: ASGIApp, *, listener: Listener | None = None) -> AsyncIterator[str]:
+    """Serve ``app`` under uvicorn in a dedicated thread; yield its base URL once it's serving; shut down on
+    exit. Binds a free port itself unless given ``listener`` (from ``bind_free_port``) -- pass one when the
+    URL must be known before the app is built, as for an OIDC issuer. Taking the listener rather than a port
+    number means the port is never released between choosing it and serving on it; uvicorn closes it on
+    shutdown."""
+    if listener is None:
+        listener = bind_free_port()
+    origin = listener.origin
     server, thread = await asyncio.to_thread(_start, app, listener.sock)
     try:
-        yield
+        yield origin
     finally:
         _stop(server, thread)
 
@@ -83,13 +88,15 @@ async def _serve_in_loop(server: uvicorn.Server, sock: socket.socket) -> None:
 
 
 @asynccontextmanager
-async def serve_app_in_loop(app: ASGIApp, *, listener: Listener) -> AsyncIterator[None]:
+async def serve_app_in_loop(app: ASGIApp, *, listener: Listener | None = None) -> AsyncIterator[str]:
     """Sibling of ``serve_app`` that runs uvicorn as a task in the *current* event loop rather than a
-    thread, for an app that uses resources bound to this loop. Yields once uvicorn is serving on
-    ``listener`` (from ``bind_free_port``); raises if the server ends or does not
-    start within ten seconds. On exit, stops the server, waits out its graceful shutdown and
-    re-raises its failure, if any. Requests to it must be awaited: a blocking call in the test
-    stalls the server."""
+    thread, for an app that uses resources bound to this loop. Yields the base URL once uvicorn is serving,
+    on ``listener`` if given; raises if the server ends or does not start within ten seconds. On exit, stops
+    the server, waits out its graceful shutdown and re-raises its failure, if any. Requests to it must be
+    awaited: a blocking call in the test stalls the server."""
+    if listener is None:
+        listener = bind_free_port()
+    origin = listener.origin
     server = uvicorn.Server(uvicorn.Config(app, log_config=None, log_level="warning"))
     serving = asyncio.create_task(_serve_in_loop(server, listener.sock))
     try:
@@ -104,7 +111,7 @@ async def serve_app_in_loop(app: ASGIApp, *, listener: Listener) -> AsyncIterato
         await asyncio.wait([serving])
         raise
     try:
-        yield
+        yield origin
     finally:
         server.should_exit = True
         await serving

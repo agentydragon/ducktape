@@ -122,9 +122,8 @@ def signing_keys() -> tuple[_SigningKey, _SigningKey, _SigningKey]:
 @pytest.fixture
 async def jwks_server(signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey]):
     state = _JwksState(document=_jwks(signing_keys[0]))
-    listener = bind_free_port()
-    async with serve_app(Starlette(routes=[Route("/jwks", state.serve)]), listener=listener):
-        yield state, f"{listener.origin}/jwks"
+    async with serve_app(Starlette(routes=[Route("/jwks", state.serve)])) as url:
+        yield state, f"{url}/jwks"
 
 
 async def test_resolves_only_issuer_and_subject_from_access_token(
