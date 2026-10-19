@@ -1780,8 +1780,8 @@ go_deps.module(
 # Keep the transitive repository visible to the isolated go_deps extension.
 go_deps.module(
     path = "go.yaml.in/yaml/v4",
-    sum = "h1:/FrI8D64VSr4HtGIlUtlFMGsm7H7pWTbj6vOLVZcA6s=",
-    version = "v4.0.0-rc.2",
+    sum = "h1:UP4+v6fFrBIb1l934bDl//mmnoIZEDK0idg1+AIvX5U=",
+    version = "v4.0.0-rc.4",
 )
 go_deps.module(
     path = "github.com/goretk/gore",
@@ -1922,8 +1922,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/mailru/easyjson",
-    sum = "h1:UGYAvKxe3sBsEDzO8ZeWOSlIQfWFlxbzLZe7hwFURr0=",
-    version = "v0.7.7",
+    sum = "h1:PrnmzHw7262yW8sTBwxi1PdJA3Iw/EKBa8psRf7d9a4=",
+    version = "v0.9.0",
 )
 go_deps.module(
     path = "github.com/mattn/go-colorable",
@@ -1932,8 +1932,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/mattn/go-isatty",
-    sum = "h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=",
-    version = "v0.0.20",
+    sum = "h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsReI=",
+    version = "v0.0.24",
 )
 go_deps.module(
     path = "k8s.io/code-generator",
@@ -2086,8 +2086,10 @@ use_repo(
     "org_golang_x_exp_typeparams",
     "org_golang_x_net",
     "org_golang_x_sync",
+    "org_golang_x_sys",
     "org_golang_x_text",
     "org_golang_x_time",
+    "org_modernc_sqlite",
 )
 
 # ─ BuildBuddy proto definitions (for bbapi CLI) ──────────────────────────────
