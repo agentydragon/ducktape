@@ -505,3 +505,227 @@ spec:
           for: 15m
           labels:
             severity: warning
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: s3-gateway-alerts
+  namespace: seaweedfs
+spec:
+  groups:
+    - name: seaweedfs-s3-gateway
+      rules:
+        - alert: SeaweedS3RequestErrorsHigh
+          annotations:
+            description: For {{ $labels.service }} {{ $labels.type }}, either at least 5% of at least 20 requests in each trailing 5-minute window returned 5xx for 10 minutes, or at least 4 requests returned 5xx in the trailing 15 minutes while fewer than 60 requests of that type were made. Either condition must remain true for 10 minutes. A compact burst of four failures can satisfy the low-volume branch while those errors remain inside the rolling 15-minute window; failures spread near the window boundary may not. Request types are evaluated separately, so read traffic cannot dilute write errors. Expected S3 4xx responses and client cancellations (499) are excluded.
+            summary: SeaweedFS S3 {{ $labels.service }} {{ $labels.type }} requests are returning 5xx
+          expr: |
+            (
+              (
+                sum by (namespace, service, type) (
+                  increase(
+                    SeaweedFS_s3_request_total{
+                      namespace="seaweedfs",
+                      service=~"seaweedfs-s3|public-s3",
+                      code=~"5.."
+                    }[5m]
+                  )
+                )
+                /
+                on (namespace, service, type)
+                sum by (namespace, service, type) (
+                  increase(
+                    SeaweedFS_s3_request_total{
+                      namespace="seaweedfs",
+                      service=~"seaweedfs-s3|public-s3"
+                    }[5m]
+                  )
+                )
+              ) >= 0.05
+              and on (namespace, service, type)
+              sum by (namespace, service, type) (
+                increase(
+                  SeaweedFS_s3_request_total{
+                    namespace="seaweedfs",
+                    service=~"seaweedfs-s3|public-s3"
+                  }[5m]
+                )
+              ) >= 20
+            )
+            or
+            (
+              sum by (namespace, service, type) (
+                increase(
+                  SeaweedFS_s3_request_total{
+                    namespace="seaweedfs",
+                    service=~"seaweedfs-s3|public-s3",
+                    code=~"5.."
+                  }[15m]
+                )
+              ) >= 4
+              and on (namespace, service, type)
+              sum by (namespace, service, type) (
+                increase(
+                  SeaweedFS_s3_request_total{
+                    namespace="seaweedfs",
+                    service=~"seaweedfs-s3|public-s3"
+                  }[15m]
+                )
+              ) < 60
+            )
+          for: 10m
+          labels:
+            severity: warning
+    - name: seaweedfs-s3-gateway-latency
+      rules:
+        - alert: SeaweedS3GatewayLatencyHigh
+          annotations:
+            description: The 95th percentile of GET time-to-first-byte exceeded 30s, or the 95th percentile of DELETE/LIST request duration exceeded 5s, with at least 20 requests of that type in each trailing 5-minute window for 15 minutes. GET uses time-to-first-byte because download size affects total duration. PUT, POST, and COPY full duration is excluded because payload size can explain it.
+            summary: SeaweedFS S3 {{ $labels.service }} {{ $labels.type }} latency is high
+          expr: |
+            (
+              (
+                histogram_quantile(
+                  0.95,
+                  sum by (namespace, service, type, le) (
+                    rate(
+                      SeaweedFS_s3_time_to_first_byte_millisecond_bucket{
+                        namespace="seaweedfs",
+                        service=~"seaweedfs-s3|public-s3",
+                        type="GET"
+                      }[5m]
+                    )
+                  )
+                ) / 1000 > 30
+                and on (namespace, service, type)
+                sum by (namespace, service, type) (
+                  increase(
+                    SeaweedFS_s3_request_total{
+                      namespace="seaweedfs",
+                      service=~"seaweedfs-s3|public-s3",
+                      type="GET"
+                    }[5m]
+                  )
+                ) >= 20
+              )
+              or
+              (
+                histogram_quantile(
+                  0.95,
+                  sum by (namespace, service, type, le) (
+                    rate(
+                      SeaweedFS_s3_request_seconds_bucket{
+                        namespace="seaweedfs",
+                        service=~"seaweedfs-s3|public-s3",
+                        type=~"DELETE|LIST"
+                      }[5m]
+                    )
+                  )
+                ) > 5
+                and on (namespace, service, type)
+                sum by (namespace, service, type) (
+                  increase(
+                    SeaweedFS_s3_request_total{
+                      namespace="seaweedfs",
+                      service=~"seaweedfs-s3|public-s3",
+                      type=~"DELETE|LIST"
+                    }[5m]
+                  )
+                ) >= 20
+              )
+            )
+          for: 15m
+          labels:
+            severity: warning
+    - name: seaweedfs-s3-gateway-metrics
+      rules:
+        - alert: SeaweedS3GatewayTargetMissing
+          annotations:
+            description: No `up` samples have been discovered for the expected {{ $labels.service }} metrics service in seaweedfs for 15 minutes. This indicates missing target discovery or ServiceMonitor wiring. A discovered target whose scrape returns `up=0` is handled by TargetDown.
+            summary: SeaweedFS S3 metrics target {{ $labels.service }} is missing
+          expr: absent_over_time(up{namespace="seaweedfs",service="seaweedfs-s3"}[10m])
+          for: 5m
+          labels:
+            severity: warning
+        - alert: SeaweedS3GatewayTargetMissing
+          annotations:
+            description: No `up` samples have been discovered for the expected {{ $labels.service }} metrics service in seaweedfs for 15 minutes. This indicates missing target discovery or ServiceMonitor wiring. A discovered target whose scrape returns `up=0` is handled by TargetDown.
+            summary: SeaweedFS S3 metrics target {{ $labels.service }} is missing
+          expr: absent_over_time(up{namespace="seaweedfs",service="public-s3"}[10m])
+          for: 5m
+          labels:
+            severity: warning
+        - alert: SeaweedS3GatewayTargetCountLow
+          annotations:
+            description: The number of discovered `up` targets for {{ $labels.service }} is below the Kubernetes Deployment's desired replica count for 10 minutes. This detects a missing pod target even while another replica is healthy. A target that is discovered but returns `up=0` is handled by TargetDown.
+            summary: SeaweedFS S3 metrics targets for {{ $labels.service }} are below desired replicas
+          expr: |
+            count by (namespace, service) (
+              max by (namespace, service, pod) (
+                up{namespace="seaweedfs",service="seaweedfs-s3"}
+              )
+            )
+            < on (namespace, service)
+            label_replace(
+              max by (namespace, deployment) (
+                kube_deployment_spec_replicas{namespace="seaweedfs",deployment="seaweedfs-s3"}
+              ),
+              "service", "$1", "deployment", "(.*)"
+            )
+          for: 10m
+          labels:
+            severity: warning
+        - alert: SeaweedS3GatewayTargetCountLow
+          annotations:
+            description: The number of discovered `up` targets for {{ $labels.service }} is below the Kubernetes Deployment's desired replica count for 10 minutes. This detects a missing pod target even while another replica is healthy. A target that is discovered but returns `up=0` is handled by TargetDown.
+            summary: SeaweedFS S3 metrics targets for {{ $labels.service }} are below desired replicas
+          expr: |
+            count by (namespace, service) (
+              max by (namespace, service, pod) (
+                up{namespace="seaweedfs",service="public-s3"}
+              )
+            )
+            < on (namespace, service)
+            label_replace(
+              max by (namespace, deployment) (
+                kube_deployment_spec_replicas{namespace="seaweedfs",deployment="public-s3"}
+              ),
+              "service", "$1", "deployment", "(.*)"
+            )
+          for: 10m
+          labels:
+            severity: warning
+        - alert: SeaweedS3GatewayMetricsMissing
+          annotations:
+            description: This pod has had successful metric scrapes but the always-exported SeaweedFS_s3_in_flight_requests gauge has been absent for 10 minutes. The expression is per pod, so a healthy sibling does not mask a malformed exporter. If the target itself is absent, SeaweedS3GatewayTargetCountLow or SeaweedS3GatewayTargetMissing covers it; if the scrape returns `up=0`, TargetDown covers it.
+            summary: SeaweedFS S3 gauge metrics are missing from {{ $labels.service }} pod {{ $labels.pod }}
+          expr: |
+            (
+              up{namespace="seaweedfs",service="seaweedfs-s3"} == 1
+            )
+            unless on (namespace, service, pod)
+            max by (namespace, service, pod) (
+              present_over_time(
+                SeaweedFS_s3_in_flight_requests{namespace="seaweedfs",service="seaweedfs-s3"}[10m]
+              )
+            )
+          for: 5m
+          labels:
+            severity: warning
+        - alert: SeaweedS3GatewayMetricsMissing
+          annotations:
+            description: This pod has had successful metric scrapes but the always-exported SeaweedFS_s3_in_flight_requests gauge has been absent for 10 minutes. The expression is per pod, so a healthy sibling does not mask a malformed exporter. If the target itself is absent, SeaweedS3GatewayTargetCountLow or SeaweedS3GatewayTargetMissing covers it; if the scrape returns `up=0`, TargetDown covers it.
+            summary: SeaweedFS S3 gauge metrics are missing from {{ $labels.service }} pod {{ $labels.pod }}
+          expr: |
+            (
+              up{namespace="seaweedfs",service="public-s3"} == 1
+            )
+            unless on (namespace, service, pod)
+            max by (namespace, service, pod) (
+              present_over_time(
+                SeaweedFS_s3_in_flight_requests{namespace="seaweedfs",service="public-s3"}[10m]
+              )
+            )
+          for: 5m
+          labels:
+            severity: warning
