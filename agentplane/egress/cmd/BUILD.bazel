@@ -5,6 +5,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 go_library(
     name = "cmd",
     srcs = [
+        "admin_grpc.go",
         "config.go",
         "main.go",
     ],
@@ -20,12 +21,14 @@ go_library(
         "//agentplane/egress/proxy",
         "//agentplane/egress/rules",
         "//agentplane/egress/upstream",
+        "//agentplane/proto:egress_admin_go_proto",
         "//agentplane/workload_auth/go/auth",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_spf13_viper//:viper",
         "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",
         "@io_k8s_client_go//rest",
         "@io_k8s_client_go//tools/clientcmd",
+        "@org_golang_google_grpc//:grpc",
         "@org_golang_x_sync//errgroup",
     ],
 )
@@ -38,9 +41,25 @@ go_binary(
 )
 
 go_test(
+    name = "admin_grpc_test",
+    srcs = ["admin_grpc_test.go"],
+    embed = [":cmd"],
+    deps = [
+        "//agentplane/egress/decision",
+        "//agentplane/proto:egress_admin_go_proto",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+    ],
+)
+
+go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":cmd"],
+    deps = ["//agentplane/workload_auth/go/auth"],
 )
 
 pkg_tar(

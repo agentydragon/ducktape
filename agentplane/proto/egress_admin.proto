@@ -1,0 +1,76 @@
+// The egress proxy's cluster-internal read side over the admission decisions it recorded.
+syntax = "proto3";
+
+package agentplane.proto.egress_admin;
+
+import "google/protobuf/timestamp.proto";
+
+service EgressAdmin {
+  // The decisions the proxy retains for the filter, oldest first, bounded by its history window.
+  rpc ListDecisions(ListDecisionsRequest) returns (ListDecisionsResponse);
+  // The `ListDecisions` list on subscribing, then again each time it changes. The proxy ends the
+  // stream after its watch lease so the next call is admitted afresh; the caller reconnects.
+  rpc WatchDecisions(WatchDecisionsRequest) returns (stream WatchDecisionsResponse);
+}
+
+// A ServiceAccount a workload token proved.
+message Subject {
+  string namespace = 1;
+  string name = 2;
+}
+
+// Refusals that never proved a ServiceAccount.
+message Unauthenticated {}
+
+// Whose decisions to read. Absent is invalid, so a caller never reads the unauthenticated refusals
+// by leaving a field out.
+message DecisionFilter {
+  oneof scope {
+    Subject subject = 1;
+    Unauthenticated unauthenticated = 2;
+  }
+}
+
+// Admission metadata, captured before forwarding; never evidence the upstream completed. Names only,
+// never values, and never a path.
+message Decision {
+  enum Outcome {
+    // The proxy recorded an outcome this schema does not name.
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_ALLOW = 1;
+    OUTCOME_DENY = 2;
+  }
+
+  google.protobuf.Timestamp at = 1;
+  string method = 2;
+  string host = 3;
+  int32 port = 4;
+  Outcome outcome = 5;
+  // The proxy's machine-readable refusal, on a deny.
+  optional string reason = 6;
+  // The rule that admitted the request.
+  optional string binding = 7;
+  optional string policy = 8;
+  optional int32 rule = 9;
+  // Whether a credential replaced a placeholder.
+  bool substituted = 10;
+  // The address the host was pinned to, when admitted.
+  optional string address = 11;
+}
+
+message ListDecisionsRequest {
+  DecisionFilter filter = 1;
+}
+
+message ListDecisionsResponse {
+  repeated Decision decisions = 1;
+}
+
+message WatchDecisionsRequest {
+  DecisionFilter filter = 1;
+}
+
+// The whole list as `ListDecisions` returns it, not the change since the last response.
+message WatchDecisionsResponse {
+  repeated Decision decisions = 1;
+}

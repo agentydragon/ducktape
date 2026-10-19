@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
 
 const databaseURLEnv = settingPrefix + "DATABASE_URL=postgresql://user:never-print-this@db/egress"
@@ -113,6 +115,57 @@ func TestADeploymentNamingNoWorkloadNamespaceIsRefused(t *testing.T) {
 			environ := required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, contents))
 			if _, err := loadTestConfig(t, environ); err == nil {
 				t.Fatal("ran with no usable workload namespace")
+			}
+		})
+	}
+}
+
+func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
+	c, err := loadTestConfig(t, required(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.adminGRPCEnabled() {
+		t.Fatal("admin gRPC enabled without being configured")
+	}
+}
+
+func TestAdminGRPCLoadsFromTheFileAndTheEnvironment(t *testing.T) {
+	path := writeSettings(t, `allowed_service_account_namespaces: [ns]
+admin_grpc_audience: file-audience
+admin_grpc_callers: [test-ns/test-app, test-ns/test-other]
+`)
+	c, err := loadTestConfig(t, required(
+		t,
+		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"ADMIN_GRPC_AUDIENCE=env-audience",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callers, err := c.adminGRPCCallers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.adminGRPCEnabled() || c.AdminGRPCAudience != "env-audience" ||
+		!slices.Equal(callers, []auth.Account{{Namespace: "test-ns", Name: "test-app"}, {Namespace: "test-ns", Name: "test-other"}}) {
+		t.Fatalf("unexpected merged config: %+v", c)
+	}
+}
+
+func TestAdminGRPCIsAllOrNothing(t *testing.T) {
+	const audience, callers = "admin_grpc_audience: test-audience\n", "admin_grpc_callers: [test-ns/test-app]\n"
+	for name, contents := range map[string]string{
+		"audience without callers": audience,
+		"callers without audience": callers,
+		"caller without a slash":   audience + "admin_grpc_callers: [test-ns]\n",
+		"caller without namespace": audience + "admin_grpc_callers: [/test-app]\n",
+		"caller without a name":    audience + "admin_grpc_callers: [test-ns/]\n",
+		"caller with a deep path":  audience + "admin_grpc_callers: [test-ns/test-app/extra]\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeSettings(t, "allowed_service_account_namespaces: [ns]\n"+contents)
+			if _, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+				t.Fatal("accepted")
 			}
 		})
 	}

@@ -192,6 +192,11 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - `/decisions/changes` streams a payload-free `changed` frame when any replica commits decisions,
   on subscribing, and after every quiet heartbeat. A reader re-reads `/decisions`, which stays the
   authority; the stream ends when the proxy loses its database connection.
+- The `EgressAdmin` gRPC service, when enabled, serves the same reads with the same records and
+  window: `ListDecisions` for a subject or the unauthenticated, `WatchDecisions` for that list on
+  subscribing and again whenever it changes. Unlike the HTTP admin API, every call is admitted only
+  for an allowed ServiceAccount proved by a bearer reviewed on that call, and a watch ends after a
+  bounded lease so a revoked caller stops reading.
 - Responses contain at most 200 recent records by default, ordered by decision time then event
   ID, oldest first within that window. This is not a global causal or insertion order.
 - Logging is diagnostic and best effort, not a mandatory lossless audit. A bounded asynchronous

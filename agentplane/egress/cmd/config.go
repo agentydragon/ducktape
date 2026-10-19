@@ -17,6 +17,10 @@ const settingPrefix = "AGENTPLANE_EGRESS_"
 // config is the proxy's deployment contract: each setting is a YAML key of the file named by
 // AGENTPLANE_EGRESS_CONFIG_FILE, with AGENTPLANE_EGRESS_* environment overrides for scalar
 // settings. Lists and maps are file-only. Viper loads the settings.
+//
+// The admin listener also serves the admin API as gRPC when admin_grpc_audience, the audience of the
+// bearer its callers send, and admin_grpc_callers, the ServiceAccounts it admits as `namespace/name`,
+// are set; it serves only HTTP without them.
 type config struct {
 	RulesNamespace                  string            `mapstructure:"rules_namespace"`
 	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
@@ -25,6 +29,8 @@ type config struct {
 	ListenPort                      int               `mapstructure:"listen_port"`
 	AdminHost                       string            `mapstructure:"admin_host"`
 	AdminPort                       int               `mapstructure:"admin_port"`
+	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
+	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
 	AgentAPIHost                    string            `mapstructure:"agent_api_host"`
 	AgentAPIPort                    int               `mapstructure:"agent_api_port"`
 	CACert                          string            `mapstructure:"ca_cert"`
@@ -62,6 +68,7 @@ func loadConfig() (config, error) {
 		"listen_port",
 		"admin_host",
 		"admin_port",
+		"admin_grpc_audience",
 		"agent_api_host",
 		"agent_api_port",
 		"ca_cert",
@@ -133,6 +140,9 @@ func (c *config) validate() error {
 		if limit.value < limit.lo || limit.value > limit.hi {
 			return fmt.Errorf("%s must be between %d and %d", limit.name, limit.lo, limit.hi)
 		}
+	}
+	if err := c.validateAdminGRPC(); err != nil {
+		return err
 	}
 	for logger, level := range c.LogLevels {
 		if logger != "root" {

@@ -237,6 +237,12 @@ func run(ctx context.Context, c config) error {
 		Handler:           admin.New(store, changes, decisions, index, time.Now),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
+	var adminShutdown shutdowner = adminServer
+	if c.adminGRPCEnabled() {
+		if adminShutdown, err = mountAdminGRPC(adminServer, c, reviews.TokenReviews(), store, changes); err != nil {
+			return err
+		}
+	}
 
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error { watcher.Run(ctx); return nil })
@@ -247,14 +253,19 @@ func run(ctx context.Context, c config) error {
 	group.Go(func() error { return serving("admin", adminServer.Serve(adminListener)) })
 	group.Go(func() error {
 		<-ctx.Done()
-		return drain(egress, index, agentAPIServer, adminServer)
+		return drain(egress, index, agentAPIServer, adminShutdown)
 	})
 	return group.Wait()
 }
 
+// shutdowner is a server that stops accepting and lets admitted requests finish until ctx ends.
+type shutdowner interface {
+	Shutdown(ctx context.Context) error
+}
+
 // drain marks the proxy unready, lets admitted requests finish, then stops the other listeners. The
 // admin listener outlives the proxy's drain so the kubelet can see the Pod go unready.
-func drain(egress *proxy.Proxy, index *policy.Index, agentAPIServer, adminServer *http.Server) error {
+func drain(egress *proxy.Proxy, index *policy.Index, agentAPIServer, adminServer shutdowner) error {
 	slog.Info("draining")
 	index.MarkDraining()
 	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
