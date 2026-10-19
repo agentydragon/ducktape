@@ -1093,17 +1093,16 @@ egress proxy as a header substitution, as the staging `claude-ai` Sandboxes' `BU
 
 ### `EGRESS_GO_CUTOVER` — run the Go egress proxy in the cluster
 
-**Blocked on [#10816](https://github.com/agentydragon/ducktape/pull/10816) merging and CI publishing the
-two Go images** (`agentplane-egress-proxy`, `agentplane-egress-history-migrate`). #10816 holds the
-whole Go port and deletes the Python proxy source; testing and staging still run the last pinned Python
-image, whose flags `cluster/cdk8s/agentplane/egress.py` still renders. Image before config: register
-both names in `cluster/cdk8s/forgejo_registry/image_automation.py` with testing and staging
-`image-pins`, wait for the pins to land, then swap the Deployment to the Go image and its settings
-file under a new ConfigMap name, and the Alembic init container for the Go migrator (it takes over
-the Alembic-stamped database, see the [egress README](../egress/README.md#decision-history)). Testing
-first, then staging. The k3s fixture already uses the Go proxy and Goose migrator through a local
-adapter; remove that adapter in the cutover, delete `egress/settings.py` and `MigrationSettings`,
-and update the README diagram.
+**In progress, 2026-10-18 PDT:** [#10816](https://github.com/agentydragon/ducktape/pull/10816) is merged
+and both Go images are published from `aabfbbb282`.
+[#11076](https://github.com/agentydragon/ducktape/pull/11076) registers their Flux image policies and
+testing/staging pin markers. Wait for Flux to replace both `unset` pins with published tags before
+merging the testing cutover. That change switches testing to the Go proxy, a new settings ConfigMap
+and the Goose migrator, and removes the k3s fixture adapter. Staging keeps its pinned Python images
+until testing has served a substituted request and a refusal and its history database carries
+`egress_goose_version`. Then merge the staging cutover and remove the temporary Python deployment
+selection and Python-only settings. The migrator adopts the Alembic-stamped database without changing
+its rows (see the [egress README](../egress/README.md#decision-history)).
 
 Exit: testing, then staging, serve a request with a substituted credential and a refusal through the
 Go proxy with the pinned Go image, and both history databases carry `egress_goose_version`. Left to
@@ -1116,7 +1115,7 @@ observations. New database work follows the task-specific review and rollout req
 
 ```mermaid
 flowchart LR
-    EGRESS_GO_CUTOVER[Blocked: #10816 merge and published Go images]
+    EGRESS_GO_CUTOVER[In progress: Flux pins, then testing and staging cutovers]
     PC_EGRESS[Unscheduled: prune OpenClaw-only wiring from the Iron proxy]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]

@@ -67,6 +67,7 @@ from cluster.cdk8s.agentplane.environment import (
     AppProps,
     DbProps,
     EgressProps,
+    EgressRuntime,
     Environment,
     LlmIngressProps,
     ReplicaProfile,
@@ -181,7 +182,9 @@ ENV = Environment(
     db=DbProps(instances=1, wal_archive=False),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(TESTING_APP_MODELS)),
     egress=EgressProps(
-        ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_CREDENTIALS_NAMESPACE
+        ca_secret_name="agentplane-testing-egress-ca",
+        credentials_namespace=TESTING_CREDENTIALS_NAMESPACE,
+        runtime=EgressRuntime.GO,
     ),
     app=AppProps(hostname=_HOSTNAME, oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
     actions=ActionsProps(

@@ -66,6 +66,7 @@ from cluster.cdk8s.agentplane.environment import (
     BearerMcpMount,
     DbProps,
     EgressProps,
+    EgressRuntime,
     Environment,
     GitHubAppProps,
     LlmIngressProps,
@@ -327,6 +328,7 @@ ENV = Environment(
     egress=EgressProps(
         ca_secret_name=public_coder_egress.CA_BUNDLE_NAME,
         credentials_namespace=STAGING_CREDENTIALS_NAMESPACE,
+        runtime=EgressRuntime.PYTHON,
         external_workload_namespaces=(public_coder_egress.NAMESPACE,),
     ),
     app=AppProps(

@@ -125,7 +125,6 @@ py_library(
         "//agentplane:crd_group",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policyset",
-        "//agentplane/egress:database_migrate",
         "//agentplane/egress:settings",
         "//agentplane/history_service:settings",
         "//agentplane/runner_gateway:api",

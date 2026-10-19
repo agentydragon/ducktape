@@ -59,6 +59,50 @@ def _app_default_policies(docs: list[dict[str, Any]]) -> list[str]:
     return defaults
 
 
+@pytest.mark.parametrize(
+    ("namespace", "image", "migration", "settings", "database_env"),
+    [
+        (
+            "agentplane-testing",
+            "agentplane-egress-proxy",
+            "agentplane-egress-history-migrate",
+            "egress-go-settings",
+            "DATABASE_URL",
+        ),
+        (
+            "agentplane-staging",
+            "agentplane-egress",
+            "agentplane-egress-migrate",
+            "egress-settings",
+            "AGENTPLANE_EGRESS_DATABASE_URL",
+        ),
+    ],
+)
+def test_egress_cuts_over_testing_before_staging(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+    namespace: str,
+    image: str,
+    migration: str,
+    settings: str,
+    database_env: str,
+) -> None:
+    docs = agentplane_manifests[namespace]
+    pod = _by_name(docs, "Deployment", "egress")["spec"]["template"]["spec"]
+    proxy = one(container for container in pod["containers"] if container["name"] == "proxy")
+    migrator = one(container for container in pod["initContainers"] if container["name"] == "migrate")
+    assert proxy["image"] == f"git.allegedly.works/ducktape-ci/{image}:unset"
+    assert migrator["image"] == f"git.allegedly.works/ducktape-ci/{migration}:unset"
+    proxy_env = {entry["name"]: entry for entry in proxy["env"]}
+    migrator_env = {entry["name"]: entry for entry in migrator["env"]}
+    assert migrator_env[database_env]["valueFrom"] == proxy_env["AGENTPLANE_EGRESS_DATABASE_URL"]["valueFrom"]
+    assert "PGSSLMODE" not in proxy_env
+    assert "PGSSLMODE" not in migrator_env
+    assert any(volume.get("configMap", {}).get("name") == settings for volume in pod["volumes"])
+    assert ("--confdir=/var/lib/agentplane-egress" in proxy["args"]) == (namespace == "agentplane-staging")
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", settings)["data"]["settings.yaml"])
+    assert not {"confdir", "decision_flush_seconds"} & config.keys()
+
+
 @pytest.mark.parametrize("namespace", NAMESPACES)
 def test_app_default_policy_sets_are_canonical(
     agentplane_manifests: dict[str, list[dict[str, Any]]], namespace: str
@@ -175,7 +219,8 @@ def test_notifications_use_their_own_projected_audience(
     assert notification_rule["credentialRef"] == {"name": notifications.WORKLOAD_CREDENTIAL}
     credential = _by_name(docs, "EgressCredential", notifications.WORKLOAD_CREDENTIAL)
     assert credential["spec"]["source"]["projectedWorkloadToken"]["audience"] == notifications.TOKEN_AUDIENCE
-    settings = _by_name(docs, "ConfigMap", "egress-settings")["data"]["settings.yaml"]
+    settings_name = "egress-go-settings" if namespace == testing.ENV.namespace else "egress-settings"
+    settings = _by_name(docs, "ConfigMap", settings_name)["data"]["settings.yaml"]
     proxy_settings = yaml.safe_load(settings)
     assert notifications.TOKEN_AUDIENCE in proxy_settings["projected_token_audiences"]
     notification_settings = yaml.safe_load(

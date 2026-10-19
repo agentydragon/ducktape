@@ -443,10 +443,7 @@ py_library(
 py_library(
     name = "settings_file",
     srcs = ["settings_file.py"],
-    visibility = [
-        "//agentplane/x/k3s_env:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":config_format",
         "//util:settings_contract",

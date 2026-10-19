@@ -12,7 +12,7 @@ import string
 from dataclasses import replace
 from typing import Any
 
-from cdk8s import ApiObject, ApiObjectMetadata, Chart, JsonPatch, Size, Testing
+from cdk8s import ApiObjectMetadata, Chart, Size, Testing
 from cdk8s_plus_34 import (
     ContainerProps,
     ContainerResources,
@@ -48,11 +48,9 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.chart import Namespace
 from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
-from cluster.cdk8s.agentplane.service_workload import ServiceWorkload
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
-from cluster.cdk8s.settings_file import SettingsFile
 
 NAMESPACE = testing.ENV.namespace
 RUNNER_GATEWAY = "runner-gateway"
@@ -62,31 +60,6 @@ QUEUE_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gatewa
 DISPATCHER_PORT = 8080
 EGRESS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset"
 EGRESS_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate:unset"
-
-
-class _GoEgress(egress.Egress):
-    """Run the Go images in the fixture ahead of the fleet's separate cutover.
-
-    CLEANUP(added 2026-10-18): remove this adapter when Egress deploys Go itself.
-    Services, RBAC, policies, trust mounts and settings still come from that construct.
-    """
-
-    def _add_workload(self, settings: SettingsFile) -> ServiceWorkload:
-        workload = super()._add_workload(settings)
-        deployment = ApiObject.of(workload.deployment)
-        args = workload.container.args
-        assert args is not None
-        deployment.add_json_patch(
-            JsonPatch.replace("/spec/template/spec/containers/0/image", EGRESS_IMAGE),
-            JsonPatch.replace(
-                "/spec/template/spec/containers/0/args", [arg for arg in args if not arg.startswith("--confdir=")]
-            ),
-            JsonPatch.add("/spec/template/spec/containers/0/env/-", {"name": "PGSSLMODE", "value": "disable"}),
-            JsonPatch.replace("/spec/template/spec/initContainers/0/image", EGRESS_MIGRATOR_IMAGE),
-            JsonPatch.replace("/spec/template/spec/initContainers/0/env/0/name", "DATABASE_URL"),
-            JsonPatch.add("/spec/template/spec/initContainers/0/env/-", {"name": "PGSSLMODE", "value": "disable"}),
-        )
-        return workload
 
 
 def _password(length: int = 40) -> str:
@@ -168,7 +141,8 @@ def objects(
         memory_limit=None,
     )
     agent_api = ServiceRef(name=egress.NAME, port=Port(name="http", number=8082), pods=egress.agent_api(NAMESPACE).pods)
-    _GoEgress(
+    database_env = {"PGSSLMODE": EnvValue.from_value("disable")}
+    egress.Egress(
         chart,
         "egress",
         env,
@@ -180,10 +154,11 @@ def objects(
         placement=None,
         registry_secret_name=None,
         service_cluster_ip="None",
-        container_env=kube_api_env,
+        container_env={**kube_api_env, **database_env},
         memory_limit=None,
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         migrate_memory_limit=None,
+        migrate_env=database_env,
     )
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {
@@ -193,7 +168,6 @@ def objects(
         ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME): notifications.service(NAMESPACE).pods
     }
     dispatcher_callers = app_caller | notifications_caller
-    database_env = {"PGSSLMODE": EnvValue.from_value("disable")}
     control = runner_gateway_workload.runner_control_service(NAMESPACE, port=Port(name="grpc", number=8080))
     runner_gateway_workload.add_stable_services(chart, env, cluster_ip="None", control=control)
     runner_gateway_workload.RunnerGateway(
