@@ -1,3 +1,5 @@
+# gazelle:resolve py skills.eval_infra.empty_skill.empty_skill_skill_spec //skills/eval_infra/empty_skill:empty_skill_skill_spec
+# gazelle:resolve py devinfra.skills.reverse_engineer.reverse_engineer_skill_spec //devinfra/skills/reverse_engineer:reverse_engineer_skill_spec
 # gazelle:exclude ci
 # ci/ is excluded, so pin the one module indexed code imports from it.
 # gazelle:resolve py devinfra.ci.invocation_ids //devinfra/ci:invocation_ids

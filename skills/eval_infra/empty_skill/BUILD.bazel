@@ -6,5 +6,8 @@ load("//skills:defs.bzl", "skill_package")
 skill_package(
     name = "empty_skill",
     srcs = ["SKILL.md"],
-    visibility = ["//skills:__subpackages__"],
+    visibility = [
+        "//devinfra/skills/reverse_engineer/evals:__subpackages__",
+        "//skills:__subpackages__",
+    ],
 )

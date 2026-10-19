@@ -1,0 +1,22 @@
+load("//skills:defs.bzl", "skill_mapping", "skill_package")
+
+skill_package(
+    name = "reverse_engineer",
+    contents = [
+        skill_mapping(
+            srcs = ["SKILL.md"],
+            preserve_paths = True,
+        ),
+        skill_mapping(
+            srcs = [
+                "//devinfra/skills/reverse_engineer/examples:binary_diff_recipe.sh",
+                "//devinfra/skills/reverse_engineer/examples:garble_re_recipe.sh",
+                "//devinfra/skills/reverse_engineer/examples:gosymtab.go",
+                "//devinfra/skills/reverse_engineer/examples:gotypes.go",
+                "//devinfra/skills/reverse_engineer/examples:inline_strings.py",
+                "//devinfra/skills/reverse_engineer/examples:pclntool.go",
+            ],
+            prefix = "examples",
+        ),
+    ],
+)

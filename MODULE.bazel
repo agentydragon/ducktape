@@ -1708,7 +1708,7 @@ go_deps.module(
 # toolexecCmd regardless of the seed source.
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["//skills/reverse_engineer/examples:garble_hash_fix.patch"],
+    patches = ["//devinfra/skills/reverse_engineer/examples:garble_hash_fix.patch"],
     path = "mvdan.cc/garble",
 )
 

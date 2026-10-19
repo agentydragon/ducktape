@@ -1,5 +1,0 @@
-filegroup(
-    name = "srcs",
-    srcs = glob(["*.go"]),
-    visibility = ["//skills/reverse_engineer/examples:__pkg__"],
-)

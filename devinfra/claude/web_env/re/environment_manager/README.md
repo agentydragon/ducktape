@@ -41,7 +41,7 @@ refuse the binary outright. Rebuild the symbol table first — then the entire
 standard toolchain works, including call-target resolution:
 
 ```bash
-bazel run //skills/reverse_engineer/examples:gosymtab -- \
+bazel run //devinfra/skills/reverse_engineer/examples:gosymtab -- \
     /opt/env-runner/environment-manager /tmp/em.sym
 go tool nm /tmp/em.sym | grep TaVHwGAw
 go tool objdump -s '^main\.main$' /tmp/em.sym

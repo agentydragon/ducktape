@@ -179,8 +179,8 @@
     {
       "name": "forgejo",
       "pkg": "skill-forgejo",
-      "target": "//skills/forgejo:forgejo_skill",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/forgejo/forgejo.skill",
+      "target": "//devinfra/skills/forgejo:forgejo_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/skills/forgejo/forgejo.skill",
       "filename": "forgejo.skill"
     },
     {
@@ -235,15 +235,15 @@
     {
       "name": "lint_audit",
       "pkg": "skill-lint_audit",
-      "target": "//skills/lint_audit:lint_audit_skill",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/lint_audit/lint_audit.skill",
+      "target": "//devinfra/skills/lint_audit:lint_audit_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/skills/lint_audit/lint_audit.skill",
       "filename": "lint_audit.skill"
     },
     {
       "name": "mcp_design",
       "pkg": "skill-mcp_design",
-      "target": "//skills/mcp_design:mcp_design_skill",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/mcp_design/mcp_design.skill",
+      "target": "//devinfra/skills/mcp_design:mcp_design_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/skills/mcp_design/mcp_design.skill",
       "filename": "mcp_design.skill"
     },
     {
@@ -263,8 +263,8 @@
     {
       "name": "reverse_engineer",
       "pkg": "skill-reverse_engineer",
-      "target": "//skills/reverse_engineer:reverse_engineer_skill",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/reverse_engineer/reverse_engineer.skill",
+      "target": "//devinfra/skills/reverse_engineer:reverse_engineer_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/skills/reverse_engineer/reverse_engineer.skill",
       "filename": "reverse_engineer.skill"
     },
     {
@@ -291,8 +291,8 @@
     {
       "name": "update_deps",
       "pkg": "skill-update_deps",
-      "target": "//skills/update_deps:update_deps_skill",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/update_deps/update_deps.skill",
+      "target": "//devinfra/skills/update_deps:update_deps_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/skills/update_deps/update_deps.skill",
       "filename": "update_deps.skill"
     },
     {

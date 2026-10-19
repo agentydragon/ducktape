@@ -7,7 +7,7 @@ Two RTX 5090s on `wyrm2`. The point of this directory is to figure out
 models, configs, and tasks evolve. Three things to decide:
 
 1. **Which models** — quality on jobs that matter (AI-powered coding;
-   reverse engineering, see <../../../skills/reverse_engineer/>; FreeCAD,
+   reverse engineering, see <../../../devinfra/skills/reverse_engineer/>; FreeCAD,
    see <../../../skills/freecad/>; reasoning tasks generally).
 2. **Which inference config** — backend (Ollama, vLLM, …), quant,
    parallelism, context — for speed and usability.

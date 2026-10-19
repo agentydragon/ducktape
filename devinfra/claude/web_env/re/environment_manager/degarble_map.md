@@ -27,7 +27,7 @@ Garble cannot rename everything, and each surviving name is a fingerprint:
    toolchain notes below.
 
 Recovering the names at all requires rebuilding the symbol table first; see
-`//skills/reverse_engineer/examples:gosymtab` and the "Defeating Obfuscation"
+`//devinfra/skills/reverse_engineer/examples:gosymtab` and the "Defeating Obfuscation"
 section of the `reverse_engineer` skill.
 
 ### What does not work: recovering file boundaries
@@ -75,7 +75,7 @@ implementations**, not a package and a wrapper:
 
 The `byoc` literal is recovered from an inline comparison, not from `strings`:
 it is an instruction operand, which `-literals` cannot encrypt. See
-`//skills/reverse_engineer/examples:inline_strings`.
+`//devinfra/skills/reverse_engineer/examples:inline_strings`.
 
 ## Third-party and stdlib-adjacent packages
 
