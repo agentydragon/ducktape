@@ -86,12 +86,10 @@ response_headers = {k.decode(): v.decode() for k, v in headers}
 
 ```bash
 # View the problematic line
-adgn-properties snapshot exec ducktape/2025-11-20-00 -- \
-  sed -n '142,142p' adgn/src/adgn/agent/server/mcp_routing.py
+sed -n '142,142p' props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/server/mcp_routing.py
 
 # View full dispatch method
-adgn-properties snapshot exec ducktape/2025-11-20-00 -- \
-  sed -n '99,150p' adgn/src/adgn/agent/server/mcp_routing.py
+sed -n '99,150p' props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/server/mcp_routing.py
 ```
 
 ## Issue #2: Streaming Broken (Cluster #18)
@@ -132,8 +130,7 @@ return Response(content=body, ...)
 
 ```bash
 # View the buffering middleware
-adgn-properties snapshot exec ducktape/2025-11-20-00 -- \
-  sed -n '222,248p' adgn/src/adgn/agent/mcp_bridge/server.py
+sed -n '222,248p' props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/mcp_bridge/server.py
 ```
 
 ## Unified Solution: Pure ASGI Middleware

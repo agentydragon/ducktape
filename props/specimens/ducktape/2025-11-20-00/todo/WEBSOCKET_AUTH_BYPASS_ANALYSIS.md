@@ -18,20 +18,16 @@ The management UI advertises token-authenticated access, but the `/ws/mcp` WebSo
 
 ```bash
 # View UITokenAuthMiddleware definition
-adgn-properties snapshot exec ducktape/2025-11-20-00 -- \
-  sed -n '124,160p' adgn/src/adgn/agent/mcp_bridge/auth.py
+sed -n '124,160p' props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/mcp_bridge/auth.py
 
 # View middleware installation in create_management_ui_app
-adgn-properties snapshot exec ducktape/2025-11-20-00 -- \
-  sed -n '271,289p' adgn/src/adgn/agent/mcp_bridge/server.py
+sed -n '271,289p' props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/mcp_bridge/server.py
 
 # Search for WebSocket handler registration
-adgn-properties snapshot exec ducktape/2025-11-20-00 -- \
-  bash -c "grep -n 'ws/mcp\|websocket' adgn/src/adgn/agent/mcp_bridge/server.py | head -20"
+grep -n 'ws/mcp\|websocket' props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/mcp_bridge/server.py | head -20
 
 # Find the actual WebSocket endpoint handler
-adgn-properties snapshot exec ducktape/2025-11-20-00 -- \
-  bash -c "grep -n 'async def.*websocket\|@.*websocket' adgn/src/adgn/agent/mcp_bridge/server.py | head -10"
+grep -n 'async def.*websocket\|@.*websocket' props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/mcp_bridge/server.py | head -10
 ```
 
 ## Root Cause Analysis

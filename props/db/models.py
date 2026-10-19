@@ -544,7 +544,7 @@ class SnapshotFile(Base):
     """File in a snapshot with metadata.
 
     Used for FK validation of file paths in occurrences and trigger sets.
-    Populated during sync from hydrated snapshot content.
+    Populated during sync from the snapshot's code tar.
     """
 
     __tablename__ = "snapshot_files"
