@@ -227,7 +227,11 @@ def service(
 
 def _request(*, owner: str) -> SubmitToolCallRequest:
     return SubmitToolCallRequest(
-        server_id="operator-backend", tool_name="mutate", arguments={"owner": owner}, rationale=f"exercise {owner}"
+        server_id="operator-backend",
+        tool_name="mutate",
+        arguments={"owner": owner},
+        rationale=f"exercise {owner}",
+        wait_for_ms=0,
     )
 
 
@@ -452,19 +456,20 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     *, migrated_db_url: str, tmp_path: Path, actors: dict[str, RuntimeActor], ledger: _RecordingLedger
 ) -> None:
     actor = actors["aa1"]
+    approver = actors["oa"]
     executor = _CancellingExecutor()
     service = _service(database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, executor=executor)
     pending = await _submit_pending(ledger, actor=actor, owner="cancelled")
     await service.decide(
         tool_call_id=pending.tool_call_id,
         decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
-        actor=actors["oa"],
+        actor=approver,
     )
     await join_executions(service)
 
     [terminal] = await service.list_tool_calls(actor=actor)
     assert terminal.status is ToolCallStatus.ERROR
-    assert ledger.finish_actors == [actor]
+    assert ledger.finish_actors == [approver]
 
 
 async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(

@@ -17,6 +17,7 @@ from haku.console.tool_calls import (
     AgentToolCallCaller,
     OperatorToolCallCaller,
     SubmitToolCallRequest,
+    ToolCallCaller,
     ToolCallRecord,
     ToolCallStatus,
 )
@@ -33,6 +34,7 @@ async def seed_pending_tool_call(
     """Insert a historical pending row for tests of approval and history behavior."""
     async with ledger._sessions.begin() as session:
         tool_call_id = f"tc_{secrets.token_hex(12)}"
+        caller: ToolCallCaller
         match actor:
             case AgentActor() as agent:
                 display_name, _ = await ledger._require_active_agent_binding(session, agent)
