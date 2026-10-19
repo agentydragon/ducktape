@@ -1,0 +1,914 @@
+package runner
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"strings"
+	"sync"
+
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	"github.com/google/uuid"
+)
+
+const (
+	claudeSessionName = "agentplane"
+	claudeMaxRetries  = 2
+)
+
+var claudeTools = []string{"Bash", "Edit", "Read", "Agent", "SendMessage", "TaskOutput"}
+
+type claudePendingInput struct {
+	commandID string
+	text      string
+}
+
+type claudeStartedInput struct {
+	messageUUID string
+	sequence    uint64
+}
+
+type claudeToolResult struct {
+	messageID string
+	sequence  uint64
+}
+
+type claudeChange struct {
+	commandID string
+	value     string
+}
+
+type claudeAdapter struct {
+	host   AdapterHost
+	launch LaunchConfig
+
+	mu              sync.Mutex
+	nativeSessionID string
+	pending         map[string]claudePendingInput
+	started         []claudeStartedInput
+	toolResult      *claudeToolResult
+	modelChanges    map[string]claudeChange
+	effortChanges   map[string]claudeChange
+	messageID       string
+	blockItems      map[int]string
+	adapterID       string
+}
+
+// NewClaudeAdapter creates an adapter bound to one runner-owned Session.
+func NewClaudeAdapter(host AdapterHost, launch LaunchConfig) Adapter {
+	snapshot := host.Session()
+	nativeID := snapshot.NativeSessionID
+	if nativeID == "" {
+		nativeID = uuid.NewString()
+	}
+	return &claudeAdapter{
+		host: host, launch: launch, nativeSessionID: nativeID,
+		pending:      make(map[string]claudePendingInput),
+		modelChanges: make(map[string]claudeChange), effortChanges: make(map[string]claudeChange),
+		blockItems: make(map[int]string), adapterID: uuid.NewString(),
+	}
+}
+
+func (a *claudeAdapter) Command() ([]string, error) {
+	session := a.host.Session()
+	args := []string{
+		a.launch.Binary,
+		"--safe-mode",
+		"--prompt-suggestions=false",
+		"--setting-sources=",
+		"--strict-mcp-config",
+		"--name", claudeSessionName,
+		"--tools", strings.Join(claudeTools, ","),
+		"--output-format", "stream-json",
+		"--verbose",
+		"--permission-mode", "bypassPermissions",
+		"--permission-prompt-tool", "stdio",
+		"--include-partial-messages",
+		"--input-format", "stream-json",
+		"--model", session.Model,
+		"--disable-slash-commands",
+	}
+	if session.Resuming {
+		args = append(args, "--resume", a.nativeSessionID)
+	} else {
+		args = append(args, "--session-id", a.nativeSessionID)
+	}
+	args = append(args, "--replay-user-messages")
+	if session.ReasoningEffort != "" {
+		args = append(args, "--effort", session.ReasoningEffort)
+	}
+	return args, nil
+}
+
+func (a *claudeAdapter) Environment() (map[string]string, error) {
+	session := a.host.Session()
+	configDir := filepath.Join(session.Directory, "claude")
+	if err := ensureDirectory(configDir); err != nil {
+		return nil, err
+	}
+	environment := copyEnvironment(session.HarnessEnvironment)
+	environment["ANTHROPIC_AUTH_TOKEN"] = a.launch.Token
+	environment["ANTHROPIC_BASE_URL"] = a.launch.BaseURL
+	environment["CLAUDE_CONFIG_DIR"] = configDir
+	environment["CLAUDE_CODE_MAX_RETRIES"] = fmt.Sprint(claudeMaxRetries)
+	environment["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+	if session.TotalContextBudgetTokens != nil && *session.TotalContextBudgetTokens != 0 {
+		environment["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = fmt.Sprint(*session.TotalContextBudgetTokens)
+	}
+	return environment, nil
+}
+
+func (a *claudeAdapter) Handshake(ctx context.Context) (string, error) {
+	requestID, err := nativeRequestID()
+	if err != nil {
+		return "", err
+	}
+	initialize := map[string]any{"subtype": "initialize"}
+	if instructions := a.host.Session().Instructions; instructions != "" {
+		initialize["appendSystemPrompt"] = instructions
+	}
+	request := map[string]any{"type": "control_request", "request_id": requestID, "request": initialize}
+	frame, err := marshalNative(request)
+	if err != nil {
+		return "", err
+	}
+	receipt, err := a.host.RequestNative(ctx, frame, func(raw json.RawMessage) bool {
+		var parsed claudeWireFrame
+		return json.Unmarshal(raw, &parsed) == nil && parsed.Type == "control_response" && parsed.Response.RequestID == requestID
+	})
+	if err != nil {
+		return "", fmt.Errorf("wait for Claude initialization: %w", err)
+	}
+	var response claudeWireFrame
+	if err := json.Unmarshal(receipt.Frame, &response); err != nil {
+		return "", err
+	}
+	if response.Type != "control_response" {
+		return "", fmt.Errorf("Claude initialization received unexpected frame type %q", response.Type)
+	}
+	if response.Response.Subtype == "error" {
+		return "", fmt.Errorf("Claude initialization rejected: %s", response.Response.Error)
+	}
+	a.mu.Lock()
+	nativeID := a.nativeSessionID
+	a.mu.Unlock()
+	return nativeID, nil
+}
+
+func (a *claudeAdapter) Reconcile(ctx context.Context, turnID string, resumed bool) (*eventpb.ConversationReconciled, error) {
+	observed, err := a.host.Journal().ObservedItems(ctx, turnID)
+	if err != nil {
+		return nil, err
+	}
+	var recovered map[string]ObservedItem
+	undetermined := make(map[string]bool)
+	if resumed {
+		a.mu.Lock()
+		nativeID := a.nativeSessionID
+		a.mu.Unlock()
+		recovered, err = readClaudeHistory(filepath.Join(a.host.Session().Directory, "claude"), nativeID)
+		if err != nil {
+			return UnknownReport(turnID, observed, "cannot inspect native continuation: "+err.Error()), nil
+		}
+	} else {
+		answered, unparsed, err := a.answeredMessages(ctx, turnID)
+		if err != nil {
+			return nil, err
+		}
+		recovered = make(map[string]ObservedItem)
+		for itemID, item := range observed {
+			messageID := itemID
+			if separator := strings.LastIndexByte(itemID, '#'); separator >= 0 {
+				messageID = itemID[:separator]
+			}
+			if item.Completed && (item.Kind != eventpb.ItemKind_ITEM_KIND_REASONING || answered[messageID]) {
+				recovered[itemID] = item
+			}
+			if unparsed && item.Completed && item.Kind == eventpb.ItemKind_ITEM_KIND_REASONING && !answered[messageID] {
+				undetermined[itemID] = true
+			}
+		}
+	}
+
+	report := &eventpb.ConversationReconciled{TurnId: turnID}
+	for _, itemID := range sortedObservedItemIDs(observed) {
+		item := observed[itemID]
+		switch {
+		case !resumed && item.Kind == eventpb.ItemKind_ITEM_KIND_TOOL_CALL && !item.Completed:
+			report.Items = append(report.Items, UnknownItem(item.ItemID, "Claude does not report whether it keeps a tool call interrupted before its result"))
+		case undetermined[item.ItemID]:
+			report.Items = append(report.Items, UnknownItem(item.ItemID, "a native line of this turn could not be parsed, so whether another block of this message survived is unknown"))
+		default:
+			recoveredItem, ok := recovered[item.ItemID]
+			if !ok {
+				report.Items = append(report.Items, CompareItem(item, nil))
+			} else {
+				report.Items = append(report.Items, CompareItem(item, &recoveredItem))
+			}
+		}
+	}
+	return report, nil
+}
+
+func (a *claudeAdapter) answeredMessages(ctx context.Context, turnID string) (map[string]bool, bool, error) {
+	entries, err := a.host.Journal().TurnEvents(ctx, turnID)
+	if err != nil {
+		return nil, false, err
+	}
+	messages := make([]claudeMessageWithBlocks, 0)
+	unparsed := false
+	for _, entry := range entries {
+		if entry == nil || entry.Event == nil {
+			continue
+		}
+		native := entry.Event.GetNative()
+		if native == nil || native.Direction != eventpb.Direction_DIRECTION_FROM_HARNESS {
+			continue
+		}
+		var frame claudeWireFrame
+		if err := json.Unmarshal([]byte(native.Line), &frame); err != nil {
+			unparsed = true
+			continue
+		}
+		if frame.Type != "assistant" {
+			continue
+		}
+		blocks, err := claudeBlocks(frame.Message.Content)
+		if err != nil {
+			unparsed = true
+			continue
+		}
+		messageID := frame.Message.ID
+		messages = append(messages, claudeMessageWithBlocks{Message: claudeMessage{ID: &messageID}, Blocks: blocks})
+	}
+	return answeredMessageIDs(messages), unparsed, nil
+}
+
+func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) error {
+	if a.host.Session().ActiveTurnID == "" {
+		turnID, err := newTurnID()
+		if err != nil {
+			return err
+		}
+		if err := a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: turnID, Model: a.host.Session().Model}}, nil); err != nil {
+			return err
+		}
+	}
+	messageUUID, err := newUUID()
+	if err != nil {
+		return err
+	}
+	frame, err := marshalNative(map[string]any{
+		"type": "user", "message": map[string]string{"role": "user", "content": text}, "parent_tool_use_id": nil, "uuid": messageUUID,
+	})
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.pending[messageUUID] = claudePendingInput{commandID: commandID, text: text}
+	a.mu.Unlock()
+	if err := a.host.SendNative(ctx, frame); err != nil {
+		a.mu.Lock()
+		delete(a.pending, messageUUID)
+		a.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
+func (a *claudeAdapter) Interrupt(ctx context.Context, turnID string) error {
+	_ = turnID // Claude interrupts its current native turn; its protocol has no turn id on this request.
+	requestID, err := nativeRequestID()
+	if err != nil {
+		return err
+	}
+	return a.send(ctx, map[string]any{
+		"type": "control_request", "request_id": requestID,
+		"request": map[string]any{"subtype": "interrupt", "cancel_queued": false, "reason": "agentplane"},
+	})
+}
+
+func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string) error {
+	requestID, err := nativeRequestID()
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.modelChanges[requestID] = claudeChange{commandID: commandID, value: model}
+	a.mu.Unlock()
+	err = a.requestAndTranslate(ctx, requestID, map[string]any{
+		"type": "control_request", "request_id": requestID,
+		"request": map[string]any{"subtype": "set_model", "model": model},
+	})
+	if err != nil {
+		a.mu.Lock()
+		delete(a.modelChanges, requestID)
+		a.mu.Unlock()
+	}
+	return err
+}
+
+func (a *claudeAdapter) ChangeReasoningEffort(ctx context.Context, commandID, effort string) error {
+	requestID, err := nativeRequestID()
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.effortChanges[requestID] = claudeChange{commandID: commandID, value: effort}
+	a.mu.Unlock()
+	err = a.requestAndTranslate(ctx, requestID, map[string]any{
+		"type": "control_request", "request_id": requestID,
+		"request": map[string]any{"subtype": "apply_flag_settings", "settings": map[string]string{"effortLevel": effort}},
+	})
+	if err != nil {
+		a.mu.Lock()
+		delete(a.effortChanges, requestID)
+		a.mu.Unlock()
+	}
+	return err
+}
+
+func (a *claudeAdapter) requestAndTranslate(ctx context.Context, requestID string, request any) error {
+	frame, err := marshalNative(request)
+	if err != nil {
+		return err
+	}
+	receipt, err := a.host.RequestNative(ctx, frame, func(raw json.RawMessage) bool {
+		var response claudeWireFrame
+		return json.Unmarshal(raw, &response) == nil && response.Type == "control_response" && response.Response.RequestID == requestID
+	})
+	if err != nil {
+		return err
+	}
+	// The journaled receipt is also sent through OnFrame by the native reader. Taking the pending
+	// request under a lock makes either path the single translator if they race.
+	return a.OnFrame(ctx, receipt.Frame, receipt.Sequence)
+}
+
+func (a *claudeAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceSequence uint64) error {
+	var frame claudeWireFrame
+	if err := json.Unmarshal(raw, &frame); err != nil {
+		return fmt.Errorf("decode Claude frame: %w", err)
+	}
+	sources := []uint64{sourceSequence}
+	if frame.Type == "control_request" {
+		return a.answerControlRequest(ctx, frame)
+	}
+	if frame.ParentToolUseID != nil && (frame.Type == "system" || frame.Type == "stream_event" || frame.Type == "assistant" || frame.Type == "user" || frame.Type == "result") {
+		return nil
+	}
+	if frame.Type == "system" && strings.HasPrefix(frame.Subtype, "task_") {
+		return nil
+	}
+
+	a.mu.Lock()
+	toolResult := a.toolResult != nil
+	isStarted := frame.Type == "command_lifecycle" && frame.State == "started"
+	isReplayPending := frame.Type == "user" && frame.IsReplay && hasString(a.pending, frame.UUID)
+	a.mu.Unlock()
+	if toolResult && !isStarted && !isReplayPending {
+		if err := a.confirmToolResultInputs(ctx, sources); err != nil {
+			return err
+		}
+	}
+
+	switch frame.Type {
+	case "control_response":
+		return a.handleControlResponse(ctx, frame, sources)
+	case "command_lifecycle":
+		return a.handleCommandLifecycle(ctx, frame, sourceSequence, sources)
+	case "stream_event":
+		return a.handleStreamEvent(ctx, frame, sourceSequence, sources)
+	case "assistant":
+		return a.handleAssistant(ctx, frame, sources)
+	case "user":
+		return a.handleUser(ctx, frame, sourceSequence)
+	case "result":
+		return a.handleResult(ctx, frame, sources)
+	default:
+		// Unknown native frames remain archived verbatim by Session and have no runner projection.
+		return nil
+	}
+}
+
+func (a *claudeAdapter) handleControlResponse(ctx context.Context, frame claudeWireFrame, sources []uint64) error {
+	if frame.Response.Subtype != "success" && frame.Response.Subtype != "error" {
+		return nil
+	}
+	a.mu.Lock()
+	modelChange, hasModel := a.modelChanges[frame.Response.RequestID]
+	effortChange, hasEffort := a.effortChanges[frame.Response.RequestID]
+	if hasModel {
+		delete(a.modelChanges, frame.Response.RequestID)
+	}
+	if hasEffort {
+		delete(a.effortChanges, frame.Response.RequestID)
+	}
+	a.mu.Unlock()
+	if hasModel {
+		if frame.Response.Subtype == "success" {
+			return a.host.ModelChanged(ctx, modelChange.commandID, modelChange.value, sources)
+		}
+		return a.host.FailCommand(ctx, modelChange.commandID, "Claude Code refused model switch: "+frame.Response.Error, sources)
+	}
+	if hasEffort {
+		if frame.Response.Subtype == "success" {
+			return a.host.ReasoningEffortChanged(ctx, effortChange.commandID, effortChange.value, sources)
+		}
+		return a.host.FailCommand(ctx, effortChange.commandID, "Claude Code refused reasoning effort switch: "+frame.Response.Error, sources)
+	}
+	return nil
+}
+
+func (a *claudeAdapter) handleCommandLifecycle(ctx context.Context, frame claudeWireFrame, sourceSequence uint64, sources []uint64) error {
+	a.mu.Lock()
+	switch frame.State {
+	case "started":
+		if _, ok := a.pending[frame.CommandUUID]; ok {
+			a.started = append(a.started, claudeStartedInput{messageUUID: frame.CommandUUID, sequence: sourceSequence})
+		}
+		a.mu.Unlock()
+		return nil
+	case "cancelled":
+		pending, ok := a.pending[frame.CommandUUID]
+		if ok {
+			delete(a.pending, frame.CommandUUID)
+			started := a.started[:0]
+			for _, input := range a.started {
+				if input.messageUUID != frame.CommandUUID {
+					started = append(started, input)
+				}
+			}
+			a.started = started
+		}
+		a.mu.Unlock()
+		if ok {
+			return a.host.NoopCommand(ctx, pending.commandID, "Claude cancelled the queued user input before taking it", sources)
+		}
+	}
+	a.mu.Unlock()
+	return nil
+}
+
+func (a *claudeAdapter) answerControlRequest(ctx context.Context, frame claudeWireFrame) error {
+	var response map[string]any
+	switch frame.Request.Subtype {
+	case "can_use_tool":
+		var toolInput map[string]any
+		if len(frame.Request.Input) > 0 {
+			if err := json.Unmarshal(frame.Request.Input, &toolInput); err != nil {
+				return err
+			}
+		}
+		response = map[string]any{"subtype": "success", "request_id": frame.RequestID, "response": map[string]any{"behavior": "allow", "updatedInput": toolInput}, "error": nil}
+	default:
+		response = map[string]any{
+			"subtype": "error", "request_id": frame.RequestID,
+			"response": nil, "error": fmt.Sprintf("the agentplane runner does not answer %q requests", frame.Request.Subtype),
+		}
+	}
+	return a.send(ctx, map[string]any{"type": "control_response", "response": response})
+}
+
+func (a *claudeAdapter) handleStreamEvent(ctx context.Context, frame claudeWireFrame, sourceSequence uint64, sources []uint64) error {
+	switch frame.Event.Type {
+	case "message_start":
+		a.mu.Lock()
+		a.messageID = frame.Event.Message.ID
+		a.blockItems = make(map[int]string)
+		a.mu.Unlock()
+		if frame.UserMessageUUID != "" {
+			return a.confirmMessageStart(ctx, frame.UserMessageUUID, sourceSequence)
+		}
+	case "content_block_start":
+		a.mu.Lock()
+		messageID := a.messageID
+		itemID := claudeItemID(frame.Event.ContentBlock, frame.Event.Index, messageID)
+		a.blockItems[frame.Event.Index] = itemID
+		a.mu.Unlock()
+		return a.startItem(ctx, itemID, frame.Event.ContentBlock, sources)
+	case "content_block_delta":
+		a.mu.Lock()
+		itemID := a.blockItems[frame.Event.Index]
+		a.mu.Unlock()
+		switch frame.Event.Delta.Type {
+		case "text_delta":
+			return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: itemID, Text: frame.Event.Delta.Text}}, sources)
+		case "thinking_delta":
+			return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: itemID, Text: frame.Event.Delta.Thinking}}, sources)
+		case "input_json_delta":
+			return a.emit(ctx, &eventpb.Event_ToolArgumentsDelta{ToolArgumentsDelta: &eventpb.ToolArgumentsDelta{ItemId: itemID, PartialJson: frame.Event.Delta.PartialJSON}}, sources)
+		}
+	}
+	return nil
+}
+
+func (a *claudeAdapter) confirmMessageStart(ctx context.Context, messageUUID string, sourceSequence uint64) error {
+	a.mu.Lock()
+	started := append([]claudeStartedInput(nil), a.started...)
+	if len(started) == 0 || started[len(started)-1].messageUUID != messageUUID {
+		a.mu.Unlock()
+		if containsStarted(started, messageUUID) {
+			return errors.New("Claude started a model request for a non-representative input")
+		}
+		return nil
+	}
+	confirmed, err := a.consumeStartedLocked(started)
+	a.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	turnID, err := a.turnID(ctx, []uint64{sourceSequence})
+	if err != nil {
+		return err
+	}
+	sources := startedSequences(started, sourceSequence)
+	return a.host.ConfirmUserMessage(ctx, UserMessageConfirmation{
+		HarnessMessageID: messageUUID, Text: joinTexts(confirmed), OriginCommandIDs: commandIDs(confirmed), TurnID: turnID,
+	}, sources)
+}
+
+func (a *claudeAdapter) handleAssistant(ctx context.Context, frame claudeWireFrame, sources []uint64) error {
+	blocks, err := claudeBlocks(frame.Message.Content)
+	if err != nil {
+		return err
+	}
+	for _, block := range blocks {
+		index, err := a.host.Journal().NextAdapterBlock(ctx, a.adapterID, frame.Message.ID)
+		if err != nil {
+			return err
+		}
+		itemID := claudeHistoryItemID(block, index, frame.Message.ID)
+		if itemID == "" {
+			continue
+		}
+		has, err := a.host.Journal().HasAdapterItem(ctx, a.adapterID, itemID)
+		if err != nil {
+			return err
+		}
+		if !has {
+			if err := a.startItem(ctx, itemID, block, sources); err != nil {
+				return err
+			}
+		}
+		switch block.Type {
+		case "text":
+			if err := a.emit(ctx, &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{ItemId: itemID, Outcome: &eventpb.ItemCompleted_Text{Text: block.Text}}}, sources); err != nil {
+				return err
+			}
+		case "thinking":
+			if err := a.emit(ctx, &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{ItemId: itemID, Outcome: &eventpb.ItemCompleted_Text{Text: block.Thinking}}}, sources); err != nil {
+				return err
+			}
+		case "tool_use":
+			arguments := canonicalJSON(block.Input)
+			if err := a.emit(ctx, &eventpb.Event_ToolArguments{ToolArguments: &eventpb.ToolArguments{ItemId: itemID, ArgumentsJson: arguments}}, sources); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (a *claudeAdapter) handleUser(ctx context.Context, frame claudeWireFrame, sourceSequence uint64) error {
+	if frame.IsReplay {
+		return a.confirmReplayedUserMessage(ctx, frame, sourceSequence)
+	}
+	blocks, err := claudeBlocks(frame.Message.Content)
+	if err != nil {
+		return err
+	}
+	hasToolResult := false
+	for _, block := range blocks {
+		if block.Type != "tool_result" {
+			continue
+		}
+		output, err := block.resultText()
+		if err != nil {
+			return err
+		}
+		hasToolResult = true
+		if err := a.emit(ctx, &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
+			ItemId: block.ToolUseID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: output, Succeeded: !block.IsError}},
+		}}, []uint64{sourceSequence}); err != nil {
+			return err
+		}
+	}
+	if hasToolResult {
+		a.mu.Lock()
+		a.toolResult = &claudeToolResult{messageID: frame.UUID, sequence: sourceSequence}
+		a.mu.Unlock()
+	}
+	return nil
+}
+
+func (a *claudeAdapter) confirmReplayedUserMessage(ctx context.Context, frame claudeWireFrame, sourceSequence uint64) error {
+	a.mu.Lock()
+	started := append([]claudeStartedInput(nil), a.started...)
+	if len(started) == 0 || started[len(started)-1].messageUUID != frame.UUID {
+		a.mu.Unlock()
+		if containsStarted(started, frame.UUID) {
+			return errors.New("Claude replayed a non-representative started input")
+		}
+		return nil
+	}
+	confirmed, err := a.peekStartedLocked(started)
+	if err != nil {
+		a.mu.Unlock()
+		return err
+	}
+	text := joinTexts(confirmed)
+	var replayed string
+	if err := json.Unmarshal(frame.Message.Content, &replayed); err != nil || replayed != text {
+		a.mu.Unlock()
+		return errors.New("Claude replayed user text inconsistent with its started input batch")
+	}
+	confirmed, err = a.consumeStartedLocked(started)
+	a.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	turnID, err := a.turnID(ctx, []uint64{sourceSequence})
+	if err != nil {
+		return err
+	}
+	return a.host.ConfirmUserMessage(ctx, UserMessageConfirmation{
+		HarnessMessageID: frame.UUID, Text: text, OriginCommandIDs: commandIDs(confirmed), TurnID: turnID,
+	}, startedSequences(started, sourceSequence))
+}
+
+func (a *claudeAdapter) confirmToolResultInputs(ctx context.Context, sources []uint64) error {
+	a.mu.Lock()
+	toolResult := a.toolResult
+	a.toolResult = nil
+	started := append([]claudeStartedInput(nil), a.started...)
+	if toolResult == nil || len(started) == 0 {
+		a.mu.Unlock()
+		return nil
+	}
+	confirmed, err := a.consumeStartedLocked(started)
+	a.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	turnID, err := a.turnID(ctx, sources)
+	if err != nil {
+		return err
+	}
+	causal := []uint64{toolResult.sequence}
+	for _, input := range started {
+		causal = append(causal, input.sequence)
+	}
+	return a.host.ConfirmUserMessage(ctx, UserMessageConfirmation{
+		HarnessMessageID: toolResult.messageID, Text: joinTexts(confirmed), OriginCommandIDs: commandIDs(confirmed), TurnID: turnID,
+	}, causal)
+}
+
+func (a *claudeAdapter) handleResult(ctx context.Context, frame claudeWireFrame, sources []uint64) error {
+	session := a.host.Session()
+	if session.ActiveTurnID == "" {
+		return nil
+	}
+	status := eventpb.TurnStatus_TURN_STATUS_COMPLETED
+	errorText := ""
+	if strings.HasPrefix(frame.TerminalReason, "aborted") {
+		status = eventpb.TurnStatus_TURN_STATUS_INTERRUPTED
+	} else if frame.IsError {
+		status = eventpb.TurnStatus_TURN_STATUS_FAILED
+		errorText = frame.Result
+	}
+	return a.emit(ctx, &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{TurnId: session.ActiveTurnID, Status: status, Error: errorText}}, sources)
+}
+
+func (a *claudeAdapter) startItem(ctx context.Context, itemID string, block claudeBlock, sources []uint64) error {
+	var kind eventpb.ItemKind
+	var toolName string
+	switch block.Type {
+	case "text":
+		kind = eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT
+	case "thinking":
+		kind = eventpb.ItemKind_ITEM_KIND_REASONING
+	case "tool_use":
+		kind, toolName = eventpb.ItemKind_ITEM_KIND_TOOL_CALL, block.Name
+	default:
+		return nil
+	}
+	if _, err := a.host.Journal().RememberAdapterItem(ctx, a.adapterID, itemID); err != nil {
+		return err
+	}
+	if _, err := a.turnID(ctx, sources); err != nil {
+		return err
+	}
+	return a.emit(ctx, &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: itemID, Kind: kind, ToolName: toolName}}, sources)
+}
+
+func (a *claudeAdapter) turnID(ctx context.Context, sources []uint64) (string, error) {
+	if turnID := a.host.Session().ActiveTurnID; turnID != "" {
+		return turnID, nil
+	}
+	turnID, err := newTurnID()
+	if err != nil {
+		return "", err
+	}
+	if err := a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: turnID, Model: a.host.Session().Model}}, sources); err != nil {
+		return "", err
+	}
+	if active := a.host.Session().ActiveTurnID; active != "" {
+		return active, nil
+	}
+	return turnID, nil
+}
+
+func (a *claudeAdapter) emit(ctx context.Context, observation any, sources []uint64) error {
+	event := &eventpb.Event{SourceSequences: append([]uint64(nil), sources...)}
+	switch value := observation.(type) {
+	case *eventpb.Event_TurnStarted:
+		event.Observation = value
+	case *eventpb.Event_TurnCompleted:
+		event.Observation = value
+	case *eventpb.Event_ItemStarted:
+		event.Observation = value
+	case *eventpb.Event_ItemCompleted:
+		event.Observation = value
+	case *eventpb.Event_TextDelta:
+		event.Observation = value
+	case *eventpb.Event_ToolArgumentsDelta:
+		event.Observation = value
+	case *eventpb.Event_ToolArguments:
+		event.Observation = value
+	default:
+		return fmt.Errorf("unsupported Claude observation type %T", observation)
+	}
+	return a.host.Emit(ctx, event, sources)
+}
+
+func (a *claudeAdapter) send(ctx context.Context, value any) error {
+	frame, err := marshalNative(value)
+	if err != nil {
+		return err
+	}
+	return a.host.SendNative(ctx, frame)
+}
+
+func (a *claudeAdapter) consumeStartedLocked(started []claudeStartedInput) ([]claudePendingInput, error) {
+	confirmed, err := a.peekStartedLocked(started)
+	if err != nil {
+		return nil, err
+	}
+	for _, input := range started {
+		delete(a.pending, input.messageUUID)
+	}
+	a.started = nil
+	return confirmed, nil
+}
+
+func (a *claudeAdapter) peekStartedLocked(started []claudeStartedInput) ([]claudePendingInput, error) {
+	confirmed := make([]claudePendingInput, 0, len(started))
+	for _, input := range started {
+		pending, ok := a.pending[input.messageUUID]
+		if !ok {
+			return nil, errors.New("Claude started an input the runner did not have pending")
+		}
+		confirmed = append(confirmed, pending)
+	}
+	return confirmed, nil
+}
+
+type claudeWireFrame struct {
+	Type            string            `json:"type"`
+	ParentToolUseID *string           `json:"parent_tool_use_id"`
+	RequestID       string            `json:"request_id"`
+	CommandUUID     string            `json:"command_uuid"`
+	State           string            `json:"state"`
+	UUID            string            `json:"uuid"`
+	IsReplay        bool              `json:"isReplay"`
+	UserMessageUUID string            `json:"user_message_uuid"`
+	Subtype         string            `json:"subtype"`
+	IsError         bool              `json:"is_error"`
+	Result          string            `json:"result"`
+	TerminalReason  string            `json:"terminal_reason"`
+	SessionID       string            `json:"session_id"`
+	DurationMS      int64             `json:"duration_ms"`
+	NumTurns        int               `json:"num_turns"`
+	Request         claudeRequest     `json:"request"`
+	Response        claudeResponse    `json:"response"`
+	Event           claudeStreamEvent `json:"event"`
+	Message         claudeWireMessage `json:"message"`
+}
+
+type claudeWireMessage struct {
+	ID      string          `json:"id"`
+	Content json.RawMessage `json:"content"`
+}
+
+type claudeRequest struct {
+	Subtype  string          `json:"subtype"`
+	ToolName string          `json:"tool_name"`
+	Input    json.RawMessage `json:"input"`
+}
+
+type claudeResponse struct {
+	Subtype   string `json:"subtype"`
+	RequestID string `json:"request_id"`
+	Error     string `json:"error"`
+}
+
+type claudeStreamEvent struct {
+	Type    string `json:"type"`
+	Index   int    `json:"index"`
+	Message struct {
+		ID string `json:"id"`
+	} `json:"message"`
+	ContentBlock claudeBlock `json:"content_block"`
+	Delta        struct {
+		Type        string `json:"type"`
+		Text        string `json:"text"`
+		Thinking    string `json:"thinking"`
+		PartialJSON string `json:"partial_json"`
+	} `json:"delta"`
+}
+
+func claudeItemID(block claudeBlock, index int, messageID string) string {
+	if block.Type == "tool_use" {
+		return block.ID
+	}
+	return fmt.Sprintf("%s#%d", messageID, index)
+}
+
+func claudeHistoryItemID(block claudeBlock, index int, messageID string) string {
+	switch block.Type {
+	case "text", "thinking", "tool_use":
+		return claudeItemID(block, index, messageID)
+	default:
+		return ""
+	}
+}
+
+func nativeRequestID() (string, error) {
+	id, err := newUUID()
+	if err != nil {
+		return "", err
+	}
+	return "capture-" + strings.ReplaceAll(id, "-", ""), nil
+}
+
+func newTurnID() (string, error) {
+	id, err := newUUID()
+	if err != nil {
+		return "", err
+	}
+	return "turn-" + strings.ReplaceAll(id, "-", ""), nil
+}
+
+func canonicalJSON(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "{}"
+	}
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return string(raw)
+	}
+	return pythonJSON(value)
+}
+
+func joinTexts(inputs []claudePendingInput) string {
+	texts := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		texts = append(texts, input.text)
+	}
+	return strings.Join(texts, "\n")
+}
+
+func commandIDs(inputs []claudePendingInput) []string {
+	ids := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		ids = append(ids, input.commandID)
+	}
+	return ids
+}
+
+func startedSequences(inputs []claudeStartedInput, final uint64) []uint64 {
+	sequences := make([]uint64, 0, len(inputs)+1)
+	for _, input := range inputs {
+		sequences = append(sequences, input.sequence)
+	}
+	return append(sequences, final)
+}
+
+func containsStarted(inputs []claudeStartedInput, uuid string) bool {
+	for _, input := range inputs {
+		if input.messageUUID == uuid {
+			return true
+		}
+	}
+	return false
+}
+
+func hasString(inputs map[string]claudePendingInput, key string) bool {
+	_, ok := inputs[key]
+	return ok
+}
+
+var _ Adapter = (*claudeAdapter)(nil)
