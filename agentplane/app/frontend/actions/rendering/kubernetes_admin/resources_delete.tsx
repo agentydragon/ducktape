@@ -23,6 +23,12 @@ function Delete({ args }: { args: z.infer<typeof resourcesDeleteArguments> }): J
   );
 }
 
+function DeleteSummary({ args }: { args: z.infer<typeof resourcesDeleteArguments> }): JSX.Element | null {
+  return args.gracePeriodSeconds === undefined ? null : (
+    <Text size="sm">Request a {args.gracePeriodSeconds}s grace period</Text>
+  );
+}
+
 function DeleteLabel({ args }: { args: z.infer<typeof resourcesDeleteArguments> }): JSX.Element {
   return (
     <Text size="sm" fw={600}>
@@ -32,6 +38,7 @@ function DeleteLabel({ args }: { args: z.infer<typeof resourcesDeleteArguments> 
 }
 
 export const resourcesDeleteLabel: ArgumentsPreview = definePreview(resourcesDeleteArguments, DeleteLabel);
+export const resourcesDeleteSummary: ArgumentsPreview = definePreview(resourcesDeleteArguments, DeleteSummary);
 export const resourcesDeletePane: ArgumentsPreview = definePreview(resourcesDeleteArguments, Delete);
 export const resourcesDeleteCall: CallPreview = defineCallPreview(
   resourcesDeleteArguments,
@@ -48,7 +55,7 @@ export const resourcesDeletePresentation: ActionPresentation = {
   outcome: (value) =>
     resourcesDeleteResult.safeParse(value).success ? { label: "Deletion accepted", failed: false } : undefined,
   label: resourcesDeleteLabel,
-  pane: { opened: resourcesDeletePane },
+  pane: { collapsed: resourcesDeleteSummary, opened: resourcesDeletePane },
   call: resourcesDeleteCall,
   details: { arguments: resourcesDeletePane, result: resourcesDeleteResultPreview },
 };

@@ -159,8 +159,8 @@ describe("Action presentation slots", () => {
         { apiVersion: "v1", kind: "Pod", name: "web-0", namespace: "apps", gracePeriodSeconds: 0 }
       )
     );
-    expect(deletion.textContent).toContain("Use API version v1");
-    expect(deletion.textContent).toContain("request a 0s grace period");
+    expect(deletion.textContent).toContain("Request a 0s grace period");
+    expect(deletion.textContent).not.toContain("Use API version v1");
     expect(deletion.textContent).not.toContain("apps/web-0");
   });
 

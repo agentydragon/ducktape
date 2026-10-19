@@ -218,7 +218,7 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
             "resources_delete",
             {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
             ["Use API version v1", "request a 0s grace period"],
-            "Use API version v1",
+            "Request a 0s grace period",
             id="resource-delete-grace-period",
         ),
         pytest.param(
