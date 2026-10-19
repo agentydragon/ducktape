@@ -6,7 +6,9 @@ metadata and a SeaweedFS S3 bucket for NAR chunk storage. Manifests in
 
 ## Architecture
 
-- **Server**: `ghcr.io/zhaofengli/attic:latest` (busybox-based Rust image)
+- **Server**: `git.allegedly.works/ducktape-ci/attic`, built by
+  `.github/workflows/attic-image.yml` from `cluster/attic/` and pinned in
+  `k8s/nix-cache/image-pins/kustomization.yaml`.
 - **Database**: CNPG cluster `attic-db` (2 instances, OVH-HA, hdd tier via the
   deprecated `local-path-ovh` alias)
 - **Cache storage**: SeaweedFS S3 bucket `attic` (`seaweedfs-s3.seaweedfs:8333`), replicated `001` across OVH volume servers
@@ -27,6 +29,13 @@ Re-running the Job is idempotent: GET the cache config first, only POST when
 missing. Because the keypair is supplied and stable, a full cluster wipe no
 longer invalidates trust or requires updating consumer pubkeys — the recreated
 cache signs with the same key as before.
+
+The server's `[database].max-connections` in `k8s/nix-cache/server.toml` sets
+its SQL connection pool limit to 32. This is an application pool limit; the
+CNPG server's connection limit is configured separately. The small source patch
+in `cluster/attic/` exposes this setting, retaining the upstream default of 10
+when it is absent. The source is pinned before Attic's thirteenth migration to
+preserve the deployed database schema.
 
 ## Secrets
 

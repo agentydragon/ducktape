@@ -242,8 +242,7 @@ spec:
                 secretKeyRef:
                   key: AWS_SECRET_ACCESS_KEY
                   name: attic-s3-credentials
-          image: ghcr.io/zhaofengli/attic:latest
-          imagePullPolicy: Always
+          image: git.allegedly.works/ducktape-ci/attic:unset
           livenessProbe:
             httpGet:
               path: /
@@ -285,6 +284,8 @@ spec:
               readOnly: true
             - mountPath: /tmp
               name: tmp
+      imagePullSecrets:
+        - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       tolerations:

@@ -1,0 +1,116 @@
+diff --git a/server/src/config-template.toml b/server/src/config-template.toml
+--- a/server/src/config-template.toml
++++ b/server/src/config-template.toml
+@@ -43,6 +43,9 @@ url = "%database_url%"
+ #
+ # For production use it's recommended to use PostgreSQL.
+ url = "%database_url%"
++
++# Maximum number of connections in the database pool.
++#max-connections = 10
+ 
+ # Whether to enable sending on periodic heartbeat queries
+ #
+diff --git a/server/src/config.rs b/server/src/config.rs
+--- a/server/src/config.rs
++++ b/server/src/config.rs
+@@ -207,6 +207,11 @@ pub struct DatabaseConfig {
+     #[serde(default = "load_database_url_from_env")]
+     pub url: String,
+ 
++    /// Maximum number of connections in the database pool.
++    #[serde(rename = "max-connections")]
++    #[serde(default = "default_db_max_connections")]
++    pub max_connections: u32,
++
+     /// Whether to enable sending of periodic heartbeat queries.
+     ///
+     /// If enabled, a heartbeat query will be sent every minute.
+@@ -543,6 +548,10 @@ fn default_listen_address() -> SocketAddr {
+     "[::]:8080".parse().unwrap()
+ }
+ 
++fn default_db_max_connections() -> u32 {
++    10
++}
++
+ fn default_db_heartbeat() -> bool {
+     false
+ }
+diff --git a/server/src/lib.rs b/server/src/lib.rs
+--- a/server/src/lib.rs
++++ b/server/src/lib.rs
+@@ -38,7 +38,7 @@ use axum::{
+     http::{uri::Scheme, Uri},
+     Router,
+ };
+-use sea_orm::{query::Statement, ConnectionTrait, Database, DatabaseConnection};
++use sea_orm::{query::Statement, ConnectOptions, ConnectionTrait, Database, DatabaseConnection};
+ use tokio::net::TcpListener;
+ use tokio::sync::OnceCell;
+ use tokio::time;
+@@ -50,6 +50,6 @@ use tower_http::trace::TraceLayer;
+ use access::http::{apply_auth, AuthState};
+ use attic::cache::CacheName;
+-use config::{Config, StorageConfig};
++use config::{Config, DatabaseConfig, StorageConfig};
+ use database::migration::{Migrator, MigratorTrait};
+ use error::{ErrorKind, ServerError, ServerResult};
+ use middleware::{init_request_state, restrict_host, set_visibility_header};
+@@ -108,7 +108,7 @@ impl StateInner {
+     async fn database(&self) -> ServerResult<&DatabaseConnection> {
+         self.database
+             .get_or_try_init(|| async {
+-                let db = Database::connect(&self.config.database.url)
++                let db = Database::connect(database_connect_options(&self.config.database))
+                     .await
+                     .map_err(ServerError::database_error);
+                 if let Ok(DatabaseConnection::SqlxSqlitePoolConnection(ref conn)) = db {
+@@ -155,6 +155,12 @@ impl StateInner {
+     }
+ }
+ 
++fn database_connect_options(config: &DatabaseConfig) -> ConnectOptions {
++    let mut options = ConnectOptions::new(config.url.clone());
++    options.max_connections(config.max_connections);
++    options
++}
++
+ impl RequestStateInner {
+     /// Returns the base API endpoint for clients.
+     ///
+@@ -266,2 +272,34 @@ pub async fn run_migrations(config: Config) -> Result<()> {
+     Ok(())
+ }
++
++#[cfg(test)]
++mod database_pool_tests {
++    use sea_orm::Database;
++
++    use super::database_connect_options;
++    use crate::config::DatabaseConfig;
++
++    #[tokio::test]
++    async fn database_max_connections_configures_the_sqlite_pool() {
++        let cases = [
++            ("url = \"sqlite::memory:\"\n", 10),
++            (
++                "url = \"sqlite::memory:\"\nmax-connections = 32\n",
++                32,
++            ),
++        ];
++
++        for (toml, expected_max_connections) in cases {
++            let config: DatabaseConfig = toml::from_str(toml).unwrap();
++            let db = Database::connect(database_connect_options(&config))
++                .await
++                .unwrap();
++            assert_eq!(
++                db.get_sqlite_connection_pool()
++                    .options()
++                    .get_max_connections(),
++                expected_max_connections
++            );
++        }
++    }
++}

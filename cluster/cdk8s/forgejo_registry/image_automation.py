@@ -60,6 +60,7 @@ IMAGES = (
     "aiquota-api",
     "airlock",
     "att-gateway-exporter",
+    "attic",
     "attic-jwt-rotation",
     "authentik-jwt-rotation",
     "aw-server",

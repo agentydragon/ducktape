@@ -1,0 +1,47 @@
+name: Attic Image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      # keep-sorted start
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/attic-image.yml"
+      - ".github/workflows/nix-image.yml"
+      - "cluster/attic/**"
+      - "cluster/k8s/nix-cache/server.toml"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/flake/packages.nix"
+      # keep-sorted end
+  pull_request:
+    paths:
+      # keep-sorted start
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/attic-image.yml"
+      - ".github/workflows/nix-image.yml"
+      - "cluster/attic/**"
+      - "cluster/k8s/nix-cache/server.toml"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/flake/packages.nix"
+      # keep-sorted end
+  workflow_dispatch:
+
+concurrency:
+  group: attic-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    uses: ./.github/workflows/nix-image.yml
+    with:
+      attr: attic-server-image
+      image: git.allegedly.works/ducktape-ci/attic
+      registry: forgejo
+      smoke: bash cluster/attic/smoke.sh
+    secrets:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}

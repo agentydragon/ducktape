@@ -169,6 +169,12 @@ ducktapePkgs
   };
   # The homepage (Hakyll-rendered, static-web-server). Recipe in website/default.nix.
   website-image = import ../../website { inherit pkgs; };
+  # Attic server with a bounded database pool, pinned before schema migration 13.
+  attic-server = import ../../cluster/attic/server.nix { inherit pkgs; };
+  attic-server-image = import ../../cluster/attic/image.nix {
+    inherit pkgs;
+    atticServer = self.packages.${system}.attic-server;
+  };
   # Parked full-NixOS container image for the Haku Managed Agents self-hosted
   # worker (Runtime B). Kept as a manual build output with its recipe beside
   # the component; automatic build/publish and Attic caching are disabled.

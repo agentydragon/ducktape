@@ -3,7 +3,7 @@ SeaweedFS `PrivateBucket`, the cache bootstrap Job, and the hourly JWT rotation.
 
 cdk8s writes the directory Kustomization and the typed rotator roster. The native
 `server.toml`, SOPS Secrets, and `image-pins/kustomization.yaml` remain hand-written beside
-them; the image-pins Component supplies the rotator image tag (cluster/cdk8s/AGENTS.md §
+them; the image-pins Component supplies the server and rotator image tags (cluster/cdk8s/AGENTS.md §
 image-pins).
 """
 
@@ -138,6 +138,7 @@ def _server(scope: Construct, *, storage: s3.PrivateBucket) -> None:
                 metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
+                    image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
                     # Co-located with SeaweedFS and attic-db on OVH kimsufi workers.
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     # Stateless S3-backed service; allow control-plane nodes as overflow capacity.
@@ -145,9 +146,7 @@ def _server(scope: Construct, *, storage: s3.PrivateBucket) -> None:
                     containers=[
                         k8s.Container(
                             name=NAME,
-                            # TODO: Pin to a versioned tag once attic publishes semver releases.
-                            image="ghcr.io/zhaofengli/attic:latest",
-                            image_pull_policy="Always",
+                            image="git.allegedly.works/ducktape-ci/attic:unset",
                             security_context=k8s.SecurityContext(
                                 run_as_user=1000,
                                 run_as_group=1000,

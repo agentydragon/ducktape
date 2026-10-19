@@ -15,6 +15,7 @@ endpoint = "https://s3.allegedly.works"
 
 [database]
 # url read from ATTIC_SERVER_DATABASE_URL env var (serde default)
+max-connections = 32
 
 [compression]
 type = "zstd"
