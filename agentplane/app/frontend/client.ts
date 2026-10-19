@@ -43,7 +43,6 @@ export function ok<T>(answer: { data?: T; error?: unknown; response: Response })
 export type SandboxView = components["schemas"]["SandboxView"];
 export type RunnerStatusView = components["schemas"]["RunnerStatusView"];
 export type PodView = components["schemas"]["PodView"];
-export type RawResourceStatus = Record<string, unknown> | null;
 export type NewSandbox = components["schemas"]["NewSandbox"];
 export type ThreadView = components["schemas"]["ThreadView"];
 export type ThreadScope = components["schemas"]["ThreadScopeResponse"];

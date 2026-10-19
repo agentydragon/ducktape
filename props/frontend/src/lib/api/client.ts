@@ -89,7 +89,6 @@ export type GraderRunInfo = components["schemas"]["GraderRunInfo"];
 export type GradingEdgeInfo = components["schemas"]["GradingEdgeInfo"];
 export type TpTarget = components["schemas"]["TpTarget"];
 export type FpTarget = components["schemas"]["FpTarget"];
-export type GradingTarget = TpTarget | FpTarget;
 
 // Enum value arrays for UI dropdowns (must match schema definitions)
 export const AGENT_RUN_STATUS_VALUES: AgentRunStatus[] = [
