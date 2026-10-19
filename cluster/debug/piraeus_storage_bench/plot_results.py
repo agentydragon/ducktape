@@ -17,8 +17,8 @@ matplotlib.use("Agg")
 ARMS = {
     "local-path-ovh-hdd": ("Local-path HDD", "#596675"),
     "seaweedfs-ovh": ("SeaweedFS HDD", "#bd6600"),
-    "piraeus-file-thin-one": ("Piraeus · 1 copy", "#2368b5"),
-    "piraeus-file-thin-two-protocol-c": ("Piraeus · 2 copies (C)", "#00866a"),
+    "piraeus-file-thin-one": ("Piraeus HDD · 1 copy", "#2368b5"),
+    "piraeus-file-thin-two-protocol-c": ("Piraeus HDD · 2 copies (C)", "#00866a"),
 }
 DIRECT_PANELS = (
     ("fsync_200", "200 × 4 KiB fsync writes"),
@@ -95,7 +95,7 @@ def main() -> None:
     plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10, "svg.hashsalt": "piraeus-storage-bench"})
     fig = plt.figure(figsize=(17, 9), facecolor="white")
     grid = fig.add_gridspec(2, 4, left=0.15, right=0.97, top=0.79, bottom=0.16, hspace=0.85, wspace=0.40)
-    fig.suptitle("Piraeus storage: local versus synchronous copies", x=0.15, y=0.97, ha="left", fontsize=21)
+    fig.suptitle("Piraeus HDD storage: local versus synchronous copies", x=0.15, y=0.97, ha="left", fontsize=21)
     fig.text(
         0.15,
         0.925,

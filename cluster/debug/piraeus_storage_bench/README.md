@@ -1,4 +1,4 @@
-# Piraeus FILE_THIN storage canary
+# Piraeus FILE_THIN HDD storage canary
 
 **Status:** completed 2026-10-19. The disposable applications, database, PVCs,
 LINSTOR resources, resource groups, and StorageClasses were removed. Cleanup evidence is
@@ -18,27 +18,30 @@ Dots show all recorded samples; diamonds and the values at right show medians.
 Each panel has its own linear scale. Missing SeaweedFS application results are
 marked explicitly.
 
+All plotted samples were collected on fresh PVCs during this run, including the
+SeaweedFS filesystem control.
+
 The direct workload used five balanced, interleaved rounds per arm. Values below are
 median seconds from [`direct-filesystem.csv`](results/direct-filesystem.csv); each cell
 has five samples.
 
-| Storage arm                              | `dd conv=fsync` × 200 | 50 tiny Git commits | local `git clone` |
-| ---------------------------------------- | --------------------: | ------------------: | ----------------: |
-| local-path-ovh-hdd                       |                 2.630 |               0.410 |             0.020 |
-| seaweedfs-ovh                            |                 2.880 |              11.770 |             3.210 |
-| Piraeus FILE_THIN, one copy              |                 5.520 |               0.430 |             0.030 |
-| Piraeus FILE_THIN, two protocol-C copies |                20.760 |               1.660 |             0.140 |
+| Storage arm                                  | `dd conv=fsync` × 200 | 50 tiny Git commits | local `git clone` |
+| -------------------------------------------- | --------------------: | ------------------: | ----------------: |
+| local-path-ovh-hdd                           |                 2.630 |               0.410 |             0.020 |
+| seaweedfs-ovh                                |                 2.880 |              11.770 |             3.210 |
+| Piraeus FILE_THIN HDD, one copy              |                 5.520 |               0.430 |             0.030 |
+| Piraeus FILE_THIN HDD, two protocol-C copies |                20.760 |               1.660 |             0.140 |
 
 The end-to-end workload used a single disposable Forgejo instance and 20 samples per
 operation. Values are median seconds from the raw CSVs. SeaweedFS has no end-to-end
 samples because the app failed during initialization.
 
-| Storage arm                              |    version | contents read | contents write | tiny `git push` |
-| ---------------------------------------- | ---------: | ------------: | -------------: | --------------: |
-| local-path-ovh-hdd                       |      0.378 |         0.415 |          0.752 |           1.140 |
-| Piraeus FILE_THIN, one copy              |      0.350 |         0.376 |          0.777 |           1.115 |
-| Piraeus FILE_THIN, two protocol-C copies |      0.348 |         0.368 |          0.840 |           1.130 |
-| seaweedfs-ovh                            | no samples |    no samples |     no samples |      no samples |
+| Storage arm                                  |    version | contents read | contents write | tiny `git push` |
+| -------------------------------------------- | ---------: | ------------: | -------------: | --------------: |
+| local-path-ovh-hdd                           |      0.378 |         0.415 |          0.752 |           1.140 |
+| Piraeus FILE_THIN HDD, one copy              |      0.350 |         0.376 |          0.777 |           1.115 |
+| Piraeus FILE_THIN HDD, two protocol-C copies |      0.348 |         0.368 |          0.840 |           1.130 |
+| seaweedfs-ovh                                | no samples |    no samples |     no samples |      no samples |
 
 In this run, the Piraeus one-copy Git metadata and the Forgejo app timings were close to
 the local-path control. The two-copy arm raised the direct `dd conv=fsync` batch median
