@@ -193,7 +193,7 @@ an informational snapshot of the answering replica, not a global acknowledgement
 the same facts (`decisionHistory`, the refresh ages) and the status code as `ready`. All three read
 through the same `Decisions`, `Changes`, history counters and `Index` as the HTTP handlers.
 
-The standard `grpc.health.v1.Health` service is served beside it for Kubernetes' native `grpc` probes:
+The standard `grpc.health.v1.Health` service is served on the same listener for Kubernetes' native `grpc` probes:
 the empty service is the verdict of `/healthz` and the service `livez` that of `/livez`, which stays
 `SERVING` while the process answers so a recoverable watch outage never restarts it. Like the HTTP
 probes it admits every caller, because the kubelet sends no bearer; `GetHealth` does not. `Watch` is
@@ -210,8 +210,9 @@ audience `admin_grpc_audience` that is reviewed on every call, before anything i
 (<../docs/grpc_services.md>). A watch is admitted once, so it ends after ten minutes and when the proxy
 drains; the caller subscribes again and is admitted afresh.
 
-The admin gRPC services are mounted only when `admin_grpc_audience` and `admin_grpc_callers`
-(`namespace/name` entries) are both set; without them the admin listener serves HTTP alone.
+The health service is always mounted. `EgressAdmin` is mounted only when `admin_grpc_audience` and
+`admin_grpc_callers` (`namespace/name` entries) are both set; without them the admin listener serves
+HTTP and health.
 
 ## Rules gRPC API
 

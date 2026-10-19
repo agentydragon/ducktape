@@ -242,12 +242,11 @@ func run(ctx context.Context, c config) error {
 	rulesGRPC := grpc.NewServer()
 	egressrulespb.RegisterEgressRulesServer(rulesGRPC, rules.NewService(verifier, index))
 	mountGRPC(agentAPIServer, rulesGRPC)
-	var adminShutdown shutdowner = adminServer
-	if c.adminGRPCEnabled() {
-		options := admin.ServiceOptions{Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index, Clock: time.Now}
-		if adminShutdown, err = mountAdminGRPC(adminServer, c, reviews.TokenReviews(), options); err != nil {
-			return err
-		}
+	adminShutdown, err := mountAdminGRPC(adminServer, c, reviews.TokenReviews(), admin.ServiceOptions{
+		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index, Clock: time.Now,
+	})
+	if err != nil {
+		return err
 	}
 
 	group, ctx := errgroup.WithContext(ctx)

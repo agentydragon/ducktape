@@ -15,9 +15,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/proto/egress_admin"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -139,5 +141,35 @@ func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T)
 	}
 	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
 		t.Fatalf("the watch ended with %v, want a clean end", err)
+	}
+}
+
+// Kubernetes' native grpc probes send no bearer, so health is served whether or not the EgressAdmin
+// API is configured.
+func TestAdminListenerServesHealthWithoutTheAdminGRPCAPI(t *testing.T) {
+	adminServer := &http.Server{Handler: http.NewServeMux()}
+	shutdown, err := mountAdminGRPC(adminServer, config{}, acceptingReviews{}, admin.ServiceOptions{Index: readyIndex{}, Clock: time.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = adminServer.Serve(listener) }()
+	defer func() { _ = shutdown.Shutdown(context.Background()) }()
+
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	probe, err := healthpb.NewHealthClient(connection).Check(context.Background(), &healthpb.HealthCheckRequest{})
+	if err != nil || probe.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+		t.Fatalf("health probe: %v, %v", probe, err)
+	}
+	_, err = egressadminpb.NewEgressAdminClient(connection).GetHealth(context.Background(), &egressadminpb.GetHealthRequest{})
+	if status.Code(err) != codes.Unimplemented {
+		t.Fatalf("GetHealth without the admin gRPC API configured: %v, want Unimplemented", err)
 	}
 }

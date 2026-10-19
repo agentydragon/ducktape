@@ -45,9 +45,26 @@ func (c *config) adminGRPCCallers() ([]auth.Account, error) {
 	return callers, nil
 }
 
-// mountAdminGRPC serves the EgressAdmin API and the standard health service on the listener of the
-// admin HTTP server. It admits the callers and the audience from c; options holds what the service reads.
+// mountAdminGRPC serves the standard health service on the listener of the admin HTTP server, and
+// the EgressAdmin API beside it when c configures the admin gRPC API: it admits the callers and the
+// audience from c. options holds what the services read.
 func mountAdminGRPC(adminServer *http.Server, c config, reviews auth.TokenReviews, options admin.ServiceOptions) (shutdowner, error) {
+	grpcServer := grpc.NewServer()
+	healthpb.RegisterHealthServer(grpcServer, admin.NewProbes(options.Index, options.Clock))
+	var shutdown shutdowner = adminServer
+	if c.adminGRPCEnabled() {
+		service, err := newAdminService(c, reviews, options)
+		if err != nil {
+			return nil, err
+		}
+		egressadminpb.RegisterEgressAdminServer(grpcServer, service)
+		shutdown = watchingServer{Server: adminServer, service: service}
+	}
+	mountGRPC(adminServer, grpcServer)
+	return shutdown, nil
+}
+
+func newAdminService(c config, reviews auth.TokenReviews, options admin.ServiceOptions) (*admin.Service, error) {
 	callers, err := c.adminGRPCCallers()
 	if err != nil {
 		return nil, err
@@ -62,12 +79,7 @@ func mountAdminGRPC(adminServer *http.Server, c config, reviews auth.TokenReview
 		return nil, err
 	}
 	options.Callers, options.WatchLease = callers, adminWatchLease
-	service := admin.NewService(options)
-	grpcServer := grpc.NewServer()
-	egressadminpb.RegisterEgressAdminServer(grpcServer, service)
-	healthpb.RegisterHealthServer(grpcServer, admin.NewProbes(options.Index, options.Clock))
-	mountGRPC(adminServer, grpcServer)
-	return watchingServer{Server: adminServer, service: service}, nil
+	return admin.NewService(options), nil
 }
 
 // watchingServer ends the watches its gRPC service holds open before the HTTP server shuts down,
