@@ -974,3 +974,34 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+# Exercise the same native interaction scripts through the Go executable.
+py_test(
+    name = "test_go_native",
+    size = "large",
+    srcs = ["test_go_native.py"],
+    data = [
+        "//agentplane/runner/go/cmd:agentplane-runner",
+        "@agentplane_codex_cli_linux_x64//:files",
+        "@claude_code_cli_linux_x64//:claude",
+    ],
+    exec_properties = NATIVE_RUNNER_EXEC_PROPERTIES,
+    main = "test_go_native.py",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":test_subagents",
+        ":test_turns",
+        "//:conftest",
+        "//agentplane/runner/testing:driver",
+        "//agentplane/runner/testing:gateway",
+        "//agentplane/runner/testing:launches",
+        "//agentplane/runner/testing:process_fixtures",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

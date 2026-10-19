@@ -96,6 +96,7 @@ async def start_runner(
         home: Path = tmp_path / "home",
         codex_binary: Path | None = None,
         harness_env: Sequence[str] = (),
+        runner_binary: Path | None = None,
     ) -> RunnerProcess:
         connections = gateway.control.connections
         process = await asyncio.create_subprocess_exec(
@@ -108,6 +109,7 @@ async def start_runner(
                 bootstrap=bootstrap,
                 codex_binary=codex_binary,
                 harness_env=harness_env,
+                runner_binary=runner_binary,
             ),
             env=runner_environment(home),
             start_new_session=True,
