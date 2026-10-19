@@ -770,9 +770,12 @@ async def test_action_history_summaries(view: VisualPage, app: AgentplaneFixture
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     page = view.page
-    summary = page.get_by_text("list the test backup archive", exact=True)
-    await expect(summary).to_be_visible()
-    await expect(page.get_by_role("link", name="View details for list the test backup archive")).to_be_visible()
+    summary = page.get_by_text("render the test diagram", exact=True)
+    card = page.locator('[data-action-receipt="70000000-0000-4000-8000-000000000002"]')
+    await expect(card.get_by_role("button", name="Receipt details", exact=True)).to_have_attribute(
+        "aria-expanded", "false"
+    )
+    await expect(page.get_by_role("link", name="View details for render the test diagram")).to_be_visible()
     await _focus(page, summary)
     await view.capture(target=page.locator("#app"))
 

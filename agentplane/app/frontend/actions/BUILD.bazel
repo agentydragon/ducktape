@@ -181,7 +181,6 @@ ts_library(
         ":call_tool_result",
         ":payload",
         ":requests",
-        ":ssh_action_schemas",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",

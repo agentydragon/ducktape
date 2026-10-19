@@ -199,7 +199,7 @@ async def test_action_request_audit_details(view: VisualPage, app: AgentplaneFix
     await audit_toggle.click()
     audit_item = page.locator(".agentplane-disclosure-item").filter(has=audit_toggle).first
     audit_body = audit_item.locator(".agentplane-disclosure-body")
-    await expect(audit_body.get_by_text("Request", exact=False)).to_be_visible()
+    await expect(audit_body.get_by_text("Requested", exact=False)).to_be_visible()
     await expect(audit_body.get_by_text("70000000-0000-4000-8000-000000000006", exact=True)).to_be_visible()
     await _focus(page, audit_body)
     await page.mouse.move(0, 0)

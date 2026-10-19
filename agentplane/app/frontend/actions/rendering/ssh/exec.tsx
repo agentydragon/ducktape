@@ -81,6 +81,11 @@ export const execCollapsedPreview: ArgumentsPreview = definePreview(zSshExecArgu
 export const execResultPreview: ResultPreview = defineResultPreview(zSshExecResult, ExecResult);
 
 export const execPresentation: ActionPresentation = {
+  outcome: (value) => {
+    const parsed = zSshExecResult.safeParse(value);
+    if (!parsed.success || parsed.data.exit_code === 0) return undefined;
+    return { label: `Command exited ${parsed.data.exit_code}`, failed: true };
+  },
   label: execLabel,
   pane: { collapsed: execCollapsedPreview, opened: execArgumentsPreview },
   details: { arguments: execArgumentsPreview, result: execResultPreview },
