@@ -1438,44 +1438,15 @@ function App() {
   }, []);
   useEffect(() => {
     let mounted = true;
-    let viewRequest: AbortController | undefined;
+    let authProbe: AbortController | undefined;
+    let authProbeStarted = false;
     const estimateQuery = selectedEstimatePeriodId ? `?estimate_period_id=${selectedEstimatePeriodId}` : "";
-    const load = async () => {
-      viewRequest?.abort();
-      const controller = new AbortController();
-      viewRequest = controller;
-      try {
-        const response = await fetch(`/api/v1/view${estimateQuery}`, {
-          cache: "no-store",
-          credentials: "same-origin",
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) return;
-        if (response.status === 401) {
-          window.location.assign("/auth/login");
-          return;
-        }
-        if (!response.ok) throw new Error(`View request returned ${response.status}`);
-        const data: View = await response.json();
-        if (!controller.signal.aborted) {
-          setView(data);
-          setError(null);
-        }
-      } catch (cause) {
-        if (!controller.signal.aborted) {
-          setError(cause instanceof Error ? cause.message : "View request failed");
-          setState("Unable to refresh");
-        }
-      }
-    };
-    void load();
     const events = new EventSource(`/api/v1/events${estimateQuery}`);
     events.addEventListener("view", (event) => {
       try {
         if (mounted) {
           const snapshot: View = JSON.parse(event.data);
-          // A live snapshot supersedes any pending startup or reconnect GET.
-          viewRequest?.abort();
+          authProbe?.abort();
           setView(snapshot);
           setError(null);
           setState("Live updates");
@@ -1485,15 +1456,45 @@ function App() {
         if (mounted) setError(cause instanceof Error ? cause.message : "Could not read live update");
       }
     });
+    events.onopen = () => {
+      authProbeStarted = false;
+    };
     events.onerror = () => {
-      if (mounted) {
-        setState("Reconnecting");
-        void load();
-      }
+      if (!mounted) return;
+      setState("Reconnecting");
+      if (events.readyState !== EventSource.CLOSED || authProbeStarted) return;
+
+      // EventSource hides HTTP status codes. Probe once after a terminal failure
+      // so an expired browser session can still return to the login flow.
+      authProbeStarted = true;
+      const controller = new AbortController();
+      authProbe = controller;
+      void fetch(`/api/v1/view${estimateQuery}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+        signal: controller.signal,
+      })
+        .then((response) => {
+          if (!mounted || controller.signal.aborted) return;
+          if (response.status === 401) {
+            window.location.assign("/auth/login");
+          } else if (!response.ok) {
+            throw new Error(`Connection check returned ${response.status}`);
+          } else {
+            setState("Unable to connect");
+            setError("The live update stream closed unexpectedly");
+          }
+        })
+        .catch((cause: unknown) => {
+          if (mounted && !controller.signal.aborted) {
+            setState("Unable to connect");
+            setError(cause instanceof Error ? cause.message : "Connection check failed");
+          }
+        });
     };
     return () => {
       mounted = false;
-      viewRequest?.abort();
+      authProbe?.abort();
       events.close();
     };
   }, [selectedEstimatePeriodId]);

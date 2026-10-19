@@ -238,9 +238,12 @@ def dashboard_url() -> Iterator[str]:
         )
 
     @app.get("/api/v1/events")
-    async def events(estimate_period_id: EstimatePeriodId | None = None) -> StreamingResponse:
+    async def events(estimate_period_id: EstimatePeriodId | None = None, warmup: bool = False) -> StreamingResponse:
         async def updates() -> AsyncIterator[str]:
-            yield f"event: view\ndata: {json.dumps(view(estimate_period_id=estimate_period_id).model_dump(mode='json'))}\n\n"
+            yield (
+                f"event: view\ndata: "
+                f"{json.dumps(view(warmup=warmup, estimate_period_id=estimate_period_id).model_dump(mode='json'))}\n\n"
+            )
             while True:
                 await asyncio.sleep(60)
                 yield ": keepalive\n\n"
@@ -602,20 +605,39 @@ async def test_spending_decision_render(
 
 
 @pytest.mark.asyncio
-async def test_chart_transactions_start_before_view_finishes(page: Page, dashboard_url: str) -> None:
-    release_view = asyncio.Event()
+async def test_transactions_refresh_on_initial_event_without_view_get(page: Page, dashboard_url: str) -> None:
+    release_events = asyncio.Event()
+    events_requested = asyncio.Event()
+    view_requests: list[str] = []
+    transaction_requests: list[str] = []
 
-    async def delayed_view(route: Route) -> None:
-        await release_view.wait()
+    async def delayed_events(route: Route) -> None:
+        events_requested.set()
+        await release_events.wait()
         await route.continue_()
 
-    await page.route("**/api/v1/view*", delayed_view)
+    async def reject_view(route: Route) -> None:
+        view_requests.append(route.request.url)
+        await route.abort()
+
+    await page.route("**/api/v1/view*", reject_view)
+    await page.route("**/api/v1/events*", delayed_events)
+    page.on(
+        "request",
+        lambda request: transaction_requests.append(request.url) if "/api/v1/transactions?" in request.url else None,
+    )
     try:
         async with page.expect_request("**/api/v1/transactions?period=rolling_7d"):
             await page.goto(dashboard_url, wait_until="domcontentloaded")
+        await events_requested.wait()
+        assert view_requests == []
+        async with page.expect_request("**/api/v1/transactions?period=rolling_7d"):
+            release_events.set()
+        await page.locator("canvas[aria-label]").wait_for()
+        assert len(transaction_requests) == 2
+        assert view_requests == []
     finally:
-        release_view.set()
-    await page.locator("canvas[aria-label]").wait_for()
+        release_events.set()
 
 
 @pytest.mark.asyncio
@@ -652,12 +674,10 @@ async def test_spending_decision_dark_theme(
 
 @pytest.mark.asyncio
 async def test_new_allowance_has_no_fake_zero_pace(page: Page, view: VisualPage, dashboard_url: str) -> None:
-    await page.add_init_script("window.EventSource = class { addEventListener() {} close() {} }")
-
     async def serve_warmup(route: Route) -> None:
-        await route.continue_(url=f"{dashboard_url}/api/v1/view?warmup=true")
+        await route.continue_(url=f"{dashboard_url}/api/v1/events?warmup=true")
 
-    await page.route("**/api/v1/view", serve_warmup)
+    await page.route("**/api/v1/events*", serve_warmup)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_text("Not enough data", exact=True).wait_for()
     await expect(page.get_by_text("Pace warming up", exact=True)).to_have_count(1)

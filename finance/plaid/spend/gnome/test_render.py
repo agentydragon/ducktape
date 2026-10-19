@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import ast
 import json
+import re
+import shlex
+import time
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -21,7 +24,7 @@ from testcontainers.core.container import DockerContainer
 
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
-from util.testing.gnome import GnomeSession, capture_panel_menu
+from util.testing.gnome import GnomeSession, capture_panel_menu, exec_output
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
@@ -38,6 +41,87 @@ _FIXTURE_NAMES = (
 _FIXTURE_DIR = "_main/finance/plaid/spend/gnome/fixtures"
 _TEST_DBUS_DEST = "works.allegedly.PlaidSpendTest"
 _TEST_DBUS_PATH = "/works/allegedly/PlaidSpendTest"
+_FAKE_DBUS_DEST = "works.allegedly.PlaidSpendFake"
+_FAKE_DBUS_PATH = "/works/allegedly/PlaidSpendFake"
+_FAKE_DBUS_SERVICE = r"""
+const Gio = imports.gi.Gio;
+const GLib = imports.gi.GLib;
+const name = "works.allegedly.PlaidSpend";
+const path = "/works/allegedly/PlaidSpend";
+const controlName = "works.allegedly.PlaidSpendFake";
+const controlPath = "/works/allegedly/PlaidSpendFake";
+const mainXml = `<node><interface name="works.allegedly.PlaidSpend1">
+  <method name="GetView"><arg name="view" type="s" direction="out"/></method>
+  <method name="Login"/>
+  <signal name="ViewChanged"><arg name="view" type="s"/></signal>
+  <property name="Status" type="s" access="read"/>
+  <property name="LastError" type="s" access="read"/>
+</interface></node>`;
+const controlXml = `<node><interface name="works.allegedly.PlaidSpendFake">
+  <method name="SetView"><arg name="view" type="s" direction="in"/></method>
+  <method name="SetViewSilently"><arg name="view" type="s" direction="in"/></method>
+  <method name="ReleaseGetView"/>
+  <method name="ReleaseName"/>
+  <method name="AcquireName"/>
+  <method name="GetCounters">
+    <arg name="calls" type="u" direction="out"/>
+    <arg name="replies" type="u" direction="out"/>
+    <arg name="pending" type="u" direction="out"/>
+  </method>
+  <method name="Stop"/>
+</interface></node>`;
+let currentView = JSON.stringify({generated_at: "2026-10-18T12:00:00Z", cards: [{spend_minor_units: 1000, currency: "USD"}]});
+let getCalls = 0;
+let replies = 0;
+let pendingViews = [];
+let nameOwner = 0;
+let controlOwner = 0;
+const loop = GLib.MainLoop.new(null, false);
+const service = Gio.DBusExportedObject.wrapJSObject(mainXml, {
+  GetViewAsync(_parameters, invocation) {
+    getCalls += 1;
+    pendingViews.push({invocation, view: currentView});
+  },
+  get Status() { return "ready"; },
+  get LastError() { return ""; },
+});
+service.export(Gio.DBus.session, path);
+const control = Gio.DBusExportedObject.wrapJSObject(controlXml, {
+  SetView(view) {
+    currentView = view;
+    service.emit_signal("ViewChanged", new GLib.Variant("(s)", [view]));
+  },
+  SetViewSilently(view) { currentView = view; },
+  ReleaseGetView() {
+    const pending = pendingViews.shift();
+    if (!pending) throw new Error("no GetView reply is pending");
+    replies += 1;
+    pending.invocation.return_value(new GLib.Variant("(s)", [pending.view]));
+  },
+  ReleaseName() {
+    if (nameOwner) {
+      Gio.bus_unown_name(nameOwner);
+      nameOwner = 0;
+    }
+  },
+  AcquireName() {
+    if (!nameOwner) nameOwner = Gio.bus_own_name(Gio.BusType.SESSION, name, Gio.BusNameOwnerFlags.NONE, null, null, null);
+  },
+  GetCounters() { return [getCalls, replies, pendingViews.length]; },
+  Stop() {
+    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      if (nameOwner) Gio.bus_unown_name(nameOwner);
+      if (controlOwner) Gio.bus_unown_name(controlOwner);
+      loop.quit();
+      return GLib.SOURCE_REMOVE;
+    });
+  },
+});
+control.export(Gio.DBus.session, controlPath);
+nameOwner = Gio.bus_own_name(Gio.BusType.SESSION, name, Gio.BusNameOwnerFlags.NONE, null, null, null);
+controlOwner = Gio.bus_own_name(Gio.BusType.SESSION, controlName, Gio.BusNameOwnerFlags.NONE, null, null, null);
+loop.run();
+"""
 
 
 def test_extension_metadata_supports_gnome_50() -> None:
@@ -115,6 +199,96 @@ def _string_reply(reply: bytes) -> str:
     if not isinstance(parsed, tuple) or len(parsed) != 1 or not isinstance(parsed[0], str):
         raise RuntimeError(f"Unexpected D-Bus string reply: {output!r}")
     return parsed[0]
+
+
+def _fake_daemon_call(session: GnomeSession, method: str, *args: str) -> bytes:
+    result = session.exec(
+        f"gdbus call --session --timeout 10 --dest {shlex.quote(_FAKE_DBUS_DEST)} "
+        f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} "
+        f"--method {shlex.quote(_FAKE_DBUS_DEST + '.' + method)} " + " ".join(shlex.quote(arg) for arg in args)
+    )
+    stdout, stderr = exec_output(result)
+    if result.exit_code != 0:
+        raise RuntimeError(f"fake daemon {method} failed: {(stdout + stderr).decode(errors='replace')}")
+    return stdout
+
+
+def _fake_daemon_counters(session: GnomeSession) -> tuple[int, int, int]:
+    output = _fake_daemon_call(session, "GetCounters")
+    match = re.search(rb"\(uint32 (\d+), uint32 (\d+), uint32 (\d+)\)", output)
+    if match is None:
+        raise RuntimeError(f"fake daemon returned invalid counters: {output!r}")
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def _wait_until(check: Callable[[], bool], description: str) -> None:
+    deadline = time.monotonic() + 15
+    while True:
+        if check():
+            return
+        if time.monotonic() >= deadline:
+            raise TimeoutError(description)
+        time.sleep(0.2)
+
+
+def _card_view(amount_minor_units: int) -> str:
+    return json.dumps(
+        {
+            "generated_at": "2026-10-18T12:00:00Z",
+            "cards": [{"spend_minor_units": amount_minor_units, "currency": "USD"}],
+        }
+    )
+
+
+def test_view_signal_wins_initial_get_and_owner_restart_rehydrates(render_session: tuple[GnomeSession, Path]) -> None:
+    session, _ = render_session
+    service = shlex.quote(_FAKE_DBUS_SERVICE)
+    session.exec(f"gjs -c {service} >/tmp/plaid-spend-fake-daemon.log 2>&1 &")
+    try:
+        _wait_until(
+            lambda: (
+                session.exec(
+                    f"gdbus introspect --session --dest {shlex.quote(_FAKE_DBUS_DEST)} "
+                    f"--object-path {shlex.quote(_FAKE_DBUS_PATH)}"
+                ).exit_code
+                == 0
+            ),
+            "fake Plaid Spend D-Bus service did not start",
+        )
+        _wait_until(lambda: _fake_daemon_counters(session)[0] == 1, "extension did not request the initial view")
+
+        _fake_daemon_call(session, "SetView", _card_view(2000))
+        _wait_until(
+            lambda: _string_reply(session.call("GetPanelLabel")) == "$20",
+            "extension did not project the ViewChanged signal",
+        )
+        _fake_daemon_call(session, "ReleaseGetView")
+        session.wait_for_paint()
+        assert _fake_daemon_counters(session) == (1, 1, 0)
+        assert _string_reply(session.call("GetPanelLabel")) == "$20"
+
+        _fake_daemon_call(session, "SetViewSilently", _card_view(3000))
+        _fake_daemon_call(session, "ReleaseName")
+        _wait_until(
+            lambda: _string_reply(session.call("GetDaemonOwner")) == "",
+            "extension did not observe the daemon going away",
+        )
+        _fake_daemon_call(session, "AcquireName")
+        _wait_until(lambda: _fake_daemon_counters(session)[0] == 2, "extension did not rehydrate after daemon restart")
+        _fake_daemon_call(session, "ReleaseGetView")
+        _wait_until(
+            lambda: _string_reply(session.call("GetPanelLabel")) == "$30",
+            "extension did not adopt the restarted daemon's view",
+        )
+        assert _fake_daemon_counters(session) == (2, 2, 0)
+    finally:
+        session.exec(
+            f"if gdbus introspect --session --dest {shlex.quote(_FAKE_DBUS_DEST)} "
+            f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} >/dev/null 2>&1; then "
+            f"gdbus call --session --dest {shlex.quote(_FAKE_DBUS_DEST)} "
+            f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} "
+            f"--method {shlex.quote(_FAKE_DBUS_DEST + '.Stop')} >/dev/null; fi"
+        )
 
 
 def _assert_no_plaid_extension_error(container: GnomeSession) -> None:

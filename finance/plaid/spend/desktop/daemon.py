@@ -83,6 +83,7 @@ class PlaidSpendDaemon:
         self.bus: MessageBus | None = None
         self.stream_task: asyncio.Task[None] | None = None
         self.login_task: asyncio.Task[None] | None = None
+        self._retry_delay = 2.0
         self.shutting_down = False
 
     async def connect_bus(self) -> None:
@@ -122,17 +123,14 @@ class PlaidSpendDaemon:
 
     def _set_view(self, view: dict[str, Any]) -> None:
         self.view = view
+        self._retry_delay = 2.0
         self.bus_interface.ViewChanged(json.dumps(view, separators=(",", ":")))
 
     async def _stream_forever(self) -> None:
-        delay = 2.0
         while not self.shutting_down:
             try:
-                token = await self.auth.access_token_for_api()
-                view = await self._get_view(token)
-                self._set_view(view)
-                self._set_status("ready", "")
-                await self._consume_events()
+                if await self._consume_events():
+                    continue
                 if self.shutting_down:
                     return
                 self._set_status("connecting", "The event stream closed; reconnecting")
@@ -146,21 +144,11 @@ class PlaidSpendDaemon:
                 logger.warning("Plaid Spend connection failed: %s", message)
                 self._set_status("error", message)
 
-            await asyncio.sleep(delay)
-            delay = min(delay * 2, 60.0)
+            await asyncio.sleep(self._retry_delay)
+            self._retry_delay = min(self._retry_delay * 2, 60.0)
 
-    async def _get_view(self, token: str) -> dict[str, Any]:
-        response = await self.http.get(f"{API_URL}/api/v1/view", headers={"Authorization": f"Bearer {token}"})
-        if response.status_code == 401:
-            token = await self.auth.access_token_for_api(force_refresh=True)
-            response = await self.http.get(f"{API_URL}/api/v1/view", headers={"Authorization": f"Bearer {token}"})
-        response.raise_for_status()
-        view = response.json()
-        if not isinstance(view, dict) or not isinstance(view.get("cards"), list):
-            raise RuntimeError("Plaid Spend returned an invalid view; expected an object with a cards array")
-        return view
-
-    async def _consume_events(self) -> None:
+    async def _consume_events(self) -> bool:
+        """Consume one stream; return true when a refreshed token should reconnect immediately."""
         token = await self.auth.access_token_for_api()
         response_context = self.http.stream(
             "GET",
@@ -170,7 +158,7 @@ class PlaidSpendDaemon:
         async with response_context as response:
             if response.status_code == 401:
                 await self.auth.access_token_for_api(force_refresh=True)
-                return
+                return True
             response.raise_for_status()
             if "text/event-stream" not in response.headers.get("content-type", ""):
                 raise RuntimeError("Plaid Spend event endpoint did not return text/event-stream")
@@ -186,9 +174,9 @@ class PlaidSpendDaemon:
                 except TimeoutError:
                     # Reconnect before the bearer expires; the next connection obtains
                     # a fresh access token, including via a rotated refresh token.
-                    return
+                    return True
                 except StopAsyncIteration:
-                    return
+                    return False
 
                 if not line:
                     if data_lines and event_name in ("view", "message"):
@@ -211,6 +199,7 @@ class PlaidSpendDaemon:
                     event_name = value
                 elif field == "data":
                     data_lines.append(value)
+        return False
 
     async def close(self) -> None:
         self.shutting_down = True

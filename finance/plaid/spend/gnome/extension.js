@@ -152,6 +152,9 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._status = "starting";
       this._error = "";
       this._hasView = false;
+      this._viewRequestId = 0;
+      this._viewRequestCancellable = null;
+      this._proxyHandlerIds = [];
       this._testMode = GLib.getenv("PLAID_SPEND_TEST") === "1";
       this._testIface = null;
       this._testBusOwnerId = 0;
@@ -181,16 +184,22 @@ const PlaidSpendIndicator = GObject.registerClass(
           if (this._destroyed) return;
           try {
             this._proxy = Gio.DBusProxy.new_for_bus_finish(result);
-            this._proxy.connect("g-signal", (_proxy, _sender, name, parameters) => {
-              if (name !== "ViewChanged") return;
-              const [rawView] = parameters.deep_unpack();
-              this._acceptView(rawView);
-            });
-            this._proxy.connect("g-properties-changed", () => this._readProperties());
-            this._proxy.connect("notify::g-name-owner", () => {
-              this._readProperties();
-              if (this._proxy.g_name_owner) this._fetchView();
-            });
+            this._proxyHandlerIds.push(
+              this._proxy.connect("g-signal", (proxy, sender, name, parameters) => {
+                if (name !== "ViewChanged") return;
+                if (sender !== proxy.g_name_owner) return;
+                const [rawView] = parameters.deep_unpack();
+                this._acceptView(rawView);
+              })
+            );
+            this._proxyHandlerIds.push(this._proxy.connect("g-properties-changed", () => this._readProperties()));
+            this._proxyHandlerIds.push(
+              this._proxy.connect("notify::g-name-owner", () => {
+                this._cancelViewRequest();
+                this._readProperties();
+                if (this._proxy.g_name_owner) this._fetchView();
+              })
+            );
             this._readProperties();
             if (this._proxy.g_name_owner) this._fetchView();
             this._render();
@@ -213,23 +222,48 @@ const PlaidSpendIndicator = GObject.registerClass(
     }
 
     _fetchView() {
-      if (!this._proxy?.g_name_owner || this._destroyed) return;
-      this._proxy.call("GetView", null, Gio.DBusCallFlags.NONE, -1, null, (proxy, result) => {
-        if (this._destroyed) return;
+      const proxy = this._proxy;
+      const owner = proxy?.g_name_owner;
+      if (!owner || this._destroyed) return;
+      this._cancelViewRequest();
+      const requestId = ++this._viewRequestId;
+      const cancellable = new Gio.Cancellable();
+      this._viewRequestCancellable = cancellable;
+      proxy.call("GetView", null, Gio.DBusCallFlags.NONE, -1, cancellable, (source, result) => {
+        const isCurrent = () =>
+          !this._destroyed &&
+          source === proxy &&
+          this._proxy === proxy &&
+          owner === proxy.g_name_owner &&
+          requestId === this._viewRequestId;
         try {
-          const [rawView] = proxy.call_finish(result).deep_unpack();
+          const reply = source.call_finish(result);
+          if (!isCurrent()) return;
+          this._viewRequestCancellable = null;
+          const [rawView] = reply.deep_unpack();
           this._acceptView(rawView);
         } catch (error) {
+          if (!isCurrent()) return;
+          this._viewRequestCancellable = null;
           this._error = error.message;
           this._render();
         }
       });
     }
 
+    _cancelViewRequest() {
+      this._viewRequestId += 1;
+      if (this._viewRequestCancellable) {
+        this._viewRequestCancellable.cancel();
+        this._viewRequestCancellable = null;
+      }
+    }
+
     _acceptView(rawView) {
       try {
         const view = JSON.parse(rawView);
         if (!view || !Array.isArray(view.cards)) throw new Error("invalid Plaid Spend view");
+        this._cancelViewRequest();
         this._view = view;
         this._hasView = true;
         this._render();
@@ -312,6 +346,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           '<method name="WaitForPaint"/>' +
           '<method name="CloseMenu"/>' +
           '<method name="GetPanelLabel"><arg type="s" direction="out" name="label"/></method>' +
+          '<method name="GetDaemonOwner"><arg type="s" direction="out" name="owner"/></method>' +
           '<method name="GetMenuText"><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
           "</interface></node>",
@@ -330,6 +365,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           OpenMenu: () => this.menu.open(false),
           CloseMenu: () => this.menu.close(false),
           GetPanelLabel: () => this._label.get_text(),
+          GetDaemonOwner: () => this._proxy?.g_name_owner || "",
           GetMenuText: () =>
             this.menu
               ._getMenuItems()
@@ -466,6 +502,9 @@ const PlaidSpendIndicator = GObject.registerClass(
     destroy() {
       this._destroyed = true;
       if (this._menuOpenId) this.menu.disconnect(this._menuOpenId);
+      this._cancelViewRequest();
+      for (const handlerId of this._proxyHandlerIds) this._proxy.disconnect(handlerId);
+      this._proxyHandlerIds = [];
       this._unexportTestInterface();
       this._proxy = null;
       super.destroy();

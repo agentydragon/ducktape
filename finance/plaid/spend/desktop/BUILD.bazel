@@ -61,6 +61,18 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_daemon",
+    srcs = ["test_daemon.py"],
+    deps = [
+        ":daemon",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_binary(
     name = "plaid_spend_cli",
     main_module = "finance.plaid.spend.desktop.cli",
