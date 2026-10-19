@@ -1681,6 +1681,7 @@ The Gateway serves `Connect` and proxies the runner's
 ```mermaid
 flowchart TD
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization]
+    DISPATCHER_OWNERSHIP_IN_POSTGRES[Unscheduled: Dispatcher Sandbox ownership without the Kubernetes Lease]
 ```
 
 The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
@@ -1697,6 +1698,22 @@ methods, except `Quiesce` (controller only). Review per-method policy for `OpenS
 Manual app resume changes Sandbox lifecycle state through Kubernetes; native state recovery belongs
 to the Runner. Read-only diagnostics do not grant command or wake authority. This node does not
 select generalized send grants or broaden caller permissions.
+
+### `DISPATCHER_OWNERSHIP_IN_POSTGRES` — Dispatcher Sandbox ownership without the Kubernetes Lease
+
+**Unscheduled; operator, 2026-10-19 PDT: a potential future change, not a decision.** Each Dispatcher
+replica takes a per-Sandbox `dispatcher-<uid>` Lease (`runner_gateway/dispatcher/ownership.go`). The Lease
+gives one replica exclusive ownership and detects a dead owner through its 30 s expiry. The Postgres
+`sandbox_ownership` row is only a compare-and-swap fence on a generation number and has no expiry, so it
+stops stale writers but cannot choose a live owner. Only the Dispatcher uses the Lease, plus the failover
+probe in the Dispatcher acceptance test. The Gateway's separate `<sandbox>-runner` connection Lease stays,
+and the Sandbox controller watches it.
+
+Move ownership entirely into Postgres: an `expires_at` heartbeat on the same row, or a session-level
+advisory lock that frees itself when the connection drops. Write the comparison first (failover time,
+behavior under a Postgres outage, the shared Lease RBAC rule in `runner_gateway_workload.py`); the Lease
+has no recorded comparison against doing this in Postgres. Prerequisite: the Dispatcher change in
+[#11035](https://github.com/agentydragon/ducktape/pull/11035) lands.
 
 ## Scope and retirement of stale gates
 
