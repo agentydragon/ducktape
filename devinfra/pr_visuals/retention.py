@@ -10,7 +10,7 @@ from collections import defaultdict, deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import boto3
 from botocore.exceptions import ClientError
@@ -169,7 +169,7 @@ def _read_s3_object(client: Any, bucket: str, key: str) -> bytes | None:
         if error.response.get("Error", {}).get("Code") in ("NoSuchKey", "404", "NotFound"):
             return None
         raise
-    return response["Body"].read()
+    return cast(bytes, response["Body"].read())
 
 
 def build_retention_report(
