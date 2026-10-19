@@ -1260,7 +1260,7 @@ def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
     lines = body.splitlines()
     assert (
         "<summary><code>//a:x</code> — 4 modified, 12 new · A · "
-        '<a href="https://v/commits/sha/tests/a/index.html">gallery</a></summary>'
+        '<a href="https://v/commits/sha/tests/a/index.html">link</a></summary>'
     ) in lines
     assert "<summary>1 unchanged target</summary>" in lines
     assert "- [`//b:y`](https://v/commits/sha/tests/b/index.html)" in lines
@@ -1348,7 +1348,7 @@ def test_success_comment_body_groups_changed_tests_and_folds_unchanged_targets()
     assert "tests/ex-visuals-abcdef/fresh.png" in body
     summary = (
         "<summary><code>//ex:visuals</code> — 1 new · Ex · "
-        '<a href="https://v/commits/sha/tests/ex-visuals-abcdef/index.html">gallery</a> · '
+        '<a href="https://v/commits/sha/tests/ex-visuals-abcdef/index.html">link</a> · '
         '<a href="https://github/actions/runs/123">request rerun</a></summary>'
     )
     assert summary in lines

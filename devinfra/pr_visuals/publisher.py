@@ -861,7 +861,7 @@ def _target_section(test: ReviewTest, *, url: str, open_section: bool, ci_detail
     details = "<details open>" if open_section else "<details>"
     gallery_url = f"{url}tests/{test.slug}/index.html"
     asset_base = f"{url}tests/{test.slug}/"
-    gallery_link = f'<a href="{html.escape(gallery_url, quote=True)}">gallery</a>'
+    gallery_link = f'<a href="{html.escape(gallery_url, quote=True)}">link</a>'
     rerun_link = f' · <a href="{html.escape(ci_details_url, quote=True)}">request rerun</a>' if ci_details_url else ""
     lines = [
         details,
