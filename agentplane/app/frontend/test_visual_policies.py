@@ -1029,9 +1029,7 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
         await expect(page.get_by_text("Apply Kubernetes resource", exact=True)).to_be_visible()
 
     if kind in {"text", "json"}:
-        block = page.get_by_test_id("action-execution-outcome").locator(
-            '.agentplane-clamped-block[data-clamped="true"]'
-        )
+        block = page.get_by_test_id("action-execution-outcome").locator(".agentplane-clamped-block")
         expand_label: str | re.Pattern[str] = "Show more"
         collapse_label = "Payload"
     elif kind == "email":
@@ -1044,6 +1042,7 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
         collapse_label = re.compile(r"^Manifest(?:$| ·)")
     await expect(block).to_have_count(1)
     await expect(block).to_be_visible()
+    await expect(block.locator('[data-clamped="true"]')).to_be_visible()
     await _focus(page, block)
     await view.capture()
     await block.get_by_role("button", name=expand_label, exact=isinstance(expand_label, str)).click()
