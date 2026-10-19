@@ -2,7 +2,7 @@ package policy
 
 import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
 
 // EffectivePolicy is an egress policy some binding grants the caller.

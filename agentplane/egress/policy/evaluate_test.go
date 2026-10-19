@@ -12,7 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/presentation"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

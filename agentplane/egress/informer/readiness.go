@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"

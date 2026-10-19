@@ -14,7 +14,7 @@ go_library(
         "//agentplane/sandbox_controller:__subpackages__",
     ],
     deps = [
-        "//agentplane/policy/api",
+        "//agentplane/policy/api/v1alpha1",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",
         "@io_k8s_apimachinery//pkg/api/errors",
@@ -43,7 +43,7 @@ go_test(
     ],
     embed = [":policy_controller"],
     deps = [
-        "//agentplane/policy/api",
+        "//agentplane/policy/api/v1alpha1",
         "@io_bazel_rules_go//go/runfiles",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",

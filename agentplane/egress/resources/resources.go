@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 )
 

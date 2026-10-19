@@ -31,7 +31,8 @@ One Go package per concern:
 - `upstream`: the admitted host resolved by the proxy, refused when it points anywhere not globally
   reachable, and pinned so the dial goes to the address checked.
 - `informer`: list-and-watch of those kinds into each replica's `Index`, and the `EgressReady`
-  condition on each `PolicyBinding`.
+  condition on each `PolicyBinding`. It uses Kubernetes-generated clients, listers and shared
+  informers from `client/` and `../policy/client/`; a list-options tweak bounds watch periods.
 - `rules`: the agent-facing `egress.agentplane-staging.svc.cluster.local/v1/rules` API, on its own
   independently authenticated listener.
 - `decision` and `history`: admission records, and their bounded best-effort write to the shared
@@ -54,6 +55,12 @@ Also here:
 - `testing/`: the throwaway CAs and process launchers `test_proxy.py` runs the built binaries with.
   It drives the real binaries against the fake API server (<../testing/fake_apiserver.py>) and a
   PostgreSQL container; the package tests beside the code cover the decision itself.
+
+The versioned Kubernetes types live in `api/v1alpha1/` and `../policy/api/v1alpha1/`.
+Their `+genclient` markers drive the pinned Kubernetes `client-gen`, `lister-gen` and `informer-gen`
+actions in <../../devinfra/go/kubernetes_clients.bzl>. Generated Go packages are Bazel outputs;
+there is no checked-in generated client tree or manual regeneration step. Build them with
+`bbr build //agentplane/egress/client:informers //agentplane/policy/client:informers`.
 
 ## Running
 

@@ -16,7 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
 
 // errorBody is FastAPI's error shape, which the agents of the Python proxy already read.

@@ -10,11 +10,11 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/rules",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
-        "//agentplane/egress/api",
+        "//agentplane/egress/api/v1alpha1",
         "//agentplane/egress/decision",
         "//agentplane/egress/identity",
         "//agentplane/egress/policy",
-        "//agentplane/policy/api",
+        "//agentplane/policy/api/v1alpha1",
         "@com_github_invopop_jsonschema//:jsonschema",
     ],
 )
@@ -24,12 +24,12 @@ go_test(
     srcs = ["rules_test.go"],
     embed = [":rules"],
     deps = [
-        "//agentplane/egress/api",
+        "//agentplane/egress/api/v1alpha1",
         "//agentplane/egress/docs",
         "//agentplane/egress/identity",
         "//agentplane/egress/policy",
         "//agentplane/egress/resources",
-        "//agentplane/policy/api",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/workload_auth/go/auth",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

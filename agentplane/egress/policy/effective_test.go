@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
 
 func TestListEffectivePolicies(t *testing.T) {

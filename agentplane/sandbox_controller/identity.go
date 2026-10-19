@@ -10,7 +10,7 @@ import (
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
 
 // ActionCallerLabel on a ServiceAccount is what admits its workload to the Action Service. It
@@ -59,7 +59,7 @@ func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *sandboxapi.Sand
 		return nil, nil
 	}
 	return r.applyOwned(ctx, sandbox, map[string]any{
-		"apiVersion": policyapi.GroupVersion.String(), "kind": "PolicyBinding",
+		"apiVersion": policyapi.SchemeGroupVersion.String(), "kind": "PolicyBinding",
 		"metadata": map[string]any{"name": sandbox.Name, "namespace": sandbox.Namespace, "labels": map[string]string{sandboxapi.SandboxLabel: sandbox.Name}},
 		"spec": map[string]any{
 			"subject":    map[string]any{"namespace": sandbox.Namespace, "name": sandbox.Name},

@@ -1,4 +1,4 @@
-package api
+package v1alpha1
 
 import (
 	"slices"
@@ -21,7 +21,7 @@ func (b *PolicyBinding) PrepareConditionApply(condition metav1.Condition) *Polic
 		return nil
 	}
 	return &PolicyBinding{
-		TypeMeta:   metav1.TypeMeta{APIVersion: GroupVersion.String(), Kind: "PolicyBinding"},
+		TypeMeta:   metav1.TypeMeta{APIVersion: SchemeGroupVersion.String(), Kind: "PolicyBinding"},
 		ObjectMeta: metav1.ObjectMeta{Name: b.Name, Namespace: b.Namespace},
 		Status:     Status{Conditions: []metav1.Condition{*meta.FindStatusCondition(conditions, condition.Type)}},
 	}

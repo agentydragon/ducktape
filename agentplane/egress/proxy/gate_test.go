@@ -25,7 +25,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"golang.org/x/net/http2"
 )
 

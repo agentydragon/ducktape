@@ -13,7 +13,7 @@ go_library(
         "//agentplane/egress/decision",
         "//agentplane/egress/presentation",
         "//agentplane/egress/resources",
-        "//agentplane/policy/api",
+        "//agentplane/policy/api/v1alpha1",
     ],
 )
 
@@ -29,7 +29,7 @@ go_test(
         "//agentplane/egress/decision",
         "//agentplane/egress/presentation",
         "//agentplane/egress/resources",
-        "//agentplane/policy/api",
+        "//agentplane/policy/api/v1alpha1",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
     ],
 )

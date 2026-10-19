@@ -2,14 +2,14 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path")
 load("//devinfra/go:controller_gen.bzl", "controller_deepcopy")
 
 go_library(
-    name = "api",
+    name = "v1alpha1",
     srcs = [
         "doc.go",
         "scheme.go",
         "types.go",
         ":deepcopy",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/egress/api",
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -25,7 +25,7 @@ go_library(
         "doc.go",
         "types.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/egress/api",
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1",
     visibility = ["//visibility:private"],
     deps = ["@io_k8s_apimachinery//pkg/apis/meta/v1:meta"],
 )
@@ -39,5 +39,5 @@ go_path(
 controller_deepcopy(
     name = "deepcopy",
     gopath = ":deepcopy_gopath",
-    importpath = "github.com/agentydragon/ducktape/agentplane/egress/api",
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1",
 )

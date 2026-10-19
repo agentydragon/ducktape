@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api"
+	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/presentation"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"

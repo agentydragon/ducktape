@@ -1093,8 +1093,7 @@ egress proxy as a header substitution, as the staging `claude-ai` Sandboxes' `BU
 
 ### Egress implementation follow-ups
 
-Unscheduled, each its own change: k8s codegen for the informer's types, upstream connection reuse,
-idle tunnel timeouts, and metrics.
+Unscheduled, each its own change: upstream connection reuse, idle tunnel timeouts, and metrics.
 
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current
 source/deployment state with the relevant owner when dispatching; old acceptance notes are not live

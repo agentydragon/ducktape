@@ -1,0 +1,9 @@
+load("//devinfra/go:kubernetes_clients.bzl", "kubernetes_clients")
+
+kubernetes_clients(
+    name = "generated",
+    api = "//agentplane/egress/api/v1alpha1",
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/client",
+    input_base = "github.com/agentydragon/ducktape/agentplane/egress",
+    kinds = ["EgressCredential"],
+)

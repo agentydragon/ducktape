@@ -1,1 +1,4 @@
-exports_files(["controller_gen.bzl"])
+exports_files([
+    "controller_gen.bzl",
+    "kubernetes_clients.bzl",
+])

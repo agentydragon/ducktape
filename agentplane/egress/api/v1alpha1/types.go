@@ -1,4 +1,4 @@
-package api
+package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,6 +53,7 @@ type EgressCredentialSpec struct {
 	Targets     []Target         `json:"targets"`
 }
 
+// +genclient
 // +kubebuilder:object:root=true
 type EgressCredential struct {
 	metav1.TypeMeta   `json:",inline"`

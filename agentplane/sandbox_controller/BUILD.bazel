@@ -24,7 +24,7 @@ go_library(
         "//agentplane/sandbox_controller:__subpackages__",
     ],
     deps = [
-        "//agentplane/policy/api",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:runner_control_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/sandboxes/api",
@@ -71,7 +71,7 @@ go_test(
     ],
     embed = [":sandbox_controller"],
     deps = [
-        "//agentplane/policy/api",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/lease",
         "@io_k8s_api//coordination/v1:coordination",
@@ -108,7 +108,7 @@ go_test(
     ],
     embed = [":sandbox_controller"],
     deps = [
-        "//agentplane/policy/api",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/sandboxes/api",
         "@com_github_go_logr_logr//:logr",
         "@io_bazel_rules_go//go/runfiles",

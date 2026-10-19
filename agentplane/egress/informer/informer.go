@@ -9,20 +9,23 @@ import (
 	"log/slog"
 	"time"
 
-	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api"
+	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
+	egressclient "github.com/agentydragon/ducktape/agentplane/egress/client/clientset/versioned"
+	egressinformers "github.com/agentydragon/ducktape/agentplane/egress/client/informers/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	policyclient "github.com/agentydragon/ducktape/agentplane/policy/client/clientset/versioned"
+	policytyped "github.com/agentydragon/ducktape/agentplane/policy/client/clientset/versioned/typed/api/v1alpha1"
+	policyinformers "github.com/agentydragon/ducktape/agentplane/policy/client/informers/api/v1alpha1"
+	policylisters "github.com/agentydragon/ducktape/agentplane/policy/client/listers/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/gentype"
-	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/client-go/listers"
+	coreinformers "k8s.io/client-go/informers/core/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -56,8 +59,8 @@ type Informer struct {
 	informers []cache.SharedIndexInformer
 	synced    []cache.InformerSynced
 
-	bindings       listers.ResourceIndexer[*policyapi.PolicyBinding]
-	bindingsClient *gentype.ClientWithList[*policyapi.PolicyBinding, *policyapi.PolicyBindingList]
+	bindings       policylisters.PolicyBindingNamespaceLister
+	bindingsClient policytyped.PolicyBindingInterface
 	// queue holds the names of bindings whose EgressReady may be out of date.
 	queue workqueue.TypedRateLimitingInterface[string]
 }
@@ -65,76 +68,47 @@ type Informer struct {
 // New returns an Informer that is idle until Run. The API server is reached only from Run.
 //
 // Each kind is a client-go shared informer over a typed client, so the list, watch, resume and
-// backoff are client-go's. Deviation from what informer-gen emits: every watch is bounded to the
-// watch period, which is what lets a watch the server ends on schedule stand as proof of life.
+// backoff are client-go's. A list-options tweak bounds watch periods, so a watch the server
+// ends on schedule stands as proof of life.
 func New(base *rest.Config, config Config) (*Informer, error) {
 	if config.WatchPeriod < minWatchPeriod || config.WatchPeriod%time.Second != 0 {
 		return nil, fmt.Errorf("the watch period is a whole number of seconds, at least %v: %v", minWatchPeriod, config.WatchPeriod)
 	}
-	scheme := runtime.NewScheme()
-	if err := errors.Join(policyapi.AddToScheme(scheme), egressapi.AddToScheme(scheme)); err != nil {
-		return nil, err
-	}
-
 	recorded := rest.CopyConfig(base)
 	recorded.Wrap(cycleRecorder{index: config.Index, now: time.Now}.wrap)
-	custom := rest.CopyConfig(recorded)
-	custom.GroupVersion, custom.APIPath = &policyapi.GroupVersion, "/apis"
-	custom.NegotiatedSerializer = rest.CodecFactoryForGeneratedClient(scheme, serializer.NewCodecFactory(scheme)).WithoutConversion()
-	customClient, err := rest.RESTClientFor(custom)
+	policies, err := policyclient.NewForConfig(recorded)
 	if err != nil {
 		return nil, err
 	}
-	core, err := corev1client.NewForConfig(recorded)
+	credentials, err := egressclient.NewForConfig(recorded)
 	if err != nil {
 		return nil, err
 	}
-
-	parameters := runtime.NewParameterCodec(scheme)
-	sets := gentype.NewClientWithList[*policyapi.PolicySet, *policyapi.PolicySetList](
-		string(policy.PolicySets), customClient, parameters, config.RulesNamespace,
-		func() *policyapi.PolicySet { return &policyapi.PolicySet{} },
-		func() *policyapi.PolicySetList { return &policyapi.PolicySetList{} },
-	)
-	bindings := gentype.NewClientWithList[*policyapi.PolicyBinding, *policyapi.PolicyBindingList](
-		string(policy.Bindings), customClient, parameters, config.RulesNamespace,
-		func() *policyapi.PolicyBinding { return &policyapi.PolicyBinding{} },
-		func() *policyapi.PolicyBindingList { return &policyapi.PolicyBindingList{} },
-	)
-	credentials := gentype.NewClientWithList[*egressapi.EgressCredential, *egressapi.EgressCredentialList](
-		string(policy.Credentials), customClient, parameters, config.RulesNamespace,
-		func() *egressapi.EgressCredential { return &egressapi.EgressCredential{} },
-		func() *egressapi.EgressCredentialList { return &egressapi.EgressCredentialList{} },
-	)
+	core, err := kubernetes.NewForConfig(recorded)
+	if err != nil {
+		return nil, err
+	}
 
 	i := &Informer{
 		index:          config.Index,
-		bindingsClient: bindings,
+		bindingsClient: policies.AgentplaneV1alpha1().PolicyBindings(config.RulesNamespace),
 		queue:          workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
 	}
 	period := int64(config.WatchPeriod / time.Second)
-	if err := watchKind(i, bindings, &policyapi.PolicyBinding{}, period, i.putBinding, i.deleteBinding); err != nil {
-		return nil, err
-	}
-	// EgressReady is judged on the bindings the informer holds, not on a read from the server.
-	i.bindings = listers.NewNamespaced(
-		listers.New[*policyapi.PolicyBinding](i.informers[0].GetIndexer(), policyapi.GroupVersion.WithResource(string(policy.Bindings)).GroupResource()),
-		config.RulesNamespace,
-	)
+	tweak := func(options *metav1.ListOptions) { options.TimeoutSeconds = &period }
+	indexers := cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
+	bindings := policyinformers.NewFilteredPolicyBindingInformer(policies, config.RulesNamespace, 0, indexers, tweak)
+	// EgressReady uses the generated cache lister, never an extra API read.
+	i.bindings = policylisters.NewPolicyBindingLister(bindings.GetIndexer()).PolicyBindings(config.RulesNamespace)
 	if err := errors.Join(
-		watchKind(i, sets, &policyapi.PolicySet{}, period, i.putSet, i.deleteSet),
-		watchKind(i, credentials, &egressapi.EgressCredential{}, period, i.putCredential, i.index.DeleteCredential),
-		watchKind(i, core.Secrets(config.CredentialsNamespace), &corev1.Secret{}, period, i.putSecret, i.index.DeleteSecret),
+		watchKind(i, bindings, i.putBinding, i.deleteBinding),
+		watchKind(i, policyinformers.NewFilteredPolicySetInformer(policies, config.RulesNamespace, 0, indexers, tweak), i.putSet, i.deleteSet),
+		watchKind(i, egressinformers.NewFilteredEgressCredentialInformer(credentials, config.RulesNamespace, 0, indexers, tweak), i.putCredential, i.index.DeleteCredential),
+		watchKind(i, coreinformers.NewFilteredSecretInformer(core, config.CredentialsNamespace, 0, indexers, tweak), i.putSecret, i.index.DeleteSecret),
 	); err != nil {
 		return nil, err
 	}
 	return i, nil
-}
-
-// listerWatcher is the list and watch every typed client has.
-type listerWatcher[L runtime.Object] interface {
-	List(context.Context, metav1.ListOptions) (L, error)
-	Watch(context.Context, metav1.ListOptions) (watch.Interface, error)
 }
 
 // object is what a typed shared informer holds: a pointer to a resource.
@@ -143,24 +117,10 @@ type object interface {
 	runtime.Object
 }
 
-// watchKind adds a shared informer over client to i, with put and remove applying what it sees to
-// the Index. The informer lists once, then watches in bounded periods and resumes each from where
-// the last stopped; it relists only when the server can no longer resume it, and the relist reports
-// the objects that vanished meanwhile as deleted.
-func watchKind[T object, L runtime.Object](
-	i *Informer, client listerWatcher[L], example T, period int64, put func(T), remove func(name string),
-) error {
-	informer := cache.NewTypedSharedIndexInformer[T](cache.NewSharedIndexInformerWithOptions(&cache.ListWatch{
-		ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
-			return client.List(ctx, options)
-		},
-		WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
-			options.TimeoutSeconds = &period
-			return client.Watch(ctx, options)
-		},
-	}, example, cache.SharedIndexInformerOptions{
-		Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
-	}))
+// watchKind applies a generated shared informer's events to the policy Index. Typed
+// handlers preserve tombstone deletion and registration-level synchronization.
+func watchKind[T object](i *Informer, shared cache.SharedIndexInformer, put func(T), remove func(name string)) error {
+	informer := cache.NewTypedSharedIndexInformer[T](shared)
 	registration, err := informer.AddTypedEventHandler(cache.TypedResourceEventHandlerFuncs[T]{
 		AddFunc:    put,
 		UpdateFunc: func(_, updated T) { put(updated) },

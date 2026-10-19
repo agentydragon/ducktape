@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
 
 // Kind is a resource kind the Index is built from, by plural.

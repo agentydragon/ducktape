@@ -1,8 +1,8 @@
-// Package api defines Agentplane's v1alpha1 PolicySet and PolicyBinding Kubernetes API.
+// Package v1alpha1 defines Agentplane's v1alpha1 PolicySet and PolicyBinding Kubernetes API.
 //
 // +kubebuilder:object:generate=true
 // +groupName=agentplane.allegedly.works
-package api
+package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,6 +38,7 @@ type Status struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// +genclient
 // +kubebuilder:object:root=true
 type PolicySet struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -64,6 +65,7 @@ type PolicyBindingSpec struct {
 	ExpiresAt  *metav1.Time      `json:"expiresAt,omitempty"`
 }
 
+// +genclient
 // +kubebuilder:object:root=true
 type PolicyBinding struct {
 	metav1.TypeMeta   `json:",inline"`

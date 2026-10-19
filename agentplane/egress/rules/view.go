@@ -1,9 +1,9 @@
 package rules
 
 import (
-	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api"
+	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
 
 // The view types are what a sandbox may know about its own egress. They are built field by field
