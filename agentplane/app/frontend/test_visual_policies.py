@@ -1146,5 +1146,52 @@ async def test_kubernetes_delete_success_receipt(view: VisualPage, app: Agentpla
     await view.capture(target=page.locator("#app"))
 
 
+@DESKTOP_AND_MOBILE
+async def test_kubernetes_pods_delete_success_receipt(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
+) -> None:
+    await app.show_action_receipt(
+        "kubernetes_admin",
+        "pods_delete",
+        {"name": "web-0", "namespace": "apps"},
+        {"content": [{"type": "text", "text": "Pod deleted successfully"}], "isError": False},
+    )
+    await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
+    page = view.page
+    await expect(page.get_by_text("Delete Pod apps/web-0", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Deletion accepted", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Result", exact=True)).to_have_count(0)
+    await expect(page.get_by_text("Exact arguments (unredacted)", exact=True)).to_have_count(0)
+    await view.check(context="successful pod deletion shown as an accepted request")
+    await view.capture(target=page.locator("#app"), name=f"pods_delete_pretty_{viewport.width}")
+
+    await _open_raw_switches(page)
+    await expect(page.get_by_text("Exact arguments (unredacted)", exact=True)).to_be_visible()
+    await expect(page.get_by_text('"name": "web-0"', exact=False)).to_be_visible()
+    await expect(page.get_by_text('"Pod deleted successfully"', exact=False)).to_be_visible()
+    await view.capture(target=page.locator("#app"), name=f"pods_delete_raw_{viewport.width}")
+
+
+@DESKTOP_AND_MOBILE
+async def test_kubernetes_pods_delete_error_receipt(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.show_action_receipt(
+        "kubernetes_admin",
+        "pods_delete",
+        {"name": "web-0", "namespace": "apps"},
+        {"content": [{"type": "text", "text": "Pod deleted successfully"}], "isError": True},
+    )
+    await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
+    page = view.page
+    await expect(page.get_by_text("Delete Pod apps/web-0", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Tool error", exact=True).first).to_be_visible()
+    await expect(page.get_by_text("Deletion accepted", exact=True)).to_have_count(0)
+    await expect(page.get_by_text("Result", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Pod deleted successfully", exact=True)).to_be_visible()
+    await view.check(context="error envelope is retained instead of a success receipt")
+    await view.capture(target=page.locator("#app"))
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

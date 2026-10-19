@@ -61,11 +61,12 @@ export const podsExecCollapsed: ArgumentsPreview = definePreview(podsExecArgumen
 export const podsExecPane: ArgumentsPreview = definePreview(podsExecArguments, Opened);
 export const podsExecLabel: ArgumentsPreview = definePreview(podsExecArguments, PodsExecLabel);
 
-function PodsDeletePane(): JSX.Element {
-  return <></>;
+function PodsDeletePane(): null {
+  return null;
 }
 
 const podsDeleteArguments = z.strictObject({ name: z.string().min(1), namespace: z.string().min(1).optional() });
+const podsDeleteResult = z.literal("Pod deleted successfully");
 
 function PodsDeleteLabel({ args }: { args: z.infer<typeof podsDeleteArguments> }): JSX.Element {
   return (
@@ -79,9 +80,14 @@ export const podsDeleteLabel: ArgumentsPreview = definePreview(podsDeleteArgumen
 export const podsDeletePane: ArgumentsPreview = definePreview(podsDeleteArguments, PodsDeletePane);
 
 export const podsDeletePresentation: ActionPresentation = {
+  outcome: (value) =>
+    podsDeleteResult.safeParse(value).success ? { label: "Deletion accepted", failed: false } : undefined,
   label: podsDeleteLabel,
   pane: { opened: podsDeletePane },
-  details: { arguments: podsDeletePane },
+  details: {
+    arguments: podsDeletePane,
+    result: defineResultPreview(podsDeleteResult, () => null),
+  },
 };
 
 export const podsExecPresentation: ActionPresentation = {

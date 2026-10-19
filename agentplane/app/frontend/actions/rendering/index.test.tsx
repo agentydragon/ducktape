@@ -412,6 +412,17 @@ describe("Action presentation slots", () => {
     expect(actionOffersCardDecisionButtons(action, args)).toBe(false);
   });
 
+  it("keeps pod-delete arguments schema-bound while omitting the empty pretty view", async () => {
+    const action = { group: "kubernetes_admin", name: "pods_delete" };
+    expect(renderDetailsArguments(action, { name: "web-0", namespace: "apps" })).toBeNull();
+
+    const recorded = await mount(
+      renderDetailsArguments(action, { name: "web-0", namespace: "apps", futureField: true })
+    );
+    expect(recorded.textContent).toContain("Details shown as recorded data");
+    expect(recorded.textContent).toContain('"futureField": true');
+  });
+
   it.each([
     ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api" }, ["Read with API version apps/v1"]],
     ["pods_log", { name: "api-0", tail: -1 }, ['"tail": -1']],
@@ -582,6 +593,67 @@ describe("details result rendering", () => {
     const warningView = await drawDetailsResult(action, warning);
     expect(warningView.textContent).toContain("finalizers are still running");
     expect(renderActionCall(action, args, warning)).toBeUndefined();
+  });
+
+  it("shows an exact pod-delete success as accepted and preserves non-success envelopes", async () => {
+    const action = { group: "kubernetes_admin", name: "pods_delete" };
+    const success = parseCallToolResult({
+      content: [{ type: "text", text: "Pod deleted successfully" }],
+      isError: false,
+    });
+    if (success === null) throw new Error("the fixture is not a CallToolResult");
+
+    expect(renderDetailsResult(action, success)).toBeNull();
+    expect(renderActionOutcome(action, success)).toEqual({ label: "Deletion accepted", failed: false });
+
+    const warning = parseCallToolResult({
+      content: [
+        { type: "text", text: "Pod deleted successfully" },
+        { type: "text", text: "Warning: cleanup is still running" },
+      ],
+      isError: false,
+    });
+    if (warning === null) throw new Error("the fixture is not a CallToolResult");
+    expect(renderDetailsResult(action, warning)).toBeUndefined();
+    expect(renderActionOutcome(action, warning)).toBeUndefined();
+    const warningView = await drawDetailsResult(action, warning);
+    expect(warningView.textContent).toContain("Pod deleted successfully");
+    expect(warningView.textContent).toContain("Warning: cleanup is still running");
+
+    const additionalContent = parseCallToolResult({
+      content: [
+        { type: "text", text: "Pod deleted successfully" },
+        { type: "future", payload: "keep this content" },
+      ],
+      structuredContent: "Pod deleted successfully",
+      isError: false,
+    });
+    if (additionalContent === null) throw new Error("the fixture is not a CallToolResult");
+    expect(renderDetailsResult(action, additionalContent)).toBeUndefined();
+    expect(renderActionOutcome(action, additionalContent)).toEqual({ label: "Deletion accepted", failed: false });
+    const additionalContentView = await drawDetailsResult(action, additionalContent);
+    expect(additionalContentView.textContent).toContain("Pod deleted successfully");
+    expect(additionalContentView.textContent).toContain("keep this content");
+
+    const mismatch = parseCallToolResult({
+      content: [{ type: "text", text: "Pod not found" }],
+      isError: false,
+    });
+    if (mismatch === null) throw new Error("the fixture is not a CallToolResult");
+    expect(renderDetailsResult(action, mismatch)).toBeUndefined();
+    expect(renderActionOutcome(action, mismatch)).toBeUndefined();
+    expect((await drawDetailsResult(action, mismatch)).textContent).toContain("Pod not found");
+
+    const error = parseCallToolResult({
+      content: [{ type: "text", text: "Pod deleted successfully" }],
+      isError: true,
+    });
+    if (error === null) throw new Error("the fixture is not a CallToolResult");
+    expect(renderDetailsResult(action, error)).toBeUndefined();
+    expect(renderActionOutcome(action, error)).toBeUndefined();
+    const errorView = await drawDetailsResult(action, error);
+    expect(errorView.textContent).toContain("Tool error");
+    expect(errorView.textContent).toContain("Pod deleted successfully");
   });
 });
 
