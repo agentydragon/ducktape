@@ -1126,6 +1126,7 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, seaweedfs_public_s3_artifact, seaweedfs_public_s3.chart),
         seaweedfs_operator_kustomization,
         kyverno_kustomization,
+        monitoring_crds_kustomization,
     )
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images_module = terraform.gitops_module(forgejo_images.NAME)

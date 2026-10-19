@@ -17,6 +17,7 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from seaweed_s3policy_crds.com.seaweedfs.seaweed import (
     S3Policy,
     S3PolicySpec,
@@ -39,6 +40,7 @@ from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.seaweedfs import (
     cluster,
     drivefs_artifacts_bucket,
@@ -244,6 +246,13 @@ def _gateway(scope: Construct) -> None:
             ports=[_S3.port.k8s_service_port(), _METRICS.port.k8s_service_port()],
         ),
     )
+    ServiceMonitor(
+        scope,
+        "service-monitor",
+        metadata=ApiObjectMetadata(name=NAME, namespace=namespace.NAME),
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
+        endpoints=[Endpoint.plain(port=_METRICS.port.name)],
+    )
     https_route(
         scope,
         "route",
@@ -264,7 +273,11 @@ def chart(app: App) -> Chart:
 
 
 def seaweedfs_public_s3(
-    chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization, kyverno: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    seaweedfs_operator: Kustomization,
+    kyverno: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "seaweedfs-public-s3"
     return flux_kustomization(
@@ -276,6 +289,8 @@ def seaweedfs_public_s3(
             seaweedfs_operator,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
             kyverno,
+            # ServiceMonitor.
+            monitoring_crds,
         ),
         timeout="5m",
     )
