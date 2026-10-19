@@ -72,6 +72,16 @@ replication. The former MCP primary's manager needed automatic liveness recovery
 after its clean PostgreSQL shutdown; it recovered without a manual restart or
 data changes. The precise manager failure remains unproven.
 
+The Claude session-sync database's planned switchover waited for its PostgreSQL
+archiver to drain an existing WAL backlog. Its shutdown checkpoint completed in
+about seven seconds; the archive queue then decreased from 355 pending segments
+at 02:20:51 UTC to two at 02:25:45 UTC, with matching advances in the archiver's
+segment name. The shutdown command was `pg_ctl -m fast stop -w -t 3600`; the
+replacement standby was caught up. This was active archive work, not a reason
+to bypass graceful shutdown or drain the worker while its primary was stopping.
+The switchover completed around 02:26 UTC with both instances healthy, no archive
+backlog, and zero streaming-replication lag.
+
 The node's historical Terraform `resolved_apply_mode=staged` is not evidence of
 a currently pending configuration. Talos reports only the active `v1alpha1`
 machine-config resource, with no `persistent` resource. The pinned Talos source
@@ -79,6 +89,50 @@ sets that resource for staged writes and omits it when loading configuration
 solely from STATE during boot. STATE is mounted on demand, explaining why a
 direct read of `/system/state/config.yaml` returned NotFound. No empty read result
 was used as a machine configuration.
+
+### Second worker host result
+
+After fresh checks of all 21 CNPG clusters, the first worker's workloads and the
+304 target-hosted SeaweedFS volumes, drained `ovh-ns103656` normally. Drain
+completed around 02:30:53 UTC without forced deletion or eviction bypass.
+Used the supported legacy upgrade API with data preservation enabled to avoid
+the first worker's lifecycle-install stream hang. The new boot ID and intended
+schematic/DRBD extension were verified through the public Talos API.
+
+The configuration-only saved plan updated exactly the existing second-worker
+resource (`0 added, 1 changed, 0 destroyed`). A fresh comparison before apply
+showed only the permitted image, kernel-module settings, and canary label.
+DRBD `9.3.3`, TCP transport and helper `disabled` were verified afterward.
+The active and persistent Talos configurations compare equal.
+
+XFS quota checking took approximately 02:32:39–02:36:44 UTC for `/dev/sda5`
+and three seconds for `/dev/sdb`. CRI metadata initialization subsequently
+delayed startup and recovered without intervention; process I/O advanced from
+121,847,296 to 150,170,112 physical read bytes between observations. The
+original XFS `/dev/sdb` data mount, Kubernetes Node UID, hostname, addresses and
+pod CIDR were preserved. Node Ready, Cilium Ready and loop/DRBD block majors
+passed before uncordoning around 02:44 UTC. Replica restoration is a separate
+gate before Piraeus deployment.
+
+That restoration gate passed at 02:46–02:47 UTC: all 21 CNPG clusters had their
+expected ready-instance counts, all six previously active node2 local-PVC
+consumers were Ready, all six SeaweedFS volume servers were Ready, both canary
+HDD per-volume checks passed, ClickHouse had two healthy replicas and Keeper
+had all three members Ready. The proposed listener/replication ports were free
+on both nodes before deployment.
+
+An optional post-apply Terraform state read failed twice because the BuildBuddy
+CLI's BES proxy could not resolve its upstream. No state was modified by that
+read, and no resolver or workstation configuration was changed. The successful
+saved-plan apply and the live Talos checks above are separate verified evidence.
+
+### Provider deployment
+
+Reviewed deployment PR #11029 at exact green head
+`0e7e40665ab463a5be621059f5b5d8ad64c0c708`, then merged it as
+`c1dddfc8b9a8d7e49cb8171281d8056c9c0d7cac` after both workers passed
+preparation and recovery. Flux fetched that commit. Provider readiness, network
+checks and PVC acceptance remain separate live checks.
 
 No Piraeus pool or test PVC has been created at this point. The 50Gi sparse probe
 is separate from the 1Gi block migration fixture: a full resync of the large
