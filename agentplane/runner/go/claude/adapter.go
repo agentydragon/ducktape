@@ -17,6 +17,7 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"
+	"github.com/schlunsen/claude-agent-sdk-go/types"
 )
 
 const (
@@ -129,32 +130,28 @@ func (a *claudeAdapter) Environment() (map[string]string, error) {
 
 func (a *claudeAdapter) Handshake(ctx context.Context) (string, error) {
 	requestID := nativeRequestID()
-	initialize := map[string]any{"subtype": "initialize"}
-	if instructions := a.host.Session().Instructions; instructions != "" {
-		initialize["appendSystemPrompt"] = instructions
-	}
-	request := map[string]any{"type": "control_request", "request_id": requestID, "request": initialize}
-	frame, err := json.Marshal(request)
+	frame, err := marshalClaudeControlRequest(requestID, claudeInitializeRequest{
+		SDKControlInitializeRequest: types.SDKControlInitializeRequest{Subtype: "initialize"},
+		AppendSystemPrompt:          a.host.Session().Instructions,
+	})
 	if err != nil {
 		return "", err
 	}
 	receipt, err := a.host.RequestNative(ctx, frame, func(raw json.RawMessage) bool {
-		var parsed claudeWireFrame
-		return json.Unmarshal(raw, &parsed) == nil && parsed.Type == "control_response" && parsed.Response.RequestID == requestID
+		parsed, err := decodeClaudeControlResponse(raw)
+		return err == nil && parsed.RequestID == requestID
 	})
 	if err != nil {
 		return "", fmt.Errorf("wait for Claude initialization: %w", err)
 	}
-	var response claudeWireFrame
-	if err := json.Unmarshal(receipt.Frame, &response); err != nil {
+	response, err := decodeClaudeControlResponse(receipt.Frame)
+	if err != nil {
 		return "", err
 	}
-	if response.Type != "control_response" {
-		return "", fmt.Errorf("Claude initialization received unexpected frame type %q", response.Type)
+	if response.Subtype == "error" {
+		return "", fmt.Errorf("Claude initialization rejected: %s", *response.Error)
 	}
-	if response.Response.Subtype == "error" {
-		return "", fmt.Errorf("Claude initialization rejected: %s", response.Response.Error)
-	}
+
 	a.mu.Lock()
 	nativeID := a.nativeSessionID
 	a.mu.Unlock()
@@ -279,10 +276,14 @@ func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) erro
 func (a *claudeAdapter) Interrupt(ctx context.Context, turnID string) error {
 	_ = turnID // Claude interrupts its current native turn; its protocol has no turn id on this request.
 	requestID := nativeRequestID()
-	return a.send(ctx, map[string]any{
-		"type": "control_request", "request_id": requestID,
-		"request": map[string]any{"subtype": "interrupt", "cancel_queued": false, "reason": "agentplane"},
+	frame, err := marshalClaudeControlRequest(requestID, claudeInterruptRequest{
+		SDKControlInterruptRequest: types.SDKControlInterruptRequest{Subtype: "interrupt"},
+		Reason:                     "agentplane", CancelQueued: false,
 	})
+	if err != nil {
+		return err
+	}
+	return a.host.SendNative(ctx, frame)
 }
 
 func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string) error {
@@ -290,10 +291,7 @@ func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string
 	a.mu.Lock()
 	a.modelChanges[requestID] = claudeChange{commandID: commandID, value: model}
 	a.mu.Unlock()
-	err := a.requestAndTranslate(ctx, requestID, map[string]any{
-		"type": "control_request", "request_id": requestID,
-		"request": map[string]any{"subtype": "set_model", "model": model},
-	})
+	err := a.requestAndTranslate(ctx, requestID, claudeSetModelRequest{Subtype: "set_model", Model: model})
 	if err != nil {
 		a.mu.Lock()
 		delete(a.modelChanges, requestID)
@@ -307,10 +305,9 @@ func (a *claudeAdapter) ChangeReasoningEffort(ctx context.Context, commandID, ef
 	a.mu.Lock()
 	a.effortChanges[requestID] = claudeChange{commandID: commandID, value: effort}
 	a.mu.Unlock()
-	err := a.requestAndTranslate(ctx, requestID, map[string]any{
-		"type": "control_request", "request_id": requestID,
-		"request": map[string]any{"subtype": "apply_flag_settings", "settings": map[string]string{"effortLevel": effort}},
-	})
+	request := claudeApplyFlagSettingsRequest{Subtype: "apply_flag_settings"}
+	request.Settings.EffortLevel = effort
+	err := a.requestAndTranslate(ctx, requestID, request)
 	if err != nil {
 		a.mu.Lock()
 		delete(a.effortChanges, requestID)
@@ -320,13 +317,13 @@ func (a *claudeAdapter) ChangeReasoningEffort(ctx context.Context, commandID, ef
 }
 
 func (a *claudeAdapter) requestAndTranslate(ctx context.Context, requestID string, request any) error {
-	frame, err := json.Marshal(request)
+	frame, err := marshalClaudeControlRequest(requestID, request)
 	if err != nil {
 		return err
 	}
 	receipt, err := a.host.RequestNative(ctx, frame, func(raw json.RawMessage) bool {
-		var response claudeWireFrame
-		return json.Unmarshal(raw, &response) == nil && response.Type == "control_response" && response.Response.RequestID == requestID
+		response, err := decodeClaudeControlResponse(raw)
+		return err == nil && response.RequestID == requestID
 	})
 	if err != nil {
 		return err
@@ -343,7 +340,11 @@ func (a *claudeAdapter) OnFrame(ctx context.Context, raw json.RawMessage, source
 	}
 	sources := []uint64{sourceSequence}
 	if frame.Type == "control_request" {
-		return a.answerControlRequest(ctx, frame)
+		var request types.SDKControlRequest
+		if err := json.Unmarshal(raw, &request); err != nil {
+			return err
+		}
+		return a.answerControlRequest(ctx, request)
 	}
 	if frame.ParentToolUseID != nil && (frame.Type == "system" || frame.Type == "stream_event" || frame.Type == "assistant" || frame.Type == "user" || frame.Type == "result") {
 		return nil
@@ -365,7 +366,11 @@ func (a *claudeAdapter) OnFrame(ctx context.Context, raw json.RawMessage, source
 
 	switch frame.Type {
 	case "control_response":
-		return a.handleControlResponse(ctx, frame, sources)
+		response, err := decodeClaudeControlResponse(raw)
+		if err != nil {
+			return err
+		}
+		return a.handleControlResponse(ctx, response, sources)
 	case "command_lifecycle":
 		return a.handleCommandLifecycle(ctx, frame, sourceSequence, sources)
 	case "stream_event":
@@ -382,31 +387,31 @@ func (a *claudeAdapter) OnFrame(ctx context.Context, raw json.RawMessage, source
 	}
 }
 
-func (a *claudeAdapter) handleControlResponse(ctx context.Context, frame claudeWireFrame, sources []uint64) error {
-	if frame.Response.Subtype != "success" && frame.Response.Subtype != "error" {
+func (a *claudeAdapter) handleControlResponse(ctx context.Context, response claudeControlResponseBody, sources []uint64) error {
+	if response.Subtype != "success" && response.Subtype != "error" {
 		return nil
 	}
 	a.mu.Lock()
-	modelChange, hasModel := a.modelChanges[frame.Response.RequestID]
-	effortChange, hasEffort := a.effortChanges[frame.Response.RequestID]
+	modelChange, hasModel := a.modelChanges[response.RequestID]
+	effortChange, hasEffort := a.effortChanges[response.RequestID]
 	if hasModel {
-		delete(a.modelChanges, frame.Response.RequestID)
+		delete(a.modelChanges, response.RequestID)
 	}
 	if hasEffort {
-		delete(a.effortChanges, frame.Response.RequestID)
+		delete(a.effortChanges, response.RequestID)
 	}
 	a.mu.Unlock()
 	if hasModel {
-		if frame.Response.Subtype == "success" {
+		if response.Subtype == "success" {
 			return a.host.ModelChanged(ctx, modelChange.commandID, modelChange.value, sources)
 		}
-		return a.host.FailCommand(ctx, modelChange.commandID, "Claude Code refused model switch: "+frame.Response.Error, sources)
+		return a.host.FailCommand(ctx, modelChange.commandID, "Claude Code refused model switch: "+*response.Error, sources)
 	}
 	if hasEffort {
-		if frame.Response.Subtype == "success" {
+		if response.Subtype == "success" {
 			return a.host.ReasoningEffortChanged(ctx, effortChange.commandID, effortChange.value, sources)
 		}
-		return a.host.FailCommand(ctx, effortChange.commandID, "Claude Code refused reasoning effort switch: "+frame.Response.Error, sources)
+		return a.host.FailCommand(ctx, effortChange.commandID, "Claude Code refused reasoning effort switch: "+*response.Error, sources)
 	}
 	return nil
 }
@@ -442,24 +447,40 @@ func (a *claudeAdapter) handleCommandLifecycle(ctx context.Context, frame claude
 	return nil
 }
 
-func (a *claudeAdapter) answerControlRequest(ctx context.Context, frame claudeWireFrame) error {
-	var response map[string]any
-	switch frame.Request.Subtype {
+func (a *claudeAdapter) answerControlRequest(ctx context.Context, frame types.SDKControlRequest) error {
+	var header struct {
+		Subtype string `json:"subtype"`
+	}
+	if err := json.Unmarshal(frame.Request, &header); err != nil {
+		return err
+	}
+	response := claudeControlResponseBody{RequestID: frame.RequestID}
+	switch header.Subtype {
 	case "can_use_tool":
+		var request claudePermissionRequest
+		if err := json.Unmarshal(frame.Request, &request); err != nil {
+			return err
+		}
 		var toolInput map[string]json.RawMessage
-		if len(frame.Request.Input) > 0 {
-			if err := json.Unmarshal(frame.Request.Input, &toolInput); err != nil {
+		if len(request.Input) > 0 {
+			if err := json.Unmarshal(request.Input, &toolInput); err != nil {
 				return err
 			}
 		}
-		response = map[string]any{"subtype": "success", "request_id": frame.RequestID, "response": map[string]any{"behavior": "allow", "updatedInput": frame.Request.Input}, "error": nil}
-	default:
-		response = map[string]any{
-			"subtype": "error", "request_id": frame.RequestID,
-			"response": nil, "error": fmt.Sprintf("the agentplane runner does not answer %q requests", frame.Request.Subtype),
+		payload, err := json.Marshal(claudePermissionAllow{Behavior: types.PermissionBehaviorAllow, UpdatedInput: request.Input})
+		if err != nil {
+			return err
 		}
+		response.Subtype, response.Response = "success", payload
+	default:
+		message := fmt.Sprintf("the agentplane runner does not answer %q requests", header.Subtype)
+		response.Subtype, response.Error = "error", &message
 	}
-	return a.send(ctx, map[string]any{"type": "control_response", "response": response})
+	raw, err := json.Marshal(response)
+	if err != nil {
+		return err
+	}
+	return a.send(ctx, types.SDKControlResponse{Type: "control_response", Response: raw})
 }
 
 func (a *claudeAdapter) handleStreamEvent(ctx context.Context, frame claudeWireFrame, sourceSequence uint64, sources []uint64) error {
