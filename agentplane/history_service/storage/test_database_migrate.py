@@ -114,11 +114,58 @@ def _command_state(operation: str, outcome: str, outcome_cursor: int | None = No
     }
 
 
+_EPOCH = "test-epoch"
+
+type _Entity = tuple[str, str, int, dict[str, object]]
+
+
+def _seed_fold(connection: Connection, session_id: uuid.UUID, last_cursor: int, entities: list[_Entity]) -> None:
+    """A Session with `last_cursor` empty stored entries, a fold checkpoint there and `(kind, id, cursor, state)` entities."""
+    connection.execute(
+        text("INSERT INTO session_history (id, last_cursor) VALUES (:id, :last)"),
+        {"id": session_id, "last": last_cursor},
+    )
+    connection.execute(
+        text(
+            "INSERT INTO session_event (session_id, cursor, payload) "
+            "SELECT :id, cursor, ''::bytea FROM generate_series(1, :last) AS series(cursor)"
+        ),
+        {"id": session_id, "last": last_cursor},
+    )
+    connection.execute(
+        text(
+            "INSERT INTO thread_checkpoint (thread_id, source_id, projection_epoch, through_cursor) "
+            "VALUES (:id, 'test-source', :epoch, :last)"
+        ),
+        {"id": session_id, "epoch": _EPOCH, "last": last_cursor},
+    )
+    for index, (kind, entity_id, cursor, state) in enumerate(entities):
+        connection.execute(
+            text(
+                "INSERT INTO thread_entity (thread_id, projection_epoch, entity_kind, entity_id, cursor, "
+                "revision_cursor, pending, state, entity_index) "
+                "VALUES (:id, :epoch, :kind, :entity_id, :cursor, :cursor, false, CAST(:state AS jsonb), :index)"
+            ),
+            {
+                "id": session_id,
+                "epoch": _EPOCH,
+                "kind": kind,
+                "entity_id": entity_id,
+                "cursor": cursor,
+                "state": json.dumps(state),
+                "index": index,
+            },
+        )
+
+
 def test_harness_stop_records_are_removed_and_the_fold_closes_over_them(db_url: str) -> None:
     """Admissions at 3 and 5 and the failure at 4 go; 7 is the stop's retained `HarnessExited`; 8 is pending."""
-    stopped, untouched, epoch = uuid.uuid4(), uuid.uuid4(), "test-epoch"
-    exited = {"observation": "harness_exited", "event": {"harnessExited": {"exitCode": 1, "stoppedByCommandId": "b"}}}
-    entities = [
+    stopped, untouched = uuid.uuid4(), uuid.uuid4()
+    exited: dict[str, object] = {
+        "observation": "harness_exited",
+        "event": {"harnessExited": {"exitCode": 1, "stoppedByCommandId": "b"}},
+    }
+    entities: list[_Entity] = [
         ("view_state", "current", 8, {}),
         ("lifecycle", "1", 1, {"observation": "harness_started", "event": {}}),
         ("command", "keep", 2, _command_state("submit_input", "pending")),
@@ -132,48 +179,14 @@ def test_harness_stop_records_are_removed_and_the_fold_closes_over_them(db_url: 
         with engine.begin() as connection:
             connection.execute(text("UPDATE alembic_version SET version_num = '0020_removed_ranges'"))
             for session_id, last_cursor, rows in ((stopped, 8, entities), (untouched, 2, entities[:3])):
-                connection.execute(
-                    text("INSERT INTO session_history (id, last_cursor) VALUES (:id, :last)"),
-                    {"id": session_id, "last": last_cursor},
-                )
-                connection.execute(
-                    text(
-                        "INSERT INTO session_event (session_id, cursor, payload) "
-                        "SELECT :id, cursor, ''::bytea FROM generate_series(1, :last) AS series(cursor)"
-                    ),
-                    {"id": session_id, "last": last_cursor},
-                )
-                connection.execute(
-                    text(
-                        "INSERT INTO thread_checkpoint (thread_id, source_id, projection_epoch, through_cursor) "
-                        "VALUES (:id, 'test-source', :epoch, :last)"
-                    ),
-                    {"id": session_id, "epoch": epoch, "last": last_cursor},
-                )
-                for index, (kind, entity_id, cursor, state) in enumerate(rows):
-                    connection.execute(
-                        text(
-                            "INSERT INTO thread_entity (thread_id, projection_epoch, entity_kind, entity_id, cursor, "
-                            "revision_cursor, pending, state, entity_index) "
-                            "VALUES (:id, :epoch, :kind, :entity_id, :cursor, :cursor, false, CAST(:state AS jsonb), :index)"
-                        ),
-                        {
-                            "id": session_id,
-                            "epoch": epoch,
-                            "kind": kind,
-                            "entity_id": entity_id,
-                            "cursor": cursor,
-                            "state": json.dumps(state),
-                            "index": index,
-                        },
-                    )
+                _seed_fold(connection, session_id, last_cursor, rows)
             for entity_cursor, observation_cursor in ((2, 2), (3, 3), (3, 4), (5, 5), (5, 7), (8, 8)):
                 connection.execute(
                     text(
                         "INSERT INTO thread_evidence (thread_id, projection_epoch, entity_cursor, observation_cursor) "
                         "VALUES (:id, :epoch, :entity, :observation)"
                     ),
-                    {"id": stopped, "epoch": epoch, "entity": entity_cursor, "observation": observation_cursor},
+                    {"id": stopped, "epoch": _EPOCH, "entity": entity_cursor, "observation": observation_cursor},
                 )
         RUNNER.apply(db_url, "0021_drop_harness_stop_records")
         with engine.connect() as connection:
@@ -226,6 +239,90 @@ def test_harness_stop_records_are_removed_and_the_fold_closes_over_them(db_url: 
     ]
     assert evidence == [(2, 2), (8, 8)]
     assert checkpoint == [(8,)]
+
+
+def test_pending_harness_stops_are_removed_too(db_url: str) -> None:
+    """The pending stop at 4 ends its Session's history; the one at 2 is followed by a retained entry."""
+    ending, middle = uuid.uuid4(), uuid.uuid4()
+    sessions: dict[uuid.UUID, tuple[int, list[_Entity]]] = {
+        ending: (
+            4,
+            [
+                ("view_state", "current", 4, {}),
+                ("command", "keep", 1, _command_state("submit_input", "pending")),
+                ("command", "stop", 4, _command_state("stop_runner_session", "pending")),
+            ],
+        ),
+        middle: (
+            3,
+            [
+                ("command", "stop", 2, _command_state("stop_runner_session", "pending")),
+                ("lifecycle", "3", 3, {"observation": "harness_started", "event": {}}),
+            ],
+        ),
+    }
+    engine = create_engine(RUNNER.sync_url(db_url))
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE alembic_version SET version_num = '0021_drop_harness_stop_records'"))
+            for session_id, (last_cursor, entities) in sessions.items():
+                _seed_fold(connection, session_id, last_cursor, entities)
+            for session_id, cursors in ((ending, (1, 4)), (middle, (2, 3))):
+                for cursor in cursors:
+                    connection.execute(
+                        text(
+                            "INSERT INTO thread_evidence (thread_id, projection_epoch, entity_cursor, observation_cursor) "
+                            "VALUES (:id, :epoch, :cursor, :cursor)"
+                        ),
+                        {"id": session_id, "epoch": _EPOCH, "cursor": cursor},
+                    )
+        RUNNER.apply(db_url, "0022_drop_pending_harness_stops")
+        with engine.connect() as connection:
+
+            def read(query: str, session_id: uuid.UUID) -> list[tuple[object, ...]]:
+                return [tuple(row) for row in connection.execute(text(query), {"id": session_id})]
+
+            after = {
+                session_id: {
+                    "events": read(
+                        "SELECT cursor FROM session_event WHERE session_id = :id ORDER BY cursor", session_id
+                    ),
+                    "removed": read(
+                        "SELECT first_cursor, last_cursor FROM session_event_removed_range WHERE session_id = :id",
+                        session_id,
+                    ),
+                    "entities": read(
+                        "SELECT entity_index, entity_kind, entity_id FROM thread_entity WHERE thread_id = :id "
+                        "ORDER BY entity_index",
+                        session_id,
+                    ),
+                    "evidence": read("SELECT entity_cursor FROM thread_evidence WHERE thread_id = :id", session_id),
+                    "committed": read(
+                        "SELECT checkpoint.through_cursor, history.last_cursor FROM thread_checkpoint AS checkpoint "
+                        "JOIN session_history AS history ON history.id = checkpoint.thread_id WHERE history.id = :id",
+                        session_id,
+                    ),
+                }
+                for session_id in sessions
+            }
+    finally:
+        engine.dispose()
+    assert after == {
+        ending: {
+            "events": [(1,), (2,), (3,)],
+            "removed": [(4, 4)],
+            "entities": [(0, "view_state", "current"), (1, "command", "keep")],
+            "evidence": [(1,)],
+            "committed": [(4, 4)],
+        },
+        middle: {
+            "events": [(1,), (3,)],
+            "removed": [(2, 2)],
+            "entities": [(0, "lifecycle", "3")],
+            "evidence": [(3,)],
+            "committed": [(3, 3)],
+        },
+    }
 
 
 if __name__ == "__main__":

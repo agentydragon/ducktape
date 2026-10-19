@@ -1587,25 +1587,23 @@ flowchart TD
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     RUNNER_RENAME[Decision, unscheduled: a better name than runner]
-    HARNESS_STOP_HISTORY_CLEANUP[In flight: data-drop PR open, decoder removal waits for its rollout]
+    HARNESS_STOP_HISTORY_CLEANUP[In flight: last pending stop on staging, decoder removal waits for its rollout]
 ```
 
 ### `HARNESS_STOP_HISTORY_CLEANUP` — remove retained harness-stop records and decoder remnants
 
-**In flight; operator-requested 2026-10-17 and approved 2026-10-18, data-drop PR opened 2026-10-18 from the
-`claude/harness-stop-history-cleanup-ixboaj` branch.** The PR deletes retained History and Dispatcher
-records, so it is never auto-merged; take a CNPG `Backup` first. It removes the harness-stop commands'
-admissions and failed or no-op outcomes from History (migration `0021_drop_harness_stop_records`, recorded
-as removed ranges) and every `stop_runner_session` receipt from the Dispatcher (migration `00003`).
-Runner journals keep their stop entries: they stay canonical evidence, and decode as unknown fields once
-`HistoricalHarnessStop` is gone.
+**In flight; operator-requested 2026-10-17 and approved 2026-10-18.** The first data-drop PR (#10984) rolled
+out on testing and staging on 2026-10-18: History migration `0021_drop_harness_stop_records` removed the
+harness-stop commands' admissions and failed or no-op outcomes (recorded as removed ranges) and Dispatcher
+migration `00003` every `stop_runner_session` receipt. Runner journals keep their stop entries: they stay
+canonical evidence, and decode as unknown fields once `HistoricalHarnessStop` is gone.
 
-Left after that PR rolls out: a stop still pending in its runner's journal stays in History until the runner
-settles it, and a stop admitted after the fold's checkpoint is not found by the migration, so either needs
-a repeat of the History cleanup. Once both queries below return zero (the first counts only once the fold is caught up),
-delete `HistoricalHarnessStop` (`proto/command.proto`), its oneof variant, the historical Dispatcher
-operation and receipt mapping, and the remaining decode-only references and tests (draft PR #10955 holds
-that removal; rebase it after the rollout):
+Left: staging's History holds one stop still pending, in a Session of a Sandbox that no longer exists, so no
+runner will ever settle it; `0022_drop_pending_harness_stops` removes it. Like 0021 it deletes retained
+records, so it is never auto-merged and follows a CNPG `Backup`. Once both queries below return zero on testing
+and staging (the first counts only once the fold is caught up), delete `HistoricalHarnessStop`
+(`proto/command.proto`), its oneof variant, the historical Dispatcher operation and receipt mapping, and the
+remaining decode-only references and tests (draft PR #10955 holds that removal; rebase it after the rollout):
 
 ```sql
 -- History database
