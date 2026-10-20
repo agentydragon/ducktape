@@ -59,15 +59,15 @@ async def test_subscription_filter_shows_cancelled_only_on_request(view: VisualP
     await expect(
         page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · no current source error")
     ).to_be_visible()
-    cancelled = page.get_by_text("agentydragon/ducktape · pull_request 42 · cancelled")
+    cancelled = page.get_by_text("agentydragon/ducktape · pull request 42 · cancelled")
     await expect(cancelled).to_have_count(0)
 
     await page.get_by_role("combobox", name="Show subscriptions").click()
     await page.get_by_role("option", name="All", exact=True).click()
     await expect(cancelled).to_be_visible()
-    await expect(page.get_by_text("owner/repo · pull_request 1 · rate limited")).to_be_visible()
-    await expect(page.get_by_text("owner/repo · pull_request 2 · access denied")).to_be_visible()
-    await page.get_by_text("owner/repo · pull_request 2 · access denied").scroll_into_view_if_needed()
+    await expect(page.get_by_text("owner/repo · pull request 1 · rate limited")).to_be_visible()
+    await expect(page.get_by_text("owner/repo · pull request 2 · access denied")).to_be_visible()
+    await page.get_by_text("owner/repo · pull request 2 · access denied").scroll_into_view_if_needed()
     await view.capture(name="notification_subscriptions_all")
 
     await page.get_by_role("combobox", name="Show subscriptions").click()

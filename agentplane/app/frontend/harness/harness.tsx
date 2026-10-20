@@ -26,7 +26,14 @@ import type {
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { DecisionsSnapshot, SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
-import type { InboxNoticeState } from "../thread_notices";
+import type {
+  GitHubSubject,
+  InboxNoticeState,
+  InboxStatus,
+  SandboxNotificationStatus,
+  SessionNoticeStates,
+  SubscriptionStatus,
+} from "../notification_types";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
@@ -574,6 +581,203 @@ const SUSPENDED_THREAD = "5f1c4a2e-0000-4000-8000-000000000004";
 const THREE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000007";
 const ONE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000008";
 const DELIVERY_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
+
+const ACTION_REQUEST_ID = "d49b85b5-849f-4e7d-a644-d4a8b8c16127";
+
+function pullRequest(number: number): GitHubSubject {
+  return { pullRequest: { number } };
+}
+
+/** What the Notification Service reports for a Sandbox's inboxes: one with a notice awaiting confirmation and a
+ * subscription in each state, one debouncing, one failing delivery. A suspended Sandbox has none. */
+function notificationStatus(sandbox: string): SandboxNotificationStatus {
+  const failures = ["SOURCE_FAILURE_KIND_RATE_LIMITED", "SOURCE_FAILURE_KIND_ACCESS_DENIED"] as const;
+  const inboxes: InboxStatus[] =
+    sandbox === "ready-sandbox"
+      ? [
+          {
+            inbox: {
+              id: "inbox-one",
+              sessionId: IDLE_THREAD,
+              lastCursor: "9",
+              acknowledged: "4",
+              covered: "7",
+              expiredThrough: "0",
+              retired: false,
+            },
+            subscriptions: [
+              {
+                id: "subscription-one",
+                source: { actions: { requestId: ACTION_REQUEST_ID } },
+                cancelled: false,
+                expiresAt: ago(-HOUR),
+                lastSuccessAt: ago(60000),
+                nextSourceCheckAt: ago(-30000),
+              },
+              {
+                id: "subscription-two",
+                source: { github: { repository: "agentydragon/ducktape", subject: pullRequest(42) } },
+                cancelled: true,
+                expiresAt: ago(HOUR),
+                lastSuccessAt: ago(60000),
+                github: {
+                  access: [
+                    {
+                      appId: "42",
+                      installationId: "11",
+                      repositoryId: "102",
+                      checkedAt: ago(60000),
+                      validUntil: ago(30000),
+                      currentlyValid: false,
+                      lastSuccessAt: ago(60000),
+                    },
+                  ],
+                  subject: { repositoryId: "102", subject: pullRequest(42), lastSuccessAt: ago(60000) },
+                },
+              },
+              ...failures.map((kind, index): SubscriptionStatus => ({
+                id: `subscription-failure-${index + 1}`,
+                source: { github: { repository: "owner/repo", subject: pullRequest(index + 1) } },
+                cancelled: false,
+                expiresAt: ago(-HOUR),
+                lastSuccessAt: ago(60000),
+                github: {
+                  access: [
+                    {
+                      appId: "42",
+                      installationId: "11",
+                      repositoryId: String(100 + index),
+                      checkedAt: ago(10000),
+                      currentlyValid: false,
+                      lastSuccessAt: ago(60000),
+                      errorKind: kind,
+                      errorSince: ago(30000),
+                      errorObservedAt: ago(10000),
+                      error:
+                        kind === "SOURCE_FAILURE_KIND_RATE_LIMITED"
+                          ? "GitHub rate limited (HTTP 429)"
+                          : "GitHub App access unavailable (HTTP 403)",
+                      retryAt: ago(-60000),
+                    },
+                  ],
+                  subject: {
+                    repositoryId: String(100 + index),
+                    subject: pullRequest(index + 1),
+                    lastSuccessAt: ago(60000),
+                  },
+                },
+                nextSourceCheckAt: ago(-60000),
+              })),
+            ],
+            notice: { throughCursor: "7", attempted: true, admitted: true, confirmed: false },
+            unannouncedCount: 2,
+            pendingAcknowledgementCount: 5,
+            pendingEntries: [
+              {
+                cursor: "5",
+                createdAt: ago(30000),
+                provider: "actions",
+                summary: `Action ${ACTION_REQUEST_ID} · event 5 · decision_pending`,
+              },
+              {
+                cursor: "6",
+                createdAt: ago(20000),
+                provider: "github",
+                summary: "GitHub check_run · completed · success",
+              },
+              { cursor: "7", createdAt: ago(10000), provider: "github", summary: "GitHub issue_comment · created" },
+              {
+                cursor: "8",
+                createdAt: ago(5000),
+                provider: "actions",
+                summary: `Action ${ACTION_REQUEST_ID} · event 8 · running`,
+              },
+              {
+                cursor: "9",
+                createdAt: ago(0),
+                provider: "actions",
+                summary: `Action ${ACTION_REQUEST_ID} · event 9 · succeeded`,
+              },
+            ],
+            pendingEntriesMore: false,
+            noticeWaitReason: "NOTICE_WAIT_REASON_AWAITING_CONFIRMATION",
+            nextWorkAt: ago(-5000),
+          },
+          {
+            inbox: {
+              id: "inbox-two",
+              sessionId: "s-2",
+              lastCursor: "3",
+              acknowledged: "1",
+              covered: "1",
+              expiredThrough: "0",
+              retired: false,
+            },
+            subscriptions: [],
+            unannouncedCount: 2,
+            pendingAcknowledgementCount: 2,
+            pendingEntries: [
+              {
+                cursor: "2",
+                createdAt: ago(10000),
+                provider: "github",
+                summary: "GitHub check_run · completed · failure",
+              },
+              { cursor: "3", createdAt: ago(0), provider: "github", summary: "GitHub pull_request · synchronize" },
+            ],
+            pendingEntriesMore: false,
+            noticeDueAt: ago(-60000),
+            quietUntil: ago(-60000),
+            maxWaitAt: ago(-120000),
+            noticeWaitReason: "NOTICE_WAIT_REASON_DEBOUNCING",
+            nextWorkAt: ago(-60000),
+          },
+          {
+            inbox: {
+              id: "inbox-three",
+              sessionId: "s-3",
+              lastCursor: "2",
+              acknowledged: "0",
+              covered: "2",
+              expiredThrough: "0",
+              retired: false,
+              deliveryError: "runner unavailable",
+            },
+            subscriptions: [
+              {
+                id: "subscription-three",
+                source: { actions: { requestId: ACTION_REQUEST_ID } },
+                cancelled: false,
+                expiresAt: ago(HOUR),
+                error: "source unavailable",
+                nextSourceCheckAt: ago(-60000),
+              },
+            ],
+            notice: { throughCursor: "2", attempted: true, admitted: false, confirmed: false },
+            unannouncedCount: 0,
+            pendingAcknowledgementCount: 2,
+            pendingEntries: [
+              {
+                cursor: "1",
+                createdAt: ago(10000),
+                provider: "actions",
+                summary: `Action ${ACTION_REQUEST_ID} · event 1 · decision_pending`,
+              },
+              {
+                cursor: "2",
+                createdAt: ago(0),
+                provider: "actions",
+                summary: `Action ${ACTION_REQUEST_ID} · event 2 · running`,
+              },
+            ],
+            pendingEntriesMore: false,
+            noticeWaitReason: "NOTICE_WAIT_REASON_DELIVERY_RETRY",
+            nextWorkAt: ago(-5000),
+          },
+        ]
+      : [];
+  return { observedAt: ago(0), inboxes };
+}
 
 /** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
 const THREADS: ThreadView[] = [
@@ -2216,268 +2420,6 @@ routes.push(
       },
     ],
   ],
-  [
-    "GET",
-    /^\/sandboxes\/([^/]+)\/notifications$/,
-    (match) =>
-      flags.has("notificationStatusUnavailable")
-        ? new Response(null, { status: 503 })
-        : {
-            observed_at: ago(0),
-            inboxes:
-              match[1] === "ready-sandbox"
-                ? [
-                    {
-                      inbox: {
-                        id: "inbox-one",
-                        session_id: IDLE_THREAD,
-                        last_cursor: 9,
-                        acknowledged: 4,
-                        covered: 7,
-                        expired_through: 0,
-                        retired: false,
-                        delivery_error: null,
-                      },
-                      subscriptions: [
-                        {
-                          id: "subscription-one",
-                          github: null,
-                          source: { provider: "actions", request_id: "d49b85b5-849f-4e7d-a644-d4a8b8c16127" },
-                          cancelled: false,
-                          expires_at: new Date(NOW + HOUR).toISOString(),
-                          last_success_at: ago(60000),
-                          error_kind: null,
-                          error_since: null,
-                          error_observed_at: null,
-                          error: null,
-                          next_source_check_at: new Date(NOW + 30000).toISOString(),
-                        },
-                        {
-                          id: "subscription-two",
-                          github: {
-                            access: [
-                              {
-                                app_id: 42,
-                                installation_id: 11,
-                                repository_id: 102,
-                                checked_at: ago(60000),
-                                valid_until: ago(30000),
-                                currently_valid: false,
-                                last_success_at: ago(60000),
-                                error_kind: null,
-                                error: null,
-                                error_since: null,
-                                error_observed_at: null,
-                                retry_at: null,
-                                refreshing_until: null,
-                              },
-                            ],
-                            subject: {
-                              repository_id: 102,
-                              kind: "pull_request",
-                              subject_key: "42",
-                              last_success_at: ago(60000),
-                              error_kind: null,
-                              error: null,
-                              error_since: null,
-                              error_observed_at: null,
-                              retry_at: null,
-                              refreshing_until: null,
-                            },
-                          },
-                          source: {
-                            provider: "github",
-                            repository: "agentydragon/ducktape",
-                            subject: { kind: "pull_request", number: 42 },
-                          },
-                          cancelled: true,
-                          expires_at: ago(HOUR),
-                          last_success_at: ago(60000),
-                          error_kind: null,
-                          error_since: null,
-                          error_observed_at: null,
-                          error: null,
-                          next_source_check_at: null,
-                        },
-                        ...(["rate_limited", "access_denied"] as const).map((kind, index) => ({
-                          id: `subscription-failure-${kind}`,
-                          source: {
-                            provider: "github",
-                            repository: "owner/repo",
-                            subject: { kind: "pull_request", number: index + 1 },
-                          },
-                          cancelled: false,
-                          expires_at: new Date(NOW + HOUR).toISOString(),
-                          last_success_at: ago(60000),
-                          error_kind: null,
-                          error_since: null,
-                          error_observed_at: null,
-                          error: null,
-                          github: {
-                            access: [
-                              {
-                                app_id: 42,
-                                installation_id: 11,
-                                repository_id: 100 + index,
-                                checked_at: ago(10000),
-                                valid_until: null,
-                                currently_valid: false,
-                                last_success_at: ago(60000),
-                                error_kind: kind,
-                                error_since: ago(30000),
-                                error_observed_at: ago(10000),
-                                error:
-                                  kind === "rate_limited"
-                                    ? "GitHub rate limited (HTTP 429)"
-                                    : "GitHub App access unavailable (HTTP 403)",
-                                retry_at: new Date(NOW + 60000).toISOString(),
-                                refreshing_until: null,
-                              },
-                            ],
-                            subject: {
-                              repository_id: 100 + index,
-                              kind: "pull_request",
-                              subject_key: String(index + 1),
-                              last_success_at: ago(60000),
-                              error_kind: null,
-                              error: null,
-                              error_since: null,
-                              error_observed_at: null,
-                              retry_at: null,
-                              refreshing_until: null,
-                            },
-                          },
-                          next_source_check_at: new Date(NOW + 60000).toISOString(),
-                        })),
-                      ],
-                      notice: { through_cursor: 7, attempted: true, admitted: true, confirmed: false, error: null },
-                      unannounced_count: 2,
-                      pending_acknowledgement_count: 5,
-                      pending_entries: [
-                        {
-                          cursor: 5,
-                          created_at: ago(30000),
-                          provider: "actions",
-                          summary: "Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · event 5 · decision_pending",
-                        },
-                        {
-                          cursor: 6,
-                          created_at: ago(20000),
-                          provider: "github",
-                          summary: "GitHub check_run · completed · success",
-                        },
-                        {
-                          cursor: 7,
-                          created_at: ago(10000),
-                          provider: "github",
-                          summary: "GitHub issue_comment · created",
-                        },
-                        {
-                          cursor: 8,
-                          created_at: ago(5000),
-                          provider: "actions",
-                          summary: "Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · event 8 · running",
-                        },
-                        {
-                          cursor: 9,
-                          created_at: ago(0),
-                          provider: "actions",
-                          summary: "Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · event 9 · succeeded",
-                        },
-                      ],
-                      pending_entries_more: false,
-                      notice_due_at: null,
-                      quiet_until: null,
-                      max_wait_at: null,
-                      notice_wait_reason: "awaiting_confirmation",
-                      next_work_at: new Date(NOW + 5000).toISOString(),
-                    },
-                    {
-                      inbox: {
-                        id: "inbox-two",
-                        session_id: "s-2",
-                        last_cursor: 3,
-                        acknowledged: 1,
-                        covered: 1,
-                        expired_through: 0,
-                        retired: false,
-                        delivery_error: null,
-                      },
-                      subscriptions: [],
-                      notice: null,
-                      unannounced_count: 2,
-                      pending_acknowledgement_count: 2,
-                      pending_entries: [
-                        {
-                          cursor: 2,
-                          created_at: ago(10000),
-                          provider: "github",
-                          summary: "GitHub check_run · completed · failure",
-                        },
-                        {
-                          cursor: 3,
-                          created_at: ago(0),
-                          provider: "github",
-                          summary: "GitHub pull_request · synchronize",
-                        },
-                      ],
-                      pending_entries_more: false,
-                      notice_due_at: new Date(NOW + 60000).toISOString(),
-                      quiet_until: new Date(NOW + 60000).toISOString(),
-                      max_wait_at: new Date(NOW + 120000).toISOString(),
-                      notice_wait_reason: "debouncing",
-                      next_work_at: new Date(NOW + 60000).toISOString(),
-                    },
-                    {
-                      inbox: {
-                        id: "inbox-three",
-                        session_id: "s-3",
-                        last_cursor: 2,
-                        acknowledged: 0,
-                        covered: 2,
-                        expired_through: 0,
-                        retired: false,
-                        delivery_error: "runner unavailable",
-                      },
-                      subscriptions: [
-                        {
-                          id: "subscription-three",
-                          github: null,
-                          source: { provider: "actions", request_id: "d49b85b5-849f-4e7d-a644-d4a8b8c16127" },
-                          cancelled: false,
-                          expires_at: ago(HOUR),
-                          error: "source unavailable",
-                          next_source_check_at: new Date(NOW + 60000).toISOString(),
-                        },
-                      ],
-                      notice: { through_cursor: 2, attempted: true, admitted: false, confirmed: false, error: null },
-                      unannounced_count: 0,
-                      pending_acknowledgement_count: 2,
-                      pending_entries: [
-                        {
-                          cursor: 1,
-                          created_at: ago(10000),
-                          provider: "actions",
-                          summary: "Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · event 1 · decision_pending",
-                        },
-                        {
-                          cursor: 2,
-                          created_at: ago(0),
-                          provider: "actions",
-                          summary: "Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · event 2 · running",
-                        },
-                      ],
-                      pending_entries_more: false,
-                      notice_due_at: null,
-                      quiet_until: null,
-                      max_wait_at: null,
-                      notice_wait_reason: "delivery_retry",
-                      next_work_at: new Date(NOW + 5000).toISOString(),
-                    },
-                  ]
-                : [],
-          },
-  ],
   ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
   ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: [...PUBLIC_CODER_POLICY_SETS, "pypi", "github-public"] })],
   ["GET", /^\/actions$/, () => ACTIONS],
@@ -2992,28 +2934,25 @@ class HarnessEventSource extends EventTarget {
         [THREE_UNPROCESSED_THREAD]: {
           queued: 2,
           unacknowledged: 1,
-          notice: "confirmed",
-          notice_wait_reason: "debouncing",
-          eligible_at: ago(-90_000),
+          notice: "NOTICE_PROGRESS_CONFIRMED",
+          noticeWaitReason: "NOTICE_WAIT_REASON_DEBOUNCING",
+          eligibleAt: ago(-90_000),
         },
-        [ONE_UNPROCESSED_THREAD]: { unacknowledged: 1, notice: "confirmed" },
-        [DELIVERY_FAILED_THREAD]: { queued: 1, notice: "attempted", error: "runner unreachable" },
+        [ONE_UNPROCESSED_THREAD]: { unacknowledged: 1, notice: "NOTICE_PROGRESS_CONFIRMED" },
+        [DELIVERY_FAILED_THREAD]: { queued: 1, notice: "NOTICE_PROGRESS_ATTEMPTED", error: "runner unreachable" },
       };
       const inboxes = url.searchParams
         .getAll("thread_id")
         .filter((session) => session in states)
         .map((session): InboxNoticeState => ({
-          inbox_id: `inbox-${session}`,
-          session_id: session,
+          inboxId: `inbox-${session}`,
+          sessionId: session,
           queued: 0,
           unacknowledged: 0,
-          notice: null,
-          notice_wait_reason: null,
-          eligible_at: null,
-          error: null,
           ...states[session],
         }));
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify({ observed_at: ago(0), inboxes }) }));
+      const snapshot: SessionNoticeStates = { observedAt: ago(0), inboxes };
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       // A dropped Thread listing takes the notice stream down with it, so the badges show stale too.
       if (flags.has("threadStreamDropped")) this.drop();
       return;
@@ -3025,26 +2964,15 @@ class HarnessEventSource extends EventTarget {
         this.drop();
         return;
       }
-      const route = routes.find(
-        ([method, pattern]) => method === "GET" && pattern.test(`/sandboxes/${notification[1]}/notifications`)
-      );
-      const match = `/sandboxes/${notification[1]}/notifications`.match(route?.[1] ?? /$^/);
-      if (!route || !match) throw new Error("Missing notifications fixture");
-      const snapshot = route[2](match, url.searchParams, undefined, undefined) as {
-        inboxes: Array<{
-          inbox: { last_cursor: number };
-          unannounced_count: number;
-          pending_acknowledgement_count: number;
-          pending_entries: Array<{ cursor: number; created_at: string; provider: string; summary: string }>;
-        }>;
-      };
-      if (flags.has("notificationExtraEntry") && snapshot.inboxes[0]) {
-        snapshot.inboxes[0].inbox.last_cursor = 10;
-        snapshot.inboxes[0].unannounced_count += 1;
-        snapshot.inboxes[0].pending_acknowledgement_count += 1;
-        snapshot.inboxes[0].pending_entries.push({
-          cursor: 10,
-          created_at: ago(0),
+      const snapshot = notificationStatus(notification[1]);
+      const first = snapshot.inboxes[0];
+      if (flags.has("notificationExtraEntry") && first) {
+        first.inbox.lastCursor = "10";
+        first.unannouncedCount += 1;
+        first.pendingAcknowledgementCount += 1;
+        first.pendingEntries.push({
+          cursor: "10",
+          createdAt: ago(0),
           provider: "github",
           summary: "GitHub workflow_run · completed",
         });
