@@ -44,10 +44,20 @@ const (
 )
 
 func kubernetesConfig(c config) (*rest.Config, error) {
+	var kubeConfig *rest.Config
+	var err error
 	if c.Kubeconfig != "" {
-		return clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
+		kubeConfig, err = clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
+	} else {
+		kubeConfig, err = rest.InClusterConfig()
 	}
-	return rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+	// Every read and every push is a TokenReview; client-go's default of 5 requests per second (burst 10) would
+	// queue them client-side. API Priority and Fairness bounds the load on the server.
+	kubeConfig.QPS = -1
+	return kubeConfig, nil
 }
 
 // readOnly is the database URL with sessions that refuse writes, so the read API cannot write.
