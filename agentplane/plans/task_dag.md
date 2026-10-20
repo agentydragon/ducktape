@@ -1395,7 +1395,7 @@ flowchart TD
     RUNNER_LAYERING_SPIKE --> RUNNER_LAYERING_SPIKE_EXIT
     RUNNER_LAYERING_SPIKE_EXIT --> RUNNER_IMAGE_LAYERING_DESIGN
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_SPIKE_RETIRE
-    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_POD[Blocked: a Pod takes runner and tools from separate images]
+    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_POD[In flight: a Pod takes the runner and CLI from a separate image]
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[In flight: a guest takes runner and tools from separate images]
     RUNNER_LAYERING_VM --> K3S_VM_IMAGE[Blocked: build a lightweight guest disk in Bazel]
     RUNNER_HARNESS_DELIVERY_DESIGN[harness delivery, section 5] -. related .-> K3S_VM_IMAGE
@@ -1451,10 +1451,11 @@ Related to `SANDBOX_GENERIC_SPLIT`: that separates the resource, this separates 
   `runner_vm.py` already attaches `config` and `trust` as separate volumes, so a three-disk guest (root /
   runner and harnesses / tools) needs no new mechanism — only the split. Halted image replacement already
   exists, which is the update path.
-- **Kubernetes image volumes.** `imageVolumes` mounts an OCI image's filesystem into a Pod volume; the
-  cluster is v1.35, where the feature is GA. This is the direct answer to "this container should mount
-  these 2 images", and beats an init-container copy on every incarnation. Check it against the CRI and
-  storage class actually in use before relying on it.
+- **Kubernetes image volumes.** An `image` volume mounts an OCI image's filesystem into a Pod. The
+  API server is v1.35.1, where `ImageVolume` is beta and on by default (GA in 1.36), and every node
+  reports containerd 2.3.x. This is the direct answer to "this container should mount these 2 images",
+  and beats an init-container copy on every incarnation. Whether the mount can be executed from is
+  untested on this stack.
 - **Init container into a shared volume.** Today's portable form: copy the runner and harnesses from image
   X into an `emptyDir`. Works everywhere; pays copy time and disk each start.
 - **Firecracker instead of KubeVirt.** The runtime the operator raised as acceptable if it helps: fast
@@ -1503,13 +1504,18 @@ bounded compatibility contract and a production DAG proposal. After the design d
 port only the accepted artifacts and tests to their production owners or remove the spike-only
 package, kernel pin, and child fence; do not leave the experiment as an implicit supported runtime.
 
-### `RUNNER_LAYERING_POD` — a Pod takes the runner, harnesses and tools from separate images
+### `RUNNER_LAYERING_POD` — a Pod takes the runner and CLI from a separate image
 
-**Blocked on the layering decision; pursuable independently of the VM half; operator, 2026-10-15 PDT.**
-Give the Pod the same decoupling: the container runs the runner from image X, the harnesses come from X,
-and the binaries the agent runs come from a per-template image Y. Options are in the decision node; image
-volumes and the init-container copy are the two to try first. Exit evidence: bumping the runner pin
-publishes one image, and a Sandbox on the unchanged tools image starts on it.
+**In flight; operator, 2026-10-20 PDT: the tools image should not change just for a runner bump. Pursuable independently of the VM half.**
+The runner and the `agentplane` command are published as plain files under `bin/` in the runner-disk
+image (`runner/runner-disk.nix`), beside the erofs the VM attaches. The runner Pod mounts that image
+as a read-only `image` volume at `/run/agentplane/runner`, starts the runner from it and appends
+`bin/` to `PATH`, and the tools image carries neither. Order: the template mounts the volume with
+nothing using it yet, and a Sandbox on `agentplane-testing` runs the binary from the mount; then the
+command flips and the tools image drops the runner and CLI. If the mount cannot be executed from,
+an init container copies the files into an `emptyDir` instead. Harnesses stay in the tools image;
+moving them is the open question in `RUNNER_IMAGE_LAYERING_DESIGN`. Exit evidence: bumping the
+runner pin publishes one image, and a Sandbox on the unchanged tools image starts on it.
 
 This does **not** deliver the RAM-headroom property by itself — a Pod still lives inside the node's
 allocatable. If the decision makes that property the priority, this node is convenience only and the VM

@@ -76,7 +76,8 @@ same Go process.
 `package.nix` installs the released executable from the `agentplane-runner` artifact pin.
 Image builds use this pin through the normal artifact publication and pin synchronization
 flow. The VM guest does not embed the runner: `runner-disk.nix` packs it and the `agentplane`
-command into the read-only runner disk that the `runner-vm` template attaches beside the guest. The first Go binary release must be published and synced before the images can build;
+command into the read-only runner disk that the `runner-vm` template attaches beside the guest; the
+same image also carries them as plain files under `bin/`, for a Pod to mount. The first Go binary release must be published and synced before the images can build;
 a previous wheel pin fails the package's ELF check instead of being installed as an
 executable. No existing Session files are deleted during this transition.
 

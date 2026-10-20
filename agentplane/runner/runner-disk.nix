@@ -1,6 +1,8 @@
-# The Agentplane-owned executables (the runner and the `agentplane` CLI) as a read-only erofs,
-# packaged as a KubeVirt containerDisk that the runner VM attaches beside its NixOS root disk
-# (cluster/cdk8s/agentplane/runner_vm.py). A pin sync republishes only this image, not the guest.
+# The Agentplane-owned executables (the runner and the `agentplane` CLI), in one image with two
+# renderings: a read-only erofs at `disk/runner.img`, which the runner VM attaches as a KubeVirt
+# containerDisk beside its NixOS root disk (cluster/cdk8s/agentplane/runner_vm.py), and the same
+# two files under `bin/`, which a runner Pod mounts as an image volume. A pin sync republishes
+# only this image, not the guest or the Pod's tools image.
 #
 # The filesystem has no compression: the registry compresses the layer on the wire, and the guest
 # needs no kernel decompressor beyond erofs itself.
@@ -16,6 +18,12 @@ let
     chmod u+w $out/bin
     cp -a ${agentplaneCli}/bin/. $out/bin/
   '';
+  # A Pod runs `agentplane-runner` directly, so the guest's `agentplane-runner-vm` alias stays in
+  # the erofs only.
+  podTree = pkgs.runCommand "agentplane-runner-disk-bin" { } ''
+    mkdir -p $out/bin
+    cp ${agentplaneRunner}/bin/agentplane-runner ${agentplaneCli}/bin/agentplane $out/bin/
+  '';
   # A fixed timestamp and UUID keep the image a function of the two executables.
   filesystem =
     pkgs.runCommand "agentplane-runner-disk.img" { nativeBuildInputs = [ pkgs.erofs-utils ]; }
@@ -25,6 +33,7 @@ let
   diskRoot = pkgs.runCommand "agentplane-runner-disk-container-disk-root" { } ''
     mkdir -p $out/disk
     cp ${filesystem} $out/disk/runner.img
+    cp -a ${podTree}/bin $out/bin
   '';
 in
 pkgs.dockerTools.buildLayeredImage {
@@ -33,9 +42,11 @@ pkgs.dockerTools.buildLayeredImage {
   includeStorePaths = false;
   maxLayers = 2;
   extraCommands = ''
-    cp --dereference disk/runner.img disk/runner.img.real
-    rm disk/runner.img
-    mv disk/runner.img.real disk/runner.img
+    for file in disk/runner.img bin/*; do
+      cp --dereference "$file" "$file.real"
+      rm "$file"
+      mv "$file.real" "$file"
+    done
   '';
   fakeRootCommands = ''
     chown 107:107 disk/runner.img
