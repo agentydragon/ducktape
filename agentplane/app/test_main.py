@@ -28,6 +28,7 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.main import AppServer, SpaFiles, serve_then_close
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
@@ -254,8 +255,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
     content: ContentStore,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
+    notifications: NotificationsOperatorClient,
     dispatcher_http: UpstreamProxy,
     history_client: HistoryServiceClient,
     dispatcher: SessionDispatcherClient,
@@ -282,8 +282,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
         database_updates=database_updates,
         operator_sessions=operator_sessions,
         electric=None,
-        notifications_http=notifications_http,
-        notifications_token_file=notifications_token_file,
+        notifications=notifications,
         dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )

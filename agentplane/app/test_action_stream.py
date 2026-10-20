@@ -8,7 +8,6 @@ whose operator sessions are on a connection pool of their own, and whose listene
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 import httpx
 import pytest
@@ -24,6 +23,7 @@ from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.history import SeededEventLogStore
@@ -104,8 +104,7 @@ def serve(
     event_logs: SeededEventLogStore,
     content: ContentStore,
     electric_proxy: ElectricProxy,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
+    notifications: NotificationsOperatorClient,
     dispatcher_http: UpstreamProxy,
 ) -> ServeApp:
     def serving(sessions: OperatorSessionStore, updates: WakeupListener) -> FastAPI:
@@ -124,8 +123,7 @@ def serve(
             database_updates=updates,
             operator_sessions=sessions,
             electric=electric_proxy,
-            notifications_http=notifications_http,
-            notifications_token_file=notifications_token_file,
+            notifications=notifications,
             dispatcher_http=dispatcher_http,
             system_status=answering_system_status(),
         )

@@ -681,8 +681,10 @@ settles it, including shared input confirmations and lifecycle effects.
 
 An operator can open the read-only Notifications drawer from a Thread (filtered to its runner
 session) or a Sandbox (all its sessions). The app's authenticated BFF resolves the live Sandbox
-incarnation and calls Notification Service's UID-pinned, bounded-summary operator read API with its
-own rotating audience-scoped service token. It shows the first 100 retained entries after
+incarnation and follows the Notification Service's UID-pinned, bounded-summary `NotificationsOperator`
+watch ([`notifications_operator.proto`](../notification_service/notifications_operator.proto)) over gRPC with its
+own rotating audience-scoped service token, relaying each snapshot to the browser as an SSE `snapshot` event in
+the proto3 JSON form. It shows the first 100 retained entries after
 acknowledgement (provider, cursor, time, and curated lifecycle/event summary), with a truncation
 indicator. It never sends that token or raw provider payloads to the browser, and requires a
 browser operator login, not merely a workload bearer admitted elsewhere in the app. No inspection acknowledges an entry or changes a subscription. The drawer refreshes
@@ -691,6 +693,6 @@ only while open and labels an unavailable backend or retained snapshot explicitl
 Each listed thread whose live inboxes hold entries the agent has not acknowledged gets a badge
 counting them, whether they still wait for a notice or a notice delivered them (the tooltip tells
 which, with the debounce's estimated due time). The badge is muted gray, soft red while delivery
-fails; an empty inbox shows none. `/threads/notices/stream` relays the Notification Service's `/v1/operator/notices/stream` for the listed thread IDs under the same
-operator-login and service-token rules; a disconnected stream dims the last badges. Following it
+fails; an empty inbox shows none. `/threads/notices/stream` relays the Notification Service's `WatchSessionNotices` for the listed thread IDs
+(a Thread's ID is its Session's) under the same operator-login and service-token rules; a disconnected stream dims the last badges. Following it
 acknowledges nothing.

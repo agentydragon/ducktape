@@ -26,6 +26,7 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.system_status import SystemStatusChecker
@@ -99,8 +100,9 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
         dispatcher_http=UpstreamProxy(
             httpx.AsyncClient(base_url="http://schema.invalid"), Path("/schema-unused-token")
         ),
-        notifications_http=httpx.AsyncClient(base_url="http://schema.invalid"),
-        notifications_token_file=Path("/schema-unused-token"),
+        notifications=NotificationsOperatorClient(
+            channel, token_file=Path("/schema-unused-token"), request_timeout_s=1
+        ),
         system_status=SystemStatusChecker([], timeout_s=1),
     ).openapi()
     components = document["components"]

@@ -45,6 +45,7 @@ from agentplane.app.live import (
     live_threads,
     threads_frame,
 )
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import (
     LoginTokens,
@@ -305,8 +306,7 @@ def app(
     reviewer: TokenReviewer,
     tmp_path: Path,
     electric_http: httpx.AsyncClient,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
+    notifications: NotificationsOperatorClient,
     dispatcher_http: UpstreamProxy,
 ) -> FastAPI:
     """Neither test below reaches a database, a runner or the History Service -- the guard answers
@@ -338,8 +338,7 @@ def app(
         electric=ElectricProxy(
             electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
         ),
-        notifications_http=notifications_http,
-        notifications_token_file=notifications_token_file,
+        notifications=notifications,
         dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )

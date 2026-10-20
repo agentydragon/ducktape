@@ -9,7 +9,6 @@ bounded, because the regression it guards against waits for the parked request, 
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import httpx
 import pytest
@@ -27,6 +26,7 @@ from agentplane.app.conftest import operator_token
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, request_session
 from agentplane.app.sandbox_access import SandboxAccess
@@ -107,8 +107,7 @@ async def app(
     operator_sessions: OperatorSessionStore,
     database_updates: WakeupListener,
     electric_proxy: ElectricProxy,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
+    notifications: NotificationsOperatorClient,
     dispatcher_http: UpstreamProxy,
 ) -> AsyncIterator[FastAPI]:
     """The app with a login that needs no identity provider, and an Action Service that answers once
@@ -128,8 +127,7 @@ async def app(
         database_updates=database_updates,
         operator_sessions=operator_sessions,
         electric=electric_proxy,
-        notifications_http=notifications_http,
-        notifications_token_file=notifications_token_file,
+        notifications=notifications,
         dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )

@@ -13,6 +13,7 @@ from agentplane.app.api import create_app
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import INSECURE_COOKIE
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
@@ -81,8 +82,7 @@ async def serve(
     event_logs: SeededEventLogStore,
     content: ContentStore,
     electric_proxy: ElectricProxy,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
+    notifications: NotificationsOperatorClient,
     operator_sessions: OperatorSessionStore,
     database_updates: WakeupListener,
     token_file: Path,
@@ -109,8 +109,7 @@ async def serve(
                 operator_sessions=operator_sessions,
                 electric=electric_proxy,
                 dispatcher_http=UpstreamProxy(facade, token_file),
-                notifications_http=notifications_http,
-                notifications_token_file=notifications_token_file,
+                notifications=notifications,
                 system_status=answering_system_status(),
             )
         )

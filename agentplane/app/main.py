@@ -28,6 +28,7 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, watch_for
+from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog
@@ -117,8 +118,8 @@ async def async_main(settings: Settings) -> None:
         AsyncExitStack() as frontend,
         ApiClient(configuration=await kubernetes_configuration(settings.kubeconfig)) as api,
         httpx.AsyncClient(base_url=str(settings.action_federation.service_url), timeout=10) as actions_http,
-        httpx.AsyncClient(base_url=str(settings.notifications_url), timeout=5) as notifications_http,
         dial(f"{settings.egress_admin_url.host}:{settings.egress_admin_url.port}") as egress_channel,
+        dial(f"{settings.notifications_url.host}:{settings.notifications_url.port}") as notifications_channel,
         dial(settings.runner_gateway_target) as gateway_channel,
         dial(settings.session_dispatcher_target) as dispatcher_channel,
         dial(settings.history_service_target) as history_health_channel,
@@ -185,7 +186,7 @@ async def async_main(settings: Settings) -> None:
             grpc_health_probe("Runner Gateway", gateway_channel),
             grpc_health_probe("History Service", history_health_channel),
             http_health_probe("Action Service", actions_http, "/healthz"),
-            http_health_probe("Notification Service", notifications_http, "/healthz"),
+            grpc_health_probe("Notification Service", notifications_channel),
             grpc_health_probe("Egress proxy", egress_channel),
         ]
         electric = None
@@ -220,8 +221,11 @@ async def async_main(settings: Settings) -> None:
             content=content,
             database_updates=database_updates,
             operator_sessions=OperatorSessionStore(engine),
-            notifications_http=notifications_http,
-            notifications_token_file=settings.notifications_token_file,
+            notifications=NotificationsOperatorClient(
+                notifications_channel,
+                token_file=settings.notifications_token_file,
+                request_timeout_s=settings.notifications_request_timeout_s,
+            ),
             system_status=SystemStatusChecker(system_probes, timeout_s=SYSTEM_STATUS_TIMEOUT_S),
         )
         if electric is not None:
