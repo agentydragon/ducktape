@@ -2537,6 +2537,7 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
     # PostgreSQL/Electric/Chromium path must render it; no malformed native event is simulated.
     (thread,) = await store.list_threads(sandbox=SANDBOX)
     async with thread_browser.history.sessions() as session, session.begin():
+        await thread_browser.history.fence_fold(session, thread.id)
         checkpoint = await session.get(ThreadCheckpoint, thread.id)
         assert checkpoint is not None
         view = await session.get(ThreadEntity, (thread.id, checkpoint.projection_epoch, "view_state", "current"))
