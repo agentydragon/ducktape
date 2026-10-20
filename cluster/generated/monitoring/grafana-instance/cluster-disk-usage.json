@@ -227,7 +227,7 @@
     {
       "id": 19,
       "title": "Disks by component",
-      "description": "One bar per scraped filesystem on this machine, labelled device · mountpoint · media (HDD, SSD or virtual); bar length is the filesystem size, so bars compare across disks. Hover a bar for every component's bytes on that disk. Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available).",
+      "description": "One bar per scraped filesystem on this machine, labelled device · mountpoint · media (HDD, SSD or virtual); bar length is the filesystem size, and every machine's chart shares one scale (the largest disk in the cluster), so bars compare across machines. Hover a bar for every component's bytes on that disk. Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available).",
       "type": "barchart",
       "gridPos": {
         "h": 8,
@@ -242,6 +242,12 @@
           "format": "table",
           "instant": true,
           "refId": "A"
+        },
+        {
+          "expr": "max(disk_usage:filesystem_size_bytes)",
+          "format": "table",
+          "instant": true,
+          "refId": "MaxDisk"
         }
       ],
       "transformations": [
@@ -273,6 +279,26 @@
             "indexByName": {},
             "renameByName": {
               "disk\\component": "Disk"
+            }
+          }
+        },
+        {
+          "id": "configFromData",
+          "options": {
+            "configRefId": "MaxDisk",
+            "mappings": [
+              {
+                "fieldName": "Value",
+                "handlerKey": "max"
+              },
+              {
+                "fieldName": "Time",
+                "handlerKey": "__ignore"
+              }
+            ],
+            "applyTo": {
+              "id": "byType",
+              "options": "number"
             }
           }
         }
