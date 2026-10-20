@@ -158,7 +158,7 @@ async def _health_state(service: ElectricService) -> dict[str, object]:
 async def _postgres_recovery_state(service: ElectricService) -> dict[str, object]:
     connection = await _connect(service)
     try:
-        slot = await _slot_state(connection)
+        slot = await _wait_for_slot(connection)
         replication = await connection.fetch(
             """
             SELECT application_name, state, sent_lsn::text, write_lsn::text, flush_lsn::text, replay_lsn::text
@@ -170,7 +170,7 @@ async def _postgres_recovery_state(service: ElectricService) -> dict[str, object
         await connection.close()
 
 
-async def _slot_state(connection: asyncpg.Connection) -> dict[str, object]:
+async def _find_slot(connection: asyncpg.Connection) -> dict[str, object] | None:
     row = await connection.fetchrow(
         """
         SELECT slot_name, active, restart_lsn::text, confirmed_flush_lsn::text, wal_status, safe_wal_size
@@ -179,8 +179,21 @@ async def _slot_state(connection: asyncpg.Connection) -> dict[str, object]:
         """,
         _SLOT,
     )
-    assert row is not None
-    return dict(row)
+    return None if row is None else dict(row)
+
+
+async def _slot_state(connection: asyncpg.Connection) -> dict[str, object]:
+    slot = await _find_slot(connection)
+    assert slot is not None
+    return slot
+
+
+async def _wait_for_slot(connection: asyncpg.Connection) -> dict[str, object]:
+    """Electric drops the invalid slot and creates its replacement while it starts."""
+    async with asyncio.timeout(30):
+        while (slot := await _find_slot(connection)) is None:
+            await connection.execute("SELECT pg_sleep(0.1)")
+    return slot
 
 
 async def _wait_for_inactive_slot(connection: asyncpg.Connection) -> None:
