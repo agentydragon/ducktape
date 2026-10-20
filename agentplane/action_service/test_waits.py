@@ -173,12 +173,12 @@ async def test_cross_writer_decision_and_terminal_predicates(waiting: Waiting) -
             waiting.request.id,
             claim.executor_id,
             claim.lease_token,
-            ExecutionResult(state=ExecutionState.SUCCEEDED, result={"token": "test-secret"}),
+            ExecutionResult(state=ExecutionState.SUCCEEDED, result={"echo": "test"}),
         )
         completed = await terminal
         assert completed.state is ActionState.SUCCEEDED
         assert completed.execution is not None
-        assert completed.execution.result == {"token": "[redacted]"}
+        assert completed.execution.result == {"echo": "test"}
         assert not waiting.updates._subscribers
 
 

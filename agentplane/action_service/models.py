@@ -288,9 +288,7 @@ class ActionRequestView(BaseModel):
     description: str | None = Field(
         description="The caller-authored added detail, projected unchanged; absent when the caller supplied none."
     )
-    caller: ServiceAccountRef | None = Field(
-        description="Who submitted it; available to operators and trusted service readers."
-    )
+    caller: ServiceAccountRef = Field(description="Who submitted it.")
     external_grant: ExternalGrantProvenance | None = None
     state: ActionState
     version: int

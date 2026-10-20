@@ -138,10 +138,7 @@ class FakeMcpServer:
                 "isError": self.tool_error,
             }
             if not self.tool_error:
-                result["structuredContent"] = {
-                    "echoed": body["params"]["arguments"]["text"],
-                    "api_key": "test-only-backend-secret",
-                }
+                result["structuredContent"] = {"echoed": body["params"]["arguments"]["text"]}
         else:
             raise AssertionError(f"unexpected MCP method: {method}")
         response = {"jsonrpc": "2.0", "id": body["id"], "result": result}
@@ -254,7 +251,7 @@ async def test_http_session_discovery_call_and_shutdown(
         assert result.state is ExecutionState.SUCCEEDED
         assert result.result == {
             "content": [{"type": "text", "text": "hi"}],
-            "structuredContent": {"echoed": "hi", "api_key": "test-only-backend-secret"},
+            "structuredContent": {"echoed": "hi"},
             "isError": False,
         }
         assert [post["method"] for post in fake_server.posts] == [
@@ -635,7 +632,7 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
             assert final.execution is not None
             assert final.execution.result == {
                 "content": [{"type": "text", "text": "hi"}],
-                "structuredContent": {"echoed": "recovered", "api_key": "[redacted]"},
+                "structuredContent": {"echoed": "recovered"},
                 "isError": False,
             }
             assert len(fake_server.calls) == 1
@@ -708,7 +705,7 @@ async def test_production_http_composition_one_execution_no_replay(
         assert final.execution.result == {
             "success": {
                 "content": [{"type": "text", "text": "hi"}],
-                "structuredContent": {"echoed": "hi", "api_key": "[redacted]"},
+                "structuredContent": {"echoed": "hi"},
                 "isError": False,
             },
             "tool_error": {"content": [{"type": "text", "text": "backend tool error text"}], "isError": True},

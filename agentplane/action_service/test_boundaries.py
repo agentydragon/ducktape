@@ -109,7 +109,7 @@ class RecordingActionService:
             arguments=body.arguments,
             title=body.title,
             description=body.description,
-            caller=None,
+            caller=principal_value.account,
             state=ActionState.DECISION_PENDING,
             version=1,
             created_at=now,

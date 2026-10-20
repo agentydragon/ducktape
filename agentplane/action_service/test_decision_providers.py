@@ -576,12 +576,12 @@ async def test_history_filters_auto_allows_before_pagination(
         dispatches=ChangeSignal(),
     ) as service:
         allowed = await service.submit(body("history-auto-allow"), CALLER)
-        all_items, _ = await service.history(OPERATOR, limit=50, cursor=None)
+        all_items, _ = await service.history(limit=50, cursor=None)
         assert {item.id for item in all_items} == {human.id, cancelled.id, denied.id, allowed.id}
         seen = []
         cursor = None
         for _ in range(3):
-            items, cursor = await service.history(OPERATOR, limit=1, cursor=cursor, include_auto_allowed=False)
+            items, cursor = await service.history(limit=1, cursor=cursor, include_auto_allowed=False)
             assert len(items) == 1
             seen.append(items[0].id)
         assert seen == [denied.id, cancelled.id, human.id]

@@ -105,10 +105,7 @@ class CountingExecutor(Executor):
 
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         self.requests.append(request)
-        return ExecutionResult(
-            state=ExecutionState.SUCCEEDED,
-            result={"echo": request.arguments, "credential": "provider-material-must-redact"},
-        )
+        return ExecutionResult(state=ExecutionState.SUCCEEDED, result={"echo": request.arguments})
 
 
 class LeakyFailingExecutor(CountingExecutor):
@@ -169,7 +166,7 @@ async def test_agent_docs_without_backend_startup(operator_idp: OperatorIdp) -> 
         await assert_agent_docs(client)
 
 
-async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
+async def test_p0_allow_deny_scope_forgery_and_single_execution(
     engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     executor = CountingExecutor()
@@ -221,8 +218,8 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         pending = submitted.json()
         request_id = pending["id"]
         assert pending["state"] == "decision_pending"
-        assert pending["caller"] is None
-        assert pending["arguments"]["nested"]["api_key"] == "[redacted]"
+        assert pending["caller"] == CALLER_A.account.model_dump()
+        assert pending["arguments"] == envelope["arguments"]
         assert "origin" not in pending
         assert "correlation" not in pending
         # The caller-authored operator summary is projected verbatim.
@@ -288,10 +285,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
 
         terminal = await _terminal(client, request_id)
         assert terminal["state"] == "succeeded"
-        assert terminal["execution"]["result"] == {
-            "echo": {"text": "hello", "nested": {"api_key": "[redacted]"}},
-            "credential": "[redacted]",
-        }
+        assert terminal["execution"]["result"] == {"echo": envelope["arguments"]}
         operator_terminal = (await client.get(_operator_path(request_id), headers=_operator(operator_idp))).json()
         assert operator_terminal["arguments"] == envelope["arguments"]
         assert operator_terminal["execution"]["result"] == terminal["execution"]["result"]
@@ -808,7 +802,7 @@ async def test_submission_schema_error_is_http_422_and_does_not_persist(
         assert executor.requests == []
 
 
-async def test_operator_arguments_are_exact_but_caller_arguments_are_recursively_redacted(
+async def test_every_reader_sees_the_submitted_arguments_exactly(
     engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     store = action_store(make_sessionmaker(engine))
@@ -833,13 +827,10 @@ async def test_operator_arguments_are_exact_but_caller_arguments_are_recursively
         )
         assert response.status_code == 202
         request_id = response.json()["id"]
-        for body in (
-            response.json(),
-            (await client.get(f"/v1/action-requests/{request_id}", headers=_workload("workload-a"))).json(),
-        ):
-            assert body["arguments"]["access_token"] == "[redacted]"
-            assert body["arguments"]["nested"]["api_key"] == "[redacted]"
-            assert body["arguments"]["nested"]["items"] == [{"password": "[redacted]", "safe": 42}]
+        assert response.json()["arguments"] == arguments
+        assert (await client.get(f"/v1/action-requests/{request_id}", headers=_workload("workload-a"))).json()[
+            "arguments"
+        ] == arguments
         assert (await client.get(_operator_path(request_id), headers=_operator(operator_idp))).json()[
             "arguments"
         ] == arguments
@@ -864,7 +855,7 @@ async def test_cancellation_http_is_owner_only_and_needs_no_version(
                 idempotency_key="test-http-cancel",
                 title="test title for test-http-cancel",
                 action=ActionIdentity(group="agentplane", name="echo"),
-                arguments={"access_token": "must-redact"},
+                arguments={"text": "withdrawn"},
             ).model_dump(mode="json"),
         )
         response.raise_for_status()
@@ -881,7 +872,7 @@ async def test_cancellation_http_is_owner_only_and_needs_no_version(
         result = CancellationResult.model_validate(response.json())
         assert result.outcome is CancellationOutcome.CANCELLED
         assert result.request.state is ActionState.CANCELLED
-        assert result.request.arguments == {"access_token": "[redacted]"}
+        assert result.request.arguments == {"text": "withdrawn"}
         duplicate = await client.post(path, headers=_workload("workload-a"))
         assert CancellationResult.model_validate(duplicate.json()).outcome is CancellationOutcome.ALREADY_CANCELLED
         assert executor.requests == []

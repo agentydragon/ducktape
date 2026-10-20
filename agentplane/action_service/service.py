@@ -449,11 +449,9 @@ class ActionService:
         )
 
     async def history(
-        self, principal: OperatorPrincipal, *, limit: int, cursor: str | None, include_auto_allowed: bool = True
+        self, *, limit: int, cursor: str | None, include_auto_allowed: bool = True
     ) -> tuple[list[ActionRequestView], str | None]:
-        return await self._store.history(
-            principal, limit=limit, cursor=cursor, include_auto_allowed=include_auto_allowed
-        )
+        return await self._store.history(limit=limit, cursor=cursor, include_auto_allowed=include_auto_allowed)
 
     async def get(self, request_id: UUID, principal: ReadPrincipal) -> ActionRequestView:
         return await self._store.get(request_id, principal)

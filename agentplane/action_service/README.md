@@ -65,7 +65,7 @@ The executable contract is deliberately small:
 - one invariant request envelope, carrying a required caller-authored `title` (at most 60
   characters) and optional `description` (at most 250 characters) projected verbatim to the
   deciding operator;
-- caller-own and operator-all reads: operator arguments are exact, while caller arguments and all execution result/error views recursively redact credential-shaped fields;
+- caller-own and operator-all reads that return the same request view to every reader;
 - a human operator Decision route, with expected-version and idempotency protection and one
   `decision_note` (optional, at most 2000 characters), shared unchanged with caller and operator;
   optional synchronous non-human `DecisionProvider`s run first and carry bounded
@@ -184,10 +184,10 @@ re-read retries with exponential backoff; there is no periodic re-read.
 
 `reader_accounts` (empty by default) allows named workload ServiceAccounts to read all Actions
 through the existing request list/detail/events REST endpoints. Ordinary callers remain owner-scoped.
-Service readers receive the request's `caller` for ownership checks; argument redaction remains in
-place. This identity is accepted only by those read handlers, not submission, cancellation, operator
-APIs, or MCP authentication. Notifications uses this permission and verifies source ownership before
-exposing Action events to a subscriber. No delegated-owner field or alternate service endpoint exists.
+Service readers receive the same request view as its owner, and check its `caller` for ownership. This
+identity is accepted only by those read handlers, not submission, cancellation, operator APIs, or MCP
+authentication. Notifications uses this permission and verifies source ownership before exposing
+Action events to a subscriber. No delegated-owner field or alternate service endpoint exists.
 
 ## Generic MCP frontend
 

@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from binascii import Error as Base64Error
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from pydantic import JsonValue, TypeAdapter
+from pydantic import TypeAdapter
 from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,24 +71,6 @@ _TERMINAL_ACTION_STATE = {
     ExecutionState.FAILED: ActionState.FAILED,
     ExecutionState.CANCELLED: ActionState.CANCELLED,
     ExecutionState.EXECUTION_UNKNOWN: ActionState.EXECUTION_UNKNOWN,
-}
-
-_SECRET_KEYS = {
-    # keep-sorted start
-    "accesstoken",
-    "apikey",
-    "authorization",
-    "clientsecret",
-    "cookie",
-    "credential",
-    "credentials",
-    "password",
-    "privatekey",
-    "refreshtoken",
-    "secret",
-    "setcookie",
-    "token",
-    # keep-sorted end
 }
 
 
@@ -163,7 +145,7 @@ class ActionStore:
                     policy_evidence=vote.outcome.evidence,
                 )
                 await session.flush()
-            return await self._view(session, row, principal)
+            return await self._view(session, row)
 
     async def list_requests(
         self,
@@ -197,10 +179,10 @@ class ActionStore:
                     tuple_(ActionRequestRow.created_at, ActionRequestRow.id) < (anchor.created_at, anchor.id)
                 )
             rows = list(await session.scalars(query))
-            return [await self._view(session, row, principal) for row in rows]
+            return [await self._view(session, row) for row in rows]
 
     async def history(
-        self, principal: OperatorPrincipal, *, limit: int, cursor: str | None, include_auto_allowed: bool = True
+        self, *, limit: int, cursor: str | None, include_auto_allowed: bool = True
     ) -> tuple[list[ActionRequestView], str | None]:
         query = select(ActionRequestRow).where(ActionRequestRow.history_at.is_not(None))
         if not include_auto_allowed:
@@ -231,14 +213,14 @@ class ActionStore:
                 if last is not None and last.history_at is not None
                 else None
             )
-            return [await self._view(session, row, principal) for row in page], next_cursor
+            return [await self._view(session, row) for row in page], next_cursor
 
     async def get(self, request_id: UUID, principal: ReadPrincipal) -> ActionRequestView:
         async with self._sessions() as session:
             row = await session.get(ActionRequestRow, request_id)
             if row is None or not _may_read(row, principal):
                 raise ActionNotFoundError(str(request_id))
-            return await self._view(session, row, principal)
+            return await self._view(session, row)
 
     async def events(
         self, request_id: UUID, principal: ReadPrincipal, *, after_sequence: int = 0, limit: int | None = None
@@ -297,7 +279,7 @@ class ActionStore:
                 row.updated_at = now
                 _record_event(session, row, now, actor=principal)
                 outcome = CancellationOutcome.CANCELLED
-            return CancellationResult(outcome=outcome, request=await self._view(session, row, principal))
+            return CancellationResult(outcome=outcome, request=await self._view(session, row))
 
     async def decide(
         self, request_id: UUID, body: DecisionInput, principal: OperatorPrincipal, *, provider: str
@@ -320,7 +302,7 @@ class ActionStore:
             if prior_key is not None:
                 if prior_key.request_id != request_id or prior_key.verdict != body.verdict:
                     raise ActionConflictError("decision idempotency key was already used for another decision")
-                return await self._view(session, row, principal), False
+                return await self._view(session, row), False
             if row.version != body.expected_version:
                 raise ActionConflictError(
                     f"request changed: expected version {body.expected_version}, current version {row.version}"
@@ -338,7 +320,7 @@ class ActionStore:
                 decision_note=body.decision_note,
             )
             await session.flush()
-            return await self._view(session, row, principal), should_dispatch
+            return await self._view(session, row), should_dispatch
 
     async def pending_dispatches(self) -> list[UUID]:
         async with self._sessions() as session:
@@ -539,20 +521,17 @@ class ActionStore:
     async def _grant_authorized(self, session: AsyncSession, grant: ExternalGrantProvenance) -> bool:
         return await self._external_grants.authorize_action(session, grant)
 
-    async def _view(self, session: AsyncSession, row: ActionRequestRow, principal: ReadPrincipal) -> ActionRequestView:
+    async def _view(self, session: AsyncSession, row: ActionRequestRow) -> ActionRequestView:
         decision = await session.scalar(select(DecisionRow).where(DecisionRow.request_id == row.id))
         execution = await session.scalar(select(ExecutionRow).where(ExecutionRow.request_id == row.id))
-        operator = isinstance(principal, OperatorPrincipal)
         return ActionRequestView(
             id=row.id,
             idempotency_key=row.idempotency_key,
             action=row.action,
-            arguments=row.arguments if operator else _redact(row.arguments),
+            arguments=row.arguments,
             title=row.title,
             description=row.description,
-            caller=ServiceAccountRef(namespace=row.caller_namespace, name=row.caller_name)
-            if isinstance(principal, (OperatorPrincipal, ServiceReaderPrincipal))
-            else None,
+            caller=ServiceAccountRef(namespace=row.caller_namespace, name=row.caller_name),
             external_grant=row.external_grant,
             state=row.state,
             version=row.version,
@@ -653,8 +632,8 @@ def _execution_view(row: ExecutionRow | None) -> ExecutionView | None:
     return ExecutionView(
         id=row.id,
         state=row.state,
-        result=_redact_value(row.result),
-        error=_redact(row.error) if row.error is not None else None,
+        result=row.result,
+        error=row.error,
         created_at=row.created_at,
         started_at=row.started_at,
         completed_at=row.completed_at,
@@ -664,19 +643,3 @@ def _execution_view(row: ExecutionRow | None) -> ExecutionView | None:
 
 def _owns_lease(execution: ExecutionRow, executor_id: str, lease_token: UUID) -> bool:
     return execution.executor_id == executor_id and execution.lease_token == lease_token
-
-
-def _redact(value: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
-    return {key: "[redacted]" if _secret_key(key) else _redact_value(item) for key, item in value.items()}
-
-
-def _secret_key(key: str) -> bool:
-    return key.lower().replace("_", "").replace("-", "") in _SECRET_KEYS
-
-
-def _redact_value(value: JsonValue | None) -> JsonValue | None:
-    if isinstance(value, dict):
-        return _redact(value)
-    if isinstance(value, list):
-        return [_redact_value(item) for item in value]
-    return value

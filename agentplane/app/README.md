@@ -463,8 +463,7 @@ bearer or workload-token promotion is used. Missing configuration is specificall
 See [`../docs/operator_federation.md`](../docs/operator_federation.md) for exact settings, PostgreSQL
 session storage, opaque session lifecycle/CSRF/invalidation, failure codes, and signed
 multi-replica/two-operator test targets. Existing browser sessions must log in again after rollout.
-Only operator Action arguments are unredacted; caller arguments and execution result/error
-redaction are unchanged. There is no app-owned Action/Decision/Execution authority.
+There is no app-owned Action/Decision/Execution authority.
 
 ## Settings
 

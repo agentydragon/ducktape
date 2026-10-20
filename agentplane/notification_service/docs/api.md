@@ -147,9 +147,9 @@ Actions allows the notification ServiceAccount to read all requests using the or
 `GET /v1/action-requests/{id}/events` endpoints. The `reader_accounts` allowlist defaults to empty;
 ordinary callers remain restricted to their own requests. A service reader is not an operator or
 Action submitter and cannot cancel, decide, or execute Actions. There is no delegated-owner parameter
-or separate service endpoint. The request view exposes its owner to trusted readers, while preserving
-ordinary argument redaction. Notifications checks that owner against the authenticated subscriber
-before accepting a subscription and on every source poll. Agent tokens are never retained or forwarded.
+or separate service endpoint. Notifications checks the request view's `caller` against the authenticated
+subscriber before accepting a subscription and on every source poll. Agent tokens are never retained or
+forwarded.
 
 The worker uses rotating, audience-specific projected service tokens. It is allowlisted at the Runner
 Gateway, which validates sandbox UID and account binding and serves read-only Session validation, and

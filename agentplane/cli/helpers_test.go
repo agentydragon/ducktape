@@ -150,7 +150,7 @@ func receiptJSON(id, state, key string) string {
 
 func receiptWithExecution(id, state, key, execution string) string {
 	return fmt.Sprintf(`{"id":%q,"idempotency_key":%q,"action":{"group":"test-group","name":"test-action"},`+
-		`"arguments":{},"title":"test title","description":null,"caller":null,"state":%q,"version":1,`+
+		`"arguments":{},"title":"test title","description":null,"caller":{"namespace":"test-namespace","name":"test-account"},"state":%q,"version":1,`+
 		`"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","decision":null,"execution":%s}`,
 		id, key, state, execution)
 }

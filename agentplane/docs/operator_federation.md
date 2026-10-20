@@ -331,10 +331,8 @@ acceptance above remains required even when every offline target is green.
   `detail={method, url, upstream_status, error_type}`; the URL is stripped of credentials, query,
   and fragment, and no body or token is echoed.
 
-There is still one Action authority. Only Action **arguments** are exact in authenticated operator
-list/detail/decision receipts. Caller/workload arguments remain recursively key-redacted; origin,
-correlation, executor/provider errors and execution results retain the existing redaction policy.
-A result echoing an argument does not become an operator credential-disclosure path.
+There is still one Action authority. Operator list/detail/decision receipts show the same request
+view as the submitting caller.
 
 ## Evidence targets
 
@@ -348,8 +346,8 @@ A result echoing an argument does not become an operator credential-disclosure p
   rotation and callback replay, alongside the existing Kubernetes caller boundary.
 - `//agentplane/action_service:test_operator_oidc`: actual operator API admission with signed
   valid arbitrary-subject and wrong-issuer/audience/azp/expired/missing-sub/wrong-signature tokens.
-- `//agentplane/action_service:test_acceptance`: exact operator arguments including nested
-  secret-looking values, recursive caller redaction, and unchanged redacted execution results.
+- `//agentplane/action_service:test_acceptance`: exact arguments including nested secret-looking
+  values for every reader.
 
 The single human-authored `decision_note` is shared unchanged with caller and operator through
 canonical polling/BFF projections; provider outcome reason fields remain separate. There is no

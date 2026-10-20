@@ -10,7 +10,7 @@ function actionRequest(
     id: "00000000-0000-4000-8000-000000000001",
     idempotency_key: "notification-format-test",
     ...fields,
-    caller: null,
+    caller: { namespace: "test-namespace", name: "test-account" },
     external_grant: null,
     state: "decision_pending",
     version: 1,
