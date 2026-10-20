@@ -61,8 +61,8 @@ from agentplane.proto import (
     command_pb2,
     event_log_pb2,
     event_pb2,
-    runner_control_pb2,
     runner_pb2,
+    runner_service_pb2,
     session_dispatcher_pb2,
     session_dispatcher_pb2_grpc,
 )
@@ -1337,7 +1337,7 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
                 await gateway.runner_unary(
                     destination,
                     lambda stub: stub.OpenSession,
-                    runner_control_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec),
+                    runner_service_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec),
                     timeout_s=gateway.lifecycle_timeout_s,
                 )
                 # Only the openings can create this row: no bridge exists, so no command or SSE request ran.

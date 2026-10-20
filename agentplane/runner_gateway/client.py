@@ -7,7 +7,7 @@ from uuid import UUID
 from google.protobuf.message import Message
 
 from agentplane.grpc.calls import call_unary, dial
-from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner_pb2
+from agentplane.proto import runner_pb2, runner_service_pb2, runner_service_pb2_grpc
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner_gateway.api import (
     SANDBOX_HEADER,
@@ -40,7 +40,7 @@ class SandboxControlClient:
     async def runner_unary[T](
         self,
         destination: SandboxDestination,
-        call: Callable[[runner_control_pb2_grpc.RunnerAsyncStub], Callable[..., Awaitable[T]]],
+        call: Callable[[runner_service_pb2_grpc.RunnerAsyncStub], Callable[..., Awaitable[T]]],
         request: Message,
         *,
         timeout_s: float | None = None,
@@ -49,7 +49,7 @@ class SandboxControlClient:
         async with dial(
             self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
         ) as channel:
-            runner: runner_control_pb2_grpc.RunnerAsyncStub = runner_control_pb2_grpc.RunnerStub(channel)
+            runner: runner_service_pb2_grpc.RunnerAsyncStub = runner_service_pb2_grpc.RunnerStub(channel)
             return await call_unary(
                 call(runner),
                 request,
@@ -90,7 +90,7 @@ class SandboxRunner:
         self, *, session_id: str | UUID, spec: runner_pb2.SessionSpec, setup_script: str | None = None
     ) -> runner_pb2.Attached:
         """Open a Runner Session directly; its retry contract is owned by the Runner."""
-        request = runner_control_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec)
+        request = runner_service_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec)
         if setup_script is not None:
             request.setup_script = setup_script
         response = await self.control.runner_unary(

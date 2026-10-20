@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
 )
 
 // quiesceTimeout bounds one Quiesce call; stopping harnesses can take a while, and Quiesce is idempotent, so
@@ -53,7 +53,7 @@ func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbo
 	err := runnerclient.WithClient(ctx, runnerclient.Config{
 		Target: target, TokenFile: g.TokenFile, Timeout: quiesceTimeout,
 		SandboxName: sandbox.Name, SandboxUID: string(sandbox.UID), SandboxNamespace: sandbox.Namespace,
-	}, func(ctx context.Context, client runnercontrolpb.RunnerClient) error {
+	}, func(ctx context.Context, client runnerservicepb.RunnerClient) error {
 		called = true
 		var err error
 		response, err = client.Quiesce(ctx, request)

@@ -13,6 +13,7 @@ import (
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -235,8 +236,8 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		t.Fatalf("control route does not point at the connection holder: %#v", endpoints.Endpoints)
 	}
 
-	client := runnercontrolpb.NewRunnerClient(connection)
-	request := &runnercontrolpb.OpenSessionRequest{SessionId: "session-a"}
+	client := runnerservicepb.NewRunnerClient(connection)
+	request := &runnerservicepb.OpenSessionRequest{SessionId: "session-a"}
 	callDone := make(chan error, 1)
 	go func() {
 		ctx, cancel := context.WithTimeout(callerContext("app-token"), 5*time.Second)
@@ -255,14 +256,14 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	if call.GetTimeout() == nil || call.GetTimeout().AsDuration() <= 0 {
 		t.Fatalf("caller deadline was not forwarded: %v", call.GetTimeout())
 	}
-	var opened runnercontrolpb.OpenSessionRequest
+	var opened runnerservicepb.OpenSessionRequest
 	if err := proto.Unmarshal(call.GetRequest(), &opened); err != nil {
 		t.Fatal(err)
 	}
 	if !proto.Equal(&opened, request) {
 		t.Fatalf("runner request changed across the tunnel: got %v want %v", &opened, request)
 	}
-	attached, err := proto.Marshal(&runnercontrolpb.OpenSessionResponse{Attached: &runnerpb.Attached{SessionId: "session-a"}})
+	attached, err := proto.Marshal(&runnerservicepb.OpenSessionResponse{Attached: &runnerpb.Attached{SessionId: "session-a"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,13 +312,13 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		}{entry, callErr}
 	}()
 	inputCall := receiveTunnelCall(t, runnerStream)
-	var inputRequest runnercontrolpb.SubmitInputRequest
+	var inputRequest runnerservicepb.SubmitInputRequest
 	if inputCall.GetMethod() != "/agentplane.proto.runner_control.Runner/SubmitInput" ||
 		proto.Unmarshal(inputCall.GetRequest(), &inputRequest) != nil ||
 		inputRequest.GetSessionId() != "session-a" || inputRequest.GetCommandId() != "command-a" || inputRequest.GetText() != "hello" {
 		t.Fatalf("Dispatcher input changed across Gateway tunnel: call=%v request=%v", inputCall, &inputRequest)
 	}
-	inputResponse, err := proto.Marshal(&runnercontrolpb.SubmitInputResponse{Admission: &eventlogpb.EventEntry{Cursor: 42}})
+	inputResponse, err := proto.Marshal(&runnerservicepb.SubmitInputResponse{Admission: &eventlogpb.EventEntry{Cursor: 42}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -623,7 +624,7 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		endpoints.Annotations[sandboxlease.ConnectionEpochAnnotation] != "2" {
 		t.Fatalf("old epoch overwrote successor control route: %#v", endpoints)
 	}
-	otherClient := runnercontrolpb.NewRunnerClient(otherConnection)
+	otherClient := runnerservicepb.NewRunnerClient(otherConnection)
 	otherCall := make(chan error, 1)
 	go func() {
 		ctx, cancel := context.WithTimeout(callerContext("app-token"), 5*time.Second)
@@ -748,7 +749,7 @@ func TestGeneratedRunnerClientPreservesTunnelStatusTrailersAndCancellation(t *te
 	ctx, cancel := context.WithCancel(context.Background())
 	changeDone := make(chan error, 1)
 	go func() {
-		_, err := connection.runner.ChangeModel(ctx, &runnercontrolpb.ChangeModelRequest{})
+		_, err := connection.runner.ChangeModel(ctx, &runnerservicepb.ChangeModelRequest{})
 		changeDone <- err
 	}()
 	changeCall := nextCall()

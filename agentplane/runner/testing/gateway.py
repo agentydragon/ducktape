@@ -21,6 +21,7 @@ from agentplane.proto import (
     runner_control_pb2_grpc,
     runner_ingress_pb2,
     runner_ingress_pb2_grpc,
+    runner_service_pb2_grpc,
 )
 from agentplane.sandboxes.guest_config import Endpoint
 
@@ -47,7 +48,7 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
         self.facts_published = asyncio.Condition()
         # The incarnation each new connection's Welcome names; a test changes it to start another.
         self.incarnation_uid = "test-incarnation"
-        self._runner: runner_control_pb2_grpc.RunnerAsyncStub | None = None
+        self._runner: runner_service_pb2_grpc.RunnerAsyncStub | None = None
         self._connected = asyncio.Condition()
 
     async def wait_connected(self, connections: int) -> None:
@@ -74,7 +75,7 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
                 lambda: bool(self.facts) and self.facts[-1].HasField("idle_since") == idle
             )
 
-    async def runner(self) -> runner_control_pb2_grpc.RunnerAsyncStub:
+    async def runner(self) -> runner_service_pb2_grpc.RunnerAsyncStub:
         """The runner's service through its newest connection, once it has one."""
         await self.wait_connected(1)
         assert self._runner is not None
@@ -111,7 +112,7 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
             await send(runner_control_pb2.ServiceFrame(call=tunneled))
 
         async with TunnelCaller(call) as tunnel:
-            runner = runner_control_pb2_grpc.RunnerStub(tunnel.channel)
+            runner = runner_service_pb2_grpc.RunnerStub(tunnel.channel)
             async with self._connected:
                 self.connections += 1
                 self._runner = runner

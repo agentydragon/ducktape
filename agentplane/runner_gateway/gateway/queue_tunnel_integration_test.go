@@ -14,6 +14,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
@@ -187,7 +188,7 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 	}
 
 	input := receiveTunnelCall(t, stream)
-	var request runnercontrolpb.SubmitInputRequest
+	var request runnerservicepb.SubmitInputRequest
 	if err := proto.Unmarshal(input.GetRequest(), &request); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +197,7 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 		request.GetText() != "persisted input" {
 		t.Fatalf("queued request changed before runner admission: call=%v request=%v", input, &request)
 	}
-	admission, err := proto.Marshal(&runnercontrolpb.SubmitInputResponse{Admission: &eventlogpb.EventEntry{Cursor: 81}})
+	admission, err := proto.Marshal(&runnerservicepb.SubmitInputResponse{Admission: &eventlogpb.EventEntry{Cursor: 81}})
 	if err != nil {
 		t.Fatal(err)
 	}

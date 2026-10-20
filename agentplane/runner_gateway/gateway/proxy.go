@@ -4,7 +4,7 @@ import (
 	"context"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
@@ -20,7 +20,7 @@ var identityMetadataKeys = []string{
 }
 
 type runnerProxy struct {
-	runnercontrolpb.UnimplementedRunnerServer
+	runnerservicepb.UnimplementedRunnerServer
 	gateway *Gateway
 }
 
@@ -79,7 +79,7 @@ func (p *runnerProxy) GetStatus(ctx context.Context, request *runnerpb.GetStatus
 	return connection.runner.GetStatus(ctx, request)
 }
 
-func (p *runnerProxy) OpenSession(ctx context.Context, request *runnercontrolpb.OpenSessionRequest) (*runnercontrolpb.OpenSessionResponse, error) {
+func (p *runnerProxy) OpenSession(ctx context.Context, request *runnerservicepb.OpenSessionRequest) (*runnerservicepb.OpenSessionResponse, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
@@ -95,7 +95,7 @@ func (p *runnerProxy) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequ
 	return connection.runner.Quiesce(ctx, request)
 }
 
-func (p *runnerProxy) SubmitInput(ctx context.Context, request *runnercontrolpb.SubmitInputRequest) (*runnercontrolpb.SubmitInputResponse, error) {
+func (p *runnerProxy) SubmitInput(ctx context.Context, request *runnerservicepb.SubmitInputRequest) (*runnerservicepb.SubmitInputResponse, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
@@ -103,7 +103,7 @@ func (p *runnerProxy) SubmitInput(ctx context.Context, request *runnercontrolpb.
 	return connection.runner.SubmitInput(ctx, request)
 }
 
-func (p *runnerProxy) ChangeModel(ctx context.Context, request *runnercontrolpb.ChangeModelRequest) (*runnercontrolpb.ChangeModelResponse, error) {
+func (p *runnerProxy) ChangeModel(ctx context.Context, request *runnerservicepb.ChangeModelRequest) (*runnerservicepb.ChangeModelResponse, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func (p *runnerProxy) ChangeModel(ctx context.Context, request *runnercontrolpb.
 	return connection.runner.ChangeModel(ctx, request)
 }
 
-func (p *runnerProxy) ChangeReasoningEffort(ctx context.Context, request *runnercontrolpb.ChangeReasoningEffortRequest) (*runnercontrolpb.ChangeReasoningEffortResponse, error) {
+func (p *runnerProxy) ChangeReasoningEffort(ctx context.Context, request *runnerservicepb.ChangeReasoningEffortRequest) (*runnerservicepb.ChangeReasoningEffortResponse, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func (p *runnerProxy) ChangeReasoningEffort(ctx context.Context, request *runner
 	return connection.runner.ChangeReasoningEffort(ctx, request)
 }
 
-func (p *runnerProxy) InterruptTurn(ctx context.Context, request *runnercontrolpb.InterruptTurnRequest) (*runnercontrolpb.InterruptTurnResponse, error) {
+func (p *runnerProxy) InterruptTurn(ctx context.Context, request *runnerservicepb.InterruptTurnRequest) (*runnerservicepb.InterruptTurnResponse, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
@@ -127,4 +127,4 @@ func (p *runnerProxy) InterruptTurn(ctx context.Context, request *runnercontrolp
 	return connection.runner.InterruptTurn(ctx, request)
 }
 
-var _ runnercontrolpb.RunnerServer = (*runnerProxy)(nil)
+var _ runnerservicepb.RunnerServer = (*runnerProxy)(nil)

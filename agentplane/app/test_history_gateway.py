@@ -18,7 +18,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.backend import ingest
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import command_pb2, runner_control_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.proto import command_pb2, runner_pb2, runner_service_pb2, session_dispatcher_pb2
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
@@ -194,10 +194,10 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
         remote = endpoint.client()
         session_id = str(uuid4())
         await (await runner.control()).OpenSession(
-            runner_control_pb2.OpenSessionRequest(session_id=session_id, spec=spec)
+            runner_service_pb2.OpenSessionRequest(session_id=session_id, spec=spec)
         )
         await (await runner.control()).SubmitInput(
-            runner_control_pb2.SubmitInputRequest(session_id=session_id, command_id="first", text="hi")
+            runner_service_pb2.SubmitInputRequest(session_id=session_id, command_id="first", text="hi")
         )
         await model.reply(await model.request(), Text("hello"))
         directory = RunnerDirectory(live_index, remote)

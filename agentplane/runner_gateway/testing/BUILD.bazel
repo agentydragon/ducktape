@@ -10,9 +10,9 @@ py_library(
     srcs = ["runner_peer.py"],
     deps = [
         "//agentplane/grpc:serving",
-        "//agentplane/proto:runner_control_pb2",
-        "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:runner_service_pb2",
+        "//agentplane/proto:runner_service_pb2_grpc",
         "//agentplane/runner/testing:process",
         "//agentplane/runner_gateway:client",
         "@pypi//grpcio",

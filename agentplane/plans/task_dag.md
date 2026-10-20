@@ -1628,7 +1628,7 @@ flowchart TD
 finds "runner" a poor name for the process that supervises a Sandbox's Sessions and harnesses.
 Candidates: "sandbox manager", "environment manager" (Claude Code web's term) and "supervisor". Choose the
 name first; the rename follows as its own change. It would reach the `Runner` and `RunnerControl` protos
-and services (`runner.proto`, `runner_control.proto`, `runner_ingress.proto`), token audiences, the
+and services (`runner.proto`, `runner_control.proto`, `runner_service.proto`, `runner_ingress.proto`), token audiences, the
 Gateway's runner proxy and control tunnel, images and the `agentplane/runner` package, Leases and
 Services named for it, and docs. Audiences and wire names are a coordinated wire change, not a find and
 replace.

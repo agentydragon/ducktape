@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -36,7 +36,7 @@ func ExpandTarget(template, sandbox, namespace string) string {
 // WithClient reads the current token, creates a per-call gRPC connection and deadline, and supplies
 // the authenticated connection to call. ReplaceOutgoingMetadata preserves the dispatcher's existing
 // behavior; callers that append metadata leave it false.
-func WithClient(ctx context.Context, config Config, call func(context.Context, runnercontrolpb.RunnerClient) error) error {
+func WithClient(ctx context.Context, config Config, call func(context.Context, runnerservicepb.RunnerClient) error) error {
 	if config.Timeout <= 0 {
 		return errors.New("runner request timeout must be positive")
 	}
@@ -78,5 +78,5 @@ func WithClient(ctx context.Context, config Config, call func(context.Context, r
 	} else {
 		ctx = metadata.AppendToOutgoingContext(ctx, metadataPairs...)
 	}
-	return call(ctx, runnercontrolpb.NewRunnerClient(conn))
+	return call(ctx, runnerservicepb.NewRunnerClient(conn))
 }

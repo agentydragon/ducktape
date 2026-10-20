@@ -14,7 +14,7 @@ from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.grpc.calls import ServiceError
-from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, runner_service_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.config import RunnerTestConfig
@@ -58,10 +58,10 @@ async def submit_input(
     remote: SandboxControlClient, session_id: str, command: command_pb2.Command
 ) -> event_log_pb2.EventEntry:
     assert command.WhichOneof("operation") == "submit_input"
-    response: runner_control_pb2.SubmitInputResponse = await remote.runner_unary(
+    response: runner_service_pb2.SubmitInputResponse = await remote.runner_unary(
         DESTINATION,
         lambda stub: stub.SubmitInput,
-        runner_control_pb2.SubmitInputRequest(
+        runner_service_pb2.SubmitInputRequest(
             session_id=session_id, command_id=command.command_id, text=command.submit_input.text
         ),
         timeout_s=remote.request_timeout_s,

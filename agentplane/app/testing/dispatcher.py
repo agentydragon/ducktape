@@ -15,7 +15,7 @@ from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.grpc.calls import RefusedError, ServiceError, dial
 from agentplane.grpc.serving import serving
-from agentplane.proto import runner_control_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
+from agentplane.proto import runner_service_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
 
 
 class RunnerProxyBackedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
@@ -64,7 +64,7 @@ class RunnerProxyBackedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherS
             request,
             context,
             "SubmitInput",
-            runner_control_pb2.SubmitInputRequest(
+            runner_service_pb2.SubmitInputRequest(
                 session_id=request.session_id, command_id=request.command_id, text=request.text
             ),
             session_dispatcher_pb2.OPERATION_SUBMIT_INPUT,
@@ -77,7 +77,7 @@ class RunnerProxyBackedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherS
             request,
             context,
             "ChangeModel",
-            runner_control_pb2.ChangeModelRequest(
+            runner_service_pb2.ChangeModelRequest(
                 session_id=request.session_id, command_id=request.command_id, model=request.model
             ),
             session_dispatcher_pb2.OPERATION_CHANGE_MODEL,
@@ -90,7 +90,7 @@ class RunnerProxyBackedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherS
             request,
             context,
             "ChangeReasoningEffort",
-            runner_control_pb2.ChangeReasoningEffortRequest(
+            runner_service_pb2.ChangeReasoningEffortRequest(
                 session_id=request.session_id, command_id=request.command_id, effort=request.effort
             ),
             session_dispatcher_pb2.OPERATION_CHANGE_REASONING_EFFORT,
@@ -104,7 +104,7 @@ class RunnerProxyBackedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherS
             response = await runner.control.runner_unary(
                 runner.destination,
                 lambda stub: stub.InterruptTurn,
-                runner_control_pb2.InterruptTurnRequest(
+                runner_service_pb2.InterruptTurnRequest(
                     session_id=request.session_id, command_id=request.command_id, turn_id=request.turn_id
                 ),
             )

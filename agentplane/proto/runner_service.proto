@@ -1,0 +1,88 @@
+// The `Runner` service the runner serves over its outbound control stream; contract in
+// agentplane/docs/runner_control.md. An incompatible change rides a clean cutover: the operator
+// retires every Sandbox on the old protocol.
+syntax = "proto3";
+
+package agentplane.proto.runner_control;
+
+import "agentplane/proto/event_log.proto";
+import "agentplane/proto/runner.proto";
+
+// Served by the runner through its outbound control stream. Sessions are durable;
+// process startup, native readiness and reconciliation are runner-owned after admission.
+service Runner {
+  rpc ListSessions(agentplane.proto.runner.ListSessionsRequest)
+      returns (agentplane.proto.runner.ListSessionsResponse);
+  // Durably reserve or confirm a Session and immutable creation configuration.
+  // An existing Session with another spec/setup returns ALREADY_EXISTS.
+  // This acknowledgement does not assert native creation or process readiness.
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+  // Informational live snapshot; never starts a process or wakes a Sandbox.
+  rpc GetStatus(agentplane.proto.runner.GetStatusRequest)
+      returns (agentplane.proto.runner.RunnerStatus);
+  // Sandbox teardown: durably refuse new Sessions and execution, let setup/bootstrap finish, stop harnesses,
+  // and seal every journal at its final cursor. Idempotent: a repeat returns the same cursors with
+  // each Session's current `flushed`, so teardown repeats it until every Session is flushed.
+  rpc Quiesce(agentplane.proto.runner.QuiesceRequest) returns (agentplane.proto.runner.QuiesceResponse);
+  // One RPC per command: the same `command_id` with the same operation and payload returns the
+  // existing admission, and under another operation or payload it fails with `ALREADY_EXISTS`.
+  // A `command_id` is unique across these operations.
+  rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
+  rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
+  rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
+  // A new interrupt with a non-active turn_id fails FAILED_PRECONDITION before admission.
+  // Already admitted retries return their original admission; never affect a successor turn.
+  rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse);
+}
+
+message OpenSessionRequest {
+  string session_id = 1;
+  agentplane.proto.runner.SessionSpec spec = 2;
+  optional string setup_script = 3;  // selected only at creation
+}
+
+message OpenSessionResponse {
+  agentplane.proto.runner.Attached attached = 1;
+}
+
+// Command responses carry durable CommandAdmitted evidence, before any required startup.
+// Startup and delivery continue after caller disconnect; later failures are journal outcomes.
+message SubmitInputRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string text = 3;
+}
+
+message SubmitInputResponse {
+  agentplane.proto.event_log.EventEntry admission = 1;
+}
+
+message ChangeModelRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string model = 3;
+}
+
+message ChangeModelResponse {
+  agentplane.proto.event_log.EventEntry admission = 1;
+}
+
+message ChangeReasoningEffortRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string effort = 3;
+}
+
+message ChangeReasoningEffortResponse {
+  agentplane.proto.event_log.EventEntry admission = 1;
+}
+
+message InterruptTurnRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string turn_id = 3;
+}
+
+message InterruptTurnResponse {
+  agentplane.proto.event_log.EventEntry admission = 1;
+}

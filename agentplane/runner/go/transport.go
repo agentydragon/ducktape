@@ -14,6 +14,7 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	controlpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/proto/runner_ingress"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
 	"github.com/sethvargo/go-retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -236,13 +237,13 @@ func (r *Runner) relay(ctx context.Context, call *tunnelpb.Call) *tunnelpb.Reply
 		defer cancel()
 	}
 	reply := &tunnelpb.Reply{CallId: call.CallId}
-	name, ok := strings.CutPrefix(call.Method, "/"+controlpb.Runner_ServiceDesc.ServiceName+"/")
+	name, ok := strings.CutPrefix(call.Method, "/"+runnerservicepb.Runner_ServiceDesc.ServiceName+"/")
 	if !ok {
 		reply.Code = int32(codes.Unimplemented)
 		reply.Details = "unknown Runner method"
 		return reply
 	}
-	for _, method := range controlpb.Runner_ServiceDesc.Methods {
+	for _, method := range runnerservicepb.Runner_ServiceDesc.Methods {
 		if method.MethodName != name {
 			continue
 		}

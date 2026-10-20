@@ -18,6 +18,7 @@ import (
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	controlpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -102,10 +103,10 @@ func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 	if _, err := r.OpenSession(context.Background(), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.SubmitInput(context.Background(), &controlpb.SubmitInputRequest{SessionId: "session-1", Text: "hello"}); status.Code(err) != codes.InvalidArgument {
+	if _, err := r.SubmitInput(context.Background(), &runnerservicepb.SubmitInputRequest{SessionId: "session-1", Text: "hello"}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("empty command ID error = %v, want InvalidArgument", err)
 	}
-	if _, err := r.InterruptTurn(context.Background(), &controlpb.InterruptTurnRequest{SessionId: "session-1", CommandId: "stale", TurnId: "not-active"}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := r.InterruptTurn(context.Background(), &runnerservicepb.InterruptTurnRequest{SessionId: "session-1", CommandId: "stale", TurnId: "not-active"}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("stale interrupt error = %v, want FailedPrecondition", err)
 	}
 	session := r.sessions["session-1"]
@@ -124,7 +125,7 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 	if _, err := r.OpenSession(context.Background(), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.SubmitInput(context.Background(), &controlpb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
+	if _, err := r.SubmitInput(context.Background(), &runnerservicepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	session := r.sessions["session-1"]
@@ -413,8 +414,8 @@ func newLifecycleRunner(t *testing.T, config Config) *Runner {
 	return r
 }
 
-func openLifecycleSession(sessionID, cwd string) *controlpb.OpenSessionRequest {
-	return &controlpb.OpenSessionRequest{
+func openLifecycleSession(sessionID, cwd string) *runnerservicepb.OpenSessionRequest {
+	return &runnerservicepb.OpenSessionRequest{
 		SessionId: sessionID,
 		Spec:      &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model"},
 	}

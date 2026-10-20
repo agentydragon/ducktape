@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Self
 from uuid import uuid4
 
-from agentplane.proto import event_log_pb2, runner_control_pb2_grpc, runner_pb2
+from agentplane.proto import event_log_pb2, runner_pb2, runner_service_pb2_grpc
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.gateway import Gateway
@@ -106,7 +106,7 @@ class RunningRunner:
             self.ingress_endpoint = ingress_endpoint
         await self.start()
 
-    async def control(self) -> runner_control_pb2_grpc.RunnerAsyncStub:
+    async def control(self) -> runner_service_pb2_grpc.RunnerAsyncStub:
         return await self.gateway.control.runner()
 
     def entries(self, session_id: str, after: int = 0) -> list[event_log_pb2.EventEntry]:

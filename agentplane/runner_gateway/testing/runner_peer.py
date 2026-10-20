@@ -16,14 +16,14 @@ import grpc
 from google.protobuf.message import Message
 
 from agentplane.grpc.serving import serving
-from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner_pb2
+from agentplane.proto import runner_pb2, runner_service_pb2, runner_service_pb2_grpc
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
 
 TEST_TOKEN = "test-runner-peer-token"
 
 
-class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
+class RunnerPeer(runner_service_pb2_grpc.RunnerServicer):
     """The generated Runner service surface, optionally backed by a native process."""
 
     def __init__(self, *, record_metadata: bool) -> None:
@@ -60,7 +60,7 @@ class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
         request: Request,
         context: grpc.aio.ServicerContext,
         response_type: type[Response],
-        invoke: Callable[[runner_control_pb2_grpc.RunnerAsyncStub, Request], Awaitable[Response]],
+        invoke: Callable[[runner_service_pb2_grpc.RunnerAsyncStub, Request], Awaitable[Response]],
     ) -> Response:
         self._record(method, context)
         if method == "ListSessions" and self._list_sessions_rejections:
@@ -96,13 +96,13 @@ class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
 
     @override
     async def OpenSession(
-        self, request: runner_control_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.OpenSessionResponse:
+        self, request: runner_service_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
+    ) -> runner_service_pb2.OpenSessionResponse:
         return await self._forward(
             "OpenSession",
             request,
             context,
-            runner_control_pb2.OpenSessionResponse,
+            runner_service_pb2.OpenSessionResponse,
             lambda stub, req: stub.OpenSession(req),
         )
 
@@ -116,49 +116,49 @@ class RunnerPeer(runner_control_pb2_grpc.RunnerServicer):
 
     @override
     async def SubmitInput(
-        self, request: runner_control_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.SubmitInputResponse:
+        self, request: runner_service_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
+    ) -> runner_service_pb2.SubmitInputResponse:
         return await self._forward(
             "SubmitInput",
             request,
             context,
-            runner_control_pb2.SubmitInputResponse,
+            runner_service_pb2.SubmitInputResponse,
             lambda stub, req: stub.SubmitInput(req),
         )
 
     @override
     async def ChangeModel(
-        self, request: runner_control_pb2.ChangeModelRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.ChangeModelResponse:
+        self, request: runner_service_pb2.ChangeModelRequest, context: grpc.aio.ServicerContext
+    ) -> runner_service_pb2.ChangeModelResponse:
         return await self._forward(
             "ChangeModel",
             request,
             context,
-            runner_control_pb2.ChangeModelResponse,
+            runner_service_pb2.ChangeModelResponse,
             lambda stub, req: stub.ChangeModel(req),
         )
 
     @override
     async def ChangeReasoningEffort(
-        self, request: runner_control_pb2.ChangeReasoningEffortRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.ChangeReasoningEffortResponse:
+        self, request: runner_service_pb2.ChangeReasoningEffortRequest, context: grpc.aio.ServicerContext
+    ) -> runner_service_pb2.ChangeReasoningEffortResponse:
         return await self._forward(
             "ChangeReasoningEffort",
             request,
             context,
-            runner_control_pb2.ChangeReasoningEffortResponse,
+            runner_service_pb2.ChangeReasoningEffortResponse,
             lambda stub, req: stub.ChangeReasoningEffort(req),
         )
 
     @override
     async def InterruptTurn(
-        self, request: runner_control_pb2.InterruptTurnRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.InterruptTurnResponse:
+        self, request: runner_service_pb2.InterruptTurnRequest, context: grpc.aio.ServicerContext
+    ) -> runner_service_pb2.InterruptTurnResponse:
         return await self._forward(
             "InterruptTurn",
             request,
             context,
-            runner_control_pb2.InterruptTurnResponse,
+            runner_service_pb2.InterruptTurnResponse,
             lambda stub, req: stub.InterruptTurn(req),
         )
 
@@ -189,6 +189,6 @@ async def runner_peer(
     peer = RunnerPeer(record_metadata=record_metadata)
     peer.runner = runner
     server = grpc.aio.server()
-    runner_control_pb2_grpc.add_RunnerServicer_to_server(peer, server)
+    runner_service_pb2_grpc.add_RunnerServicer_to_server(peer, server)
     async with serving(server, "127.0.0.1:0", grace_s=0) as port:
         yield Endpoint(f"127.0.0.1:{port}", token_file, peer)

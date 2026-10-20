@@ -3,7 +3,7 @@ package gateway
 import (
 	"sync"
 
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -19,7 +19,7 @@ type runnerConnection struct {
 	epoch    uint64
 	bootID   string
 	tunnel   *tunnel
-	runner   runnercontrolpb.RunnerClient
+	runner   runnerservicepb.RunnerClient
 	ended    chan struct{}
 	endMu    sync.Mutex
 	endErr   error
@@ -29,7 +29,7 @@ func newRunnerConnection(identity sandboxreader.Identity, podUID, bootID string,
 	tunnel := newTunnel(send)
 	return &runnerConnection{
 		identity: identity, podUID: podUID, epoch: epoch, bootID: bootID,
-		tunnel: tunnel, runner: runnercontrolpb.NewRunnerClient(&tunnelClientConn{tunnel: tunnel}), ended: make(chan struct{}),
+		tunnel: tunnel, runner: runnerservicepb.NewRunnerClient(&tunnelClientConn{tunnel: tunnel}), ended: make(chan struct{}),
 	}
 }
 

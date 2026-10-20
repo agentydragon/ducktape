@@ -10,13 +10,13 @@ from contextlib import asynccontextmanager
 import grpc
 import pytest
 
-from agentplane.proto import event_log_pb2, runner_control_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, runner_control_pb2, runner_pb2, runner_service_pb2
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.process import RunningRunner
 
 # The `Runner` stub types its calls; mypy reads stubs only from direct deps.
-# gazelle:include_dep //agentplane/proto:runner_control_pb2_grpc
+# gazelle:include_dep //agentplane/proto:runner_service_pb2_grpc
 # gazelle:include_dep @pypi//grpcio
 # gazelle:include_dep @pypi//protobuf
 
@@ -65,14 +65,14 @@ class SessionFollow:
         """Submit text and return once the runner admitted it."""
         runner = await self._gateway.control.runner()
         await runner.SubmitInput(
-            runner_control_pb2.SubmitInputRequest(session_id=self.attached.session_id, command_id=command_id, text=text)
+            runner_service_pb2.SubmitInputRequest(session_id=self.attached.session_id, command_id=command_id, text=text)
         )
         self._ended = False
 
     async def interrupt_turn(self, command_id: str, turn_id: str) -> None:
         runner = await self._gateway.control.runner()
         await runner.InterruptTurn(
-            runner_control_pb2.InterruptTurnRequest(
+            runner_service_pb2.InterruptTurnRequest(
                 session_id=self.attached.session_id, command_id=command_id, turn_id=turn_id
             )
         )
@@ -80,7 +80,7 @@ class SessionFollow:
     async def change_model(self, command_id: str, model: str) -> None:
         runner = await self._gateway.control.runner()
         await runner.ChangeModel(
-            runner_control_pb2.ChangeModelRequest(
+            runner_service_pb2.ChangeModelRequest(
                 session_id=self.attached.session_id, command_id=command_id, model=model
             )
         )
@@ -88,7 +88,7 @@ class SessionFollow:
     async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
         runner = await self._gateway.control.runner()
         await runner.ChangeReasoningEffort(
-            runner_control_pb2.ChangeReasoningEffortRequest(
+            runner_service_pb2.ChangeReasoningEffortRequest(
                 session_id=self.attached.session_id, command_id=command_id, effort=effort
             )
         )
@@ -176,7 +176,7 @@ class RunnerDriver:
             )
             return SessionFollow(self.gateway, attached, after_cursor)
         runner = await self.gateway.control.runner()
-        opening = runner_control_pb2.OpenSessionRequest(session_id=session_id, spec=spec)
+        opening = runner_service_pb2.OpenSessionRequest(session_id=session_id, spec=spec)
         if setup_script is not None:
             opening.setup_script = setup_script
         attached = (await runner.OpenSession(opening)).attached

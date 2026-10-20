@@ -27,8 +27,8 @@ go_library(
     deps = [
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/client:applyconfiguration_api",
-        "//agentplane/proto:runner_control_go_proto",
         "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:runner_service_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/lease",
         "//agentplane/sandboxes/runnerclient",

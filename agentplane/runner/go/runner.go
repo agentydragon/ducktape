@@ -19,6 +19,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	controlpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -28,7 +29,7 @@ import (
 )
 
 type Runner struct {
-	controlpb.UnimplementedRunnerServer
+	runnerservicepb.UnimplementedRunnerServer
 	config      Config
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -443,7 +444,7 @@ func writeDurable(path string, data []byte) error {
 	return syncDirectory(filepath.Dir(path))
 }
 
-func (r *Runner) OpenSession(_ context.Context, request *controlpb.OpenSessionRequest) (*controlpb.OpenSessionResponse, error) {
+func (r *Runner) OpenSession(_ context.Context, request *runnerservicepb.OpenSessionRequest) (*runnerservicepb.OpenSessionResponse, error) {
 	if request.Spec == nil {
 		return nil, status.Error(codes.InvalidArgument, "spec is required")
 	}
@@ -494,7 +495,7 @@ func (r *Runner) OpenSession(_ context.Context, request *controlpb.OpenSessionRe
 				return nil, status.Error(codes.AlreadyExists, "session exists with a different setup script")
 			}
 		}
-		return &controlpb.OpenSessionResponse{Attached: s.attached()}, nil
+		return &runnerservicepb.OpenSessionResponse{Attached: s.attached()}, nil
 	}
 	budget, err := r.config.ResolveModelConfig(r.ctx, spec.Harness, spec.Model)
 	if err != nil {
@@ -528,7 +529,7 @@ func (r *Runner) OpenSession(_ context.Context, request *controlpb.OpenSessionRe
 		r.mu.Unlock()
 	}
 	r.changed()
-	return &controlpb.OpenSessionResponse{Attached: s.attached()}, nil
+	return &runnerservicepb.OpenSessionResponse{Attached: s.attached()}, nil
 }
 
 func equalString(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
@@ -562,24 +563,24 @@ func (r *Runner) admit(id string, c *commandpb.Command) (*eventlogpb.EventEntry,
 	return entry, rpcError(err)
 }
 
-func (r *Runner) SubmitInput(_ context.Context, q *controlpb.SubmitInputRequest) (*controlpb.SubmitInputResponse, error) {
+func (r *Runner) SubmitInput(_ context.Context, q *runnerservicepb.SubmitInputRequest) (*runnerservicepb.SubmitInputResponse, error) {
 	entry, err := r.admit(q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: q.Text}}})
-	return &controlpb.SubmitInputResponse{Admission: entry}, err
+	return &runnerservicepb.SubmitInputResponse{Admission: entry}, err
 }
 
-func (r *Runner) ChangeModel(_ context.Context, q *controlpb.ChangeModelRequest) (*controlpb.ChangeModelResponse, error) {
+func (r *Runner) ChangeModel(_ context.Context, q *runnerservicepb.ChangeModelRequest) (*runnerservicepb.ChangeModelResponse, error) {
 	entry, err := r.admit(q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: q.Model}}})
-	return &controlpb.ChangeModelResponse{Admission: entry}, err
+	return &runnerservicepb.ChangeModelResponse{Admission: entry}, err
 }
 
-func (r *Runner) ChangeReasoningEffort(_ context.Context, q *controlpb.ChangeReasoningEffortRequest) (*controlpb.ChangeReasoningEffortResponse, error) {
+func (r *Runner) ChangeReasoningEffort(_ context.Context, q *runnerservicepb.ChangeReasoningEffortRequest) (*runnerservicepb.ChangeReasoningEffortResponse, error) {
 	entry, err := r.admit(q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: q.Effort}}})
-	return &controlpb.ChangeReasoningEffortResponse{Admission: entry}, err
+	return &runnerservicepb.ChangeReasoningEffortResponse{Admission: entry}, err
 }
 
-func (r *Runner) InterruptTurn(_ context.Context, q *controlpb.InterruptTurnRequest) (*controlpb.InterruptTurnResponse, error) {
+func (r *Runner) InterruptTurn(_ context.Context, q *runnerservicepb.InterruptTurnRequest) (*runnerservicepb.InterruptTurnResponse, error) {
 	entry, err := r.admit(q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: q.TurnId}}})
-	return &controlpb.InterruptTurnResponse{Admission: entry}, err
+	return &runnerservicepb.InterruptTurnResponse{Admission: entry}, err
 }
 
 func rpcError(err error) error {

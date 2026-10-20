@@ -87,7 +87,8 @@ message RunnerFacts {
 }
 ```
 
-- **Versioning.** The proto is `agentplane/proto/runner_control.proto`, package
+- **Versioning.** The protos are `agentplane/proto/runner_control.proto` (`RunnerControl` and its frames)
+  and `agentplane/proto/runner_service.proto` (the `Runner` service), package
   `agentplane.proto.runner_control`. An incompatible change, a rename included, rides a clean
   cutover: the operator retires every Sandbox on the old protocol, and no dual path is served.
   Nothing is negotiated: every connection carries commands and lifecycle requests. A frame of a
