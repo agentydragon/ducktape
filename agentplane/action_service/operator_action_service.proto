@@ -12,9 +12,9 @@ import "google/protobuf/timestamp.proto";
 
 // The caller is the integration app acting for an operator. The bearer is the operator's OIDC token, whose issuer,
 // audience and signature the service verifies; a workload's bearer never reaches this service, and an operator's
-// never reaches `ActionService`. An operator sees every account's requests with their arguments unredacted, decides
-// them, and manages external Connections, MCP server linkage and Web Push. `ListActionRequests`, `GetActionRequest`
-// and `ListActionGroups` take the messages of `ActionService`, with the operator's wider view.
+// never reaches `ActionService`. An operator sees every account's requests, decides them, and manages external
+// Connections, MCP server linkage and Web Push. `ListActionRequests`, `GetActionRequest` and `ListActionGroups` take
+// the messages of `ActionService`, with the operator's wider view.
 //
 // An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
 // expired. `INVALID_ARGUMENT` is a malformed request, an invalid history cursor, an unsupported push endpoint or
@@ -51,7 +51,7 @@ service OperatorActionService {
     option (google.api.http) = {get: "/v1/operator/action-requests:history"};
   }
 
-  // One request of any account, with its arguments unredacted. A request that does not exist fails `NOT_FOUND`.
+  // One request of any account. A request that does not exist fails `NOT_FOUND`.
   rpc GetActionRequest(GetActionRequestRequest) returns (GetActionRequestResponse) {
     option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}"};
   }
