@@ -1592,6 +1592,7 @@ flowchart TD
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     RUNNER_RENAME[Decision, unscheduled: a better name than runner]
+    RUNNER_IMAGES_RENAME[Unscheduled: tools images stop being called runner]
     HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: how Agentplane services are configured]
 ```
@@ -1606,6 +1607,18 @@ and services (`runner.proto`, `runner_control.proto`, `runner_service.proto`, `r
 Gateway's runner proxy and control tunnel, images and the `agentplane/runner` package, Leases and
 Services named for it, and docs. Audiences and wire names are a coordinated wire change, not a find and
 replace.
+
+### `RUNNER_IMAGES_RENAME` — tools images stop being called runner
+
+**Unscheduled; operator, 2026-10-20 05:48 UTC: "rename those images and stuff named after \"runner\" since
+they no longer even contain it".** The Pod tools images (`runner`, `runner-ducktape`), the VM guest
+(`runner-vm`) and what is named for them no longer carry the runner or the `agentplane` command: those
+come from the runner-disk image. Name each for what it holds (harnesses, tools), including their Nix
+flake outputs, `agentplane/runner/{image,container-disk,vm}.nix`, the `agentplane-runner-{image,ducktape-image,vm-image}`
+workflows, the `ducktape-ci/runner*` image repositories with their Flux image policies and pins, the
+`runner` and `runner-vm` SandboxTemplates, and docs. The runner-disk image keeps its name. This is separate
+from `RUNNER_RENAME`, which names the process; do not hold either for the other. Renamed template and
+image names reach live Sandboxes and Flux pins, so land it as an image-before-config sequence.
 
 ### `HISTORY_SERVICE_RENAME` — History as a transcript service
 
