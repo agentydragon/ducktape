@@ -3,6 +3,7 @@ its clients address it by."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from cdk8s import ApiObjectMetadata
@@ -12,7 +13,9 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecBootstrapInitdbSecret,
+    ClusterSpecBootstrapRecovery,
     ClusterSpecEnv,
+    ClusterSpecExternalClusters,
     ClusterSpecManaged,
     ClusterSpecMonitoring,
     ClusterSpecPlugins,
@@ -106,6 +109,8 @@ def cluster(
     size: str,
     initdb: ClusterSpecBootstrapInitdb | None,
     wal_archive: bool,
+    recovery: ClusterSpecBootstrapRecovery | None = None,
+    external_clusters: Sequence[ClusterSpecExternalClusters] | None = None,
     instances: int = 2,
     image_name: str | None = POSTGRES_IMAGE,
     annotations: dict[str, str] | None = None,
@@ -116,8 +121,9 @@ def cluster(
     enable_pod_monitor: bool = True,
 ) -> Cluster:
     """`ref`'s CNPG `Cluster`. Keywords are `ClusterSpec` fields under the same names and types,
-    except `initdb` (`bootstrap.initdb`; `None` leaves CNPG's default, an `app` database and
-    owner), `storage_class`/`size` (`storage`), `placement` (the zone or region pin), from which
+    except `initdb` and `recovery` (`bootstrap.initdb` and `bootstrap.recovery`, at most one; neither
+    leaves CNPG's default, an `app` database and owner), `storage_class`/`size` (`storage`),
+    `placement` (the zone or region pin), from which
     `_affinity` derives placement, and `wal_archive`, which makes the barman-cloud plugin archive
     WAL to the ObjectStore named `ref.name` (`cnpg_backup.CnpgBackup` builds it). Our policy: 2 instances
     (cluster/docs/cnpg_conventions.md R2) on `POSTGRES_IMAGE`; `image_name=None` runs the
@@ -125,6 +131,8 @@ def cluster(
     otherwise kills a primary it considers isolated on a transient network blip -- and enables
     the PodMonitor.
     """
+    if initdb is not None and recovery is not None:
+        raise ValueError(f"{ref.name=}: bootstrap is initdb or recovery, not both")
     return Cluster(
         scope,
         id,
@@ -132,7 +140,10 @@ def cluster(
         storage=ClusterSpecStorage(storage_class=storage_class, size=size),
         instances=instances,
         image_name=image_name,
-        bootstrap=None if initdb is None else ClusterSpecBootstrap(initdb=initdb),
+        bootstrap=None
+        if initdb is None and recovery is None
+        else ClusterSpecBootstrap(initdb=initdb, recovery=recovery),
+        external_clusters=external_clusters,
         affinity=_affinity(placement=placement, storage_class=storage_class) if placement is not None else None,
         env=env,
         managed=managed,

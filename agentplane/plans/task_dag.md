@@ -1925,7 +1925,7 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 
 ```mermaid
 flowchart LR
-    HISTORY_GO_STAGING_CUTOVER[Candidate: cut staging over to the Go History Service]
+    HISTORY_GO_STAGING_CUTOVER[In flight: cut staging over to the Go History Service]
     HISTORY_PYTHON_RETIREMENT[Blocked: retire the Python History Service]
     HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
     NOTIFICATION_SERVICE_GO_PORT[Candidate: port the Notification Service to Go]
@@ -1939,8 +1939,9 @@ flowchart LR
 
 ### `HISTORY_GO_STAGING_CUTOVER` — cut staging over to the Go History Service
 
-**Candidate.** The Go service runs on `agentplane-testing`; staging's `image-pins` keeps the Python service by
-dropping the policy marker on the service pin. Backup and restore proof first
+**In flight** (the History port thread, 2026-10-20: the restored copy is being added; the refold check
+on it is next). The Go service runs on `agentplane-testing`; staging's `image-pins` keeps the Python
+service by dropping the policy marker on the service pin. Backup and restore proof first
 ([staging data preservation](../docs/staging_data_preservation.md)); on the restored copy, a Go refold of
 every retained Session equals the rows the Python fold stored. Then image before config. No staging
 database or Session is dropped or recreated.

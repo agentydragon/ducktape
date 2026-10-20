@@ -72,6 +72,7 @@ from cluster.cdk8s.agentplane import (
     binding_delegation,
     db_backups as agentplane_staging_db_backups,
     generation as agentplane_generation,
+    history_restore_proof as agentplane_staging_history_restore_proof,
     runner_gateway_workload,
     staging,
     testing,
@@ -951,11 +952,22 @@ def generate_manifests(root: Path) -> None:
     agentplane_staging_db_backups_artifact = artifact(
         "agentplane-staging-db-backups", agentplane_staging_db_backups.OUTPUT_DIR
     )
-    agentplane_staging_db_backups.agentplane_staging_db_backups(
+    agentplane_staging_db_backups_kustomization = agentplane_staging_db_backups.agentplane_staging_db_backups(
         flux_chart,
         write_directory(root, agentplane_staging_db_backups_artifact, agentplane_staging_db_backups.chart),
         cnpg_kustomization,
         seaweedfs_operator_kustomization,
+    )
+    agentplane_staging_history_restore_proof_artifact = artifact(
+        "agentplane-staging-history-restore-proof", agentplane_staging_history_restore_proof.OUTPUT_DIR
+    )
+    agentplane_staging_history_restore_proof.agentplane_staging_history_restore_proof(
+        flux_chart,
+        write_directory(
+            root, agentplane_staging_history_restore_proof_artifact, agentplane_staging_history_restore_proof.chart
+        ),
+        cnpg_kustomization,
+        agentplane_staging_db_backups_kustomization,
     )
     monitoring_loki_artifact = artifact("monitoring-loki", loki.OUTPUT_DIR)
     loki_kustomization = loki.loki(
@@ -1736,6 +1748,7 @@ def generate_manifests(root: Path) -> None:
             agentplane_staging_artifact,
             agentplane_staging_delivery_artifact,
             agentplane_staging_db_backups_artifact,
+            agentplane_staging_history_restore_proof_artifact,
             monitoring_stack_artifact,
             ntfy_artifact,
             agentplane_testing_artifact,

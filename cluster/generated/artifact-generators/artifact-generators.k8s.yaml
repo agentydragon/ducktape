@@ -23,6 +23,11 @@ spec:
       name: agentplane-staging-db-backups
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/agentplane-staging/history-restore-proof/**"
+          to: "@artifact/cluster/generated/agentplane-staging/history-restore-proof/"
+      name: agentplane-staging-history-restore-proof
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/monitoring/**"
           to: "@artifact/cluster/k8s/monitoring/"
       name: monitoring-stack

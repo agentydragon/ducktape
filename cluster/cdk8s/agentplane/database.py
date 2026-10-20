@@ -24,8 +24,8 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule
 from cluster.cdk8s.providers.cnpg.database import Database
 
-_STORAGE_CLASS = "local-path-ovh-ssd"
-_STORAGE_SIZE = "5Gi"
+STORAGE_CLASS = "local-path-ovh-ssd"
+STORAGE_SIZE = "5Gi"
 _CLUSTER_NAME = "postgres"
 
 # The logical databases services own on the shared Cluster; the initdb-owned
@@ -91,8 +91,8 @@ class Db(Construct):
             ref=cluster,
             instances=env.db.instances,
             placement=node_scheduling.HIL_OVH,
-            storage_class=_STORAGE_CLASS,
-            size=_STORAGE_SIZE,
+            storage_class=STORAGE_CLASS,
+            size=STORAGE_SIZE,
             # Electric's WAL-loss recovery purges every shape, then stays unready while
             # rebuilding its replication pipeline. Keep a bounded outage budget below the
             # 5Gi volume instead of silently recycling the logical slot's WAL.

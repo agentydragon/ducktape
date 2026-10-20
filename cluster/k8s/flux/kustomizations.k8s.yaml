@@ -2010,6 +2010,29 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: Restores a copy of the agentplane staging Cluster from its backups, to prove the restore.
+  name: agentplane-staging-history-restore-proof
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: agentplane-staging-db-backups
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane-staging/history-restore-proof
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: agentplane-staging-history-restore-proof
+    namespace: ducktape-flux
+  wait: false
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: loki
   namespace: ducktape-flux
 spec:

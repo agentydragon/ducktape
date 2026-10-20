@@ -1,0 +1,40 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    description: Recovers from postgres's backups and WAL to prove the restore.
+  name: postgres-restore-proof
+  namespace: agentplane-staging
+spec:
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    recovery:
+      database: app
+      owner: app
+      source: postgres
+  externalClusters:
+    - name: postgres
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: postgres
+          serverName: postgres
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 1
+  monitoring:
+    enablePodMonitor: false
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 5Gi
+    storageClass: local-path-ovh-ssd
