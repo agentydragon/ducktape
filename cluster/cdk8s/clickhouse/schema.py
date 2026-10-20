@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, Duration
+from cdk8s import ApiObjectMetadata, App, Chart, Duration, Size
 from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy
 
 from cluster.cdk8s import pod_policy
@@ -78,6 +78,9 @@ def chart(app: App) -> Chart:
                 "schema",
                 schema=ConfigMap.from_config_map_name(chart, "schema-ref", _CONFIG_MAP),
                 credentials=client.ADMIN_CREDENTIALS,
+                # Under `client.queries_file_container`'s working set, so a rerun would thrash the
+                # disk. Raise it with the next `_JOB_NAME` bump: a Job's pod template is immutable.
+                memory_limit=Size.mebibytes(128),
             )
         ],
     )

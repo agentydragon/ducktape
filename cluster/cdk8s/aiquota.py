@@ -229,6 +229,7 @@ class Aiquota(Construct):
                     "migrate",
                     schema=ConfigMap.from_config_map_name(self, "schema-ref", SCHEMA_CONFIG_MAP.name),
                     credentials=_CLICKHOUSE,
+                    memory_limit=Size.gibibytes(1),
                 )
             ],
         )

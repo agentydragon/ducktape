@@ -65,9 +65,14 @@ _TMP_DIR = "/tmp"
 
 
 def queries_file_container(
-    scope: Construct, name: str, *, schema: IConfigMap, credentials: SecretRef
+    scope: Construct, name: str, *, schema: IConfigMap, credentials: SecretRef, memory_limit: Size
 ) -> ContainerProps:
-    """Runs `schema`'s `SCHEMA_FILE` key as the user in `credentials` (`username`/`PASSWORD_KEY` keys)."""
+    """Runs `schema`'s `SCHEMA_FILE` key as the user in `credentials` (`username`/`PASSWORD_KEY` keys).
+
+    `clickhouse-client` is the whole server binary, and its mapped pages count toward `memory_limit`.
+    Pages over it are reclaimed and re-read rather than OOM-killed, so a limit below the binary's
+    working set turns every start into disk thrash, not a failure anything alerts on.
+    """
     return ContainerProps(
         name=name,
         image=IMAGE,
@@ -89,7 +94,7 @@ def queries_file_container(
         },
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(10), limit=Cpu.millis(250)),
-            memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
+            memory=MemoryResources(request=Size.mebibytes(32), limit=memory_limit),
         ),
         security_context=ContainerSecurityContextProps(
             capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), read_only_root_filesystem=True
