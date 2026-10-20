@@ -156,6 +156,6 @@ gRPC-Gateway, so no handler translates between the two.
 - **Reference:** the service's HTTP reference is the OpenAPI document that `proto_openapi`
   ([`//devinfra/go:proto_openapi.bzl`](../../devinfra/go/proto_openapi.bzl)) generates from the proto,
   so a route and a field are described once, in the proto comment beside them. The service embeds
-  it, serves it at `/openapi.json` and links it from its `/llms.txt` (egress:
-  [`egress/docs/BUILD.bazel`](../egress/docs/BUILD.bazel)).
+  it (egress: [`egress/docs/BUILD.bazel`](../egress/docs/BUILD.bazel)), links it from its `/llms.txt`, and
+  serves both with `/docs/agents/` through [`facade.MountAgentDocs`](../grpc/facade/docs.go).
   It is OpenAPI 2, the version grpc-gateway emits; an agent reads either.

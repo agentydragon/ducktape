@@ -54,6 +54,8 @@ const (
 	sandboxName  = "test-sandbox"
 	sandboxUID   = "test-sandbox-uid"
 	sandboxToken = "test-token-sandbox"
+	otherName    = "test-other"
+	otherToken   = "test-token-other"
 	testSession  = "test-session"
 	webhookKey   = "test-webhook-secret-of-sixteen-or-more"
 )
@@ -62,6 +64,7 @@ const (
 // name.
 var testAccounts = map[string]authtest.Account{
 	sandboxToken: {Namespace: testNamespace, Name: sandboxName, UID: "test-sandbox-account-uid"},
+	otherToken:   {Namespace: testNamespace, Name: otherName, UID: "test-other-account-uid"},
 }
 
 // serveGRPC serves a fake peer on a loopback port and returns its address.
@@ -120,13 +123,20 @@ func testDatabase(t *testing.T) *sql.DB {
 	return db
 }
 
-// start serves with settings for the test database and fake peers; tune adjusts the rest.
+// start serves over a database emptied of earlier tests' inboxes, with settings for it and fake peers; tune
+// adjusts the rest.
 func start(t *testing.T, tune func(*config)) running {
 	t.Helper()
-	db := testDatabase(t)
-	if _, err := db.ExecContext(t.Context(), `TRUNCATE inbox CASCADE`); err != nil {
+	if _, err := testDatabase(t).ExecContext(t.Context(), `TRUNCATE inbox CASCADE`); err != nil {
 		t.Fatal(err)
 	}
+	return restart(t, tune)
+}
+
+// restart serves over the rows the database holds: a new process, which only they carry over to.
+func restart(t *testing.T, tune func(*config)) running {
+	t.Helper()
+	db := testDatabase(t)
 	actionsServer := httptest.NewServer(http.HandlerFunc(serveActionService))
 	t.Cleanup(actionsServer.Close)
 	tokens := t.TempDir()

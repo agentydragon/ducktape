@@ -1,0 +1,23 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+# The Python service's `api` serves the same guides from its runfiles.
+filegroup(
+    name = "agents",
+    srcs = glob(["agents/**"]),
+    visibility = ["//agentplane/notification_service:__pkg__"],
+)
+
+copy_file(
+    name = "openapi_json",
+    src = "//agentplane/notification_service:notifications_openapi",
+    out = "openapi.json",
+)
+
+go_library(
+    name = "docs",
+    srcs = ["docs.go"],
+    embedsrcs = glob(["agents/**"]) + [":openapi_json"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/docs",
+    visibility = ["//agentplane/notification_service:__pkg__"],
+)

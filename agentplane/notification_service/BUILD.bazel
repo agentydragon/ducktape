@@ -14,7 +14,7 @@ package(default_visibility = ["//agentplane/notification_service:__subpackages__
 py_library(
     name = "api",
     srcs = ["api.py"],
-    data = glob(["docs/agents/**"]),
+    data = ["//agentplane/notification_service/docs:agents"],
     deps = [
         ":channels",
         ":models",
@@ -580,6 +580,7 @@ go_library(
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/notification_service/actions",
         "//agentplane/notification_service/api",
+        "//agentplane/notification_service/docs",
         "//agentplane/notification_service/github",
         "//agentplane/notification_service/store",
         "//agentplane/notification_service/webhook",
@@ -629,15 +630,18 @@ go_test(
     name = "unit_test",
     srcs = [
         "config_test.go",
+        "docs_test.go",
         "workers_test.go",
     ],
     embed = [":main_lib"],
+    deps = ["//agentplane/testing/agentdocs"],
 )
 
 go_test(
     name = "integration_test",
     size = "medium",
     srcs = [
+        "acceptance_test.go",
         "integration_testmain_test.go",
         "main_test.go",
     ],
@@ -650,6 +654,9 @@ go_test(
         "//agentplane/notification_service/migrations",
         "//agentplane/notification_service/store",
         "//agentplane/postgres/go/wakeups",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",

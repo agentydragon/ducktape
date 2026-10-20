@@ -17,7 +17,8 @@ and notices for normal retention and inspection; it never acknowledges them or r
 an inbox to a replacement Sandbox.
 
 Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked subscription, inbox-handling and
-GitHub workflows and an HTTP reference served under `/docs/agents/`. Update the guides when those contracts change.
+GitHub workflows served under `/docs/agents/`, and `/openapi.json` as the HTTP reference. Update the guides
+when those contracts change.
 
 - [API, authorization, persistence and delivery semantics](docs/api.md)
 - [Staging GitHub acceptance record](docs/staging_github_acceptance.md) — live CI/comment delivery and its limits.
@@ -52,8 +53,10 @@ service above serves until the cutover. It reads the settings file and environme
   startup instead of leaving the source off.
 - A setting that fails validation stops startup without printing its value.
 
-One listener (`host`, `port`) serves gRPC (`Notifications`, `NotificationsOperator` and `grpc.health.v1`) and, when
-GitHub is on, `POST /v1/webhooks/github`. Health checks take no bearer: service `""` is readiness (the LISTEN
+One listener (`host`, `port`) serves gRPC (`Notifications`, `NotificationsOperator` and `grpc.health.v1`), the HTTP
+form of `Notifications` (the routes of [`notifications.proto`](notifications.proto); the operator service has none),
+the agent documentation (`/llms.txt`, `/docs/agents/` and `/openapi.json`, the document generated from that proto,
+which answer without the database) and, when GitHub is on, `POST /v1/webhooks/github`. Health checks take no bearer: service `""` is readiness (the LISTEN
 connection is up and a query succeeds; it fails once the service is told to stop) and `livez` is liveness (the
 process answers). Four workers claim inboxes, and one that returns or fails ends the process, logging the types of
 its error and never its message.
