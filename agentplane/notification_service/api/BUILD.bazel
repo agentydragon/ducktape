@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
 
@@ -41,5 +41,67 @@ go_library(
         "@org_golang_google_protobuf//types/known/emptypb",
         "@org_golang_google_protobuf//types/known/structpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "unit_test",
+    srcs = [
+        "errors_test.go",
+        "runner_test.go",
+        "send_test.go",
+    ],
+    embed = [":api"],
+    deps = [
+        "//agentplane/notification_service:notifications_operator_go_proto",
+        "//agentplane/notification_service/store",
+        "//agentplane/notification_service/worker",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/sandboxreader",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "integration_test",
+    size = "medium",
+    srcs = [
+        "fixture_test.go",
+        "integration_testmain_test.go",
+        "notifications_test.go",
+        "operator_test.go",
+        "watch_test.go",
+    ],
+    embed = [":api"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/notification_service:notifications_go_proto",
+        "//agentplane/notification_service:notifications_operator_go_proto",
+        "//agentplane/notification_service/github",
+        "//agentplane/notification_service/migrations",
+        "//agentplane/notification_service/store",
+        "//agentplane/postgres/go/wakeups",
+        "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/sandboxreader",
+        "//agentplane/testing/postgres",
+        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/go/authtest",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
     ],
 )
