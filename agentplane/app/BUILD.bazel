@@ -1642,7 +1642,9 @@ py_test(
 
 py_test(
     name = "test_notifications_stream",
+    size = "medium",
     srcs = ["test_notifications_stream.py"],
+    requires_docker = True,
     deps = [
         ":action_policy",
         ":api",
