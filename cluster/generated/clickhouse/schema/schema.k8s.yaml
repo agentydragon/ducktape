@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/component: schema
     app.kubernetes.io/instance: clickhouse
     app.kubernetes.io/name: clickhouse-schema
-  name: clickhouse-aiquota-schema-v11
+  name: clickhouse-aiquota-schema-v12
   namespace: clickhouse
 spec:
   activeDeadlineSeconds: 1200
@@ -50,7 +50,7 @@ spec:
           resources:
             limits:
               cpu: 250m
-              memory: 128Mi
+              memory: 1024Mi
             requests:
               cpu: 10m
               memory: 32Mi

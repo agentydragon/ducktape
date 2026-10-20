@@ -34,13 +34,12 @@ the operator renders into that same generated ConfigMap. Files merge in sorted o
 the operator's own `01-clickhouse-0*.xml` set `replace="1"` on `query_log`, `part_log` and
 `trace_log`, so anything overriding those must sort after them.
 
-The versioned `clickhouse-aiquota-schema-v7` Job applies idempotent tenant DDL
-once through the cluster Service with `ON CLUSTER default`. Tables remain
-ReplicatedMergeTree tables using the same Keeper paths. Tenant schema belongs
-only to these Jobs: ClickHouse startup scripts do not create application
-tables. Completed Jobs are retained as rollout evidence; a later schema
-revision needs a new immutable Job name because Kubernetes cannot mutate a
-completed Job template.
+The versioned `clickhouse-aiquota-schema-vN` Job (`cluster/cdk8s/clickhouse/schema.py`)
+creates the tenant databases once through the cluster Service with `ON CLUSTER default`.
+Everything inside a database belongs to its app: aiquota applies `aiquota/schema.sql` at
+startup, Langfuse runs its own migrations. ClickHouse startup scripts do not create
+application tables. A later revision of the Job needs a new immutable name because
+Kubernetes cannot mutate a completed Job template.
 
 Each tenant gets its own database, least-privilege users, credentials, quotas,
 and query profile. The schema Job creates the empty `langfuse` database; the

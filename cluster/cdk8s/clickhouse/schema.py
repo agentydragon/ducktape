@@ -1,6 +1,6 @@
 """The Job that bootstraps ClickHouse databases with distributed DDL. Database creation
 is ClickHouse-admin-only, so it lives here; everything inside each database is owned by
-its app (aiquota's `migrate` init container, Langfuse's own migration runner).
+its app (aiquota applies its own schema at startup, Langfuse's own migration runner).
 
 `schema.sql` beside this module is the DDL, copied into the output directory; the generated
 `kustomization.yaml` renders it into the ConfigMap the Job mounts. A Job's template is
@@ -31,7 +31,7 @@ NAME = "clickhouse-schema"
 OUTPUT_DIR = f"{GENERATED_ROOT}/clickhouse/schema"
 NAMESPACE = "clickhouse"
 _CONFIG_MAP = "clickhouse-aiquota-schema"
-_JOB_NAME = "clickhouse-aiquota-schema-v11"
+_JOB_NAME = "clickhouse-aiquota-schema-v12"
 _LABELS = {
     "app.kubernetes.io/name": NAME,
     "app.kubernetes.io/instance": "clickhouse",
@@ -78,9 +78,7 @@ def chart(app: App) -> Chart:
                 "schema",
                 schema=ConfigMap.from_config_map_name(chart, "schema-ref", _CONFIG_MAP),
                 credentials=client.ADMIN_CREDENTIALS,
-                # Under `client.queries_file_container`'s working set, so a rerun would thrash the
-                # disk. Raise it with the next `_JOB_NAME` bump: a Job's pod template is immutable.
-                memory_limit=Size.mebibytes(128),
+                memory_limit=Size.gibibytes(1),
             )
         ],
     )
