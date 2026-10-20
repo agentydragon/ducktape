@@ -32,7 +32,7 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.conftest import AUDIENCE, GITHUB_POLICY, SANDBOX_A, SUBJECT_A, TOKEN_A, UPSTREAM_HOST, seed
 from agentplane.egress.resources import TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
-from agentplane.egress.testing.go_replica import go_replica, kubeconfig
+from agentplane.egress.testing.go_replica import go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.egress.testing.tls import (
     CertificateAuthority,
@@ -291,7 +291,7 @@ async def test_health_reports_ready_only_once_the_tunnel_accepts(
     async with fake_apiserver() as api:
         seed(api)
         settings = replica_settings(
-            api_config=kubeconfig(tmp_path / "fake-api.yaml", api.port),
+            api_config=api.write_kubeconfig(tmp_path / "fake-api.yaml"),
             ca=ca,
             database_url=history_db_url,
             port_factory=unused_tcp_port_factory,
@@ -336,7 +336,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
         seed(second_api)
         settings = [
             replica_settings(
-                api_config=kubeconfig(tmp_path / f"fake-api-{i}.yaml", fake.port),
+                api_config=fake.write_kubeconfig(tmp_path / f"fake-api-{i}.yaml"),
                 ca=(cert, key),
                 database_url=history_db_url,
                 port_factory=unused_tcp_port_factory,
@@ -401,7 +401,7 @@ async def test_go_proxy_finishes_an_admitted_request_after_sigterm(
     ):
         seed(api)
         settings = replica_settings(
-            api_config=kubeconfig(tmp_path / "fake-api.yaml", api.port),
+            api_config=api.write_kubeconfig(tmp_path / "fake-api.yaml"),
             ca=(cert, key),
             database_url=history_db_url,
             port_factory=unused_tcp_port_factory,

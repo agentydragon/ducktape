@@ -515,3 +515,22 @@ go_test(
         "@org_golang_google_grpc//status",
     ],
 )
+
+py_test(
+    name = "test_go_service",
+    srcs = ["test_go_service.py"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/testing:electric_role",
+        "//util/testing:postgres",
+        "@pypi//asyncpg",
+        "@pypi//protobuf",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

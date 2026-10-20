@@ -28,11 +28,8 @@ py_library(
     srcs = ["go_replica.py"],
     deps = [
         "//agentplane/egress:settings",
+        "//agentplane/testing:go_process",
         "//util/bazel:runfiles",
-        "@pypi//grpcio",
-        "@pypi//grpcio_health_checking",
-        "@pypi//protobuf",
         "@pypi//sqlalchemy",
-        "@pypi//tenacity",
     ],
 )

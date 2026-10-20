@@ -7,6 +7,7 @@ package(
         "//agentplane/app:__pkg__",
         "//agentplane/crds:__pkg__",
         "//agentplane/egress:__pkg__",
+        "//agentplane/egress/testing:__pkg__",
         "//agentplane/history_service:__pkg__",
         "//agentplane/history_service/migrations:__pkg__",
         "//agentplane/history_service/testing:__pkg__",
@@ -58,5 +59,16 @@ py_library(
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "go_process",
+    srcs = ["go_process.py"],
+    deps = [
+        "@pypi//grpcio",
+        "@pypi//grpcio_health_checking",
+        "@pypi//protobuf",
+        "@pypi//tenacity",
     ],
 )

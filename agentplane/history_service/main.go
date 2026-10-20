@@ -44,10 +44,19 @@ const (
 )
 
 func kubernetesConfig(c config) (*rest.Config, error) {
+	var base *rest.Config
+	var err error
 	if c.Kubeconfig != "" {
-		return clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
+		base, err = clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
+	} else {
+		base, err = rest.InClusterConfig()
 	}
-	return rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+	// Every request is a TokenReview, so JSON costs nothing; the tests' in-memory API server speaks only JSON.
+	base.ContentType, base.AcceptContentTypes = "application/json", "application/json"
+	return base, nil
 }
 
 // readOnly is the database URL with sessions that refuse writes, so the read API cannot write.

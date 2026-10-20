@@ -18,6 +18,8 @@ import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
+from textwrap import dedent
 from typing import Any
 
 from aiohttp import web
@@ -109,6 +111,28 @@ class FakeApiServer:
     def __post_init__(self) -> None:
         for plural in self.namespace_of:
             self.objects.setdefault(plural, {})
+
+    def write_kubeconfig(self, path: Path) -> Path:
+        """A kubeconfig reaching this server over plain HTTP, for a Go client."""
+        path.write_text(
+            dedent(f"""apiVersion: v1
+kind: Config
+clusters:
+- name: test
+  cluster:
+    server: http://127.0.0.1:{self.port}
+contexts:
+- name: test
+  context:
+    cluster: test
+    user: test
+current-context: test
+users:
+- name: test
+  user: {{}}
+""")
+        )
+        return path
 
     def put(self, plural: str, obj: dict[str, Any]) -> None:
         """Create or replace; stamps the next resourceVersion (and a uid on create) and wakes watches."""
