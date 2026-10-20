@@ -103,11 +103,22 @@ ducktapePkgs
   # (agentplane/images/sandbox.nix).
   # Build: nix build .#agentplane-sandbox-image
   # Load:  docker load < result
-  agentplane-sandbox-image = import ../../agentplane/images/sandbox.nix { inherit pkgs; };
+  agentplane-sandbox-image = import ../../agentplane/images/sandbox.nix {
+    inherit pkgs;
+    agentplaneCli = self.packages.${system}.agentplane-cli;
+  };
   # The build box's image: the sandbox image plus Bazel and its toolchain (agentplane/images/build.nix).
   # Build: nix build .#agentplane-sandbox-build-image
   # Load:  docker load < result
-  agentplane-sandbox-build-image = import ../../agentplane/images/build.nix { inherit pkgs; };
+  agentplane-sandbox-build-image = import ../../agentplane/images/build.nix {
+    inherit pkgs;
+    agentplaneCli = self.packages.${system}.agentplane-cli;
+  };
+  # The released static `agentplane` command that every image above and the runner VM carry.
+  agentplane-cli = import ../../agentplane/cli/package.nix {
+    inherit pkgs;
+    binary = artifacts.agentplane-cli;
+  };
   # agentplane's runner image: the sandbox image plus the released static runner binary and nixpkgs'
   # Claude Code and Codex (agentplane/runner/image.nix).
   # Build: nix build .#runner-image
@@ -119,6 +130,7 @@ ducktapePkgs
   runner-image = import ../../agentplane/runner/image.nix {
     inherit pkgs pkgsUnstable;
     runner = self.packages.${system}.agentplane-runner;
+    agentplaneCli = self.packages.${system}.agentplane-cli;
   };
   # Shared by the image and its Nix check, so validation cannot drift to another tool list.
   # Size reference: runner-ducktape:devel-20261008225612-c58bc67 measured 5.93 GiB
@@ -135,6 +147,7 @@ ducktapePkgs
   runner-ducktape-image = import ../../agentplane/runner/image.nix {
     inherit pkgs pkgsUnstable;
     runner = self.packages.${system}.agentplane-runner;
+    agentplaneCli = self.packages.${system}.agentplane-cli;
     name = "runner-ducktape";
     extraPaths = [ self.packages.${system}.runner-ducktape-tools ];
   };

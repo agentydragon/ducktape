@@ -182,6 +182,12 @@
         binary = artifacts.agentplane-runner;
       };
 
+      # The released static `agentplane` command, carried by the runner's NixOS guest.
+      agentplaneCli = import ./agentplane/cli/package.nix {
+        inherit pkgs;
+        binary = artifacts.agentplane-cli;
+      };
+
       pkgsMaster = import nixpkgs-master {
         inherit system;
         config.allowUnfree = true;
@@ -306,6 +312,7 @@
               homeManagerHost
               ;
             inherit
+              agentplaneCli
               agentplaneRunner
               pkgsUnstable
               ;

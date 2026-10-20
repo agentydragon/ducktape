@@ -8,6 +8,7 @@ on:
     paths:
       - "agentplane/runner/image.nix"
       - "agentplane/images/sandbox.nix"
+      - "agentplane/cli/package.nix"
       - "nix/lib/nix-ld-image.nix"
       # The runner arrives as a released executable, so a runner change reaches the image when its
       # pin moves.
@@ -32,6 +33,7 @@ on:
       - ".github/workflows/agentplane-runner-image.yml"
       - ".github/workflows/nix-image.yml"
       - ".pre-commit-config.yaml"
+      - "agentplane/cli/package.nix"
       - "agentplane/images/sandbox.nix"
       - "agentplane/runner/ducktape_image_smoke.sh"
       - "agentplane/runner/ducktape_tools_check.nix"

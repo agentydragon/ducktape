@@ -14,11 +14,12 @@
   pkgs,
   pkgsUnstable,
   runner,
+  agentplaneCli,
   name ? "runner",
   extraPaths ? [ ],
 }:
 import ../images/sandbox.nix {
-  inherit pkgs name;
+  inherit pkgs agentplaneCli name;
   extraPaths = [
     runner
     pkgsUnstable.claude-code

@@ -5,9 +5,9 @@
 #
 # Build:  nix build .#agentplane-sandbox-build-image
 # Load:   docker load < result
-{ pkgs }:
+{ pkgs, agentplaneCli }:
 import ./sandbox.nix {
-  inherit pkgs;
+  inherit pkgs agentplaneCli;
   name = "agentplane-sandbox-build";
   extraPaths = [
     # `bazel` as bazelisk, which runs the upstream release a workspace's `.bazelversion` names: an

@@ -16,6 +16,7 @@
   pkgs,
   pkgsUnstable,
   agentplaneRunner,
+  agentplaneCli,
   ...
 }:
 let
@@ -329,6 +330,7 @@ in
     util-linux
     which
     xz
+    agentplaneCli
     pkgsUnstable.claude-code
     codexWithoutVoice
   ];

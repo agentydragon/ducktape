@@ -13,6 +13,8 @@
 # Load:   docker load < result
 {
   pkgs,
+  # The released `agentplane` command (<../cli/package.nix>).
+  agentplaneCli,
   name ? "agentplane-sandbox",
   # What an image built on this one adds: packages linked into /bin beside the tools, and image
   # config such as an entrypoint.
@@ -51,6 +53,7 @@ let
       pkgs.openssl
       pkgs.cacert
       pkgs.kubectl # the sandbox's own Kubernetes identity, through the egress proxy
+      agentplaneCli # the Action, Notification and egress-rules APIs (<../docs/agent_cli.md>)
 
       # FULL python3, never `python3Minimal`, whose missing `json`/`shutil` broke the Haku image's
       # scripts. nixpkgs marks it EXTERNALLY-MANAGED, so a run installs packages into a

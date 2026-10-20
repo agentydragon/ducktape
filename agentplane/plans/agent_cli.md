@@ -8,9 +8,8 @@ before a Session can use it. It authorizes no prompt or deployment change beyond
 
 The order follows [Settings](../AGENTS.md#settings): code lands before the configuration that uses it.
 
-1. The CLI, released and carried in the sandbox image (`images/sandbox.nix`), pinned in
-   `nix/artifact-pins.json` as the runner wheel is.
-2. The environment variables:
+1. The environment variables, once the images pinned on staging and `agentplane-testing` carry
+   `agentplane`:
 
    | Variable                                                                                               | Set by                                 | Value                                                                                                                                                                                                      |
    | ------------------------------------------------------------------------------------------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -20,7 +19,7 @@ The order follows [Settings](../AGENTS.md#settings): code lands before the confi
 
    The per-Session variable needs the pinned runner to export it. Until then `--destination` serves.
 
-3. The platform instructions gain a short paragraph naming `agentplane` and its `--help`, and each
+2. The platform instructions gain a short paragraph naming `agentplane` and its `--help`, and each
    workflow guide shows the command beside the route it wraps. The service table, URLs and
    placeholders stay, because `curl` remains supported. Sessions started earlier keep their
    original prompt and keep working through `curl`.
