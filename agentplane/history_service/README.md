@@ -7,8 +7,9 @@ Service's. A Session UUID by itself
 grants nothing. Consumers use `client.py`; `testing/backend.py` serves the real boundary over a test
 database.
 
-This service's `migrate` init container runs the history tables' migrations
-(`storage/`); its runner ingress and its fold are their only writers.
+This service's `migrate` init container runs the history tables' migrations: `migrations/` (Goose) on
+`agentplane-testing`, `storage/` (Alembic) on staging until its cutover. Its runner ingress and its fold are
+their only writers.
 
 ## While the History Service is down or rolling
 
@@ -119,6 +120,7 @@ the `ThreadEntityView` JSON browsers sync. A caller holding rows of a replaced e
 `ReadEntityEvidence` pages the observation cursors an entity was folded from, and
 `ReadNativeFrames` the native harness frames linked to one of them, read from the raw log.
 
-Bazel targets: `:main`, `:image`. Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
-variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`settings.py`). gRPC
-listens on `port`, where `grpc.health.v1.Health` reports process liveness only.
+Bazel targets: `:history-service` and `:service_image` (Go; `agentplane-testing`), `:main` and `:image`
+(Python; staging until its cutover). Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
+variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`config.go`, `settings.py`).
+gRPC listens on `port`, where `grpc.health.v1.Health` reports process liveness only.

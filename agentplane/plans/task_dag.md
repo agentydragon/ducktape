@@ -1938,16 +1938,15 @@ binary with no import of the Python History service other than its client.
 
 ### `HISTORY_GO_TESTING_CUTOVER` — cut `agentplane-testing` over to the Go History Service
 
-**Candidate.** The Go migrator is on `agentplane-testing`: the Goose baseline records itself in
-`history_service_goose_version` and changes nothing else on the Alembic-built database. Staging keeps the
-Python migrator, because testing and staging follow one Flux image policy per name and staging's `image-pins`
-dropped the `$imagepolicy` marker on that pin. After the migrator has soaked on testing, point
-`agentplane-history-service` in `devinfra/ci/image_targets.json` at `//agentplane/history_service:service_image`
-(the Go binary accepts the current manifests' settings), holding staging's pin of it the same way until
-`HISTORY_GO_STAGING_CUTOVER`. Then switch the README system overview and the docs. The Go projector continues
-each Session's fold from its stored checkpoint in the current epoch, so no Session refolds and Electric sees no
-scope reset. **Deliverable:** a Session on `agentplane-testing` runs through ingress, the fold, the reads and
-Electric on the Go service.
+**Candidate.** The Go migrator runs on `agentplane-testing`: the Goose baseline records itself in
+`history_service_goose_version` and changes nothing else on the Alembic-built database. The service image
+builds from `//agentplane/history_service:service_image` (`devinfra/ci/image_targets.json`; the Go binary accepts
+the current manifests' settings). Testing and staging follow one Flux image policy per name, so staging's
+`image-pins` drops the policy marker on the service pin as it did on the migrator's and keeps the Python
+service until `HISTORY_GO_STAGING_CUTOVER`. The Go projector continues each Session's fold from its stored
+checkpoint in the current epoch, so no Session refolds and Electric sees no scope reset. **Deliverable:** once
+Flux pins the Go image, a Session on `agentplane-testing` runs through ingress, the fold, the reads and
+Electric on the Go service; then this node goes.
 
 ### `HISTORY_GO_STAGING_CUTOVER` — cut staging over to the Go History Service
 

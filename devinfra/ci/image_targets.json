@@ -260,7 +260,7 @@
       "registry": "forgejo"
     },
     "agentplane-history-service": {
-      "target": "//agentplane/history_service:image",
+      "target": "//agentplane/history_service:service_image",
       "test": "//agentplane/history_service/...",
       "registry": "forgejo"
     },
