@@ -1969,14 +1969,15 @@ The Go service reads the Action Service through a small hand-written HTTP client
 
 ### `ACTION_SERVICE_GO_PORT` — port the Action Service to Go
 
-**Candidate; recommended after the other ports because it sits on MCP and OAuth.** Serve its operator and
+**Candidate; operator, 2026-10-19 PDT: port it, with the OAuth authorization server on `zitadel/oidc`.** Serve its operator and
 workload APIs as generated facades and delete `OperatorActionServiceClient`, the app's Action routes and
-relays, and the Go Notification Service's hand-written HTTP client for the two request reads it makes. The request watch gets a resume cursor or delta frames in its proto from the start: its first frame
+relays, and the Go Notification Service's hand-written HTTP client for the two request reads it makes. The request watch sends delta frames from the start: its first frame
 is the whole history (megabytes, #7922) and it ends every minute with the exchanged token. The MCP
 endpoint, OAuth metadata and consent callbacks stay hand-written HTTP. The receipt wait
 (`wait_seconds`, `wait_until`) and request paging (`limit`, `after_id`) the [agent CLI](../docs/agent_cli.md)
 calls are served by the Python service today; the port keeps them, and a server stream of receipts that
-ends at the condition replaces the wait with the CLI updated in the same change.
+ends at the condition replaces the wait with the CLI updated in the same change. Stages, stored-data risks and
+cutover: [Action Service Go port](action_service_go_port.md).
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 

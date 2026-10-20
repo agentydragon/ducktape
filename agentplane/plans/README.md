@@ -33,6 +33,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   per-service tracks are in the task DAG
 - [Notification Service Go port](notification_service_go_port.md) — stages, stored-data risks and cutover
   for porting the service as it is, with its facade generated from a proto
+- [Action Service Go port](action_service_go_port.md) — stages, library choices, the OAuth authorization
+  server on `zitadel/oidc`, stored-data risks and cutover for porting the service as it is
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving
   agent-facing records through an extension apiserver, with RBAC via `SubjectAccessReview` as the
   cheaper route
