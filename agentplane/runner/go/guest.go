@@ -25,6 +25,9 @@ const (
 	guestAgentUID     = uint32(107)
 	guestAgentGID     = uint32(107)
 	workloadToken     = "agentplane-credential-agentplane-workload"
+	// The runner disk carries this executable and the `agentplane` command; runner/vm.nix mounts it
+	// at /run/agentplane/runner.
+	guestRunnerDiskBin = "/run/agentplane/runner/bin"
 )
 
 // guestSeed is the read-only per-environment configuration written to the guest.
@@ -160,7 +163,7 @@ func guestHarnessEnvironment(proxyURL string) map[string]string {
 		"HOME":                filepath.Join(guestWorkspaceDir, ".home"),
 		"USER":                "agent",
 		"LOGNAME":             "agent",
-		"PATH":                "/run/current-system/sw/bin",
+		"PATH":                "/run/current-system/sw/bin:" + guestRunnerDiskBin,
 		"TZDIR":               "/usr/share/zoneinfo",
 		"HTTP_PROXY":          proxyURL,
 		"HTTPS_PROXY":         proxyURL,
