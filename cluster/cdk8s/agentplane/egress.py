@@ -413,6 +413,9 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
                     "/llms.txt",
                     "/docs/agents/**",
                     "/openapi.json",
+                    # CLEANUP(added 2026-10-20): Remove "/v1/sources" with stage K of NOTIFICATION_SERVICE_GO_PORT.
+                    #   Staging's Sandboxes run the CLI whose `notifications sources` calls it until the Go service
+                    #   answers there.
                     "/v1/sources",
                     "/v1/subscriptions",
                     "/v1/subscriptions/**",

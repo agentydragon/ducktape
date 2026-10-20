@@ -94,6 +94,7 @@ The separate `History PostgreSQL → Electric → app → browser` arrows show r
 ```mermaid
 flowchart LR
     agent([Agent])
+    app[Integration app]
     github([GitHub])
     notifications[Notification service]
     actions[Action Service]
@@ -103,6 +104,7 @@ flowchart LR
     history[History Service]
 
     agent -->|notification API| notifications
+    app -->|gRPC operator watches + health| notifications
     github --> notifications
     notifications --> github
     notifications -->|Action history| actions
@@ -112,7 +114,8 @@ flowchart LR
     notifications -->|command receipts| history
 ```
 
-The Notification service does not call the integration app. GitHub sends it signed webhooks; it
+The Notification service does not call the integration app, which watches subscription and notice
+state over the operator-only `NotificationsOperator` gRPC service. GitHub sends it signed webhooks; it
 makes GitHub App REST calls, reads receipt evidence from History before retrying a delivery, and
 submits every runner notice through the Session Dispatcher.
 
@@ -167,6 +170,6 @@ policy. LiteLLM is a separate hop behind LLM ingress; only that service holds th
 
 ## Service definitions
 
-- gRPC: [RunnerControl](../runner_gateway/runner_control.proto), [tunneled Runner RPCs](../runner/runner_service.proto), [RunnerIngress](../history_service/runner_ingress.proto), [Session Dispatcher](../runner_gateway/dispatcher/session_dispatcher.proto), and [History Service](../history_service/history_service.proto). The Runner Gateway also serves standard gRPC health and proxies the Runner service over each outbound control stream.
-- HTTP and streaming APIs: [Integration app](../app/api.py), [Electric proxy](../app/electric.py), [Action Service](../action_service/api.py), [Notification Service](../notification_service/api.py), [LLM ingress](../llm_ingress/server.go), and [Git index](../indexing/app.py).
+- gRPC: [RunnerControl](../runner_gateway/runner_control.proto), [tunneled Runner RPCs](../runner/runner_service.proto), [RunnerIngress](../history_service/runner_ingress.proto), [Session Dispatcher](../runner_gateway/dispatcher/session_dispatcher.proto), [History Service](../history_service/history_service.proto), and the Notification Service's [workload](../notification_service/notifications.proto) and [operator](../notification_service/notifications_operator.proto) APIs (the workload API also has an HTTP form). The Runner Gateway also serves standard gRPC health and proxies the Runner service over each outbound control stream.
+- HTTP and streaming APIs: [Integration app](../app/api.py), [Electric proxy](../app/electric.py), [Action Service](../action_service/api.py), [LLM ingress](../llm_ingress/server.go), and [Git index](../indexing/app.py).
 - Controllers and egress: [Sandbox Controller](../sandbox_controller/controller.go), [Policy Controller](../policy_controller/controller.go), [central egress proxy](../egress/proxy/proxy.go), [Go sidecar](../egress/sidecar/main.go), and [sidecar route configuration](../egress/platform_routes.py).

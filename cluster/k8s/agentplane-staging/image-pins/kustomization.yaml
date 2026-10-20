@@ -13,8 +13,11 @@ images:
     newTag: devel-20261020091614-af3f1fe # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate
     newTag: devel-20261019070159-d538834 # {"$imagepolicy": "flux-system:agentplane-egress-history-migrate:tag"}
+  # CLEANUP(added 2026-10-20): Restore this pin's Flux image-policy marker (policy `agentplane-app`, field `tag`)
+  #   with the staging service flip of NOTIFICATION_SERVICE_GO_PORT: until then staging's Notification Service is the
+  #   Python image, which the app's gRPC watches in later images cannot talk to.
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261020164134-e944bbb # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261020164134-e944bbb
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261017094929-fd684b6 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway

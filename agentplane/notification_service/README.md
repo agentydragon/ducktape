@@ -42,9 +42,9 @@ sessions retain their original prompt.
 
 ## Go image
 
-`:service_image` (binary `:notification-service`) is the Go service: nothing deploys it yet, and the Python
-service above serves until the [cutover](docs/cutover.md). It reads the settings file and environment variables of
-[Configuration](#configuration), with these differences:
+`:service_image` (binary `:notification-service`) is the Go service. `agentplane-testing` runs it; staging runs
+the Python service above until the [cutover](docs/cutover.md) reaches it. It reads the settings file and environment
+variables of [Configuration](#configuration), with these differences:
 
 - It takes no flags, and no `log_levels`; logs are JSON on stderr.
 - `request_timeout_s` (default 15) bounds a call's backend work, and `watch_lease_s` (default 300) is how long a

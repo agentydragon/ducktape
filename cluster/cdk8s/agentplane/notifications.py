@@ -26,7 +26,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.probes import grpc_probe, http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -38,6 +38,9 @@ NAME = "notifications"
 WORKLOAD_CREDENTIAL = "agentplane-notifications-workload"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
+# The health service whose verdict is "the process answers"; the empty name is readiness. Keep equal to
+# `livenessService` in agentplane/notification_service/main.go.
+_LIVENESS_HEALTH_SERVICE = "livez"
 
 
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
@@ -128,6 +131,17 @@ class Notifications(Construct):
             },
             supplied=supplied,
         )
+        # CLEANUP(added 2026-10-20): Remove the HTTP branch and `Environment.notifications_grpc_probes` once
+        #   staging's service flip lands (stage K of NOTIFICATION_SERVICE_GO_PORT); every environment then
+        #   runs the Go image and these `grpc` probes.
+        if env.notifications_grpc_probes:
+            readiness = grpc_probe(port=endpoint.pod_port, initial_delay_seconds=3, period_seconds=10)
+            liveness = grpc_probe(
+                port=endpoint.pod_port, service=_LIVENESS_HEALTH_SERVICE, initial_delay_seconds=20, period_seconds=30
+            )
+        else:
+            readiness = http_probe("/readyz", port=8080, initial_delay_seconds=3, period_seconds=10)
+            liveness = http_probe("/healthz", port=8080, initial_delay_seconds=20, period_seconds=30)
         workload = add_service_workload(
             self,
             env,
@@ -135,8 +149,8 @@ class Notifications(Construct):
             container="notifications",
             image=f"{_IMAGE}:unset",
             env_variables=variables,
-            readiness=http_probe("/readyz", port=8080, initial_delay_seconds=3, period_seconds=10),
-            liveness=http_probe("/healthz", port=8080, initial_delay_seconds=20, period_seconds=30),
+            readiness=readiness,
+            liveness=liveness,
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=memory_limit),

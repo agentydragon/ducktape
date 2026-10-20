@@ -85,7 +85,7 @@ flowchart LR
     app -->|gRPC health + tunneled Runner RPCs| gw
     app -->|Dispatcher API: gRPC and HTTP/JSON reads| gw
     app --> hs
-    app --> notif
+    app -->|gRPC operator watches + health| notif
     app --> actions
     app -->|gRPC| egress
     app --> electric
@@ -113,7 +113,7 @@ flowchart LR
     click app href "app/api.py" "Integration app API"
     click gw href "docs/runner_control.md" "Runner control stream and proxy"
     click hs href "history_service/history_service.proto" "History Service API"
-    click notif href "notification_service/api.py" "Notification Service API"
+    click notif href "notification_service/notifications.proto" "Notification Service API"
     click actions href "action_service/api.py" "Action Service API"
     click policy href "policy_controller/controller.go" "Policy Controller"
     click sandboxctl href "sandbox_controller/controller.go" "Sandbox Controller"
