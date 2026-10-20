@@ -6,7 +6,9 @@ Preserve the configured proxy and CA trust for this call and subsequent protecte
 ## Build the request from a live rule
 
 Choose a rule covering the intended host, HTTP method, and path. Read the credential's description:
-it identifies whose authority you will use. Send its exact `placeholder` according to its `targets`:
+it identifies whose authority you will use. Send its exact `placeholder` according to its `targets`
+(`agentplane egress rules` prints each as the header or field to send; `--json` has the raw `method`,
+`header`, `scheme` and `field`):
 
 - `METHOD_SCHEME_TOKEN`: use the declared `header` and `scheme`, such as `Authorization: Bearer <placeholder>`.
 - `METHOD_WHOLE_VALUE`: the entire declared `header` value is the placeholder.
