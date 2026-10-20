@@ -337,42 +337,10 @@ _GROCY_SF_READS_ACTIONS = [
     # keep-sorted end
 ]
 
-# kubectl-passthrough-mcp's read-only surface. These execute as the operator's cluster-admin
-# identity, so they reach past the caller's own RBAC: every namespace's Pods, Events and objects.
-# Reviewed exclusions: `pods_log`, since application logs can carry credentials; Secret kinds (see _KUBERNETES_RESOURCE_READ_SCHEMA);
-# `configuration_view`, which returns the server's kubeconfig and with it any credential that
-# carries; `nodes_log` file paths (only service names, see below); and every write, `pods_exec`
-# and `pods_run` included. New upstream tools stay manual until reviewed here.
-_KUBERNETES_INSPECTION_READS_ACTIONS = [
-    # keep-sorted start
-    "events_list",
-    "namespaces_list",
-    "nodes_stats_summary",
-    "nodes_top",
-    "pods_get",
-    "pods_list",
-    "pods_list_in_namespace",
-    "pods_top",
-    "projects_list",
-    # keep-sorted end
-]
-# `resources_get`/`resources_list` with any kind but a Secret. The server resolves `kind` through
-# discovery, so the refusal is case-insensitive and covers the plural and list spellings; the
-# identifier pattern keeps a padded or otherwise odd spelling off the auto-approved path.
-_KUBERNETES_RESOURCE_READ_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "kind": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]*$", "not": {"pattern": "^[Ss][Ee][Cc][Rr][Ee][Tt]"}}
-    },
-    "required": ["apiVersion", "kind"],
-}
-# `nodes_log` for a named service (`kubelet`, ...). A `/`-prefixed query reads an arbitrary file
-# under the node's /var/log, the API server audit log among them, and stays manual.
-_KUBERNETES_NODE_SERVICE_LOG_SCHEMA = {
-    "type": "object",
-    "properties": {"query": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*$"}},
-    "required": ["query"],
-}
+# kubectl-passthrough-mcp's node and Pod resource-usage reads: metrics only, no object contents,
+# logs or Secrets. They execute as the operator's cluster-admin identity, so they cover every node
+# and namespace. Every other kubernetes_admin Action stays manual until reviewed here.
+_KUBERNETES_INSPECTION_READS_ACTIONS = ["nodes_stats_summary", "nodes_top", "pods_top"]
 
 
 def add_staging_action_policies(scope: Construct) -> None:
@@ -943,22 +911,12 @@ def add_staging_action_policies(scope: Construct) -> None:
             namespace=_NAMESPACE,
             annotations={
                 "description": (
-                    "Auto-approves the reviewed read-only kubernetes_admin Actions: Pods, Events, node stats and "
-                    "service logs, and any object but a Secret. pods_log, configuration_view, node log files, "
-                    "pods_exec, pods_run and every write stay on the human path."
+                    "Auto-approves kubernetes_admin's node stats and node/Pod resource-usage reads; every "
+                    "other kubernetes_admin Action stays on the human path."
                 )
             },
         ),
-        rules=[
-            AutoApproveIf.exact_actions(actions={"kubernetes_admin": _KUBERNETES_INSPECTION_READS_ACTIONS}),
-            AutoApproveIf.argument_schema(
-                actions={"kubernetes_admin": ["resources_get", "resources_list"]},
-                schema=_KUBERNETES_RESOURCE_READ_SCHEMA,
-            ),
-            AutoApproveIf.argument_schema(
-                actions={"kubernetes_admin": ["nodes_log"]}, schema=_KUBERNETES_NODE_SERVICE_LOG_SCHEMA
-            ),
-        ],
+        rules=[AutoApproveIf.exact_actions(actions={"kubernetes_admin": _KUBERNETES_INSPECTION_READS_ACTIONS})],
     )
 
     # The long-running OpenClaw Pod is hosted in its own namespace; keep its Action

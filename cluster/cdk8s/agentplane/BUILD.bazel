@@ -796,11 +796,9 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "@pypi//jsonschema",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//referencing",
     ],
 )
 

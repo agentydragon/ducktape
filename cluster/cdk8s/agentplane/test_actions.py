@@ -5,15 +5,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import jsonschema
 import pytest
 import pytest_bazel
 from more_itertools import one
 
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
-
-# types-jsonschema stubs import referencing; the mypy aspect needs that typed package directly.
-# gazelle:include_dep @pypi//referencing
 
 # REST, docs, health and consent live behind the Action API's own authentication, never on
 # the public MCP origin.
@@ -82,66 +78,6 @@ def test_gaffer_pr_policy_approves_only_create_pull_request(
     assert approval["schema"]["properties"]["maintainer_can_modify"] == {"const": False}
     assert "reviewers" not in approval["schema"]["properties"]
     assert approval["schema"]["additionalProperties"] is False
-
-
-def _kubernetes_inspection_approves(
-    manifests: dict[str, list[dict[str, Any]]], action: str, arguments: dict[str, Any]
-) -> bool:
-    """Whether a `kubernetes-inspection-reads` rule approves the call, judged the way the Action
-    Service judges `exact_actions` and `argument_schema` rules."""
-    policy_set = one(
-        doc
-        for doc in manifests["agentplane-staging"]
-        if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == "kubernetes-inspection-reads"
-    )
-    for rule in policy_set["spec"]["rules"]:
-        policy = rule["policy"]
-        if action not in policy["actions"].get("kubernetes_admin", []):
-            continue
-        if policy["type"] == "exact_actions":
-            return True
-        assert policy["type"] == "argument_schema"
-        schema = policy["schema"]
-        if jsonschema.validators.validator_for(schema)(schema).is_valid(arguments):
-            return True
-    return False
-
-
-@pytest.mark.parametrize(
-    ("action", "arguments"),
-    [
-        ("nodes_stats_summary", {"name": "fake-node"}),
-        ("pods_get", {"name": "fake-pod", "namespace": "fake-ns"}),
-        ("nodes_log", {"name": "fake-node", "query": "kubelet"}),
-        ("resources_get", {"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "name": "fake-db"}),
-        ("resources_list", {"apiVersion": "v1", "kind": "ConfigMap", "namespace": "fake-ns"}),
-    ],
-)
-def test_kubernetes_inspection_reads_approve_reads(
-    agentplane_manifests: dict[str, list[dict[str, Any]]], action: str, arguments: dict[str, Any]
-) -> None:
-    assert _kubernetes_inspection_approves(agentplane_manifests, action, arguments)
-
-
-@pytest.mark.parametrize(
-    ("action", "arguments"),
-    [
-        ("resources_get", {"apiVersion": "v1", "kind": "Secret", "name": "fake-secret"}),
-        ("resources_list", {"apiVersion": "v1", "kind": "secrets"}),
-        ("resources_list", {"apiVersion": "v1", "kind": "SecretList"}),
-        ("resources_get", {"apiVersion": "v1", "kind": " Secret", "name": "fake-secret"}),
-        ("nodes_log", {"name": "fake-node", "query": "/var/log/audit/kube/kube-apiserver.log"}),
-        ("pods_log", {"name": "fake-pod", "namespace": "fake-ns"}),
-        ("configuration_view", {"minified": False}),
-        ("pods_exec", {"name": "fake-pod", "command": ["true"]}),
-        ("pods_run", {"image": "fake-image"}),
-        ("resources_delete", {"apiVersion": "v1", "kind": "Pod", "name": "fake-pod"}),
-    ],
-)
-def test_kubernetes_inspection_reads_leave_secrets_logs_exec_and_writes_manual(
-    agentplane_manifests: dict[str, list[dict[str, Any]]], action: str, arguments: dict[str, Any]
-) -> None:
-    assert not _kubernetes_inspection_approves(agentplane_manifests, action, arguments)
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
