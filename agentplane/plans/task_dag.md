@@ -277,7 +277,7 @@ flowchart TD
     HISTORY_ACCESS_AFTER_DELETION -. may change collection membership storage only .-> SESSION_ACCESS_RULES
     SESSION_ACCESS_RULES --> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN --> HISTORY_SANDBOX_UID
-    HISTORY_SERVICE_GO_PORT[Candidate: port the History Service to Go, section 13] -. operational hold: the UID is recorded in the Go service .-> HISTORY_SANDBOX_UID
+    HISTORY_GO_SERVICE[In flight: the Go History Service, section 13] -. operational hold: the UID is recorded in the Go service .-> HISTORY_SANDBOX_UID
     HISTORY_SESSION_KEY_DESIGN -. read API shape .-> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN -. only if re-keyed .-> APP_THREAD_SANDBOX_UID
     HISTORY_SANDBOX_UID --> THREAD_READ_POLICY
@@ -476,7 +476,7 @@ re-keyed, drop the rows whose Sandbox is already deleted?
 
 ### `HISTORY_SANDBOX_UID` — History records and checks the Sandbox UID
 
-**Blocked on `HISTORY_SESSION_KEY_DESIGN` and, as an operational hold, on `HISTORY_SERVICE_GO_PORT`, which
+**Blocked on `HISTORY_SESSION_KEY_DESIGN` and, as an operational hold, on `HISTORY_GO_SERVICE`, which
 it lands in; the first History change to dispatch under either alternative.** In order:
 the namespaced `get serviceaccounts` Role for the History Service lands first, then the code. Add the
 nullable `sandbox_uid` and `SandboxRef.uid`; resolve and cache the pusher's Sandbox UID at bind, fill
@@ -1955,27 +1955,71 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 
 ```mermaid
 flowchart LR
-    HISTORY_SERVICE_GO_PORT[Candidate: port the History Service to Go]
+    HISTORY_GO_SERVICE[In flight: the Go History Service]
+    HISTORY_TEST_BACKEND_ON_GO[Blocked: app and Electric tests run against the Go History]
+    HISTORY_GO_TESTING_CUTOVER[Blocked: cut agentplane-testing over to the Go History Service]
+    HISTORY_GO_STAGING_CUTOVER[Blocked: cut staging over to the Go History Service]
+    HISTORY_PYTHON_RETIREMENT[Blocked: retire the Python History Service]
     HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
     NOTIFICATION_SERVICE_GO_PORT[Blocked: port the Notification Service to Go]
     ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
-    HISTORY_SERVICE_GO_PORT --> HISTORY_READS_FACADE
+    HISTORY_GO_SERVICE --> HISTORY_TEST_BACKEND_ON_GO
+    HISTORY_GO_SERVICE --> HISTORY_GO_TESTING_CUTOVER
+    HISTORY_GO_TESTING_CUTOVER --> HISTORY_GO_STAGING_CUTOVER
+    HISTORY_GO_STAGING_CUTOVER --> HISTORY_PYTHON_RETIREMENT
+    HISTORY_TEST_BACKEND_ON_GO --> HISTORY_PYTHON_RETIREMENT
+    HISTORY_GO_STAGING_CUTOVER --> HISTORY_READS_FACADE
     NOTIFICATION_SERVICE_SPLIT --> NOTIFICATION_SERVICE_GO_PORT
-    HISTORY_SERVICE_GO_PORT -. operational hold: the UID is recorded in the Go service .-> HISTORY_SANDBOX_UID
+    HISTORY_GO_SERVICE -. operational hold: the UID is recorded in the Go service .-> HISTORY_SANDBOX_UID
 ```
 
-### `HISTORY_SERVICE_GO_PORT` — port the History Service to Go
+### `HISTORY_GO_SERVICE` — the Go History Service
 
-**Candidate; the operator chose it as the next port (2026-10-19).** Keep the schema and the gRPC contract
-unchanged so Electric and the existing callers keep working; the fold's Python tests pin the port.
-`HISTORY_SANDBOX_UID` and the History changes after it wait for the Go service and land there, so no History
-change is written in Python and ported afterwards.
+**In flight (this thread, 2026-10-20 UTC); the operator chose the History Service as the next port (2026-10-19).**
+Keep the schema and the gRPC contract unchanged so Electric and the existing callers keep working; the
+ported Python tests and the golden vectors the Python fold produced pin the port. `HISTORY_SANDBOX_UID` and the
+History changes after it wait for this service and land in it, so no History change is written in Python and
+ported afterwards. Landed: the Goose migrator (a baseline over Alembic head `0022`), the store with delta
+settlement, the pure fold, and projection leases. In review: fold recording. Remaining: lifecycle
+projection, summaries and the projector; the fold runner; the readers, gRPC servicers and runner ingress;
+settings, `main`, health and the image. **Deliverable:** the Go binary passes the ported Python tests
+against Postgres and serves every History RPC; nothing deploys it yet.
+
+### `HISTORY_TEST_BACKEND_ON_GO` — app and Electric tests run against the Go History
+
+**Blocked on `HISTORY_GO_SERVICE`.** The app's, Electric's and browser tests read History through an
+in-process Python backend (`history_service/testing/backend.py`, `history.py`) that runs the Python store,
+fold, servicers and ingress. Start the Go binary on a test Postgres in its place, so those tests keep
+covering the service that ships and the Python code can go. **Deliverable:** those tests pass against the Go
+binary with no import of the Python History service other than its client.
+
+### `HISTORY_GO_TESTING_CUTOVER` — cut `agentplane-testing` over to the Go History Service
+
+**Blocked on `HISTORY_GO_SERVICE`.** Image before config: build and pin the service and migrator images,
+then switch the manifests, the README system overview and the docs. The Go projector continues each
+Session's fold from its stored checkpoint in the current epoch, so no Session refolds and Electric sees no
+scope reset. **Deliverable:** a Session on `agentplane-testing` runs through ingress, the fold, the
+reads and Electric on the Go service.
+
+### `HISTORY_GO_STAGING_CUTOVER` — cut staging over to the Go History Service
+
+**Blocked on `HISTORY_GO_TESTING_CUTOVER`.** Backup and restore proof first
+([staging data preservation](../docs/staging_data_preservation.md)); on the restored copy, a Go refold of
+every retained Session equals the rows the Python fold stored. Then image before config. No staging
+database or Session is dropped or recreated.
+
+### `HISTORY_PYTHON_RETIREMENT` — retire the Python History Service
+
+**Blocked on `HISTORY_GO_STAGING_CUTOVER` and `HISTORY_TEST_BACKEND_ON_GO`.** Delete the Python store, fold,
+servicers, ingress, runner and migration image with their BUILD targets and CI roster entries; keep
+`client.py`, which the app and the Notification service use. Move the references that name the Python delta
+templates (`docs/adr_delta_settlement.md`, the History README, `native/BUILD.bazel`).
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
 
-**Blocked on `HISTORY_SERVICE_GO_PORT`.** Annotate the browser's History
+**Blocked on `HISTORY_GO_STAGING_CUTOVER`.** Annotate the browser's History
 reads and replace the app's mirror models (`app/threads/view/content.py`,
 `app/threads/events/debug.py`) with the generic proxy. `WatchSessionSummaries` says only that something
 changed, so a browser-facing watch gets frames that carry state. Decide on purpose whether the app's Thread
