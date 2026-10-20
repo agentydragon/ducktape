@@ -49,11 +49,13 @@ not proof that the current head passed required checks.
 
 ## Health, expiry, and cleanup
 
-Inspect `GET /v1/subscriptions/{id}` for source failures and expiry, and `inbox.delivery_error` on
+Inspect `GET /v1/subscriptions/{id}` (`agentplane notifications subscription ID`, or
+`subscriptions` to list) for source failures and expiry, and `inbox.delivery_error` on
 inbox reads. If creation or delivery fails, use a bounded status check or explain the limitation;
 do not claim monitoring is active. Notifications cannot start a stopped harness or Sandbox.
 
 Subscriptions expire unless renewed. Use `PATCH /v1/subscriptions/{id}` with its current `version`
-and the desired `lifetime_days`; consult OpenAPI for limits. Cancel with
-`DELETE /v1/subscriptions/{id}` when the purpose is complete. This does not cancel an Action or
+and the desired `lifetime_days` (`agentplane notifications renew ID --lifetime-days N`); consult
+OpenAPI for limits. Cancel with `DELETE /v1/subscriptions/{id}` (`agentplane notifications cancel ID`)
+when the purpose is complete. This does not cancel an Action or
 erase accepted notifications. Do not retire the entire Session inbox to clean up one task.

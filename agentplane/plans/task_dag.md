@@ -1836,7 +1836,6 @@ flowchart LR
     IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive, section 7]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
-    AGENT_CLI_ROLLOUT[In flight: carry the agentplane CLI into Sessions]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a PostgreSQL-free K3s tier]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
@@ -2056,15 +2055,6 @@ endpoint, OAuth metadata and consent callbacks stay hand-written HTTP. The recei
 (`wait_seconds`, `wait_until`) and request paging (`limit`, `after_id`) the [agent CLI](../docs/agent_cli.md)
 calls are served by the Python service today; the port keeps them, and a server stream of receipts that
 ends at the condition replaces the wait with the CLI updated in the same change.
-
-### `AGENT_CLI_ROLLOUT` — carry the agentplane CLI into Sessions
-
-**In flight (this thread, 2026-10-20 UTC).** The [CLI](../docs/agent_cli.md) is built and the Action
-Service serves the wait and paging it calls; it is released and the Sandbox, build, runner and VM
-images carry it (image change open). What remains is the [rollout](agent_cli.md): the environment
-variables, then the platform instructions and guides, in that order. **Deliverable:** a Session on `agentplane-testing` runs an Action and a
-subscription through `agentplane` and the real proxy, answering the plan's open checks. Delete this
-node and the plan with the last step.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 

@@ -15,7 +15,11 @@ Use the common creation envelope in [subscriptions](subscriptions.md), replacing
 }
 ```
 
-Other subjects are `{"kind":"issue","number":123}`, `{"kind":"branch","name":"devel"}`,
+`agentplane notifications subscribe github pr OWNER/REPO#123` creates the pull-request subscription
+for your Session (`AGENTPLANE_DESTINATION`; or `--destination JSON`). Its repeated invocation
+returns the same subscription, `--event NAME[:ACTION[,ACTION]]` replaces the default events, and it
+exits `4` when the response is a cancelled subscription (pass a new `--key`). Other subjects are
+`{"kind":"issue","number":123}`, `{"kind":"branch","name":"devel"}`,
 or `{"kind":"commit","sha":"FULL_40_CHARACTER_COMMIT_SHA"}`. Use real repository identifiers.
 Omit `events` for subject defaults. For PR comments only, add
 `"events":[{"event":"issue_comment","actions":["created"]}]` to the source. Use the advertised

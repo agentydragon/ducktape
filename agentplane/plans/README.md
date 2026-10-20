@@ -26,8 +26,6 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   Sandbox scopes, explicit collections, live bundles and Session inboxes; shared inbox/messaging
   service with subscriptions and batched notices; tentative service-enforced PolicySet rules,
   remaining schema/API decisions and deferred agent lifecycle delegation
-- [Agent CLI](agent_cli.md) — rollout of the built `agentplane` command: release, pin, environment
-  variables and agent guides
 - [Generated HTTP facades](grpc_http_facade.md) — extension of the approved gRPC-Gateway direction
   to the browser, through the app first, with direct browser access as a later option; the
   per-service tracks are in the task DAG

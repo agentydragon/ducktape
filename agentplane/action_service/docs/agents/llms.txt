@@ -9,6 +9,7 @@ not select an owner or grant access. The operator routes are not a workload API.
 Find operations with `GET /v1/action-groups` and fetch the chosen Action's argument schema with
 `GET /v1/action-groups/{group}/actions/{action}`. Check `GET /v1/action-policy` for your current
 bindings, expiry, and exact argument constraints. A catalog entry alone grants nothing.
+`agentplane actions --help` lists the command for each route below.
 
 Prefer your own Kubernetes access, allowed egress credentials, or matching auto-approved Actions
 before submitting a request that needs an operator click. A submitted request's decision and

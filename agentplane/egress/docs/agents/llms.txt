@@ -3,7 +3,8 @@
 > Discover your ServiceAccount's effective outbound access and credential presentation without obtaining real credentials.
 
 Use the Egress rules base URL from your platform instructions. Fetch `GET /v1/rules` through the
-configured proxy with `Authorization: Bearer agentplane-credential-agentplane-workload`.
+configured proxy with `Authorization: Bearer agentplane-credential-agentplane-workload`
+(`agentplane egress rules` does this and prints the same response with `--json`).
 The response names your authenticated `subject` and effective policies. Their rules provide `hosts`,
 `methods` and `paths` (each a `values` list, or `null` for any), and any `credential`'s identity,
 description, exact placeholder, and presentation `targets`. A rule whose `credential` is `null`
