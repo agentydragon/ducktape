@@ -8,11 +8,12 @@ go_library(
     deps = [
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/util/cache",
+        "@io_k8s_apiserver//pkg/authentication/authenticator",
+        "@io_k8s_apiserver//pkg/authentication/token/cache",
+        "@io_k8s_apiserver//pkg/authentication/user",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
-        "@org_golang_x_sync//singleflight",
     ],
 )
 

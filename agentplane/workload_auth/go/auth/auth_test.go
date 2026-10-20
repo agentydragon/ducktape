@@ -148,19 +148,17 @@ func TestAResolverNeedsAReviewerAnAudienceAndANamespace(t *testing.T) {
 	}
 }
 
-func TestAnAcceptanceIsReusedUntilItsTTLLapses(t *testing.T) {
-	now := time.Unix(1_000, 0)
+func TestAnAcceptanceIsReusedPerBearerAndLapsesWithItsTTL(t *testing.T) {
 	var calls atomic.Int32
-	revoked := false
+	var revoked atomic.Bool
 	reviews := reviewFunc(func(context.Context, *authenticationv1.TokenReview) (*authenticationv1.TokenReview, error) {
 		calls.Add(1)
-		if revoked {
+		if revoked.Load() {
 			return &authenticationv1.TokenReview{}, nil
 		}
 		return accepted(), nil
 	})
-	resolver, err := NewResolver(reviews, "dispatcher", []string{"agentplane-staging"},
-		WithVerdictTTL(time.Minute), WithClock(func() time.Time { return now }))
+	resolver, err := NewResolver(reviews, "dispatcher", []string{"agentplane-staging"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,17 +174,29 @@ func TestAnAcceptanceIsReusedUntilItsTTLLapses(t *testing.T) {
 		t.Fatalf("each bearer is reviewed once while its acceptance is fresh, got %d reviews", got)
 	}
 
-	revoked = true
-	now = now.Add(30 * time.Second)
+	revoked.Store(true)
 	if _, err := resolver.ResolveToken(context.Background(), "token"); err != nil {
-		t.Fatalf("a revocation is not seen before the TTL lapses: %v", err)
+		t.Fatalf("a revocation is not seen while the acceptance is fresh: %v", err)
 	}
-	now = now.Add(31 * time.Second)
-	if _, err := resolver.ResolveToken(context.Background(), "token"); !errors.Is(err, ErrInvalidBearer) {
-		t.Fatalf("a revocation is seen once the TTL lapses: %v", err)
+
+	short, err := NewResolver(reviews, "dispatcher", []string{"agentplane-staging"}, WithVerdictTTL(time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := calls.Load(); got != 3 {
-		t.Fatalf("got %d reviews", got)
+	revoked.Store(false)
+	if _, err := short.ResolveToken(context.Background(), "token"); err != nil {
+		t.Fatal(err)
+	}
+	revoked.Store(true)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_, err := short.ResolveToken(context.Background(), "token")
+		if errors.Is(err, ErrInvalidBearer) {
+			return
+		}
+		if err != nil || time.Now().After(deadline) {
+			t.Fatalf("a revocation is seen once the TTL lapses: %v", err)
+		}
 	}
 }
 

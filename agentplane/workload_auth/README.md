@@ -24,15 +24,17 @@ header, body field, source address, operator identity, role, permission, Agent, 
 participates, and resolution does not read the Pod object. The Runner Gateway's `resolve_peer` reads
 it afterwards, to follow a runner control stream's Pod to its controlling Sandbox.
 
-**Verdict reuse (Go).** The Go `Resolver` (`go/auth`) keeps the API server's acceptance of a bearer
-for `DefaultVerdictTTL` (30 s): a revoked token, or one whose Pod is gone, still resolves here for
-at most that long. The key is the bearer's hash, calls for one bearer that arrive while its
-TokenReview is in flight share it, and a caller that gives up does not fail the others. Only
-acceptances are kept: a rejection or a failed review is asked again by the next call, so an API
-server blip is never extended. The namespace allowlist and claim checks run on every call against
-the kept answer. Reviewing every request would make each one wait on the API server and spend its
-client's rate limit, and Sandbox Pod tokens live 600 s, so the window is small beside the token's
-own life.
+**Verdict reuse (Go).** The Go `Resolver` (`go/auth`) puts its TokenReview behind `k8s.io/apiserver`'s
+cached token authenticator, the cache the API server itself uses for webhook and delegated
+authentication (`authenticatorfactory.DelegatingAuthenticatorConfig`). It keeps the API server's
+acceptance of a bearer for `DefaultVerdictTTL` (30 s): a revoked token, or one whose Pod is gone,
+still resolves here for at most that long. The key is a keyed hash of the bearer, calls for one
+bearer that arrive while its TokenReview is in flight share it, and a caller that gives up does not
+fail the others. Only acceptances are kept: a rejection or a failed review is asked again by the
+next call, so an API server blip is never extended. The namespace allowlist and claim checks run on
+every call against the kept answer. Reviewing every request would make each one wait on the API
+server and spend its client's rate limit, and Sandbox Pod tokens live 600 s, so the window is small
+beside the token's own life.
 
 **Deviation:** the Python resolver (`principal.py`) reviews every call.
 

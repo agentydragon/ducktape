@@ -4,20 +4,20 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
 
-	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/cache"
+	"k8s.io/apiserver/pkg/authentication/authenticator"
+	"k8s.io/apiserver/pkg/authentication/token/cache"
+	"k8s.io/apiserver/pkg/authentication/user"
 )
 
 const (
@@ -28,14 +28,6 @@ const (
 
 // DefaultVerdictTTL is how long a Resolver reuses the API server's acceptance of a bearer.
 const DefaultVerdictTTL = 30 * time.Second
-
-const (
-	// maxVerdicts bounds the acceptances held; the least recently used goes first.
-	maxVerdicts = 10000
-	// reviewTimeout bounds a TokenReview that every call for one bearer shares, so a caller that
-	// gives up does not fail the others.
-	reviewTimeout = 30 * time.Second
-)
 
 var (
 	ErrInvalidBearer = errors.New("invalid workload bearer")
@@ -72,34 +64,23 @@ type TokenReviews interface {
 	Create(context.Context, *authenticationv1.TokenReview, metav1.CreateOptions) (*authenticationv1.TokenReview, error)
 }
 
-type clock func() time.Time
-
-func (c clock) Now() time.Time { return c() }
-
-// Resolver reviews each bearer with the API server and reuses its acceptance for the verdict TTL:
-// a revoked token, or one whose Pod is gone, still resolves for at most that long. A rejection or a
-// failed review is never reused, so the next call asks again.
+// Resolver reviews each bearer with the API server and reuses its acceptance for the verdict TTL
+// (the Kubernetes API server's own cached token authenticator): a revoked token, or one whose Pod
+// is gone, still resolves for at most that long. A rejection or a failed review is never reused, so
+// the next call asks again.
 type Resolver struct {
-	reviews    TokenReviews
 	audience   string
 	namespaces map[string]struct{}
-	ttl        time.Duration
-	now        func() time.Time
-
-	// accepted holds the identity of each bearer the API server accepted, keyed by the bearer's
-	// hash so the cache keeps no credential.
-	accepted *cache.LRUExpireCache
-	flights  singleflight.Group
+	verdicts   authenticator.Token
 }
 
 // Option tunes a Resolver.
-type Option func(*Resolver)
+type Option func(*settings)
+
+type settings struct{ verdictTTL time.Duration }
 
 // WithVerdictTTL replaces DefaultVerdictTTL. Zero reviews every call.
-func WithVerdictTTL(ttl time.Duration) Option { return func(r *Resolver) { r.ttl = ttl } }
-
-// WithClock replaces the wall clock that ages acceptances.
-func WithClock(now func() time.Time) Option { return func(r *Resolver) { r.now = now } }
+func WithVerdictTTL(ttl time.Duration) Option { return func(s *settings) { s.verdictTTL = ttl } }
 
 func NewResolver(reviews TokenReviews, audience string, namespaces []string, options ...Option) (*Resolver, error) {
 	if reviews == nil || audience == "" || len(namespaces) == 0 {
@@ -112,12 +93,42 @@ func NewResolver(reviews TokenReviews, audience string, namespaces []string, opt
 		}
 		allowed[namespace] = struct{}{}
 	}
-	r := &Resolver{reviews: reviews, audience: audience, namespaces: allowed, ttl: DefaultVerdictTTL, now: time.Now}
+	configured := settings{verdictTTL: DefaultVerdictTTL}
 	for _, option := range options {
-		option(r)
+		option(&configured)
 	}
-	r.accepted = cache.NewLRUExpireCacheWithClock(maxVerdicts, clock(r.now))
-	return r, nil
+	return &Resolver{
+		audience: audience, namespaces: allowed,
+		// Errors and rejections are not cached: failureTTL is zero.
+		verdicts: cache.New(tokenReviewer{reviews: reviews, audience: audience}, false, configured.verdictTTL, 0),
+	}, nil
+}
+
+// tokenReviewer is the uncached authenticator.Token the verdict cache wraps: one TokenReview per call.
+type tokenReviewer struct {
+	reviews  TokenReviews
+	audience string
+}
+
+func (t tokenReviewer) AuthenticateToken(ctx context.Context, token string) (*authenticator.Response, bool, error) {
+	review, err := t.reviews.Create(ctx, &authenticationv1.TokenReview{
+		Spec: authenticationv1.TokenReviewSpec{Token: token, Audiences: []string{t.audience}},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		return nil, false, err
+	}
+	if review == nil || !review.Status.Authenticated || !slices.Contains(review.Status.Audiences, t.audience) {
+		return nil, false, nil
+	}
+	info := review.Status.User
+	extra := make(map[string][]string, len(info.Extra))
+	for claim, values := range info.Extra {
+		extra[claim] = values
+	}
+	return &authenticator.Response{
+		Audiences: review.Status.Audiences,
+		User:      &user.DefaultInfo{Name: info.Username, UID: info.UID, Groups: info.Groups, Extra: extra},
+	}, true, nil
 }
 
 // Resolve adapts gRPC metadata to ResolveAuthorization. HTTP callers use the same
@@ -157,71 +168,31 @@ func (r *Resolver) ResolveAuthorization(ctx context.Context, values []string) (P
 // Unauthenticated when the token does not prove a workload this Resolver serves and with
 // Unavailable when the TokenReview could not be answered.
 func (r *Resolver) ResolveToken(ctx context.Context, token string) (Principal, error) {
-	user, err := r.review(ctx, token)
+	response, authenticated, err := r.verdicts.AuthenticateToken(ctx, token)
 	if err != nil {
-		return Principal{}, err
+		return Principal{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
-	parts := strings.Split(user.Username, ":")
+	if !authenticated {
+		return Principal{}, ErrInvalidBearer
+	}
+	parts := strings.Split(response.User.GetName(), ":")
 	if len(parts) != 4 || parts[0]+":"+parts[1]+":" != accountPrefix || parts[2] == "" || parts[3] == "" {
 		return Principal{}, ErrInvalidBearer
 	}
 	if _, ok := r.namespaces[parts[2]]; !ok {
 		return Principal{}, ErrInvalidBearer
 	}
-	podName, okName := oneClaim(user.Extra[podNameClaim])
-	podUID, okUID := oneClaim(user.Extra[podUIDClaim])
-	if !okName || !okUID || user.UID == "" {
+	extra := response.User.GetExtra()
+	podName, okName := oneClaim(extra[podNameClaim])
+	podUID, okUID := oneClaim(extra[podUIDClaim])
+	if !okName || !okUID || response.User.GetUID() == "" {
 		return Principal{}, ErrInvalidBearer
 	}
 	return Principal{
 		Account:           Account{Namespace: parts[2], Name: parts[3]},
-		ServiceAccountUID: user.UID,
+		ServiceAccountUID: response.User.GetUID(),
 		PodName:           podName, PodUID: podUID,
 	}, nil
-}
-
-// review returns who the API server proved the bearer to be: a held acceptance while it is fresh,
-// else the answer of a TokenReview that every concurrent call for the bearer waits on together.
-func (r *Resolver) review(ctx context.Context, token string) (authenticationv1.UserInfo, error) {
-	key := sha256.Sum256([]byte(token))
-	if user, found := r.accepted.Get(key); found {
-		return user.(authenticationv1.UserInfo), nil
-	}
-	lookup := r.flights.DoChan(string(key[:]), func() (any, error) {
-		// A call that arrived while the flight before it was finishing finds its acceptance.
-		if user, found := r.accepted.Get(key); found {
-			return user, nil
-		}
-		shared, cancel := context.WithTimeout(context.WithoutCancel(ctx), reviewTimeout)
-		defer cancel()
-		user, err := r.createReview(shared, token)
-		if err == nil && r.ttl > 0 {
-			r.accepted.Add(key, user, r.ttl)
-		}
-		return user, err
-	})
-	select {
-	case result := <-lookup:
-		if result.Err != nil {
-			return authenticationv1.UserInfo{}, result.Err
-		}
-		return result.Val.(authenticationv1.UserInfo), nil
-	case <-ctx.Done():
-		return authenticationv1.UserInfo{}, fmt.Errorf("%w: %w", ErrUnavailable, ctx.Err())
-	}
-}
-
-func (r *Resolver) createReview(ctx context.Context, token string) (authenticationv1.UserInfo, error) {
-	review, err := r.reviews.Create(ctx, &authenticationv1.TokenReview{
-		Spec: authenticationv1.TokenReviewSpec{Token: token, Audiences: []string{r.audience}},
-	}, metav1.CreateOptions{})
-	if err != nil {
-		return authenticationv1.UserInfo{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
-	}
-	if review == nil || !review.Status.Authenticated || !slices.Contains(review.Status.Audiences, r.audience) {
-		return authenticationv1.UserInfo{}, ErrInvalidBearer
-	}
-	return review.Status.User, nil
 }
 
 // RequireAccount applies an API/method-specific allowlist after token validation. It does not
@@ -237,7 +208,7 @@ func (r *Resolver) RequireAccount(ctx context.Context, allowed map[Account]struc
 	return principal, nil
 }
 
-func oneClaim(values authenticationv1.ExtraValue) (string, bool) {
+func oneClaim(values []string) (string, bool) {
 	returnValue := ""
 	if len(values) != 1 || values[0] == "" {
 		return returnValue, false
