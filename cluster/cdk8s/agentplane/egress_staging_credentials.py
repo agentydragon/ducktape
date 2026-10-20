@@ -42,6 +42,7 @@ from cluster.cdk8s.clickhouse import client as clickhouse
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.haku import mailbox
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
+from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
@@ -111,6 +112,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
             clickhouse.HTTP.egress(),  # _aiquota_read: typed history.
             mailbox.HTTP.egress(),  # _haku_mailbox: application policy excludes management APIs.
             plaid_pgweb.SERVICE.egress(),  # _plaid_pgweb.
+            mimir.GATEWAY.egress(),  # `mimir-reads` (actions_staging_policies.py): credentialless metric reads.
         ],
     )
 

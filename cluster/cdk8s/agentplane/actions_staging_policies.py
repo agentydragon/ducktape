@@ -44,6 +44,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     home_assistant_read_egress_rules,
 )
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.providers.agentplane import policy_set
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
@@ -64,6 +65,7 @@ GROCY_SF_READS_SET = "grocy-sf-reads"
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
 _GITHUB_DOWNLOADS_POLICY = "github-downloads"
+MIMIR_READS_POLICY = "mimir-reads"
 
 # Staging-only PolicySets. `agentplane-testing` combines testing-instance egress with the
 # acceptance-test Kubernetes grants; its rules are assembled by the Policy Controller from the
@@ -666,6 +668,23 @@ def add_staging_action_policies(scope: Construct) -> None:
         ],
     )
 
+    # Mimir's Prometheus-compatible read API over the cluster Service, with no credential: the
+    # gateway admits any in-cluster caller, and this rule is the whole fence. GET only, so a
+    # sandbox can query metrics but not push samples or reach the ruler and admin routes.
+    add_egress_policy(
+        scope,
+        f"egresspolicy-{MIMIR_READS_POLICY}",
+        metadata=ApiObjectMetadata(name=MIMIR_READS_POLICY, namespace=_NAMESPACE),
+        rules=[
+            Rule.egress(
+                hosts=[mimir.GATEWAY.fqdn],
+                methods=[PolicySetSpecRulesMethods.GET],
+                paths=["/prometheus/api/v1/**"],
+                cluster_internal=True,
+            )
+        ],
+    )
+
     # What a sandbox of claude-ai's may reach. The binding is on the account rather than on each
     # box because that is what the account is entitled to: the proxy authenticates the Pod's
     # ServiceAccount, and every sandbox stamped for this caller runs as exactly that. Nothing else
@@ -691,6 +710,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # this caller's can inspect sync health and run SQL over the Plaid mirror as `plaid_ro`, which
     # can only SELECT (agent_access_profiles.py, egress_staging_credentials.py).
     # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
+    # `mimir-reads` presents nothing either: GET on Mimir's Prometheus query API over the cluster Service.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
     # `github-clone` presents nothing either: the anonymous smart-HTTP git protocol
     # (GET+POST to github.com only, scoped to the `info/refs`/`git-upload-pack` paths). Now a
@@ -736,6 +756,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
             GITHUB_ACTIONS_LOGS_POLICY,
             BUILDBUDDY_POLICY,
+            MIMIR_READS_POLICY,
             *_ACCOUNT_READ_SETS,
         ],
     )

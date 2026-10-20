@@ -14,14 +14,28 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "mimir"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/mimir"
 _NAMESPACE = "monitoring"
 _CREDENTIALS_SECRET = "mimir-seaweedfs-credentials"
 _S3_ENDPOINT = "seaweedfs-s3.seaweedfs.svc:8333"
-# The chart's nginx gateway Service, on port 80, named after the release.
-GATEWAY_URL = f"http://{NAME}-gateway.{_NAMESPACE}.svc.cluster.local"
+# The chart's nginx gateway Service, named after the release: port 80 onto the Pods' 8080.
+GATEWAY = ServiceRef(
+    name=f"{NAME}-gateway",
+    port=Port(name="http-metrics", number=80),
+    target_port=8080,
+    pods=Pods(
+        namespace=_NAMESPACE,
+        labels=(
+            ("app.kubernetes.io/component", "gateway"),
+            ("app.kubernetes.io/instance", NAME),
+            ("app.kubernetes.io/name", NAME),
+        ),
+    ),
+)
+GATEWAY_URL = f"http://{GATEWAY.fqdn}"
 PUSH_URL = f"{GATEWAY_URL}/api/v1/push"
 
 

@@ -8262,6 +8262,22 @@ spec:
       type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: mimir-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      hosts:
+        - mimir-gateway.monitoring.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /prometheus/api/v1/**
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
 metadata:
   annotations:
@@ -8286,6 +8302,7 @@ spec:
     - github-agentydragon-agent
     - github-actions-logs
     - buildbuddy
+    - mimir-reads
     - github-reads
     - github-identity-reads
     - sandbox-self
@@ -10180,6 +10197,16 @@ spec:
       toPorts:
         - ports:
             - port: "8081"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: gateway
+            app.kubernetes.io/instance: mimir
+            app.kubernetes.io/name: mimir
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "8080"
               protocol: TCP
   endpointSelector:
     matchLabels:
