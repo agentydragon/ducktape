@@ -1913,15 +1913,13 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 ```mermaid
 flowchart LR
     HISTORY_TEST_BACKEND_ON_GO[Candidate: app and Electric tests run against the Go History]
-    HISTORY_GO_TESTING_CUTOVER[Candidate: cut agentplane-testing over to the Go History Service]
-    HISTORY_GO_STAGING_CUTOVER[Blocked: cut staging over to the Go History Service]
+    HISTORY_GO_STAGING_CUTOVER[Candidate: cut staging over to the Go History Service]
     HISTORY_PYTHON_RETIREMENT[Blocked: retire the Python History Service]
     HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
     NOTIFICATION_SERVICE_GO_PORT[Candidate: port the Notification Service to Go]
     ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
-    HISTORY_GO_TESTING_CUTOVER --> HISTORY_GO_STAGING_CUTOVER
     HISTORY_GO_STAGING_CUTOVER --> HISTORY_PYTHON_RETIREMENT
     HISTORY_TEST_BACKEND_ON_GO --> HISTORY_PYTHON_RETIREMENT
     HISTORY_GO_STAGING_CUTOVER --> HISTORY_READS_FACADE
@@ -1936,21 +1934,10 @@ fold, servicers and ingress. Start the Go binary on a test Postgres in its place
 covering the service that ships and the Python code can go. **Deliverable:** those tests pass against the Go
 binary with no import of the Python History service other than its client.
 
-### `HISTORY_GO_TESTING_CUTOVER` — cut `agentplane-testing` over to the Go History Service
-
-**Candidate.** The Go migrator runs on `agentplane-testing`: the Goose baseline records itself in
-`history_service_goose_version` and changes nothing else on the Alembic-built database. The service image
-builds from `//agentplane/history_service:service_image` (`devinfra/ci/image_targets.json`; the Go binary accepts
-the current manifests' settings). Testing and staging follow one Flux image policy per name, so staging's
-`image-pins` drops the policy marker on the service pin as it did on the migrator's and keeps the Python
-service until `HISTORY_GO_STAGING_CUTOVER`. The Go projector continues each Session's fold from its stored
-checkpoint in the current epoch, so no Session refolds and Electric sees no scope reset. **Deliverable:** once
-Flux pins the Go image, a Session on `agentplane-testing` runs through ingress, the fold, the reads and
-Electric on the Go service; then this node goes.
-
 ### `HISTORY_GO_STAGING_CUTOVER` — cut staging over to the Go History Service
 
-**Blocked on `HISTORY_GO_TESTING_CUTOVER`.** Backup and restore proof first
+**Candidate.** The Go service runs on `agentplane-testing`; staging's `image-pins` keeps the Python service by
+dropping the policy marker on the service pin. Backup and restore proof first
 ([staging data preservation](../docs/staging_data_preservation.md)); on the restored copy, a Go refold of
 every retained Session equals the rows the Python fold stored. Then image before config. No staging
 database or Session is dropped or recreated.
