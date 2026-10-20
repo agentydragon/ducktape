@@ -22,6 +22,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     GOOGLE_CALENDAR_READS_SET,
     GROCY_SF_READS_SET,
     HOME_ASSISTANT_READS_SET,
+    KUBERNETES_INSPECTION_READS_SET,
     SANDBOX_SELF_SET,
     SSH_READS_SET,
     TANA_READS_SET,
@@ -59,10 +60,10 @@ _FINANCE_AGENT_INSTRUCTIONS = "\n\n".join(
 )
 _FINANCE_AGENT_THREAD_SETUP = Path(__file__).with_name("finance_agent_thread_setup.sh").read_text(encoding="utf-8")
 # What the Haku preset binds: the reviewed read-only bundle the haku-agent and claude-ai
-# bindings name (GitHub, Home Assistant, Gmail, Google Calendar, Tana, Grocy SF, SSH) plus sandbox
-# use and the GitHub identity read, and Haku's one write: rerunning failed jobs on a ducktape CI
-# run. Nothing here is a new grant -- each set's own auto-approval rule was reviewed for the
-# connector principals, and every other write stays on the human path.
+# bindings name (GitHub, Home Assistant, Gmail, Google Calendar, Tana, Grocy SF, SSH, Kubernetes
+# inspection) plus sandbox use and the GitHub identity read, and Haku's one write: rerunning failed
+# jobs on a ducktape CI run. Nothing here is a new grant -- each set's own auto-approval rule was
+# reviewed for the connector principals, and every other write stays on the human path.
 HAKU_ACTION_POLICY_SETS = (
     GITHUB_READS_SET,
     GITHUB_IDENTITY_READS_SET,
@@ -73,6 +74,7 @@ HAKU_ACTION_POLICY_SETS = (
     TANA_READS_SET,
     GROCY_SF_READS_SET,
     SSH_READS_SET,
+    KUBERNETES_INSPECTION_READS_SET,
     DUCKTAPE_PR_FAILED_JOBS_SET,
 )
 

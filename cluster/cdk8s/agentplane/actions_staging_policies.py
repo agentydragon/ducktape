@@ -61,6 +61,7 @@ GMAIL_READS_SET = "gmail-reads"
 GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
 TANA_READS_SET = "tana-reads"
 GROCY_SF_READS_SET = "grocy-sf-reads"
+KUBERNETES_INSPECTION_READS_SET = "kubernetes-inspection-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
@@ -115,6 +116,7 @@ _ACCOUNT_READ_SETS = (
     TANA_READS_SET,
     GROCY_SF_READS_SET,
     SSH_READS_SET,
+    KUBERNETES_INSPECTION_READS_SET,
 )
 
 
@@ -334,6 +336,44 @@ _GROCY_SF_READS_ACTIONS = [
     "stock_get",
     # keep-sorted end
 ]
+
+# kubectl-passthrough-mcp's read-only surface. These execute as the operator's cluster-admin
+# identity, so they reach past the caller's own RBAC: every namespace's Pods, logs, Events and
+# objects. Reviewed exclusions: Secret kinds (see _KUBERNETES_RESOURCE_READ_SCHEMA);
+# `configuration_view`, which returns the server's kubeconfig and with it any credential that
+# carries; `nodes_log` file paths (only service names, see below); and every write, `pods_exec`
+# and `pods_run` included. New upstream tools stay manual until reviewed here.
+_KUBERNETES_INSPECTION_READS_ACTIONS = [
+    # keep-sorted start
+    "events_list",
+    "namespaces_list",
+    "nodes_stats_summary",
+    "nodes_top",
+    "pods_get",
+    "pods_list",
+    "pods_list_in_namespace",
+    "pods_log",
+    "pods_top",
+    "projects_list",
+    # keep-sorted end
+]
+# `resources_get`/`resources_list` with any kind but a Secret. The server resolves `kind` through
+# discovery, so the refusal is case-insensitive and covers the plural and list spellings; the
+# identifier pattern keeps a padded or otherwise odd spelling off the auto-approved path.
+_KUBERNETES_RESOURCE_READ_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "kind": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]*$", "not": {"pattern": "^[Ss][Ee][Cc][Rr][Ee][Tt]"}}
+    },
+    "required": ["apiVersion", "kind"],
+}
+# `nodes_log` for a named service (`kubelet`, ...). A `/`-prefixed query reads an arbitrary file
+# under the node's /var/log, the API server audit log among them, and stays manual.
+_KUBERNETES_NODE_SERVICE_LOG_SCHEMA = {
+    "type": "object",
+    "properties": {"query": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*$"}},
+    "required": ["query"],
+}
 
 
 def add_staging_action_policies(scope: Construct) -> None:
@@ -894,6 +934,32 @@ def add_staging_action_policies(scope: Construct) -> None:
             },
         ),
         rules=[AutoApproveIf.exact_actions(actions={"ssh": ["list_targets"]})],
+    )
+
+    _policy_set(
+        scope,
+        "kubernetes-inspection-reads",
+        metadata=ApiObjectMetadata(
+            name=KUBERNETES_INSPECTION_READS_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": (
+                    "Auto-approves the reviewed read-only kubernetes_admin Actions: Pods, logs, Events, node "
+                    "stats and service logs, and any object but a Secret. configuration_view, node log files, "
+                    "pods_exec, pods_run and every write stay on the human path."
+                )
+            },
+        ),
+        rules=[
+            AutoApproveIf.exact_actions(actions={"kubernetes_admin": _KUBERNETES_INSPECTION_READS_ACTIONS}),
+            AutoApproveIf.argument_schema(
+                actions={"kubernetes_admin": ["resources_get", "resources_list"]},
+                schema=_KUBERNETES_RESOURCE_READ_SCHEMA,
+            ),
+            AutoApproveIf.argument_schema(
+                actions={"kubernetes_admin": ["nodes_log"]}, schema=_KUBERNETES_NODE_SERVICE_LOG_SCHEMA
+            ),
+        ],
     )
 
     # The long-running OpenClaw Pod is hosted in its own namespace; keep its Action

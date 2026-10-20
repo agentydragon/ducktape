@@ -3002,6 +3002,7 @@ data:
           - tana-reads
           - grocy-sf-reads
           - ssh-reads
+          - kubernetes-inspection-reads
           - ducktape-pr-failed-jobs
           - shared-diagnostics
           - agentplane-testing
@@ -8311,6 +8312,7 @@ spec:
     - tana-reads
     - grocy-sf-reads
     - ssh-reads
+    - kubernetes-inspection-reads
   subject:
     name: claude-ai
     namespace: agentplane-staging
@@ -8348,6 +8350,7 @@ spec:
     - tana-reads
     - grocy-sf-reads
     - ssh-reads
+    - kubernetes-inspection-reads
   subject:
     name: haku-agent
     namespace: agentplane-staging
@@ -8557,6 +8560,63 @@ spec:
           ssh:
             - list_targets
         type: exact_actions
+      type: action_auto_approve
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: "Auto-approves the reviewed read-only kubernetes_admin Actions: Pods, logs, Events, node stats and service logs, and any object but a Secret. configuration_view, node log files, pods_exec, pods_run and every write stay on the human path."
+  name: kubernetes-inspection-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - policy:
+        actions:
+          kubernetes_admin:
+            - events_list
+            - namespaces_list
+            - nodes_stats_summary
+            - nodes_top
+            - pods_get
+            - pods_list
+            - pods_list_in_namespace
+            - pods_log
+            - pods_top
+            - projects_list
+        type: exact_actions
+      type: action_auto_approve
+    - policy:
+        actions:
+          kubernetes_admin:
+            - resources_get
+            - resources_list
+        schema:
+          properties:
+            kind:
+              not:
+                pattern: ^[Ss][Ee][Cc][Rr][Ee][Tt]
+              pattern: ^[A-Za-z][A-Za-z0-9]*$
+              type: string
+          required:
+            - apiVersion
+            - kind
+          type: object
+        type: argument_schema
+      type: action_auto_approve
+    - policy:
+        actions:
+          kubernetes_admin:
+            - nodes_log
+        schema:
+          properties:
+            query:
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.@-]*$
+              type: string
+          required:
+            - query
+          type: object
+        type: argument_schema
       type: action_auto_approve
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1

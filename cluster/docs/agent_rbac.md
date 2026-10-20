@@ -168,6 +168,13 @@ their explicit RoleBinding to the same named Secret. These grants do not make `c
 for Haku: it has no Haku sandbox write authority or staging operator access. Its existing
 `AcceptanceToken` binding remains, and `haku-agent` still has no broader Haku profile grants.
 
+The `kubernetes-inspection-reads` PolicySet auto-approves the read-only `kubernetes_admin`
+Actions (Pods, pod and node-service logs, Events, node stats, and `resources_get`/`resources_list`
+of any kind but a Secret) for the static `claude-ai` and `haku-agent` bindings and the Haku preset.
+Those Actions run as the operator's cluster-admin passthrough identity, so they reach past the
+namespace classifications above: every namespace's pod logs and ConfigMaps. `pods_exec`,
+`pods_run`, `configuration_view`, node log files, Secret reads and every write stay manual.
+
 Agentplane-managed Haku runner Pods use per-Sandbox ServiceAccounts and their own
 preset selections, which an operator may replace. Kubernetes access is also distinct
 from Forgejo credentials, egress policies, and Actions approvals; this profile does not
