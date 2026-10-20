@@ -21,7 +21,7 @@ GitHub workflows and an HTTP reference served under `/docs/agents/`. Update the 
 
 - [API, authorization, persistence and delivery semantics](docs/api.md)
 - [Staging GitHub acceptance record](docs/staging_github_acceptance.md) — live CI/comment delivery and its limits.
-- `/openapi.json` and authenticated `GET /v1/sources`: schemas and available sources.
+- `/openapi.json`: the routes and their request and response schemas.
 
 While the History Service is down or rolling, webhooks are still accepted and inbox entries still
 stored, but no notice reaches a Session: a delivery reads the Session's receipts from the History

@@ -37,7 +37,6 @@ joins as one more group under them.
 | `actions events ID [--after SEQUENCE]`                                                                                                         | `GET /v1/action-requests/{id}/events`, paged           |
 | `actions cancel ID`                                                                                                                            | `POST /v1/action-requests/{id}/cancel`                 |
 | `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--destination JSON]` | `POST /v1/subscriptions`                               |
-| `notifications sources`                                                                                                                        | `GET /v1/sources`                                      |
 | `notifications subscriptions`                                                                                                                  | `GET /v1/subscriptions`, paged                         |
 | `notifications subscription ID`                                                                                                                | `GET /v1/subscriptions/{id}`                           |
 | `notifications renew ID [--lifetime-days N]`                                                                                                   | `GET`, then `PATCH` with the read `version`            |
@@ -65,7 +64,10 @@ Left out on purpose:
 
 - **`--json`** prints the service's own objects, compacted but otherwise unmodified: no envelope, no
   renamed or added fields. A unary command prints one JSON value. A list prints one value per line, in
-  the service's order. `jq` reads either form, and `jq -s` collects the lines.
+  the service's order. `jq` reads either form, and `jq -s` collects the lines. **Deviation:** a
+  gRPC-Gateway service wraps each answer in a named field (`{"subscription": {...}}`,
+  `{"subscriptions": [...]}`); the `notifications` commands print that field's value. Field names are
+  the gateway's own: camelCase, with `int64` values such as `version` as strings.
 - **`actions groups --json` is large:** the service returns every Action's full description and input
   schema inline. `actions list` prints the same Actions one per line.
 - **Without `--json`** prints concise text, one line per item. Text is not a stable interface; a script
@@ -97,7 +99,8 @@ no discovery calls, so no command depends on a service it does not talk to.
 
 `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` are the harness environment's existing proxy
 and trust settings; the CLI uses them as `curl` does. `subscribe` also accepts `--destination JSON` (the
-same object, and it wins over the variable) for a Session started without the variable.
+same object, and it wins over the variable) for a Session started without the variable. The object holds
+`destination_ref` (`namespace`, `name`, `uid`) and `session_id` and nothing else; anything else is exit `2`.
 
 Credential scope:
 
@@ -113,12 +116,13 @@ Credential scope:
 
 ## Errors and exit codes
 
-Every failure is classified once, from the HTTP status and two response headers. The central proxy sets
-`x-agentplane-egress` (`denied; reason=...`) and the Pod sidecar sets `x-agentplane-egress-sidecar`
-(`reason=...`) on its refusals ([egress spec](../egress/SPEC.md)). A response carrying either is the
-platform's, not the service's: a `403` without the header is the service denying, a `403` with it is the
-proxy denying. The error names a gRPC status code, so the vocabulary survives the facades (gRPC-Gateway
-maps the same codes to HTTP statuses). It is one line of JSON on stderr under `--json`:
+Every failure is classified once, from the HTTP status, two response headers and, for a gRPC-Gateway
+service, the body. The central proxy sets `x-agentplane-egress` (`denied; reason=...`) and the Pod
+sidecar sets `x-agentplane-egress-sidecar` (`reason=...`) on its refusals
+([egress spec](../egress/SPEC.md)). A response carrying either is the platform's, not the service's: a
+`403` without the header is the service denying, a `403` with it is the proxy denying. The error names a
+gRPC status code, so the vocabulary survives the facades (gRPC-Gateway maps the same codes to HTTP
+statuses). It is one line of JSON on stderr under `--json`:
 
 ```json
 {
@@ -136,7 +140,8 @@ maps the same codes to HTTP statuses). It is one line of JSON on stderr under `-
 `source` is `service`, `egress`, `sidecar` or `client` (the CLI itself: usage, configuration, a lost
 connection). `reason` is the `reason=` token of a refusal header when there is one. `egress` is the proxy
 refusing a call from any group, not the Egress rules API, whose own refusals are `service`. In text mode
-the same fields print as one line. `retry_after_seconds` is the `Retry-After` header. The mapping:
+the same fields print as one line. `retry_after_seconds` is the `google.rpc.RetryInfo` delay of a gateway
+body, else the `Retry-After` header. The mapping:
 
 | HTTP                                              | gRPC code                           | Exit |
 | ------------------------------------------------- | ----------------------------------- | ---- |
@@ -149,8 +154,14 @@ the same fields print as one line. `retry_after_seconds` is the `Retry-After` he
 | `502`, `503`, `504`, connection failure, deadline | `UNAVAILABLE` / `DEADLINE_EXCEEDED` | `3`  |
 | any other status                                  | `INTERNAL` (`500`) / `UNKNOWN`      | `1`  |
 
-A `409` is `ALREADY_EXISTS` for `submit` and `subscribe` (a repeated key) and `ABORTED` elsewhere (a
-stale `version`).
+A `409` is `ALREADY_EXISTS` for `submit` (a repeated key) and `ABORTED` elsewhere (a stale `version`).
+
+**Deviation:** a gRPC-Gateway service answers an error with a `google.rpc.Status` body, whose numeric
+`code` names the gRPC code and replaces the guess above, because the HTTP status only approximates it
+(`FAILED_PRECONDITION` and `OUT_OF_RANGE` arrive as `400`, `ALREADY_EXISTS` and `ABORTED` as `409`).
+`NOT_FOUND` exits `5`; `ALREADY_EXISTS` and `ABORTED` `4`; `RESOURCE_EXHAUSTED`, `UNAVAILABLE` and
+`DEADLINE_EXCEEDED` `3`; every other code `1`. Today that is the `notifications` group. A refusal
+carrying a platform header keeps its own source and code whatever the body says.
 
 Exit codes say what the caller should do next. `0` and `128 + signal` follow shell convention; no code
 is `126` or `127`.
@@ -257,7 +268,7 @@ than adding to them, as the service does.
 | `groups`, `list`, `policy` | none; the catalog is bounded                     | prints all                        |
 | `requests`                 | `after_id` and `limit`, at most 128 a page       | follows pages; `--after ID`       |
 | `events`                   | `after_sequence` and `limit`, at most 128 a page | follows pages; `--after SEQUENCE` |
-| `subscriptions`            | `after_id`, 128 a page                           | follows pages; `--after ID`       |
+| `subscriptions`            | `afterId`, 128 a page                            | follows pages; `--after ID`       |
 
 A list follows server pages until `--limit` items (default 50; `0` is unlimited). To resume, pass the
 last printed item's `id` or `sequence` to `--after`; text mode prints that hint on stderr when the limit

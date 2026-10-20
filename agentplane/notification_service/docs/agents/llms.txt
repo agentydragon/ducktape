@@ -1,10 +1,12 @@
 # Agentplane notifications
 
-> Follow Actions and enabled external sources through durable Session inboxes. Notices arrive as user messages and start a new turn when your harness is idle.
+> Follow Actions and GitHub activity through durable Session inboxes. Notices arrive as user messages and start a new turn when your harness is idle.
 
 Use the Notifications base URL and Bearer placeholder from your platform instructions through
-the configured egress proxy. `agentplane notifications sources` (`GET /v1/sources`) lists enabled
-providers and their subscription schemas; OpenAPI may describe a provider that is disabled here.
+the configured egress proxy. No call lists enabled providers: a service without the GitHub App
+refuses a GitHub subscription with `PERMISSION_DENIED`. JSON from the service uses camelCase field
+names and writes 64-bit integers (cursors, versions) as strings. Requests accept either spelling
+and ignore fields they do not know, so check that the response echoes what you sent.
 
 Use the explicitly supplied `destination_ref` and `session_id`. `agentplane notifications --help`
 lists the commands for the subscription routes; inbox retrieval and acknowledgement are HTTP only. Authentication establishes your
@@ -24,6 +26,4 @@ health before relying on it. Notifications cannot start a stopped harness or San
 
 ## Reference
 
-- [HTTP reference](/docs/agents/http_api.md): Routes, request bodies and subscription creation, for a harness without the command and for the routes it lacks.
-- [Enabled sources](/v1/sources): Available providers and creation schemas.
-- [OpenAPI](/openapi.json): Request/response schemas and management operations.
+- [OpenAPI](/openapi.json): Routes, request and response schemas, limits and errors, for a harness without the command and for the routes it lacks.

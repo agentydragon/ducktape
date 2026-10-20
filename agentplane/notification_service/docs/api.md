@@ -8,7 +8,6 @@ Workload bearer authentication uses TokenReview. Owner authority is the
 verified ServiceAccount, shared by its workloads. Every creation specifies `destination_ref`
 (namespace/name/UID) and `session_id`; inbox and subscription IDs identify subsequent operations.
 
-- `GET /v1/sources`: source schema discovery (Actions and enabled GitHub).
 - `POST /v1/subscriptions`: immutable provider-owned source/filter and `idempotency_key`; identical retries return
   the same subscription, conflicting reuse returns 409. Actions replay defaults to sequence zero;
   GitHub starts after the latest committed webhook at creation.
@@ -29,42 +28,40 @@ incarnation, and runner session), not across the entire sandbox. The server-gene
 is used for subsequent GET/PATCH/DELETE. Reusing a key with different creation parameters returns 409;
 reusing it after cancellation returns that cancelled subscription rather than creating a replacement.
 
-Subscription creation and views use a provider-discriminated `source`; `actions` and enabled `github` sources are
-implemented. The common envelope owns destination, session, idempotency, and lifetime. Actions owns
-its request ID and starting sequence:
+Subscription creation and views use a `source` that is a oneof: `actions` or `github`. The common envelope
+owns destination, session, idempotency, and lifetime. Actions owns its request ID and starting sequence.
+The HTTP form of the gRPC-Gateway writes JSON field names in camelCase and 64-bit integers as strings, and
+accepts either spelling in requests ([`notifications.proto`](../notifications.proto) is the contract):
 
 ```json
 {
-  "destination_ref": { "namespace": "agentplane-staging", "name": "sandbox-name", "uid": "sandbox-uid" },
-  "session_id": "session-id",
-  "idempotency_key": "follow-action",
+  "destinationRef": { "namespace": "agentplane-staging", "name": "sandbox-name", "uid": "sandbox-uid" },
+  "sessionId": "session-id",
+  "idempotencyKey": "follow-action",
   "source": {
-    "provider": "actions",
-    "request_id": "d49b85b5-849f-4e7d-a644-d4a8b8c16127",
-    "after_sequence": 0
+    "actions": { "requestId": "d49b85b5-849f-4e7d-a644-d4a8b8c16127", "afterSequence": 0 }
   }
 }
 ```
 
 The returned `source` is the immutable subscription specification, including its original starting
-sequence, not a moving worker checkpoint. Inbox entries use a separate provider-discriminated `event`
-identity; one event can match multiple subscriptions. Payload content remains provider-defined:
+sequence, not a moving worker checkpoint. Inbox entries use a separate `event` identity, also a oneof; one
+event can match multiple subscriptions. Payload content remains provider-defined:
 
 ```json
 {
-  "cursor": 1,
+  "cursor": "1",
   "event": {
-    "provider": "actions",
-    "request_id": "d49b85b5-849f-4e7d-a644-d4a8b8c16127",
-    "sequence": 1
+    "actions": { "requestId": "d49b85b5-849f-4e7d-a644-d4a8b8c16127", "sequence": 1 }
   },
   "payload": { "sequence": 1, "state": "decision_pending", "at": "2026-10-04T12:00:00Z", "actor": null },
-  "subscriptions": ["ecf2527e-12cc-4506-b21c-7f82669466ce"]
+  "subscriptionIds": ["ecf2527e-12cc-4506-b21c-7f82669466ce"]
 }
 ```
 
-`source.provider` and `event.provider` are required discriminators. Unsupported providers and extra
-fields are rejected. Discovery advertises GitHub only when enabled; OpenAPI describes both supported variants. Inbox cursors, acknowledgement, and runner notices remain provider-neutral.
+A `source` with neither field set is rejected as `INVALID_ARGUMENT`. A service without the GitHub App refuses
+a `github` source with `PERMISSION_DENIED`; no route lists enabled providers. Inbox cursors,
+acknowledgement, and runner notices remain provider-neutral.
 
 The platform prompt supplies service URLs, authentication, explicit destination identifiers and
 essential decision rules. The service's [`/llms.txt`](agents/llms.txt) links to agent workflows for
