@@ -8566,7 +8566,7 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
-    description: "Auto-approves the reviewed read-only kubernetes_admin Actions: Pods, logs, Events, node stats and service logs, and any object but a Secret. configuration_view, node log files, pods_exec, pods_run and every write stay on the human path."
+    description: "Auto-approves the reviewed read-only kubernetes_admin Actions: Pods, Events, node stats and service logs, and any object but a Secret. pods_log, configuration_view, node log files, pods_exec, pods_run and every write stay on the human path."
   name: kubernetes-inspection-reads
   namespace: agentplane-staging
 spec:
@@ -8581,7 +8581,6 @@ spec:
             - pods_get
             - pods_list
             - pods_list_in_namespace
-            - pods_log
             - pods_top
             - projects_list
         type: exact_actions

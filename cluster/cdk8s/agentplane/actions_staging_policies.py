@@ -338,8 +338,8 @@ _GROCY_SF_READS_ACTIONS = [
 ]
 
 # kubectl-passthrough-mcp's read-only surface. These execute as the operator's cluster-admin
-# identity, so they reach past the caller's own RBAC: every namespace's Pods, logs, Events and
-# objects. Reviewed exclusions: Secret kinds (see _KUBERNETES_RESOURCE_READ_SCHEMA);
+# identity, so they reach past the caller's own RBAC: every namespace's Pods, Events and objects.
+# Reviewed exclusions: `pods_log`, since application logs can carry credentials; Secret kinds (see _KUBERNETES_RESOURCE_READ_SCHEMA);
 # `configuration_view`, which returns the server's kubeconfig and with it any credential that
 # carries; `nodes_log` file paths (only service names, see below); and every write, `pods_exec`
 # and `pods_run` included. New upstream tools stay manual until reviewed here.
@@ -352,7 +352,6 @@ _KUBERNETES_INSPECTION_READS_ACTIONS = [
     "pods_get",
     "pods_list",
     "pods_list_in_namespace",
-    "pods_log",
     "pods_top",
     "projects_list",
     # keep-sorted end
@@ -944,8 +943,8 @@ def add_staging_action_policies(scope: Construct) -> None:
             namespace=_NAMESPACE,
             annotations={
                 "description": (
-                    "Auto-approves the reviewed read-only kubernetes_admin Actions: Pods, logs, Events, node "
-                    "stats and service logs, and any object but a Secret. configuration_view, node log files, "
+                    "Auto-approves the reviewed read-only kubernetes_admin Actions: Pods, Events, node stats and "
+                    "service logs, and any object but a Secret. pods_log, configuration_view, node log files, "
                     "pods_exec, pods_run and every write stay on the human path."
                 )
             },

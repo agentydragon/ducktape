@@ -111,7 +111,7 @@ def _kubernetes_inspection_approves(
     ("action", "arguments"),
     [
         ("nodes_stats_summary", {"name": "fake-node"}),
-        ("pods_log", {"name": "fake-pod", "namespace": "fake-ns"}),
+        ("pods_get", {"name": "fake-pod", "namespace": "fake-ns"}),
         ("nodes_log", {"name": "fake-node", "query": "kubelet"}),
         ("resources_get", {"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "name": "fake-db"}),
         ("resources_list", {"apiVersion": "v1", "kind": "ConfigMap", "namespace": "fake-ns"}),
@@ -131,13 +131,14 @@ def test_kubernetes_inspection_reads_approve_reads(
         ("resources_list", {"apiVersion": "v1", "kind": "SecretList"}),
         ("resources_get", {"apiVersion": "v1", "kind": " Secret", "name": "fake-secret"}),
         ("nodes_log", {"name": "fake-node", "query": "/var/log/audit/kube/kube-apiserver.log"}),
+        ("pods_log", {"name": "fake-pod", "namespace": "fake-ns"}),
         ("configuration_view", {"minified": False}),
         ("pods_exec", {"name": "fake-pod", "command": ["true"]}),
         ("pods_run", {"image": "fake-image"}),
         ("resources_delete", {"apiVersion": "v1", "kind": "Pod", "name": "fake-pod"}),
     ],
 )
-def test_kubernetes_inspection_reads_leave_secrets_exec_and_writes_manual(
+def test_kubernetes_inspection_reads_leave_secrets_logs_exec_and_writes_manual(
     agentplane_manifests: dict[str, list[dict[str, Any]]], action: str, arguments: dict[str, Any]
 ) -> None:
     assert not _kubernetes_inspection_approves(agentplane_manifests, action, arguments)
