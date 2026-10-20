@@ -8,7 +8,6 @@ go_library(
         "admin_grpc.go",
         "agent_api.go",
         "config.go",
-        "grpc.go",
         "main.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/cmd",

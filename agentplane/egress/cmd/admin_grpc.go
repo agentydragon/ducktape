@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
+	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -61,7 +62,7 @@ func mountAdminGRPC(adminServer *http.Server, c config, reviews auth.TokenReview
 		egressadminpb.RegisterEgressAdminServer(grpcServer, service)
 		shutdown = watchingServer{Server: adminServer, service: service}
 	}
-	mountGRPC(adminServer, grpcServer)
+	facade.MountGRPC(adminServer, grpcServer)
 	return shutdown, nil
 }
 

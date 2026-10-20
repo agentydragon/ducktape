@@ -25,6 +25,6 @@ func newAgentAPI(ctx context.Context, address string, verifier *identity.Verifie
 	server := &http.Server{Handler: rules.New(rulesFacade, agentDocs, openAPI), ReadHeaderTimeout: readHeaderTimeout}
 	rulesGRPC := grpc.NewServer()
 	egressrulespb.RegisterEgressRulesServer(rulesGRPC, rules.NewService(verifier, index))
-	mountGRPC(server, rulesGRPC)
+	facade.MountGRPC(server, rulesGRPC)
 	return server, nil
 }
