@@ -54,6 +54,9 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
     pytest is handed the entry-point file, so it collects that file alone. `pytest_bazel` passes no
     path of its own, which makes pytest walk the whole runfiles tree from the working directory
     looking for tests -- 8-25s on app tests whose tree is large, against 0.1s for the file alone.
+    The file goes in `PYTEST_ADDOPTS`, not `args`, because some tests parse `sys.argv` themselves.
+    `--rootdir=.` keeps the runfiles root as the rootdir, and so as the conftest cutoff: with a path
+    and no ini file pytest would pick the test's own directory and skip every conftest above it.
 
     Args:
         name: Target name.
@@ -94,7 +97,7 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
     if "main_module" not in kwargs:
         test_file = _test_file(name, kwargs.get("srcs"), kwargs.get("main"))
         if test_file != None:
-            base_args = base_args + ["$(rootpath {})".format(test_file)]
+            env = {"PYTEST_ADDOPTS": "--rootdir=. $(rootpath {})".format(test_file)} | (env or {})
     if requires_docker:
         base_tags = base_tags + ["requires_docker"]
         env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | (env or {})

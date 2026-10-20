@@ -288,5 +288,7 @@ source file.
 
 What remains is the platform tail above: `agentplane/app/conftest.py` imports about 3000 modules for every
 test under `agentplane/app`, and each module is a file open on a lazily served filesystem. With the
-change and 21 concurrent actions, `test_dispatcher_client` still timed out 1 in 3 (min 26.1s). Not
+change and 21 concurrent actions, `test_dispatcher_client` still timed out 1 in 3 (min 26.1s); in a
+12-target run it passed in 25.5s while `test_system_status` timed out with an empty log after the
+`Running pytest.main with:` line, so still inside conftest import. Not
 established: how much of the conftest cost a narrower conftest would save.
