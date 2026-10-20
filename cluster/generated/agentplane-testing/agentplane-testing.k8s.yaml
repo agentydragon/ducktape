@@ -3714,8 +3714,21 @@ spec:
       containers:
         - args:
             - --namespace=agentplane-testing
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
             - --runner-gateway-target={sandbox}-control.{namespace}.svc:8080
             - --runner-gateway-token-file=/var/run/secrets/agentplane-runner-gateway/token
+          env:
+            - name: AGENTPLANE_SANDBOX_CONTROLLER_NAMESPACE
+              value: agentplane-testing
+            - name: AGENTPLANE_SANDBOX_CONTROLLER_METRICS_BIND_ADDRESS
+              value: :8080
+            - name: AGENTPLANE_SANDBOX_CONTROLLER_HEALTH_PROBE_BIND_ADDRESS
+              value: :8081
+            - name: AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TARGET
+              value: "{sandbox}-control.{namespace}.svc:8080"
+            - name: AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TOKEN_FILE
+              value: /var/run/secrets/agentplane-runner-gateway/token
           image: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:

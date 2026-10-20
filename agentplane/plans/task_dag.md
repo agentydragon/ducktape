@@ -348,7 +348,7 @@ Connection representation/storage changes are outside this work.
 Sandboxes and explicit collections, for permissions like "send messages to any Sandbox" and "read from any
 Session"; a Session's scope is its Sandbox, so both are one target form. It matches every Sandbox in the
 namespace of the PolicySet holding the rule, never the whole cluster: a Sandbox Controller reconciles one
-namespace (`--namespace`), and a Sandbox in another namespace needs a direct target. It covers Sandboxes
+namespace (its `namespace` setting), and a Sandbox in another namespace needs a direct target. It covers Sandboxes
 created later and needs no membership data, and History matches it on the recorded namespace, so a reader
 of every history is unaffected by `HISTORY_ACCESS_AFTER_DELETION`. Operations stay independent (read-any
 does not imply send-any) and only whoever writes PolicySets can grant it. The namespace match is the
@@ -1683,15 +1683,15 @@ external Connections call, so renaming them is a wire change.
 
 **Unscheduled; the operator chose one service per change, each after the previous lands
 (2026-10-19, from the operator's 2026-10-18 direction that Go services read settings the same way, from a
-file and the environment, with no flags).** LLM ingress, the egress proxy and the Runner Gateway already
-read their settings through Viper used directly in the service
+file and the environment, with no flags).** LLM ingress, the egress proxy, the Runner Gateway and the
+Sandbox Controller already read their settings through Viper used directly in the service
 ([#10989](https://github.com/agentydragon/ducktape/pull/10989),
-[#11080](https://github.com/agentydragon/ducktape/pull/11080)). Move the Sandbox Controller, the Policy
-Controller and the egress sidecar from flag parsing to the same. Setting names and values stay; only how
-they are read changes. A manifest sends the settings next to the flags in the change that reads them, and
-drops the flags only after the image that reads the file is pinned (image before config); the Gateway's
-flags are still sent (tombstone in `runner_gateway_workload.py`). New settings in the meantime follow how
-the service reads settings today.
+[#11080](https://github.com/agentydragon/ducktape/pull/11080)). Move the Policy Controller and the egress
+sidecar from flag parsing to the same. Setting names and values stay; only how they are read changes. A
+manifest sends the settings next to the flags in the change that reads them, and drops the flags only after
+the image that reads the settings is pinned (image before config); the Gateway's and the Sandbox
+Controller's flags are still sent (tombstones in `runner_gateway_workload.py` and `sandbox_controller.py`).
+New settings in the meantime follow how the service reads settings today.
 
 ## 9. Legacy burn-down
 

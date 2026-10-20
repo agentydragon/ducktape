@@ -1,8 +1,11 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "cmd_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "config.go",
+        "main.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sandbox_controller/cmd",
     visibility = ["//visibility:private"],
     deps = [
@@ -11,6 +14,7 @@ go_library(
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/lease",
         "@com_github_go_logr_logr//:logr",
+        "@com_github_spf13_viper//:viper",
         "@io_k8s_api//coordination/v1:coordination",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",
@@ -34,4 +38,10 @@ go_binary(
     embed = [":cmd_lib"],
     pure = "on",
     visibility = ["//agentplane/sandbox_controller:__pkg__"],
+)
+
+go_test(
+    name = "config_test",
+    srcs = ["config_test.go"],
+    embed = [":cmd_lib"],
 )

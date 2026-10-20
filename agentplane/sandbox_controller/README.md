@@ -12,7 +12,7 @@ Deletion first has the runner seal every
 Session: the controller calls `Runner.Quiesce` through the [Runner Gateway](../runner_gateway/README.md)'s
 [runner proxy](../docs/runner_control.md#runner-proxy), at the Sandbox's own control Service, and sets the
 `Quiesced` condition. Suspension seals the same way before the Pod stops, recorded as
-`status.quiescedIncarnation`. `--runner-gateway-target` and `--runner-gateway-token-file` are required.
+`status.quiescedIncarnation`. `runner_gateway_target` and `runner_gateway_token_file` are required settings.
 Storage layouts, compatible attachments and retained identities: [Sandbox storage](../docs/sandbox_storage.md).
 
 Because that condition is set only once the History Service's ingress has
@@ -44,10 +44,14 @@ retain their creation records and are never reapplied from a changed template.
 
 Every Agentplane environment runs it from `cluster/cdk8s/agentplane/sandbox_controller.py`, which
 also holds its RBAC; its runner `SandboxTemplate`s are in `runner_sandbox.py`.
-Locally:
+Its settings are `AGENTPLANE_SANDBOX_CONTROLLER_*` environment variables, named by the fields of
+[`settings.py`](settings.py). Locally:
 
 ```bash
-bb run //agentplane/sandbox_controller/cmd:sandbox-controller -- --namespace=<namespace>
+AGENTPLANE_SANDBOX_CONTROLLER_NAMESPACE=<namespace> \
+  AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TARGET=<target> \
+  AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TOKEN_FILE=<token file> \
+  bb run //agentplane/sandbox_controller/cmd:sandbox-controller
 ```
 
 At startup the controller discovers whether the cluster serves KubeVirt's API and only then watches

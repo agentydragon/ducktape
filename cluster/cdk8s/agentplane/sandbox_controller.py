@@ -19,6 +19,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from agentplane.sandbox_controller.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
@@ -27,6 +28,7 @@ from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from util.settings_contract import checked_value, env_name
 
 _GATEWAY_TOKEN_DIR = "/var/run/secrets/agentplane-runner-gateway"
 
@@ -75,18 +77,31 @@ class SandboxController(Construct):
         self.gateway = gateway
         namespace = env.namespace
         endpoint = metrics(namespace)
+        scalars = {
+            field: checked_value(Settings, field, value)
+            for field, value in {
+                "namespace": namespace,
+                "metrics_bind_address": f":{endpoint.port.number}",
+                "health_probe_bind_address": f":{_HEALTH_PORT}",
+                "runner_gateway_target": gateway_control_target,
+                "runner_gateway_token_file": f"{_GATEWAY_TOKEN_DIR}/token",
+            }.items()
+        }
+        # CLEANUP(added 2026-10-20): Remove `args` once the pinned `agentplane-sandbox-controller` image is
+        #   built from a tree whose `agentplane/sandbox_controller/cmd/config.go` reads the settings above.
+        #   The image before it takes only these flags and fails without them; the one after ignores them.
+        legacy_args = [f"--{field.replace('_', '-')}={value}" for field, value in scalars.items()]
         workload = add_service_workload(
             self,
             env,
             serves=[endpoint],
             container="sandbox-controller",
             image=f"{_IMAGE}:unset",
-            args=[
-                f"--namespace={namespace}",
-                f"--runner-gateway-target={gateway_control_target}",
-                f"--runner-gateway-token-file={_GATEWAY_TOKEN_DIR}/token",
-            ],
-            env_variables=dict(container_env or {}),
+            args=legacy_args,
+            env_variables={
+                **{env_name(Settings, field): EnvValue.from_value(str(value)) for field, value in scalars.items()},
+                **(container_env or {}),
+            },
             extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
             readiness=http_probe("/readyz", port=_HEALTH_PORT, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=_HEALTH_PORT, initial_delay_seconds=10, period_seconds=30),

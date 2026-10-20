@@ -2,8 +2,6 @@
 package main
 
 import (
-	"errors"
-	"flag"
 	"log/slog"
 	"os"
 	"time"
@@ -32,27 +30,19 @@ import (
 )
 
 func main() {
-	namespace := flag.String("namespace", "", "where the Sandboxes, their templates, Pods and state PVCs live")
-	metricsAddress := flag.String("metrics-bind-address", ":8080", "where Prometheus metrics are served")
-	probeAddress := flag.String("health-probe-bind-address", ":8081", "where /healthz and /readyz are served")
-	gatewayTarget := flag.String("runner-gateway-target", "", "where the controller quiesces a Sandbox's runner through the Runner Gateway, for one Sandbox, a template of {sandbox} and {namespace}: the Sandbox's own control Service")
-	gatewayTokenFile := flag.String("runner-gateway-token-file", "", "the projected ServiceAccount token the Runner Gateway accepts from this controller")
-	flag.Parse()
 	ctrl.SetLogger(logr.FromSlogHandler(slog.NewJSONHandler(os.Stderr, nil)))
 	log := ctrl.Log.WithName("sandbox-controller")
-	if err := run(*namespace, *metricsAddress, *probeAddress, sandboxcontroller.GatewayQuiescer{Target: *gatewayTarget, TokenFile: *gatewayTokenFile}); err != nil {
+	c, err := loadConfig()
+	if err == nil {
+		err = run(c)
+	}
+	if err != nil {
 		log.Error(err, "controller failed")
 		os.Exit(1)
 	}
 }
 
-func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontroller.GatewayQuiescer) error {
-	if namespace == "" {
-		return errors.New("--namespace is required")
-	}
-	if quiescer.Target == "" || quiescer.TokenFile == "" {
-		return errors.New("--runner-gateway-target and --runner-gateway-token-file are required")
-	}
+func run(c config) error {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return err
@@ -71,8 +61,8 @@ func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontrol
 		return err
 	}
 	ours := labels.NewSelector().Add(*labelled)
-	config := ctrl.GetConfigOrDie()
-	kubeVirt, err := servesKubeVirt(config)
+	restConfig := ctrl.GetConfigOrDie()
+	kubeVirt, err := servesKubeVirt(restConfig)
 	if err != nil {
 		return err
 	}
@@ -96,22 +86,23 @@ func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontrol
 		return err
 	}
 	byObject[&coordinationv1.Lease{}] = cache.ByObject{Label: labels.NewSelector().Add(*connection)}
-	mgr, err := ctrl.NewManager(config, ctrl.Options{
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: metricsAddress},
-		HealthProbeBindAddress: probeAddress,
+		Metrics:                metricsserver.Options{BindAddress: c.MetricsBindAddress},
+		HealthProbeBindAddress: c.HealthProbeBindAddress,
 		// Replicas take turns: only the Lease holder reconciles.
 		LeaderElection:          true,
 		LeaderElectionID:        "agentplane-sandbox-controller",
-		LeaderElectionNamespace: namespace,
+		LeaderElectionNamespace: c.Namespace,
 		Cache: cache.Options{
-			DefaultNamespaces: map[string]cache.Config{namespace: {}},
+			DefaultNamespaces: map[string]cache.Config{c.Namespace: {}},
 			ByObject:          byObject,
 		},
 	})
 	if err != nil {
 		return err
 	}
+	quiescer := sandboxcontroller.GatewayQuiescer{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile}
 	reconciler := &sandboxcontroller.Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: kubeVirt, Quiescer: quiescer, Leases: mgr.GetClient(), Now: time.Now}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return err
