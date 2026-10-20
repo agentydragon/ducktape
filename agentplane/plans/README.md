@@ -13,6 +13,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   objects and data live, the operator's workflows through each, what Agentplane borrows from
   Kubernetes and what each direction keeps or replaces, what is right under every direction, and the
   experiments that would narrow the choice; no direction chosen
+- [Sandbox tags and History's Sandbox records](sandbox_tags.md) — agreed design for recipient and
+  reader tags on the Sandbox and History's own record of each Sandbox, which outlives it
 - [Native session discovery](native_session_discovery.md) — remaining harness characterization and
   deferred shared-session design with identity, attribution and durability gates
 - [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
@@ -23,7 +25,7 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access
   choices and broader authorization-system evaluation, separate from multiagent implementation
 - [Cross-agent communication and authorization](multiagent_communication.md) — agreed SA attribution,
-  Sandbox scopes, explicit collections, live bundles and Session inboxes; shared inbox/messaging
+  Sandbox scopes, Sandbox tags, live bundles and Session inboxes; shared inbox/messaging
   service with subscriptions and batched notices; tentative service-enforced PolicySet rules,
   remaining schema/API decisions and deferred agent lifecycle delegation
 - [Generated HTTP facades](grpc_http_facade.md) — extension of the approved gRPC-Gateway direction

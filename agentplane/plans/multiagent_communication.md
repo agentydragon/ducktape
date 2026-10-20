@@ -1,7 +1,7 @@
 # Cross-agent communication and authorization: design space
 
-Status: **service-enforced Session-access PolicySet rules tentatively selected for v1**. Exact rule,
-collection and API schemas remain open. This records design directions, not implemented behavior;
+Status: **service-enforced Session-access PolicySet rules tentatively selected for v1**. Exact rule and
+API schemas remain open. This records design directions, not implemented behavior;
 the operator may revisit the choice if implementation does not work well.
 Implementation gates remain in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations).
 The decisions still open are summarized under [cases to resolve before implementation](#cases-to-resolve-before-implementation).
@@ -71,61 +71,37 @@ than a multiagent prerequisite; no replacement app-auth path is selected.
 
 ### Target collections and launch enrollment
 
-Permissions apply to a Sandbox directly, through explicit target collections, or through an
-`allSandboxes` target. Individual Session
-IDs remain addresses for delivery and reads; they do not select a narrower permission boundary.
-A collection such as `developers` has no built-in organizational meaning. A bundle can grant
-read/send to that collection and be assigned to any SA, including one otherwise given different
-capabilities. Independent per-SA grants can add rights on unrelated Sandboxes or Kubernetes
-resources, optionally temporarily. Removing collection membership ends collection-derived grants;
+Permissions apply to a Sandbox directly, through a tag on the Sandbox, or through an `allSandboxes`
+target. Individual Session IDs remain addresses for delivery and reads; they do not select a
+narrower permission boundary. A tag such as `developers` has no built-in organizational meaning. A
+bundle can grant read/send to that tag and be assigned to any SA, including one otherwise given
+different capabilities. Independent per-SA grants can add rights on unrelated Sandboxes or
+Kubernetes resources, optionally temporarily. Removing a tag ends the grants derived from it;
 independent overlapping grants remain.
 
 **`allSandboxes` target agreed with the operator, 2026-10-17:** a rule may target every Sandbox in the
 namespace of the PolicySet holding it, never the whole cluster; the Sandbox Controller likewise
 reconciles a single namespace. A Sandbox in another namespace needs a direct target. The target
-covers later Sandboxes without membership data, and the backends match it on the recorded Sandbox
-namespace, so it keeps working after a Sandbox is deleted. It grants only the operations its rule
-lists: read-any does not imply send-any.
+covers later Sandboxes without tags, and the backends match it on the recorded Sandbox namespace,
+so it keeps working after a Sandbox is deleted. It grants only the operations its rule lists:
+read-any does not imply send-any.
 
-**V1 membership storage choice:** use separate membership CRs, each representing one Sandbox's
-enrollment in one collection. Flux and the app can own different enrollment objects independently,
-rather than sharing a member list embedded in a collection CR. A collection is only the name its
-rules and memberships share; it has no CR of its own, because one would have no field for a reader.
-A membership's Sandbox reference carries an optional UID, whose absence means name-based. Exact
-kind and field names remain open.
+**Collections are tags on the Sandbox, agreed with the operator, 2026-10-19 to 2026-10-20 UTC:**
+set-typed string lists in `Sandbox.spec`, with no membership or collection objects
+([design](sandbox_tags.md)). Recipient tags gate sends and go with the CR; reader tags gate history
+reads, and History keeps them after the CR is deleted. Flux and the app write tags, with Sandbox
+RBAC as the only gate. An app preset supplies a launched Sandbox's initial tags; a tag removed later
+stays removed, and preset edits change only later launches. A recreated Sandbox gets the tags its
+manifest or preset gives it, and no old Session's recorded Sandbox association changes. No computed
+selection is needed for v1. Tags select Sandbox targets; OAuth caller SAs are assigned through
+PolicyBindings, not tags.
 
-**Sandbox reference modes agreed:** support namespace/name references, which follow that name
-across Sandbox deletion and recreation, and namespace/name plus UID references, which identify
-exactly one Sandbox instance. App-launched memberships default to UID-pinned references;
-GitOps-managed named Sandboxes may use name-based references. A name-based membership can authorize
-the replacement Sandbox's new Sessions; it does not change any old Session's recorded Sandbox
-association or make deleted Sessions deliverable. Retained-history membership semantics remain
-an explicit design question.
-
-An app preset can supply initial collection memberships when launching a Sandbox, subject to
-launch/enrollment authorization. Later removal sticks: preset reconciliation or opening another
-Session must not silently re-enroll it. Preset edits change defaults for future launches rather
-than recomputing existing memberships. No computed selection is needed for v1.
-
-**V1 membership administration agreed:** ordinary Kubernetes RBAC controls membership CR writes.
-Initially grant administration to operator/GitOps and the trusted provisioning path; agent read/send
-grants confer no membership administration. This is grant configuration, not an enforced category
-of agent: explicit administrative grants remain possible. V1 requires no new mechanism for agents
-to administer membership in selected collections. Launch enrollment remains subject to provisioning
-authorization.
-
-Finalize reference field names and concrete administrative RBAC before implementation. Flux owns
-the memberships authored in git, so revoking one is a git change that Flux reconciles; the app owns
-the memberships it creates. Separate object ownership does not authorize writes or establish a
-runtime override of GitOps desired state. Collections select Sandbox targets; supporting OAuth caller SAs through
-PolicyBindings does not require SA collection members.
-
-**Storage preference agreed:** start with Kubernetes resources for grants and explicit collection
-membership, managed through GitOps or authorized runtime edits. This is a preference, not a hard
-requirement: another store is acceptable if concrete implementation friction justifies it while
-preserving the agreed authorization semantics and administration boundary. Resource kinds, schemas
-and concrete RBAC grants remain open. Storage and operation evaluation are separate choices; the
-tentative service-enforced rule direction below builds on this storage preference.
+**Storage preference agreed:** grants are Kubernetes resources (PolicySets and PolicyBindings),
+managed through GitOps or authorized runtime edits. This is a preference, not a hard requirement:
+another store is acceptable if concrete implementation friction justifies it while preserving the
+agreed authorization semantics and administration boundary. Rule schemas and concrete RBAC grants
+remain open. Storage and operation evaluation are separate choices; the tentative service-enforced
+rule direction below builds on this storage preference.
 
 ## Live permission bundles
 
@@ -162,8 +138,8 @@ Source inventory checked on 2026-10-16 against `f11947bf7a`; this is not a live 
 | History           | [History reads](../history_service/grpc_api.py) serve retained conversations and evidence to configured service readers.                                                             | Scoped agent discovery/read/follow permissions are not implemented.                                                                          |
 | Provisioning      | [Sandbox inventory](../sandboxes/inventory.py) submits CRs; the [controller](../sandbox_controller/identity.go) creates a dedicated SA and binds the Sandbox's selected policy sets. | Constrained agent launch, delegation and session-create authority remain design work.                                                        |
 
-The [scoped-read plan](scoped_session_reads.md) applies the agreed Sandbox minimum and explicit
-collections to retained history and the tentative Session-access rule family; its exact schema and
+The [scoped-read plan](scoped_session_reads.md) applies the agreed Sandbox minimum and tags to
+retained history and the tentative Session-access rule family; its exact schema and
 administration remain open. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
 already calls for comparing reusable authorization systems rather than inventing a universal broker.
 
@@ -259,8 +235,8 @@ using “its contributors” must define that relation in configuration. Who may
 underlying facts is itself an authority decision; self-editable labels cannot establish trusted
 membership.
 
-Implement the tentative rule family below against current explicit target membership and existing
-SA assignments. Finish the grant/membership administration and GitOps/runtime ownership contracts.
+Implement the tentative rule family below against direct, tag and `allSandboxes` targets and existing
+SA assignments. Finish the grant administration and GitOps/runtime ownership contracts.
 Shared definition edits remain live for current assignees, and independent overlapping grants
 remain additive. GitOps reconciliation must not recreate a revoked or expired runtime grant
 accidentally. Exact CRD and rule syntax remain open.
@@ -280,7 +256,7 @@ Kubernetes, egress and Actions.
 **Selected with the operator, 2026-10-16, subject to revision:** add service-enforced Session-access
 rules to existing `PolicySet`s and assign them through existing SA `PolicyBinding`s. This follows
 the typed-rule pattern already used by egress and Actions. Kubernetes RBAC controls administration
-of the policy and collection resources; the resource-owning services enforce Session operations.
+of the policy resources and Sandbox tags; the resource-owning services enforce Session operations.
 
 Illustrative rule syntax, not a selected CRD schema or an implemented rule type:
 
@@ -288,30 +264,30 @@ Illustrative rule syntax, not a selected CRD schema or an implemented rule type:
 type: session_access
 operations: [append_inbox]
 targets:
-  sandboxCollections: [developers]
+  recipientTags: [developers]
 ```
 
 **Send and transcript reads are not bundled, operator direction 2026-10-18 UTC (stated as
 "probably"):** they are separate capabilities, so the first `session_access` schema carries
 `append_inbox` only. `list_sessions` and `read_transcript` join it or get their own rule type when
-the held read decisions reopen; the target matching, collection and `PolicyWatch` code is shared
+the held read decisions reopen; the target matching and `PolicyWatch` code is shared
 either way.
 
-Support direct Sandbox targets as well as explicit collections. For Sandbox-hosted Session operations,
-the backend authenticates the SA, takes the Sandbox from the request (or, in History, which owns the
-record of the Sandbox that wrote each Session, from that record), and allows the operation if any current
-bound rule matches that operation and Sandbox, directly or through current collection membership.
-Share rule-reading and evaluation code while enforcing each backend's own API, including paths
-that bypass Dispatcher. Preserve live bundle edits, membership changes, expiry and additive
-overlapping grants; listing, transcript reads and sending remain independently grantable.
+Support direct Sandbox targets as well as tags. For Sandbox-hosted Session operations, the backend
+authenticates the SA, takes the Sandbox from the request (or, in History, which owns the record of
+the Sandbox that wrote each Session, from that record), and allows the operation if any current
+bound rule matches that operation and Sandbox, directly or through its current tags (in History,
+the reader tags on its record). Share rule-reading and evaluation code while enforcing each
+backend's own API, including paths that bypass Dispatcher. Preserve live bundle edits, tag changes,
+expiry and additive overlapping grants; listing, transcript reads and sending remain independently grantable.
 
 The send operation appends correspondence to a particular Session's inbox. Its raw peer payload
-is stored there; the platform-generated notice is a separate delivery effect. Sandbox/collection
-scopes select permitted targets, while collections are not inbox recipients. Session addressing and
+is stored there; the platform-generated notice is a separate delivery effect. Sandbox and tag targets
+select permitted Sandboxes; a tag is not an inbox recipient. Session addressing and
 canonical state stay outside Kubernetes; this direction requires no Session CRs or projection of
 these rules into native Roles.
 
-Before implementation, finalize rule/membership schemas, concrete administrative RBAC, freshness
+Before implementation, finalize rule schemas, concrete administrative RBAC, freshness
 settings, filtered enumeration and retained-history behavior. The agreed propagation contract below
 applies; accepted inbox correspondence survives later loss of send permission. Revisit
 the representation if implementation exposes a poor fit or disproportionate maintenance cost.
@@ -320,7 +296,7 @@ the representation if implementation exposes a poor fit or disproportionate main
 
 **V1 direction agreed:** follow the existing Actions/egress pattern of independently watched
 policy state with freshness checks. Each enforcing backend evaluates its local view of PolicySets,
-PolicyBindings and collection memberships. Changes apply as replicas observe them; replicas can
+PolicyBindings and Sandbox tags. Changes apply as replicas observe them; replicas can
 briefly disagree, and an edit is not an atomic cluster-wide authorization cutover.
 
 Refuse protected operations before initial sync or when required policy data exceeds a configurable
@@ -337,11 +313,11 @@ Both native RBAC and service-enforced rules can use PolicySets/Bindings for assi
 distinction is how operation/target rules are represented and evaluated, not PolicySets versus
 Kubernetes RBAC. Alternatives remain available without requiring their implementation first.
 
-| Candidate                                 | How it could fit the existing design                                                                                                                                               | Questions to evaluate                                                                                                                                                                                                              |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native RBAC with collection projection    | Represent Session operations using Sandbox-scoped authorization attributes. Generate Roles from collection membership and assign them through existing PolicySet Kubernetes rules. | A Role per collection and independent permission, or configured bundle, needs new Role reconciliation and constrained write authority; today's Policy Controller only maintains bindings. Empty membership must produce no grants. |
-| Native RBAC with backend scope resolution | Backends resolve the Sandbox and its collections, then submit access reviews for direct or collection scopes.                                                                      | Avoids Role expansion, but authorization attributes must faithfully distinguish the Session operation, Sandbox boundary and collection selector. Collections are not inbox recipients.                                             |
-| RBAC-gated named policies                 | A domain policy defines operations/targets; native RBAC grants `use` of that policy. Existing PolicySet Kubernetes rules can assign the referenced Roles.                          | Keeps native assignment but adds policy interpretation and Roles for named policies. Compare the extra layer with direct PolicyBinding enrollment.                                                                                 |
+| Candidate                                 | How it could fit the existing design                                                                                                                                      | Questions to evaluate                                                                                                                                                                                                          |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Native RBAC with tag projection           | Represent Session operations using Sandbox-scoped authorization attributes. Generate Roles from Sandbox tags and assign them through existing PolicySet Kubernetes rules. | A Role per tag and independent permission, or configured bundle, needs new Role reconciliation and constrained write authority; today's Policy Controller only maintains bindings. A tag on no Sandbox must produce no grants. |
+| Native RBAC with backend scope resolution | Backends resolve the Sandbox and its tags, then submit access reviews for direct or tag scopes.                                                                           | Avoids Role expansion, but authorization attributes must faithfully distinguish the Session operation, Sandbox boundary and tag selector. Tags are not inbox recipients.                                                       |
+| RBAC-gated named policies                 | A domain policy defines operations/targets; native RBAC grants `use` of that policy. Existing PolicySet Kubernetes rules can assign the referenced Roles.                 | Keeps native assignment but adds policy interpretation and Roles for named policies. Compare the extra layer with direct PolicyBinding enrollment.                                                                             |
 
 Related precedents are [Knative EventPolicy](https://knative.dev/v1.21-docs/eventing/features/authorization/)
 for domain-specific delivery policy, [Argo CD](https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac/)
@@ -349,7 +325,7 @@ for application permissions stored in Kubernetes configuration, and
 [OpenShift SCCs](https://docs.redhat.com/en/documentation/openshift_container_platform/4.12/html/authentication_and_authorization/managing-pod-security-policies)
 for RBAC-granted `use` of a named policy. These are patterns to adapt, not products or their
 organizational models selected for Agentplane. Namespace-scoped Roles/ClusterRoles are another
-option, but require reviewing namespace lifecycle/layout and target-collection binding fan-out.
+option, but require reviewing namespace lifecycle/layout and tag binding fan-out.
 
 For the native-RBAC option, [SubjectAccessReview](https://kubernetes.io/docs/reference/access-authn-authz/authorization/#checking-api-access)
 allows a service to ask the API server about another caller's access. The backend must derive that
@@ -395,12 +371,12 @@ a suspended Sandbox's storage.
 including one of a running Sandbox's Session, is an archive read. The tentative `session_access`
 operations already divide by the service that enforces them:
 
-| Aspect               | Live objects                                           | Archive                                                            |
-| -------------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
-| Operations           | `append_inbox`; control, when designed                 | `list_sessions`, `read_transcript`                                 |
-| Enforced by          | the inbox owner, the Dispatcher, the Runner Gateway    | History, on its own API                                            |
-| Targets are named as | live Sandboxes: direct, membership CRs, `allSandboxes` | the Sandbox as History recorded it: namespace, name, UID once kept |
-| Lasts as long as     | the Sandbox                                            | the history                                                        |
+| Aspect               | Live objects                                           | Archive                                                                         |
+| -------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Operations           | `append_inbox`; control, when designed                 | `list_sessions`, `read_transcript`                                              |
+| Enforced by          | the inbox owner, the Dispatcher, the Runner Gateway    | History, on its own API                                                         |
+| Targets are named as | live Sandboxes: direct, recipient tags, `allSandboxes` | the Sandbox as History recorded it: namespace, name, UID once kept, reader tags |
+| Lasts as long as     | the Sandbox                                            | the history                                                                     |
 
 Today History checks only that the caller is one of its configured `reader_accounts` (staging: the
 app and Notifications), then serves any Session by ID; there is no per-Session or per-Sandbox check,
@@ -415,11 +391,9 @@ own for every history bound to a writer, which is what the split would build on.
   (namespace and name, optional UID) and `allSandboxes`, both matched on History's record. For
   these two the split changes where the rule lives, not what it matches, since neither reads a live
   object.
-- Collections are the one target form that needs data outside the archive (membership CRs of live
-  Sandboxes). The split asks the collection question for the archive alone: either archive grants
-  have no collections and list Sandboxes or namespaces, or the archive owns its enrollments, the
-  `Memberships in a database` alternative of `HISTORY_ACCESS_AFTER_DELETION`. Live collections stay
-  as agreed.
+- Tags already take this split ([design](sandbox_tags.md)): recipient tags are live and go with the
+  CR, while reader tags are archive data that History copies into its record of the Sandbox and
+  keeps after the CR is deleted. A reader-tag grant matches that record, never the live object.
 - How separate is open. **Separate rule type**: same PolicySets and PolicyBindings, so assignment,
   GitOps authoring, live bundle edits and the shared `PolicyWatch` carry over. **Separate
   authority**: History stores and administers archive grants itself, with its own API and audit;
@@ -429,17 +403,16 @@ own for every history bound to a writer, which is what the split would build on.
 
 **What it decouples.**
 
-- A read needs no live Kubernetes object: no membership CR, ownerReference or Sandbox has to
-  exist, and no Kubernetes object becomes a historical log. `HISTORY_ACCESS_AFTER_DELETION` reduces
-  to the collection question above.
-- History's read path watches archive grants only, not Sandboxes or memberships.
-- Deleting a Sandbox or removing its live membership never changes archive access, and an archive
+- A read needs no live Kubernetes object: no ownerReference or Sandbox has to exist, and no
+  Kubernetes object becomes a historical log.
+- History's read path checks archive grants against its own records, never a live Sandbox.
+- Deleting a Sandbox or removing a recipient tag never changes archive access, and an archive
   grant never keeps a Sandbox alive.
 
 **Trade-offs.**
 
 - A person who expects one grant gets two: "X may send to and read `developers`" is a rule in each
-  universe, and a collection of that name can drift between them. Only collections cost this;
+  universe, and the recipient and reader tags of that name can drift apart. Only tags cost this;
   direct and `allSandboxes` targets read the same either way. Send and read are already independent
   grants.
 - A second rule type and target vocabulary to review, test and document. Evaluator and watch code
@@ -733,7 +706,7 @@ access control or silently discard accepted messages. The deferred item is
 
 These cases should compare allowed/denied operations, authorized discovery, evidence and operational
 cost for the tentative direction and any replacement. Open decisions include identity continuity,
-grant and relationship ownership, exact rule/membership schemas, freshness settings, whether the
+grant and relationship ownership, exact rule schemas, freshness settings, whether the
 archive is [authorized apart from live objects](#option-authorize-the-archive-apart-from-live-objects),
 remaining inbox/API semantics, optional protocol facades,
 provisioning/delegation, and migration across existing services. No runtime implementation or engine

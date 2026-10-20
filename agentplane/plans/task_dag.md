@@ -251,10 +251,11 @@ the remaining contracts below still require review before implementation.
 ```mermaid
 flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
-    SESSION_ACCESS_RULES_DESIGN[Decision: Session-access rule and membership schema]
+    SESSION_ACCESS_RULES_DESIGN[Decision: Session-access rule schema]
     SESSION_ACCESS_RULES[Blocked: shared Session-access rules]
     THREAD_READ_POLICY_DESIGN[Held decision: remaining history read contract]
-    HISTORY_ACCESS_AFTER_DELETION[Held decision: who reads a deleted Sandbox's history]
+    SANDBOX_RECIPIENT_TAGS[Blocked: recipient tags on the Sandbox]
+    HISTORY_SANDBOX_RECORD[Blocked: History's Sandbox record and reader tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SESSION_KEY_DESIGN[Decision: record the Sandbox UID in History, and key Sessions by it]
     HISTORY_SANDBOX_UID[Blocked: History records and checks the Sandbox UID]
@@ -274,13 +275,13 @@ flowchart TD
     SESSION_ACCESS_RULES_DESIGN --> THREAD_READ_POLICY_DESIGN
     SESSION_ACCESS_RULES_DESIGN --> AGENT_MESSAGING_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
-    HISTORY_ACCESS_AFTER_DELETION --> THREAD_READ_POLICY
-    HISTORY_ACCESS_AFTER_DELETION -. may change collection membership storage only .-> SESSION_ACCESS_RULES
+    SESSION_ACCESS_RULES --> SANDBOX_RECIPIENT_TAGS
     SESSION_ACCESS_RULES --> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN --> HISTORY_SANDBOX_UID
     HISTORY_SESSION_KEY_DESIGN -. read API shape .-> THREAD_READ_POLICY
     HISTORY_SESSION_KEY_DESIGN -. only if re-keyed .-> APP_THREAD_SANDBOX_UID
-    HISTORY_SANDBOX_UID --> THREAD_READ_POLICY
+    HISTORY_SANDBOX_UID --> HISTORY_SANDBOX_RECORD
+    HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
     HISTORY_SANDBOX_UID --> APP_THREAD_SANDBOX_UID
     APP_THREAD_SANDBOX_UID --> HISTORY_SESSION_REKEY
     SESSION_ACCESS_RULES --> AGENT_MESSAGE_INGRESS
@@ -316,28 +317,20 @@ do not hold them up. The app's existing auth path may remain a special case for 
 special handling is optional, separately reviewed follow-up work and does not gate multiagent
 implementation.
 
-### `SESSION_ACCESS_RULES_DESIGN` — Session-access rule and membership schema
+### `SESSION_ACCESS_RULES_DESIGN` — Session-access rule schema
 
 **Decision; the wildcard question is settled and the concrete schema remains for review. Gates
 `SESSION_ACCESS_RULES`, `THREAD_READ_POLICY_DESIGN` and `AGENT_MESSAGING_DESIGN`.** Draft the concrete
-rule/member-reference schema for review, including administrative RBAC and freshness
-settings under the agreed [policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness),
-without requiring an auth-engine migration. Prefer Kubernetes resources for grants and explicit
-collection membership, with separate CRs for individual Sandbox-to-collection enrollments so Flux
-and the app can own different memberships independently. Support name-based Sandbox references that
-follow recreation and UID-pinned references for a single instance; app launches default to UID
-pinning, while GitOps-managed named Sandboxes may use name-based membership. Other storage remains
-allowed if concrete implementation friction warrants it. Storage is separate from the selected
-service-enforced evaluator direction.
-
-Membership CR writes use ordinary Kubernetes RBAC, initially granted to operator/GitOps and trusted
-provisioning. Read/send grants confer no membership administration; explicit administrative grants
-remain possible without introducing agent categories. V1 requires no new collection-specific agent
-enrollment-delegation mechanism. Finalize the concrete RBAC and provisioning checks within this boundary.
+rule schema for review, including administrative RBAC and freshness settings under the agreed
+[policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness), without
+requiring an auth-engine migration. The first schema has direct Sandbox and `allSandboxes` targets
+only. Collections are tags on the Sandbox, with no membership CRs (operator, 2026-10-19 to 2026-10-20
+UTC; [design](sandbox_tags.md)); their target forms arrive with `SANDBOX_RECIPIENT_TAGS` and
+`HISTORY_SANDBOX_RECORD`.
 
 **Reads not bundled with send (operator, 2026-10-18 UTC, "probably"):** the first schema's rule carries
 `append_inbox` only. `list_sessions` and `read_transcript` join it or get their own rule type when
-`THREAD_READ_POLICY_DESIGN` reopens, and the target, membership and watch code is shared either way.
+`THREAD_READ_POLICY_DESIGN` reopens, and the target and watch code is shared either way.
 
 Include OAuth-bound static SAs as subjects by namespace/name for permitted sends and reads. OAuth
 callers reach the backends from an Action box whose egress substitutes the SA's projected
@@ -345,15 +338,15 @@ token ([agreed route](multiagent_communication.md#oauth-callers)); no OAuth admi
 other backends. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and
 Connection representation/storage changes are outside this work.
 
-**Wildcard target agreed (operator, 2026-10-17 UTC):** v1 includes an `allSandboxes` target beside direct
-Sandboxes and explicit collections, for permissions like "send messages to any Sandbox" and "read from any
-Session"; a Session's scope is its Sandbox, so both are one target form. It matches every Sandbox in the
-namespace of the PolicySet holding the rule, never the whole cluster: a Sandbox Controller reconciles one
-namespace (its `namespace` setting), and a Sandbox in another namespace needs a direct target. It covers Sandboxes
-created later and needs no membership data, and History matches it on the recorded namespace, so a reader
-of every history is unaffected by `HISTORY_ACCESS_AFTER_DELETION`. Operations stay independent (read-any
-does not imply send-any) and only whoever writes PolicySets can grant it. The namespace match is the
-design's reading of "the controller's scope"; the schema draft confirms or replaces it.
+**Wildcard target agreed (operator, 2026-10-17 UTC):** v1 includes an `allSandboxes` target beside
+direct Sandboxes and tags, for permissions like "send messages to any Sandbox" and "read
+from any Session"; a Session's scope is its Sandbox, so both are one target form. It matches every
+Sandbox in the namespace of the PolicySet holding the rule, never the whole cluster: a Sandbox
+Controller reconciles one namespace (its `namespace` setting), and a Sandbox in another namespace needs
+a direct target. It covers Sandboxes created later and needs no tags, and History matches it on the
+recorded namespace, so it keeps working after a Sandbox is deleted. Operations stay independent
+(read-any does not imply send-any) and only whoever writes PolicySets can grant it. The namespace match
+is the design's reading of "the controller's scope"; the schema draft confirms or replaces it.
 
 ### `SESSION_ACCESS_RULES` — shared Session-access rule support
 
@@ -361,83 +354,52 @@ design's reading of "the controller's scope"; the schema draft confirms or repla
 tentative Session-access rule, whose first operation is Session-inbox append, and implement shared
 rule-reading/evaluation code for API owners; listing and transcript reads are not bundled into it and
 reuse the shared code once they have a rule. Reuse existing SA authentication and PolicyBindings. Match
-the append operation against direct Sandbox targets, current explicit collection memberships
-represented by separate enrollment CRs and an all-Sandboxes target.
-Honor both name-based and UID-pinned Sandbox member references without changing recorded Session
-associations when a Sandbox name is reused.
-Implement independent watched policy views, initial-sync and configurable freshness checks, and
-asynchronous revocation under the agreed contract; no global replica acknowledgement is required.
-Preserve live bundle updates, existing binding lifecycle and additive overlapping grants. Cover mixed
-static/runtime SAs, allowed/denied operations and targets, empty collections, membership removal,
-overlap, initial sync, stale watches, independently advancing replicas and both reference modes
-across Sandbox recreation. Backend enforcement and retained-history semantics remain in their
-respective nodes.
+the append operation against direct Sandbox targets and an all-Sandboxes target, without changing
+recorded Session associations when a Sandbox name is reused. Implement independent watched policy views,
+initial-sync and configurable freshness checks, and asynchronous revocation under the agreed contract;
+no global replica acknowledgement is required. Preserve live bundle updates, existing binding lifecycle
+and additive overlapping grants. Cover mixed static/runtime SAs, allowed/denied operations and targets,
+overlap, initial sync, stale watches, independently advancing replicas and Sandbox recreation under the
+same name. Backend enforcement and retained-history semantics remain in their respective nodes.
+
+### `SANDBOX_RECIPIENT_TAGS` — recipient tags on the Sandbox
+
+**Blocked on `SESSION_ACCESS_RULES`.** [Design](sandbox_tags.md#tags). Add a set-typed
+`spec.recipientTags` to `Sandbox` and a recipient-tag target to the `session_access` rule. The inbox
+owner matches a send against the live CR's tags, with no History call. App presets supply a launch's
+initial tags. Test a send allowed and one denied by tag, a removed tag withdrawing the grant, a
+deleted Sandbox no longer matching, and a tag grant overlapping a direct one.
 
 ### `THREAD_READ_POLICY_DESIGN` — scoped history read policy
 
-**Decision, held by the operator for now (2026-10-17 UTC): do not raise it until he reopens it. Tentative
-Session-access rules, Sandbox minimum, explicit collections and all-Sandboxes target selected.**
+**Decision, held by the operator for now (2026-10-17 UTC): do not raise it until the operator reopens
+it. Tentative Session-access rules, Sandbox minimum, reader tags and all-Sandboxes target selected.**
 Reads are not bundled into the send rule, so this decision also settles their rule type or addition to
-`session_access`. Finalize read-specific grant administration within the agreed membership RBAC boundary and caller
-replacement semantics. Access to retained histories after Sandbox deletion is
-`HISTORY_ACCESS_AFTER_DELETION`. V1 has no
-individual-Session grants or computed collection selection. Presets
-may seed authorized launch enrollment; subsequent removals persist. Reading a Session resolves its
-recorded Sandbox identity, and all Sessions in that Sandbox use the same scope. Defaults expose
-no existing histories to workloads. Session listing is a distinct, weaker read-type permission,
-independent from send; its metadata fields are selected, and raw history read/follow behavior remains to design. Read does not
-imply send/create, and no folded-read API is required for v1. Cover discovery, linked evidence, live-feed
-revocation and unknown historical associations. Do not block this on a messaging transport.
+`session_access`. Finalize caller replacement semantics. Collection reads match reader tags on History's
+record of the Sandbox, which outlives it ([design](sandbox_tags.md)). V1 has no individual-Session
+grants or computed collection selection. Presets seed launch tags; later removals persist. Reading a
+Session resolves its recorded Sandbox identity, and all Sessions in that Sandbox use the same scope.
+Defaults expose no existing histories to workloads. Session listing is a distinct, weaker read-type
+permission, independent from send; its metadata fields are selected, and raw history read/follow
+behavior remains to design. Read does not imply send/create, and no folded-read API is required for v1.
+Cover discovery, linked evidence, live-feed revocation and unknown historical associations. Do not block
+this on a messaging transport.
 
-### `HISTORY_ACCESS_AFTER_DELETION` — who reads a Sandbox's history once it is deleted
-
-**Decision, held by the operator for now (2026-10-17 UTC): he asked not to rush it, and not to raise it until
-he reopens it.** Retained history stays
-readable after its Sandbox is deleted, and History already records the Sandbox that wrote each Session. A
-direct Sandbox grant needs only that record, as does an `allSandboxes` grant, so both keep working. Only a collection grant needs membership at read time, and membership lives in Kubernetes CRs that
-go away or dangle with the Sandbox. The operator wants agents to read old history, dislikes Kubernetes
-references to Sandboxes that no longer exist, does not want to keep heavy Sandbox resources only for
-history, does not want membership split awkwardly between History and Kubernetes, does not want Kubernetes
-to be a historical log, and finds a collection grant that stops covering deleted members annoying.
-
-Alternatives:
-
-- **Live-only memberships.** UID-pinned membership CRs carry an ownerReference to their Sandbox, so
-  Kubernetes removes them with it; GitOps name-based memberships stay Flux's. Collection grants cover only
-  live members, and old history is reached by direct or all-Sandboxes grants.
-- **Reduced Sandbox kept.** Suspend the Sandbox and drop its workspace PVC, keeping the object and the small
-  harness data directory, so memberships stay valid. Deletion becomes archiving: a new lifecycle state and
-  a Sandbox, ServiceAccount, PolicyBinding and PVC per dead Sandbox, to protect transcripts History already
-  stores.
-- **Memberships in a database.** One owner (History or Notifications) with an API, administrative
-  authorization and audit; no dangling references. Membership writes leave Kubernetes RBAC and GitOps, so
-  Flux and the app no longer own different memberships through CRs.
-- **Kubernetes CRs plus a database record.** The CRs stay authoritative while the Sandbox exists, and a
-  record of its collections, written at deletion or kept from History's last push, serves reads afterwards.
-  Two places for one fact, one a cache of the other, and History needs read access to membership CRs.
-- **Archive grants apart from live objects** (floated by the operator, 2026-10-18 UTC, tentatively; see
-  [the option](multiagent_communication.md#option-authorize-the-archive-apart-from-live-objects)). Archive
-  reads get their own rule type matched on History's recorded Sandbox, so no live object is needed at
-  read time. That leaves the collection question for the archive alone: no archive collections, or
-  archive-owned enrollments (the database alternative above). Live sends and live collections are unchanged.
-
-**Recommendation:** decide it when `THREAD_READ_POLICY` is next in line, because nothing else waits on it:
-sending and live reads need no retained membership, and direct grants work after deletion under every
-alternative. **Questions for review:** which alternative? Should an `allSandboxes` read also reach histories
-with no recorded Sandbox UID, which are operator-only today (`HISTORY_SESSION_KEY_DESIGN`)? Those rows keep
-the recorded namespace, which is all that target matches on; a history with no recorded Sandbox stays
-operator-only either way.
+**Question for review:** should an `allSandboxes` read also reach histories with no recorded Sandbox
+UID, which are operator-only today (`HISTORY_SESSION_KEY_DESIGN`)? Those rows keep the recorded
+namespace, which is all that target matches on; a history with no recorded Sandbox stays operator-only
+either way.
 
 ### `THREAD_READ_POLICY` — authorized retained-history access
 
-**Blocked on reviewed read policy and on `HISTORY_ACCESS_AFTER_DELETION`, both held by the operator, and
-on `HISTORY_SANDBOX_UID`, which records the Sandbox UID the association needs.** Enforce the immutable Session-to-Sandbox association and
-Sandbox-scoped grants through the shared rule evaluation at the owning backend across list,
-raw/native evidence, direct reads and feeds, including reconnect and revocation. Keep app-only UI
-folds separate. Test allowed/denied histories, two principals,
-deleted Sandboxes and revocation with deterministic service tests plus a bounded deployed auth check.
-Cover a listing-only caller separately from transcript/evidence reads and follows. Recheck stream
-authorization/freshness and stop Event emission on observed grant loss or stale required policy state.
+**Blocked on reviewed read policy, held by the operator, and on `HISTORY_SANDBOX_RECORD`, which keeps
+the Sandbox UID and reader tags the association needs.** Enforce the immutable Session-to-Sandbox
+association and Sandbox-scoped grants through the shared rule evaluation at the owning backend across
+list, raw/native evidence, direct reads and feeds, including reconnect and revocation. Keep app-only UI
+folds separate. Test allowed/denied histories, two principals, deleted Sandboxes and revocation with
+deterministic service tests plus a bounded deployed auth check. Cover a listing-only caller separately
+from transcript/evidence reads and follows. Recheck stream authorization/freshness and stop Event
+emission on observed grant loss or stale required policy state.
 
 ### `HISTORY_SESSION_KEY_DESIGN` — record the Sandbox UID in History, and key Sessions by it
 
@@ -487,6 +449,18 @@ refused, a failed read, and `FindSessions` and summaries reporting the UID. Upda
 [History README](../history_service/README.md#which-sandbox-wrote-a-session), which says UIDs are not
 recorded. A ServiceAccount recreated in place under the same Sandbox keeps failing as a different writer;
 letting the Sandbox UID take over as the pin is a separate decision.
+
+### `HISTORY_SANDBOX_RECORD` — History's Sandbox record and reader tags
+
+**Blocked on `HISTORY_SANDBOX_UID`; it lands in the Go History Service.**
+[Design](sandbox_tags.md#historys-record-of-a-sandbox). Add a set-typed `spec.readerTags` to `Sandbox`
+in the same change, since History is its only reader; app presets supply a launch's initial reader tags.
+The Role granting History `get`, `list` and `watch` on Sandboxes lands first, then the code. History
+keeps one record per Sandbox UID with namespace, name and reader tags; a read-only watch writes it and
+never deletes it. The History rule in [service boundaries](../docs/service_boundaries.md) and the
+[History README](../history_service/README.md) change in the same PR. Test a tag edit reaching the
+record, a deleted Sandbox keeping its last tags, a same-name replacement getting its own record, and a
+restarted watch catching up.
 
 ### `APP_THREAD_SANDBOX_UID` — the app stores each Thread's Sandbox UID
 

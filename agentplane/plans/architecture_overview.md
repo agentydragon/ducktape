@@ -217,6 +217,8 @@ arithmetic, not a measurement at scale.
 
 ### Keeping finished Sandboxes as records
 
+The design agreed from this is in [Sandbox tags and History's Sandbox records](sandbox_tags.md).
+
 The operator's knot (09:50): "when you delete a Sandbox CR, that deletes also all its history; if
 you want to 'archive', that's some different operation that keeps the CR alive", and the question it
 raises: "is it a good idea to keep around potentially all sandboxes I've ever ran if I made like 100
@@ -313,18 +315,19 @@ Candidates; each still needs the operator's go.
   (2026-10-20 00:32), follow the same rules below. Against the membership CRs, git cannot cleanly tag a Sandbox the app
   created: Flux would own the whole object, delete it when the entry leaves git, and try to recreate
   it from a partial manifest after an archive (not tried). On a Sandbox git creates, git and the app
-  can each own different tags, since server-side apply tracks each label key separately and Flux
+  can each own different tags, since server-side apply tracks each entry of a set-typed list separately and Flux
   takes back only fields edited with `kubectl` (kustomize-controller's field-manager cleanup); a tag
   git declares is reverted if changed live. Setting a tag is a grant, and RBAC on Sandbox writes is
   its only gate, with no admission rule (2026-10-20 01:29): whoever can patch a Sandbox can already
   set its `spec.policySets`, which grants at least as much. Flux and the app are the writers
-  (01:17), as for membership in the
-  [agent communication plan](multiagent_communication.md#target-collections-and-launch-enrollment).
+  (01:17), as the
+  [agent communication plan](multiagent_communication.md#target-collections-and-launch-enrollment)
+  now records.
   Both tag kinds are spec lists declared `x-kubernetes-list-type: set`, like `spec.policySets`
   (2026-10-20 00:36): the CRD validates them and requesters keep writing spec, and a set keeps the
   split ownership that a plain list, owned whole, would lose. Labels would let `kubectl` and watchers
   select on a tag, which nothing needs while History watches every Sandbox. This takes the
-  membership CR out of #10987.
+  membership CR out of #10987 ([design](sandbox_tags.md)).
 - **Drop a Sandbox's workspace without deleting the Sandbox.** Deferred by the operator, "not needed
   for this plan" (23:32). The Sandbox owns `<sandbox>-workspace`, and a missing one blocks the next
   start with `VolumeLayoutMismatch` (`sandbox_controller/workspace.go`), so deleting the Sandbox is
@@ -359,8 +362,6 @@ Each setting is another mode to test and keep working, so configurability stays 
 
 Held until one is chosen:
 
-- collection membership as Sandbox-owned CRs (#10987: D1, D3) or as History rows (#10990: D2, D4),
-  unless collections become tags;
 - deleting history with its Sandbox (D1), or archive grants apart from live grants (D2);
 - a retired state that watchers treat specially (D1, D3);
 - the History re-key by Sandbox UID (D2);
@@ -433,13 +434,10 @@ Held until one is chosen:
 
 ### Not stored yet
 
-- **Collection membership** (which Sandboxes a named collection holds, for grants). Proposed: #10987
-  makes one Sandbox-owned `SandboxCollectionMembership` CR per Sandbox and collection; #10990
-  recommends rows in History's database keyed by Sandbox UID, with git-authored sets reconciled in one
-  way. Operator: collections must keep covering Sandboxes "no longer alive" (2026-10-18 23:33); a
-  database is "okay, we could still have some kind of reconciler" (2026-10-19 01:10); a collection
-  could be a tag on Sandboxes with "no Membership objects" (09:58), with recipient tags and history
-  reader tags kept apart (2026-10-20 00:21).
+- **Sandbox tags** (which Sandboxes a grant's collection covers). Agreed, not implemented: recipient
+  and reader tags as set-typed lists on the Sandbox, with History keeping the reader tags in its own
+  record of each Sandbox, keyed by Sandbox UID ([design](sandbox_tags.md)). They replace #10987's
+  `SandboxCollectionMembership` CRs and #10990's membership rows.
 - **Session-access grants** (who may send to, or read, which Sandbox's Sessions). History's
   configured `reader_accounts` are the only gate on reads, and the Dispatcher trusts the app and
   Notification to authorize their users. Proposed: `session_access` rules in `PolicySet`s, assigned by
@@ -492,19 +490,18 @@ something like a tag" (09:58).
 
 ## Assumed by a lane and never confirmed
 
-| Assumption                                                                                                    | Where it lives                              | What the operator said                                                                   |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `session_access` rule shape, `targets` union, one `SandboxCollectionMembership` CR per Sandbox and collection | #10987, plan                                | Only the two target decisions above                                                      |
-| Resync of 300 s, refusal after three missed cycles, `policy_resync_seconds`                                   | #10987                                      | Asked "Shouldn't freshness just come from a k8s watch?" The number is not the operator's |
-| Payloads expire at 30 days, 128 unacknowledged per sender per inbox, idempotency key, recipient states        | [plan](multiagent_communication.md), #10987 | Never answered that batch; later asked for one question at a time                        |
-| History owns membership, keyed by Sandbox UID                                                                 | #10990 (closed)                             | Tentatively okay to a database, not to the owner or key; D2 and D4 only                  |
-| Records stay in the outer cluster's Kubernetes API                                                            | #10990 "Take" (closed)                      | Treated as open (2026-10-19 01:58); D1 and D2 keep it                                    |
+| Assumption                                                                                             | Where it lives                              | What the operator said                                                                   |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `session_access` rule shape and `targets` union                                                        | #10987, plan                                | Only the two target decisions above; tags instead of membership CRs                      |
+| Resync of 300 s, refusal after three missed cycles, `policy_resync_seconds`                            | #10987                                      | Asked "Shouldn't freshness just come from a k8s watch?" The number is not the operator's |
+| Payloads expire at 30 days, 128 unacknowledged per sender per inbox, idempotency key, recipient states | [plan](multiagent_communication.md), #10987 | Never answered that batch; later asked for one question at a time                        |
+| Records stay in the outer cluster's Kubernetes API                                                     | #10990 "Take" (closed)                      | Treated as open (2026-10-19 01:58); D1 and D2 keep it                                    |
 
 ## Open PRs that encode unconfirmed defaults
 
-| PR     | Encodes                                                                      | Handling                                                                                    |
-| ------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| #10987 | The draft send schema with the membership CR, freshness and recipient states | The membership CR is D1 or D3; direct, `allSandboxes` and tag targets are direction-neutral |
+| PR     | Encodes                                                                      | Handling                                                                   |
+| ------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| #10987 | The draft send schema with the membership CR, freshness and recipient states | Trim to direct and `allSandboxes` targets ([steps](sandbox_tags.md#steps)) |
 
 ## Parked
 
