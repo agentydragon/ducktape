@@ -180,6 +180,27 @@ func TestSubscriptionOfAnotherAccountExitsNotFound(t *testing.T) {
 	}
 }
 
+func TestSourcesNamesEachProviderAndJSONIsTheServicesOwn(t *testing.T) {
+	const sources = `{"github":{"subscription_schema":{"title":"Subscribe"},"content":"Full GitHub webhook JSON; identity in event"},` +
+		`"actions":{"subscription_schema":{"title":"Subscribe"},"content":"ActionEventView: sequence, state, at, actor"}}`
+	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, sources) })
+
+	code, stdout, _ := invoke(notificationsEnv(f.URL), "notifications", "sources")
+	want := "actions  ActionEventView: sequence, state, at, actor\ngithub  Full GitHub webhook JSON; identity in event"
+	if code != 0 || strings.TrimSpace(stdout) != want {
+		t.Errorf("exit %d, stdout %q; want exit 0 and %q", code, stdout, want)
+	}
+	code, stdout, _ = invoke(notificationsEnv(f.URL), "notifications", "sources", "--json")
+	if code != 0 || strings.TrimSpace(stdout) != compact(t, sources) {
+		t.Errorf("--json: exit %d, stdout %q; want exit 0 and the service's document", code, stdout)
+	}
+	for _, s := range f.all() {
+		if s.method != http.MethodGet || s.path != "/v1/sources" {
+			t.Errorf("request %s %s, want GET /v1/sources", s.method, s.path)
+		}
+	}
+}
+
 func TestSubscriptionsFollowPagesOf128(t *testing.T) {
 	const total = 300
 	ids := make([]string, total)

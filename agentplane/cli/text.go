@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -305,4 +307,18 @@ func (t credentialTarget) presenting(placeholder string) string {
 	default:
 		return fmt.Sprintf("%s %s (see --json)", t.Method, placeholder)
 	}
+}
+
+func sourcesText(raw json.RawMessage) (string, error) {
+	sources, err := decode[map[string]struct {
+		Content string `json:"content"`
+	}](raw)
+	if err != nil {
+		return "", err
+	}
+	lines := []string{}
+	for _, provider := range slices.Sorted(maps.Keys(sources)) {
+		lines = append(lines, fields(provider, sources[provider].Content))
+	}
+	return strings.Join(lines, "\n"), nil
 }

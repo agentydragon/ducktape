@@ -37,6 +37,7 @@ joins as one more group under them.
 | `actions events ID [--after SEQUENCE]`                                                                                                         | `GET /v1/action-requests/{id}/events`, paged           |
 | `actions cancel ID`                                                                                                                            | `POST /v1/action-requests/{id}/cancel`                 |
 | `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--destination JSON]` | `POST /v1/subscriptions`                               |
+| `notifications sources`                                                                                                                        | `GET /v1/sources`                                      |
 | `notifications subscriptions`                                                                                                                  | `GET /v1/subscriptions`, paged                         |
 | `notifications subscription ID`                                                                                                                | `GET /v1/subscriptions/{id}`                           |
 | `notifications renew ID [--lifetime-days N]`                                                                                                   | `GET`, then `PATCH` with the read `version`            |

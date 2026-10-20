@@ -28,7 +28,7 @@ func (a *app) notificationsCommand() *cobra.Command {
 	return group("notifications", "Subscribe to events and manage subscriptions", notificationsHelp,
 		group("subscribe", "Subscribe to a source", "Creates a subscription for this Session's inbox.",
 			group("github", "Subscribe to GitHub activity", "Only pull requests (`pr`) are supported.", a.subscribePullRequestCommand())),
-		a.subscriptionsCommand(), a.subscriptionCommand(), a.renewCommand(), a.cancelSubscriptionCommand())
+		a.sourcesCommand(), a.subscriptionsCommand(), a.subscriptionCommand(), a.renewCommand(), a.cancelSubscriptionCommand())
 }
 
 // destination is the inbox a subscription delivers to, the object AGENTPLANE_DESTINATION holds.
@@ -199,6 +199,23 @@ lifetime), and when the key belongs to a cancelled subscription (pass a new --ke
 	command.Flags().StringVar(&key, "key", "", "idempotency key; derived from the source if absent")
 	command.Flags().StringVar(&destinationFlag, "destination", "", "the destination JSON, instead of AGENTPLANE_DESTINATION")
 	return command
+}
+
+func (a *app) sourcesCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "sources",
+		Short: "List the providers this service can follow",
+		Long: `GET /v1/sources: the enabled providers and what a notice from each contains. --json also has each
+provider's subscription schema.`,
+		Args: cobra.NoArgs,
+		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, _ []string) error {
+			body, err := svc.fetch(ctx, "/v1/sources", nil)
+			if err != nil {
+				return err
+			}
+			return a.showOne(body, sourcesText)
+		}),
+	}
 }
 
 func (a *app) subscriptionsCommand() *cobra.Command {
