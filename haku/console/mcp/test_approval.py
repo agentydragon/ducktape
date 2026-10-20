@@ -469,12 +469,10 @@ async def test_two_operator_two_agent_http_authorization_matrix(
             assert all(operator.get(f"/api/tool-calls/{call_id}").status_code == 200 for call_id in own_ids)
             assert all(operator.get(f"/api/tool-calls/{call_id}").status_code == 404 for call_id in foreign_ids)
 
-        # Decision ownership is checked before credential lookup, transition, or execution. Approve
-        # and deny reach the ledger through different reads, so each is attempted.
+        # Decision ownership is checked before credential lookup, transition, or execution.
         for operator, foreign_call_id in ((operator_a, call_ids["ops"]), (operator_b, call_ids["haku"])):
-            for decision in ("approve", "deny"):
-                response = operator.post(f"/api/tool-calls/{foreign_call_id}/decision", json={"decision": decision})
-                assert response.status_code == 404
+            response = operator.post(f"/api/tool-calls/{foreign_call_id}/decision", json={"decision": "approve"})
+            assert response.status_code == 404
 
         approved = operator_a.post(f"/api/tool-calls/{call_ids['haku']}/decision", json={"decision": "approve"})
         denied = operator_b.post(
@@ -516,6 +514,34 @@ async def test_all_v1_tool_calls_require_console_approval(operator_client: TestC
     assert body["result"] is None
     assert pending["approvals"] == [body]
     assert listed["tool_calls"][0]["tool_call_id"] == body["tool_call_id"]
+
+
+async def test_operator_tenants_cannot_read_or_decide_each_others_calls(
+    make_operator_client, console_app: dict[str, Any]
+) -> None:
+    with (
+        make_operator_client(
+            **console_app, operator_external_user_key="operator-a", operator_username="a@example.com"
+        ) as operator_a,
+        make_operator_client(
+            **console_app, operator_external_user_key="operator-b", operator_username="b@example.com"
+        ) as operator_b,
+    ):
+        submitted = _submit(operator_a)
+        call_id = submitted["tool_call_id"]
+
+        assert [row["tool_call_id"] for row in operator_a.get("/api/tool-calls").json()["tool_calls"]] == [call_id]
+        assert operator_b.get("/api/tool-calls").json()["tool_calls"] == []
+        assert operator_b.get(f"/api/tool-calls/{call_id}").status_code == 404
+        assert operator_b.get("/api/approvals/pending").json()["approvals"] == []
+
+        for decision in ("deny", "approve"):
+            response = operator_b.post(f"/api/tool-calls/{call_id}/decision", json={"decision": decision})
+            assert response.status_code == 404
+
+        approved = operator_a.post(f"/api/tool-calls/{call_id}/decision", json={"decision": "approve"})
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["tool_call"]["status"] == "running"
 
 
 async def test_ledger_get_and_list_load_principal_projection_in_one_query(
