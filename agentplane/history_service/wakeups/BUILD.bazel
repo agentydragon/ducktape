@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/history_service:__subpackages__"])
+
+go_library(
+    name = "wakeups",
+    srcs = ["hub.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/wakeups",
+    deps = ["@com_github_lib_pq//:pq"],
+)
+
+go_test(
+    name = "integration_test",
+    size = "medium",
+    srcs = [
+        "hub_test.go",
+        "integration_testmain_test.go",
+    ],
+    embed = [":wakeups"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/testing/postgres",
+        "@com_github_lib_pq//:pq",
+    ],
+)
