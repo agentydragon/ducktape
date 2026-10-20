@@ -2013,13 +2013,15 @@ check on `thread_observations` (404 for a Session no Thread links) is kept or dr
 Port the service as it is; a later split moves responsibilities between Go services as it would between
 Python ones. Proto and generated facade for subscriptions, inboxes and the operator streams, replacing the
 app's Notification proxy and the hand-written `docs/agents/http_api.md`. The signed GitHub webhook stays
-hand-written HTTP.
+hand-written HTTP. Stages, stored-data risks and cutover: [Notification Service Go port](notification_service_go_port.md).
+The Go service reads the Action Service through a small hand-written HTTP client that
+`ACTION_SERVICE_GO_PORT` deletes.
 
 ### `ACTION_SERVICE_GO_PORT` — port the Action Service to Go
 
 **Candidate; recommended after the other ports because it sits on MCP and OAuth.** Serve its operator and
-workload APIs as generated facades and delete `OperatorActionServiceClient` and the app's Action routes and
-relays. The request watch gets a resume cursor or delta frames in its proto from the start: its first frame
+workload APIs as generated facades and delete `OperatorActionServiceClient`, the app's Action routes and
+relays, and the Go Notification Service's hand-written HTTP client for the two request reads it makes. The request watch gets a resume cursor or delta frames in its proto from the start: its first frame
 is the whole history (megabytes, #7922) and it ends every minute with the exchanged token. The MCP
 endpoint, OAuth metadata and consent callbacks stay hand-written HTTP. The receipt wait
 (`wait_seconds`, `wait_until`) and request paging (`limit`, `after_id`) the [agent CLI](../docs/agent_cli.md)
