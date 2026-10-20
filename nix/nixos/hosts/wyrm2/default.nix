@@ -508,7 +508,9 @@ in
   # filesystem label yet; systemd's makefs option needs to reach the raw device.
   # This replaces the existing /var/lib/kubelet tree, so the initial move must
   # happen during node maintenance with pod mountpoints quiesced; do not activate
-  # this over a live pod tree.
+  # this over a live pod tree. Any later remount needs the CSI node plugins
+  # restarted afterwards: a running one keeps the old directory, and its mounts
+  # never reach kubelet (cluster/docs/lessons_learned/2026_10_20_csi_plugin_stale_kubelet_mount.md).
   fileSystems."/var/lib/kubelet" = {
     device = "/dev/vdl";
     fsType = "ext4";
