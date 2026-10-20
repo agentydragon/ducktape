@@ -1512,7 +1512,11 @@ with the runner jailing a forked child into stage 2 to exec Claude/Codex — is 
 squashfs-disk and split-`containerDisk` shapes in the decision node beside it. KubeVirt is not assumed and
 Firecracker stays open; what must not change is that the state volume and its ownership rules survive
 (`STATE_VOLUME_BLOCK`, and the `107:107` virtiofs constraint). Halted containerDisk replacement already
-works, so the update path exists; today it moves a whole guest image, and after this it can move one disk.
+works, so the update path exists. Landed: the runner and CLI are published as their own `containerDisk`
+(`runner/runner-disk.nix`) and the `runner-vm` template attaches it as a second read-only disk. Remaining:
+the guest mounts it at `/run/agentplane/runner` and runs the runner from it, the runner and CLI leave the
+guest closure and the full-guest pin triggers, and a raw erofs `containerDisk` is booted for the first time.
+The tools disk is not split yet.
 The in-guest budgets (`VM_GUEST_BUDGET_DERIVE`) are the other half of the same story — stage 1 owns the
 reserve, stage 2 gets the rest.
 Deliver a lean bootable guest: a bare root filesystem with the runner and harnesses available from
@@ -1973,13 +1977,13 @@ flowchart LR
 
 ### `HISTORY_GO_SERVICE` — the Go History Service
 
-**In flight (this thread, 2026-10-20 UTC); the operator chose the History Service as the next port (2026-10-19).**
+**In flight; the operator chose the History Service as the next port (2026-10-19).**
 Keep the schema and the gRPC contract unchanged so Electric and the existing callers keep working; the
 ported Python tests and the golden vectors the Python fold produced pin the port. `HISTORY_SANDBOX_UID` and the
 History changes after it wait for this service and land in it, so no History change is written in Python and
 ported afterwards. Landed: the Goose migrator (a baseline over Alembic head `0022`), the store with delta
-settlement, the pure fold, and projection leases. In review: fold recording. Remaining: lifecycle
-projection, summaries and the projector; the fold runner; the readers, gRPC servicers and runner ingress;
+settlement, the fold with its recording, projection leases and the per-Session fold runner, the readers,
+cross-replica reader wakeups, and runner ingress. Remaining: the gRPC servicers for the read RPCs;
 settings, `main`, health and the image. **Deliverable:** the Go binary passes the ported Python tests
 against Postgres and serves every History RPC; nothing deploys it yet.
 

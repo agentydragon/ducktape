@@ -1,7 +1,7 @@
 # Generated HTTP facades for every service API, browser included
 
-Status: **the operator chose the app-fronted browser path for the first steps (2026-10-19) and
-dispatched the Dispatcher reads and the egress admin gRPC interface.** It extends the transport
+Status: **the operator chose the app-fronted browser path for the first steps (2026-10-19); the
+Dispatcher reads and the egress admin gRPC interface have landed.** It extends the transport
 direction approved on 2026-10-15
 ([API transports and agent workflows](../docs/runner_delivery_and_harness_design.md#api-transports-and-agent-workflows):
 gRPC between services, a gRPC-Gateway HTTP/JSON facade, an ergonomic CLI, adopted one service and

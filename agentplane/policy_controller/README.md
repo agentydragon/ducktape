@@ -6,7 +6,7 @@ are in [`agentplane/crds`](../crds/BUILD.bazel).
 
 A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) controller:
 
-- [`../policy/api/types.go`](../policy/api/types.go): the neutral CRD types. Bazel generates the
+- [`../policy/api/v1alpha1/types.go`](../policy/api/v1alpha1/types.go): the neutral CRD types. Bazel generates the
   controller-gen deep-copy methods when building the API; build `//agentplane/policy/api/v1alpha1:deepcopy` to check the generated
   file directly. The pinned upstream `controller-gen` binary and Go SDK run with declared Bazel
   inputs, so no generated Go file is committed.
