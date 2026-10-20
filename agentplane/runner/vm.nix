@@ -83,6 +83,10 @@ in
   # network, and the runner's first dial, back by about five seconds.
   networking.dhcpcd.extraConfig = "noarp";
 
+  # The guest cannot reach NTP (UDP/123): timesyncd retried the pool for the whole boot and filled
+  # the serial console. The VM starts on the host's clock and is never suspended.
+  services.timesyncd.enable = false;
+
   # Keep the replaceable guest root small: the runner's journals live on the state PVC and agent
   # work on the workspace disk. Every closure byte is pulled to the node before the guest boots.
   virtualisation.diskSize = 8 * 1024;
