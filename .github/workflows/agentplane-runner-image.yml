@@ -1,30 +1,27 @@
 # Build agentplane's Nix runner image (agentplane/runner/image.nix) and push it to the Forgejo
-# registry, through nix-image.yml. The archive also goes to the Attic cache.
-name: Runner Images
+# registry, through nix-image.yml. The archive also goes to the Attic cache. The runner and
+# `agentplane` are not in the image: they come from the runner disk image, so a pin bump for either
+# does not build this one. The runner-ducktape variant, which does carry released tools, builds in
+# agentplane-runner-ducktape-image.yml.
+name: Runner Image
 
 on:
   push:
     branches: [devel]
     paths:
-      - "agentplane/runner/image.nix"
-      - "agentplane/images/sandbox.nix"
-      - "agentplane/images/tools.nix"
-      - "nix/lib/nix-ld-image.nix"
-      # The runner-ducktape tools include released executables (bb, bbr, gazelle, ...). The runner
-      # and `agentplane` are not in either image: they come from the runner disk image.
-      - "nix/artifact-pins.json"
-      - "flake.lock"
-      - "nix/flake/packages.nix"
-      - "nix/flake/devtools.nix"
-      - "nix/packages/**"
-      - "agentplane/runner/ducktape_image_smoke.sh"
-      - "agentplane/runner/ducktape_tools_check.nix"
-      - ".pre-commit-config.yaml"
-      - "ruff.toml"
-      - "flake.nix"
+      # keep-sorted start
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-image.yml"
       - ".github/workflows/nix-image.yml"
+      - "agentplane/images/sandbox.nix"
+      - "agentplane/images/tools.nix"
+      - "agentplane/runner/ducktape_image_smoke.sh"
+      - "agentplane/runner/image.nix"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      # keep-sorted end
   # Build-only on PRs, so a change to the image is proven to build before it merges.
   pull_request:
     paths:
@@ -32,20 +29,14 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-image.yml"
       - ".github/workflows/nix-image.yml"
-      - ".pre-commit-config.yaml"
       - "agentplane/images/sandbox.nix"
       - "agentplane/images/tools.nix"
       - "agentplane/runner/ducktape_image_smoke.sh"
-      - "agentplane/runner/ducktape_tools_check.nix"
       - "agentplane/runner/image.nix"
       - "flake.lock"
       - "flake.nix"
-      - "nix/artifact-pins.json"
-      - "nix/flake/devtools.nix"
       - "nix/flake/packages.nix"
       - "nix/lib/nix-ld-image.nix"
-      - "nix/packages/**"
-      - "ruff.toml"
       # keep-sorted end
   workflow_dispatch:
 
@@ -58,17 +49,14 @@ permissions:
 
 jobs:
   image:
-    strategy:
-      matrix:
-        variant: [runner, runner-ducktape]
     uses: ./.github/workflows/nix-image.yml
     with:
-      attr: ${{ matrix.variant }}-image
-      image: git.allegedly.works/ducktape-ci/${{ matrix.variant }}
+      attr: runner-image
+      image: git.allegedly.works/ducktape-ci/runner
       registry: forgejo
       attic: true
       # Starts each harness the runner SandboxTemplate names, once, as the image's own user.
       # Nothing here runs a turn: that is //agentplane/acceptance, run by hand after a bump.
-      smoke: bash agentplane/runner/ducktape_image_smoke.sh "${{ matrix.variant }}"
+      smoke: bash agentplane/runner/ducktape_image_smoke.sh runner
     secrets:
       SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}

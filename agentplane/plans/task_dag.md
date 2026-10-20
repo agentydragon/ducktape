@@ -1440,11 +1440,11 @@ package, kernel pin, and child fence; do not leave the experiment as an implicit
 The runner and the `agentplane` command are published as plain files under `bin/` in the runner-disk
 image (`runner/runner-disk.nix`), beside the erofs the VM attaches. The runner Pod mounts that image
 as a read-only `image` volume at `/run/agentplane/runner` and starts the runner from it; the tools image
-carries neither and ends `PATH` with the mount's `bin/`. Landed: the image, the mount and the start
-command, and the slimmer tools image; a Pod on `agentplane-testing` executes both binaries from the
-mount. Remaining: once the slimmer image is pinned, a Sandbox on testing starts on it, and a runner pin
-bump publishes only the runner-disk image (the tools-image workflows still re-push an unchanged tag,
-since their path filter covers all of `nix/artifact-pins.json`).
+carries neither and ends `PATH` with the mount's `bin/`. Landed: the image, the mount, the start
+command and the slimmer tools image; a Sandbox on `agentplane-testing` starts on the slimmer image and
+connects its runner from the mount. The `runner` image workflow no longer triggers on
+`nix/artifact-pins.json`. Remaining: the next runner pin bump publishes only the runner-disk image
+(`runner-ducktape` still rebuilds on any pin bump, since it carries released tools).
 Harnesses stay in the tools image; moving them is the open question in `RUNNER_IMAGE_LAYERING_DESIGN`.
 
 This does **not** deliver the RAM-headroom property by itself — a Pod still lives inside the node's
