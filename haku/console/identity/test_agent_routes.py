@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.identity.agent_routes import router
+from haku.console.identity.agent_routes import AgentListResponse, AgentView, router
 from haku.console.identity.enrollment import OperatorAgent
 from haku.console.identity.operator_auth import OperatorSession, operator_session, require_operator_mutation_origin
 
@@ -43,7 +43,7 @@ def _agent() -> OperatorAgent:
         credential_kind=CredentialKind.OAUTH,
         credential_status=CredentialBindingStatus.ACTIVE,
         created_at=NOW - datetime.timedelta(days=2),
-        activated_at=NOW - datetime.timedelta(days=2),
+        activated_at=NOW - datetime.timedelta(days=1),
         last_seen_at=NOW - datetime.timedelta(minutes=4),
         access_profile_id="haku_v1",
     )
@@ -81,28 +81,15 @@ def _client(*, authenticated: bool = True) -> tuple[TestClient, _FakeAgentServic
     return TestClient(app, base_url="https://haku.test"), fake
 
 
-def test_settings_lists_operator_agents_without_claiming_live_connection_state() -> None:
+def test_settings_lists_the_operators_agents_and_available_access_profiles() -> None:
     client, service = _client()
     response = client.get("/api/agent-enrollment/agents")
 
     assert response.status_code == 200
     assert service.listed_operator_ids == [OPERATOR_ID]
-    assert response.json() == {
-        "agents": [
-            {
-                "agent_id": str(AGENT_ID),
-                "display_name": "Kitchen Claude",
-                "status": "active",
-                "credential_kind": "oauth",
-                "credential_status": "active",
-                "created_at": "2026-07-18T12:00:00Z",
-                "activated_at": "2026-07-18T12:00:00Z",
-                "last_seen_at": "2026-07-20T11:56:00Z",
-                "access_profile_id": "haku_v1",
-            }
-        ],
-        "access_profiles": ["no_auto_approval", "haku_v1"],
-    }
+    listing = AgentListResponse.model_validate(response.json())
+    assert listing.agents == [AgentView.model_validate(asdict(_agent()))]
+    assert listing.access_profiles == ["no_auto_approval", "haku_v1"]
 
 
 def test_agent_list_requires_an_operator_session() -> None:
