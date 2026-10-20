@@ -211,20 +211,34 @@
       }
     },
     {
-      "id": 19,
-      "title": "Each disk by component, grouped by machine",
-      "description": "One bar per scraped filesystem, labelled machine · device · mountpoint · media (HDD, SSD or virtual); bar length is the filesystem size, so bars compare across disks. Hover a bar for every component's bytes on that disk. Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available).",
-      "type": "barchart",
+      "id": 23,
+      "type": "row",
+      "title": "$node",
+      "repeat": "node",
+      "collapsed": false,
       "gridPos": {
-        "h": 22,
+        "h": 1,
         "w": 24,
         "x": 0,
         "y": 20
       },
+      "panels": []
+    },
+    {
+      "id": 19,
+      "title": "Disks by component",
+      "description": "One bar per scraped filesystem on this machine, labelled device · mountpoint · media (HDD, SSD or virtual); bar length is the filesystem size, so bars compare across disks. Hover a bar for every component's bytes on that disk. Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available).",
+      "type": "barchart",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "label_join((sum by (node, device, component) (disk_usage:component_used_bytes) or label_replace(disk_usage:unattributed_bytes, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes - disk_usage:filesystem_avail_bytes, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info) * on (node, device) group_left (media) disk_usage:filesystem:info), \"disk\", \" · \", \"node\", \"device\", \"mountpoint\", \"media\")",
+          "expr": "label_join((sum by (node, device, component) (disk_usage:component_used_bytes{node=\"$node\"}) or label_replace(disk_usage:unattributed_bytes{node=\"$node\"}, \"component\", \"Unattributed\", \"\", \"\") or label_replace(disk_usage:filesystem_free_bytes{node=\"$node\"} - disk_usage:filesystem_avail_bytes{node=\"$node\"}, \"component\", \"Reserved (root only)\", \"\", \"\") or label_replace(disk_usage:filesystem_avail_bytes{node=\"$node\"}, \"component\", \"Free\", \"\", \"\")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=\"$node\"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=\"$node\"}), \"disk\", \" · \", \"device\", \"mountpoint\", \"media\")",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -347,6 +361,19 @@
       }
     },
     {
+      "id": 24,
+      "type": "row",
+      "title": "Detail",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "panels": []
+    },
+    {
       "id": 20,
       "title": "Per-disk attribution",
       "description": "Every component on every disk, with its share of that filesystem's size. Filter or sort a column to answer, for example, which disks hold a given SeaweedFS bucket. Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available).",
@@ -355,7 +382,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 30
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -456,7 +483,7 @@
         "h": 11,
         "w": 12,
         "x": 0,
-        "y": 54
+        "y": 42
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -500,7 +527,7 @@
         "h": 11,
         "w": 12,
         "x": 12,
-        "y": 54
+        "y": 42
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -558,7 +585,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 65
+        "y": 53
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -605,7 +632,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 65
+        "y": 53
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -643,7 +670,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 74
+        "y": 62
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -690,7 +717,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 74
+        "y": 62
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -728,7 +755,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 83
+        "y": 71
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -775,7 +802,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 83
+        "y": 71
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -813,7 +840,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 92
+        "y": 80
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -860,7 +887,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 92
+        "y": 80
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -898,7 +925,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 101
+        "y": 89
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -945,7 +972,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 101
+        "y": 89
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -983,7 +1010,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 110
+        "y": 98
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1030,7 +1057,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 110
+        "y": 98
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1068,7 +1095,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 119
+        "y": 107
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1115,7 +1142,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 119
+        "y": 107
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1150,7 +1177,24 @@
   "style": "dark",
   "tags": ["cluster", "disk", "storage", "capacity"],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "text": "All",
+          "value": ["$__all"]
+        },
+        "datasource": "${DS_MIMIR}",
+        "definition": "label_values(disk_usage:filesystem:info, node)",
+        "includeAll": true,
+        "label": "Machine",
+        "multi": true,
+        "name": "node",
+        "query": "label_values(disk_usage:filesystem:info, node)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
   },
   "time": {
     "from": "now-7d",
