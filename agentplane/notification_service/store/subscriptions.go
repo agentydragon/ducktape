@@ -173,31 +173,13 @@ func bindSource(ctx context.Context, tx *sql.Tx, source Source, access *GitHubAc
 		if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(position), 0) FROM github_delivery`).Scan(&start); err != nil {
 			return sourceBinding{}, err
 		}
-		for _, statement := range []struct {
-			query string
-			args  []any
-		}{
-			{
-				`INSERT INTO github_installation (app_id, installation_id, generation) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING`,
-				[]any{access.AppID, access.InstallationID},
-			},
-			{
-				`INSERT INTO github_repository (repository_id, full_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-				[]any{access.RepositoryID, source.Repository},
-			},
-			{
-				`INSERT INTO github_repository_access (app_id, installation_id, repository_id, generation) VALUES ($1, $2, $3, 0)
-					ON CONFLICT DO NOTHING`,
-				[]any{access.AppID, access.InstallationID, access.RepositoryID},
-			},
-			{
-				`INSERT INTO github_subject (repository_id, kind, subject_key, generation) VALUES ($1, $2, $3, 0) ON CONFLICT DO NOTHING`,
-				[]any{subject.RepositoryID, subject.Kind, subject.Key},
-			},
-		} {
-			if _, err := tx.ExecContext(ctx, statement.query, statement.args...); err != nil {
-				return sourceBinding{}, err
-			}
+		if err := insertGrant(ctx, tx, *access, source.Repository); err != nil {
+			return sourceBinding{}, err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO github_subject (repository_id, kind, subject_key, generation) VALUES ($1, $2, $3, 0) ON CONFLICT DO NOTHING`,
+			subject.RepositoryID, subject.Kind, subject.Key); err != nil {
+			return sourceBinding{}, err
 		}
 		return sourceBinding{
 			githubStartPosition: sql.NullInt64{Int64: start, Valid: true},

@@ -237,10 +237,9 @@ func (g githubFixture) fork(offset int64) GitHubRepository {
 func (g githubFixture) grant(t *testing.T, installation int64, repository GitHubRepository) GitHubAccessKey {
 	t.Helper()
 	key := GitHubAccessKey{AppID: g.app, InstallationID: installation, RepositoryID: repository.ID}
-	g.exec(t, `INSERT INTO github_installation (app_id, installation_id, generation) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING`, g.app, installation)
-	g.exec(t, `INSERT INTO github_repository (repository_id, full_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`, repository.ID, repository.Name)
-	g.exec(t, `INSERT INTO github_repository_access (app_id, installation_id, repository_id, generation) VALUES ($1, $2, $3, 0)`,
-		key.AppID, key.InstallationID, key.RepositoryID)
+	if err := g.state.Grant(t.Context(), key, repository.Name); err != nil {
+		t.Fatal(err)
+	}
 	return key
 }
 
@@ -260,29 +259,14 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 	}
 	base := g.validate(t, g.access())
 	g.refreshSubject(t, sub.Subject, base)
-	subject, err := loadRefresh(ctx, g.db, sub.Subject)
+	subject, err := g.state.Subject(ctx, sub.Subject)
 	if err != nil {
 		t.Fatal(err)
 	}
-	repairAt := subject.lastSuccessAt.Time.Add(testFreshness)
+	repairAt := subject.LastSuccessAt.Add(testFreshness)
 	fences := []GitHubAccessFence{base}
-	rows, err := g.db.QueryContext(ctx, `
-		SELECT installation_id, repository_id FROM github_repository_access
-		WHERE app_id = $1 AND repository_id != $2 AND repository_id IN (
-			SELECT head_repository_id FROM github_subject_revision WHERE repository_id = $2 AND kind = $3 AND subject_key = $4)`,
-		g.app, g.repository, sub.Subject.Kind, sub.Subject.Key)
+	grants, err := g.state.RevisionGrants(ctx, g.app, sub.Subject)
 	if err != nil {
-		t.Fatal(err)
-	}
-	var grants []GitHubAccessKey
-	for rows.Next() {
-		grant := GitHubAccessKey{AppID: g.app}
-		if err := rows.Scan(&grant.InstallationID, &grant.RepositoryID); err != nil {
-			t.Fatal(err)
-		}
-		grants = append(grants, grant)
-	}
-	if err := rows.Close(); err != nil {
 		t.Fatal(err)
 	}
 	for _, grant := range grants {
@@ -306,11 +290,11 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 		fences = append(fences, fence)
 	}
 	for _, fence := range fences {
-		access, err := loadRefresh(ctx, g.db, fence.Key)
+		validUntil, err := g.state.ValidUntil(ctx, fence.Key)
 		if err != nil {
 			t.Fatal(err)
 		}
-		repairAt = minTime(repairAt, access.validUntil.Time)
+		repairAt = minTime(repairAt, validUntil)
 	}
 	matched, err := g.GitHubDeliveries(ctx, GitHubMatch{
 		SubscriptionID: sub.ID, InboxID: sub.InboxID, AppID: g.app, Subject: sub.Subject,
@@ -322,7 +306,7 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 	return githubStep{GitHubRecording{
 		SubscriptionID: sub.ID, Version: version, Generation: generation, Matched: matched,
 		More: len(matched) == GitHubDeliveryPageSize, Fences: fences, Subject: sub.Subject,
-		SubjectGeneration: subject.generation, RepairAt: repairAt,
+		SubjectGeneration: subject.Generation, RepairAt: repairAt,
 	}}
 }
 

@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "client.go",
         "errors.go",
+        "provider.go",
         "ratelimit.go",
         "settings.go",
         "webhook.go",
@@ -13,6 +14,7 @@ go_library(
     visibility = ["//agentplane/notification_service:__subpackages__"],
     deps = [
         "//agentplane/notification_service/store",
+        "//agentplane/notification_service/worker",
         "@com_github_bradleyfalzon_ghinstallation_v2//:ghinstallation",
         "@com_github_google_go_github_v88//github",
         "@com_github_google_uuid//:uuid",
@@ -24,6 +26,7 @@ go_test(
     srcs = [
         "client_test.go",
         "fake_test.go",
+        "provider_classify_test.go",
         "ratelimit_test.go",
         "settings_test.go",
         "webhook_test.go",
@@ -32,8 +35,29 @@ go_test(
     embed = [":github"],
     deps = [
         "//agentplane/notification_service/store",
+        "//agentplane/notification_service/worker",
         "@com_github_google_uuid//:uuid",
         "@com_github_spf13_viper//:viper",
         "@io_bazel_rules_go//go/runfiles",
+    ],
+)
+
+go_test(
+    name = "provider_integration_test",
+    size = "medium",
+    srcs = [
+        "fake_test.go",
+        "provider_harness_integration_test.go",
+        "provider_integration_test.go",
+    ],
+    embed = [":github"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/notification_service/migrations",
+        "//agentplane/notification_service/store",
+        "//agentplane/notification_service/worker",
+        "//agentplane/testing/postgres",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
     ],
 )

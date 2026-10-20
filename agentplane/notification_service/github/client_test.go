@@ -89,6 +89,51 @@ func TestBranchesAreFoundByNameAndMissingOnesAreNotAnError(t *testing.T) {
 	}
 }
 
+// go-github keeps the slashes of a branch name and escapes each segment, so `feature/x` is requested as
+// `heads/feature/x`; the Python client sent `heads/feature%2Fx`. GitHub answered both forms with the same branch
+// for a real branch with a slash in its name, so the client keeps go-github's form.
+func TestBranchNamesAreSentWithEachSegmentEscaped(t *testing.T) {
+	fake := newFake(t)
+	fake.handler = func(w http.ResponseWriter, _ *http.Request, path string) bool {
+		if !strings.Contains(path, "/git/ref/") {
+			return false
+		}
+		w.WriteHeader(http.StatusNotFound)
+		return true
+	}
+	client := newTestClient(t, fake)
+	const prefix = "/repos/owner/repo/git/ref/heads/"
+	for branch, want := range map[string]string{
+		"feature/x": "feature/x",
+		"a b":       "a%20b",
+		"a#b?c":     "a%23b%3Fc",
+		"100%":      "100%25",
+		"ünï":       "%C3%BCn%C3%AF",
+	} {
+		before := len(fake.requestURIs())
+		if _, found, err := client.Branch(t.Context(), "owner/repo", branch, installationID); found || err != nil {
+			t.Errorf("Branch %q = %v, %v", branch, found, err)
+		}
+		uris := fake.requestURIs()[before:]
+		if got := uris[len(uris)-1]; got != prefix+want {
+			t.Errorf("Branch %q requested %q, want %q", branch, got, prefix+want)
+		}
+	}
+}
+
+func TestBranchNamesThatWouldResolveOntoAnotherEndpointAreMissingBranches(t *testing.T) {
+	fake := newFake(t)
+	client := newTestClient(t, fake)
+	for _, branch := range []string{"../../x", "a/../b", "./x", "x/.."} {
+		if sha, found, err := client.Branch(t.Context(), "owner/repo", branch, installationID); sha != "" || found || err != nil {
+			t.Errorf("Branch %q = %q, %v, %v", branch, sha, found, err)
+		}
+	}
+	if n := fake.total(); n != 0 {
+		t.Errorf("%d requests were made", n)
+	}
+}
+
 func TestATokenRequestAnsweringNotFoundIsLostAccessNotAMissingBranch(t *testing.T) {
 	fake := newFake(t)
 	fake.respond(tokenPath, 404, nil, "")

@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -374,6 +375,11 @@ func (c *Client) Branch(ctx context.Context, repository, branch string, installa
 	owner, name, err := splitRepository(repository)
 	if err != nil {
 		return "", false, err
+	}
+	// A segment of only dots is not allowed in a branch name, and the request URL would resolve it onto another
+	// endpoint.
+	if slices.ContainsFunc(strings.Split(branch, "/"), func(segment string) bool { return segment == "." || segment == ".." }) {
+		return "", false, nil
 	}
 	ref, err := callAsInstallation(ctx, c, installationID, true, func(ctx context.Context, client *github.Client) (*github.Reference, *github.Response, error) {
 		return client.Git.GetRef(ctx, owner, name, "heads/"+branch)

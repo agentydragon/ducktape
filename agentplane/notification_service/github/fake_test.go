@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -60,8 +61,14 @@ type fakeGitHub struct {
 	// stall holds the response to a path until the client gives up.
 	stall string
 
-	mu        sync.Mutex
-	requests  []string
+	// handler, when set, answers the requests that pass the checks and have no override, ahead of the default
+	// endpoints. It returns false for a request it leaves to them.
+	handler func(w http.ResponseWriter, r *http.Request, path string) bool
+
+	mu       sync.Mutex
+	requests []string
+	// uris are the request targets as the client sent them, with escapes intact.
+	uris      []string
 	responses map[string]fakeResponse
 }
 
@@ -95,6 +102,19 @@ func (f *fakeGitHub) count(path string) int {
 	return n
 }
 
+func (f *fakeGitHub) requestURIs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.uris)
+}
+
+// forget drops the requests recorded so far.
+func (f *fakeGitHub) forget() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.requests, f.uris = nil, nil
+}
+
 func (f *fakeGitHub) total() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -114,6 +134,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	f.requests = append(f.requests, path)
+	f.uris = append(f.uris, r.RequestURI)
 	override, overridden := f.responses[path]
 	f.mu.Unlock()
 	// A server only notices that the client hung up once it has read the request body.
@@ -136,6 +157,9 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(override.status)
 		fmt.Fprint(w, override.body)
+		return
+	}
+	if f.handler != nil && f.handler(w, r, path) {
 		return
 	}
 	f.serve(w, r, path, payload)
