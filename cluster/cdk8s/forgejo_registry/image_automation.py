@@ -51,6 +51,7 @@ IMAGES = (
     "agentplane-notification-service-migrate",
     "agentplane-oauth-fixture",
     "agentplane-policy-controller",
+    "agentplane-runner-disk",
     "agentplane-runner-gateway",
     "agentplane-runner-gateway-queue-migrate",
     "agentplane-runner-vm",

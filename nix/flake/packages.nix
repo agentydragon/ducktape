@@ -155,6 +155,13 @@ ducktapePkgs
   agentplane-runner-vm-container-disk = import ../../agentplane/runner/container-disk.nix {
     inherit pkgs self;
   };
+  # The runner and `agentplane` CLI as an erofs containerDisk, attached to the guest above as its
+  # second disk; publish through the dedicated workflow.
+  agentplane-runner-disk-container-disk = import ../../agentplane/runner/runner-disk.nix {
+    inherit pkgs;
+    agentplaneRunner = self.packages.${system}.agentplane-runner;
+    agentplaneCli = self.packages.${system}.agentplane-cli;
+  };
   # Parked Codex pod image experiment (plain Docker, no NixOS/systemd). Flake
   # output retained; see x/codex_pod_image/deploy/README.md for status.
   # Build: nix build .#codex-pod-image (currently fails at evaluation; see deployment README)
