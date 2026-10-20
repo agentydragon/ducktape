@@ -13,6 +13,7 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -111,6 +112,10 @@ def _database(scope: Construct) -> None:
         size="2Gi",
         initdb=cnpg.same_owner_initdb("attic"),
         wal_archive=True,
+        # Attic autocommits several statements per ~64 KiB chunk. With a commit per fsync on this HDD
+        # tier, a large upload saturates the disk until Attic's 10-connection pool times out (a 500).
+        # A crash loses under a second of commits: cache rows a client re-pushes.
+        postgresql=ClusterSpecPostgresql(parameters={"synchronous_commit": "off"}),
     )
     cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 

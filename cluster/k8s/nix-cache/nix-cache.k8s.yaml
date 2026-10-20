@@ -49,6 +49,9 @@ spec:
       name: barman-cloud.cloudnative-pg.io
       parameters:
         barmanObjectName: attic-db
+  postgresql:
+    parameters:
+      synchronous_commit: "off"
   probes:
     liveness:
       isolationCheck:
