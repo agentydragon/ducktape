@@ -38,3 +38,18 @@ def base_environment(tmp_path: Path) -> dict[str, str]:
         # Keep standard utilities available under hermetic RBE execution.
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
     }
+
+
+@pytest.fixture
+def agent_cli_environment() -> dict[str, str]:
+    """What the runner puts in a harness's environment for the `agentplane` command
+    (agentplane/docs/agent_cli.md), with fake values."""
+    return {
+        "AGENTPLANE_ACTIONS_URL": "http://actions.test:8080",
+        "AGENTPLANE_ACTIONS_CREDENTIAL": "test-actions-bearer",
+        "AGENTPLANE_NOTIFICATIONS_URL": "http://notifications.test:8080",
+        "AGENTPLANE_NOTIFICATIONS_CREDENTIAL": "test-notifications-bearer",
+        "AGENTPLANE_EGRESS_URL": "http://egress.test",
+        "AGENTPLANE_EGRESS_CREDENTIAL": "test-egress-bearer",
+        "AGENTPLANE_DESTINATION": '{"destination_ref": {"kind": "test"}, "session_id": "test-session"}',
+    }

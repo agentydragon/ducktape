@@ -306,3 +306,24 @@ py_test(
         "@pypi//tenacity",
     ],
 )
+
+py_test(
+    name = "test_environment",
+    size = "medium",
+    srcs = ["test_environment.py"],
+    data = ["@claude_code_cli_linux_x64//:claude"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/claude/testing:anthropic_sse",
+        "//agentplane/native/claude/testing:harness",
+        "//agentplane/native/claude/testing:messages",
+        "//agentplane/native/claude/testing:model",
+        "@pypi//pytest_bazel",
+    ],
+)

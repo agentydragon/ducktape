@@ -28,6 +28,5 @@ The system overview diagrams do not change: the CLI adds no service and no traff
 
 ## Open checks
 
-- Whether the pinned Claude Code and Codex pass the `AGENTPLANE_*` variables to the commands they run.
 - One run through the real proxy on `agentplane-testing`: the environment variables, the CA trust and
   the credential presentation are deployment facts a fake server cannot show.
