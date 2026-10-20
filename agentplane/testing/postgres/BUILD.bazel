@@ -3,7 +3,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "postgres",
     testonly = True,
-    srcs = ["postgres.go"],
+    srcs = [
+        "electric.go",
+        "postgres.go",
+    ],
     data = [
         "//third_party/containers:postgres_18_load",
         "//third_party/containers:ryuk_014_load",

@@ -1,4 +1,5 @@
 load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -145,5 +146,40 @@ py_test(
         "@pypi//psycopg",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+go_library(
+    name = "storage",
+    srcs = ["store.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/storage",
+    deps = [
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:history_service_go_proto",
+        "//agentplane/proto:runner_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "store_integration_test",
+    size = "medium",
+    srcs = [
+        "store_integration_test.go",
+        "store_integration_testmain_test.go",
+    ],
+    embed = [":storage"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/history_service/migrations",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:history_service_go_proto",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/testing/postgres",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+        "@org_golang_google_protobuf//proto",
     ],
 )
