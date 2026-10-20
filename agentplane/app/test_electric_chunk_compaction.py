@@ -27,10 +27,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -48,7 +47,6 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.changes import ChangeSignal
 from agentplane.history_service.fold.models import ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.fold.views import ThreadPayloadReference
-from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.electric_service import electric_service
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
@@ -157,13 +155,12 @@ class _FollowedBody:
 
 
 @asynccontextmanager
-async def _followed_body(engine: AsyncEngine, token_file: Path) -> AsyncIterator[_FollowedBody]:
+async def _followed_body(
+    engine: AsyncEngine, history_on: Callable[[str], AbstractAsyncContextManager[History]]
+) -> AsyncIterator[_FollowedBody]:
     """`engine` is the app's database; the body lives in the history database Electric replicates."""
-    async with (
-        electric_service() as service,
-        history_service(service.database_url, token_file) as history_client,
-        History(service.database_url) as history,
-    ):
+    async with electric_service() as service, history_on(service.database_url) as history:
+        history_client = history.service.reader
         forwarded: list[httpx.Request] = []
 
         async def forward(request: httpx.Request) -> None:
@@ -238,11 +235,11 @@ def _key(row: Row) -> Row:
 
 
 async def test_compacting_in_place_reaches_every_reader_of_the_field_as_one_batch(
-    engine: AsyncEngine, tmp_path: Path
+    engine: AsyncEngine, history_on: Callable[[str], AbstractAsyncContextManager[History]]
 ) -> None:
     """Chunk 0 rewritten to the whole text and the other chunks deleted: every row the compacted body
     keeps is one a holder of the uncompacted body already has."""
-    async with _followed_body(engine, tmp_path / "history-token") as body:
+    async with _followed_body(engine, history_on) as body:
         async with async_sessionmaker(body.engine)() as session, session.begin():
             await session.execute(
                 update(ThreadPayloadChunk).where(*body.chunks, ThreadPayloadChunk.chunk_index == 0).values(text=_TEXT)
@@ -275,12 +272,12 @@ async def test_compacting_in_place_reaches_every_reader_of_the_field_as_one_batc
 
 
 async def test_compacting_by_reinsertion_reaches_every_reader_of_the_field_as_one_batch(
-    engine: AsyncEngine, tmp_path: Path
+    engine: AsyncEngine, history_on: Callable[[str], AbstractAsyncContextManager[History]]
 ) -> None:
     """Every chunk deleted and the compacted row inserted at chunk 0's key. Electric passes both halves
     on, so a holder keeps its text on screen only by applying the batch whole: applied change by
     change, chunk 0's delete withdraws it."""
-    async with _followed_body(engine, tmp_path / "history-token") as body:
+    async with _followed_body(engine, history_on) as body:
         async with async_sessionmaker(body.engine)() as session, session.begin():
             await session.execute(delete(ThreadPayloadChunk).where(*body.chunks))
             session.add(

@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -15,21 +15,35 @@ from agentplane.app.threads.history_watch import HistoryWatch, SessionOpenings
 from agentplane.app.threads.summaries import Summaries
 from agentplane.changes import ChangeSignal
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.testing.backend import announce_fold_commit, history_service
+from agentplane.history_service.testing.go_service import GoHistoryService, go_history_service
 from agentplane.history_service.testing.history import History
-from agentplane.history_service.testing.sessions import WRITER
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 
-async def test_fold_commits_and_renewals_wake_thread_readers(service_history_db_url: str, tmp_path: Path) -> None:
+async def test_fold_commits_and_renewals_wake_thread_readers(
+    service_history_db_url: str,
+    history_api: KubernetesApiServer,
+    tmp_path: Path,
+    unused_tcp_port_factory: Callable[[], int],
+) -> None:
     changes = ChangeSignal()
     woken = asyncio.Event()
-    async with history_service(service_history_db_url, tmp_path / "history-token", watch_lease_s=3) as history:
-        watch = asyncio.create_task(HistoryWatch(history, changes.notify, retry_interval_s=0.05).run())
+    async with (
+        go_history_service(
+            service_history_db_url,
+            api=history_api,
+            directory=tmp_path,
+            port_factory=unused_tcp_port_factory,
+            watch_lease_s=3,
+        ) as service,
+        History(service) as history,
+    ):
+        watch = asyncio.create_task(HistoryWatch(service.reader, changes.notify, retry_interval_s=0.05).run())
         try:
             with changes.subscribe(woken):
                 await asyncio.wait_for(woken.wait(), 10)  # the stream's opening notice
                 woken.clear()
-                await announce_fold_commit(service_history_db_url)
+                await history.announce_fold_commit()
                 await asyncio.wait_for(woken.wait(), 10)
                 woken.clear()
                 # After planned renewal the next stream opens with a notice of its own.
@@ -48,11 +62,9 @@ def production_event_logs(
 
 
 @asynccontextmanager
-async def session_openings(
-    service_history_db_url: str, token_file: Path, event_logs: EventLogStore
-) -> AsyncIterator[None]:
+async def session_openings(service: GoHistoryService, event_logs: EventLogStore) -> AsyncIterator[None]:
     """Session openings on their own History Service client, as `main.py` runs them."""
-    async with history_service(service_history_db_url, token_file) as client:
+    async with service.reader.new_client() as client:
         task = asyncio.create_task(SessionOpenings(client, event_logs, retry_interval_s=0.05).run())
         try:
             yield
@@ -70,21 +82,20 @@ async def wait_for_thread(event_logs: EventLogStore, session_id: UUID) -> None:
 
 
 async def test_each_recorded_session_gets_a_thread(
-    service_history_db_url: str, tmp_path: Path, history: History, production_event_logs: EventLogStore
+    history_service: GoHistoryService, history: History, production_event_logs: EventLogStore
 ) -> None:
     recorded_before = uuid4()
-    await history.store.bind_writer(recorded_before, WRITER)
-    async with session_openings(service_history_db_url, tmp_path / "openings-token", production_event_logs):
+    await history.open(recorded_before)
+    async with session_openings(history_service, production_event_logs):
         # Recorded before the replica watched: the stream's backlog.
         await wait_for_thread(production_event_logs, recorded_before)
         recorded_while_watching = uuid4()
-        await history.store.bind_writer(recorded_while_watching, WRITER)
+        await history.open(recorded_while_watching)
         await wait_for_thread(production_event_logs, recorded_while_watching)
 
 
 async def test_a_session_whose_open_failed_is_offered_again_on_the_next_stream(
-    service_history_db_url: str,
-    tmp_path: Path,
+    history_service: GoHistoryService,
     history: History,
     production_event_logs: EventLogStore,
     monkeypatch: pytest.MonkeyPatch,
@@ -100,8 +111,8 @@ async def test_a_session_whose_open_failed_is_offered_again_on_the_next_stream(
 
     monkeypatch.setattr(production_event_logs, "open", failing_once)
     session_id = uuid4()
-    await history.store.bind_writer(session_id, WRITER)
-    async with session_openings(service_history_db_url, tmp_path / "openings-token", production_event_logs):
+    await history.open(session_id)
+    async with session_openings(history_service, production_event_logs):
         await wait_for_thread(production_event_logs, session_id)
     assert attempts[:2] == [str(session_id), str(session_id)]
 

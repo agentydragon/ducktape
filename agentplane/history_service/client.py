@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Collection
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Collection
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -125,7 +125,7 @@ class HistoryServiceClient:
     ) -> history_service_pb2.ReadNativeFramesResponse:
         return await self.unary(self.stub.ReadNativeFrames, request)
 
-    async def watch_session_summaries(self) -> AsyncIterator[None]:
+    async def watch_session_summaries(self) -> AsyncGenerator[None]:
         """Yield once per change notice until planned renewal, which returns; anything else raises."""
         async for _ in self._watch(history_service_pb2.WatchSessionSummariesRequest()):
             yield

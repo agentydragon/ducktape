@@ -68,8 +68,7 @@ class ReplicationSource:
                     entries, attached = self.entries[copied:], runner_pb2.Attached()
                     # The runner's snapshot at the last copied cursor, taken with the entries it covers.
                     attached.CopyFrom(self.attached)
-                    await history.record(self.session_id, entries)
-                    await history.set_attached(self.session_id, attached)
+                    await history.record(self.session_id, entries, attached=attached)
                     copied += len(entries)
                     continue
                 await self._appended.wait()

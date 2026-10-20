@@ -4,8 +4,8 @@ Serves retained Session history: the raw runner Event log and its observation me
 public Session ID. It authenticates callers by projected ServiceAccount token (TokenReview) and
 serves only the configured reader accounts, today the integration app's and the Notification
 Service's. A Session UUID by itself
-grants nothing. Consumers use `client.py`; `testing/backend.py` serves the real boundary over a test
-database.
+grants nothing. Consumers use `client.py`; `testing/go_service.py` runs the built Go service over a test
+database for their tests.
 
 This service's `migrate` init container runs the history tables' migrations: `migrations/` (Goose) on
 `agentplane-testing`, `storage/` (Alembic) on staging until its cutover. Its runner ingress and its fold are

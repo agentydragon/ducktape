@@ -6,6 +6,8 @@ import asyncio
 import json
 import os
 import tempfile
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from uuid import UUID
 
@@ -28,7 +30,9 @@ _WAL_CAP_BYTES = 1024 * 1024
 _BATCH_BYTES = 4 * 1024 * 1024
 
 
-async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() -> None:
+async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap(
+    history_on: Callable[[str], AbstractAsyncContextManager[History]],
+) -> None:
     """A stopped Electric service loses its slot and cannot continue an old shape cursor."""
     with tempfile.TemporaryDirectory(prefix="electric-wal-state-") as state_dir:
         async with (
@@ -36,7 +40,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
                 postgres_settings=("max_slot_wal_keep_size=1MB", "max_wal_size=32MB", "min_wal_size=32MB"),
                 electric_storage_dir=Path(state_dir),
             ) as service,
-            History(service.database_url) as history,
+            history_on(service.database_url) as history,
         ):
             thread, source = await _project_initial_item(history)
             params = {"table": "thread_entity", "where": f"thread_id = '{thread}'"}

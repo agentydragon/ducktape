@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import signal
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 # The generated health stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
+
+_DUMP_SECONDS = 5
 
 
 @dataclass
@@ -58,7 +61,14 @@ async def go_process(
             async with asyncio.timeout(grace_s):
                 await process.wait()
         except TimeoutError:
-            process.kill()
-            await process.wait()
-            raise AssertionError("process did not terminate within its grace budget") from None
+            # QUIT makes a Go process dump its goroutines to stderr: what it was waiting on.
+            process.send_signal(signal.SIGQUIT)
+            try:
+                async with asyncio.timeout(_DUMP_SECONDS):
+                    await process.wait()
+            except TimeoutError:
+                process.kill()
+                await process.wait()
+            stopped = await asyncio.to_thread(stderr.read_text)
+            raise AssertionError(f"process did not terminate within its grace budget:\n{stopped}") from None
         assert process.returncode == 0, await asyncio.to_thread(stderr.read_text)

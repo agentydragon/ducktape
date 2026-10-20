@@ -8,7 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.action_service.testing.fixtures import action_database_template, echo_catalog, echo_executor
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.testing.fixtures import service_database_template
+from agentplane.history_service.testing.fixtures import (
+    history_api,
+    history_kubeconfig,
+    history_service,
+    history_writer_namespaces,
+    service_database_template,
+    service_history_db_url,
+)
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.dispatcher_client import SessionDispatcherClient
 from agentplane.notification_service.service import Service
@@ -39,11 +46,6 @@ from util.testing.sqlalchemy_engines import managed_async_engine
 # gazelle:include_dep @pypi//psycopg
 
 database_template, db_url = migrated_database_fixtures(RUNNER, drivername="postgresql+asyncpg")
-
-
-@pytest.fixture
-def history_db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
-    return database_clones.clone(service_database_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture

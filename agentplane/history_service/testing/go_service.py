@@ -10,9 +10,9 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
-from collections.abc import AsyncIterator, Callable, Sequence
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
+from contextlib import aclosing, asynccontextmanager, contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID
 
@@ -23,10 +23,12 @@ from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.runner.testing.process import RunningRunner
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from util.testing.postgres import PostgresDatabaseTemplate
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -39,6 +41,9 @@ _CONFIG_FILE_ENV = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
 _GRACE_SECONDS = 10
 # Bounds only a push or fold that stopped making progress.
 _PROGRESS_BOUND_SECONDS = 30
+# The ingress stores an announced snapshot only once history covers it, so a push meant to leave the feed state alone
+# announces one beyond any history a test writes.
+_UNCOVERED_CURSOR = 2**62
 
 READER_AUDIENCE = "test-app-history-service"
 READER = ServiceAccountRef(namespace="test-history-namespace", name="test-history-reader")
@@ -68,21 +73,40 @@ def migrate_history_database(database_url: str) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+@contextmanager
+def migrated_history_template(admin_url: str, template_name: str) -> Iterator[PostgresDatabaseTemplate]:
+    """A History database template the Go migrator built once, for tests that clone many History databases."""
+    with PostgresDatabaseTemplate(admin_url, template_name) as template:
+        migrate_history_database(template.url)
+        yield template
+
+
 @dataclass(frozen=True)
 class GoHistoryService:
+    database_url: str
     read_target: str
     ingress_target: str
     reader_token_file: Path
+    # Entered for the life of the service; `reader.new_client()` is an independent one.
+    reader: HistoryServiceClient
     api: KubernetesApiServer
     process: GoProcess
-
-    def client(self) -> HistoryServiceClient:
-        """A new client of the read API, to enter."""
-        return HistoryServiceClient(self.read_target, token_file=self.reader_token_file, request_timeout_s=20)
+    _writer_tokens: dict[ServiceAccountRef, str] = field(default_factory=dict, init=False)
 
     async def writer_token(self, writer: ServiceAccountRef) -> str:
-        """A token the ingress accepts as `writer`."""
-        return await self.api.workload_token(writer, [WRITER_AUDIENCE])
+        """A token the ingress accepts as `writer`, issued once per writer: a push waits on nothing else of the API."""
+        if writer not in self._writer_tokens:
+            self._writer_tokens[writer] = await self.api.workload_token(writer, [WRITER_AUDIENCE])
+        return self._writer_tokens[writer]
+
+    @asynccontextmanager
+    async def ingest(self, runner: RunningRunner, *, writer: ServiceAccountRef = WRITER) -> AsyncIterator[None]:
+        """Forward what `runner` pushes to its Gateway on to this service's ingress, as `writer`."""
+        runner.gateway.ingress.forward_to(self.ingress_target, await self.writer_token(writer))
+        try:
+            yield
+        finally:
+            runner.gateway.ingress.stop_forwarding()
 
     async def push(
         self,
@@ -91,12 +115,14 @@ class GoHistoryService:
         *,
         writer: ServiceAccountRef = WRITER,
         attached: runner_pb2.Attached | None = None,
-    ) -> None:
-        """Push `entries` of the Session's journal as `writer`'s runner does, returning once they are committed.
+    ) -> int:
+        """Push `entries` of the Session's journal as `writer`'s runner does, returning the cursor committed through.
 
-        `attached` is the runner's snapshot, announced first; without one the announcement names only the Session.
+        `attached` is the runner's snapshot, announced first; without one the push stores no snapshot and leaves the
+        Session's feed state as it was. Without `entries` the call only binds the Session to `writer` and announces
+        `attached`.
         """
-        announce = runner_pb2.Attached()
+        announce = runner_pb2.Attached(last_cursor=_UNCOVERED_CURSOR)
         if attached is not None:
             announce.CopyFrom(attached)
         announce.session_id = str(session_id)
@@ -104,33 +130,60 @@ class GoHistoryService:
             call = runner_ingress_pb2_grpc.RunnerIngressStub(channel).Push(
                 metadata=(("authorization", f"Bearer {await self.writer_token(writer)}"),)
             )
+
+            async def acknowledged_cursor() -> int:
+                acknowledgement = await call.read()
+                assert isinstance(acknowledgement, runner_ingress_pb2.Acknowledgement), (
+                    "the ingress closed the call before acknowledging"
+                )
+                return acknowledgement.cursor
+
             await call.write(runner_ingress_pb2.PushFrame(announce=announce))
             for entry in entries:
                 await call.write(runner_ingress_pb2.PushFrame(entry=entry))
             # Closing the call commits what arrived without acknowledging it, so wait for the acknowledgement first.
-            acknowledged = 0
-            while acknowledged < max((entry.cursor for entry in entries), default=0):
-                acknowledgement = await call.read()
-                assert isinstance(acknowledgement, runner_ingress_pb2.Acknowledgement), (
-                    f"the ingress closed the call at cursor {acknowledged}"
-                )
-                acknowledged = acknowledgement.cursor
+            committed = await acknowledged_cursor()
+            while committed < max((entry.cursor for entry in entries), default=0):
+                committed = await acknowledged_cursor()
             await call.done_writing()
             assert await call.code() == grpc.StatusCode.OK, await call.details()
+            return committed
+
+    async def until(self, holds: Callable[[], Awaitable[bool]]) -> None:
+        """Return once `holds()` is true, asking at the watch's opening and after every change the fold notices."""
+        async with asyncio.timeout(_PROGRESS_BOUND_SECONDS), aclosing(self.reader.watch_session_summaries()) as changes:
+            async for _ in changes:
+                if await holds():
+                    return
+        raise AssertionError("the summaries watch ended before the condition held")
+
+    async def settled(
+        self, session_id: UUID, condition: Callable[[history_service_pb2.SessionSummary], bool]
+    ) -> history_service_pb2.SessionSummary:
+        """The Session's summary once `condition` holds of it."""
+        latest: history_service_pb2.SessionSummary | None = None
+
+        async def holds() -> bool:
+            nonlocal latest
+            try:
+                latest = await self.reader.get_session_summary(str(session_id))
+            except ServiceError as error:
+                if error.code != grpc.StatusCode.NOT_FOUND:
+                    raise
+                return False
+            return condition(latest)
+
+        try:
+            await self.until(holds)
+        except TimeoutError as error:
+            error.add_note(f"the last summary of {session_id}:\n{latest}")
+            raise
+        assert latest is not None
+        return latest
 
     async def folded(self, session_id: UUID, through: int) -> history_service_pb2.SessionSummary:
-        """The Session's summary once the fold has reached `through`, awaited on the fold's change notices."""
-        async with asyncio.timeout(_PROGRESS_BOUND_SECONDS), self.client() as client:
-            async for _ in client.watch_session_summaries():
-                try:
-                    summary = await client.get_session_summary(str(session_id))
-                except ServiceError as error:
-                    if error.code != grpc.StatusCode.NOT_FOUND:
-                        raise
-                    continue
-                if summary.folded_through >= through:
-                    return summary
-        raise AssertionError(f"the summaries watch ended before the fold reached {through} of {session_id}")
+        """The Session's summary once the fold has reached `through`."""
+        return await self.settled(session_id, lambda summary: summary.folded_through >= through)
 
 
 @asynccontextmanager
@@ -140,6 +193,7 @@ async def go_history_service(
     api: KubernetesApiServer,
     directory: Path,
     port_factory: Callable[[], int],
+    writer_namespaces: Sequence[str] = (WRITER.namespace,),
     watch_lease_s: float = 300,
 ) -> AsyncIterator[GoHistoryService]:
     """The Go History Service on `database_url`, which the Go migrator has built, authenticating through `api`."""
@@ -158,8 +212,10 @@ async def go_history_service(
                 "kubeconfig": str(api.kubeconfig),
                 "ingress": {
                     "token_audience": WRITER_AUDIENCE,
-                    "writer_namespaces": [WRITER.namespace],
+                    "writer_namespaces": list(writer_namespaces),
                     "port": ingress_port,
+                    # Tests compare the archive with the runner's journal entry by entry.
+                    "settle_deltas": False,
                 },
                 # The fold also runs when a commit announces itself; the interval only bounds a missed notice.
                 "fold_interval_s": 0.05,
@@ -174,10 +230,15 @@ async def go_history_service(
         health_port=read_port,
         grace_s=_GRACE_SECONDS,
     ) as process:
-        yield GoHistoryService(
-            read_target=f"127.0.0.1:{read_port}",
+        read_target = f"127.0.0.1:{read_port}"
+        service = GoHistoryService(
+            database_url=database_url,
+            read_target=read_target,
             ingress_target=f"127.0.0.1:{ingress_port}",
             reader_token_file=token_file,
+            reader=HistoryServiceClient(read_target, token_file=token_file, request_timeout_s=20),
             api=api,
             process=process,
         )
+        async with service.reader:
+            yield service

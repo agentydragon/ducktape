@@ -1912,7 +1912,6 @@ its Go port, from the same proto. Design, alternatives and exit evidence:
 
 ```mermaid
 flowchart LR
-    HISTORY_TEST_BACKEND_ON_GO[Candidate: app and Electric tests run against the Go History]
     HISTORY_GO_STAGING_CUTOVER[Candidate: cut staging over to the Go History Service]
     HISTORY_PYTHON_RETIREMENT[Blocked: retire the Python History Service]
     HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
@@ -1921,18 +1920,9 @@ flowchart LR
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
     HISTORY_GO_STAGING_CUTOVER --> HISTORY_PYTHON_RETIREMENT
-    HISTORY_TEST_BACKEND_ON_GO --> HISTORY_PYTHON_RETIREMENT
     HISTORY_GO_STAGING_CUTOVER --> HISTORY_READS_FACADE
     NOTIFICATION_SERVICE_GO_PORT -. related .-> NOTIFICATION_SERVICE_SPLIT
 ```
-
-### `HISTORY_TEST_BACKEND_ON_GO` — app and Electric tests run against the Go History
-
-**Candidate.** The app's, Electric's and browser tests read History through an
-in-process Python backend (`history_service/testing/backend.py`, `history.py`) that runs the Python store,
-fold, servicers and ingress. Start the Go binary on a test Postgres in its place, so those tests keep
-covering the service that ships and the Python code can go. **Deliverable:** those tests pass against the Go
-binary with no import of the Python History service other than its client.
 
 ### `HISTORY_GO_STAGING_CUTOVER` — cut staging over to the Go History Service
 
@@ -1944,9 +1934,11 @@ database or Session is dropped or recreated.
 
 ### `HISTORY_PYTHON_RETIREMENT` — retire the Python History Service
 
-**Blocked on `HISTORY_GO_STAGING_CUTOVER` and `HISTORY_TEST_BACKEND_ON_GO`.** Delete the Python store, fold,
+**Blocked on `HISTORY_GO_STAGING_CUTOVER`.** Delete the Python store, fold,
 servicers, ingress, runner and migration image with their BUILD targets and CI roster entries; keep
-`client.py`, which the app and the Notification service use. Move the references that name the Python delta
+`client.py`, which the app and the Notification service use. The app's, Electric's and browser tests run
+on the Go service but still import the Python fold's ORM models, view enums, `channels` and `FOLD_EPOCH`
+to read the fold's tables: move those to a home that survives. Move the references that name the Python delta
 templates (`docs/adr_delta_settlement.md`, the History README, `native/BUILD.bazel`).
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API

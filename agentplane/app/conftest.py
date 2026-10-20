@@ -44,8 +44,16 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.testing.backend import history_service
-from agentplane.history_service.testing.fixtures import service_database_template
+from agentplane.history_service.testing.fixtures import (
+    history_api,
+    history_kubeconfig,
+    history_on,
+    history_service,
+    history_writer_namespaces,
+    service_database_template,
+    service_history_db_url,
+)
+from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.history_service.testing.history import History
 from agentplane.kubernetes_watch import Freshness
 from agentplane.postgres.wakeups import WakeupListener
@@ -102,11 +110,6 @@ def db_url(app_database_template: PostgresDatabaseTemplate, database_clones: Dat
 
 
 @pytest.fixture
-def service_history_db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
-    return database_clones.clone(service_database_template, drivername="postgresql+asyncpg")
-
-
-@pytest.fixture
 def register_attached_sessions() -> bool:
     return False
 
@@ -118,20 +121,14 @@ async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
 
 
 @pytest.fixture
-async def history(service_history_db_url: str) -> AsyncIterator[History]:
-    async with History(service_history_db_url) as history, history.folding():
+async def history(history_service: GoHistoryService) -> AsyncIterator[History]:
+    async with History(history_service) as history:
         yield history
 
 
 @pytest.fixture
-def history_token_file(tmp_path: Path) -> Path:
-    return tmp_path / "history-service-token"
-
-
-@pytest.fixture
-async def history_client(service_history_db_url: str, history_token_file: Path) -> AsyncIterator[HistoryServiceClient]:
-    async with history_service(service_history_db_url, history_token_file) as client:
-        yield client
+def history_client(history_service: GoHistoryService) -> HistoryServiceClient:
+    return history_service.reader
 
 
 @pytest.fixture
@@ -166,17 +163,10 @@ def content(engine: AsyncEngine, history_client: HistoryServiceClient) -> Conten
 
 
 @asynccontextmanager
-async def listening(
-    engine: AsyncEngine, history_client: HistoryServiceClient, history_token_file: Path
-) -> AsyncIterator[WakeupListener]:
+async def listening(engine: AsyncEngine, history_client: HistoryServiceClient) -> AsyncIterator[WakeupListener]:
     """A replica's notifications, woken by the History Service's fold commits as `main.py` wires them."""
     updates = create_database_updates(engine.url)
-    async with (
-        HistoryServiceClient(
-            history_client.target, token_file=history_token_file, request_timeout_s=20
-        ) as watch_client,
-        updates.listener.listen(),
-    ):
+    async with history_client.new_client() as watch_client, updates.listener.listen():
         watch = HistoryWatch(watch_client, updates.changes[Channel.THREADS].notify, retry_interval_s=0.05)
         task = asyncio.create_task(watch.run())
         try:
@@ -187,10 +177,8 @@ async def listening(
 
 
 @pytest.fixture
-async def database_updates(
-    engine: AsyncEngine, history_client: HistoryServiceClient, history_token_file: Path
-) -> AsyncIterator[WakeupListener]:
-    async with listening(engine, history_client, history_token_file) as updates:
+async def database_updates(engine: AsyncEngine, history_client: HistoryServiceClient) -> AsyncIterator[WakeupListener]:
+    async with listening(engine, history_client) as updates:
         yield updates
 
 

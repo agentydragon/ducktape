@@ -520,26 +520,6 @@ go_test(
     ],
 )
 
-py_test(
-    name = "test_go_service",
-    srcs = ["test_go_service.py"],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/history_service/testing:go_service",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "//agentplane/testing:electric_role",
-        "//agentplane/testing:kubernetes_apiserver",
-        "//util/testing:postgres",
-        "@pypi//asyncpg",
-        "@pypi//protobuf",
-        "@pypi//psycopg",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 proto_library(
     name = "runner_ingress_proto",
     srcs = ["runner_ingress.proto"],

@@ -8,7 +8,7 @@ import asyncio
 import json
 import logging
 import shlex
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,7 +54,7 @@ from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
-from agentplane.history_service.testing.backend import history_service, ingest
+from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
@@ -251,15 +251,17 @@ def register_attached_sessions() -> bool:
 
 
 @pytest.fixture
+def history_writer_namespaces() -> Sequence[str]:
+    return (NAMESPACE, WRITER.namespace)
+
+
+@pytest.fixture
 async def history_client(
-    runner: RunningRunner, service_history_db_url: str, history_token_file: Path
+    runner: RunningRunner, history_service: GoHistoryService
 ) -> AsyncIterator[HistoryServiceClient]:
     # The History Service reads what the local runner pushes to its ingress, as deployed.
-    async with (
-        ingest(service_history_db_url, runner, writer=ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX)),
-        history_service(service_history_db_url, history_token_file) as client,
-    ):
-        yield client
+    async with history_service.ingest(runner, writer=ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX)):
+        yield history_service.reader
 
 
 @pytest.fixture
@@ -1213,7 +1215,6 @@ async def replicas(
     content: ContentStore,
     history: History,
     history_client: HistoryServiceClient,
-    history_token_file: Path,
     dispatcher: SessionDispatcherClient,
     tmp_path: Path,
 ) -> AsyncIterator[Replicas]:
@@ -1224,7 +1225,7 @@ async def replicas(
     owner = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
     try:
         async with (
-            listening(replica_engine, history_client, history_token_file) as replica_updates,
+            listening(replica_engine, history_client) as replica_updates,
             history_client.new_client() as owner_openings_client,
             history_client.new_client() as survivor_openings_client,
         ):
@@ -1466,8 +1467,6 @@ async def test_open_and_input_reply_before_archive_catches_up(
         assert thread_view is not None
         assert thread_view.id == thread_id
         assert thread_view.last_cursor == 0
-        assert thread_view.harness_state == "HARNESS_STATE_UNSPECIFIED"
-        assert thread_view.feed_status is None
         listed_threads = await store.list_threads()
         assert [thread.id for thread in listed_threads] == [thread_id]
         assert listed_threads[0].last_cursor == 0

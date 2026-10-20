@@ -179,7 +179,7 @@ async def test_record_materializes_exact_payload_revisions_and_stalls_on_unknown
     assert item.text_ref["chunk_count"] == "0"
 
     # The fold stalls on what it does not model: nothing of the batch applies and the view reports it.
-    await history.record(thread, [event_entry(5)])
+    await history.record_unmodeled(thread, [event_entry(5)])
     assert await event_logs.last_cursor(thread) == 4
     _, view = await view_state(history, thread)
     assert operational_state(view)["status"] == "failed"

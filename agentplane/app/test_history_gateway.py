@@ -16,7 +16,7 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc.calls import ServiceError
-from agentplane.history_service.testing.backend import ingest
+from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner import runner_service_pb2
@@ -61,12 +61,9 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     runner: RunningRunner,
     spec: runner_pb2.SessionSpec,
     model: ScriptedModel,
-    service_history_db_url: str,
+    history_service: GoHistoryService,
 ) -> None:
-    async with (
-        runner_peer(tmp_path / "gateway-token", runner=runner) as endpoint,
-        ingest(service_history_db_url, runner),
-    ):
+    async with runner_peer(tmp_path / "gateway-token", runner=runner) as endpoint, history_service.ingest(runner):
         remote = endpoint.client()
         directory = RunnerDirectory(live_index, remote)
         async with runner_proxy_backed_dispatcher(directory, event_logs, tmp_path / "dispatcher-token") as dispatcher:

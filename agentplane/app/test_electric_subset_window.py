@@ -9,7 +9,7 @@ that they do, and the request forms that work.
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -103,17 +103,19 @@ class _Thread:
 
 
 @asynccontextmanager
-async def _attached_thread() -> AsyncIterator[_Thread]:
+async def _attached_thread(history_on: Callable[[str], AbstractAsyncContextManager[History]]) -> AsyncIterator[_Thread]:
     """An attached Session with nothing recorded yet, in the history database Electric replicates."""
-    async with electric_service() as service, History(service.database_url) as history:
+    async with electric_service() as service, history_on(service.database_url) as history:
         source, thread = ReplicationSource(), fixture_session_id(SANDBOX, SESSION)
         await history.open(thread)
         await history.set_attached(thread, source.attached)
         yield _Thread(service.url, history, source, thread)
 
 
-async def test_one_thread_shape_serves_a_moving_window() -> None:
-    async with _attached_thread() as thread:
+async def test_one_thread_shape_serves_a_moving_window(
+    history_on: Callable[[str], AbstractAsyncContextManager[History]],
+) -> None:
+    async with _attached_thread(history_on) as thread:
         items = [f"item-{index:02}" for index in range(12)]
         await thread.record(
             event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=1)),
@@ -188,8 +190,10 @@ async def test_one_thread_shape_serves_a_moving_window() -> None:
             assert not any(_visible(txid, older_snapshot) for txid in edits[after_scroll.revision_cursor])
 
 
-async def test_bodies_load_as_subsets_of_one_shape_per_field() -> None:
-    async with _attached_thread() as thread:
+async def test_bodies_load_as_subsets_of_one_shape_per_field(
+    history_on: Callable[[str], AbstractAsyncContextManager[History]],
+) -> None:
+    async with _attached_thread(history_on) as thread:
         await thread.record(
             event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=1)),
             event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")),

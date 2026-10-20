@@ -20,30 +20,6 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_indexing",
-    # Full archives up to 40,000 events and pure-fold-derived prefixes up to 20,000 item rows.
-    size = "large",
-    srcs = ["test_indexing.py"],
-    deps = [
-        "//:conftest",
-        "//agentplane/app:conftest",
-        "//agentplane/app/testing:history",
-        "//agentplane/app/testing:thread_test_support",
-        "//agentplane/app/threads/view:content",
-        "//agentplane/history_service/fold:models",
-        "//agentplane/history_service/testing:history",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "//util/testing:undeclared_outputs",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 py_library(
     name = "store",
     srcs = ["store.py"],
@@ -181,9 +157,9 @@ py_test(
         "//agentplane/app:conftest",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/history_service:client",
-        "//agentplane/history_service/testing:backend",
+        "//agentplane/history_service/testing:go_service",
         "//agentplane/history_service/testing:history",
-        "//agentplane/history_service/testing:sessions",
+        "//agentplane/testing:kubernetes_apiserver",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

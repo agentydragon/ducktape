@@ -1,235 +1,173 @@
-"""Scripted Session history in a history database, folded by the History Service's own fold.
+"""Scripted Session history in the Go History Service's database.
 
-A consumer under test reads it only through the History Service (`backend`), as in production.
-Tests write a Session's entries and feed state here, as the History ingress would, and
-each write folds before it returns.
+A consumer under test reads it only through the History Service, as in production. Tests write a
+Session's entries and feed state here as a runner pushes them to the ingress, and each write
+returns once the service has folded it. `sessions` reads the fold's rows for assertions.
 """
 
-import asyncio
-from collections.abc import AsyncIterator, Iterator, Sequence, Set
-from contextlib import asynccontextmanager, contextmanager
-from datetime import UTC
+from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import asynccontextmanager
+from pathlib import Path
 from types import TracebackType
 from typing import Self
 from uuid import UUID
 
-from more_itertools import one
-from sqlalchemy import func, insert, select
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from agentplane.history_service import history_service_pb2
 from agentplane.history_service.channels import Channel
-from agentplane.history_service.fold import fold
-from agentplane.history_service.fold.models import (
-    ThreadCheckpoint,
-    ThreadEntity,
-    ThreadEvidence,
-    ThreadHistorySummary,
-    ThreadPayloadChunk,
-    ThreadPayloadManifest,
-)
-from agentplane.history_service.fold.recording import set_operational
-from agentplane.history_service.fold.rows import ordered_entity_rows
+from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity
 from agentplane.history_service.fold.views import EntityKind
-from agentplane.history_service.fold_runner import FoldRunner
-from agentplane.history_service.storage.database_migrate import RUNNER
-from agentplane.history_service.storage.db import SessionHistory
-from agentplane.history_service.storage.store import Store, Writer
-from agentplane.history_service.testing.sessions import WRITER
+from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
 from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2, runner_pb2
-from util.testing.postgres import PostgresDatabaseTemplate, migrated_database_template
+from agentplane.subjects import ServiceAccountRef
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//protobuf
 
-FOLD_INTERVAL_S = 0.05
-
-
-def migrate(database_url: str) -> None:
-    """Migrate a disposable history database as the History Service's migration job does."""
-    RUNNER.apply(database_url)
-
-
-@contextmanager
-def migrated_template(admin_url: str, template_name: str) -> Iterator[PostgresDatabaseTemplate]:
-    """A history database template migrated once, for tests that clone many history databases."""
-    with migrated_database_template(admin_url, template_name, RUNNER) as template:
-        yield template
-
 
 class History:
-    """One test's history database. `folding` also folds what other writers commit, as the deployed fold does."""
+    """One test's scripted history in the database `service` runs on."""
 
-    def __init__(self, database_url: str) -> None:
-        self.engine: AsyncEngine = create_async_engine(database_url)
+    def __init__(self, service: GoHistoryService) -> None:
+        self.service = service
+        self.engine: AsyncEngine = create_async_engine(service.database_url)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
-        self.store = Store(self.engine)
-        self._fold = FoldRunner(engine=self.engine, history=self.store, concurrency=4, page_size=1000)
-        self._folding = asyncio.Lock()
-        self._attachments: dict[UUID, runner_pb2.Attached] = {}
+        # The runner's latest snapshot per Session, announced again with every push: an announcement replaces the
+        # stored feed state, and the service stores it only once the committed entries cover its cursor.
+        self._attached: dict[UUID, runner_pb2.Attached] = {}
 
     async def open(self, session_id: UUID, *, sandbox_name: str | None = None) -> None:
         """Bind the Session to the test writer unless a writer already pushed it."""
-        async with self.sessions() as session:
-            if await session.get(SessionHistory, session_id) is not None:
-                return
-        writer = (
-            WRITER if sandbox_name is None else Writer(namespace=WRITER.namespace, name=sandbox_name, uid=WRITER.uid)
-        )
-        await self.store.bind_writer(session_id, writer)
+        if await self._writer(session_id) is not None:
+            return
+        writer = WRITER if sandbox_name is None else ServiceAccountRef(namespace=WRITER.namespace, name=sandbox_name)
+        await self.service.push(session_id, [], writer=writer)
 
-    async def clear_sandbox_identity(self, session_id: UUID) -> None:
-        """Inject a committed History row without Sandbox identity for reader error tests."""
-        async with self.sessions.begin() as session:
-            row = await session.get(SessionHistory, session_id)
-            if row is None:
-                raise ValueError("open the Session first")
-            row.sandbox_namespace = None
-            row.sandbox_name = None
-
-    async def fold(self) -> None:
-        """Fold every Session until none is behind, then hand the leases back for the next folder."""
-        async with self._folding, self._fold:
-            while (await self._fold.cycle()).behind:
-                pass
-
-    @asynccontextmanager
-    async def paused(self) -> AsyncIterator[None]:
-        """Hold off this History's folds, so a test can seed the fold's rows itself."""
-        async with self._folding:
-            yield
-
-    @asynccontextmanager
-    async def folding(self) -> AsyncIterator[None]:
-        async def run() -> None:
-            while True:
-                await self.fold()
-                await asyncio.sleep(FOLD_INTERVAL_S)
-
-        task = asyncio.create_task(run(), name="test-history-fold")
-        try:
-            yield
-        finally:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
-
-    async def record(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> None:
-        cursor = await self.store.append(session_id, entries)
-        pending = self._attachments.get(session_id)
-        if pending is not None and pending.last_cursor <= cursor:
-            await self.store.record_feed_state(session_id, history_service_pb2.SessionFeedState(attached=pending))
-            del self._attachments[session_id]
-        await self.fold()
-
-    async def seed_folded(
-        self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, prior_items: Set[str]
+    async def record(
+        self,
+        session_id: UUID,
+        entries: Sequence[event_log_pb2.EventEntry],
+        *,
+        attached: runner_pb2.Attached | None = None,
     ) -> None:
-        """Fold the stored entries past the checkpoint with the pure fold and bulk-insert the rows.
+        """Push `entries` as the Session's writer and return once the fold has caught up with them.
 
-        Lets a test seed a large folded prefix without folding it batch by batch; hold `paused()` so
-        no folder races it. `prior_items` are items the fold treats as already materialized.
+        `attached` is the runner's snapshot with them, which replaces the Session's last one.
         """
-        async with self.sessions.begin() as session:
-            checkpoint = await session.get(ThreadCheckpoint, session_id)
-            if checkpoint is None or checkpoint.source_id is None:
-                raise ValueError("fold the Session's first entries before seeding the rest")
-            epoch = checkpoint.projection_epoch
-            through = checkpoint.through_cursor
-            result = fold.advance(
-                fold.ViewState(fold.Position(checkpoint.source_id, epoch, through_cursor=through)),
-                fold.EventBatch(checkpoint.source_id, through, tuple(entries[through:]), ()),
-                fold.PriorEntities(items=dict.fromkeys(prior_items), commands={}, bodies={}),
-            )
-            if result.state.position.through_cursor != len(entries):
-                raise ValueError("the entries must be the Session's whole stored prefix")
-            next_index = await session.scalar(
-                select(func.max(ThreadEntity.entity_index)).where(
-                    ThreadEntity.thread_id == session_id, ThreadEntity.projection_epoch == epoch
-                )
-            )
-            next_index = 0 if next_index is None else next_index + 1
-            appends = [write for write in result.payload_writes if isinstance(write, fold.AppendPayload)]
-            if len(appends) != len(result.payload_writes) or any(write.base is not None for write in appends):
-                raise ValueError("a seeded prefix only creates payloads")
-            projected = ordered_entity_rows(
-                session_id, result, {write.reference: int(bool(write.text)) for write in appends}
-            )
-            items = [row for row in projected if row["entity_kind"] == EntityKind.ITEM]
-            view_state_row = one(row for row in projected if row["entity_kind"] == EntityKind.VIEW_STATE)
-            for index, row in enumerate(items):
-                row["entity_index"] = next_index + index
-            if items:
-                await session.execute(insert(ThreadEntity), items)
-            view_state = await session.get(ThreadEntity, (session_id, epoch, EntityKind.VIEW_STATE, "current"))
-            if view_state is None:
-                raise ValueError("the Session has no folded view state")
-            view_state.cursor = result.state.position.through_cursor
-            view_state.revision_cursor = result.state.position.through_cursor
-            state = view_state_row["state"]
-            if not isinstance(state, dict):
-                raise TypeError(f"{state=} is not a view state document")
-            view_state.state = state
-            checkpoint.through_cursor = result.state.position.through_cursor
-            if appends:
-                await session.execute(
-                    insert(ThreadPayloadManifest),
-                    [
-                        {
-                            "thread_id": session_id,
-                            **_payload_key(write.reference),
-                            "revision_cursor": write.reference.revision_cursor,
-                            "chunk_count": int(bool(write.text)),
-                            "content_bytes": len(write.text.encode()),
-                        }
-                        for write in appends
-                    ],
-                )
-            chunks = [
-                {"thread_id": session_id, **_payload_key(write.reference), "chunk_index": 0, "text": write.text}
-                for write in appends
-                if write.text
-            ]
-            if chunks:
-                await session.execute(insert(ThreadPayloadChunk), chunks)
-            evidence = [
-                {
-                    "thread_id": session_id,
-                    "projection_epoch": value.projection_epoch,
-                    "entity_cursor": value.entity_cursor,
-                    "observation_cursor": value.observation_cursor,
-                }
-                for value in result.evidence_upserts
-            ]
-            if evidence:
-                await session.execute(insert(ThreadEvidence), evidence)
-            summary = await session.get(ThreadHistorySummary, session_id)
-            if summary is None:
-                raise ValueError("the Session has no folded summary")
-            summary.first_event_at = entries[0].event.at.ToDatetime(tzinfo=UTC)
-            summary.last_event_at = entries[-1].event.at.ToDatetime(tzinfo=UTC)
+        if attached is not None:
+            self._attached[session_id] = attached = self._snapshot(session_id, attached)
+        else:
+            attached = self._attached.get(session_id)
+        committed = await self.service.push(
+            session_id, entries, writer=await self._bound_writer(session_id), attached=attached
+        )
+        await self._folded(session_id, committed, attached)
+
+    async def record_unmodeled(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> None:
+        """Push `entries` the fold cannot model and return once it has reported that it stalled on them."""
+        await self.service.push(
+            session_id, entries, writer=await self._bound_writer(session_id), attached=self._attached.get(session_id)
+        )
+        await self.service.until(lambda: self._operational_status_is_failed(session_id))
 
     async def set_attached(self, session_id: UUID, attached: runner_pb2.Attached) -> None:
+        """Announce the runner's snapshot. A snapshot ahead of the Session's entries is stored once they cover it."""
+        snapshot = self._snapshot(session_id, attached)
+        self._attached[session_id] = snapshot
+        committed = await self.service.push(
+            session_id, [], writer=await self._bound_writer(session_id), attached=snapshot
+        )
+        await self._folded(session_id, committed, snapshot)
+
+    @staticmethod
+    def _snapshot(session_id: UUID, attached: runner_pb2.Attached) -> runner_pb2.Attached:
         snapshot = runner_pb2.Attached()
         snapshot.CopyFrom(attached)
         snapshot.session_id = str(session_id)
-        async with self.sessions() as session:
-            row = await session.get(SessionHistory, session_id)
-        if row is None:
+        return snapshot
+
+    async def clear_sandbox_identity(self, session_id: UUID) -> None:
+        """Inject a committed History row without Sandbox identity for reader error tests."""
+        async with self.engine.begin() as connection:
+            result = await connection.execute(
+                text("UPDATE session_history SET sandbox_namespace = NULL, sandbox_name = NULL WHERE id = :id"),
+                {"id": session_id},
+            )
+        if result.rowcount != 1:
             raise ValueError("open the Session first")
-        if row.last_cursor < snapshot.last_cursor:
-            # A fixture may describe a runner snapshot before seeding its entries; the store takes
-            # it once the entries cover it.
-            self._attachments[session_id] = snapshot
-            return
-        await self.store.record_feed_state(session_id, history_service_pb2.SessionFeedState(attached=snapshot))
-        await self.fold()
 
     async def fail_feed(self, session_id: UUID, *, error: str, error_cursor: int | None = None) -> None:
         """A folded failure state for UI tests, not a fake archive failure."""
         async with self.sessions.begin() as session:
-            await set_operational(session, session_id, status="failed", error=error, error_cursor=error_cursor)
+            checkpoint = await session.get(ThreadCheckpoint, session_id)
+            if checkpoint is None:
+                raise ValueError("record the Session's first entries before failing its feed")
+            view = await session.get(
+                ThreadEntity, (session_id, checkpoint.projection_epoch, EntityKind.VIEW_STATE, "current")
+            )
+            if view is None:
+                raise ValueError("thread checkpoint has no current controls")
+            view.state = {
+                **view.state,
+                "operational": {
+                    "status": "failed",
+                    "last_verified_cursor": str(checkpoint.through_cursor),
+                    "feed_error": {"cursor": None if error_cursor is None else str(error_cursor), "message": error},
+                },
+            }
             await notify(session, Channel.SUMMARIES)
+
+    async def announce_fold_commit(self) -> None:
+        """Commit the notice a fold commit sends, without folding anything."""
+        async with self.sessions.begin() as session:
+            await notify(session, Channel.SUMMARIES)
+
+    async def _writer(self, session_id: UUID) -> ServiceAccountRef | None:
+        async with self.engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text("SELECT writer_namespace, writer_name FROM session_history WHERE id = :id"), {"id": session_id}
+                )
+            ).first()
+        return None if row is None else ServiceAccountRef(namespace=row.writer_namespace, name=row.writer_name)
+
+    async def _bound_writer(self, session_id: UUID) -> ServiceAccountRef:
+        writer = await self._writer(session_id)
+        if writer is None:
+            raise ValueError("open the Session first")
+        return writer
+
+    async def _operational_status_is_failed(self, session_id: UUID) -> bool:
+        async with self.sessions() as session:
+            checkpoint = await session.get(ThreadCheckpoint, session_id)
+            if checkpoint is None:
+                return False
+            view = await session.get(
+                ThreadEntity, (session_id, checkpoint.projection_epoch, EntityKind.VIEW_STATE, "current")
+            )
+        if view is None:
+            return False
+        operational = view.state["operational"]
+        return isinstance(operational, dict) and operational["status"] == "failed"
+
+    async def _folded(self, session_id: UUID, committed: int, attached: runner_pb2.Attached | None) -> None:
+        """Wait for the summary to show the entries through `committed` and, once they cover it, `attached`."""
+
+        def shows(summary: history_service_pb2.SessionSummary) -> bool:
+            if summary.folded_through < committed:
+                return False
+            if attached is None or attached.last_cursor > committed:
+                return True
+            # The summary's snapshot is the runner's with the entries after it applied.
+            if attached.last_cursor == committed:
+                return summary.attached == attached
+            return summary.attached.last_cursor == committed
+
+        await self.service.settled(session_id, shows)
 
     async def __aenter__(self) -> Self:
         return self
@@ -243,11 +181,13 @@ class History:
         await self.engine.dispose()
 
 
-def _payload_key(reference: fold.PayloadRef) -> dict[str, object]:
-    return {
-        "projection_epoch": reference.projection_epoch,
-        "owner_cursor": reference.owner_cursor,
-        "owner_id": reference.owner_id,
-        "field": reference.field,
-        "generation": reference.generation,
-    }
+@asynccontextmanager
+async def scripted_history(
+    database_url: str, *, api: KubernetesApiServer, directory: Path, port_factory: Callable[[], int]
+) -> AsyncIterator[History]:
+    """The Go History Service on `database_url`, which the Go migrator has built, and a `History` scripting it."""
+    async with (
+        go_history_service(database_url, api=api, directory=directory, port_factory=port_factory) as service,
+        History(service) as history,
+    ):
+        yield history

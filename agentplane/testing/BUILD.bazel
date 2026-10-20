@@ -5,6 +5,7 @@ package(
     default_visibility = [
         "//agentplane/action_service:__pkg__",
         "//agentplane/app:__pkg__",
+        "//agentplane/app/threads:__pkg__",
         "//agentplane/crds:__pkg__",
         "//agentplane/egress:__pkg__",
         "//agentplane/egress/testing:__pkg__",

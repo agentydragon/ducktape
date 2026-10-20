@@ -370,6 +370,14 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
         async with page.expect_request(lambda request: _older_page_bound(request) is not None):
             await page.mouse.wheel(0, -10_000)
         await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
+        # The older page's rows are read ahead like the first window's: leave once the reader holds every body
+        # of the window, the first window's 90 and the page's 30.
+        while True:
+            chunks_read.clear()
+            if _bodies_read(of(threads[0])) >= 120:
+                break
+            async with asyncio.timeout(30):
+                await chunks_read.wait()
         first_visit = of(threads[0])
         held_down_to = min(bound for request in first_visit if (bound := _older_page_bound(request)) is not None)
         (handle,) = _entity_handles(first_visit)

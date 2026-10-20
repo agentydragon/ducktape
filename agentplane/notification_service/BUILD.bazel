@@ -219,7 +219,7 @@ py_test(
         "//agentplane/action_service/testing:stores",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:channels",
-        "//agentplane/history_service/testing:backend",
+        "//agentplane/history_service/testing:go_service",
         "//agentplane/notification_service/sources:actions",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandboxes_pb2",

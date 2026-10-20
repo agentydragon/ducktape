@@ -3,7 +3,7 @@
 import asyncio
 import json
 from collections.abc import Callable
-from pathlib import Path
+from contextlib import AbstractAsyncContextManager
 from typing import Any
 from uuid import UUID
 
@@ -16,7 +16,6 @@ from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.summaries import Summaries
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.electric_service import ElectricService, electric_service
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_pb2
@@ -25,13 +24,10 @@ from agentplane.proto import command_pb2, event_pb2
 
 
 async def test_materialized_revisions_replicate_with_restricted_role(
-    db_url: str, engine: AsyncEngine, tmp_path: Path
+    db_url: str, engine: AsyncEngine, history_on: Callable[[str], AbstractAsyncContextManager[History]]
 ) -> None:
-    async with (
-        electric_service() as service,
-        history_service(service.database_url, tmp_path / "history-token") as reader,
-        History(service.database_url) as history,
-    ):
+    async with electric_service() as service, history_on(service.database_url) as history:
+        reader = history.service.reader
         event_logs = SeededEventLogStore(engine, history=history, history_reader=reader, summaries=Summaries(reader))
         source = ReplicationSource()
         source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
