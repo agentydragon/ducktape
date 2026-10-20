@@ -1,10 +1,10 @@
-# BuildBuddy Firecracker workspace-attach stalls (July 2026)
+# BuildBuddy Firecracker workspace-attach stalls (July and October 2026)
 
 ## Status
 
-Open infrastructure anomaly. The immediate Calendar test exposure was removed by
-making its router tests independent of the full console/Postgres fixture; do not
-raise the test timeout as a mitigation.
+Open infrastructure anomaly, seen again on 2026-10-20 (see below). The immediate Calendar
+test exposure was removed by making its router tests independent of the full console/Postgres
+fixture; do not raise the test timeout as a mitigation, and a re-run only hides it.
 
 ## Symptom and scope
 
@@ -48,6 +48,33 @@ investigation.
 The same Calendar action later passed when the equivalent resume-to-workspace
 attachment interval was about 3.2 seconds. That contrast, plus the action
 content being unchanged, argues against a deterministic application deadlock.
+
+## October 20 recurrence
+
+A `small` test that normally runs in 5 to 8 seconds, `//cluster/validation:test_mailbox_smtp_ingress`
+(it reads two files), timed out at 60 s with an empty `test.log` on a PR that touches nothing it
+reads. The same action passed on the re-run, so nothing in the repository differs between the two.
+
+- Invocation: `988a5a1c-f017-5655-b803-5d6f1acd89fe`
+- Execution: `/uploads/2b36de3b-73ad-486b-9b43-0d76d57df336/blobs/e880b12b44b635ac4c2836f3247632e81a55c3eddd755f0c497e12b3e5c4b1cf/498`
+  on executor `sjc-prod-r2206m08vm4onh`, VM `fae01fa6-72ef-4d34-af21-30d45fd571c4` (snapshot resume,
+  runner task number 1)
+- VM log CAS: `19b22834c04ead053c969c3b11f18f7edabd62b9710b971fdefa20ae667da042/4713`
+- Queue: 59 ms (`04:20:51.260Z` to `04:20:51.319Z`). Execution ran `04:20:55.32Z` to `04:21:55.33Z`
+  (60.004 s), then `deadline exceeded`.
+- Firecracker resumed the vCPUs at `04:20:57.56Z` and logged no further API request, in particular
+  no `PATCH /drives/workspacefs`, through the kill 58 s later. The guest's last kernel line is
+  "vdb: detected capacity change from 3914640 to 0".
+- `fileDownloadDurationUsec` is 60.7 s for 4 files and 880 KB.
+
+Unlike July this was not one VM. Of the 54 executions in the invocation, 40 recorded at least 20 s
+of file download (up to 111 s), most of them started within the same two seconds
+(`04:20:50Z` to `04:20:52Z`), and many downloaded no files at all. Actions with longer deadlines
+absorbed the delay (mypy and `tsc` actions took 83 to 133 s); this test's 60 s deadline is
+shorter than the stall.
+
+Nothing here is fixable from the repository: the test is already minimal and the data it declares
+is not what stalls. The remaining step is the one under Next diagnostic.
 
 ## Runner-queue hypothesis
 
