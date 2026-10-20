@@ -1,11 +1,14 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -320,6 +323,63 @@ func (h *harness) addEvents(t *testing.T, subscription store.Subscription, first
 			t.Fatal(err)
 		}
 	}
+}
+
+// refuseInboxWrites makes every later update of an inbox row fail with a database error, as the release of a claim
+// does when the database goes away.
+func (h *harness) refuseInboxWrites(t *testing.T) {
+	t.Helper()
+	h.exec(t, `
+		CREATE FUNCTION refuse_inbox_write() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN RAISE EXCEPTION 'inbox writes are refused'; END $$`)
+	h.exec(t, `CREATE TRIGGER refuse_inbox_write BEFORE UPDATE ON inbox FOR EACH ROW EXECUTE FUNCTION refuse_inbox_write()`)
+	t.Cleanup(func() {
+		// The test's context has ended by now.
+		ctx := context.WithoutCancel(t.Context())
+		for _, drop := range []string{`DROP TRIGGER refuse_inbox_write ON inbox`, `DROP FUNCTION refuse_inbox_write()`} {
+			if _, err := h.db.ExecContext(ctx, drop); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+}
+
+// logBuffer collects the lines a log handler writes.
+type logBuffer struct {
+	mu   sync.Mutex
+	data bytes.Buffer
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.Write(p)
+}
+
+// records are the log lines as JSON objects.
+func (b *logBuffer) records(t *testing.T) []map[string]any {
+	t.Helper()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var records []map[string]any
+	for line := range strings.Lines(b.data.String()) {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("log line is not JSON: %v: %s", err, line)
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+// captureLogs collects what the test logs through the default logger, as the service writes it.
+func captureLogs(t *testing.T) *logBuffer {
+	t.Helper()
+	logs := &logBuffer{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return logs
 }
 
 // setEntryTime changes when the entry was committed.

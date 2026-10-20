@@ -10,6 +10,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -140,7 +141,13 @@ func (w *Worker) step(ctx context.Context) (bool, error) {
 	if shutdown := ctx.Err(); shutdown != nil {
 		// What interrupted the work is not an outcome. The claim is given back all the same, so another replica
 		// need not wait out the lease.
-		return true, errors.Join(shutdown, w.release(grace, *claim, carriedError(*claim)))
+		released := w.release(grace, *claim, carriedError(*claim))
+		if released != nil {
+			// Run returns nil once stopped, so this log is the only trace that the inbox stays held until its
+			// lease runs out. The error text can carry the connection string; the type names the failure.
+			slog.WarnContext(ctx, "notification claim not released on stop", "inbox", claim.ID, "error_type", fmt.Sprintf("%T", released))
+		}
+		return true, errors.Join(shutdown, released)
 	}
 	if !outcome.released {
 		failure = errors.Join(failure, w.release(grace, *claim, outcome.deliveryError))

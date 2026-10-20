@@ -207,6 +207,38 @@ func TestAStopWhileTheInboxIsBeingGivenBackDoesNotKeepTheLease(t *testing.T) {
 	requireWithin(t, "next work", next, time.Time{}, time.Now().Add(5*time.Second))
 }
 
+func TestAReleaseThatFailsWhileStoppingIsLoggedByItsType(t *testing.T) {
+	h := newHarness(t, debounce(3600, 3600))
+	subscription := h.subscribe(t, "first")
+	logs := captureLogs(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	h.actions.on(func(read context.Context, _ store.Claim, _ store.DueSubscription) error {
+		// The stop arrives while the source is read, and the release that follows is refused.
+		h.refuseInboxWrites(t)
+		cancel()
+		<-read.Done()
+		return read.Err()
+	})
+
+	_, err := h.worker.step(ctx)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("step = %v, want context.Canceled", err)
+	}
+	records := logs.records(t)
+	if len(records) != 1 {
+		t.Fatalf("%d log records, want 1: %v", len(records), records)
+	}
+	record := records[0]
+	requireEqual(t, record["level"], "WARN")
+	// The error's text is not logged: only the inbox and the kind of failure.
+	delete(record, "time")
+	delete(record, "level")
+	delete(record, "msg")
+	requireEqual(t, record, map[string]any{"inbox": subscription.InboxID.String(), "error_type": "*pq.Error"})
+}
+
 // awaitQueryWaitingForARow returns once a query waits for a row lock another transaction holds.
 func (h *harness) awaitQueryWaitingForARow(t *testing.T) {
 	t.Helper()
