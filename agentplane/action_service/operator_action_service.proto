@@ -1,0 +1,692 @@
+// The Action Service's operator API: what the integration app shows an operator about Actions and does for them. It
+// carries no agent authority.
+syntax = "proto3";
+
+package agentplane.action_service;
+
+import "agentplane/action_service/action_service.proto";
+import "agentplane/proto/sandboxes.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// The caller is the integration app acting for an operator. The bearer is the operator's OIDC token, whose issuer,
+// audience and signature the service verifies; a workload's bearer never reaches this service, and an operator's
+// never reaches `ActionService`. An operator sees every account's requests with their arguments unredacted, decides
+// them, and manages external Connections, MCP server linkage and Web Push. `ListActionRequests`, `GetActionRequest`
+// and `ListActionGroups` take the messages of `ActionService`, with the operator's wider view.
+//
+// An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
+// expired. `INVALID_ARGUMENT` is a malformed request, an invalid history cursor, an unsupported push endpoint or
+// scopes the MCP server is not configured for. `NOT_FOUND` is a request, Connection, enrollment, MCP server or push
+// subscription that does not exist. `ALREADY_EXISTS` is a decision key already used for another decision, or a push
+// endpoint another operator registered. `ABORTED` is an `expected_version` that is no longer current, or a
+// Connection that changed after the operator reviewed it. `FAILED_PRECONDITION` is a state that refuses the call: a
+// request already decided, a Connection without an active grant or bound caller, a ServiceAccount no longer labeled
+// as an Action caller, an enrollment that expired or already holds a different decision, an MCP server whose OAuth
+// metadata cannot be used, or Web Push that is not configured. `PERMISSION_DENIED` is an enrollment bound to another
+// browser or operator. `UNAVAILABLE` is a draining service or a lost change notification.
+//
+// An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT`; a response never carries one.
+//
+// Every `Watch*` stream sends the current set as `snapshot` frames of a bounded number of items each, then
+// `snapshot_complete` (alone, for an empty set), then one `upsert` per item that changes afterwards, carrying the item
+// as it now stands. A client replaces what it holds under the item's identity. A change wakes the server but the item
+// is read from the table, so changes in quick succession may arrive as one `upsert`, and one that happens with the
+// clock alone (a token reaching its expiry) arrives too. Nothing is replayed: a new stream starts from a new
+// snapshot, which is the whole set. The bearer is checked again before every frame: a stream whose bearer expires
+// or stops being accepted ends `UNAUTHENTICATED`, and the client opens another with a fresh token. A stream that ends
+// `UNAUTHENTICATED` before its first frame was refused at the door, and retrying it with the same token cannot
+// succeed.
+service OperatorActionService {
+  // Every account's requests, newest first, with the filters and pages of `ActionService.ListActionRequests`.
+  rpc ListActionRequests(ListActionRequestsRequest) returns (ListActionRequestsResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests"};
+  }
+
+  // Requests that have left `ACTION_STATE_DECISION_PENDING`, newest first by when they did, in pages. Continue with
+  // `cursor` set to the previous page's `next_cursor`; a page without one is the last. The route is a custom verb
+  // because a literal `history` segment beside `{request_id}` would depend on the gateway's route order.
+  rpc ListActionRequestHistory(ListActionRequestHistoryRequest) returns (ListActionRequestHistoryResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests:history"};
+  }
+
+  // One request of any account, with its arguments unredacted. A request that does not exist fails `NOT_FOUND`.
+  rpc GetActionRequest(GetActionRequestRequest) returns (GetActionRequestResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}"};
+  }
+
+  // Records the operator's Decision on a request waiting for one, and answers with the request as it now stands. An
+  // allow queues the request for dispatch. `expected_version` must be the `version` the operator reviewed, else
+  // `ABORTED`. `idempotency_key` is unique per operator: an identical retry answers with the request as it now
+  // stands, and the key reused for another request or verdict fails `ALREADY_EXISTS`. A request no longer pending
+  // fails `FAILED_PRECONDITION`. A draining service fails `UNAVAILABLE`.
+  rpc DecideActionRequest(DecideActionRequestRequest) returns (DecideActionRequestResponse) {
+    option (google.api.http) = {post: "/v1/operator/action-requests/{request_id}/decision" body: "*"};
+  }
+
+  // The requests in `state`, then each one again whenever it changes. A request that stops matching `state` arrives
+  // as an `upsert` of its new state, which a client holding it drops. With no `state` the snapshot is every request
+  // ever recorded: the browser passes `ACTION_STATE_DECISION_PENDING`, and `ListActionRequestHistory` pages the rest.
+  // No resume cursor: a reconnect reads the filtered set again.
+  rpc WatchActionRequests(WatchActionRequestsRequest) returns (stream WatchActionRequestsResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests:watch"};
+  }
+
+  // The same catalog as `ActionService.ListActionGroups`, with each MCP group's `health.detail`, which can name
+  // backend addresses and error text. Health is the answering replica's.
+  rpc ListActionGroups(ListActionGroupsRequest) returns (ListActionGroupsResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-groups"};
+  }
+
+  // The MCP-backed groups with their health detail, then each one again whenever its health or catalog changes.
+  // Groups of other executor kinds are not streamed.
+  rpc WatchActionGroups(WatchActionGroupsRequest) returns (stream WatchActionGroupsResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-groups:watch"};
+  }
+
+  // What the named ServiceAccount's bindings auto-decide, as admission would resolve them now, with each binding's
+  // labels and Ready verdict and each named set as present, refused or missing. A subject the service does not watch
+  // reads as no bindings.
+  rpc GetServiceAccountActionPolicy(GetServiceAccountActionPolicyRequest) returns (GetServiceAccountActionPolicyResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-policy/service-accounts/{namespace}/{name}"};
+  }
+
+  // The ServiceAccounts a new Connection may act as: those currently labeled as Action callers, as the service's
+  // watch sees them.
+  rpc ListCallerServiceAccounts(ListCallerServiceAccountsRequest) returns (ListCallerServiceAccountsResponse) {
+    option (google.api.http) = {get: "/v1/operator/caller-service-accounts"};
+  }
+
+  // Every external Connection, oldest first, with all its grants.
+  rpc ListConnections(ListConnectionsRequest) returns (ListConnectionsResponse) {
+    option (google.api.http) = {get: "/v1/operator/connections"};
+  }
+
+  rpc GetConnection(GetConnectionRequest) returns (GetConnectionResponse) {
+    option (google.api.http) = {get: "/v1/operator/connections/{connection_id}"};
+  }
+
+  // Renames a Connection. A name is presentation only: it need not be unique and the Connection's `id` does not
+  // change. `expected_version` must be the `version` read, else `ABORTED`.
+  rpc UpdateConnection(UpdateConnectionRequest) returns (UpdateConnectionResponse) {
+    option (google.api.http) = {patch: "/v1/operator/connections/{connection_id}" body: "*"};
+  }
+
+  // Retargets future uses of the Connection's issued tokens to another labeled ServiceAccount. Past grants and the
+  // provenance of past requests stay as they were. Needs an active grant and a bound caller, else
+  // `FAILED_PRECONDITION`, as does a `service_account` not labeled as an Action caller. Rebinding to the account
+  // already bound changes nothing.
+  rpc RebindConnection(RebindConnectionRequest) returns (RebindConnectionResponse) {
+    option (google.api.http) = {post: "/v1/operator/connections/{connection_id}/rebind" body: "*"};
+  }
+
+  // Revokes every grant and clears the bound caller, so the Connection's tokens stop resolving at once. Already
+  // claimed Executions are not stopped. A Connection with every grant already revoked answers unchanged whatever
+  // `expected_version` says.
+  rpc UnbindConnection(UnbindConnectionRequest) returns (UnbindConnectionResponse) {
+    option (google.api.http) = {post: "/v1/operator/connections/{connection_id}/unbind" body: "*"};
+  }
+
+  // The Connections, then each one again whenever it changes.
+  rpc WatchConnections(WatchConnectionsRequest) returns (stream WatchConnectionsResponse) {
+    option (google.api.http) = {get: "/v1/operator/connections:watch"};
+  }
+
+  // Shows an operator the OAuth authorization they are asked to consent to, and binds the enrollment to their
+  // browser: the first preview records `browser_binding` and the operator, and any other browser or operator then
+  // fails `PERMISSION_DENIED`. An enrollment that does not exist fails `NOT_FOUND`, an expired one
+  // `FAILED_PRECONDITION`.
+  rpc PreviewConnectionEnrollment(PreviewConnectionEnrollmentRequest) returns (PreviewConnectionEnrollmentResponse) {
+    option (google.api.http) = {post: "/v1/operator/connection-enrollments/{handle}/preview" body: "*"};
+  }
+
+  // Records the operator's consent or refusal, once. An exact retry answers with the recorded result; a different
+  // decision after one fails `FAILED_PRECONDITION`. `expected_version` must be the preview's `version`, else
+  // `ABORTED`, as does a reconnect target whose Connection changed since it was reviewed. An allow names a labeled
+  // ServiceAccount (else `PERMISSION_DENIED`) and either a new Connection or an existing one the operator confirmed.
+  // Consent alone grants nothing: the OAuth token exchange that follows does.
+  rpc DecideConnectionEnrollment(DecideConnectionEnrollmentRequest) returns (DecideConnectionEnrollmentResponse) {
+    option (google.api.http) = {post: "/v1/operator/connection-enrollments/{handle}/decision" body: "*"};
+  }
+
+  // One configured MCP server's OAuth linkage. An unknown server fails `NOT_FOUND`.
+  rpc GetMcpServerLinkage(GetMcpServerLinkageRequest) returns (GetMcpServerLinkageResponse) {
+    option (google.api.http) = {get: "/v1/operator/mcp-servers/{server_id}/linkage"};
+  }
+
+  // The linkage of every configured MCP server.
+  rpc ListMcpServers(ListMcpServersRequest) returns (ListMcpServersResponse) {
+    option (google.api.http) = {get: "/v1/operator/mcp-servers"};
+  }
+
+  // The MCP servers' linkages, then each one again whenever it changes, including when a token reaches its
+  // `expires_at`.
+  rpc WatchMcpServers(WatchMcpServersRequest) returns (stream WatchMcpServersResponse) {
+    option (google.api.http) = {get: "/v1/operator/mcp-servers:watch"};
+  }
+
+  // Begins linking a server: discovers its OAuth metadata and answers with the authorization URL the operator's
+  // browser opens. The flow lasts 10 minutes and finishes at the service's callback, which is plain HTTP. A server
+  // whose metadata is unusable, or that lacks Client ID Metadata Document support where the server needs it, fails
+  // `FAILED_PRECONDITION`; `scopes` the server is not configured for fail `INVALID_ARGUMENT`.
+  rpc StartMcpServerLinkage(StartMcpServerLinkageRequest) returns (StartMcpServerLinkageResponse) {
+    option (google.api.http) = {post: "/v1/operator/mcp-servers/{server_id}/linkage/start" body: "*"};
+  }
+
+  // Discards the server's token state and answers with its now unlinked linkage. Idempotent.
+  rpc DisconnectMcpServer(DisconnectMcpServerRequest) returns (DisconnectMcpServerResponse) {
+    option (google.api.http) = {post: "/v1/operator/mcp-servers/{server_id}/linkage/disconnect"};
+  }
+
+  // The key the browser subscribes to push with. Absent when Web Push is not configured.
+  rpc GetPushConfig(GetPushConfigRequest) returns (GetPushConfigResponse) {
+    option (google.api.http) = {get: "/v1/operator/push/config"};
+  }
+
+  // The calling operator's own push subscriptions.
+  rpc ListPushSubscriptions(ListPushSubscriptionsRequest) returns (ListPushSubscriptionsResponse) {
+    option (google.api.http) = {get: "/v1/operator/push/subscriptions"};
+  }
+
+  // The calling operator's push subscriptions, then each one again when it is added or changed. A subscription that
+  // is removed, including one the push service reports gone, arrives as `removed_endpoint`.
+  rpc WatchPushSubscriptions(WatchPushSubscriptionsRequest) returns (stream WatchPushSubscriptionsResponse) {
+    option (google.api.http) = {get: "/v1/operator/push/subscriptions:watch"};
+  }
+
+  // Registers a browser's Web Push subscription for the operator. Registering the same endpoint again replaces its
+  // keys. The `User-Agent` header of the HTTP request, cut to 300 characters, becomes the subscription's
+  // `user_agent`; it is not a request field. An `endpoint` that is not an HTTPS URL of a configured push service
+  // fails `INVALID_ARGUMENT`; one another operator registered fails `ALREADY_EXISTS`; Web Push that is not configured
+  // fails `FAILED_PRECONDITION`.
+  rpc CreatePushSubscription(CreatePushSubscriptionRequest) returns (CreatePushSubscriptionResponse) {
+    option (google.api.http) = {post: "/v1/operator/push/subscriptions" body: "*"};
+  }
+
+  // Removes one of the operator's push subscriptions by `endpoint`, a query parameter. Another operator's, or none,
+  // fails `NOT_FOUND`.
+  rpc DeletePushSubscription(DeletePushSubscriptionRequest) returns (DeletePushSubscriptionResponse) {
+    option (google.api.http) = {delete: "/v1/operator/push/subscriptions"};
+  }
+}
+
+message ListActionRequestHistoryRequest {
+  // At most this many requests, 1 to 100; 50 when absent.
+  optional int32 limit = 1;
+  // The previous page's `next_cursor`. Opaque; absent for the first page. An invalid cursor fails `INVALID_ARGUMENT`.
+  optional string cursor = 2;
+  // Whether to include requests a policy allowed without an operator; true when absent.
+  optional bool include_auto_allowed = 3;
+}
+
+message ListActionRequestHistoryResponse {
+  repeated ActionRequest action_requests = 1;
+  // Absent on the last page.
+  optional string next_cursor = 2;
+}
+
+message DecideActionRequestRequest {
+  // UUID.
+  string request_id = 1;
+  Verdict verdict = 2;
+  // The request's `version` the operator reviewed.
+  int64 expected_version = 3;
+  // Chosen by the caller, unique per operator: 1 to 200 characters.
+  string idempotency_key = 4;
+  // Shared unchanged with the caller and not secret: at most 2000 characters.
+  optional string decision_note = 5;
+}
+
+message DecideActionRequestResponse {
+  ActionRequest action_request = 1;
+}
+
+message WatchActionRequestsRequest {
+  // Only requests in these states; empty selects every state.
+  repeated ActionState state = 1;
+}
+
+// Exactly one field is set.
+message WatchActionRequestsResponse {
+  oneof frame {
+    ActionRequestChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    ActionRequest upsert = 3;
+    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
+    // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
+    google.protobuf.Empty reconnect_required = 4;
+  }
+}
+
+message ActionRequestChunk {
+  repeated ActionRequest action_requests = 1;
+}
+
+message WatchActionGroupsRequest {}
+
+// Exactly one field is set.
+message WatchActionGroupsResponse {
+  oneof frame {
+    ActionGroupChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    ActionGroup upsert = 3;
+    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
+    // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
+    google.protobuf.Empty reconnect_required = 4;
+  }
+}
+
+message ActionGroupChunk {
+  repeated ActionGroup action_groups = 1;
+}
+
+message GetServiceAccountActionPolicyRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message GetServiceAccountActionPolicyResponse {
+  SubjectActionPolicy action_policy = 1;
+}
+
+// A subject's effective Action policy for the operator: the account's view plus the verdicts and failures the account
+// is not shown.
+message SubjectActionPolicy {
+  // The subject's unexpired, valid bindings in name order, as admission would resolve them now.
+  repeated SubjectBinding bindings = 1;
+  // Whether the service's copy of the policy objects is complete and still refreshed. While it is not, nothing
+  // auto-decides and `auto_approve_if` is empty.
+  bool synced = 2;
+  // In evaluation order; the first match approves.
+  repeated EffectivePolicy auto_approve_if = 3;
+}
+
+message SubjectBinding {
+  BindingKind kind = 1;
+  string name = 2;
+  // The binding's metadata labels, for a reader that tells writers apart by them.
+  map<string, string> labels = 3;
+  // The binding's metadata generation; a Ready judged at an older one is stale.
+  int64 generation = 4;
+  // After this instant the binding contributes nothing; absent when it never expires.
+  google.protobuf.Timestamp expires_at = 5;
+  // The binding's `ActionsReady`; absent until the service has judged the binding at all.
+  ReadyCondition ready = 6;
+  // The named sets that exist, valid or refused, in the binding's order.
+  repeated ActionPolicySet policy_sets = 7;
+  // Names in the binding that no set answers to.
+  repeated string missing_policy_sets = 8;
+}
+
+enum BindingKind {
+  BINDING_KIND_UNSPECIFIED = 0;
+  BINDING_KIND_POLICY_BINDING = 1;
+}
+
+// The service's verdict on an object's spec, as its informer last wrote it.
+message ReadyCondition {
+  ConditionStatus status = 1;
+  string reason = 2;
+  string message = 3;
+  // The generation judged; behind the object's while an edit is unjudged.
+  optional int64 observed_generation = 4;
+}
+
+// A Kubernetes condition status.
+enum ConditionStatus {
+  CONDITION_STATUS_UNSPECIFIED = 0;
+  CONDITION_STATUS_TRUE = 1;
+  CONDITION_STATUS_FALSE = 2;
+  CONDITION_STATUS_UNKNOWN = 3;
+}
+
+message ActionPolicySet {
+  string name = 1;
+  int64 generation = 2;
+  // Why a rule does not parse, when one does not; such a set contributes nothing. A PolicySet has no status of its
+  // own: each binding's `ActionsReady` says whether its sets resolved.
+  optional string refused = 3;
+}
+
+message ListCallerServiceAccountsRequest {}
+
+message ListCallerServiceAccountsResponse {
+  repeated agentplane.proto.ServiceAccount service_accounts = 1;
+}
+
+message ListConnectionsRequest {}
+
+message ListConnectionsResponse {
+  repeated Connection connections = 1;
+}
+
+message GetConnectionRequest {
+  // UUID.
+  string connection_id = 1;
+}
+
+message GetConnectionResponse {
+  Connection connection = 1;
+}
+
+message UpdateConnectionRequest {
+  // UUID.
+  string connection_id = 1;
+  // The Connection's current `version`.
+  int64 expected_version = 2;
+  // 1 to 200 characters after trimming whitespace.
+  string display_name = 3;
+}
+
+message UpdateConnectionResponse {
+  Connection connection = 1;
+}
+
+message RebindConnectionRequest {
+  // UUID.
+  string connection_id = 1;
+  // The Connection's current `version`.
+  int64 expected_version = 2;
+  // The labeled ServiceAccount future uses act as.
+  agentplane.proto.ServiceAccount service_account = 3;
+}
+
+message RebindConnectionResponse {
+  Connection connection = 1;
+}
+
+message UnbindConnectionRequest {
+  // UUID.
+  string connection_id = 1;
+  // The Connection's current `version`.
+  int64 expected_version = 2;
+}
+
+message UnbindConnectionResponse {
+  Connection connection = 1;
+}
+
+message WatchConnectionsRequest {}
+
+// Exactly one field is set.
+message WatchConnectionsResponse {
+  oneof frame {
+    ConnectionChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    Connection upsert = 3;
+    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
+    // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
+    google.protobuf.Empty reconnect_required = 4;
+  }
+}
+
+message ConnectionChunk {
+  repeated Connection connections = 1;
+}
+
+// An external client's access to Actions, acting as one ServiceAccount. Nothing is deleted: unbinding revokes.
+message Connection {
+  // UUID.
+  string id = 1;
+  string display_name = 2;
+  // Increases with every change of the Connection or its grants; an update sends the one it read.
+  int64 version = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  // Every grant the Connection has had, oldest revision first.
+  repeated Grant grants = 6;
+  // The ServiceAccount its unrevoked grant acts as; absent exactly when the Connection is unbound.
+  agentplane.proto.ServiceAccount bound_caller = 7;
+}
+
+// One consented OAuth authorization of a Connection. Immutable apart from its status.
+message Grant {
+  // UUID.
+  string id = 1;
+  // UUID.
+  string connection_id = 2;
+  // From 1; a reconnect revokes the previous grant and adds the next revision.
+  int32 revision = 3;
+  // The ServiceAccount consent chose. A rebind changes `Connection.bound_caller`, not this.
+  agentplane.proto.ServiceAccount caller = 4;
+  // The verified downstream OAuth issuer and client of the pair.
+  string issuer = 5;
+  string client_id = 6;
+  GrantStatus status = 7;
+  // A pending grant cannot authorize calls, and cannot be activated after this.
+  google.protobuf.Timestamp activation_deadline = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp activated_at = 10;
+  google.protobuf.Timestamp revoked_at = 11;
+}
+
+enum GrantStatus {
+  GRANT_STATUS_UNSPECIFIED = 0;
+  GRANT_STATUS_PENDING = 1;
+  GRANT_STATUS_ACTIVE = 2;
+  GRANT_STATUS_REVOKED = 3;
+}
+
+message PreviewConnectionEnrollmentRequest {
+  // The enrollment's handle, from the consent URL.
+  string handle = 1;
+  // An unguessable value the browser keeps, 32 to 200 characters. Only the browser and operator of the first preview
+  // can decide.
+  string browser_binding = 2;
+}
+
+message PreviewConnectionEnrollmentResponse {
+  string client_id = 1;
+  optional string client_name = 2;
+  string redirect_uri = 3;
+  // The enrollment lasts at most 15 minutes.
+  google.protobuf.Timestamp expires_at = 4;
+  // The `expected_version` of the decision.
+  int64 version = 5;
+}
+
+message DecideConnectionEnrollmentRequest {
+  // The enrollment's handle, from the consent URL.
+  string handle = 1;
+  // The value the preview bound.
+  string browser_binding = 2;
+  // The preview's `version`.
+  int64 expected_version = 3;
+  // Chosen by the caller: 1 to 200 characters.
+  string idempotency_key = 4;
+  // Exactly one field is set.
+  oneof decision {
+    EnrollmentAllow allow = 5;
+    google.protobuf.Empty deny = 6;
+  }
+}
+
+message EnrollmentAllow {
+  // A ServiceAccount labeled as an Action caller.
+  agentplane.proto.ServiceAccount service_account = 1;
+  // Exactly one field is set.
+  oneof connection {
+    NewConnection new_connection = 2;
+    ReconnectConnection reconnect = 3;
+  }
+}
+
+message NewConnection {
+  // 1 to 200 characters after trimming whitespace.
+  string display_name = 1;
+}
+
+// Replaces an existing Connection's authority, so the operator must say they reviewed that.
+message ReconnectConnection {
+  // UUID.
+  string connection_id = 1;
+  // The Connection's `version` the operator reviewed.
+  int64 expected_version = 2;
+  // Must be true: the operator confirmed the change of authority. False fails `INVALID_ARGUMENT`.
+  bool authority_change_confirmed = 3;
+}
+
+message DecideConnectionEnrollmentResponse {
+  Verdict verdict = 1;
+  // Where the browser continues the upstream sign-in; present for an allow only.
+  optional string redirect_url = 2;
+}
+
+message GetMcpServerLinkageRequest {
+  string server_id = 1;
+}
+
+message GetMcpServerLinkageResponse {
+  McpServerLinkage linkage = 1;
+}
+
+message ListMcpServersRequest {}
+
+message ListMcpServersResponse {
+  repeated McpServerLinkage linkages = 1;
+}
+
+message WatchMcpServersRequest {}
+
+// Exactly one field is set.
+message WatchMcpServersResponse {
+  oneof frame {
+    McpServerLinkageChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    McpServerLinkage upsert = 3;
+    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
+    // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
+    google.protobuf.Empty reconnect_required = 4;
+  }
+}
+
+message McpServerLinkageChunk {
+  repeated McpServerLinkage linkages = 1;
+}
+
+message StartMcpServerLinkageRequest {
+  string server_id = 1;
+  // OAuth scopes to request. Each must be among the server's configured scopes, or among those its metadata
+  // advertises where none are configured. Empty requests all of those.
+  repeated string scopes = 2;
+}
+
+message StartMcpServerLinkageResponse {
+  // UUID.
+  string flow_id = 1;
+  // Where the operator's browser authorizes.
+  string authorization_url = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message DisconnectMcpServerRequest {
+  string server_id = 1;
+}
+
+message DisconnectMcpServerResponse {
+  McpServerLinkage linkage = 1;
+}
+
+// The shared OAuth token family of one configured MCP server.
+message McpServerLinkage {
+  string server_id = 1;
+  string server_url = 2;
+  McpLinkageStatus status = 3;
+  // Increases whenever the linkage is replaced or disconnected.
+  int32 revision = 4;
+  repeated string scopes = 5;
+  // When the access token expires; absent when unlinked or when it does not.
+  google.protobuf.Timestamp expires_at = 6;
+  google.protobuf.Timestamp linked_at = 7;
+  // The operator who linked it; absent when unlinked.
+  Operator linked_by = 8;
+  // The latest token refresh failure, including one still being retried, which may lapse the token before it clears.
+  McpRefreshFailure refresh_failure = 9;
+}
+
+enum McpLinkageStatus {
+  MCP_LINKAGE_STATUS_UNSPECIFIED = 0;
+  MCP_LINKAGE_STATUS_UNLINKED = 1;
+  MCP_LINKAGE_STATUS_LINKED = 2;
+  // The refresh failed in a way that needs the operator to link again.
+  MCP_LINKAGE_STATUS_DEGRADED = 3;
+  // The access token lapsed.
+  MCP_LINKAGE_STATUS_EXPIRED = 4;
+}
+
+message McpRefreshFailure {
+  McpRefreshAction action = 1;
+  // What the latest refresh got back: the provider's OAuth error, or the token endpoint's HTTP status or connection
+  // failure.
+  string error = 2;
+  int32 attempts = 3;
+  // When the service tries again; absent for `MCP_REFRESH_ACTION_RECONNECT`.
+  google.protobuf.Timestamp retry_at = 4;
+}
+
+enum McpRefreshAction {
+  MCP_REFRESH_ACTION_UNSPECIFIED = 0;
+  // The provider refused the refresh: the operator links the account again.
+  MCP_REFRESH_ACTION_RECONNECT = 1;
+  // The refresh failed in a way that may pass: the service retries.
+  MCP_REFRESH_ACTION_RETRYING = 2;
+}
+
+message GetPushConfigRequest {}
+
+message GetPushConfigResponse {
+  // The VAPID public key, URL-safe base64 of the uncompressed point; absent when Web Push is not configured.
+  optional string application_server_key = 1;
+}
+
+message ListPushSubscriptionsRequest {}
+
+message ListPushSubscriptionsResponse {
+  repeated PushSubscription push_subscriptions = 1;
+}
+
+message WatchPushSubscriptionsRequest {}
+
+// Exactly one field is set.
+message WatchPushSubscriptionsResponse {
+  oneof frame {
+    PushSubscriptionChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    PushSubscription upsert = 3;
+    // The `endpoint` of a subscription that is gone.
+    string removed_endpoint = 4;
+    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
+    // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
+    google.protobuf.Empty reconnect_required = 5;
+  }
+}
+
+message PushSubscriptionChunk {
+  repeated PushSubscription push_subscriptions = 1;
+}
+
+// A browser's registration for Web Push, never more authority than the operator's own.
+message PushSubscription {
+  // The push service URL; the subscription's identity.
+  string endpoint = 1;
+  optional string user_agent = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message CreatePushSubscriptionRequest {
+  // 1 to 2048 characters.
+  string endpoint = 1;
+  // The browser's public key, 1 to 200 characters.
+  string p256dh = 2;
+  // The browser's authentication secret, 1 to 200 characters.
+  string auth = 3;
+}
+
+message CreatePushSubscriptionResponse {}
+
+message DeletePushSubscriptionRequest {
+  string endpoint = 1;
+}
+
+message DeletePushSubscriptionResponse {}
