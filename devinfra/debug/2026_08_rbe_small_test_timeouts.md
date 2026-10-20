@@ -264,31 +264,30 @@ answers the August open question: the pinned image was never the mechanism.
   named here because it sat inside this same symptom and will otherwise look like more evidence
   for a story it does not belong to.
 
-## 2026-10-20: pytest walked the whole runfiles tree
+## 2026-10-20: handing pytest the test file moves the time, it does not remove it
 
 `//agentplane/app:test_system_status` and `//agentplane/app/threads:test_dispatcher_client` timed out
-on a PR that touched neither (and `test_dispatcher_client` timed out 1 in 3 on plain `devel`). The
-logs end at `pytest_bazel`'s `Running pytest.main with:` line, as above. With
-`PYTHONPROFILEIMPORTTIME=1` and `--durations=0` a run Bazel killed at 61s turned out to have passed
-(`1 passed in 24.82s`), and the time split was:
+on a PR that touched neither (`test_dispatcher_client` also 1 in 3 on plain `devel`), with the log
+ending at `pytest_bazel`'s `Running pytest.main with:` line. `pytest_bazel` passes pytest no path,
+so pytest walks the runfiles tree. Setting `PYTEST_ADDOPTS="--rootdir=. <entry-point file>"` in
+`py_test` cut the session `pytest` reports for `//agentplane/app:test_notifications_operator_client`
+from 8.8-10.9s to 0.24-0.30s, and did not shorten the test:
 
-| phase                                                  | healthy run | slow run |
-| ------------------------------------------------------ | ----------: | -------: |
-| interpreter and `pytest_bazel` imports                 |        2.9s |     4.7s |
-| `pytest.main` to the session header (conftest imports) |       12.1s |    25.7s |
-| pytest session for one 0.09s test                      |       11.6s |    24.8s |
+| `test_notifications_operator_client`, 6 runs each | `devel`            | file handed to pytest          |
+| ------------------------------------------------- | ------------------ | ------------------------------ |
+| wall time, min / avg / max                        | 26.7 / 39.1 / 58.0 | 27.9 / 39.0 / 61.6 (1 TIMEOUT) |
 
-The last row is the avoidable part. `pytest_bazel` passes pytest no path, so pytest collects from the
-working directory, the root of the test's runfiles tree. No module is imported in that time, so the
-cost is the collection walk over the tree (inferred: the explicit path removes it). Handing pytest the
-entry-point file cuts the session to 0.1-0.2s
-(`test_dispatcher_client` 8.6-24.8s before, 0.08-0.22s after; `test_system_status` 10.1s before,
-0.13-0.19s after). `devinfra/python/defs.bzl` now passes it for every `py_test` whose entry point is a
-source file.
+With `PYTHONPROFILEIMPORTTIME=1` and `--test_arg=-s` (so pytest does not swallow the profile), 3 runs
+each: the junit `timestamp` puts the session start 8-12s after the process starts on `devel` and
+18-25s after it with the file handed over, so the time the session lost is spent before it starts.
+The mechanism is not established. Both trees import 580 modules (2.5-2.8s) before `pytest.main` and
+2451 (9-11s; 23.9s on a slow host) between `pytest.main` and the header: the
+`agentplane/app/conftest.py` chain, led by `kubernetes_asyncio.client` (12.7s cumulative on the slow
+host), `agentplane.app.action_policy` (4.7s) and `sqlalchemy.ext.asyncio` (1.8s).
 
-What remains is the platform tail above: `agentplane/app/conftest.py` imports about 3000 modules for every
-test under `agentplane/app`, and each module is a file open on a lazily served filesystem. With the
-change and 21 concurrent actions, `test_dispatcher_client` still timed out 1 in 3 (min 26.1s); in a
-12-target run it passed in 25.5s while `test_system_status` timed out with an empty log after the
-`Running pytest.main with:` line, so still inside conftest import. Not
-established: how much of the conftest cost a narrower conftest would save.
+Side by side on the 44 targets that timed out in a cold full-suite CI run (one run each, at the same
+time): 4 timed out with the file handed to pytest, 9 on `devel`. One run each is not a rate. The
+change was dropped (#11301).
+
+Not tested: whether importing `kubernetes_asyncio` and `action_policy` inside the fixtures that need
+them shortens the tests that do not.

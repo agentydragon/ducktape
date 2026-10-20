@@ -32,31 +32,8 @@ def py_binary(imports = None, **kwargs):
 # from Docker Hub.
 RYUK_TAG = "testcontainers/ryuk:0.14.0"
 
-def _test_file(name, srcs, main):
-    """The `.py` source `py_test` runs as its entry point, or None where it can't be told apart.
-
-    Mirrors rules_python: `main` if given, else `<name>.py` in `srcs`, else the only source.
-    A `main_module` entry point names a module, not a file, so the caller skips those.
-    """
-    if main != None:
-        return main
-    if type(srcs) != "list":
-        return None
-    if name + ".py" in srcs:
-        return name + ".py"
-    if len(srcs) == 1:
-        return srcs[0]
-    return None
-
 def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, tags = None, imports = None, args = None, deps = None, env = None, env_inherit = None, shard_count = None, **kwargs):
     """py_test with auto repo-root imports and sensible defaults.
-
-    pytest is handed the entry-point file, so it collects that file alone. `pytest_bazel` passes no
-    path of its own, which makes pytest walk the whole runfiles tree from the working directory
-    looking for tests -- 8-25s on app tests whose tree is large, against 0.1s for the file alone.
-    The file goes in `PYTEST_ADDOPTS`, not `args`, because some tests parse `sys.argv` themselves.
-    `--rootdir=.` keeps the runfiles root as the rootdir, and so as the conftest cutoff: with a path
-    and no ini file pytest would pick the test's own directory and skip every conftest above it.
 
     Args:
         name: Target name.
@@ -94,10 +71,6 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
     base_env_inherit = list(env_inherit or [])
     base_args = list(args or [])
     base_deps = list(deps or [])
-    if "main_module" not in kwargs:
-        test_file = _test_file(name, kwargs.get("srcs"), kwargs.get("main"))
-        if test_file != None:
-            env = {"PYTEST_ADDOPTS": "--rootdir=. $(rootpath {})".format(test_file)} | (env or {})
     if requires_docker:
         base_tags = base_tags + ["requires_docker"]
         env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | (env or {})
