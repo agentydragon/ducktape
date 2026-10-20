@@ -13,8 +13,8 @@ import "google/protobuf/timestamp.proto";
 // `agentplane.allegedly.works/use-action-service` label. A caller acts for its own ServiceAccount and sees only the
 // requests that account submitted, whichever Pod or external Connection submitted them. The exception is a service
 // reader (the Notification Service's ServiceAccount): it may list, get, watch and read the events of every account's
-// requests, which then carry `caller`. An agent reaches the HTTP routes through the egress proxy; `agentplane actions`
-// wraps them.
+// requests. A request reads the same for every reader. An agent reaches the HTTP routes through the egress proxy;
+// `agentplane actions` wraps them.
 //
 // An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
 // whose ServiceAccount is not labeled; the answer does not say which. `INVALID_ARGUMENT` is a malformed request,
@@ -232,14 +232,13 @@ message ActionRequest {
   string id = 1;
   string idempotency_key = 2;
   ActionIdentity action = 3;
-  // As submitted, except that for any reader but an operator the value under a key that names a secret (`token`,
-  // `password`, `apiKey` and the like), at any depth, reads `[redacted]`.
+  // As submitted.
   google.protobuf.Struct arguments = 4;
   // The caller-authored one-line summary, unchanged.
   string title = 5;
   // The caller-authored detail, unchanged; absent when the caller supplied none.
   optional string description = 6;
-  // Who submitted it. Present for operators and service readers, absent when the submitting account reads its own.
+  // The ServiceAccount that submitted it.
   agentplane.proto.ServiceAccount caller = 7;
   // The external Connection grant that submitted it; absent for a request from a Pod.
   ExternalGrantProvenance external_grant = 8;
@@ -398,8 +397,7 @@ message Execution {
   // UUID.
   string id = 1;
   ExecutionState state = 2;
-  // What the Action returned, whatever JSON that is; absent until it finishes. A value under a key that names a
-  // secret reads `[redacted]`.
+  // What the Action returned, whatever JSON that is; absent until it finishes.
   google.protobuf.Value result = 3;
   // Why it failed, or why its outcome is unknown, as a `kind` and a `message`; absent otherwise.
   google.protobuf.Struct error = 4;
