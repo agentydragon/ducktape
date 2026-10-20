@@ -56,6 +56,7 @@ py_library(
         "@envtest_kubernetes_linux_amd64//:assets",  # keep: pinned control-plane executables
     ],
     deps = [
+        "//agentplane:subjects",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//kubernetes_asyncio",

@@ -526,6 +526,7 @@ py_test(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/testing:electric_role",
+        "//agentplane/testing:kubernetes_apiserver",
         "//util/testing:postgres",
         "@pypi//asyncpg",
         "@pypi//protobuf",

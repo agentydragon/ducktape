@@ -15,6 +15,7 @@ from agentplane.history_service.testing.go_service import (
 )
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.testing.electric_role import ensure_electric_role
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, control_plane, kubernetes_api
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 
 # gazelle:include_dep @pypi//asyncpg
@@ -30,15 +31,31 @@ def go_history_database_template(postgres_admin_url: str) -> Iterator[PostgresDa
         yield template
 
 
+@pytest.fixture(scope="session")
+def kubeconfig() -> Iterator[Path]:
+    """One control plane for the whole test target; each test enters its own client of it."""
+    with control_plane() as path:
+        yield path
+
+
+@pytest.fixture
+async def api(kubeconfig: Path) -> AsyncIterator[KubernetesApiServer]:
+    async with kubernetes_api(kubeconfig) as server:
+        yield server
+
+
 @pytest.fixture
 async def service(
     go_history_database_template: PostgresDatabaseTemplate,
     database_clones: DatabaseClones,
+    api: KubernetesApiServer,
     tmp_path: Path,
     unused_tcp_port_factory: Callable[[], int],
 ) -> AsyncIterator[GoHistoryService]:
     database_url = database_clones.clone(go_history_database_template, drivername="postgresql+asyncpg")
-    async with go_history_service(database_url, directory=tmp_path, port_factory=unused_tcp_port_factory) as running:
+    async with go_history_service(
+        database_url, api=api, directory=tmp_path, port_factory=unused_tcp_port_factory
+    ) as running:
         yield running
 
 
