@@ -1802,7 +1802,7 @@ Decision nodes do not authorize runtime changes. Detailed code paths and alterna
 **Approved transport direction (operator, 2026-10-15 UTC):** gRPC for internal APIs,
 gRPC-Gateway for the generated HTTP/JSON facade, and an ergonomic CLI, adopted incrementally by
 service and interface. Use JSON server streams for watches/waits and native gRPC for full duplex.
-Individual service migrations and the CLI workflow contract remain separate work items below, and the
+Individual service migrations and the CLI rollout remain separate work items below, and the
 HTTP/JSON facade is built per service inside each migration; this direction authorizes no runtime change
 beyond the transport track nodes marked in flight, which the operator dispatched.
 
@@ -1817,7 +1817,7 @@ flowchart LR
     IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive, section 7]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
-    AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
+    AGENT_CLI_ROLLOUT[In flight: carry the agentplane CLI into Sessions]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a PostgreSQL-free K3s tier]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
@@ -1989,20 +1989,19 @@ app's Notification proxy. The signed GitHub webhook stays hand-written HTTP.
 workload APIs as generated facades and delete `OperatorActionServiceClient` and the app's Action routes and
 relays. The request watch gets a resume cursor or delta frames in its proto from the start: its first frame
 is the whole history (megabytes, #7922) and it ends every minute with the exchanged token. The MCP
-endpoint, OAuth metadata and consent callbacks stay hand-written HTTP. Decide with
-[`AGENT_API_TOOLING_DESIGN`](#agent_api_tooling_design--preserve-ergonomic-scriptable-agent-workflows)
-whether the agent CLI's Action Service changes land in the Python service or in this port.
+endpoint, OAuth metadata and consent callbacks stay hand-written HTTP. The receipt wait
+(`wait_seconds`, `wait_until`) and request paging (`limit`, `after_id`) the [agent CLI](../docs/agent_cli.md)
+calls are served by the Python service today; the port keeps them, and a server stream of receipts that
+ends at the condition replaces the wait with the CLI updated in the same change.
 
-### `AGENT_API_TOOLING_DESIGN` — preserve ergonomic, scriptable agent workflows
+### `AGENT_CLI_ROLLOUT` — carry the agentplane CLI into Sessions
 
-**Drafted for operator review; the interface direction is approved.** The command and JSON contract
-is [the agent CLI plan](agent_cli.md): commands, output, credentials, errors and exit
-codes, pagination, waits, interruption, the Action Service changes it needs and the rollout order.
-The operator settled all of its [decisions](agent_cli.md#settled-decisions) (2026-10-17 and
-2026-10-18). Approval to build replaces this node with the plan's rollout steps as nodes.
-
-**Deliverable:** operator approval to build from the plan. This is design only; no CLI, prompt or
-API change is authorized.
+**In flight (this thread, 2026-10-20 UTC).** The [CLI](../docs/agent_cli.md) is built and the Action
+Service serves the wait and paging it calls. What remains is the [rollout](agent_cli.md): the release
+and its pin, the Sandbox image carrying it, the environment variables, then the platform instructions
+and guides, in that order. **Deliverable:** a Session on `agentplane-testing` runs an Action and a
+subscription through `agentplane` and the real proxy, answering the plan's open checks. Delete this
+node and the plan with the last step.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 
