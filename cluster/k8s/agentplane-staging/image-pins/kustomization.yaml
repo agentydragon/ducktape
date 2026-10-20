@@ -13,11 +13,8 @@ images:
     newTag: devel-20261020091614-af3f1fe # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate
     newTag: devel-20261019070159-d538834 # {"$imagepolicy": "flux-system:agentplane-egress-history-migrate:tag"}
-  # CLEANUP(added 2026-10-20): Restore this pin's Flux image-policy marker (policy `agentplane-app`, field `tag`)
-  #   with the staging service flip of NOTIFICATION_SERVICE_GO_PORT: until then staging's Notification Service is the
-  #   Python image, which the app's gRPC watches in later images cannot talk to.
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261020164134-e944bbb
+    newTag: devel-20261020192946-56e4610 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261017094929-fd684b6 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway
@@ -28,13 +25,10 @@ images:
     newTag: devel-20261020054019-b8f2621 # {"$imagepolicy": "flux-system:runner:tag"}
   - name: git.allegedly.works/ducktape-ci/runner-ducktape
     newTag: devel-20261020092708-1bab9a4 # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
-  # CLEANUP(added 2026-10-20): Restore the Flux image-policy markers (policies `agentplane-sandbox`,
-  #   `agentplane-sandbox-build`, field `tag`) when stage K of the Notification Service Go port lands: until then
-  #   staging's Notification Service is the Python image, which the CLI in later images cannot talk to.
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
-    newTag: devel-20261020052603-8957e98
+    newTag: devel-20261020092037-1bab9a4 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
-    newTag: devel-20261020052607-8957e98
+    newTag: devel-20261020092044-1bab9a4 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20261019172302-17e2ab0 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
@@ -43,11 +37,8 @@ images:
     newTag: devel-20261020164138-e944bbb # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
     newTag: devel-20261020033733-e077352 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
-  # CLEANUP(added 2026-10-20): Restore this pin's Flux image-policy marker (policy `agentplane-notification-service`,
-  #   field `tag`) in the staging service flip of NOTIFICATION_SERVICE_GO_PORT; until then staging keeps the Python
-  #   service while the roster publishes the Go image.
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261020090057-42dc841
+    newTag: devel-20261020121540-258b550 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
     newTag: devel-20261020121534-258b550 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
@@ -57,10 +48,7 @@ images:
     newTag: devel-20261020040746-de0e178 # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
   # The runner and `agentplane` command: a disk beside the VM guest, and an image volume in the
   # runner Pod, both reached through kustomizeconfig.
-  # CLEANUP(added 2026-10-20): Restore this pin's Flux image-policy marker (policy `agentplane-runner-disk`, field
-  #   `tag`) when stage K of the Notification Service Go port lands: until then staging's Notification Service is the
-  #   Python image, which the CLI in later disks cannot talk to.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261020051808-9d70a22
+    newTag: devel-20261020092018-1bab9a4 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig
