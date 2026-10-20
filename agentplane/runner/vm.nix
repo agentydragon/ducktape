@@ -327,9 +327,6 @@ in
     };
   };
 
-  # The list below is the guest's whole package set, as in the Pod sandbox image; NixOS' default
-  # perl, rsync and strace are not in it.
-  environment.defaultPackages = [ ];
   environment.systemPackages = with pkgs; [
     bashInteractive
     coreutils
