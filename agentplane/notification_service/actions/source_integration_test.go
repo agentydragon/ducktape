@@ -147,7 +147,7 @@ func (f fixture) subscribe(t *testing.T) store.Subscription {
 		IdempotencyKey: "test-key",
 		Source:         store.ActionsSource{RequestID: uuid.New()},
 		LifetimeDays:   7,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
