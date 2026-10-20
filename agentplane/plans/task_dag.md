@@ -714,7 +714,7 @@ flowchart LR
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
     VM_HARNESS_RESOURCE_LIMITS[Blocked: accept VM per-harness resource limits]
     VM_INTRA_SANDBOX_HARDENING[Deferred: optional intra-Sandbox process/state hardening]
-    RUNNER_LAYERING_VM[Blocked: slim VM runtime, section 7]
+    RUNNER_LAYERING_VM[In flight: slim VM runtime, section 7]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
@@ -1385,7 +1385,7 @@ flowchart TD
     RUNNER_LAYERING_SPIKE_EXIT --> RUNNER_IMAGE_LAYERING_DESIGN
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_SPIKE_RETIRE
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_POD[Blocked: a Pod takes runner and tools from separate images]
-    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[Blocked: a guest takes runner and tools from separate images]
+    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[In flight: a guest takes runner and tools from separate images]
     RUNNER_LAYERING_VM --> K3S_VM_IMAGE[Blocked: build a lightweight guest disk in Bazel]
     RUNNER_HARNESS_DELIVERY_DESIGN[harness delivery, section 5] -. related .-> K3S_VM_IMAGE
 ```
@@ -1505,7 +1505,7 @@ half carries the requirement.
 
 ### `RUNNER_LAYERING_VM` — a guest takes the runner, harnesses and tools from separate images
 
-**Blocked on the layering decision; pursuable independently of the Pod half; operator, 2026-10-15 PDT.**
+**In flight; operator chose to split the disks on KubeVirt first (2026-10-20 PDT); Firecracker and a runtime-class abstraction stay later, and whether harnesses become a separate disk stays open in `RUNNER_IMAGE_LAYERING_DESIGN`. Pursuable independently of the Pod half.**
 Split the guest so a runner bump or a template's tool list does not rebuild and repush the whole VM. The
 two-stage shape the operator named — lean stage 1 booting the runner and mounting a stage 2 filesystem,
 with the runner jailing a forked child into stage 2 to exec Claude/Codex — is one option, with the
