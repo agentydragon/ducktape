@@ -48,11 +48,8 @@ images:
   #   service while the roster publishes the Go image.
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
     newTag: devel-20261020090057-42dc841
-  # CLEANUP(added 2026-10-20): Restore this pin's Flux image-policy marker (policy
-  #   `agentplane-notification-service-migrate`, field `tag`) in the staging cutover of NOTIFICATION_SERVICE_GO_PORT;
-  #   until then staging keeps the Python migrator.
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
-    newTag: devel-20261017094830-fd684b6
+    newTag: devel-20261020121534-258b550 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
     newTag: devel-20261020090051-42dc841 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # The runner VM SandboxTemplate's containerDisk, which `images:` reaches through kustomizeconfig.
