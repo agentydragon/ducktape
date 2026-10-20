@@ -1,5 +1,8 @@
 load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -1317,4 +1320,37 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+proto_library(
+    name = "action_service_proto",
+    srcs = ["action_service.proto"],
+    deps = [
+        "//agentplane/proto:sandboxes_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@protobuf//:struct_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "action_service_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//devinfra/go:grpc_gateway",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb",
+    proto = ":action_service_proto",
+    deps = [
+        "//agentplane/proto:sandboxes_go_proto",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
+)
+
+# The agent-facing reference. The operator API is a second proto so that this document describes only what an agent
+# may call.
+proto_openapi(
+    name = "action_service_openapi",
+    proto = ":action_service_proto",
 )

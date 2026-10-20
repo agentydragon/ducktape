@@ -1,0 +1,599 @@
+// The Action Service's workload API: how a sandboxed agent finds the Actions it may request, submits a request and
+// reads what came of it.
+syntax = "proto3";
+
+package agentplane.action_service;
+
+import "agentplane/proto/sandboxes.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// Callers are workloads: the bearer is the Pod-bound token of a ServiceAccount that carries the
+// `agentplane.allegedly.works/use-action-service` label. A caller acts for its own ServiceAccount and sees only the
+// requests that account submitted, whichever Pod or external Connection submitted them. The exception is a service
+// reader (the Notification Service's ServiceAccount): it may list, get, watch and read the events of every account's
+// requests, which then carry `caller`. An agent reaches the HTTP routes through the egress proxy; `agentplane actions`
+// wraps them.
+//
+// An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
+// whose ServiceAccount is not labeled; the answer does not say which. `INVALID_ARGUMENT` is a malformed request,
+// arguments that do not satisfy the Action's schema, or a group and Action this service cannot run. `NOT_FOUND` is a
+// request that does not exist or is not the caller's, or an unknown Action in `GetAction`. `ALREADY_EXISTS` is an
+// idempotency key the account already used. `PERMISSION_DENIED` is an external Connection grant that no longer
+// authorizes the call. `FAILED_PRECONDITION` is an allowed request whose dispatch is no longer pending. `UNAVAILABLE`
+// is a draining service, an ActionGroup that is temporarily unavailable, or a lost change notification.
+//
+// An `*_UNSPECIFIED` enum value in a request fails `INVALID_ARGUMENT` unless its field says it stands for a default; a
+// response never carries one.
+service ActionService {
+  // Records a request for an Action and answers with its receipt.
+  //
+  // Admission validates `arguments` against the Action's current schema and asks the account's policies before
+  // anything is stored. A request a policy decides arrives already `ACTION_STATE_ALLOWED` or `ACTION_STATE_DENIED`
+  // and is never visible as `ACTION_STATE_DECISION_PENDING`; any other request waits there for an operator. An allow
+  // is not execution success: read the Execution with `GetActionRequest` or `WatchActionRequest`.
+  //
+  // `idempotency_key` is unique per calling ServiceAccount and is accepted once. A repeat fails `ALREADY_EXISTS`
+  // instead of replaying the first response; recover a lost response with `ListActionRequests` by key, and never
+  // resubmit under a new key.
+  rpc SubmitActionRequest(SubmitActionRequestRequest) returns (SubmitActionRequestResponse) {
+    option (google.api.http) = {post: "/v1/action-requests" body: "*"};
+  }
+
+  // The caller's requests, newest first. `limit` bounds a page; continue with `after_id` set to the last request's
+  // `id`. Without `limit` every matching request is returned. An `after_id` that is unknown or not the caller's
+  // fails `NOT_FOUND`.
+  rpc ListActionRequests(ListActionRequestsRequest) returns (ListActionRequestsResponse) {
+    option (google.api.http) = {get: "/v1/action-requests"};
+  }
+
+  // The receipt of one request: its current state, Decision and Execution, with the result once there is one. Reads
+  // once and never waits; `WatchActionRequest` waits.
+  rpc GetActionRequest(GetActionRequestRequest) returns (GetActionRequestResponse) {
+    option (google.api.http) = {get: "/v1/action-requests/{request_id}"};
+  }
+
+  // Streams the receipt at once and again on each change, until it satisfies `until`. The last frame is the one that
+  // did, and the stream then ends OK. A committed change wakes the server; nothing polls.
+  //
+  // The wait ends at the client's deadline too, with the last frame received as the current receipt. A deadline is
+  // not a failure and ending a watch never cancels the request. The bearer is checked again before every frame: a
+  // watch whose bearer stops being accepted ends `UNAUTHENTICATED`. A lost change notification fails the watch
+  // `UNAVAILABLE`; a plain read still works.
+  rpc WatchActionRequest(WatchActionRequestRequest) returns (stream WatchActionRequestResponse) {
+    option (google.api.http) = {get: "/v1/action-requests/{request_id}:watch"};
+  }
+
+  // Withdraws a request that has not been claimed for dispatch, and answers with what happened and the receipt. Only
+  // the submitting account can cancel, else `NOT_FOUND`; a service reader cannot. It takes no version and never
+  // interrupts an executor. The dispatch claim is the cutoff, even before the executor has physically started. Where
+  // the request already ended or passed the cutoff the `outcome` says so, and the receipt is unchanged.
+  rpc CancelActionRequest(CancelActionRequestRequest) returns (CancelActionRequestResponse) {
+    option (google.api.http) = {post: "/v1/action-requests/{request_id}:cancel"};
+  }
+
+  // The request's retained events in `sequence` order after `after_sequence`. Advance `after_sequence` only after
+  // recording the events returned; asking again from the last sequence seen is a no-op.
+  rpc ListActionRequestEvents(ListActionRequestEventsRequest) returns (ListActionRequestEventsResponse) {
+    option (google.api.http) = {get: "/v1/action-requests/{request_id}/events"};
+  }
+
+  // The reviewed catalog: every ActionGroup with its Actions and their descriptions, the same for every caller. It
+  // is bounded and not paged. A group that is not `available` lists no Actions.
+  rpc ListActionGroups(ListActionGroupsRequest) returns (ListActionGroupsResponse) {
+    option (google.api.http) = {get: "/v1/action-groups"};
+  }
+
+  // One Action's current description and argument schema. Fetch it before submitting: do not guess arguments. An
+  // unknown group or Action fails `NOT_FOUND`; a group that is temporarily unavailable fails `UNAVAILABLE`.
+  //
+  // The request type is qualified because this service's `GetActionRequest` RPC would otherwise shadow it.
+  rpc GetAction(.agentplane.action_service.GetActionRequest) returns (GetActionResponse) {
+    option (google.api.http) = {get: "/v1/action-groups/{group_key}/actions/{action_key}"};
+  }
+
+  // What the caller's own bindings auto-decide, resolved as admission would resolve them now. Read it instead of
+  // submitting to find out whether a request would wait for an operator. While `synced` is false nothing
+  // auto-decides: every request takes the human path, whatever the policy objects say.
+  rpc GetActionPolicy(GetActionPolicyRequest) returns (GetActionPolicyResponse) {
+    option (google.api.http) = {get: "/v1/action-policy"};
+  }
+}
+
+message SubmitActionRequestRequest {
+  // Chosen by the caller, unique per ServiceAccount: 1 to 200 characters.
+  string idempotency_key = 1;
+  ActionIdentity action = 2;
+  // Must satisfy the Action's input schema (`GetAction`); `{}` for an Action without arguments.
+  google.protobuf.Struct arguments = 3;
+  // One plain-language line saying what the request does, for the operator deciding it: 1 to 60 characters, of
+  // commit-subject length ("delete crashlooping backend pod"). Not the Action's group and name, which are shown
+  // already, and not a decision note.
+  string title = 4;
+  // Detail or justification the title leaves out, for the operator: at most 250 characters. Build on the title
+  // instead of restating it.
+  optional string description = 5;
+}
+
+message SubmitActionRequestResponse {
+  ActionRequest action_request = 1;
+}
+
+message ListActionRequestsRequest {
+  // Only requests in these states; empty selects every state.
+  repeated ActionState state = 1;
+  // Only the request submitted under this key: recovers a submission whose response was lost.
+  optional string idempotency_key = 2;
+  // At most this many requests, 1 to 128. Without it, every matching request is returned.
+  optional int32 limit = 3;
+  // The `id` (UUID) of the last request already held; the page starts after it, newest first.
+  optional string after_id = 4;
+}
+
+message ListActionRequestsResponse {
+  repeated ActionRequest action_requests = 1;
+}
+
+message GetActionRequestRequest {
+  // UUID.
+  string request_id = 1;
+}
+
+message GetActionRequestResponse {
+  ActionRequest action_request = 1;
+}
+
+message WatchActionRequestRequest {
+  // UUID.
+  string request_id = 1;
+  // What to wait for. `WATCH_UNTIL_UNSPECIFIED` is `WATCH_UNTIL_TERMINAL`.
+  WatchUntil until = 2;
+}
+
+// The receipt, current as of this frame.
+message WatchActionRequestResponse {
+  ActionRequest action_request = 1;
+}
+
+// The condition on a receipt that ends a watch.
+enum WatchUntil {
+  // The same as `WATCH_UNTIL_TERMINAL`.
+  WATCH_UNTIL_UNSPECIFIED = 0;
+  // The state is no longer `ACTION_STATE_DECISION_PENDING`. An allowed request that has not run yet qualifies.
+  WATCH_UNTIL_DECISION = 1;
+  // The state is `ACTION_STATE_SUCCEEDED`, `ACTION_STATE_FAILED`, `ACTION_STATE_DENIED`, `ACTION_STATE_CANCELLED` or
+  // `ACTION_STATE_EXECUTION_UNKNOWN`. The last is an outcome that cannot be observed, not proof of success or
+  // permission to replay.
+  WATCH_UNTIL_TERMINAL = 2;
+}
+
+message CancelActionRequestRequest {
+  // UUID.
+  string request_id = 1;
+}
+
+message CancelActionRequestResponse {
+  CancellationOutcome outcome = 1;
+  ActionRequest action_request = 2;
+}
+
+enum CancellationOutcome {
+  CANCELLATION_OUTCOME_UNSPECIFIED = 0;
+  // The request is cancelled now and cannot execute, including after a restart or a late approval.
+  CANCELLATION_OUTCOME_CANCELLED = 1;
+  // It was cancelled before; cancelling again is a success.
+  CANCELLATION_OUTCOME_ALREADY_CANCELLED = 2;
+  // It was `ACTION_STATE_DENIED`, `ACTION_STATE_SUCCEEDED` or `ACTION_STATE_FAILED`.
+  CANCELLATION_OUTCOME_ALREADY_FINISHED = 3;
+  // It is `ACTION_STATE_DISPATCHING`, `ACTION_STATE_RUNNING` or `ACTION_STATE_EXECUTION_UNKNOWN`, past the cutoff.
+  CANCELLATION_OUTCOME_TOO_LATE = 4;
+}
+
+message ListActionRequestEventsRequest {
+  // UUID.
+  string request_id = 1;
+  // Only events with a larger sequence, 0 to 2147483647; 0 reads from the first.
+  int32 after_sequence = 2;
+  // At most this many events, 1 to 128. Without it, every remaining event is returned.
+  optional int32 limit = 3;
+}
+
+message ListActionRequestEventsResponse {
+  repeated ActionEvent events = 1;
+}
+
+message ListActionGroupsRequest {}
+
+message ListActionGroupsResponse {
+  repeated ActionGroup action_groups = 1;
+}
+
+message GetActionRequest {
+  // The ActionGroup's key.
+  string group_key = 1;
+  // The Action's name within the group.
+  string action_key = 2;
+}
+
+message GetActionResponse {
+  Action action = 1;
+}
+
+message GetActionPolicyRequest {}
+
+message GetActionPolicyResponse {
+  CallerActionPolicy action_policy = 1;
+}
+
+// A request for an Action, with where it stands: the receipt.
+message ActionRequest {
+  // UUID.
+  string id = 1;
+  string idempotency_key = 2;
+  ActionIdentity action = 3;
+  // As submitted, except that for any reader but an operator the value under a key that names a secret (`token`,
+  // `password`, `apiKey` and the like), at any depth, reads `[redacted]`.
+  google.protobuf.Struct arguments = 4;
+  // The caller-authored one-line summary, unchanged.
+  string title = 5;
+  // The caller-authored detail, unchanged; absent when the caller supplied none.
+  optional string description = 6;
+  // Who submitted it. Present for operators and service readers, absent when the submitting account reads its own.
+  agentplane.proto.ServiceAccount caller = 7;
+  // The external Connection grant that submitted it; absent for a request from a Pod.
+  ExternalGrantProvenance external_grant = 8;
+  ActionState state = 9;
+  // Starts at 1 and increases with every change of state: the `sequence` of the latest event.
+  int64 version = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  // Absent while the state is `ACTION_STATE_DECISION_PENDING`, and for a request cancelled before any Decision.
+  Decision decision = 13;
+  // Absent until the request is allowed.
+  Execution execution = 14;
+}
+
+// The Action a request names.
+message ActionIdentity {
+  // The ActionGroup's key: lowercase letters, digits, `_` and `-`, starting with a letter, 1 to 200 characters.
+  string group = 1;
+  // The Action's name, in the same form.
+  string name = 2;
+}
+
+enum ActionState {
+  ACTION_STATE_UNSPECIFIED = 0;
+  // Waiting for an operator.
+  ACTION_STATE_DECISION_PENDING = 1;
+  // Allowed and queued for dispatch; no executor has claimed it.
+  ACTION_STATE_ALLOWED = 2;
+  // Refused by an operator or a policy; nothing ran.
+  ACTION_STATE_DENIED = 3;
+  // Claimed by an executor, which has not started it.
+  ACTION_STATE_DISPATCHING = 4;
+  ACTION_STATE_RUNNING = 5;
+  // The Action ran and returned. A tool's own error output is a success of the Execution; read `result`.
+  ACTION_STATE_SUCCEEDED = 6;
+  // The Action could not be run or ended with a platform error; `execution.error` says why.
+  ACTION_STATE_FAILED = 7;
+  // Withdrawn by its caller before dispatch.
+  ACTION_STATE_CANCELLED = 8;
+  // The executor may have started the Action and its outcome could not be observed. The request is never replayed.
+  ACTION_STATE_EXECUTION_UNKNOWN = 9;
+}
+
+// The submission evidence of an external Connection: the grant that submitted the request, as it stood then. It
+// never changes afterwards, whatever happens to the Connection.
+message ExternalGrantProvenance {
+  // The ServiceAccount the grant acted as.
+  agentplane.proto.ServiceAccount caller = 1;
+  string issuer = 2;
+  string client_id = 3;
+  // UUID.
+  string connection_id = 4;
+  // UUID.
+  string grant_id = 5;
+  int32 revision = 6;
+  int32 binding_version = 7;
+}
+
+// How a request was decided, by an operator or by a policy.
+message Decision {
+  // UUID.
+  string id = 1;
+  Verdict verdict = 2;
+  // Who decided: `human_operator` for an operator, `action_policy_set` for the policy objects.
+  string provider = 3;
+  // The operator who decided; absent when a provider did.
+  Operator operator = 4;
+  // The operator's note, shared unchanged with the caller and not secret; absent for a provider's Decision.
+  optional string decision_note = 5;
+  // A bounded code for a provider's reason; absent for an operator's Decision.
+  optional string reason_code = 6;
+  // A bounded explanation for a provider's reason, safe for the caller to read; absent for an operator's Decision.
+  optional string reason_description = 7;
+  // The policy objects a policy Decision evaluated; absent for any other.
+  PolicyEvidence policy_evidence = 8;
+  string idempotency_key = 9;
+  google.protobuf.Timestamp decided_at = 10;
+}
+
+enum Verdict {
+  VERDICT_UNSPECIFIED = 0;
+  VERDICT_ALLOW = 1;
+  VERDICT_DENY = 2;
+}
+
+// The human or application behind an operator call, as the operator's token proved them.
+message Operator {
+  string issuer = 1;
+  string subject = 2;
+}
+
+// What a policy Decision evaluated, as the objects stood at admission, so the Decision still explains itself after
+// they change.
+message PolicyEvidence {
+  // Every binding the caller had.
+  repeated BindingEvidence bindings = 1;
+  // Every set those bindings resolved.
+  repeated PolicySetEvidence policy_sets = 2;
+  // The policy that matched.
+  MatchedPolicy matched = 3;
+}
+
+message BindingEvidence {
+  string namespace = 1;
+  string name = 2;
+  string resource_version = 3;
+}
+
+message PolicySetEvidence {
+  string namespace = 1;
+  string name = 2;
+  int64 generation = 3;
+}
+
+// The policy that produced the Decision: which set, which list, which entry and which kind.
+message MatchedPolicy {
+  string namespace = 1;
+  string policy_set = 2;
+  PolicySource source = 3;
+  // The entry's position in that list, from 0.
+  int32 index = 4;
+  PolicyKind type = 5;
+  // Set by the GitHub repository kinds; the other kinds resolve no repository.
+  MatchedRepository repository = 6;
+}
+
+// The one GitHub repository a GitHub policy resolved the request to target, as the request spelled it.
+message MatchedRepository {
+  string owner = 1;
+  string repository = 2;
+  // Whether an unauthenticated GitHub lookup confirmed the repository public at admission
+  // (`POLICY_KIND_GITHUB_PUBLIC_REPOSITORY`); a `POLICY_KIND_GITHUB_REPOSITORY` policy names its repository and never
+  // looks.
+  bool confirmed_public = 3;
+}
+
+// Which list of a PolicySet a policy sits in. Stored in Decisions, so it only grows.
+enum PolicySource {
+  POLICY_SOURCE_UNSPECIFIED = 0;
+  // The set's `rules`.
+  POLICY_SOURCE_RULES = 1;
+}
+
+// The kinds of Action policy; each has one evaluator.
+enum PolicyKind {
+  POLICY_KIND_UNSPECIFIED = 0;
+  POLICY_KIND_EXACT_ACTIONS = 1;
+  POLICY_KIND_ARGUMENT_SCHEMA = 2;
+  POLICY_KIND_GITHUB_REPOSITORY = 3;
+  POLICY_KIND_GITHUB_PUBLIC_REPOSITORY = 4;
+  POLICY_KIND_HOME_ASSISTANT_ENTITY_CONTROL = 5;
+}
+
+// One attempt to run an allowed request. There is at most one: it is never replayed.
+message Execution {
+  // UUID.
+  string id = 1;
+  ExecutionState state = 2;
+  // What the Action returned, whatever JSON that is; absent until it finishes. A value under a key that names a
+  // secret reads `[redacted]`.
+  google.protobuf.Value result = 3;
+  // Why it failed, or why its outcome is unknown, as a `kind` and a `message`; absent otherwise.
+  google.protobuf.Struct error = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp completed_at = 7;
+  // When a late authenticated completion settled an execution first reported unknown.
+  google.protobuf.Timestamp reconciled_at = 8;
+}
+
+enum ExecutionState {
+  EXECUTION_STATE_UNSPECIFIED = 0;
+  EXECUTION_STATE_PENDING_DISPATCH = 1;
+  EXECUTION_STATE_DISPATCHING = 2;
+  EXECUTION_STATE_RUNNING = 3;
+  EXECUTION_STATE_SUCCEEDED = 4;
+  EXECUTION_STATE_FAILED = 5;
+  EXECUTION_STATE_CANCELLED = 6;
+  EXECUTION_STATE_EXECUTION_UNKNOWN = 7;
+}
+
+// One retained change of a request's state.
+message ActionEvent {
+  // The request's `version` after the change, from 1.
+  int32 sequence = 1;
+  ActionState state = 2;
+  google.protobuf.Timestamp at = 3;
+  // Who caused the change, where an authenticated actor did (a cancellation); absent otherwise.
+  Principal actor = 4;
+}
+
+// An authenticated identity that can author an Action's events. Exactly one field is set.
+message Principal {
+  oneof principal {
+    // A workload, or an external Connection acting as the ServiceAccount.
+    agentplane.proto.ServiceAccount caller = 1;
+    Operator operator = 2;
+  }
+}
+
+// The discovery and ownership unit: one executor and its Actions.
+message ActionGroup {
+  // The key a request names; lowercase letters, digits, `_` and `-`.
+  string key = 1;
+  string title = 2;
+  string description = 3;
+  ExecutorKind executor_kind = 4;
+  // What the executor is and whose account or credential it uses.
+  string executor_description = 5;
+  // Whether the group is offered to agents now. An unavailable group lists no Actions.
+  bool available = 6;
+  // The answering replica's view of an MCP group's connection; absent for a group without one.
+  McpHealth health = 7;
+  repeated Action actions = 8;
+}
+
+// Where an ActionGroup's Actions run.
+enum ExecutorKind {
+  EXECUTOR_KIND_UNSPECIFIED = 0;
+  // A reviewed upstream MCP server.
+  EXECUTOR_KIND_MCP = 1;
+  // This service, acting as the caller itself.
+  EXECUTOR_KIND_POD = 2;
+}
+
+// Replica-local diagnostics of an MCP group's connection.
+message McpHealth {
+  McpLifecycle state = 1;
+  // Why the group is unavailable, while it is; absent otherwise.
+  optional McpUnavailableReason reason = 2;
+  // What `reason` came from: the backend's error, or the OAuth linkage's state. It can name backend addresses, so it
+  // is present for operators only and absent in a workload's view.
+  optional string detail = 3;
+  google.protobuf.Timestamp last_discovery_at = 4;
+  google.protobuf.Timestamp retry_at = 5;
+  // Consecutive failures since the last success.
+  int32 failures = 6;
+}
+
+enum McpLifecycle {
+  MCP_LIFECYCLE_UNSPECIFIED = 0;
+  MCP_LIFECYCLE_DISCONNECTED = 1;
+  MCP_LIFECYCLE_CONNECTING = 2;
+  MCP_LIFECYCLE_DISCOVERING = 3;
+  MCP_LIFECYCLE_AVAILABLE = 4;
+  MCP_LIFECYCLE_DRAINING = 5;
+  MCP_LIFECYCLE_STOPPED = 6;
+}
+
+enum McpUnavailableReason {
+  MCP_UNAVAILABLE_REASON_UNSPECIFIED = 0;
+  MCP_UNAVAILABLE_REASON_CONNECT_FAILED = 1;
+  MCP_UNAVAILABLE_REASON_DISCOVERY_FAILED = 2;
+  MCP_UNAVAILABLE_REASON_INVALID_CATALOG = 3;
+  MCP_UNAVAILABLE_REASON_LINKAGE_UNAVAILABLE = 4;
+  MCP_UNAVAILABLE_REASON_SESSION_FAILED = 5;
+  MCP_UNAVAILABLE_REASON_SUPERVISOR_STOPPED = 6;
+}
+
+// One Action: its description and the argument schema a submission is validated against.
+message Action {
+  // The ActionGroup's key.
+  string group = 1;
+  // The Action's name within the group.
+  string name = 2;
+  string description = 3;
+  // A JSON Schema of `arguments`. Execution checks the backend's schema again, so a schema that changed after
+  // discovery can still fail the request.
+  google.protobuf.Struct input_schema = 4;
+}
+
+// An account's effective Action policy, in the form the account may see: what its bindings auto-decide, as admission
+// would resolve them now.
+message CallerActionPolicy {
+  // The ServiceAccount whose bindings these are.
+  agentplane.proto.ServiceAccount subject = 1;
+  // The subject's unexpired, valid bindings in name order. Empty means every request waits for an operator.
+  repeated CallerBinding bindings = 2;
+  // Whether the service's copy of the policy objects is complete and still refreshed. While it is not, including
+  // when a watch has wedged, nothing auto-decides and `auto_approve_if` is empty.
+  bool synced = 3;
+  // In evaluation order; the first match approves.
+  repeated EffectivePolicy auto_approve_if = 4;
+}
+
+message CallerBinding {
+  string name = 1;
+  // After this instant the binding contributes nothing; absent when it never expires.
+  google.protobuf.Timestamp expires_at = 2;
+  // The named sets that resolved, present and valid, in the binding's order. A set that is missing or refused is
+  // not listed.
+  repeated string policy_sets = 3;
+}
+
+// One policy as admission walks it: the binding and set it came through and its position there, which is what a
+// Decision's `MatchedPolicy` names.
+message EffectivePolicy {
+  string binding = 1;
+  string policy_set = 2;
+  PolicySource source = 3;
+  int32 index = 4;
+  Policy policy = 5;
+}
+
+// An auto-approve policy: a request that matches it is allowed. Exactly one field is set: the policy's kind.
+message Policy {
+  oneof kind {
+    ExactActionsPolicy exact_actions = 1;
+    ArgumentSchemaPolicy argument_schema = 2;
+    GitHubRepositoryPolicy github_repository = 3;
+    GitHubPublicRepositoryPolicy github_public_repository = 4;
+    HomeAssistantEntityControlPolicy home_assistant_entity_control = 5;
+  }
+}
+
+message StringList {
+  repeated string values = 1;
+}
+
+// Matches a listed Action by name alone.
+message ExactActionsPolicy {
+  // Action names by ActionGroup key, sorted.
+  map<string, StringList> actions = 1;
+}
+
+// Matches a listed Action whose arguments satisfy a JSON Schema. Plain JSON Schema semantics: `properties` alone never
+// implies presence.
+message ArgumentSchemaPolicy {
+  map<string, StringList> actions = 1;
+  google.protobuf.Struct argument_schema = 2;
+}
+
+// Matches a listed GitHub MCP call that targets one repository: `owner` and `repo` arguments compared
+// case-insensitively, a pull-request search with no query-level `repo:` qualifier, a code search with exactly one
+// unquoted `repo:owner/repo` qualifier.
+message GitHubRepositoryPolicy {
+  map<string, StringList> actions = 1;
+  // The GitHub repository owner the call must target.
+  string owner = 2;
+  // The GitHub repository name the call must target.
+  string repository = 3;
+}
+
+// Matches a listed GitHub MCP call whose target repository an unauthenticated GitHub lookup confirms public. A lookup
+// that fails or is unavailable matches nothing, so the request waits for an operator and is never denied for it.
+message GitHubPublicRepositoryPolicy {
+  map<string, StringList> actions = 1;
+}
+
+// Confines Home Assistant's generic service-call tool to configured entities and the services configured for each:
+// the call must name exactly one configured entity, that entity's own domain and one of its services, and carry no
+// argument the kind has not reviewed and no `data` that retargets it.
+message HomeAssistantEntityControlPolicy {
+  map<string, StringList> actions = 1;
+  // The Home Assistant entity ids a call may target, each with the services it may use, sorted.
+  map<string, StringList> entities = 2;
+}
