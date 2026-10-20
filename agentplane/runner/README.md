@@ -79,6 +79,9 @@ flow. The VM guest does not embed the runner: `runner-disk.nix` packs it and the
 command into the read-only runner disk that the `runner-vm` template attaches beside the guest; the
 same image also carries them as plain files under `bin/`, which the runner Pod templates mount at
 `/run/agentplane/runner` and start the runner from, so the Pod's tools image (`image.nix`) holds neither.
+A bump of the `agentplane-runner` or `agentplane-cli` pin therefore republishes the runner disk image
+but not the `runner` tools image; `runner-ducktape` and the Action sandbox images also rebuild on any
+pin bump.
 The first Go binary release must be published and synced before the images can build;
 a previous wheel pin fails the package's ELF check instead of being installed as an
 executable. No existing Session files are deleted during this transition.

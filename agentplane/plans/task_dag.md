@@ -1325,7 +1325,6 @@ flowchart TD
     RUNNER_LAYERING_SPIKE --> RUNNER_LAYERING_SPIKE_EXIT
     RUNNER_LAYERING_SPIKE_EXIT --> RUNNER_IMAGE_LAYERING_DESIGN
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_SPIKE_RETIRE
-    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_POD[In flight: a Pod takes the runner and CLI from a separate image]
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[In flight: a guest takes runner and tools from separate images]
     RUNNER_LAYERING_VM --> K3S_VM_IMAGE[Blocked: build a lightweight guest disk in Bazel]
     RUNNER_HARNESS_DELIVERY_DESIGN[harness delivery, section 5] -. related .-> K3S_VM_IMAGE
@@ -1433,23 +1432,6 @@ The spike exits when those update boundaries and startup measurements are docume
 bounded compatibility contract and a production DAG proposal. After the design decision, either
 port only the accepted artifacts and tests to their production owners or remove the spike-only
 package, kernel pin, and child fence; do not leave the experiment as an implicit supported runtime.
-
-### `RUNNER_LAYERING_POD` — a Pod takes the runner and CLI from a separate image
-
-**In flight; operator, 2026-10-20 PDT: the tools image should not change just for a runner bump. Pursuable independently of the VM half.**
-The runner and the `agentplane` command are published as plain files under `bin/` in the runner-disk
-image (`runner/runner-disk.nix`), beside the erofs the VM attaches. The runner Pod mounts that image
-as a read-only `image` volume at `/run/agentplane/runner` and starts the runner from it; the tools image
-carries neither and ends `PATH` with the mount's `bin/`. Landed: the image, the mount, the start
-command and the slimmer tools image; a Sandbox on `agentplane-testing` starts on the slimmer image and
-connects its runner from the mount. The `runner` image workflow no longer triggers on
-`nix/artifact-pins.json`. Remaining: the next runner pin bump publishes only the runner-disk image
-(`runner-ducktape` still rebuilds on any pin bump, since it carries released tools).
-Harnesses stay in the tools image; moving them is the open question in `RUNNER_IMAGE_LAYERING_DESIGN`.
-
-This does **not** deliver the RAM-headroom property by itself — a Pod still lives inside the node's
-allocatable. If the decision makes that property the priority, this node is convenience only and the VM
-half carries the requirement.
 
 ### `RUNNER_LAYERING_VM` — a guest takes the runner, harnesses and tools from separate images
 
