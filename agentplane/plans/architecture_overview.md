@@ -275,15 +275,15 @@ tags, and a purge can be a History call the app makes after removing the CR; the
 purging (23:33). The operator keeps two kinds of tag apart (2026-10-20 00:21): "recipient tags" and
 "history reader tags" are "permission gates for different services". Recipient tags stay on the CR,
 since "history should not be required for the tags feature": sending is checked against them with no
-History involved (23:27), and History never looks at them. Reader tags are History's own gate. Where
-they are set while the Sandbox is live is open. A second, separately named set on the CR lets git
-and the app set both when they create a Sandbox; History watches that set and keeps the last values
-it saw once the CR goes, with no finalizer. The only gap is a reader-tag edit made while History is
-down just before a delete, which an app retag fixes. The operator agreed History may read Sandbox
-tags (23:29), which relaxes "never routes to, reads or manages Sandboxes" ([service
+History involved (23:27), and History never looks at them. Reader tags are History's own gate. They
+are a second, separately named set on the CR, the operator's pick (2026-10-20 00:32), so git and the
+app set both when they create a Sandbox. History watches that set and keeps the last values it saw
+once the CR goes, with no finalizer. The only gap is a reader-tag edit made while History is down
+just before a delete, which an app retag fixes. The operator agreed History may read Sandbox tags
+(23:29), which relaxes "never routes to, reads or manages Sandboxes" ([service
 boundaries](../docs/service_boundaries.md)) to reading them; the rule changes with the change that
-adds the watch. Setting reader tags only through History keeps the rule as it is, but git then has
-no way to set them.
+adds the watch. Setting reader tags only through History would have kept the rule and given live and
+archived Sandboxes one write path, but git would have no way to set them.
 
 The operator also raised (23:48) making "a sandbox's historical record" "a separate k8s object with
 its own finalizer that might do purging". It costs far less than keeping Sandboxes: no PVCs, about
@@ -309,8 +309,8 @@ Candidates; each still needs the operator's go.
   no Membership objects"; recipient tags and history reader tags are separate (2026-10-20 00:21). A
   recipient tag lives and dies with its Sandbox, and a rule matches it the same way in every
   direction, as it does direct and `allSandboxes` targets; membership then picks no direction, and a
-  recreated Sandbox has only the tags its manifest or preset gives it. Reader tags set on the CR
-  follow the same rules below. Against the membership CRs, git cannot cleanly tag a Sandbox the app
+  recreated Sandbox has only the tags its manifest or preset gives it. Reader tags, also on the CR
+  (2026-10-20 00:32), follow the same rules below. Against the membership CRs, git cannot cleanly tag a Sandbox the app
   created: Flux would own the whole object, delete it when the entry leaves git, and try to recreate
   it from a partial manifest after an archive (not tried). On a Sandbox git creates, git and the app
   can each own different tags, since server-side apply tracks each label key separately and Flux
@@ -473,6 +473,7 @@ Held until one is chosen:
 | 2026-10-19 23:48 | Tags could split into sendability and readability tags; a Sandbox's record could be its own k8s object whose finalizer purges | Split adopted at 00:21; record object declined at 00:12       |
 | 2026-10-20 00:12 | History keeps its own records in its database, with a reconciler against live Sandboxes if needed                             | No Kubernetes record object; the tag watch is that reconciler |
 | 2026-10-20 00:21 | Recipient tags and history reader tags are separate gates for different services; recipient tags are not archived             | Two tag sets; only reader tags outlive the CR                 |
+| 2026-10-20 00:32 | Reader tags as a second set on the Sandbox CR that History watches                                                            | History's watch reads only reader tags; git can declare them  |
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control
