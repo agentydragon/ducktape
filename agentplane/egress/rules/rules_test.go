@@ -8,8 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -22,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/testing/agentdocs"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -323,64 +322,10 @@ func at(t *testing.T, document any, path string) any {
 	return document
 }
 
-// links finds the Markdown links of a document that point at a path of this API.
-var links = regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
-
 func TestAgentDocumentationGraphIsServed(t *testing.T) {
 	agentDocs, err := fs.Sub(docs.Agents, "agents")
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := documentation(agentDocs)
-
-	pending, visited := []string{"/llms.txt"}, map[string]bool{}
-	for len(pending) > 0 {
-		path := pending[0]
-		pending = pending[1:]
-		if visited[path] {
-			continue
-		}
-		visited[path] = true
-		response := get(handler, path)
-		if strings.HasSuffix(path, ".json") {
-			// The generated OpenAPI document of the rules route.
-			if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "application/json" || !json.Valid(response.Body.Bytes()) {
-				t.Errorf("GET %s = %d %q %.20q, want a served JSON document", path, response.Code, response.Header().Get("Content-Type"), response.Body)
-			}
-		} else if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/") ||
-			!strings.HasPrefix(response.Body.String(), "# ") {
-			t.Errorf("GET %s = %d %q %.20q, want a served text document that opens with a heading", path, response.Code, response.Header().Get("Content-Type"), response.Body)
-		}
-		for _, match := range links.FindAllStringSubmatch(response.Body.String(), -1) {
-			target, err := url.Parse(match[1])
-			if err == nil && target.Host == "" && (strings.HasPrefix(target.Path, "/docs/agents/") || target.Path == "/openapi.json") {
-				pending = append(pending, target.Path)
-			}
-		}
-	}
-	if len(visited) < 2 {
-		t.Errorf("visited %v, want llms.txt and the guides it links", visited)
-	}
-}
-
-func TestAgentDocumentationServesOnlyFiles(t *testing.T) {
-	handler := documentation(fstest.MapFS{
-		"llms.txt":         {Data: []byte("# index")},
-		"guides/start.md":  {Data: []byte("# start")},
-		"credentials.md":   {Data: []byte("# credentials")},
-		"credentials.json": {Data: []byte("{}")},
-	})
-
-	for path, want := range map[string]int{
-		"/llms.txt":                     http.StatusOK,
-		"/docs/agents/credentials.md":   http.StatusOK,
-		"/docs/agents/credentials.json": http.StatusOK,
-		"/docs/agents/guides/start.md":  http.StatusOK,
-		"/docs/agents/guides":           http.StatusNotFound,
-		"/docs/agents/missing.md":       http.StatusNotFound,
-	} {
-		if response := get(handler, path); response.Code != want {
-			t.Errorf("GET %s = %d, want %d", path, response.Code, want)
-		}
-	}
+	agentdocs.AssertServed(t, documentation(agentDocs))
 }

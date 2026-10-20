@@ -1,0 +1,9 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "agentdocs",
+    testonly = True,
+    srcs = ["agentdocs.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/testing/agentdocs",
+    visibility = ["//agentplane:__subpackages__"],
+)

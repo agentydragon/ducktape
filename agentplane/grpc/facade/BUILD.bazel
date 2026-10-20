@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "facade",
     srcs = [
+        "docs.go",
         "facade.go",
         "mount.go",
     ],
@@ -17,7 +18,10 @@ go_library(
 
 go_test(
     name = "facade_test",
-    srcs = ["facade_test.go"],
+    srcs = [
+        "docs_test.go",
+        "facade_test.go",
+    ],
     embed = [":facade"],
     deps = [
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
