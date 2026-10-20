@@ -56,13 +56,7 @@ jobs:
         if: inputs.smoke != ''
         run: ${{ inputs.smoke }}
 
-      - name: Push to Attic
-        if: inputs.attic && github.ref_name == 'devel'
-        run: |
-          nix profile install nixpkgs#attic-client
-          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
-          attic push ducktape:main result
-
+      # Before the cache upload: a cache failure must not withhold the image.
       - name: Push image
         if: github.ref_name == 'devel'
         env:
@@ -81,3 +75,10 @@ jobs:
           skopeo copy --insecure-policy --dest-creds "$creds" --digestfile "$RUNNER_TEMP/digest" \
             "docker-archive:$(readlink -f result)" "docker://$ref"
           echo "pushed \`$ref\` as \`$IMAGE@$(cat "$RUNNER_TEMP/digest")\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Push to Attic
+        if: inputs.attic && github.ref_name == 'devel'
+        run: |
+          nix profile install nixpkgs#attic-client
+          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
+          attic push ducktape:main result
