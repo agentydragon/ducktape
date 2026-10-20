@@ -1215,7 +1215,6 @@ py_test(
         "//:conftest",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:replication_source",
-        "//agentplane/history_service:fold_runner",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/testing:electric_service",
         "//agentplane/history_service/testing:history",

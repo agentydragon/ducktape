@@ -157,7 +157,7 @@ cluster/docs/inference/model_comparison/** rules-lint-ignored=true
 
 cluster/k8s/activitywatch/kustomization.yaml linguist-generated=true
 
-# Golden vectors the Python thread fold generates; test_golden checks the exact output.
+# Golden vectors the retired Python thread fold generated; threadfold/golden_test.go holds the Go fold to them.
 agentplane/history_service/threadfold/golden.json linguist-generated=true
 
 # Golden vectors the Python Notification Service generates; test_golden checks the exact output.

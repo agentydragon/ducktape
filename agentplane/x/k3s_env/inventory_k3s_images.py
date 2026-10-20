@@ -35,11 +35,8 @@ IMAGES = {
         "agentplane/egress/history_migrations/image",
     ),
     "egress_sidecar": ("//agentplane/egress:sidecar_image", "agentplane/egress/sidecar_image"),
-    "history_migrate": (
-        "//agentplane/history_service/storage:migration_image",
-        "agentplane/history_service/storage/migration_image",
-    ),
-    "history_service": ("//agentplane/history_service:image", "agentplane/history_service/image"),
+    "history_migrate": ("//agentplane/history_service/migrations:image", "agentplane/history_service/migrations/image"),
+    "history_service": ("//agentplane/history_service:service_image", "agentplane/history_service/service_image"),
     "llm_ingress": ("//agentplane/llm_ingress:image", "agentplane/llm_ingress/image"),
     "notification_service": ("//agentplane/notification_service:image", "agentplane/notification_service/image"),
     "notification_service_migrate": (

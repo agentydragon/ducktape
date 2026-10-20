@@ -1,7 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/python:defs.bzl", "py_test")
 
 pkg_tar(
     name = "binary_layer",
@@ -29,26 +28,5 @@ go_library(
     deps = [
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
-    ],
-)
-
-py_test(
-    name = "test_migrations",
-    size = "medium",
-    srcs = ["test_migrations.py"],
-    data = ["//agentplane/history_service/migrations/cmd:history-migrate"],
-    requires_docker = True,
-    deps = [
-        "//:conftest",
-        "//agentplane/history_service:conftest",
-        "//agentplane/history_service/storage:database_migrate",
-        "//agentplane/testing:electric_role",
-        "//util/bazel:runfiles",
-        "//util/testing:postgres",
-        "//util/testing:postgres_schema",
-        "@pypi//psycopg",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )

@@ -9,8 +9,6 @@ package(
         "//agentplane/crds:__pkg__",
         "//agentplane/egress:__pkg__",
         "//agentplane/egress/testing:__pkg__",
-        "//agentplane/history_service:__pkg__",
-        "//agentplane/history_service/migrations:__pkg__",
         "//agentplane/history_service/testing:__pkg__",
         "//agentplane/llm_ingress:__pkg__",
         "//agentplane/notification_service:__pkg__",

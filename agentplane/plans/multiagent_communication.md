@@ -135,7 +135,7 @@ Source inventory checked on 2026-10-16 against `f11947bf7a`; this is not a live 
 | Command delivery  | [Dispatcher](../runner_gateway/dispatcher/README.md) supports input, model/effort changes, interrupts, stop and Open, with durable queues for the queued operations.                 | Its service caller allowlist is not destination- and operation-scoped agent authorization.                                                   |
 | Runner access     | [Proxy](../runner_gateway/gateway/proxy.go) checks callers and Sandbox UID/owner identity; Quiesce is controller-only.                                                               | Identity fencing does not grant permission, and general authorization must cover direct paths around command admission.                      |
 | Receiving         | [Notifications](../notification_service/docs/api.md) stores Actions/GitHub events in session inboxes, sends notices through Dispatcher, and exposes read/ack operations.             | Agent correspondence is not a source. Inboxes are SA/Sandbox/Session-scoped; optional standing addresses or other lifetimes need a contract. |
-| History           | [History reads](../history_service/grpc_api.py) serve retained conversations and evidence to configured service readers.                                                             | Scoped agent discovery/read/follow permissions are not implemented.                                                                          |
+| History           | [History reads](../history_service/api/service.go) serve retained conversations and evidence to configured service readers.                                                             | Scoped agent discovery/read/follow permissions are not implemented.                                                                          |
 | Provisioning      | [Sandbox inventory](../sandboxes/inventory.py) submits CRs; the [controller](../sandbox_controller/identity.go) creates a dedicated SA and binds the Sandbox's selected policy sets. | Constrained agent launch, delegation and session-create authority remain design work.                                                        |
 
 The [scoped-read plan](scoped_session_reads.md) applies the agreed Sandbox minimum and tags to
@@ -380,9 +380,9 @@ operations already divide by the service that enforces them:
 
 Today History checks only that the caller is one of its configured `reader_accounts` (staging: the
 app and Notifications), then serves any Session by ID; there is no per-Session or per-Sandbox check,
-and a workload ServiceAccount is refused (`grpc_api.py`, `workload_auth/grpc_caller.py`). Writes are
+and a workload ServiceAccount is refused (`api/service.go`, `workload_auth/go/auth`). Writes are
 fenced separately: the ingress binds a Session to its first pushing ServiceAccount (namespace, name,
-UID) and refuses any other (`ingress.py`). The archive therefore already holds an identity of its
+UID) and refuses any other (`ingress/ingress.go`). The archive therefore already holds an identity of its
 own for every history bound to a writer, which is what the split would build on.
 
 **What it would mean.**

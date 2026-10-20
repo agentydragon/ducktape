@@ -109,7 +109,7 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `threads/view/content.py`: `ContentStore`, reads of what the History Service's fold assembled
-  (`../history_service/fold/`).
+  (`ThreadEntityView`, `../history_service/fold/views.py`).
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
   per-listener thread copies. The scope read is a long poll held until the thread's first fold.

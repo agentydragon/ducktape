@@ -287,9 +287,9 @@ followed by a delete, waits on this.
   writes after sealing, and Session sealing prevents further work (`runner/go/session.go`).
 - The runner's per-Session acknowledgement file records `sealed`; `IngressPusher.track` skips a Session whose
   acknowledgement is sealed, and a push ends on a sealed first acknowledgement (`runner/go/transport.go`).
-- The History Service stores the seal in the Session's feed state. `record_feed_state` keeps it sticky ("conflicting
+- The History Service stores the seal in the Session's feed state. `RecordFeedState` keeps it sticky ("conflicting
   seals"), and `Push` returns right after a sealed first acknowledgement, so it takes no entry from a sealed Session
-  (`history_service/ingress.py`, `storage/store.py`). `append` itself does not check it.
+  (`history_service/ingress/ingress.go`, `storage/store.go`). `Append` itself does not check it.
 - The lameduck marker is the exception: it carries the incarnation UID and is dropped on a different one.
 
 **What a resume needs.** The new incarnation mounts the same state volume, so the journal, its `Seal` row at cursor

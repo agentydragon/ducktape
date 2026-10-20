@@ -1,7 +1,7 @@
-"""The thread fold's projection tables, keyed by public Session ID.
+"""Readers' mirror of the thread fold's projection tables, keyed by public Session ID.
 
-Each database holding a fold registers `Base.metadata` with its own migrations. The tables carry no
-foreign key: what names a Session differs between the databases that hold a fold.
+The History Service's Go fold writes the tables and `migrations/history` (Goose) owns their schema;
+app tests read and seed rows through these classes. The tables carry no foreign key.
 """
 
 from __future__ import annotations
@@ -13,19 +13,12 @@ from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, Te
 from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+# The projection epoch the Go fold stamps its rows with (`FoldEpoch` in `projection/runner.go`).
+FOLD_EPOCH = "history-v1"
+
 
 class Base(DeclarativeBase):
     pass
-
-
-class SessionProjectionLease(Base):
-    """Replica ownership of projection work for one Session."""
-
-    __tablename__ = "session_projection_lease"
-
-    session_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
-    token: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True))
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class ThreadCheckpoint(Base):

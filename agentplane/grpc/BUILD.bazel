@@ -43,15 +43,3 @@ py_library(
         "@pypi//protobuf",
     ],
 )
-
-py_library(
-    name = "servicer",
-    srcs = ["servicer.py"],
-    deps = [
-        "//agentplane:subjects",
-        "//agentplane/workload_auth:grpc_caller",
-        "//agentplane/workload_auth:principal",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-    ],
-)

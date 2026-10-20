@@ -13,10 +13,14 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// golden.json holds scenarios folded by the Python thread fold this one replaces: the entries of each
+// golden.json holds scenarios folded by the Python thread fold this one replaced: the entries of each
 // batch, and the rows, payload writes and evidence the Python fold produced for them, or the error it
 // raised. Each batch's prior state is read back from the rows the golden earlier batches stored, so the
 // row readers are held to what Python wrote as well as the builders to what it would write.
+//
+// The Python fold and the generator that wrote this file (`fold/generate_golden.py`) are in git history
+// at commit a80ac930e0. The file is now a fixture: a deliberate change to this fold's output changes
+// the expectations it makes.
 //
 //go:embed golden.json
 var goldenJSON []byte

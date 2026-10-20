@@ -24,7 +24,7 @@ follows it; code that differs converges on it.
   from the generated messages:
 
   ```python
-  class HistoryService(history_service_pb2_grpc.HistoryServiceServicer):
+  class FakeHistoryService(history_service_pb2_grpc.HistoryServiceServicer):
       @override
       async def ReadSessionEvents(
           self, request: history_service_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
@@ -55,22 +55,18 @@ follows it; code that differs converges on it.
 
 - Callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
   call: projected tokens rotate.
-- A servicer admits its caller first thing in each RPC through `agentplane/workload_auth/grpc_caller`:
-  `authenticate` checks the caller's account against an allowlist, and `resolve_caller` returns the
-  whole principal for a door that authorizes on more than the account (the runner ingress binds a
-  Session to its writer; runner control resolves the Sandbox Pod). Services never carry their own
-  copy of the bearer parsing.
+- A servicer admits its caller first thing in each RPC through `agentplane/workload_auth/go/auth`:
+  `Resolver.RequireAccount` checks the caller's account against an allowlist, and `Resolver.Resolve`
+  returns the whole principal for a door that authorizes on more than the account (the runner ingress
+  binds a Session to its writer; runner control resolves the Sandbox Pod). Services never carry their
+  own copy of the bearer parsing.
 
 ## Errors
 
-- **Server:** one `errors(context)` async context manager per servicer module wraps each RPC body and
-  maps domain exceptions to status codes. It is built by `agentplane.grpc.servicer.status_mapping`
-  from the service's own rows; the rejected-bearer, deadline and unavailable-backend rows are shared,
-  each service naming only their messages. Messages are fixed strings: no exception text, Kubernetes
-  response, SQL or bearer data reaches a client. Every abort logs the
-  exception behind it, since the fixed message names no cause. A server fault the mapping does not know propagates;
-  gRPC logs it and answers `UNKNOWN`. `context.abort` outside the mapping is for request validation
-  the RPC itself performs.
+- **Server:** a service maps each RPC's error to a status code in one place (`failure` in
+  `history_service/api/service.go`). Messages are fixed strings: no error text, Kubernetes
+  response, SQL or bearer data reaches a client. A failure whose fixed message names no cause logs
+  the error behind it.
 - **Client:** `agentplane.grpc.calls` logs each failed call and translates `grpc.aio.AioRpcError` in one place into a
   `ServiceError` carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`; the Runner
   Gateway client reads `FAILED_PRECONDITION` as `RefusedError`).

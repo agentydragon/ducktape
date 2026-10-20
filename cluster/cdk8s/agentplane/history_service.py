@@ -110,7 +110,7 @@ class HistoryService(Construct):
             supplied=[("database_url",)],
         )
         # The History Service writes the `sandbox_service` database, so it connects as that
-        # database's owner; its read API's sessions are read-only (main.py).
+        # database's owner; its read API's sessions are read-only (main.go).
         workload = add_service_workload(
             self,
             env,

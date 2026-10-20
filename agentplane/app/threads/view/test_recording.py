@@ -11,6 +11,7 @@ from sqlalchemy import select
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.history_service.fold.models import (
+    FOLD_EPOCH,
     ThreadCheckpoint,
     ThreadEntity,
     ThreadEvidence,
@@ -19,7 +20,6 @@ from agentplane.history_service.fold.models import (
     ThreadPayloadManifest,
 )
 from agentplane.history_service.fold.views import EntityKind, ThreadOperationalState
-from agentplane.history_service.fold_runner import FOLD_EPOCH
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_pb2, runner_pb2
 

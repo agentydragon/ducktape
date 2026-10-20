@@ -1,34 +1,13 @@
-load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane/history_service:__subpackages__"])
-
-py_library(
-    name = "grpc_api",
-    srcs = ["grpc_api.py"],
-    deps = [
-        ":evidence",
-        ":summaries",
-        ":thread_reads",
-        "//agentplane:changes",
-        "//agentplane/grpc:servicer",
-        "//agentplane/history_service:history_service_pb2",
-        "//agentplane/history_service:history_service_pb2_grpc",
-        "//agentplane/history_service/storage:store",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
 
 py_library(
     name = "channels",
@@ -63,187 +42,6 @@ py_library(
 )
 
 py_library(
-    name = "evidence",
-    srcs = ["evidence.py"],
-    deps = [
-        ":settled_cursors",
-        ":thread_reads",
-        "//agentplane/history_service:history_service_pb2",
-        "//agentplane/history_service/fold:models",
-        "//agentplane/history_service/storage:store",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_evidence",
-    size = "medium",
-    srcs = ["test_evidence.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":evidence",
-        ":fold_runner",
-        ":thread_reads",
-        "//:conftest",
-        "//agentplane/history_service:history_service_pb2",
-        "//agentplane/history_service/fold:views",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/history_service/testing:delta_spans",
-        "//agentplane/history_service/testing:sessions",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_projection_lease",
-    size = "medium",
-    srcs = ["test_projection_lease.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/history_service/fold:models",
-        "//agentplane/history_service/fold:projection_lease",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "fold_runner",
-    srcs = ["fold_runner.py"],
-    # The app tests fold seeded history into the tables the app reads.
-    visibility = [
-        "//agentplane/app:__subpackages__",
-        "//agentplane/history_service:__subpackages__",
-    ],
-    deps = [
-        "//agentplane:changes",
-        "//agentplane/history_service/fold:models",
-        "//agentplane/history_service/fold:projection_lease",
-        "//agentplane/history_service/fold:projector",
-        "//agentplane/history_service/storage:db",
-        "//agentplane/history_service/storage:store",
-        "@pypi//asyncpg",
-        "@pypi//grpcio_health_checking",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_fold_runner",
-    size = "medium",
-    srcs = ["test_fold_runner.py"],
-    requires_docker = True,
-    deps = [
-        ":channels",
-        ":conftest",
-        ":fold_runner",
-        "//:conftest",
-        "//agentplane:changes",
-        "//agentplane/grpc:serving",
-        "//agentplane/history_service:history_service_pb2",
-        "//agentplane/history_service/fold:models",
-        "//agentplane/history_service/fold:views",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/history_service/testing:delta_spans",
-        "//agentplane/history_service/testing:sessions",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_pb2",
-        "@pypi//grpcio",
-        "@pypi//grpcio_health_checking",
-        "@pypi//protobuf",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "summaries",
-    srcs = ["summaries.py"],
-    deps = [
-        "//agentplane/history_service:history_service_pb2",
-        "//agentplane/history_service/fold:models",
-        "//agentplane/history_service/storage:db",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/proto:event_pb2",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_summaries",
-    size = "medium",
-    srcs = ["test_summaries.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":fold_runner",
-        ":summaries",
-        "//:conftest",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/history_service/testing:sessions",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "thread_reads",
-    srcs = ["thread_reads.py"],
-    deps = [
-        "//agentplane/history_service:history_service_pb2",
-        "//agentplane/history_service/fold:models",
-        "//agentplane/history_service/fold:views",
-        "//agentplane/history_service/storage:db",
-        "//agentplane/history_service/storage:store",
-        "@pypi//protobuf",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_thread_reads",
-    size = "medium",
-    srcs = ["test_thread_reads.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":fold_runner",
-        ":thread_reads",
-        "//:conftest",
-        "//agentplane/history_service:history_service_pb2",
-        "//agentplane/history_service/fold:views",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/history_service/testing:sessions",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "@pypi//protobuf",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = [
@@ -260,137 +58,6 @@ py_library(
 )
 
 py_library(
-    name = "ingress",
-    srcs = ["ingress.py"],
-    deps = [
-        "//agentplane/history_service:history_service_pb2",
-        "//agentplane/history_service:runner_ingress_pb2",
-        "//agentplane/history_service:runner_ingress_pb2_grpc",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/workload_auth:grpc_caller",
-        "//agentplane/workload_auth:principal",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_ingress",
-    size = "medium",
-    srcs = ["test_ingress.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":ingress",
-        "//:conftest",
-        "//agentplane/grpc:serving",
-        "//agentplane/history_service:runner_ingress_pb2",
-        "//agentplane/history_service:runner_ingress_pb2_grpc",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/workload_auth:principal",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "main",
-    srcs = ["main.py"],
-    deps = [
-        ":channels",
-        ":evidence",
-        ":fold_runner",
-        ":grpc_api",
-        ":ingress",
-        ":settings",
-        ":summaries",
-        ":thread_reads",
-        "//agentplane:background_task",
-        "//agentplane:service_process",
-        "//agentplane/grpc:serving",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/workload_auth:principal",
-        "@pypi//asyncpg",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_grpc_api",
-    size = "medium",
-    srcs = ["test_grpc_api.py"],
-    deps = [
-        ":channels",
-        ":conftest",
-        ":evidence",
-        ":grpc_api",
-        ":summaries",
-        ":thread_reads",
-        "//:conftest",
-        "//agentplane:subjects",
-        "//agentplane/grpc:serving",
-        "//agentplane/history_service:history_service_pb2",
-        "//agentplane/history_service:history_service_pb2_grpc",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/history_service/testing:sessions",
-        "//agentplane/postgres:wakeups",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "//agentplane/testing:fake_apiserver",
-        "//agentplane/workload_auth:principal",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-aspect_py_binary(
-    name = "server_image_bin",
-    main = "main.py",
-    deps = [":main"],
-)
-
-server_layers_oci_tars = shared_py_image_layers(
-    name = "server_layers",
-    binary = ":server_image_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-oci_image(
-    name = "image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("server_image_bin"),
-    # Kubernetes TLS verification uses the system trust store.
-    env = py_image_env(
-        binary_name = "server_image_bin",
-        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
-    ),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = server_layers_oci_tars + [
-        "//third_party/debian_slim:cacerts",
-    ],
-    user = "1000:1000",
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "settled_cursors",
     srcs = ["settled_cursors.py"],
     visibility = ["//agentplane:__subpackages__"],
@@ -404,28 +71,10 @@ py_test(
     name = "test_settled_cursors",
     srcs = ["test_settled_cursors.py"],
     deps = [
-        ":conftest",
         ":settled_cursors",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = [
-        "//agentplane/history_service/storage:database_migrate",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/testing:electric_role",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
-        "@pypi//asyncpg",
-        "@pypi//psycopg",
-        "@pypi//pytest",
-        "@pypi//sqlalchemy",
     ],
 )
 

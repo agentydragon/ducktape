@@ -20,7 +20,7 @@ count, first and last chunk time) in their place. It settles only when all of th
   duplicate-key frame, a failed command, harness stderr or exit, a reconciliation). Interrupted,
   failed and process-lost items never complete, so they never settle; recovery reads their deltas.
 - **Exact templates:** every delta is a pair of a native frame matching a versioned template in
-  `agentplane/native/delta_templates.py` exactly, as a parsed JSON value, and the derived event made
+  `agentplane/history_service/storage/delta_templates.go` exactly, as a parsed JSON value, and the derived event made
   from it. Templates are only added, never edited, so an old settlement is never reinterpreted.
 - **Content is retained elsewhere:** the retained completion frame holds exactly the
   concatenation. A settlement points at runner-authored entries and never carries content of its

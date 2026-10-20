@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -17,23 +17,6 @@ py_library(
     name = "omit_none",
     srcs = ["omit_none.py"],
     deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "delta_templates",
-    srcs = ["delta_templates.py"],
-)
-
-py_test(
-    name = "test_delta_templates",
-    srcs = ["test_delta_templates.py"],
-    deps = [
-        ":conftest",
-        ":delta_templates",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 py_library(

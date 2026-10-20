@@ -5,11 +5,11 @@ public Session ID. It authenticates callers by projected ServiceAccount token (T
 serves only the configured reader accounts, today the integration app's and the Notification
 Service's. A Session UUID by itself
 grants nothing. Consumers use `client.py`; `testing/go_service.py` runs the built Go service over a test
-database for their tests.
+database for their tests, which read the fold's tables through `fold/models.py` and validate the rows
+browsers sync with `fold/views.py`.
 
-This service's `migrate` init container runs the history tables' migrations: `migrations/` (Goose) on
-`agentplane-testing`, `storage/` (Alembic) on staging until its cutover. Its runner ingress and its fold are
-their only writers.
+This service's `migrate` init container runs the history tables' migrations (`migrations/`, Goose). Its
+runner ingress and its fold are their only writers.
 
 ## While the History Service is down or rolling
 
@@ -24,9 +24,9 @@ not call it.
 
 ## Runner ingress
 
-`ingress.py` serves `RunnerIngress.Push`, the
+`ingress/` serves `RunnerIngress.Push`, the
 [runner ingress contract](../docs/runner_control.md#event-ingress): runners push each Session's
-journal here, one call per Session. `main.py` serves it on its own listener (`ingress.port`), apart
+journal here, one call per Session. `main.go` serves it on its own listener (`ingress.port`), apart
 from the read API, since it takes untrusted input: the network fence admits the egress proxy to that
 port alone. Its settings name the token audience and the namespaces whose ServiceAccounts may push.
 A Sandbox reaches it only through the egress proxy under the `runner-ingress` policy
@@ -35,7 +35,7 @@ A Sandbox reaches it only through the egress proxy under the `runner-ingress` po
 
 The first accepted announcement binds the Session to the pushing ServiceAccount (namespace, name,
 UID) in `session_history`; other accounts get `PERMISSION_DENIED`. Entries commit through
-`Store.append`, which accepts exact replays and refuses gaps and conflicting entries, and each
+`Store.Append`, which accepts exact replays and refuses gaps and conflicting entries, and each
 acknowledgement follows its commit. The ingress queues at most 16 decoded frames and commits
 at most 128 entries or 1 MiB of serialized entries per transaction (one oversized entry forms its
 own transaction); a full queue applies backpressure to the stream.
@@ -52,10 +52,10 @@ A Session belongs to one Sandbox for its whole life and never moves to another; 
 
 ## Delta settlement
 
-Each `Store.append` batch that completes an item drops that
+Each `Store.Append` batch that completes an item drops that
 item's streamed delta entries (native frames and their derived deltas) from `session_event`, in
 the same transaction, when every frame matches an exact versioned template
-(`agentplane/native/delta_templates.py`) and the retained completion holds exactly their
+(`storage/delta_templates.go`) and the retained completion holds exactly their
 concatenation. Anything else in the span keeps every entry. The dropped cursors are recorded as a
 `SettledDeltas` with its ranges, and read pages report the settlements that cover or complete in
 them; the fold and the app's raw-history readers treat a settled cursor as absent. The runner
@@ -84,7 +84,7 @@ harness merely to render the Thread. Existing/nonempty projections still require
 Event prefix.
 
 Every replica folds every retained Session into the thread projection
-(`agentplane.history_service.fold`; `thread_*` tables, since a Thread is the projection of a
+(`threadfold/` computes it, `projection/` runs it; `thread_*` tables, since a Thread is the projection of a
 Session: [layering](../docs/thread_layering.md#authorities-and-representations)), in epoch
 `history-v1`, from cursor 0: a page per Session per cycle under the per-Session projection leases,
 so replicas share the work. The fold writes only those tables. Cycles run back to back while any
@@ -120,7 +120,6 @@ the `ThreadEntityView` JSON browsers sync. A caller holding rows of a replaced e
 `ReadEntityEvidence` pages the observation cursors an entity was folded from, and
 `ReadNativeFrames` the native harness frames linked to one of them, read from the raw log.
 
-Bazel targets: `:history-service` and `:service_image` (Go; `agentplane-testing`), `:main` and `:image`
-(Python; staging until its cutover). Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
+Bazel targets: `:history-service` and `:service_image`. Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
 variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`config.go`, `settings.py`).
 gRPC listens on `port`, where `grpc.health.v1.Health` reports process liveness only.

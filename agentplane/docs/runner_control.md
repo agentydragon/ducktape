@@ -182,7 +182,7 @@ answers with the runner's own status and bytes. It has no database.
 Status: **accepted design (operator, 2026-10-10 PDT); deployed.** The runner pushes
 when started with `--ingress-target` (`runner/go/transport.go`), which every runner `SandboxTemplate`
 passes, and reports `flushed` from what it recorded. The History
-Service serves the ingress (`history_service/ingress.py`) on a listener of its own, and follows no
+Service serves the ingress (`history_service/ingress/ingress.go`) on a listener of its own, and follows no
 runner.
 
 The runner pushes each Session's journal to one **ingress**, the endpoint its Sandbox names, and
