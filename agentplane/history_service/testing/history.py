@@ -13,7 +13,7 @@ from typing import Self
 from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from agentplane.history_service import history_service_pb2
 from agentplane.history_service.channels import Channel
@@ -120,6 +120,18 @@ class History:
                 },
             }
             await notify(session, Channel.SUMMARIES)
+
+    @staticmethod
+    async def fence_fold(session: AsyncSession, session_id: UUID) -> None:
+        """Hold the Session's projection lease row until `session`'s transaction ends, as the fold's writes do.
+
+        The fold runs a cycle every 50 ms and, under that lock, rewrites the Session's operational state and
+        summary from the summary it read. A test that writes those rows takes the lock before reading them, so
+        a cycle that read before the test's commit cannot write over it afterwards.
+        """
+        await session.execute(
+            text("SELECT 1 FROM session_projection_lease WHERE session_id = :id FOR UPDATE"), {"id": session_id}
+        )
 
     async def announce_fold_commit(self) -> None:
         """Commit the notice a fold commit sends, without folding anything."""
