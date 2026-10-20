@@ -126,9 +126,9 @@ func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL st
 	})
 }
 
-func newConfiguredIngressTestServer(t *testing.T, reviews auth.TokenReviews, c config) *httptest.Server {
+func newConfiguredIngressTestServer(t *testing.T, reviews auth.TokenReviews, c config, options ...auth.Option) *httptest.Server {
 	t.Helper()
-	resolver, err := auth.NewResolver(reviews, testAudience, []string{testNamespace})
+	resolver, err := auth.NewResolver(reviews, testAudience, []string{testNamespace}, options...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -649,13 +649,15 @@ func TestTruncatedBackendResponseDoesNotLookLikeSuccessfulEndOfStream(t *testing
 	}
 }
 
-func TestRevokedAndDisallowedNamespaceTokensFailOnNextRequest(t *testing.T) {
+func TestRevokedAndDisallowedNamespaceTokensAreRefused(t *testing.T) {
 	reviews := newFakeTokenReviews()
 	reviews.set(testTokenA, acceptedReview(testNamespace, "sandbox-a", "sandbox-a", "pod-a-uid", testAudience))
 	reviews.set(testTokenB, acceptedReview("other-namespace", "sandbox-b", "sandbox-b", "pod-b", testAudience))
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
-	ingress := newIngressTestServer(t, reviews, backendServer.URL)
+	// The resolver reviews every call, so the revocation shows on the next request.
+	ingress := newConfiguredIngressTestServer(t, reviews, config{LiteLLMURL: backendServer.URL, LiteLLMKey: testBackendKey},
+		auth.WithVerdictTTL(0))
 	client := testClient()
 	defer client.CloseIdleConnections()
 
@@ -872,15 +874,19 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 	if messageResponse.StatusCode != 529 || !bytes.Equal(messageBody, anthropicError) {
 		t.Fatalf("binary proxy response: status=%d body=%s", messageResponse.StatusCode, messageBody)
 	}
-	for i := 0; i < 2; i++ {
-		select {
-		case spec := <-reviewsSeen:
-			if spec.Token != testTokenA || len(spec.Audiences) != 1 || spec.Audiences[0] != "environment-audience" {
-				t.Fatalf("TokenReview spec = %+v", spec)
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("binary did not send TokenReview")
+	select {
+	case spec := <-reviewsSeen:
+		if spec.Token != testTokenA || len(spec.Audiences) != 1 || spec.Audiences[0] != "environment-audience" {
+			t.Fatalf("TokenReview spec = %+v", spec)
 		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("binary did not send TokenReview")
+	}
+	// Both responses are in, so a second review would already have been seen.
+	select {
+	case spec := <-reviewsSeen:
+		t.Fatalf("the second request reviewed its bearer again: %+v", spec)
+	default:
 	}
 	backendMu.Lock()
 	gotBackendRequests := backendRequests

@@ -284,3 +284,32 @@ func TestACallerThatGivesUpDoesNotFailTheReviewItStarted(t *testing.T) {
 		t.Fatalf("got %d reviews", got)
 	}
 }
+
+func TestACallerWhoseContextEndedIsToldSoNotThatTheAPIIsDown(t *testing.T) {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	reviews := reviewFunc(func(context.Context, *authenticationv1.TokenReview) (*authenticationv1.TokenReview, error) {
+		<-release
+		return accepted(), nil
+	})
+	resolver, err := NewResolver(reviews, "dispatcher", []string{"agentplane-staging"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for want, end := range map[codes.Code]func() (context.Context, context.CancelFunc){
+		codes.Canceled: func() (context.Context, context.CancelFunc) {
+			ctx, cancel := context.WithCancel(incoming("Bearer token"))
+			cancel()
+			return ctx, cancel
+		},
+		codes.DeadlineExceeded: func() (context.Context, context.CancelFunc) {
+			return context.WithDeadline(incoming("Bearer token"), time.Unix(0, 0))
+		},
+	} {
+		ctx, cancel := end()
+		defer cancel()
+		if _, err := resolver.Resolve(ctx); status.Code(err) != want {
+			t.Errorf("got %v, want %v", err, want)
+		}
+	}
+}

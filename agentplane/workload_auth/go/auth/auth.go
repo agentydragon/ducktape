@@ -131,6 +131,8 @@ func (r *Resolver) Resolve(ctx context.Context) (Principal, error) {
 	switch {
 	case errors.Is(err, ErrInvalidBearer):
 		return Principal{}, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+	case err != nil && ctx.Err() != nil:
+		return Principal{}, status.FromContextError(ctx.Err()).Err()
 	case errors.Is(err, ErrUnavailable):
 		return Principal{}, status.Error(codes.Unavailable, ErrUnavailable.Error())
 	default:

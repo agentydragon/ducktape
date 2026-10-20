@@ -174,11 +174,12 @@ func newLab(t *testing.T) *lab {
 		Type: resources.EgressRuleType, Hosts: []string{fixtureHost}, CredentialRef: &policyapi.CredentialRef{Name: "key"},
 		Paths: []string{"/allowed", "/stream", "/sse", "/ws", "/cancel"},
 	})
-	hop, err := auth.NewResolver(l.hop, hopAudience, []string{"workloads"})
+	// These tests revoke and rebind tokens between requests, so every call reviews its bearer.
+	hop, err := auth.NewResolver(l.hop, hopAudience, []string{"workloads"}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
 	}
-	projected, err := auth.NewResolver(l.projected, projectedAudience, []string{"workloads"})
+	projected, err := auth.NewResolver(l.projected, projectedAudience, []string{"workloads"}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
 	}
