@@ -23,6 +23,7 @@ type config struct {
 	TokenAudience                   string            `mapstructure:"token_audience"`
 	LogLLMRequests                  bool              `mapstructure:"log_llm_requests"`
 	Models                          []modelConfig     `mapstructure:"models"`
+	CodexModelCatalogFile           string            `mapstructure:"codex_model_catalog_file"`
 	LiteLLMURL                      string            `mapstructure:"litellm_url"`
 	LiteLLMKey                      string            `mapstructure:"litellm_key"`
 	LogLevels                       map[string]string `mapstructure:"log_levels"`
@@ -40,7 +41,8 @@ func loadConfig() (config, error) {
 	settings := viper.New()
 	settings.SetEnvPrefix("AGENTPLANE_LLM_INGRESS")
 	for _, key := range []string{
-		"token_audience", "log_llm_requests", "litellm_url", "litellm_key", "host", "port", "kubeconfig",
+		"token_audience", "log_llm_requests", "codex_model_catalog_file", "litellm_url", "litellm_key", "host", "port",
+		"kubeconfig",
 	} {
 		settings.MustBindEnv(key)
 	}

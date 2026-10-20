@@ -119,15 +119,20 @@ func acceptedReview(namespace, account, podName, podUID string, audiences ...str
 
 func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL string, models ...modelConfig) *httptest.Server {
 	t.Helper()
+	return newConfiguredIngressTestServer(t, reviews, config{
+		LiteLLMURL: backendURL,
+		LiteLLMKey: testBackendKey,
+		Models:     models,
+	})
+}
+
+func newConfiguredIngressTestServer(t *testing.T, reviews auth.TokenReviews, c config) *httptest.Server {
+	t.Helper()
 	resolver, err := auth.NewResolver(reviews, testAudience, []string{testNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := newIngressHandler(config{
-		LiteLLMURL: backendURL,
-		LiteLLMKey: testBackendKey,
-		Models:     models,
-	}, resolver, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler, err := newIngressHandler(c, resolver, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

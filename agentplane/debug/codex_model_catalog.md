@@ -1,7 +1,8 @@
 # Codex model catalog served by LLM ingress
 
-Checked 2026-10-19 on Codex **0.157.0** (the runner and native-test pin) and **0.163.0** (latest release),
-with a mock Responses and catalog server. Sources:
+Checked 2026-10-19 on Codex **0.157.0** (the Bazel pin of the scripted harness tests) and **0.163.0** (latest
+release), with a mock Responses and catalog server. The runner image runs nixpkgs' `codex` (`runner/image.nix`),
+0.162.1 at the locked `flake.lock` revision; that version was not run. Sources:
 [`rust-v0.157.0`](https://github.com/openai/codex/tree/rust-v0.157.0/codex-rs),
 [`rust-v0.163.0`](https://github.com/openai/codex/tree/rust-v0.163.0/codex-rs) (line anchors below are
 0.163.0).
@@ -32,7 +33,7 @@ uses the new entry.
   ([`model_info.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/models-manager/src/model_info.rs#L19-L31)).
 - **0.157.0 only:** `features.api_key_model_discovery` is under development and off by default; without
   `-c features.api_key_model_discovery=true` the catalog URL of a custom provider is never fetched
-  (observed: zero fetches). It is stable and on by default in 0.163.0.
+  (observed: zero fetches). It is stable and on by default in 0.163.0 and, from source, in 0.162.1.
 
 ## Observed
 

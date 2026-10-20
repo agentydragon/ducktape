@@ -41,6 +41,7 @@ type ingressHandler struct {
 	baseURL  *url.URL
 	key      string
 	models   map[string]modelConfig
+	codex    *codexCatalog
 	logBody  bool
 	logger   *slog.Logger
 	pool     chan struct{}
@@ -79,12 +80,19 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 	for _, item := range c.Models {
 		models[item.Model] = item
 	}
+	var codex *codexCatalog
+	if c.CodexModelCatalogFile != "" {
+		if codex, err = loadCodexCatalog(c.CodexModelCatalogFile); err != nil {
+			return nil, err
+		}
+	}
 	return &ingressHandler{
 		resolver: resolver,
 		backend:  backend,
 		baseURL:  baseURL,
 		key:      c.LiteLLMKey,
 		models:   models,
+		codex:    codex,
 		logBody:  c.LogLLMRequests,
 		logger:   logger,
 		pool:     make(chan struct{}, 100),
@@ -137,6 +145,16 @@ func (h *ingressHandler) ServeHTTP(writer http.ResponseWriter, request *http.Req
 			return
 		}
 		_ = json.NewEncoder(writer).Encode(model)
+		return
+	}
+	if request.URL.Path == codexCatalogPath && request.Method == http.MethodGet {
+		if h.codex == nil {
+			writeJSONError(writer, http.StatusNotFound, "Codex model catalog is not configured", "")
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		writer.Header().Set("ETag", h.codex.etag)
+		_, _ = writer.Write(h.codex.body)
 		return
 	}
 	h.forward(writer, request, principal)
@@ -235,6 +253,9 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 			"content_type", response.Header.Get("Content-Type"))
 	}
 	copyResponseHeaders(writer.Header(), response.Header)
+	if h.codex != nil && incoming.URL.Path == "/v1/responses" {
+		writer.Header().Set("X-Models-Etag", h.codex.etag)
+	}
 	writer.WriteHeader(response.StatusCode)
 	if err := http.NewResponseController(writer).Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		return

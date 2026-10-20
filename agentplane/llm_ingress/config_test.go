@@ -38,6 +38,7 @@ litellm_url: http://127.0.0.1:8100/prefix
 litellm_key: yaml-secret
 log_llm_requests: true
 port: 6060
+codex_model_catalog_file: /yaml/codex_models.json
 models:
   - model: test/model
     total_context_budget_tokens: 8192
@@ -54,7 +55,8 @@ models:
 	}
 	if c.TokenAudience != "env-audience" || c.Port != 7070 || c.LiteLLMKey != "env-secret" || c.LogLLMRequests ||
 		len(c.AllowedServiceAccountNamespaces) != 1 || c.AllowedServiceAccountNamespaces[0] != "yaml-namespace" ||
-		c.LiteLLMURL != "http://127.0.0.1:8100/prefix" || len(c.Models) != 1 || c.Models[0].TotalContextBudgetTokens != 8192 {
+		c.LiteLLMURL != "http://127.0.0.1:8100/prefix" || len(c.Models) != 1 || c.Models[0].TotalContextBudgetTokens != 8192 ||
+		c.CodexModelCatalogFile != "/yaml/codex_models.json" {
 		t.Fatalf("unexpected merged config: %+v", c)
 	}
 }

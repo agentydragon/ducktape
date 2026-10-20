@@ -57,6 +57,7 @@ oci_image(
 go_library(
     name = "server_lib",
     srcs = [
+        "codex_catalog.go",
         "config.go",
         "main.go",
         "server.go",
@@ -80,6 +81,7 @@ go_binary(
 go_test(
     name = "ingress_test",
     srcs = [
+        "codex_catalog_test.go",
         "config_test.go",
         "ingress_test.go",
     ],

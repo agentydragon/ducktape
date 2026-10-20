@@ -852,7 +852,7 @@ flowchart LR
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
     EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
-    CODEX_MODEL_CATALOG[Unscheduled: LLM ingress serves Codex a model catalog]
+    CODEX_MODEL_CATALOG[Candidate: LLM ingress serves Codex a model catalog]
     RUNNER_CODEX_SHARED_PROCESS[Blocked: shared Codex app-server, section 3]
     CODEX_MODEL_CATALOG -. removes a process-wide option .-> RUNNER_CODEX_SHARED_PROCESS
     RUNNER_HARNESS_DELIVERY_DESIGN -. entries follow the delivered Codex version .-> CODEX_MODEL_CATALOG
@@ -1066,35 +1066,45 @@ No new artifact service or runtime-download implementation is selected by this n
 
 ### `CODEX_MODEL_CATALOG` — LLM ingress serves Codex a model catalog that follows the model config
 
-**Unscheduled; operator, 2026-10-19 PDT: wants a catalog Agentplane serves that updates when its model
-config does, without restarting Codex or the runner.** Today the runner passes Codex one process-wide
-`-c model_context_window` from the route's `ModelConfig`. It pins every thread to one window, is why a model
-change across different windows is rejected, and cannot be shared by one app-server hosting several
+**Candidate; operator, 2026-10-20 PDT: go, in the three steps below.** Today the runner passes Codex one
+process-wide `-c model_context_window` from the route's `ModelConfig`. It pins every thread to one window, is
+why a model change across different windows is rejected, and cannot be shared by one app-server hosting several
 Sessions. [Evidence](../debug/codex_model_catalog.md): Codex fetches a provider's `model_catalog_url` and
 refetches it when a Responses reply carries a changed `X-Models-Etag`; the next turn uses the new entry.
 
-Direction: LLM ingress serves the catalog, authenticated like inference and answered from its
-configuration like `/agentplane/model-config` (never forwarded to LiteLLM), with an `ETag`, and adds the same
-value as `X-Models-Etag` to every `/v1/responses` reply. The runner's provider block gains `model_catalog_url`
-(and `features.api_key_model_discovery=true` while the pin is 0.157.0) and drops `-c model_context_window`
-for Codex; Claude keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. Entries are full `ModelInfo` records, not sparse
-overrides ([budget audit](../../model_catalog/client_budgets.md#codex-local-model-catalogue-2026-10-10)):
-generate them from `ModelConfig` plus a template for the pinned Codex version, chosen by the
-`client_version` query Codex sends. Image before config: ingress serves the catalog first, the runner points
-at it afterwards.
+Direction: LLM ingress serves a generated catalog file from memory
+([README](../llm_ingress/README.md#codex-model-catalog)), authenticated like inference and never forwarded to
+LiteLLM, with an `ETag` equal to the `X-Models-Etag` it adds to every `/v1/responses` reply. The app neither
+derives nor reads the catalog and its picker list does not change; the only shared input is the route selection
+`HarnessRoutes.codex`. cdk8s generates the file and mounts it as a ConfigMap, one entry per selected route with
+the route id as slug, and fails when a route has no entry. A ChatGPT route's entry comes from the upstream
+catalog (`codex debug models --bundled`); every other route has a JSON file we own. Entries start
+fallback-shaped (what Codex does for an unknown slug today, with the route's window) and a ChatGPT route moves
+to its upstream entry only after a LiteLLM/CLIProxyAPI pass-through check of the request Codex then sends. The
+runner's provider block gains `model_catalog_url` (the ingress origin plus `/agentplane/codex/models`, not under
+`/v1`) and drops `-c model_context_window` for Codex; Claude keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. Entries are
+full `ModelInfo` records ([budget audit](../../model_catalog/client_budgets.md#codex-local-model-catalogue-2026-10-10)).
+
+The runner image runs nixpkgs' `codex` (`runner/image.nix`), not the Bazel test pin
+(`agentplane_codex_cli_linux_x64`, 0.157.0, where `features.api_key_model_discovery=true` is needed). The Codex
+that generates upstream entries must not be older than the runner's; the default is the Bazel-pinned binary,
+bumped together with the runner's, and `RUNNER_HARNESS_DELIVERY_DESIGN` owns keeping the two in step.
+
+Steps, image before config: (1) ingress serves the endpoint and header; (2) cdk8s entries, generator and mount,
+after the ingress pin; (3) the runner change, after that pin.
 
 Open inside this node, with a default: Sessions on an edited route follow the edit. The
 [ingress README](../llm_ingress/README.md#per-model-client-configuration) tells operators to use a new route
 ID instead so retained Sessions keep their budget; a Session can still be pinned per thread through
 `thread/start.config`. The different-window model-change rejection then applies to Claude only.
 
-**Exit:** ingress tests cover authentication, the `ETag` equal to the header, answering from configuration
-and no LiteLLM forward. A native Codex test against the pin shows a catalog edit reaching a running
+**Exit:** ingress tests cover authentication, the `ETag` equal to the header, answering from the file and no
+LiteLLM forward (step 1). A native Codex test against the pin shows a catalog edit reaching a running
 app-server without restart, a switch between routes of different windows, and a failing refetch (0.163.0
 falls back to default metadata until a refetch succeeds). Then remove the runner's `-c model_context_window`
 for Codex and update `runner/SPEC.md` and the ingress README. Untested so far: real tool or reasoning use
-against a served entry, compaction after a switch to a smaller window, and `X-Models-Etag` passing the egress
-sidecar and proxy; check these before the runner change.
+against a served entry, compaction after a switch to a smaller window, and `X-Models-Etag` and the catalog fetch
+passing the egress sidecar and proxy; check these before the runner change. Delete this node with step 3.
 
 ### `K3S_BUNDLED_SERVICES_SPIKE` — measure a less isolated control plane in real k3s
 

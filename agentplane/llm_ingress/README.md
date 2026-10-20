@@ -63,6 +63,22 @@ as `y`. Review request/response translation (including streaming), lookup identi
 authorization and accounting together. Current inference remains pass-through;
 this TODO does not enable aliases or infer budgets/capabilities from a model name.
 
+## Codex model catalog
+
+When `codex_model_catalog_file` is set, the authenticated `GET /agentplane/codex/models` endpoint
+serves that JSON file with an `ETag` that is a hash of its bytes. The file is `{"models": [...]}`
+with entries in Codex's `ModelInfo` form; the ingress refuses to start on what Codex would refuse (unique
+non-empty slugs, at most 1 MiB). It reads the file once at startup and answers from memory, never from
+LiteLLM, so a LiteLLM outage cannot make a Codex refetch fail. Without the setting the endpoint answers 404
+and is not forwarded.
+
+Every `/v1/responses` reply then carries the same value as `X-Models-Etag`. A running Codex that sees
+a value different from the `ETag` it holds refetches the catalog before its next turn, so an edited
+catalog (a new file, a restarted ingress) reaches running Sessions without restarting their
+harnesses. A harness has to be configured to use the endpoint (its provider's `model_catalog_url`);
+the runner does not set it yet. Codex behavior behind this endpoint, with source citations and test
+results: [`debug/codex_model_catalog.md`](../debug/codex_model_catalog.md).
+
 For targeted debugging, set `log_llm_requests: true` in the ingress settings (or
 `AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true`). The ingress logs each request body and every raw
 response chunk with a per-request ID and chunk number, plus whether the stream completed. This can

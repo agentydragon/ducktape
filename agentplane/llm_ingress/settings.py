@@ -35,6 +35,13 @@ class Settings(YamlFileSettings):
     models: list[ModelConfig] = Field(
         default_factory=list, description="Per-route client configuration exposed to authenticated workloads."
     )
+    codex_model_catalog_file: Path | None = Field(
+        default=None,
+        description=(
+            "JSON file with a `models` list, served to Codex at `/agentplane/codex/models`; its hash is sent as "
+            "`X-Models-Etag` on every Responses reply, so a running Codex refetches an edited catalog."
+        ),
+    )
     litellm_url: HttpEndpointUrl = Field(description="Internal LiteLLM base URL.")
     litellm_key: SecretStr = Field(description="The one server-held LiteLLM virtual key.")
     log_levels: LogLevels
