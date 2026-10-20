@@ -85,7 +85,8 @@ point.** The service (`agentplane/notification_service/`) has grown to several r
 
 Decide which stay, which move to other services, and what the remaining service is called. The inbox
 messaging nodes of section 3 (`AGENT_MESSAGING_DESIGN` and the nodes it feeds) record the service name as
-open and keep v1 in one deployment; this node is the later restructuring, not a prerequisite for them.
+open and keep v1 in one deployment; this node is the later restructuring, not a prerequisite for them or
+for the Go port (`NOTIFICATION_SERVICE_GO_PORT`).
 Related: whether notice delivery belongs with the Dispatcher
 ([freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership)),
 and the history-free notice outcome (`NOTIFICATION_COMMAND_OUTCOME_DESIGN`), which bears on the notice
@@ -1952,7 +1953,7 @@ flowchart LR
     HISTORY_GO_STAGING_CUTOVER[Blocked: cut staging over to the Go History Service]
     HISTORY_PYTHON_RETIREMENT[Blocked: retire the Python History Service]
     HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
-    NOTIFICATION_SERVICE_GO_PORT[Blocked: port the Notification Service to Go]
+    NOTIFICATION_SERVICE_GO_PORT[Candidate: port the Notification Service to Go]
     ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
@@ -1960,7 +1961,7 @@ flowchart LR
     HISTORY_GO_STAGING_CUTOVER --> HISTORY_PYTHON_RETIREMENT
     HISTORY_TEST_BACKEND_ON_GO --> HISTORY_PYTHON_RETIREMENT
     HISTORY_GO_STAGING_CUTOVER --> HISTORY_READS_FACADE
-    NOTIFICATION_SERVICE_SPLIT --> NOTIFICATION_SERVICE_GO_PORT
+    NOTIFICATION_SERVICE_GO_PORT -. related .-> NOTIFICATION_SERVICE_SPLIT
 ```
 
 ### `HISTORY_TEST_BACKEND_ON_GO` — app and Electric tests run against the Go History
@@ -2008,9 +2009,11 @@ check on `thread_observations` (404 for a Session no Thread links) is kept or dr
 
 ### `NOTIFICATION_SERVICE_GO_PORT` — port the Notification Service to Go
 
-**Blocked on `NOTIFICATION_SERVICE_SPLIT`, so the service is ported once, after the operator decides what
-stays.** Proto and generated facade for subscriptions, inboxes and the operator streams, replacing the
-app's Notification proxy. The signed GitHub webhook stays hand-written HTTP.
+**Candidate; operator, 2026-10-19 PDT: the possible `NOTIFICATION_SERVICE_SPLIT` does not hold the port.**
+Port the service as it is; a later split moves responsibilities between Go services as it would between
+Python ones. Proto and generated facade for subscriptions, inboxes and the operator streams, replacing the
+app's Notification proxy and the hand-written `docs/agents/http_api.md`. The signed GitHub webhook stays
+hand-written HTTP.
 
 ### `ACTION_SERVICE_GO_PORT` — port the Action Service to Go
 
