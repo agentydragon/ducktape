@@ -315,10 +315,11 @@ Candidates; each still needs the operator's go.
   it from a partial manifest after an archive (not tried). On a Sandbox git creates, git and the app
   can each own different tags, since server-side apply tracks each label key separately and Flux
   takes back only fields edited with `kubectl` (kustomize-controller's field-manager cleanup); a tag
-  git declares is reverted if changed live. Setting a tag is a grant that Kubernetes RBAC cannot
-  limit by label or value, so an admission rule keeps tag writes to GitOps and the app's provisioning
-  path, the v1 membership administration already agreed
-  in the [agent communication plan](multiagent_communication.md#target-collections-and-launch-enrollment).
+  git declares is reverted if changed live. Setting a tag is a grant, and RBAC on Sandbox writes is
+  its only gate, with no admission rule (2026-10-20 01:29): whoever can patch a Sandbox can already
+  set its `spec.policySets`, which grants at least as much. Flux and the app are the writers
+  (01:17), as for membership in the
+  [agent communication plan](multiagent_communication.md#target-collections-and-launch-enrollment).
   Both tag kinds are spec lists declared `x-kubernetes-list-type: set`, like `spec.policySets`
   (2026-10-20 00:36): the CRD validates them and requesters keep writing spec, and a set keeps the
   split ownership that a plain list, owned whole, would lose. Labels would let `kubectl` and watchers
@@ -477,7 +478,8 @@ Held until one is chosen:
 | 2026-10-20 00:21 | Recipient tags and history reader tags are separate gates for different services; recipient tags are not archived             | Two tag sets; only reader tags outlive the CR                      |
 | 2026-10-20 00:32 | Reader tags as a second set on the Sandbox CR that History watches                                                            | History's watch reads only reader tags; git can declare them       |
 | 2026-10-20 00:36 | Tags as set-typed spec lists rather than labels                                                                               | `spec.recipientTags` and `spec.readerTags`, like `spec.policySets` |
-| 2026-10-20 01:17 | Only Flux and the app may set tags                                                                                            | The admission rule names no operator identity                      |
+| 2026-10-20 01:17 | Only Flux and the app may set tags                                                                                            | Flux and the app are the tag writers                               |
+| 2026-10-20 01:29 | No webhook for tag writes; Sandbox RBAC is enough                                                                             | No admission rule                                                  |
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control
