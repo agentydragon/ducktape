@@ -139,6 +139,19 @@ func TestEverySubscriberWakesAfterTheConnectionIsLostAndListeningContinues(t *te
 	awaitWakeup(t, onA)
 }
 
+func TestPingSucceedsOnALiveConnectionAndFailsOnceTheHubIsClosed(t *testing.T) {
+	hub := listen(t, "test-wakeups-ping", "test_wakeups_a")
+	if err := hub.Ping(); err != nil {
+		t.Fatal(err)
+	}
+	if err := hub.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if hub.Ping() == nil {
+		t.Fatal("a closed hub answered a ping")
+	}
+}
+
 func TestListeningFailsWhenTheDatabaseCannotBeReached(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()

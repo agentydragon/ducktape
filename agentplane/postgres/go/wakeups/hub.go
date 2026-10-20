@@ -95,6 +95,10 @@ func (h *Hub) Subscribe(channels ...string) (<-chan struct{}, func(), error) {
 // Close ends the LISTEN connection.
 func (h *Hub) Close() error { return h.listener.Close() }
 
+// Ping is a round trip on the LISTEN connection. It fails while the connection is down or being re-established,
+// during which notifications are lost: a service that cannot show stale answers is not ready until it succeeds.
+func (h *Hub) Ping() error { return h.listener.Ping() }
+
 func (h *Hub) fanOut() {
 	for notification := range h.listener.Notify {
 		// The listener sends nil after it reconnected: notifications in between were lost.
