@@ -651,8 +651,8 @@ native capability; it does not establish integration safety or migration behavio
 
 Route requests, replies, notifications and server-initiated requests to the correct Session/thread.
 Preserve Session-specific workdir, instructions, model/effort and setup behavior; identify any
-incompatible process-wide options during design (the context window is one:
-`CODEX_MODEL_CATALOG`). Concurrent startup must create only one server.
+incompatible process-wide options during design (the context window is not one: Codex reads it per
+model from the ingress catalog). Concurrent startup must create only one server.
 An exact-turn interrupt affects only its target. A shared server failure invalidates every hosted
 assignment; runner recovery must reconcile each affected Session and its admitted commands without
 duplicating side effects. Orderly quiesce still waits for setup/bootstrap. Persisted but unloaded
@@ -826,10 +826,7 @@ flowchart LR
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
     EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
-    CODEX_MODEL_CATALOG[Candidate: LLM ingress serves Codex a model catalog]
     RUNNER_CODEX_SHARED_PROCESS[Blocked: shared Codex app-server, section 3]
-    CODEX_MODEL_CATALOG -. removes a process-wide option .-> RUNNER_CODEX_SHARED_PROCESS
-    RUNNER_HARNESS_DELIVERY_DESIGN -. entries follow the delivered Codex version .-> CODEX_MODEL_CATALOG
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
@@ -1025,6 +1022,8 @@ harness OCI images made available through mounts or an init container copying in
 Operator preference: eventual delivery should decouple harnesses from the runner image; the
 narrower test images are an interim optimization. Decide delivery and service/cache ownership. Any serving service must
 respect the backend dependency rule; the integration app cannot own this path.
+Whatever delivers Codex must keep the version the model-catalog generator pins at least as new as the runner's
+([ingress README](../llm_ingress/README.md#codex-model-catalog)).
 
 The [image-split comparison](../x/k3s_env/README.md#harness-specific-runner-comparison-2026-10-16)
 measures removal of unused harness payload; it does not measure runtime delivery of a needed harness.
@@ -1037,30 +1036,6 @@ service may only move the same transfer later, and fetching upstream still costs
 extraction time. Specify version/digest verification, atomic installation, concurrent requests,
 cache scope, unavailable-artifact behavior and allowed egress for any runtime-delivery proposal.
 No new artifact service or runtime-download implementation is selected by this node.
-
-### `CODEX_MODEL_CATALOG` — LLM ingress serves Codex a model catalog that follows the model config
-
-**Candidate; operator, 2026-10-20 PDT: go. Ingress serving (#11206), the cdk8s catalog (#11212) and the runner
-change are done or in review; the rest is below.** The design is in the
-[ingress README](../llm_ingress/README.md#codex-model-catalog) and the Codex behavior in the
-[evidence](../debug/codex_model_catalog.md). The runner's Codex provider names the catalog and no longer passes
-`-c model_context_window`; Claude keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. A ChatGPT route's catalog entry is the
-upstream one from the Bazel-pinned Codex, so that Codex must not be older than the runner image's (nixpkgs'
-`codex`, `runner/image.nix`); `RUNNER_HARNESS_DELIVERY_DESIGN` owns keeping the two in step.
-
-Remaining, in order:
-
-1. After the runner image carrying the runner change is pinned (VM guests embed the runner from
-   `nix/artifact-pins.json`, so after that pin too), `model_configs()` in `cluster/cdk8s/model_selections.py`
-   returns Claude routes only, because an older runner image still reads Codex budgets from ingress.
-   `RUNNER_CONTEXT_OVERRIDES` stays: `codex_models.py` reads it for window entries.
-2. On `agentplane-testing` before staging, check what the runner tests could not: real tool and reasoning use
-   against a served upstream entry through LiteLLM and CLIProxyAPI (a recognized-model entry makes Codex send a
-   different request than the fallback does), compaction after a switch to a smaller window, a runner restart
-   with thread resume, and the catalog fetch and `X-Models-Etag` through the egress sidecar and proxy. A route
-   whose upstream request does not pass through loses its entry in the generator and keeps the fallback.
-
-**Exit:** both done. Delete this node, and the `RUNNER_CODEX_SHARED_PROCESS` cross-reference to it.
 
 ### `K3S_BUNDLED_SERVICES_SPIKE` — measure a less isolated control plane in real k3s
 

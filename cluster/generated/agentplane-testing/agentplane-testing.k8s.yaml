@@ -765,8 +765,6 @@ data:
       - agentplane-testing
     log_llm_requests: false
     models:
-      - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-        total_context_budget_tokens: 262144
       - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
         total_context_budget_tokens: 131072
     codex_model_catalog_file: /etc/agentplane-llm-ingress-codex/codex_models.json

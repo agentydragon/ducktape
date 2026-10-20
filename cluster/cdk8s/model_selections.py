@@ -56,8 +56,8 @@ TESTING_APP_MODELS = HarnessRoutes(
     claude=(OLLAMA_QWEN_IQ4XS_128K.native,), codex=(GPT6_LUNA_RESPONSES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES)
 )
 
-# Preserve the existing runner-owned context overrides for both native harnesses.
-# These are client budgets, not inferred from Ollama num_ctx or provider limits.
+# Client context budgets, not inferred from Ollama num_ctx or provider limits. The ingress serves
+# Claude's as `ModelConfig`; `codex_models.py` turns Codex's into catalog entries.
 RUNNER_CONTEXT_OVERRIDES = {
     OLLAMA_QWEN_IQ4XS_128K.openai: 128 * 1024,
     OLLAMA_QWEN_IQ4XS_128K.native: 128 * 1024,
@@ -69,6 +69,6 @@ RUNNER_CONTEXT_OVERRIDES = {
 def model_configs(models: HarnessRoutes) -> list[ModelConfig]:
     return [
         ModelConfig(model=route.id, total_context_budget_tokens=RUNNER_CONTEXT_OVERRIDES[route])
-        for route in sorted(models.all, key=lambda route: route.id)
+        for route in sorted(models.claude, key=lambda route: route.id)
         if route in RUNNER_CONTEXT_OVERRIDES
     ]

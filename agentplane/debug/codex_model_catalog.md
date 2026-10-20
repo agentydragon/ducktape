@@ -54,9 +54,21 @@ Windows are Codex's usable window, 95% of the entry's `context_window`, read fro
 on 0.157.0 (the runner sets `model_catalog_url`): each turn's window follows its served entry, an edit reaches
 the running Codex within two turns, and a 500 on refetch fails no turn.
 
-Not tested: real tool or reasoning use against a served entry, compaction after a switch to a smaller
-window, `X-Models-Etag` passing through the egress sidecar and proxy, a catalog `ETag` that differs from
-the reply header over many turns.
+## Deployed check
+
+On `agentplane-testing` (2026-10-20, runner image with the catalog change, Codex 0.162.1 in a Pod Sandbox):
+
+- A `gpt-6-luna` turn with a shell tool call and a reasoning step completed through LiteLLM and CLIProxyAPI
+  on the served upstream entry.
+- The Session's `models_cache.json` held the served entries, with an ETag equal to the hash the ingress
+  computes from its file. After the Sandbox was suspended and resumed, the new Codex fetched the catalog again
+  and the Thread continued. The reported window (258400) does not show the fetch: it is 95% of the entry's
+  272000 and equals the unknown-model fallback.
+- The `qwen3.8-flash-next-iq4xs-256k` route answered `404` from Ollama (`model ... not found`) before any
+  token usage, so its window was not observed.
+
+Not tested: compaction after a switch to a smaller window, a VM Sandbox's fetch, a catalog `ETag` that
+differs from the reply header over many turns.
 
 ## Reproduce
 

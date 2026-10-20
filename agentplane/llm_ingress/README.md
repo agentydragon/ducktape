@@ -46,7 +46,7 @@ Configuration is authored as a list in ingress settings, for example:
 
 ```yaml
 models:
-  - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+  - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
     total_context_budget_tokens: 131072
 ```
 
@@ -78,7 +78,8 @@ a value different from the `ETag` it holds refetches the catalog before its next
 catalog (a new file, a restarted ingress) reaches running Sessions without restarting their
 harnesses. The runner sets the Codex provider's `model_catalog_url` to this endpoint and passes no context window of its own. cdk8s generates the file for each environment
 (`cluster/cdk8s/agentplane/codex_models.py`): a ChatGPT route takes the pinned Codex's upstream entry, another
-route an entry only where a context window is configured. Codex behavior behind this endpoint, with source citations and test
+route an entry only where a context window is configured. The pinned Codex must not be older than the runner image's
+(nixpkgs' `codex`, `runner/image.nix`). Codex behavior behind this endpoint, with source citations and test
 results: [`debug/codex_model_catalog.md`](../debug/codex_model_catalog.md).
 
 For targeted debugging, set `log_llm_requests: true` in the ingress settings (or
@@ -87,8 +88,8 @@ response chunk with a per-request ID and chunk number, plus whether the stream c
 include prompts, reasoning, generated text, and tool arguments; keep it disabled by default and
 restrict access and retention while enabled. Authorization and other request headers are not logged.
 
-Each environment projects selected routes through the explicit runner budget map
-into `LlmIngressProps.models`, then `settings.py`'s configuration schema. `models.py` owns the lightweight
+Each environment projects its Claude routes through the explicit runner budget map
+into `LlmIngressProps.models` (Codex budgets are catalog entries, above), then `settings.py`'s configuration schema. `models.py` owns the lightweight
 `ModelConfig` API contract shared by ingress, runner, and config generation.
 These are configured harness overrides, not a catalog of every known model capacity.
 

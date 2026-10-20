@@ -1025,9 +1025,7 @@ data:
     allowed_service_account_namespaces:
       - agentplane-staging
     log_llm_requests: true
-    models:
-      - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-        total_context_budget_tokens: 262144
+    models: []
     codex_model_catalog_file: /etc/agentplane-llm-ingress-codex/codex_models.json
 immutable: false
 ---
