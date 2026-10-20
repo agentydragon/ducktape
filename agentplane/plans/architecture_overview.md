@@ -477,6 +477,7 @@ Held until one is chosen:
 | 2026-10-20 00:21 | Recipient tags and history reader tags are separate gates for different services; recipient tags are not archived             | Two tag sets; only reader tags outlive the CR                      |
 | 2026-10-20 00:32 | Reader tags as a second set on the Sandbox CR that History watches                                                            | History's watch reads only reader tags; git can declare them       |
 | 2026-10-20 00:36 | Tags as set-typed spec lists rather than labels                                                                               | `spec.recipientTags` and `spec.readerTags`, like `spec.policySets` |
+| 2026-10-20 01:17 | Only Flux and the app may set tags                                                                                            | The admission rule names no operator identity                      |
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control
