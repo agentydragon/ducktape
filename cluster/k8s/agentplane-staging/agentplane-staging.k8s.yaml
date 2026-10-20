@@ -3419,6 +3419,18 @@ spec:
             - REQUESTS_CA_BUNDLE
             - --harness-env
             - KUBECONFIG
+            - --harness-env
+            - AGENTPLANE_ACTIONS_URL
+            - --harness-env
+            - AGENTPLANE_ACTIONS_CREDENTIAL
+            - --harness-env
+            - AGENTPLANE_NOTIFICATIONS_URL
+            - --harness-env
+            - AGENTPLANE_NOTIFICATIONS_CREDENTIAL
+            - --harness-env
+            - AGENTPLANE_EGRESS_URL
+            - --harness-env
+            - AGENTPLANE_EGRESS_CREDENTIAL
             - --harness-inherit-env
             - TZDIR
           env:
@@ -3448,6 +3460,18 @@ spec:
               value: /etc/ssl/certs/ca-certificates.crt
             - name: KUBECONFIG
               value: /etc/kubernetes/kubeconfig
+            - name: AGENTPLANE_ACTIONS_URL
+              value: http://actions.agentplane-staging.svc.cluster.local:8080
+            - name: AGENTPLANE_ACTIONS_CREDENTIAL
+              value: agentplane-credential-agentplane-workload
+            - name: AGENTPLANE_NOTIFICATIONS_URL
+              value: http://notifications.agentplane-staging.svc.cluster.local:8080
+            - name: AGENTPLANE_NOTIFICATIONS_CREDENTIAL
+              value: agentplane-credential-agentplane-notifications-workload
+            - name: AGENTPLANE_EGRESS_URL
+              value: http://egress.agentplane-staging.svc.cluster.local
+            - name: AGENTPLANE_EGRESS_CREDENTIAL
+              value: agentplane-credential-agentplane-workload
             - name: ANTHROPIC_AUTH_TOKEN
               value: agentplane-credential-agentplane-workload
             - name: OPENAI_API_KEY
@@ -5715,6 +5739,18 @@ spec:
             - --harness-env
             - KUBECONFIG
             - --harness-env
+            - AGENTPLANE_ACTIONS_URL
+            - --harness-env
+            - AGENTPLANE_ACTIONS_CREDENTIAL
+            - --harness-env
+            - AGENTPLANE_NOTIFICATIONS_URL
+            - --harness-env
+            - AGENTPLANE_NOTIFICATIONS_CREDENTIAL
+            - --harness-env
+            - AGENTPLANE_EGRESS_URL
+            - --harness-env
+            - AGENTPLANE_EGRESS_CREDENTIAL
+            - --harness-env
             - BBR_BUILDBUDDY_API_KEY_FILE
             - --harness-inherit-env
             - TZDIR
@@ -5747,6 +5783,18 @@ spec:
               value: /etc/ssl/certs/ca-certificates.crt
             - name: KUBECONFIG
               value: /etc/kubernetes/kubeconfig
+            - name: AGENTPLANE_ACTIONS_URL
+              value: http://actions.agentplane-staging.svc.cluster.local:8080
+            - name: AGENTPLANE_ACTIONS_CREDENTIAL
+              value: agentplane-credential-agentplane-workload
+            - name: AGENTPLANE_NOTIFICATIONS_URL
+              value: http://notifications.agentplane-staging.svc.cluster.local:8080
+            - name: AGENTPLANE_NOTIFICATIONS_CREDENTIAL
+              value: agentplane-credential-agentplane-notifications-workload
+            - name: AGENTPLANE_EGRESS_URL
+              value: http://egress.agentplane-staging.svc.cluster.local
+            - name: AGENTPLANE_EGRESS_CREDENTIAL
+              value: agentplane-credential-agentplane-workload
             - name: ANTHROPIC_AUTH_TOKEN
               value: agentplane-credential-agentplane-workload
             - name: OPENAI_API_KEY

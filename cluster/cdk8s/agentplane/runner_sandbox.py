@@ -11,6 +11,7 @@ so image-pins/ covers them too.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
@@ -58,18 +59,51 @@ _PLATFORM_INSTRUCTIONS_VOLUME = "platform-instructions"
 _PLATFORM_INSTRUCTIONS_DIR = "/etc/agentplane/platform-instructions"
 # Where the Sandbox controller mounts the Sandbox's launch ConfigMap (agentplane/sandbox_controller/launch.go).
 _LAUNCH_FILE = "/run/agentplane/sandbox/launch.json"
+# The bearers a Session presents: the placeholders the agentplane-workload and the notifications
+# EgressCredentials derive from their names, which the egress proxy substitutes.
+_WORKLOAD_PLACEHOLDER = "agentplane-credential-agentplane-workload"
+_NOTIFICATIONS_PLACEHOLDER = "agentplane-credential-agentplane-notifications-workload"
+
+
+@dataclass(frozen=True)
+class ServiceUrls:
+    """The base URLs of the services a Session calls, as the platform instructions list them."""
+
+    egress: str
+    actions: str
+    notifications: str
+
+
+def service_urls(env: Environment, *, egress_api_service: ServiceRef | None = None) -> ServiceUrls:
+    actions_service = actions.service(env.namespace)
+    egress_api = egress_api_service or egress.agent_api(env.namespace)
+    egress_port = f":{egress_api.port.number}" if egress_api.port.number != 80 else ""
+    return ServiceUrls(
+        egress=f"http://{egress_api.fqdn}{egress_port}",
+        actions=f"http://{actions_service.fqdn}:{actions_service.port.number}",
+        notifications=f"http://{notifications.service(env.namespace).fqdn}:8080",
+    )
 
 
 def platform_instructions(env: Environment, *, egress_api_service: ServiceRef | None = None) -> str:
     """The complete deployment-wide prompt: shared guidance with this environment's service URLs."""
-    actions_service = actions.service(env.namespace)
-    egress_api = egress_api_service or egress.agent_api(env.namespace)
-    egress_port = f":{egress_api.port.number}" if egress_api.port.number != 80 else ""
+    urls = service_urls(env, egress_api_service=egress_api_service)
     return render_platform_instructions(
-        egress_api_url=f"http://{egress_api.fqdn}{egress_port}",
-        actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
-        notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
+        egress_api_url=urls.egress, actions_service_url=urls.actions, notifications_service_url=urls.notifications
     )
+
+
+def agent_cli_env(urls: ServiceUrls) -> list[k8s.EnvVar]:
+    """What the `agentplane` command reads (agentplane/docs/agent_cli.md): each group's base URL and
+    the placeholder bearer the egress proxy swaps for the real credential."""
+    return [
+        k8s.EnvVar(name="AGENTPLANE_ACTIONS_URL", value=urls.actions),
+        k8s.EnvVar(name="AGENTPLANE_ACTIONS_CREDENTIAL", value=_WORKLOAD_PLACEHOLDER),
+        k8s.EnvVar(name="AGENTPLANE_NOTIFICATIONS_URL", value=urls.notifications),
+        k8s.EnvVar(name="AGENTPLANE_NOTIFICATIONS_CREDENTIAL", value=_NOTIFICATIONS_PLACEHOLDER),
+        k8s.EnvVar(name="AGENTPLANE_EGRESS_URL", value=urls.egress),
+        k8s.EnvVar(name="AGENTPLANE_EGRESS_CREDENTIAL", value=_WORKLOAD_PLACEHOLDER),
+    ]
 
 
 def pods(namespace: str) -> Pods:
@@ -137,6 +171,7 @@ class RunnerSandbox(Construct):
             image_pull_secret_name=image_pull_secret_name,
             trust_mounts=trust_mounts,
             control_service=control_service,
+            egress_api_service=egress_api_service,
         )
         if env.vm_sandboxes:
             launcher_relay.LauncherRelayPolicy(
@@ -192,6 +227,7 @@ class RunnerTemplate(Construct):
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
         control_service: ServiceRef | None = None,
+        egress_api_service: ServiceRef | None = None,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
@@ -204,6 +240,7 @@ class RunnerTemplate(Construct):
         self.image_pull_secret_name = image_pull_secret_name
         self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
         self.control_service = control_service
+        self.agent_cli_env = agent_cli_env(service_urls(env, egress_api_service=egress_api_service))
         # The SandboxTemplate's spec: its `pod`, and the `stateVolume` the VM template shares.
         self.spec = self._add_sandbox_template(name=name, image=image)
 
@@ -223,6 +260,7 @@ class RunnerTemplate(Construct):
                     "PATH",
                     *self.env.sandbox_workload_env,
                     *(var.name for var in sandbox_pod.egress_env()),
+                    *(var.name for var in self.agent_cli_env),
                     *self.extra_harness_env,
                 ]
             )
@@ -269,13 +307,14 @@ class RunnerTemplate(Construct):
                     ),
                     # On the container and not just on the harness children the runner spawns.
                     *sandbox_pod.egress_env(),
+                    *self.agent_cli_env,
                     # Neither a workload token nor a LiteLLM key: the placeholder the
                     # agentplane-workload EgressCredential derives from its name. Central
                     # substitutes the sidecar-only projected token; the ingress replaces
                     # that with its server-held LiteLLM virtual key after live
                     # WorkloadPrincipal resolution.
-                    k8s.EnvVar(name="ANTHROPIC_AUTH_TOKEN", value="agentplane-credential-agentplane-workload"),
-                    k8s.EnvVar(name="OPENAI_API_KEY", value="agentplane-credential-agentplane-workload"),
+                    k8s.EnvVar(name="ANTHROPIC_AUTH_TOKEN", value=_WORKLOAD_PLACEHOLDER),
+                    k8s.EnvVar(name="OPENAI_API_KEY", value=_WORKLOAD_PLACEHOLDER),
                 ],
                 self.workload_env,
             ),
