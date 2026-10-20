@@ -133,6 +133,9 @@ spec:
             readOnlyRootFilesystem: false
             runAsNonRoot: true
           volumeMounts:
+            - mountPath: /etc/agentplane-runner-gateway/settings
+              name: configmap-runner-gateway-settings
+              readOnly: true
             - mountPath: /var/run/secrets/agentplane-runner-gateway
               name: runner-gateway-token
               readOnly: true
@@ -156,6 +159,9 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
       volumes:
+        - configMap:
+            name: runner-gateway-settings
+          name: configmap-runner-gateway-settings
         - name: runner-gateway-token
           projected:
             sources:

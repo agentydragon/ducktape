@@ -257,12 +257,12 @@ class RunnerGateway(Construct):
             registry_secret_name=registry_secret_name,
             placement=placement,
         )
+        settings.mount_into(workload.container, env=Settings.config_file_env)
         workload.project_tokens(
             "runner-gateway-token",
             "/var/run/secrets/agentplane-runner-gateway",
             {"token": runner_gateway.TOKEN_AUDIENCE},
         )
-        settings.mount_into(workload.container, env=Settings.config_file_env)
         self._add_rbac(workload.account, namespace)
         egress.add_runner_egress(
             self,

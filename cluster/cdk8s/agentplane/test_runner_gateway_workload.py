@@ -1,5 +1,6 @@
 """The Gateway keeps stable Service addresses for one authenticated gRPC listener."""
 
+from pathlib import PurePosixPath
 from typing import Any, cast
 
 import pytest
@@ -117,6 +118,19 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     role = _resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
     assert {rule["resources"][0] for rule in role["rules"]} == {"pods", "sandboxes", "leases", "endpointslices"}
     assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
+
+
+def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token() -> None:
+    docs = _gateway_objects()
+    pod = _resource(docs, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
+    container = one(c for c in pod["containers"] if c["name"] == "runner-gateway")
+    path = PurePosixPath(one(entry["value"] for entry in container["env"] if entry["name"] == Settings.config_file_env))
+    mounted = {mount["mountPath"]: mount["name"] for mount in container["volumeMounts"]}
+    volumes = {volume["name"]: volume for volume in pod["volumes"]}
+    settings_map = _resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")
+    assert volumes[mounted[str(path.parent)]]["configMap"]["name"] == settings_map["metadata"]["name"]
+    assert path.name in settings_map["data"]
+    assert "projected" in volumes[mounted["/var/run/secrets/agentplane-runner-gateway"]]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)

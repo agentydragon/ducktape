@@ -46,7 +46,10 @@ class ServiceWorkload:
 
     def project_tokens(self, volume: str, mount_path: str, audiences: Mapping[str, str]) -> None:
         """Mounts a rotating workload token for each `{file: audience}` under `mount_path`, apart
-        from the API-server token. cdk8s-plus has no projected ServiceAccount token volume."""
+        from the API-server token. cdk8s-plus has no projected ServiceAccount token volume.
+
+        Call it after every other mount of the container: while the container has none, its patches
+        replace the volume and mount arrays, which drops a mount added afterwards."""
         deployment = ApiObject.of(self.deployment)
         token_volume = k8s.Volume(
             name=volume,
