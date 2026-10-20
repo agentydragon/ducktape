@@ -74,6 +74,10 @@ import "./projected_session.css";
 
 type ReadingAnchor = { key: string; offset: number; target?: HTMLElement };
 
+// Collapsing a block hides its own sticky heading (`display: none`): still connected, but with no box to
+// hold. Its rect reads as zeros, so a correction toward it is the same step on every resize and never arrives.
+const isHidden = (target: HTMLElement): boolean => target.isConnected && target.getClientRects().length === 0;
+
 /** A run of tool calls and reasoning steps, folded behind its summary until opened. */
 function CollapsibleRows({
   id,
@@ -415,6 +419,10 @@ function VirtualizedHistory({
     if (!anchor || !element || restoringAnchor.current !== anchor.key) return null;
     const row = anchorElement(anchor.key);
     if (!row) return null;
+    if (anchor.target && isHidden(anchor.target)) {
+      captureReadingAnchor(element);
+      return 0;
+    }
     const anchorTarget = anchor.target?.isConnected ? anchor.target : row;
     const correction = anchorTarget.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
     element.scrollTop += correction;
@@ -552,6 +560,10 @@ function VirtualizedHistory({
     const element = viewport.current;
     const target = anchor?.target;
     if (!anchor || anchor.key !== stickyAnchorKey || !element || !target?.isConnected) return;
+    if (isHidden(target)) {
+      captureReadingAnchor(element);
+      return;
+    }
 
     // A nested disclosure can shrink its containing virtual row past the scroll position. Restore
     // its sticky control in this commit, before the browser paints it clamped by that row's bottom.
@@ -565,7 +577,7 @@ function VirtualizedHistory({
       publishMode();
     });
     publishMode();
-  }, [cancelRestoration, publishMode, stickyAnchorKey, stickyAnchorRevision]);
+  }, [cancelRestoration, captureReadingAnchor, publishMode, stickyAnchorKey, stickyAnchorRevision]);
   const restoreAnchor = useEffectEvent((anchor: ReadingAnchor, awaitMeasurement = false) => {
     const index = anchorIndex(anchor.key);
     if (index < 0) return;
@@ -576,6 +588,10 @@ function VirtualizedHistory({
       const element = viewport.current;
       const row = anchorElement(anchor.key);
       if (!element || !row) return null;
+      if (anchor.target && isHidden(anchor.target)) {
+        captureReadingAnchor(element);
+        return 0;
+      }
       const anchorTarget = anchor.target?.isConnected ? anchor.target : row;
       const currentOffset = anchorTarget.getBoundingClientRect().top - element.getBoundingClientRect().top;
       const correction = currentOffset - anchor.offset;

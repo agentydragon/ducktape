@@ -1437,7 +1437,9 @@ async def test_expanded_command_stays_collapsible(
                 f"thread-command-expanded-{viewport_name}{color_suffix}.png",
                 f"Expanded command on {viewport_name} ({color_scheme})",
             )
-        await collapse.click()
+        # The heading the reader clicked hides with the block it collapses: the history leaves the run where it was.
+        async with holding_still(page, run):
+            await collapse.click()
         await frames(page)
         assert await editor.evaluate("node => node.isConnected"), "collapsing remounted the CodeMirror editor"
         assert await page.evaluate("() => window.getSelection()?.toString()") == "echo command line 20"
