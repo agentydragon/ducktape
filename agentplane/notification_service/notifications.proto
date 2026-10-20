@@ -1,0 +1,445 @@
+// The Notification Service's workload API: subscriptions that deliver events from a source into a Session's
+// inbox, and the inbox an agent reads and acknowledges.
+syntax = "proto3";
+
+package agentplane.notification_service;
+
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// Callers are workloads. Every call acts for the caller's ServiceAccount, which its workloads share, and only on
+// what that account owns: a subscription or inbox that exists but belongs to another account answers `NOT_FOUND`,
+// as a missing one does. An agent reaches the HTTP routes through the egress proxy; `agentplane notifications`
+// wraps the subscription ones.
+//
+// An error carries the gRPC status code that names it. `INVALID_ARGUMENT` is a malformed or out-of-range request,
+// `NOT_FOUND` a missing or unowned resource, `PERMISSION_DENIED` a source the account may not follow,
+// `ALREADY_EXISTS` a creation key reused for other arguments, `ABORTED` a renewal on a stale `version`,
+// `FAILED_PRECONDITION` a retired inbox, `OUT_OF_RANGE` a cursor past the inbox's end, `RESOURCE_EXHAUSTED` a
+// quota, and `UNAVAILABLE` the service's backend or a source being down; a GitHub rate limit also carries
+// `google.rpc.RetryInfo`.
+service Notifications {
+  // Subscribes a Session's inbox to a source. The inbox is the Session's inbox for the caller's account; it is
+  // created with its first subscription.
+  //
+  // `destination_ref` must name an existing Sandbox with that UID owned by the caller's ServiceAccount, else
+  // `NOT_FOUND`. A creation is identified by `idempotency_key` within the inbox: an identical retry answers with
+  // the same subscription, the key reused for other arguments fails `ALREADY_EXISTS`, and the key of a cancelled
+  // subscription answers with that cancelled subscription rather than creating a replacement. An Action request
+  // source must belong to the caller, else `PERMISSION_DENIED`; so must a GitHub repository the service's
+  // GitHub App can read. A retired inbox fails `FAILED_PRECONDITION`.
+  rpc CreateSubscription(CreateSubscriptionRequest) returns (CreateSubscriptionResponse) {
+    option (google.api.http) = {post: "/v1/subscriptions" body: "*"};
+  }
+
+  // The caller's subscriptions in `id` order, in pages of 128. Continue with `after_id` set to the last
+  // subscription's `id`; a page of fewer than 128 is the last.
+  rpc ListSubscriptions(ListSubscriptionsRequest) returns (ListSubscriptionsResponse) {
+    option (google.api.http) = {get: "/v1/subscriptions"};
+  }
+
+  // One subscription, with its source failures and expiry.
+  rpc GetSubscription(GetSubscriptionRequest) returns (GetSubscriptionResponse) {
+    option (google.api.http) = {get: "/v1/subscriptions/{subscription_id}"};
+  }
+
+  // Extends a subscription to `lifetime_days` from now, up to 30. `version` must be the one last read, else
+  // `ABORTED`, which is also the answer for a cancelled subscription. Renewing an expired subscription takes an
+  // active slot and is subject to the same quota as creating one.
+  rpc RenewSubscription(RenewSubscriptionRequest) returns (RenewSubscriptionResponse) {
+    option (google.api.http) = {patch: "/v1/subscriptions/{subscription_id}" body: "*"};
+  }
+
+  // Cancels a subscription. Idempotent. Entries it already delivered stay in the inbox, and cancelling never
+  // cancels an Action request.
+  rpc CancelSubscription(CancelSubscriptionRequest) returns (CancelSubscriptionResponse) {
+    option (google.api.http) = {delete: "/v1/subscriptions/{subscription_id}"};
+  }
+
+  // The caller's inboxes in `id` order: one per qualified Session, retired ones included until they are purged.
+  rpc ListInboxes(ListInboxesRequest) returns (ListInboxesResponse) {
+    option (google.api.http) = {get: "/v1/inboxes"};
+  }
+
+  // Entries after `after_cursor`, oldest first, contiguous from the cursor, with the latest notice's delivery
+  // state. Reading acknowledges nothing and never skips: a page ends where the committed entries do, so a
+  // reader that continues from the last cursor it saw misses none. Payloads are provider snapshots stored when
+  // the event arrived, not fetched at read time, and are not instructions from the operator.
+  rpc ReadInbox(ReadInboxRequest) returns (ReadInboxResponse) {
+    option (google.api.http) = {get: "/v1/inboxes/{inbox_id}/entries"};
+  }
+
+  // Acknowledges the handled prefix of the inbox up to `through_cursor`. Never moves backwards, so a lower
+  // cursor changes nothing; a cursor beyond the inbox's last fails `OUT_OF_RANGE`. Delivery and reads never
+  // acknowledge.
+  rpc AcknowledgeInbox(AcknowledgeInboxRequest) returns (AcknowledgeInboxResponse) {
+    option (google.api.http) = {put: "/v1/inboxes/{inbox_id}/acknowledgement" body: "*"};
+  }
+
+  // Retires an inbox: its subscriptions are cancelled and nothing more is matched or delivered to it. A command
+  // already submitted to the runner cannot be withdrawn. Idempotent. A missing endpoint or a transient lookup
+  // failure is not retirement.
+  rpc RetireInbox(RetireInboxRequest) returns (RetireInboxResponse) {
+    option (google.api.http) = {delete: "/v1/inboxes/{inbox_id}"};
+  }
+}
+
+message CreateSubscriptionRequest {
+  // The Session's Sandbox.
+  DestinationRef destination_ref = 1;
+  // The Session whose inbox receives the events: 1 to 200 characters.
+  string session_id = 2;
+  // Chosen by the caller, unique within the inbox: 1 to 200 characters. Identical retries return the existing
+  // subscription.
+  string idempotency_key = 3;
+  // Immutable once created.
+  Source source = 4;
+  // How long the subscription lasts, 1 to 30 days; 7 when absent.
+  optional int32 lifetime_days = 5;
+}
+
+message CreateSubscriptionResponse {
+  Subscription subscription = 1;
+}
+
+message ListSubscriptionsRequest {
+  // A subscription `id` (UUID): only those after it.
+  optional string after_id = 1;
+}
+
+message ListSubscriptionsResponse {
+  repeated Subscription subscriptions = 1;
+}
+
+message GetSubscriptionRequest {
+  // UUID.
+  string subscription_id = 1;
+}
+
+message GetSubscriptionResponse {
+  Subscription subscription = 1;
+}
+
+message RenewSubscriptionRequest {
+  // UUID.
+  string subscription_id = 1;
+  // The subscription's current `version`.
+  int64 version = 2;
+  // The lifetime counted from now, 1 to 30 days; 7 when absent.
+  optional int32 lifetime_days = 3;
+}
+
+message RenewSubscriptionResponse {
+  Subscription subscription = 1;
+}
+
+message CancelSubscriptionRequest {
+  // UUID.
+  string subscription_id = 1;
+}
+
+message CancelSubscriptionResponse {
+  Subscription subscription = 1;
+}
+
+message ListInboxesRequest {}
+
+message ListInboxesResponse {
+  repeated Inbox inboxes = 1;
+}
+
+message ReadInboxRequest {
+  // UUID.
+  string inbox_id = 1;
+  // Only entries with a larger cursor; 0 reads from the start.
+  int64 after_cursor = 2;
+  // At most this many entries, 1 to 128; 128 when absent.
+  optional int32 limit = 3;
+}
+
+message ReadInboxResponse {
+  Inbox inbox = 1;
+  repeated InboxEntry entries = 2;
+  // The latest notice of the inbox, absent before the first.
+  Notice notice = 3;
+}
+
+message AcknowledgeInboxRequest {
+  // UUID.
+  string inbox_id = 1;
+  // The highest cursor handled; every entry up to it must have been.
+  int64 through_cursor = 2;
+}
+
+message AcknowledgeInboxResponse {
+  Inbox inbox = 1;
+}
+
+message RetireInboxRequest {
+  // UUID.
+  string inbox_id = 1;
+}
+
+message RetireInboxResponse {}
+
+// The Sandbox a Session runs in, by the identity that tells it from a Sandbox recreated under the same name.
+message DestinationRef {
+  // 1 to 63 characters.
+  string namespace = 1;
+  // 1 to 63 characters.
+  string name = 2;
+  // 1 to 128 characters.
+  string uid = 3;
+}
+
+// Where events come from. Exactly one field is set: the source's provider.
+message Source {
+  oneof provider {
+    ActionsSource actions = 1;
+    GitHubSource github = 2;
+  }
+}
+
+// The events of an Action request: its state changes, from the Action Service.
+message ActionsSource {
+  // UUID of an Action request the caller owns.
+  string request_id = 1;
+  // Replay starts after this event sequence, 0 to 2147483647; 0 replays from the first. It is the request's own
+  // sequence, not an inbox cursor.
+  int32 after_sequence = 2;
+}
+
+// Activity on one GitHub subject, delivered from the service's GitHub App webhook. Events from before the
+// subscription was created are not delivered.
+message GitHubSource {
+  // `owner/name`, at most 200 characters.
+  string repository = 1;
+  GitHubSubject subject = 2;
+  // Which events and actions to deliver, at most 32 filters. Empty selects the subject's defaults: an issue's
+  // `issues` and `issue_comment` events; for any other subject completed `check_run` events and `status`
+  // events, plus a pull request's `pull_request`, `issue_comment`, `pull_request_review` and
+  // `pull_request_review_comment` events and a branch's `push`, `create` and `delete` events. Selecting events
+  // explicitly allows, for a pull request those and the CI events, for a branch the ref events and the CI
+  // events, for a commit the CI events, and for an issue only its two defaults. The CI events are `check_run`,
+  // `check_suite`, `status`, `workflow_run` and `workflow_job`; the last three are delivered only when
+  // selected. Anything else is `INVALID_ARGUMENT`. Filters are unordered: order and repeats do not change the
+  // subscription's identity.
+  repeated GitHubEventFilter events = 3;
+}
+
+// What a GitHub subscription follows. Exactly one field is set: the kind of subject.
+message GitHubSubject {
+  oneof subject {
+    PullRequestSubject pull_request = 1;
+    IssueSubject issue = 2;
+    BranchSubject branch = 3;
+    CommitSubject commit = 4;
+  }
+}
+
+message PullRequestSubject {
+  // Positive.
+  int32 number = 1;
+}
+
+// An ordinary issue. Pull requests are refused: GitHub returns them as issues too.
+message IssueSubject {
+  // Positive.
+  int32 number = 1;
+}
+
+// A branch by name. Deleting the branch does not cancel following the name.
+message BranchSubject {
+  // 1 to 255 characters.
+  string name = 1;
+}
+
+// A commit; CI results for it arrive while it is the head of a followed ref or reported against it.
+message CommitSubject {
+  // The full 40-character lowercase SHA.
+  string sha = 1;
+}
+
+// The GitHub webhook event names this service accepts.
+enum GitHubEventName {
+  GITHUB_EVENT_NAME_UNSPECIFIED = 0;
+  GITHUB_EVENT_NAME_PULL_REQUEST = 1;
+  GITHUB_EVENT_NAME_ISSUE_COMMENT = 2;
+  GITHUB_EVENT_NAME_PULL_REQUEST_REVIEW = 3;
+  GITHUB_EVENT_NAME_PULL_REQUEST_REVIEW_COMMENT = 4;
+  GITHUB_EVENT_NAME_CHECK_RUN = 5;
+  GITHUB_EVENT_NAME_CHECK_SUITE = 6;
+  GITHUB_EVENT_NAME_STATUS = 7;
+  GITHUB_EVENT_NAME_PUSH = 8;
+  GITHUB_EVENT_NAME_CREATE = 9;
+  GITHUB_EVENT_NAME_DELETE = 10;
+  GITHUB_EVENT_NAME_WORKFLOW_RUN = 11;
+  GITHUB_EVENT_NAME_WORKFLOW_JOB = 12;
+  GITHUB_EVENT_NAME_ISSUES = 13;
+}
+
+message GitHubEventFilter {
+  GitHubEventName event = 1;
+  // GitHub `action` values to deliver, such as `created` or `completed`: lowercase letters and `_`, at most 64
+  // characters each, at most 32. Empty selects every action. `push`, `create`, `delete` and `status` have no
+  // action to select.
+  repeated string actions = 2;
+}
+
+// An existing subscription. The `source` is the specification it was created with, not a checkpoint of how far
+// it has been processed.
+message Subscription {
+  // UUID.
+  string id = 1;
+  // UUID of the inbox its events land in.
+  string inbox_id = 2;
+  Source source = 3;
+  string idempotency_key = 4;
+  // Changes whenever the subscription does; a renewal sends the one it read.
+  int64 version = 5;
+  bool cancelled = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  // Of this subscription's own processing; absent before the first success. Neither it nor an absent error
+  // proves complete webhook coverage, current remote authorization or delivery to the agent.
+  google.protobuf.Timestamp last_success_at = 8;
+  // The current failure of this subscription's processing. `error_kind`, `error`, `error_since` and
+  // `error_observed_at` are all present or all absent. A success clears them.
+  optional SourceFailureKind error_kind = 9;
+  // A safe description of the failure; never an upstream body or a credential.
+  optional string error = 10;
+  // When the failure of this kind began; a failure of a different kind starts it anew.
+  google.protobuf.Timestamp error_since = 11;
+  google.protobuf.Timestamp error_observed_at = 12;
+  // When the service will retry, for a current failure of an active subscription. It is not a delivery deadline.
+  google.protobuf.Timestamp retry_at = 13;
+  // The GitHub access and subject observations the subscription shares with others; absent for Action sources.
+  GitHubStatus github = 14;
+}
+
+// Why a source could not be processed.
+enum SourceFailureKind {
+  SOURCE_FAILURE_KIND_UNSPECIFIED = 0;
+  SOURCE_FAILURE_KIND_RATE_LIMITED = 1;
+  SOURCE_FAILURE_KIND_UNAVAILABLE = 2;
+  SOURCE_FAILURE_KIND_ACCESS_DENIED = 3;
+  SOURCE_FAILURE_KIND_SOURCE_CHANGED = 4;
+  SOURCE_FAILURE_KIND_PROCESSING_ERROR = 5;
+}
+
+// Observations of the GitHub App's access and of the subject, shared by every subscription to them: a failure
+// belongs here once, not copied into each subscription. A cancelled subscription can still show observations
+// kept for another subscriber.
+message GitHubStatus {
+  // The App, installation and repository grants that cover the subscription.
+  repeated GitHubAccessStatus access = 1;
+  GitHubSubjectStatus subject = 2;
+}
+
+// One App, installation and repository grant.
+message GitHubAccessStatus {
+  int64 app_id = 1;
+  int64 installation_id = 2;
+  int64 repository_id = 3;
+  // When the grant was last validated, and until when that validation is trusted.
+  google.protobuf.Timestamp checked_at = 4;
+  google.protobuf.Timestamp valid_until = 5;
+  // As of this read; not a promise about later delivery.
+  bool currently_valid = 6;
+  // The observation fields below mean what they do on `Subscription`, for the grant instead of a subscription.
+  google.protobuf.Timestamp last_success_at = 7;
+  optional SourceFailureKind error_kind = 8;
+  optional string error = 9;
+  google.protobuf.Timestamp error_since = 10;
+  google.protobuf.Timestamp error_observed_at = 11;
+  google.protobuf.Timestamp retry_at = 12;
+  // While another worker refreshes the grant, until when its lease holds.
+  google.protobuf.Timestamp refreshing_until = 13;
+}
+
+// The repair state of the followed GitHub subject.
+message GitHubSubjectStatus {
+  int64 repository_id = 1;
+  GitHubSubject subject = 2;
+  // The observation fields below mean what they do on `Subscription`, for the subject instead of a subscription.
+  google.protobuf.Timestamp last_success_at = 3;
+  optional SourceFailureKind error_kind = 4;
+  optional string error = 5;
+  google.protobuf.Timestamp error_since = 6;
+  google.protobuf.Timestamp error_observed_at = 7;
+  google.protobuf.Timestamp retry_at = 8;
+  google.protobuf.Timestamp refreshing_until = 9;
+}
+
+// One Session's inbox: entries from every source its subscriptions follow, in the order they were committed.
+// A cursor is an entry's position, from 1.
+message Inbox {
+  // UUID.
+  string id = 1;
+  DestinationRef destination_ref = 2;
+  string session_id = 3;
+  // The cursor of the newest committed entry, or 0 for none.
+  int64 last_cursor = 4;
+  // Entries up to this cursor are acknowledged; it moves only when the agent acknowledges.
+  int64 acknowledged = 5;
+  // Entries up to this cursor are named by a notice. Coverage is independent of acknowledgement: an entry a notice
+  // covered is not announced again.
+  int64 covered = 6;
+  // Payloads expire after 30 days; entries up to this cursor are no longer readable. It leaves `acknowledged` as it
+  // was.
+  int64 expired_through = 7;
+  bool retired = 8;
+  // Why the inbox's latest notice could not be delivered to the runner, while it is being retried.
+  optional string delivery_error = 9;
+}
+
+// One event delivered to an inbox.
+message InboxEntry {
+  int64 cursor = 1;
+  // Which event this is. One event can match several subscriptions, and is one entry.
+  EventIdentity event = 2;
+  // The provider's own JSON for the event: an Action event's `sequence`, `state`, `at` and `actor`, or the full
+  // GitHub webhook body.
+  google.protobuf.Struct payload = 3;
+  // UUIDs of the subscriptions the event matched.
+  repeated string subscription_ids = 4;
+}
+
+// Identifies an entry's event within its source, which is how a redelivery is told from a new event. Exactly one
+// field is set: the provider.
+message EventIdentity {
+  oneof provider {
+    ActionsEvent actions = 1;
+    GitHubEvent github = 2;
+  }
+}
+
+message ActionsEvent {
+  // UUID.
+  string request_id = 1;
+  // The request's own event sequence, from 1.
+  int32 sequence = 2;
+}
+
+message GitHubEvent {
+  int64 app_id = 1;
+  // UUID of the webhook delivery.
+  string delivery_id = 2;
+  int64 repository_id = 3;
+  GitHubEventName event = 4;
+  optional string action = 5;
+}
+
+// A notice: the message sent to the Session's runner naming the entries that await the agent.
+message Notice {
+  // UUID of the command carrying it; a lost response retries the same one.
+  string command_id = 1;
+  // The notice covers entries up to this cursor.
+  int64 through_cursor = 2;
+  // How far the command got: it was sent, the runner admitted it, the harness confirmed it reached the agent.
+  // Admission is not delivery; only confirmation is.
+  bool attempted = 3;
+  bool admitted = 4;
+  bool confirmed = 5;
+  optional string error = 6;
+}

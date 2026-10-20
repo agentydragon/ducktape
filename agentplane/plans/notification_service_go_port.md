@@ -37,39 +37,21 @@ a history-free notice outcome, any schema change, and the Action Service port.
 
 ## Contract
 
-`agentplane/proto/notifications.proto` holds two services, because the audiences differ as the Action Service's
-do: `Notifications` for workloads (any ServiceAccount of the namespace, owning only its own inboxes) and
-`NotificationsOperator` for the integration app alone (`operator_reader_account`). The OpenAPI document
-`proto_openapi` generates from it is served at `/openapi.json`, linked from `/llms.txt`, and replaces
-`docs/agents/http_api.md`. Proposed RPCs:
+`notification_service/notifications.proto` (`Notifications`, for workloads) and `notifications_operator.proto`
+(`NotificationsOperator`, for the integration app alone) hold the RPCs, shapes and error codes. They are two files
+so that the OpenAPI document `proto_openapi` renders from the first, one proto source per document, describes
+only what an agent may call. What the servicers and callers still owe it:
 
-| Today                                                                                                   | RPC                                                                               | Route                                                                                    |
-| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `POST /v1/subscriptions`                                                                                | `CreateSubscription`                                                              | same                                                                                     |
-| `GET /v1/subscriptions`, `GET`/`PATCH`/`DELETE /v1/subscriptions/{id}`                                  | `ListSubscriptions`, `GetSubscription`, `RenewSubscription`, `CancelSubscription` | same                                                                                     |
-| `GET /v1/inboxes`, `GET /v1/inboxes/{id}/entries`                                                       | `ListInboxes`, `ReadInbox`                                                        | same                                                                                     |
-| `PUT /v1/inboxes/{id}/acknowledgement`, `DELETE /v1/inboxes/{id}`                                       | `AcknowledgeInbox`, `RetireInbox`                                                 | same                                                                                     |
-| `GET /v1/sources`                                                                                       | none                                                                              | deleted: nothing outside the service reads it, the OpenAPI document describes the shapes |
-| `GET /v1/operator/sandboxes/{namespace}/{name}/notifications/stream`, `GET /v1/operator/notices/stream` | `WatchSandboxNotifications`, `WatchSessionNotices`                                | `…/notifications:watch`, `/v1/operator/notices:watch`                                    |
-| `POST /v1/webhooks/github`                                                                              | hand-written HTTP on the facade's listener                                        | unchanged: signed body, bounded, `202`                                                   |
-| `/healthz`, `/readyz`                                                                                   | `grpc.health.v1`                                                                  | probes become native `grpc` probes                                                       |
-
-Shape rules, taking the operator's "we choose the shape" (2026-10-19):
-
-- The same resources and fields; only the encoding changes. Fields are camelCase and cursors and versions
-  `int64`, which proto3 JSON writes as decimal strings.
-- `Source`, `EventIdentity` and the GitHub subject become `oneof`s; the `provider` and `kind` discriminator
-  strings go. Entry `payload` is `google.protobuf.Struct`, so provider JSON passes through unchanged.
-- Domain errors become the codes the [CLI](../docs/agent_cli.md#errors-and-exit-codes) already names: not found
-  or not owned `NOT_FOUND`, source not owned or GitHub access lost `PERMISSION_DENIED`, a stale `version`
-  `ABORTED`, a repeated creation key with different arguments `ALREADY_EXISTS`, quota `RESOURCE_EXHAUSTED`,
-  backend or GitHub unavailable `UNAVAILABLE`. A GitHub rate limit carries `google.rpc.RetryInfo`; the CLI
-  reads `retry_after_seconds` from the `Retry-After` header today, and the stock gateway sets none, so the CLI
-  reads the error body's details instead.
-- Both watches keep what the SSE streams do: a `snapshot` frame, sent when its state changes and re-read at the
-  next debounce or expiry deadline. They already carry state, so no tick-only watch problem. A
-  `reconnect_required` frame after a lease, as History's watch does, replaces the stream that never ends; the app
-  still ends a relayed stream when the operator session does.
+- The rendered document is served at `/openapi.json`, linked from `/llms.txt`, and replaces
+  `docs/agents/http_api.md` (stage H).
+- The GitHub webhook stays hand-written HTTP on the facade's listener, unchanged: signed body, bounded, `202`.
+  `/healthz` and `/readyz` become `grpc.health.v1` and the probes native `grpc` probes (H); the app's probe moves
+  in I.
+- A GitHub rate limit carries `google.rpc.RetryInfo`. The CLI reads `retry_after_seconds` from the `Retry-After`
+  header today, and the stock gateway sets none, so it reads the error body's details instead (I).
+- Both watches send a `snapshot` when its state changes and read again at the next debounce or expiry deadline,
+  and end with `reconnect_required` after a lease, as History's watch does. The app still ends a relayed stream
+  when the operator session does (H, I).
 
 ## Stored data the port must read and write exactly
 
@@ -96,7 +78,6 @@ from Python until the cutover.
 
 | Stage | Change                                                                                                                                                                                                                                                                                                                 |
 | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| B     | The proto, with the rendered OpenAPI in the PR as the review artifact. This is the agent-facing contract; nothing else depends on its review except the servicers.                                                                                                                                                     |
 | D     | `store`: inboxes, subscriptions, quotas, cursors, read, acknowledge, retire, cleanup, with the golden vectors and the tests of `test_store.py` and `test_wakeups.py`.                                                                                                                                                  |
 | E     | `worker`: claim, fenced release, debounce, the notice state machine (persist, checkpoint, attempt, `SubmitInput`, receipts from History), two-lookup stale retirement. Ported in the order of `Service.step` and with `test_service.py`.                                                                               |
 | F     | Actions source: the HTTP client, the owner check, event paging, `record`.                                                                                                                                                                                                                                              |

@@ -1,6 +1,9 @@
 load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
+load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -455,4 +458,62 @@ py_library(
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
+)
+
+proto_library(
+    name = "notifications_proto",
+    srcs = ["notifications.proto"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "@googleapis//google/api:annotations_proto",
+        "@protobuf//:struct_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+proto_library(
+    name = "notifications_operator_proto",
+    srcs = ["notifications_operator.proto"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        ":notifications_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@protobuf//:empty_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "notifications_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//devinfra/go:grpc_gateway",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb",
+    proto = ":notifications_proto",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = ["@org_golang_google_genproto_googleapis_api//annotations"],
+)
+
+go_proto_library(
+    name = "notifications_operator_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//devinfra/go:grpc_gateway",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb",
+    proto = ":notifications_operator_proto",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        ":notifications_go_proto",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
+)
+
+# The agent-facing reference, which the service serves at `/openapi.json`.
+proto_openapi(
+    name = "notifications_openapi",
+    proto = ":notifications_proto",
 )

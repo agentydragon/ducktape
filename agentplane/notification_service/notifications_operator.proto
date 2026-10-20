@@ -1,0 +1,187 @@
+// The Notification Service's operator API: what the integration app shows an operator about notification
+// delivery. It carries no agent inbox authority.
+syntax = "proto3";
+
+package agentplane.notification_service;
+
+import "agentplane/notification_service/notifications.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// Only the integration app's ServiceAccount (the service's `operator_reader_account`, in its namespace) may call
+// this service, with a Pod-bound token of the audience the Notification Service accepts. It returns no provider
+// payloads, idempotency keys or notice text, and has no way to change anything: the agent's own inboxes stay
+// reachable only through `Notifications`, owner by owner.
+//
+// The app verifies the browser's operator login and resolves the Sandbox's current UID before it calls, so a
+// reused Sandbox name cannot expose another incarnation.
+service NotificationsOperator {
+  // The notification state of the Sandbox's inboxes, retired ones included, then again whenever it changes: their
+  // subscriptions and source errors, how many entries wait for a notice or for acknowledgement, and the latest
+  // notice's stage.
+  //
+  // The stream opens with a snapshot. Another follows whenever the displayed state changes, and at the next
+  // debounce or subscription-expiry deadline, so a state that changes with the clock is shown when it does. A
+  // snapshot that differs only in `observed_at` is not sent. Reading acknowledges nothing and the stream
+  // replays nothing: PostgreSQL only tells the service to read again, and a new stream reads the committed state
+  // from scratch. `NOT_FOUND` for a Sandbox outside the caller's namespace.
+  rpc WatchSandboxNotifications(WatchSandboxNotificationsRequest) returns (stream WatchSandboxNotificationsResponse) {
+    option (google.api.http) = {get: "/v1/operator/sandboxes/{namespace}/{name}/notifications:watch"};
+  }
+
+  // The named Sessions' inboxes that are not retired, at a glance, in the caller's namespace, then again whenever
+  // that changes and when a debounced notice falls due. Reading acknowledges nothing. Same stream behavior as
+  // `WatchSandboxNotifications`.
+  rpc WatchSessionNotices(WatchSessionNoticesRequest) returns (stream WatchSessionNoticesResponse) {
+    option (google.api.http) = {get: "/v1/operator/notices:watch"};
+  }
+}
+
+message WatchSandboxNotificationsRequest {
+  // The Sandbox's namespace; it must be the caller's.
+  string namespace = 1;
+  string name = 2;
+  // The Sandbox's current UID.
+  string uid = 3;
+}
+
+// Exactly one field is set.
+message WatchSandboxNotificationsResponse {
+  oneof frame {
+    SandboxNotificationStatus snapshot = 1;
+    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a
+    // failure.
+    google.protobuf.Empty reconnect_required = 2;
+  }
+}
+
+message WatchSessionNoticesRequest {
+  // At most 200 Session IDs.
+  repeated string session_ids = 1;
+}
+
+// Exactly one field is set.
+message WatchSessionNoticesResponse {
+  oneof frame {
+    SessionNoticeStates snapshot = 1;
+    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a
+    // failure.
+    google.protobuf.Empty reconnect_required = 2;
+  }
+}
+
+message SandboxNotificationStatus {
+  // When the state was read. Not a change of state.
+  google.protobuf.Timestamp observed_at = 1;
+  repeated InboxStatus inboxes = 2;
+}
+
+// One inbox with what is waiting in it and what is scheduled for it.
+message InboxStatus {
+  Inbox inbox = 1;
+  // The latest notice, absent before the first.
+  Notice notice = 2;
+  repeated SubscriptionStatus subscriptions = 3;
+  // Retained entries beyond the highest of covered, acknowledged and expired: no notice names them yet.
+  int32 unannounced_count = 4;
+  // Retained, unexpired entries beyond `acknowledged`, including those a notice already covers. A prepared or
+  // confirmed notice does not acknowledge anything.
+  int32 pending_acknowledgement_count = 5;
+  // The oldest of the entries counted by `pending_acknowledgement_count`, at most 100, with a one-line summary
+  // each.
+  repeated InboxEntrySummary pending_entries = 6;
+  // Whether more entries are pending than `pending_entries` lists.
+  bool pending_entries_more = 7;
+  // While `notice_wait_reason` is `NOTICE_WAIT_REASON_DEBOUNCING`: when the next notice is due, which is the
+  // earlier of the quiet and maximum-wait deadlines. Absent otherwise.
+  google.protobuf.Timestamp notice_due_at = 8;
+  // The end of the quiet window after the newest uncovered entry.
+  google.protobuf.Timestamp quiet_until = 9;
+  // The end of the maximum wait after the oldest uncovered entry.
+  google.protobuf.Timestamp max_wait_at = 10;
+  // Why the next notice waits; absent when nothing is waiting. It replaces the debounce deadlines whenever
+  // another notice awaits confirmation or a delivery error needs a retry.
+  optional NoticeWaitReason notice_wait_reason = 11;
+  // When a worker next works on the inbox. Not a promise of delivery: an offline runner or event-dependent pacing
+  // has no guaranteed time.
+  google.protobuf.Timestamp next_work_at = 12;
+}
+
+// Why an inbox's next notice has not been sent.
+enum NoticeWaitReason {
+  NOTICE_WAIT_REASON_UNSPECIFIED = 0;
+  // The inbox is retired.
+  NOTICE_WAIT_REASON_RETIRED = 1;
+  // The latest notice failed.
+  NOTICE_WAIT_REASON_NOTICE_ERROR = 2;
+  // Delivery to the runner failed and will be retried.
+  NOTICE_WAIT_REASON_DELIVERY_RETRY = 3;
+  // The latest notice has not been confirmed by the harness.
+  NOTICE_WAIT_REASON_AWAITING_CONFIRMATION = 4;
+  // New entries are collecting within a quiet window.
+  NOTICE_WAIT_REASON_DEBOUNCING = 5;
+  // A notice is due and waits for a worker.
+  NOTICE_WAIT_REASON_READY = 6;
+}
+
+// A subscription as an operator sees it: no idempotency key, and the next time its source is checked instead of
+// its version.
+message SubscriptionStatus {
+  // UUID.
+  string id = 1;
+  Source source = 2;
+  bool cancelled = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  // The observation fields mean what they do on `Subscription`.
+  google.protobuf.Timestamp last_success_at = 5;
+  optional SourceFailureKind error_kind = 6;
+  optional string error = 7;
+  google.protobuf.Timestamp error_since = 8;
+  google.protobuf.Timestamp error_observed_at = 9;
+  // When this subscription's source is next reconciled.
+  google.protobuf.Timestamp next_source_check_at = 10;
+  GitHubStatus github = 11;
+}
+
+message InboxEntrySummary {
+  int64 cursor = 1;
+  google.protobuf.Timestamp created_at = 2;
+  // The source's name: `actions` or `github`.
+  string provider = 3;
+  string summary = 4;
+}
+
+// The live inboxes of the named Sessions, reduced to what a Thread list shows.
+message SessionNoticeStates {
+  google.protobuf.Timestamp observed_at = 1;
+  repeated InboxNoticeState inboxes = 2;
+}
+
+// One live inbox at a glance: what waits for a notice, what a notice covers that the agent has not
+// acknowledged, and how far the latest notice got.
+message InboxNoticeState {
+  // UUID.
+  string inbox_id = 1;
+  string session_id = 2;
+  // Entries no notice covers yet.
+  int32 queued = 3;
+  // Entries a notice covers that the agent has not acknowledged.
+  int32 unacknowledged = 4;
+  // How far the latest notice got; absent before the first.
+  optional NoticeProgress notice = 5;
+  optional NoticeWaitReason notice_wait_reason = 6;
+  // While debouncing: when a notice of the queued entries becomes due. An estimate, since a new entry extends the
+  // quiet window.
+  google.protobuf.Timestamp eligible_at = 7;
+  // The latest notice's error, or else the inbox's delivery error.
+  optional string error = 8;
+}
+
+enum NoticeProgress {
+  NOTICE_PROGRESS_UNSPECIFIED = 0;
+  NOTICE_PROGRESS_PREPARED = 1;
+  NOTICE_PROGRESS_ATTEMPTED = 2;
+  NOTICE_PROGRESS_ADMITTED = 3;
+  NOTICE_PROGRESS_CONFIRMED = 4;
+}
