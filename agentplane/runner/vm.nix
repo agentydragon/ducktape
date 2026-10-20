@@ -92,6 +92,12 @@ in
   # the serial console. The VM starts on the host's clock and is never suspended.
   services.timesyncd.enable = false;
 
+  # NixOS' default activation runs two Perl scripts, one that builds /etc and one that creates users
+  # and groups, in the initrd on every boot; the guest has one vCPU. An overlay /etc (built into the
+  # closure, mounted writable) and userborn do the same work without Perl.
+  system.etc.overlay.enable = true;
+  services.userborn.enable = true;
+
   # Keep the replaceable guest root small: the runner's journals live on the state PVC and agent
   # work on the workspace disk. Every closure byte is pulled to the node before the guest boots.
   virtualisation.diskSize = 8 * 1024;
