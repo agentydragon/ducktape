@@ -1930,11 +1930,13 @@ flowchart LR
     HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
     NOTIFICATION_SERVICE_GO_PORT[Candidate: port the Notification Service to Go]
     ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
+    ACTION_API_MERGE[Decision, unscheduled: merge parts of the operator and agent-facing Action APIs]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
     HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
     HISTORY_GO_STAGING_CUTOVER --> HISTORY_PYTHON_RETIREMENT
     HISTORY_GO_STAGING_CUTOVER --> HISTORY_READS_FACADE
     NOTIFICATION_SERVICE_GO_PORT -. related .-> NOTIFICATION_SERVICE_SPLIT
+    ACTION_SERVICE_GO_PORT -. related .-> ACTION_API_MERGE
 ```
 
 ### `HISTORY_GO_STAGING_CUTOVER` — cut staging over to the Go History Service
@@ -1983,6 +1985,18 @@ endpoint, OAuth metadata and consent callbacks stay hand-written HTTP. The recei
 calls are served by the Python service today; the port keeps them, and a server stream of receipts that
 ends at the condition replaces the wait with the CLI updated in the same change. Stages, stored-data risks and
 cutover: [Action Service Go port](action_service_go_port.md).
+
+### `ACTION_API_MERGE` — merge parts of the operator and agent-facing Action APIs
+
+**Decision, unscheduled (operator, 2026-10-20 07:25 UTC: "we should consider merging some parts of the operator and
+agent-facing apis").** `OperatorActionService` and `ActionService` define separate RPCs for reading requests and
+action groups over the same messages. They differ in the bearer (an operator's OIDC token, not a Pod-bound
+ServiceAccount token), the route prefix (`/v1/operator/`) and which requests the reader may see. Alternatives:
+keep two services, as the merged contract has them; or serve the shared reads once and let the bearer pick the
+principal, keeping the operator-only RPCs (decisions, Connections, enrollments, MCP linkage, Web Push) in
+`OperatorActionService`. Deciding before the servicers of `ACTION_SERVICE_GO_PORT` are written lets them be
+implemented once. The contract is `action_service.proto` and `operator_action_service.proto` in
+`agentplane/action_service/`.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 

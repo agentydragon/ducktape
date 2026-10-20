@@ -67,13 +67,3 @@ and operator access distinct; they are not interchangeable authorization facts. 
 retain policy decisions and operator-linked MCP execution; Notifications would retain
 subscriptions, matching and inbox delivery. This is a possibility to evaluate, not a committed
 extraction.
-
-## Merge parts of the operator and agent-facing APIs
-
-`OperatorActionService` and `ActionService` define separate RPCs for reading requests and action
-groups (`ListActionRequests`, `GetActionRequest`, `ListActionGroups`) over the same messages, and
-differ only in the bearer (an operator's OIDC token, not a Pod-bound ServiceAccount token), the route
-prefix (`/v1/operator/`) and which requests the reader may see. Consider serving the reads once and
-letting the bearer pick the principal, keeping the operator-only RPCs (decisions, Connections,
-enrollments, MCP linkage, Web Push) in `OperatorActionService`. This is a possibility to evaluate,
-not a committed change.
