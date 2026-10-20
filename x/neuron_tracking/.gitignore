@@ -1,7 +1,7 @@
 /data/
 /runs/
 
-# Source media and generated previews belong in the ignored directories above.
+# Media and run artifacts live in ~/drive/neuron-tracking, outside the checkout.
 *.[aA][vV][iI]
 *.[mM][pP]4
 *.[mM][oO][vV]

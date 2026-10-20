@@ -41,7 +41,8 @@ counts do not establish that its other predictions are correct. The broader
 qualitative findings remain in [the trial review](first_trials.md).
 
 The shared Python CLI evaluated all six saved annotations. Reports are saved as
-`sample_check_results.json` in each ignored run directory, with their combined
-results in `runs/manual_frame_review/first_five_check_summary.json`. Raw media,
-masks, manual annotations, and reports stay outside Git; the checker and criteria
-are committed independently.
+`sample_check_results.json` in each run directory under
+`~/drive/neuron-tracking/runs/`, with their combined results in
+`~/drive/neuron-tracking/runs/manual_frame_review/first_five_check_summary.json`.
+Raw media, masks, manual annotations, and reports stay outside Git; the checker
+and criteria are committed independently.

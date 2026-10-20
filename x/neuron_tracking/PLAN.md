@@ -80,7 +80,7 @@ coverage if a resource limit prevents completion.
 
 Let the annotation agent choose and execute the processing it needs, using the
 repo's Nix environment, `nix shell`, or `nix-shell`. It may create scratch scripts
-under its ignored output directory for these operations:
+under its assigned Drive output directory for these operations:
 
 - Extract lossless frames and source presentation timestamps with `ffmpeg` and
   `ffprobe`; generate labeled contact sheets.
@@ -152,7 +152,8 @@ source images; no recall or identity-accuracy target has been demonstrated yet.
 
 ## Codex entry point and provider
 
-The launch command is in `README.md`. The installed CLI is `codex-cli 0.162.1`;
+Media and run data live in `~/drive/neuron-tracking/{data,runs}/`, outside
+the checkout. The launch command is in `README.md`. The installed CLI is `codex-cli 0.162.1`;
 its model cache lists `gpt-6-luna`, `xhigh` reasoning, and image inputs. The CLI
 reports an existing ChatGPT login. The five trials use that login and provider;
 their partial annotations do not yet establish complete or accurate tracking.

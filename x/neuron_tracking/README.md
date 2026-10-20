@@ -7,7 +7,8 @@ across frames, and inspect and correct its rendered masks before hand-off.
 The annotation prompt is in `annotate.md`, with mask semantics in
 `annotation_format.md` and the machine-readable format in
 `annotations.schema.json`. Five independent `gpt-6-luna` / `xhigh` trials have
-finished; their local artifacts and native traces are under `runs/`.
+finished; their artifacts and native traces are under
+`~/drive/neuron-tracking/runs/`.
 All produced partial annotations; see [the trial review](debug/first_trials.md).
 Codex may use Nix and write its own processing scripts. Follow-up work is in
 `TODO.md`.
@@ -15,23 +16,26 @@ Codex may use Nix and write its own processing scripts. Follow-up work is in
 Keep each run in one conversation. Context compaction is allowed; save identity
 decisions, annotation revisions, and review progress on disk for continuation.
 
-Keep local input media in `data/` and generated frames, annotations, overlays,
-videos, and session logs in `runs/`. Both directories and common media extensions
-are ignored. Source files can also remain outside the checkout. Do not commit
-media blobs or local symlinks to them.
+Keep input media in `~/drive/neuron-tracking/data/` and generated frames,
+annotations, overlays, videos, and session logs in
+`~/drive/neuron-tracking/runs/`. These are actual files in the synced Drive folder,
+outside the Git checkout. Do not create checkout-local copies or links to them.
+The Drive folder's `README.md` describes the saved runs, source snapshot, and
+continuation steps. Do not commit media or run artifacts.
 
 ## First run
 
-From the repository root, put the source clip and reference JPEG in `data/` or
-pass absolute paths to files outside the checkout. With files under `data/`, run:
+Run from the repository root, using the source clip and reference JPEG in
+`~/drive/neuron-tracking/data/`:
 
 ```bash
-mkdir -p x/neuron_tracking/runs/luna_xhigh
+neuron_run="$HOME/drive/neuron-tracking/runs/luna_xhigh"
+mkdir -p "$neuron_run"
 codex exec --model gpt-6-luna -c 'model_reasoning_effort="xhigh"' \
   --approve-for-me --json \
-  --output-last-message x/neuron_tracking/runs/luna_xhigh/handoff.md \
-  'Read x/neuron_tracking/annotate.md and x/neuron_tracking/sample_task.md. Process all frames from x/neuron_tracking/data/IMG_6128.AVI, using x/neuron_tracking/data/photo_2026-10-19_14-30-28.jpg as the target reference. Save the colored annotated AVI, pixel annotations, schema, tracking CSV, and review record under x/neuron_tracking/runs/luna_xhigh.' \
-  > x/neuron_tracking/runs/luna_xhigh/codex_events.jsonl
+  --output-last-message "$neuron_run/handoff.md" \
+  "Read x/neuron_tracking/annotate.md and x/neuron_tracking/sample_task.md. Process all frames from $HOME/drive/neuron-tracking/data/IMG_6128.AVI, using $HOME/drive/neuron-tracking/data/photo_2026-10-19_14-30-28.jpg as the target reference. Save the colored annotated AVI, pixel annotations, schema, tracking CSV, and review record under $neuron_run." \
+  > "$neuron_run/codex_events.jsonl"
 ```
 
 Use a fresh output directory for each run. This uses the existing Codex login
@@ -59,14 +63,14 @@ Then render a single frame or the full AVI:
 
 ```bash
 python -m x.neuron_tracking.render \
-  --source x/neuron_tracking/data/IMG_6128.AVI \
-  --annotations x/neuron_tracking/runs/luna_xhigh_03/annotations.json \
-  --frame 68 --output x/neuron_tracking/runs/renderer/frame_068.png
+  --source "$HOME/drive/neuron-tracking/data/IMG_6128.AVI" \
+  --annotations "$HOME/drive/neuron-tracking/runs/luna_xhigh_03/annotations.json" \
+  --frame 68 --output "$HOME/drive/neuron-tracking/runs/renderer/frame_068.png"
 
 python -m x.neuron_tracking.render \
-  --source x/neuron_tracking/data/IMG_6128.AVI \
-  --annotations x/neuron_tracking/runs/luna_xhigh_03/annotations.json \
-  --output x/neuron_tracking/runs/renderer/annotated.avi
+  --source "$HOME/drive/neuron-tracking/data/IMG_6128.AVI" \
+  --annotations "$HOME/drive/neuron-tracking/runs/luna_xhigh_03/annotations.json" \
+  --output "$HOME/drive/neuron-tracking/runs/renderer/annotated.avi"
 ```
 
 Use `--layer body`, `--layer branches`, or `--layer uncertain` for separate
@@ -97,7 +101,7 @@ shell above (the checker itself only needs Pydantic):
 
 ```bash
 python -m x.neuron_tracking.check \
-  --annotations x/neuron_tracking/runs/manual_frame_review/annotations.json \
+  --annotations "$HOME/drive/neuron-tracking/runs/manual_frame_review/annotations.json" \
   --checks x/neuron_tracking/sample_checks.json
 ```
 

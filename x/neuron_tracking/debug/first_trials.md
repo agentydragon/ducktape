@@ -3,8 +3,9 @@
 Five independent `gpt-6-luna` / `xhigh` conversations processed the sample.
 All reached hand-off, including interrupted jobs resumed in their original
 conversations. Compaction is allowed. Native traces and all generated files
-remain local under `runs/luna_xhigh_0{1,2,3,4,5}/`; no media or annotation blobs
-are committed.
+are stored under `~/drive/neuron-tracking/runs/luna_xhigh_0{1,2,3,4,5}/`;
+no media or annotation blobs are committed. Full native Codex transcripts are
+in `~/drive/neuron-tracking/transcripts/`.
 
 ## Results and direct inspection
 

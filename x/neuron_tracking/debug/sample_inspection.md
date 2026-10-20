@@ -1,6 +1,6 @@
 # Example clip inspection
 
-Inspected on `2026-10-19`. Media remains local and is not included in Git.
+Inspected on `2026-10-19`. Media is stored in `~/drive/neuron-tracking/data/` and is not included in Git.
 
 | Input                           | SHA-256                                                            | Observed metadata                                                                     |
 | ------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
@@ -31,21 +31,21 @@ Inspected on `2026-10-19`. Media remains local and is not included in Git.
 
 ## Reproduce frame extraction
 
-Run from the repository root with local inputs under `x/neuron_tracking/data/`:
+Run from the repository root with inputs under `~/drive/neuron-tracking/data/`:
 
 ```bash
-mkdir -p x/neuron_tracking/runs/inspection/frames
-sha256sum x/neuron_tracking/data/IMG_6128.AVI
+mkdir -p "$HOME/drive/neuron-tracking/runs/inspection/frames"
+sha256sum "$HOME/drive/neuron-tracking/data/IMG_6128.AVI"
 ffprobe -v error -count_frames -select_streams v:0 \
   -show_entries stream=codec_name,width,height,nb_read_frames:format=duration,size \
-  -of json x/neuron_tracking/data/IMG_6128.AVI
+  -of json "$HOME/drive/neuron-tracking/data/IMG_6128.AVI"
 ffprobe -v error -select_streams v:0 \
   -show_entries frame=best_effort_timestamp_time -of csv=p=0 \
-  x/neuron_tracking/data/IMG_6128.AVI \
-  > x/neuron_tracking/runs/inspection/timestamps.csv
+  "$HOME/drive/neuron-tracking/data/IMG_6128.AVI" \
+  > "$HOME/drive/neuron-tracking/runs/inspection/timestamps.csv"
 ffmpeg -hide_banner -loglevel error \
-  -i x/neuron_tracking/data/IMG_6128.AVI \
-  x/neuron_tracking/runs/inspection/frames/frame-%03d.png
+  -i "$HOME/drive/neuron-tracking/data/IMG_6128.AVI" \
+  "$HOME/drive/neuron-tracking/runs/inspection/frames/frame-%03d.png"
 ```
 
 These extraction operations were exercised against the original files with a

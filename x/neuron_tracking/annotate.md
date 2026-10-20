@@ -18,7 +18,7 @@ Keep the ID/color table, annotation revision, unresolved decisions, and review
 progress on disk so you can continue reliably. Keep identity decisions in this
 conversation; do not delegate frames to other agents. Preserve the inputs and
 tracked project files. Keep scratch scripts and generated artifacts in the
-assigned ignored output directory. Use only the supplied inputs and your own
+assigned output directory outside Git. Use only the supplied inputs and your own
 work, without consulting other runs, reference annotations, or evaluation answers.
 
 For every source frame, save full-resolution pixel masks for each neuron's body
