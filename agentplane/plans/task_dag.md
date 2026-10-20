@@ -1740,6 +1740,9 @@ Manual app resume changes Sandbox lifecycle state through Kubernetes; native sta
 to the Runner. Read-only diagnostics do not grant command or wake authority. This node does not
 select generalized send grants or broaden caller permissions.
 
+The proposed [merge into one service](dispatcher_gateway_merge.md) removes the command methods from the
+caller-visible proxy in its third step, which would finish this node.
+
 ### `DISPATCHER_OWNERSHIP_IN_POSTGRES` — Dispatcher Sandbox ownership without the Kubernetes Lease
 
 **Unscheduled; operator, 2026-10-19 PDT: a potential future change, not a decision.** Each Dispatcher
@@ -1754,6 +1757,10 @@ Move ownership entirely into Postgres: an `expires_at` heartbeat on the same row
 advisory lock that frees itself when the connection drops. Write the comparison first (failover time,
 behavior under a Postgres outage, the shared Lease RBAC rule in `runner_gateway_workload.py`); the Lease
 has no recorded comparison against doing this in Postgres.
+
+[Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) proposes retiring the `dispatcher-<uid>` Lease
+instead, by making the replica that holds a Sandbox's runner connection the owner, which this node's question then no
+longer needs. If the operator declines that part, this node stays as written.
 
 ## Scope and retirement of stale gates
 
@@ -1783,7 +1790,7 @@ beyond the transport track nodes marked in flight, which the operator dispatched
 
 ```mermaid
 flowchart LR
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: durable queue or direct admission]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: optional queue in one service, proposal awaiting review]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     DELIVERY_DESTINATION_CONTRACT[Blocked: implement reviewed destination contract]
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
@@ -1803,32 +1810,21 @@ flowchart LR
     K3S_VM_IMAGE -. real VM path prerequisite .-> CNPG_FREE_K3S_INTEGRATION_TIER
 ```
 
-### `DISPATCHER_PERSISTENCE_MODEL_DESIGN` — choose durable queue or direct runner admission contract
+### `DISPATCHER_PERSISTENCE_MODEL_DESIGN` — choose the queue's role: always on, or optional in one service
 
-**Candidate decision.** Compare the current PostgreSQL-backed queue with direct runner admission.
-One evaluation goal is whether a useful Agentplane deployment can run without CNPG, potentially
-with runner-local persistence; inventory every other database consumer and say which state/feature
-can be omitted, moved or still requires a database.
-For direct admission, require an available runner and reject while it is unavailable or suspended;
-direct admission must not wake-to-deliver or wait through long VM/image startup. The durable queue is
-the only mode that may retain work and own wake-to-deliver. For wake-on-send, persist the complete
-destination tuple, command ID and payload before reporting durable queue acceptance or initiating
-wake; retain it across caller disconnect, Dispatcher restart and the full image-pull/boot delay.
-Distinguish that queue receipt from later Runner admission. A lost direct-admission reply is unknown,
-not rejection: retry the same idempotency key while the runner journal is retained. Runner storage
-loss is terminal for runner-owned state; there is no requirement to reconstruct it from a queue or
-History, and this does not imply separately retained History was also lost. Cover per-Session ordering,
-cancellation, duplicate opens, sender and replica failure, and retries. Runner-local persistence
-protects work only after the runner has committed admission; it does not accept work while that runner
-is absent. Inventory all database owners before making any CNPG claim: current manifests declare the
-shared cluster databases `app`, `sandbox_service`, `actions`, `egress`, `notifications` and the
-Dispatcher; the retired `sandbox_commands` database is not part of the current manifests. Indexing
-has a separate PostgreSQL dependency.
+**Candidate decision; proposal written, awaiting operator review.** Alternatives: keep the PostgreSQL queue as
+the only mode, add a separate online-only direct-admission contract, or merge the Dispatcher and the Gateway's proxy
+into one gRPC service whose queue is optional. The operator proposed the last (2026-10-20 07:13 UTC), and
+[Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) recommends it: queue on stores, delivers and
+is the only mode that wakes; queue off delivers at once or refuses with the queue's own reasons. The plan covers
+every command state in both modes, per-Session ordering, cancellation, duplicate opens, sender and replica failure,
+retries and the database inventory, which shows queue off removes the Gateway's database and not CNPG. It ends
+with one question: should the replica holding a Sandbox's runner connection own its delivery, retiring the
+`dispatcher-<uid>` Lease?
 
-**Recommendation for review:** preserve the queue's durable acceptance and wake-to-deliver contract.
-If a direct mode is considered, keep it a separate online-only contract with explicit idempotent
-retry semantics and no implicit wake. Question: keep the queue, change its durable owner, or add a
-narrower direct mode? Do not implement a direct-RPC replacement from this design task alone.
+No implementation starts, and no implementation nodes are added, before the operator approves. On approval
+`DISPATCHER_OWNERSHIP_IN_POSTGRES` and `PROXY_START_METHODS_DISPATCHER_ONLY` finish with the plan's steps;
+`DELIVERY_DESTINATION_AUTHORITY_DESIGN` stays independent of it.
 
 ### `CNPG_FREE_K3S_INTEGRATION_TIER` — add a narrow database-independent integration tier
 
