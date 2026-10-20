@@ -152,3 +152,8 @@ gRPC-Gateway, so no handler translates between the two.
   as `authorization` metadata, and a gRPC status becomes its HTTP status with a `{"code", "message"}` body.
 - **Wire form:** stock gRPC-Gateway. Fields are camelCase, enums their names, unpopulated fields
   present. A server stream is newline-delimited JSON, one `{"result": <message>}` per line.
+- **Reference:** the service's HTTP reference is the OpenAPI document that `proto_openapi`
+  ([`//devinfra/go:proto_openapi.bzl`](../../devinfra/go/proto_openapi.bzl)) generates from the proto,
+  so a route and a field are described once, in the proto comment beside them. The service embeds
+  it and links it from its `/llms.txt` (egress: [`egress/docs/BUILD.bazel`](../egress/docs/BUILD.bazel)).
+  It is OpenAPI 2, the version grpc-gateway emits; an agent reads either.

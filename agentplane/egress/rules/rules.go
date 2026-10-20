@@ -33,8 +33,11 @@ func readDoc(w http.ResponseWriter, r *http.Request, docs fs.FS, name string) {
 		return
 	}
 	contentType := "text/plain; charset=utf-8"
-	if path.Ext(name) == ".md" {
+	switch path.Ext(name) {
+	case ".md":
 		contentType = "text/markdown; charset=utf-8"
+	case ".json":
+		contentType = "application/json"
 	}
 	w.Header().Set("Content-Type", contentType)
 	if _, err := w.Write(body); err != nil {

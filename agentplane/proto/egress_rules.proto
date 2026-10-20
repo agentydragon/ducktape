@@ -6,9 +6,10 @@ package agentplane.proto.egress_rules;
 import "google/api/annotations.proto";
 
 service EgressRules {
-  // The rules of the ServiceAccount the caller's bearer proves, redacted: no credential value, and
-  // no Secret it is read from. The caller is the ServiceAccount of the bearer and nothing else; no
-  // field of the request selects a subject.
+  // The egress rules of the ServiceAccount the caller's bearer proves, redacted.
+  //
+  // The answer holds no credential value and no Secret it is read from. The caller is the
+  // ServiceAccount of the bearer and nothing else; no field of the request selects a subject.
   rpc GetRules(GetRulesRequest) returns (GetRulesResponse) {
     option (google.api.http) = {get: "/v1/rules"};
   }

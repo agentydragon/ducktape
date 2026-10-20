@@ -6,8 +6,10 @@ caller's Pod-bound token, decides the request from the `egress` rules of `Policy
 one decision is in <../docs/egress_composition.md>. Transport choices and rejected alternatives are in
 <docs/design.md>.
 
-The rules API serves [`/llms.txt`](docs/agents/llms.txt) and its linked credential/refusal guide
-and HTTP reference under `/docs/agents/`. Update the guide when credential presentation or refusal behavior changes.
+The rules API serves [`/llms.txt`](docs/agents/llms.txt), its linked credential/refusal guide and the
+OpenAPI document of `/v1/rules` under `/docs/agents/`. The document is generated from
+[`egress_rules.proto`](../proto/egress_rules.proto), so a field is described once, in the proto. Update the
+guide when credential presentation or refusal behavior changes.
 
 ```sh
 bbr test //agentplane/egress/...

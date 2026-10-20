@@ -342,7 +342,12 @@ func TestAgentDocumentationGraphIsServed(t *testing.T) {
 		}
 		visited[path] = true
 		response := get(handler, path)
-		if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/") ||
+		if strings.HasSuffix(path, ".json") {
+			// The generated OpenAPI document of the rules route.
+			if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "application/json" || !json.Valid(response.Body.Bytes()) {
+				t.Errorf("GET %s = %d %q %.20q, want a served JSON document", path, response.Code, response.Header().Get("Content-Type"), response.Body)
+			}
+		} else if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/") ||
 			!strings.HasPrefix(response.Body.String(), "# ") {
 			t.Errorf("GET %s = %d %q %.20q, want a served text document that opens with a heading", path, response.Code, response.Header().Get("Content-Type"), response.Body)
 		}

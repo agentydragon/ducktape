@@ -1,6 +1,6 @@
 # Use credentials through the proxy
 
-Run `agentplane egress rules` ([HTTP reference](http_api.md) for the raw request and response fields).
+Run `agentplane egress rules` ([HTTP reference](openapi.json) for the raw request and response fields).
 Preserve the configured proxy and CA trust for this call and subsequent protected traffic.
 
 ## Build the request from a live rule

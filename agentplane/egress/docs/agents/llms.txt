@@ -22,5 +22,5 @@ permissions, or auto-approved Actions before requesting an Action that needs man
 
 ## Reference
 
-- [HTTP reference](/docs/agents/http_api.md): The `GET /v1/rules` request and the fields of its response.
+- [HTTP reference](/docs/agents/openapi.json): OpenAPI document of `GET /v1/rules`: its response fields and errors.
 - [Effective rules](/v1/rules): Your current destinations, request scopes, credential identities, and presentation targets.

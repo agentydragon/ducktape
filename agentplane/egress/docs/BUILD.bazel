@@ -1,4 +1,6 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 
 filegroup(
     name = "agents",
@@ -6,10 +8,21 @@ filegroup(
     visibility = ["//agentplane/egress:__pkg__"],
 )
 
+proto_openapi(
+    name = "rules_openapi",
+    proto = "//agentplane/proto:egress_rules_proto",
+)
+
+copy_file(
+    name = "openapi_json",
+    src = ":rules_openapi",
+    out = "agents/openapi.json",
+)
+
 go_library(
     name = "docs",
     srcs = ["docs.go"],
-    embedsrcs = glob(["agents/**"]),
+    embedsrcs = glob(["agents/**"]) + [":openapi_json"],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/docs",
     visibility = ["//agentplane/egress:__subpackages__"],
 )
