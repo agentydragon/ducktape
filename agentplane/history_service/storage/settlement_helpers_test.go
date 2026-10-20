@@ -1,8 +1,8 @@
 package storage
 
 import (
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
-	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
 )
 
 func settlementRanges(settlement *historypb.SettledDeltas) []CursorRange {

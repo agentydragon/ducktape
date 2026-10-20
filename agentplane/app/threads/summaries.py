@@ -10,8 +10,9 @@ from uuid import UUID
 import grpc
 
 from agentplane.grpc.calls import ServiceError
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.proto import history_service_pb2, runner_pb2
+from agentplane.proto import runner_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

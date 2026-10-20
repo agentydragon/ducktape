@@ -15,7 +15,8 @@ from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.grpc.calls import RefusedError, ServiceError, dial
 from agentplane.grpc.serving import serving
-from agentplane.proto import runner_service_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
+from agentplane.runner import runner_service_pb2
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 
 
 class RunnerProxyBackedDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):

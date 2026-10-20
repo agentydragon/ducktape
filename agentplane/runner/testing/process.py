@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Self
 from uuid import uuid4
 
-from agentplane.proto import event_log_pb2, runner_pb2, runner_service_pb2_grpc
+from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.runner import runner_service_pb2_grpc
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.gateway import Gateway

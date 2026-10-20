@@ -10,6 +10,7 @@ from sqlalchemy import delete, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.fold import fold
 from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
@@ -32,7 +33,6 @@ from agentplane.history_service.fold.views import (
     ThreadViewState,
 )
 from agentplane.history_service.settled_cursors import unstored_ranges
-from agentplane.proto import history_service_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 )
 
 // quiesceTimeout bounds one Quiesce call; stopping harnesses can take a while, and Quiesce is idempotent, so

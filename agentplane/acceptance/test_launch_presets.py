@@ -11,8 +11,8 @@ import pytest_bazel
 from agentplane.acceptance.agent import RUNNER_ANSWERS_SECONDS, Agent
 from agentplane.acceptance.conftest import SANDBOX_READY_SECONDS, Sandboxes, wait_until_running
 from agentplane.app.testing.client import Client
-from agentplane.proto import session_dispatcher_pb2
 from agentplane.runner.harness import Harness
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

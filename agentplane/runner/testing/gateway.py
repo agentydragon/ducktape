@@ -14,15 +14,10 @@ import grpc
 
 from agentplane.grpc.serving import serving
 from agentplane.grpc.tunnel import TunnelCaller
-from agentplane.proto import (
-    event_log_pb2,
-    grpc_tunnel_pb2,
-    runner_control_pb2,
-    runner_control_pb2_grpc,
-    runner_ingress_pb2,
-    runner_ingress_pb2_grpc,
-    runner_service_pb2_grpc,
-)
+from agentplane.history_service import runner_ingress_pb2, runner_ingress_pb2_grpc
+from agentplane.proto import event_log_pb2, grpc_tunnel_pb2
+from agentplane.runner import runner_service_pb2_grpc
+from agentplane.runner_gateway import runner_control_pb2, runner_control_pb2_grpc
 from agentplane.sandboxes.guest_config import Endpoint
 
 # gazelle:include_dep @pypi//protobuf

@@ -7,8 +7,9 @@ from uuid import UUID
 from google.protobuf.message import Message
 
 from agentplane.grpc.calls import call_unary, dial
-from agentplane.proto import runner_pb2, runner_service_pb2, runner_service_pb2_grpc
+from agentplane.proto import runner_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
+from agentplane.runner import runner_service_pb2, runner_service_pb2_grpc
 from agentplane.runner_gateway.api import (
     SANDBOX_HEADER,
     SANDBOX_OWNER_NAME_HEADER,

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"testing/fstest"
 
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
-	egressrulespb "github.com/agentydragon/ducktape/agentplane/proto/egress_rules"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/protobuf/encoding/protojson"
 )

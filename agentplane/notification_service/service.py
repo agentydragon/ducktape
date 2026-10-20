@@ -35,9 +35,10 @@ from agentplane.notification_service.sources.github.client import (
 from agentplane.notification_service.sources.github.source import GitHub
 from agentplane.notification_service.sources.github.state import RefreshDeferredError
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
-from agentplane.proto import event_log_pb2, session_dispatcher_pb2
+from agentplane.proto import event_log_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandboxes.errors import SandboxNotFoundError
 from agentplane.sandboxes.reader import SandboxReader
 from agentplane.subjects import ServiceAccountRef

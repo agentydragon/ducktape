@@ -13,7 +13,7 @@ The manual queue, replica and wake probes are documented in the
 
 - **One RPC per command**: `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`,
   `OpenSession`, `GetSessionOpening`, plus `GetDispatch`, `ListDispatches`, `WatchDispatches` and `CancelDispatch`
-  ([proto](../../proto/session_dispatcher.proto)). Callers name the Sandbox and the Session; `command_id` is
+  ([proto](session_dispatcher.proto)). Callers name the Sandbox and the Session; `command_id` is
   the idempotency key across every command RPC.
 - **Watching**: `WatchDispatches` sends the Dispatches in scope, then one `CaughtUp` frame, then a Dispatch
   again whenever it changes. `DispatchFilter.command_ids` (at most 1000) narrows either scope to those

@@ -3,7 +3,7 @@ package settledcursors
 import (
 	"testing"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 )
 
 func cursorRange(first, last uint64) *historypb.CursorRange {

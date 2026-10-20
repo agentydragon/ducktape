@@ -15,11 +15,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.changes import ChangeSignal
 from agentplane.grpc.servicer import Abort, ServicerResources, status_mapping
+from agentplane.history_service import history_service_pb2, history_service_pb2_grpc
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.thread_reads import ThreadReader, ThreadScopeResetError
-from agentplane.proto import history_service_pb2, history_service_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio

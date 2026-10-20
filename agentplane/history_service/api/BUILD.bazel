@@ -10,11 +10,11 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/api",
     deps = [
+        "//agentplane/history_service:history_service_go_proto",
         "//agentplane/history_service/projection",
         "//agentplane/history_service/reads",
         "//agentplane/history_service/storage",
         "//agentplane/postgres/go/wakeups",
-        "//agentplane/proto:history_service_go_proto",
         "//agentplane/workload_auth/go/auth",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
@@ -34,6 +34,7 @@ go_test(
     embed = [":api"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/history_service:history_service_go_proto",
         "//agentplane/history_service/migrations",
         "//agentplane/history_service/projection",
         "//agentplane/history_service/reads",
@@ -41,7 +42,6 @@ go_test(
         "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:history_service_go_proto",
         "//agentplane/testing/postgres",
         "//agentplane/workload_auth/go/auth",
         "//agentplane/workload_auth/go/authtest",

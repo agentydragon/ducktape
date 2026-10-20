@@ -39,6 +39,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.upstream_proxy import UpstreamProxy
+from agentplane.egress import egress_admin_pb2_grpc
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import serving
@@ -48,7 +49,6 @@ from agentplane.history_service.testing.fixtures import service_database_templat
 from agentplane.history_service.testing.history import History
 from agentplane.kubernetes_watch import Freshness
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import egress_admin_pb2_grpc
 from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.

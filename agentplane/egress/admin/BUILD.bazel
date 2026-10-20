@@ -9,10 +9,10 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/admin",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
+        "//agentplane/egress:egress_admin_go_proto",
         "//agentplane/egress/decision",
         "//agentplane/egress/history",
         "//agentplane/egress/policy",
-        "//agentplane/proto:egress_admin_go_proto",
         "//agentplane/workload_auth/go/auth",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
@@ -32,10 +32,10 @@ go_test(
     ],
     embed = [":admin"],
     deps = [
+        "//agentplane/egress:egress_admin_go_proto",
         "//agentplane/egress/decision",
         "//agentplane/egress/history",
         "//agentplane/egress/policy",
-        "//agentplane/proto:egress_admin_go_proto",
         "//agentplane/workload_auth/go/auth",
         "@com_github_google_uuid//:uuid",
         "@io_k8s_api//authentication/v1:authentication",

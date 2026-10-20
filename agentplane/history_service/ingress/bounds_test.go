@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
-	runneringresspb "github.com/agentydragon/ducktape/agentplane/proto/runner_ingress"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 )

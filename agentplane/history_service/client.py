@@ -15,7 +15,7 @@ from google.protobuf.message import Message
 
 from agentplane.grpc.calls import bearer, raise_status
 from agentplane.grpc.options import LARGE_EVENT_RECEIVE_OPTIONS
-from agentplane.proto import history_service_pb2, history_service_pb2_grpc
+from agentplane.history_service import history_service_pb2, history_service_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio

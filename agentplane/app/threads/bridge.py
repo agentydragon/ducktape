@@ -17,7 +17,8 @@ from agentplane.app.threads.summaries import FeedError
 from agentplane.app.threads.view.content import ContentStore
 
 # Not `runner_pb2`: that name is the runner's protocol here.
-from agentplane.proto import runner_pb2, session_dispatcher_pb2
+from agentplane.proto import runner_pb2
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio

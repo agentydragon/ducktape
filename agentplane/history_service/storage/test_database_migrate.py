@@ -7,8 +7,9 @@ import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from sqlalchemy import Connection, create_engine, text
 
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.storage.database_migrate import RUNNER
-from agentplane.proto import history_service_pb2, runner_pb2
+from agentplane.proto import runner_pb2
 
 # The migrated database is read back over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg

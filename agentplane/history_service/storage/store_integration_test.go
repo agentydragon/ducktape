@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/google/uuid"
 	"github.com/lib/pq"

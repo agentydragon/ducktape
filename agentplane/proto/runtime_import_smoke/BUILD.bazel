@@ -2,7 +2,7 @@ load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//devinfra/python:defs.bzl", "py_library")
 
-# gazelle:resolve py agentplane.proto.session_dispatcher_pb2 //agentplane/proto:session_dispatcher_pb2
+# gazelle:resolve py agentplane.runner_gateway.dispatcher.session_dispatcher_pb2 //agentplane/runner_gateway/dispatcher:session_dispatcher_pb2
 
 package(default_visibility = ["//visibility:private"])
 
@@ -23,7 +23,7 @@ py_library(
     name = "probe",
     srcs = ["probe.py"],
     deps = [
-        "//agentplane/proto:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "@pypi//protobuf",
     ],
 )

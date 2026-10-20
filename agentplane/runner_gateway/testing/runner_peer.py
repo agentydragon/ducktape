@@ -16,7 +16,8 @@ import grpc
 from google.protobuf.message import Message
 
 from agentplane.grpc.serving import serving
-from agentplane.proto import runner_pb2, runner_service_pb2, runner_service_pb2_grpc
+from agentplane.proto import runner_pb2
+from agentplane.runner import runner_service_pb2, runner_service_pb2_grpc
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
 

@@ -41,12 +41,13 @@ from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import Store
-from agentplane.proto import runner_pb2, session_dispatcher_pb2
+from agentplane.proto import runner_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.platform_instructions import render_platform_instructions
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.testing.gateway_process import run_gateway
 from agentplane.sandboxes.launch import SandboxIdentity
 from agentplane.sandboxes.testing.api_server import NAMESPACE, SANDBOX, SandboxCluster, sandbox_cluster

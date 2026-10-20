@@ -3,7 +3,7 @@ package dispatcher
 import (
 	"fmt"
 
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/proto/session_dispatcher"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

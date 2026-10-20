@@ -14,14 +14,8 @@ from uuid import NAMESPACE_URL, uuid5
 import grpc
 
 from agentplane.history_service.testing.history import History
-from agentplane.proto import (
-    command_pb2,
-    event_log_pb2,
-    event_pb2,
-    runner_pb2,
-    runner_service_pb2,
-    runner_service_pb2_grpc,
-)
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
+from agentplane.runner import runner_service_pb2, runner_service_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
 

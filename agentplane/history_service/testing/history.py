@@ -17,6 +17,7 @@ from more_itertools import one
 from sqlalchemy import func, insert, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.fold import fold
 from agentplane.history_service.fold.models import (
@@ -36,7 +37,7 @@ from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.store import Store, Writer
 from agentplane.history_service.testing.sessions import WRITER
 from agentplane.postgres.wakeups import notify
-from agentplane.proto import event_log_pb2, history_service_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, runner_pb2
 from util.testing.postgres import PostgresDatabaseTemplate, migrated_database_template
 
 # gazelle:include_dep @pypi//asyncpg

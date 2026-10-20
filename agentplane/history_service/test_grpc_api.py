@@ -10,6 +10,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from agentplane.grpc.serving import serving
+from agentplane.history_service import history_service_pb2, history_service_pb2_grpc
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.grpc_api import Resources, add_service
@@ -18,7 +19,7 @@ from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.testing.sessions import WRITER, retained_session
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.postgres.wakeups import notify
-from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2, history_service_pb2_grpc
+from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict, fake_apiserver
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver

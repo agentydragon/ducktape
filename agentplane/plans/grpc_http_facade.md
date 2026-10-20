@@ -63,7 +63,7 @@ are the app's own logic.
 
 ### Contract: a proto, exposure by annotation
 
-- One `agentplane/proto/<name>.proto` per API, as in [gRPC services](../docs/grpc_services.md). Each
+- One `<name>.proto` per API, beside the service that serves it, as in [gRPC services](../docs/grpc_services.md). Each
   RPC reachable over HTTP carries one `google.api.http` rule; an unannotated RPC is not. That keeps
   `RunnerControl.Connect` and `RunnerIngress.Push` (full duplex, native gRPC per the approved
   direction) and the tunneled `Runner` service off HTTP.

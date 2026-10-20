@@ -15,7 +15,8 @@ from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
-from agentplane.proto import event_log_pb2, session_dispatcher_pb2
+from agentplane.proto import event_log_pb2
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 
 # A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
 # test is how the client reads a connection that dies, which an ASGI transport cannot produce.

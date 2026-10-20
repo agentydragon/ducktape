@@ -10,9 +10,9 @@ import (
 	"errors"
 	"fmt"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
 )
 
 // PayloadField names a body a row references. The stored form is the string.

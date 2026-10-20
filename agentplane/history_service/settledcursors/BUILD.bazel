@@ -6,12 +6,12 @@ go_library(
     name = "settledcursors",
     srcs = ["settledcursors.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/settledcursors",
-    deps = ["//agentplane/proto:history_service_go_proto"],
+    deps = ["//agentplane/history_service:history_service_go_proto"],
 )
 
 go_test(
     name = "settledcursors_test",
     srcs = ["settledcursors_test.go"],
     embed = [":settledcursors"],
-    deps = ["//agentplane/proto:history_service_go_proto"],
+    deps = ["//agentplane/history_service:history_service_go_proto"],
 )

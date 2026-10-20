@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
-	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"

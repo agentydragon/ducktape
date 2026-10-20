@@ -7,7 +7,7 @@ import (
 	"time"
 
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

@@ -3,7 +3,7 @@ package gateway
 import (
 	"sync"
 
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

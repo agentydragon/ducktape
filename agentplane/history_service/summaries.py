@@ -8,10 +8,11 @@ from google.protobuf.json_format import ParseDict
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadHistorySummary
 from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.store import HistoryNotFoundError
-from agentplane.proto import event_pb2, history_service_pb2
+from agentplane.proto import event_pb2
 
 MAX_BATCH = 200
 

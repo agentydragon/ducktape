@@ -6,6 +6,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.fold.views import EntityKind
 from agentplane.history_service.fold_runner import FOLD_EPOCH, FoldRunner
@@ -13,7 +14,7 @@ from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
 from agentplane.history_service.testing.sessions import retained_session
 from agentplane.history_service.thread_reads import ThreadScopeResetError
-from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2
+from agentplane.proto import event_log_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
 

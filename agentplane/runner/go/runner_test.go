@@ -17,8 +17,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	controlpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

@@ -7,6 +7,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.storage.store import (
     HistoryConflictError,
@@ -18,7 +19,7 @@ from agentplane.history_service.storage.store import (
 )
 from agentplane.history_service.testing.delta_spans import claude_text
 from agentplane.history_service.testing.sessions import remove_entries
-from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 
 # gazelle:include_dep @pypi//protobuf
 

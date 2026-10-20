@@ -6,9 +6,10 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadHistorySummary
 from agentplane.history_service.fold.recording import EventReplicationError, set_operational
-from agentplane.proto import event_log_pb2, history_service_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, runner_pb2
 
 # gazelle:include_dep @pypi//protobuf
 

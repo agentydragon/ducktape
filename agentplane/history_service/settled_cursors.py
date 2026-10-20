@@ -6,7 +6,7 @@ the ranges that intersect it, and a reader treats a cursor inside one as covered
 
 from collections.abc import Iterable
 
-from agentplane.proto import history_service_pb2
+from agentplane.history_service import history_service_pb2
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf

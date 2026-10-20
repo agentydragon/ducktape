@@ -11,9 +11,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
+	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
-	egressadminpb "github.com/agentydragon/ducktape/agentplane/proto/egress_admin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"

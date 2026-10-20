@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
-	egressadminpb "github.com/agentydragon/ducktape/agentplane/proto/egress_admin"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"

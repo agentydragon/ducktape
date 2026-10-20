@@ -17,7 +17,7 @@ go_test(
     srcs = ["facade_test.go"],
     embed = [":facade"],
     deps = [
-        "//agentplane/proto:session_dispatcher_go_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",

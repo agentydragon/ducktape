@@ -1,5 +1,5 @@
 // The runner's session and Sandbox lifecycle messages, carried by the runner control stream
-// (runner_control.proto) and its Event ingress (runner_ingress.proto), and retained by the services
+// (runner_service.proto) and its Event ingress (runner_ingress.proto), and retained by the services
 // that read them.
 
 syntax = "proto3";

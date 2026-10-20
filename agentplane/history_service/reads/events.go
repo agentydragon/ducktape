@@ -3,7 +3,7 @@ package reads
 import (
 	"context"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 )
 
 // ReadSessionEvents pages through a Session's retained runner entries.

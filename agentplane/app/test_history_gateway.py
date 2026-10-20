@@ -18,10 +18,12 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.backend import ingest
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import command_pb2, runner_pb2, runner_service_pb2, session_dispatcher_pb2
+from agentplane.proto import command_pb2, runner_pb2
+from agentplane.runner import runner_service_pb2
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.testing.runner_peer import runner_peer
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster, sandbox_cluster

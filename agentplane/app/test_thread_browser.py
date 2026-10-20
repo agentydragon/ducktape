@@ -61,8 +61,9 @@ from agentplane.history_service.fold.views import ThreadFeedErrorState, ThreadOp
 from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import notify
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_dispatcher_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport

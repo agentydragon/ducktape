@@ -1,9 +1,13 @@
 load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 
@@ -16,9 +20,9 @@ py_library(
         ":thread_reads",
         "//agentplane:changes",
         "//agentplane/grpc:servicer",
+        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service:history_service_pb2_grpc",
         "//agentplane/history_service/storage:store",
-        "//agentplane/proto:history_service_pb2",
-        "//agentplane/proto:history_service_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pydantic",
@@ -51,8 +55,8 @@ py_library(
     deps = [
         "//agentplane/grpc:calls",
         "//agentplane/grpc:options",
-        "//agentplane/proto:history_service_pb2",
-        "//agentplane/proto:history_service_pb2_grpc",
+        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service:history_service_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -64,9 +68,9 @@ py_library(
     deps = [
         ":settled_cursors",
         ":thread_reads",
+        "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/storage:store",
-        "//agentplane/proto:history_service_pb2",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
@@ -83,13 +87,13 @@ py_test(
         ":fold_runner",
         ":thread_reads",
         "//:conftest",
+        "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/fold:views",
         "//agentplane/history_service/storage:store",
         "//agentplane/history_service/testing:delta_spans",
         "//agentplane/history_service/testing:sessions",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:history_service_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -147,6 +151,7 @@ py_test(
         "//:conftest",
         "//agentplane:changes",
         "//agentplane/grpc:serving",
+        "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/fold:views",
         "//agentplane/history_service/storage:store",
@@ -155,7 +160,6 @@ py_test(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:history_service_pb2",
         "//agentplane/proto:runner_pb2",
         "@pypi//grpcio",
         "@pypi//grpcio_health_checking",
@@ -169,11 +173,11 @@ py_library(
     name = "summaries",
     srcs = ["summaries.py"],
     deps = [
+        "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/storage:db",
         "//agentplane/history_service/storage:store",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:history_service_pb2",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
@@ -204,11 +208,11 @@ py_library(
     name = "thread_reads",
     srcs = ["thread_reads.py"],
     deps = [
+        "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/fold:views",
         "//agentplane/history_service/storage:db",
         "//agentplane/history_service/storage:store",
-        "//agentplane/proto:history_service_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -225,12 +229,12 @@ py_test(
         ":fold_runner",
         ":thread_reads",
         "//:conftest",
+        "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/fold:views",
         "//agentplane/history_service/storage:store",
         "//agentplane/history_service/testing:sessions",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:history_service_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -259,11 +263,11 @@ py_library(
     name = "ingress",
     srcs = ["ingress.py"],
     deps = [
+        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service:runner_ingress_pb2",
+        "//agentplane/history_service:runner_ingress_pb2_grpc",
         "//agentplane/history_service/storage:store",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:history_service_pb2",
-        "//agentplane/proto:runner_ingress_pb2",
-        "//agentplane/proto:runner_ingress_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "//agentplane/workload_auth:grpc_caller",
         "//agentplane/workload_auth:principal",
@@ -284,11 +288,11 @@ py_test(
         ":ingress",
         "//:conftest",
         "//agentplane/grpc:serving",
+        "//agentplane/history_service:runner_ingress_pb2",
+        "//agentplane/history_service:runner_ingress_pb2_grpc",
         "//agentplane/history_service/storage:store",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_ingress_pb2",
-        "//agentplane/proto:runner_ingress_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "//agentplane/workload_auth:principal",
         "@pypi//grpcio",
@@ -338,13 +342,13 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/grpc:serving",
+        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service:history_service_pb2_grpc",
         "//agentplane/history_service/storage:store",
         "//agentplane/history_service/testing:sessions",
         "//agentplane/postgres:wakeups",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:history_service_pb2",
-        "//agentplane/proto:history_service_pb2_grpc",
         "//agentplane/testing:fake_apiserver",
         "//agentplane/workload_auth:principal",
         "@pypi//grpcio",
@@ -391,7 +395,7 @@ py_library(
     srcs = ["settled_cursors.py"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/proto:history_service_pb2",
+        "//agentplane/history_service:history_service_pb2",
         "@pypi//protobuf",
     ],
 )
@@ -433,14 +437,14 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service",
     deps = [
+        ":history_service_go_proto",
+        ":runner_ingress_go_proto",
         "//agentplane/history_service/api",
         "//agentplane/history_service/ingress",
         "//agentplane/history_service/projection",
         "//agentplane/history_service/reads",
         "//agentplane/history_service/storage",
         "//agentplane/postgres/go/wakeups",
-        "//agentplane/proto:history_service_go_proto",
-        "//agentplane/proto:runner_ingress_go_proto",
         "//agentplane/workload_auth/go/auth",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
@@ -494,14 +498,14 @@ go_test(
     embed = [":main_lib"],
     tags = ["requires_docker"],
     deps = [
+        ":history_service_go_proto",
+        ":runner_ingress_go_proto",
         "//agentplane/history_service/migrations",
         "//agentplane/history_service/projection",
         "//agentplane/history_service/testing/spans",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:history_service_go_proto",
         "//agentplane/proto:runner_go_proto",
-        "//agentplane/proto:runner_ingress_go_proto",
         "//agentplane/testing/postgres",
         "//agentplane/workload_auth/go/auth",
         "//agentplane/workload_auth/go/authtest",
@@ -533,5 +537,85 @@ py_test(
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+proto_library(
+    name = "runner_ingress_proto",
+    srcs = ["runner_ingress.proto"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/proto:event_log_proto",
+        "//agentplane/proto:runner_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "runner_ingress_pb2",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [":runner_ingress_proto"],
+)
+
+py_grpc_service_library(
+    name = "runner_ingress_pb2_grpc",
+    proto = ":runner_ingress_proto",
+    py_proto = ":runner_ingress_pb2",
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+proto_library(
+    name = "history_service_proto",
+    srcs = ["history_service.proto"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/proto:event_log_proto",
+        "//agentplane/proto:event_proto",
+        "//agentplane/proto:runner_proto",
+        "@protobuf//:empty_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "history_service_pb2",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [":history_service_proto"],
+)
+
+py_grpc_service_library(
+    name = "history_service_pb2_grpc",
+    proto = ":history_service_proto",
+    py_proto = ":history_service_pb2",
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+go_proto_library(
+    name = "runner_ingress_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb",
+    proto = ":runner_ingress_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:runner_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "history_service_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb",
+    proto = ":history_service_proto",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:runner_go_proto",
     ],
 )

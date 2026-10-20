@@ -11,8 +11,8 @@ py_library(
     deps = [
         "//agentplane/grpc:serving",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:runner_service_pb2",
-        "//agentplane/proto:runner_service_pb2_grpc",
+        "//agentplane/runner:runner_service_pb2",
+        "//agentplane/runner:runner_service_pb2_grpc",
         "//agentplane/runner/testing:process",
         "//agentplane/runner_gateway:client",
         "@pypi//grpcio",

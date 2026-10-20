@@ -10,7 +10,7 @@ filegroup(
 
 proto_openapi(
     name = "rules_openapi",
-    proto = "//agentplane/proto:egress_rules_proto",
+    proto = "//agentplane/egress:egress_rules_proto",
 )
 
 copy_file(

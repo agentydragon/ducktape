@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
+	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runneringresspb "github.com/agentydragon/ducktape/agentplane/proto/runner_ingress"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/authtest"
 	"github.com/google/uuid"

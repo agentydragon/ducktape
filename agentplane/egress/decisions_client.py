@@ -7,9 +7,9 @@ from pathlib import Path
 
 import grpc
 
+from agentplane.egress import egress_admin_pb2 as pb, egress_admin_pb2_grpc as rpc
 from agentplane.egress.decisions import Decision, Outcome
 from agentplane.grpc.calls import bearer
-from agentplane.proto import egress_admin_pb2 as pb, egress_admin_pb2_grpc as rpc
 from agentplane.subjects import ServiceAccountRef
 
 # Generated messages use Timestamp methods and protobuf field-presence stubs.

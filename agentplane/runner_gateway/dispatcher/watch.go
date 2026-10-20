@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	notificationpb "github.com/agentydragon/ducktape/agentplane/proto/dispatcher_notification"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/proto/session_dispatcher"
+	notificationpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/dispatcher_notificationpb"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"

@@ -18,8 +18,9 @@ from agentplane.app.threads.events.event_log import EventLogStore, SessionAdmiss
 from agentplane.app.threads.models import Thread
 from agentplane.app.threads.summaries import Summaries
 from agentplane.grpc.calls import ServiceError
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.proto import event_pb2, history_service_pb2
+from agentplane.proto import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

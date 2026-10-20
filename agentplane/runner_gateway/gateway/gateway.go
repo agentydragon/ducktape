@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/proto/runner_service"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/kubernetes"

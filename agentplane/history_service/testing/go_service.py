@@ -20,8 +20,9 @@ import grpc
 from sqlalchemy.engine import make_url
 
 from agentplane.grpc.calls import ServiceError
+from agentplane.history_service import history_service_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.proto import event_log_pb2, history_service_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
+from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer

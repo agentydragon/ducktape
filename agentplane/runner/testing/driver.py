@@ -10,13 +10,15 @@ from contextlib import asynccontextmanager
 import grpc
 import pytest
 
-from agentplane.proto import event_log_pb2, runner_control_pb2, runner_pb2, runner_service_pb2
+from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.runner import runner_service_pb2
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.process import RunningRunner
+from agentplane.runner_gateway import runner_control_pb2
 
 # The `Runner` stub types its calls; mypy reads stubs only from direct deps.
-# gazelle:include_dep //agentplane/proto:runner_service_pb2_grpc
+# gazelle:include_dep //agentplane/runner:runner_service_pb2_grpc
 # gazelle:include_dep @pypi//grpcio
 # gazelle:include_dep @pypi//protobuf
 

@@ -10,7 +10,7 @@ import pytest_bazel
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import serving
-from agentplane.proto import session_dispatcher_pb2, session_dispatcher_pb2_grpc
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 
 # Generated protobuf typing imports google.protobuf through transitive stubs.
 # gazelle:include_dep @pypi//protobuf

@@ -3,6 +3,7 @@ import json
 import pytest
 import pytest_bazel
 
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.storage.settlement import cursor_ranges, settle
 from agentplane.history_service.testing.delta_spans import (
     Span,
@@ -14,7 +15,7 @@ from agentplane.history_service.testing.delta_spans import (
     codex_reasoning,
 )
 from agentplane.native.delta_templates import DeltaTemplate
-from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2
+from agentplane.proto import event_log_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
 

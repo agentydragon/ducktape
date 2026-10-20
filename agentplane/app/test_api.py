@@ -43,15 +43,9 @@ from agentplane.grpc.serving import serving
 from agentplane.history_service.testing.history import History
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import (
-    command_pb2,
-    event_log_pb2,
-    event_pb2,
-    runner_pb2,
-    session_dispatcher_pb2,
-    session_dispatcher_pb2_grpc,
-)
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import (

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/google/uuid"
 	"github.com/lib/pq"

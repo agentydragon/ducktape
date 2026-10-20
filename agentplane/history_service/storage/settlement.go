@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
 )
 
 // Settlement decides whether an item field's streamed deltas can leave stored history.

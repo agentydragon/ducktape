@@ -5,11 +5,11 @@ import (
 	"io/fs"
 	"net/http"
 
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/rules"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
-	egressrulespb "github.com/agentydragon/ducktape/agentplane/proto/egress_rules"
 	"google.golang.org/grpc"
 )
 

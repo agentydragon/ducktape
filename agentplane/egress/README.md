@@ -8,7 +8,7 @@ one decision is in <../docs/egress_composition.md>. Transport choices and reject
 
 The rules API serves [`/llms.txt`](docs/agents/llms.txt), its linked credential/refusal guide under
 `/docs/agents/` and the OpenAPI document of `/v1/rules` at `/openapi.json`. The document is generated from
-[`egress_rules.proto`](../proto/egress_rules.proto), so a field is described once, in the proto. Update the
+[`egress_rules.proto`](egress_rules.proto), so a field is described once, in the proto. Update the
 guide when credential presentation or refusal behavior changes.
 
 ```sh
@@ -190,7 +190,7 @@ an informational snapshot of the answering replica, not a global acknowledgement
 
 ## Admin gRPC API
 
-`EgressAdmin` (<../proto/egress_admin.proto>) serves the operator reads on the admin listener:
+`EgressAdmin` (<egress_admin.proto>) serves the operator reads on the admin listener:
 `ListDecisions` lists a subject's recent decisions, `WatchDecisions` sends that list on subscribing and
 again each time it differs, and `GetHealth` carries the readiness verdict as `ready` with the facts it
 rests on (`decision_history`, the refresh ages). All three read through the same `Decisions`,
@@ -217,7 +217,7 @@ health alone.
 
 ## Rules gRPC API
 
-`EgressRules` (<../proto/egress_rules.proto>) serves `GetRules` on the agent API listener, which takes
+`EgressRules` (<egress_rules.proto>) serves `GetRules` on the agent API listener, which takes
 gRPC beside HTTP. `GET /v1/rules` is its gRPC-Gateway facade (<../grpc/facade/facade.go>), which forwards
 over loopback to that listener so the servicer authenticates every request. The answer is the redacted
 view of the ServiceAccount the bearer proves and nothing else: the bearer is read from `authorization`

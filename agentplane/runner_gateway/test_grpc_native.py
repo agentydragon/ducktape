@@ -14,8 +14,9 @@ from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.grpc.calls import ServiceError
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, runner_service_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
+from agentplane.runner import runner_service_pb2
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.process import RunningRunner

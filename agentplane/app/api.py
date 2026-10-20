@@ -99,8 +99,9 @@ from agentplane.app.upstream_proxy import UpstreamProxy, response_body
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import command_pb2, session_dispatcher_pb2
+from agentplane.proto import command_pb2
 from agentplane.runner.harness import Harness
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandboxes.egress_views import (
     BindingNotFoundError,
     BindingView,
@@ -325,7 +326,7 @@ upstream_router = APIRouter(prefix="/upstream", tags=["upstream"])
 async def dispatcher_upstream(
     request: Request, services: Services, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions, path: str
 ) -> StreamingResponse:
-    """The Session Dispatcher's HTTP/JSON reads (`agentplane/proto/session_dispatcher.proto`), unchanged,
+    """The Session Dispatcher's HTTP/JSON reads (`agentplane/runner_gateway/dispatcher/session_dispatcher.proto`), unchanged,
     for as long as the operator session lasts. Its commands are not reachable here: they go through the
     Thread routes, whose checks the Dispatcher does not make."""
     try:

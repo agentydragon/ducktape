@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"math"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
-	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )

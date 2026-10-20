@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.changes import ChangeSignal
 from agentplane.grpc.serving import add_health, serving
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
@@ -28,7 +29,7 @@ from agentplane.history_service.fold_runner import FOLD_EPOCH, HEALTH_SERVICE, F
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
 from agentplane.history_service.testing.sessions import remove_entries, retained_session
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, history_service_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 
 PAGE_SIZE = 8
 

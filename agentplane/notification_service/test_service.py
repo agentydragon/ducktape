@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.models import ActionEventView, ActionState
 from agentplane.grpc.calls import ServiceError
+from agentplane.history_service import history_service_pb2
 from agentplane.notification_service.db import Entry, Inbox, Notice, Subscription
 from agentplane.notification_service.dispatcher_client import SessionDispatcherClient
 from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionView
@@ -24,9 +25,10 @@ from agentplane.notification_service.service import DestinationRejectedError, Se
 from agentplane.notification_service.settings import NoticeDebounceSettings, QuotaSettings
 from agentplane.notification_service.store import ConflictError, Store
 from agentplane.notification_service.testing.store import claimed
-from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 from agentplane.proto.sandboxes_pb2 import Sandbox, SandboxDestination, ServiceAccount
 from agentplane.runner_gateway.client import SandboxRunner
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandboxes.errors import SandboxNotFoundError
 from agentplane.workload_auth.principal import WorkloadPrincipal
 

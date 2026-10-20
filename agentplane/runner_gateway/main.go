@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/proto/session_dispatcher"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"

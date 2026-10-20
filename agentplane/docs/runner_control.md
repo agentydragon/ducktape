@@ -87,8 +87,8 @@ message RunnerFacts {
 }
 ```
 
-- **Versioning.** The protos are `agentplane/proto/runner_control.proto` (`RunnerControl` and its frames)
-  and `agentplane/proto/runner_service.proto` (the `Runner` service), package
+- **Versioning.** The protos are `agentplane/runner_gateway/runner_control.proto` (`RunnerControl` and its frames)
+  and `agentplane/runner/runner_service.proto` (the `Runner` service), package
   `agentplane.proto.runner_control`. An incompatible change, a rename included, rides a clean
   cutover: the operator retires every Sandbox on the old protocol, and no dual path is served.
   Nothing is negotiated: every connection carries commands and lifecycle requests. A frame of a
@@ -197,7 +197,7 @@ Service, which makes a historyless client unlike any other and couples live deli
 database.
 
 ```protobuf
-// agentplane/proto/runner_ingress.proto
+// agentplane/history_service/runner_ingress.proto
 service RunnerIngress {
   rpc Push(stream PushFrame) returns (stream Acknowledgement);
 }

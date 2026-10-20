@@ -12,11 +12,11 @@ import (
 	"log/slog"
 	"time"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runneringresspb "github.com/agentydragon/ducktape/agentplane/proto/runner_ingress"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"

@@ -5,7 +5,9 @@ follows it; code that differs converges on it.
 
 ## Schema and generated code
 
-- One `agentplane/proto/<name>.proto` per API, `package agentplane.proto.<name>`.
+- One `<name>.proto` per API, in the directory of the service that serves it
+  (`agentplane/history_service/history_service.proto`), `package agentplane.proto.<name>`. A messages-only
+  proto that two or more services import stays in `agentplane/proto/`.
 - Messages build with `py_proto_library_with_mypy_stubs`; the service with `py_grpc_service_library`
   (`<name>_pb2_grpc`, typed by its generated `.pyi`).
 - RPC `X` takes `XRequest` and returns `XResponse`, each its own message even when it wraps a single

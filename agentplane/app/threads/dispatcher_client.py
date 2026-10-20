@@ -7,7 +7,7 @@ import grpc
 from google.protobuf.message import Message
 
 from agentplane.grpc.calls import call_unary
-from agentplane.proto import session_dispatcher_pb2_grpc
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
 
 # gazelle:include_dep @pypi//grpcio
 # gazelle:include_dep @pypi//protobuf

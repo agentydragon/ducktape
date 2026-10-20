@@ -8,7 +8,7 @@ import (
 	"cmp"
 	"slices"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 )
 
 // NextStored returns the first cursor after cursor that is not inside a settled range.

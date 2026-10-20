@@ -5,10 +5,10 @@ import (
 	"reflect"
 	"testing"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	historypb "github.com/agentydragon/ducktape/agentplane/proto/history_service"
 	"google.golang.org/protobuf/proto"
 )
 

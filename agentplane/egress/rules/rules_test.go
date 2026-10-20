@@ -16,12 +16,12 @@ import (
 	"testing/fstest"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/docs"
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	egressrulespb "github.com/agentydragon/ducktape/agentplane/proto/egress_rules"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

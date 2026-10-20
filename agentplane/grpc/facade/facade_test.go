@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/proto/session_dispatcher"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
