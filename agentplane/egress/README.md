@@ -6,8 +6,8 @@ caller's Pod-bound token, decides the request from the `egress` rules of `Policy
 one decision is in <../docs/egress_composition.md>. Transport choices and rejected alternatives are in
 <docs/design.md>.
 
-The rules API serves [`/llms.txt`](docs/agents/llms.txt), its linked credential/refusal guide and the
-OpenAPI document of `/v1/rules` under `/docs/agents/`. The document is generated from
+The rules API serves [`/llms.txt`](docs/agents/llms.txt), its linked credential/refusal guide under
+`/docs/agents/` and the OpenAPI document of `/v1/rules` at `/openapi.json`. The document is generated from
 [`egress_rules.proto`](../proto/egress_rules.proto), so a field is described once, in the proto. Update the
 guide when credential presentation or refusal behavior changes.
 
@@ -226,7 +226,7 @@ token and the projected tokens it accepts are accepted on both.
 
 **Deviation** from <../docs/grpc_services.md>: callers are the sandbox workloads themselves, so there is no
 allow-list and no `auth.Resolver` of its own; every bearer is `Unauthenticated` (`401`) alike, and one that
-could not be reviewed is `Unavailable` (`503`). The documentation routes (`/llms.txt`, `/docs/agents/`)
+could not be reviewed is `Unavailable` (`503`). The documentation routes (`/llms.txt`, `/docs/agents/`, `/openapi.json`)
 stay hand-written HTTP. It is mounted unconditionally, because it has no setting.
 
 ## ServiceAccount permissions

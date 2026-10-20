@@ -230,7 +230,7 @@ func run(ctx context.Context, c config) error {
 	// The facade outlives the termination signal so that reads admitted before it finish while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
-	agentAPIServer, err := newAgentAPI(facadeContext, agentAPIListener.Addr().String(), verifier, index, agentDocs)
+	agentAPIServer, err := newAgentAPI(facadeContext, agentAPIListener.Addr().String(), verifier, index, agentDocs, docs.OpenAPI)
 	if err != nil {
 		return err
 	}

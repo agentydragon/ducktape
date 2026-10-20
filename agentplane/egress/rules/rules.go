@@ -13,11 +13,17 @@ import (
 	"path"
 )
 
-// New serves rulesFacade under /v1/, and /llms.txt and /docs/agents/ from agentDocs, which holds
-// llms.txt and the guides it links at its root.
-func New(rulesFacade http.Handler, agentDocs fs.FS) http.Handler {
+// New serves rulesFacade under /v1/, its OpenAPI document at /openapi.json, and /llms.txt and
+// /docs/agents/ from agentDocs, which holds llms.txt and the guides it links at its root.
+func New(rulesFacade http.Handler, agentDocs fs.FS, openAPI []byte) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/v1/", rulesFacade)
+	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write(openAPI); err != nil {
+			slog.Warn("OpenAPI document not written", "error", err)
+		}
+	})
 	mux.HandleFunc("GET /llms.txt", func(w http.ResponseWriter, r *http.Request) { readDoc(w, r, agentDocs, "llms.txt") })
 	mux.HandleFunc("GET /docs/agents/{name...}", func(w http.ResponseWriter, r *http.Request) {
 		readDoc(w, r, agentDocs, r.PathValue("name"))
@@ -33,11 +39,8 @@ func readDoc(w http.ResponseWriter, r *http.Request, docs fs.FS, name string) {
 		return
 	}
 	contentType := "text/plain; charset=utf-8"
-	switch path.Ext(name) {
-	case ".md":
+	if path.Ext(name) == ".md" {
 		contentType = "text/markdown; charset=utf-8"
-	case ".json":
-		contentType = "application/json"
 	}
 	w.Header().Set("Content-Type", contentType)
 	if _, err := w.Write(body); err != nil {

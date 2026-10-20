@@ -7,3 +7,8 @@ import "embed"
 //
 //go:embed agents
 var Agents embed.FS
+
+// OpenAPI is the OpenAPI document of the rules API, generated from its proto and served at /openapi.json.
+//
+//go:embed openapi.json
+var OpenAPI []byte

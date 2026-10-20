@@ -442,7 +442,7 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
                 hosts=[agent_api(namespace).fqdn],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/llms.txt", "/docs/agents/**", "/v1/rules"],
+                paths=["/llms.txt", "/docs/agents/**", "/openapi.json", "/v1/rules"],
                 credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
             # The API server, inside `basic` rather than behind a policy a launch opts into: every

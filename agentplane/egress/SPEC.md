@@ -110,7 +110,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 - The rules API publishes `/llms.txt` and linked Markdown guides under `/docs/agents/` for
   credential presentation and refusal recovery, and the OpenAPI document of `/v1/rules` at
-  `/docs/agents/openapi.json`. They contain no credentials or caller-specific rules;
+  `/openapi.json`. They contain no credentials or caller-specific rules;
   effective access still comes from the authenticated `/v1/rules` view.
 - **A sandbox can read the rules that apply to it**, at
   `http://egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's

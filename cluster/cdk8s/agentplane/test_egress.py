@@ -162,7 +162,7 @@ def test_agent_egress_api_uses_its_canonical_service(
     rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule["hosts"])
     assert rule["hosts"] == [canonical_host]
     assert rule["methods"] == ["GET"]
-    assert rule["paths"] == ["/llms.txt", "/docs/agents/**", "/v1/rules"]
+    assert rule["paths"] == ["/llms.txt", "/docs/agents/**", "/openapi.json", "/v1/rules"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)

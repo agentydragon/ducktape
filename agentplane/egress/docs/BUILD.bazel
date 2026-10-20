@@ -16,7 +16,7 @@ proto_openapi(
 copy_file(
     name = "openapi_json",
     src = ":rules_openapi",
-    out = "agents/openapi.json",
+    out = "openapi.json",
 )
 
 go_library(
