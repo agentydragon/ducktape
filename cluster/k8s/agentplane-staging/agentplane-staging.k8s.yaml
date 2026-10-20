@@ -3970,6 +3970,10 @@ spec:
                 serial: agentplane-trust
               - disk:
                   bus: virtio
+                name: runner
+                serial: agentplane-runner
+              - disk:
+                  bus: virtio
                 name: workspace
                 serial: workspace
             interfaces:
@@ -4000,6 +4004,10 @@ spec:
           - configMap:
               name: agentplane-egress-ca
             name: trust
+          - containerDisk:
+              image: git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset
+              imagePullPolicy: IfNotPresent
+            name: runner
   stateVolume:
     name: state
     layout:

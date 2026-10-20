@@ -2,8 +2,9 @@
 KubeVirt VM the Sandbox Controller makes from `spec.vm` (agentplane/sandbox_controller/SPEC.md § VMs).
 
 The guest gets what a runner Pod's container gets, as the disks vm.nix reads by serial: the public
-launch config (platform instructions included) and kubeconfig, the egress trust bundle, and the
-Sandbox-owned workspace disk, which survives VM replacements. The controller attaches its PVC and
+launch config (platform instructions included) and kubeconfig, the egress trust bundle, the runner
+and `agentplane` command on their own read-only disk, and the Sandbox-owned workspace disk, which
+survives VM replacements. The controller attaches its PVC and
 adds the state PVC as the virtiofs filesystem named after the state volume, along with the Sandbox's
 own launch file as one more disk. The egress relay the guest dials at the masquerade gateway is the launcher policy's
 (launcher_relay.py); the VM carries the runner Pods' labels, so the runner fence applies to its
@@ -27,6 +28,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecDomainResourcesRequests,
     VirtualMachineSpecTemplateSpecVolumes,
     VirtualMachineSpecTemplateSpecVolumesConfigMap,
+    VirtualMachineSpecTemplateSpecVolumesContainerDisk,
 )
 from pydantic import AnyHttpUrl
 
@@ -39,6 +41,7 @@ from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
 
 NAME = "runner-vm"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset"  # image-pins/ sets the tag
+_RUNNER_DISK_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"  # image-pins/ sets the tag
 _CONFIG_MAP_NAME = "runner-vm-config"
 _WORKSPACE = "workspace"
 # The guest listens on nothing; a listed port keeps masquerade from forwarding every other port,
@@ -110,6 +113,13 @@ class RunnerVmTemplate(Construct):
                 "agentplane-trust": VirtualMachineSpecTemplateSpecVolumes(
                     name="trust",
                     config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=env.egress.ca_secret_name),
+                ),
+                # An erofs with the runner and `agentplane` command, which vm.nix mounts executable.
+                "agentplane-runner": VirtualMachineSpecTemplateSpecVolumes(
+                    name="runner",
+                    container_disk=VirtualMachineSpecTemplateSpecVolumesContainerDisk(
+                        image=_RUNNER_DISK_IMAGE, image_pull_policy="IfNotPresent"
+                    ),
                 ),
             },
             controller_attached_disks=[_WORKSPACE],
