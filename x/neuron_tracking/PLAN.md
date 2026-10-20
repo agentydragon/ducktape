@@ -56,9 +56,10 @@ commands live in `debug/sample_inspection.md`.
    the encoded video as well. Revisions that change annotations invalidate the
    affected visual checks.
 
-The agent may request crops, zooms, or image alignment to help comparison.
-Classical tracking or segmentation can later propose masks if annotation is the
-bottleneck; its proposals go through the same visible correction loop.
+The agent chooses its tools and remains responsible for complete annotation
+and identity review in every frame. Sampling a few successful examples does not
+validate the rest of the sequence. The annotation instructions are in
+`annotate.md`; evaluate their effect against the source and the saved outputs.
 
 ## Conversation continuity
 

@@ -86,6 +86,12 @@ evidence of correct neuron selection or tracking; open and inspect the outputs.
 
 ## Sample sanity checks
 
+These are evaluator checks. For a blind prompt comparison, provide the annotation
+agent only its instructions, input media, target definition, format/schema, and
+renderer access. Keep these criteria, the reviewed annotations, and prior runs
+outside its input workspace; evaluate its saved output afterward. The
+`sample_task.md` contains only the sample's anatomical target definition.
+
 Run the checks against an annotation JSON from the repository root, in the Nix
 shell above (the checker itself only needs Pydantic):
 
