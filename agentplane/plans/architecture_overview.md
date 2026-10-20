@@ -243,15 +243,16 @@ completed Workflows in Postgres or MySQL.
 
 The operator's "archive" keeps the CR, which is D1's retiring. The precedent suggests a second kind
 of archive, a move out of Kubernetes: the CR and state PVC go, History keeps the transcript and its
-record of the Sandbox, and that record keeps what grants need, such as the Sandbox's tags. The tags
-stay editable, since freezing them "would be a bit inconvenient" (10:24): while the CR exists it
-holds them and History only mirrors them, and once it is gone History's copy is the only one. Editing
-them can wait, but a mistaken tag must stay fixable, from the app (10:43), so no importer is needed.
-Until History has that write path, two things keep it possible: the tags live once per archived
-Sandbox, never copied into each Session's rows, and grants match them at read time, not at archive
-time. Retired Sandboxes, which can resume, stay CRs and stay few. It is D2 with an explicit archive
-step. It needs no restore: the operator would not ask for "given just history records and no
-Sandbox or PVC anymore, make a new Sandbox and make it restore and continue that history" (09:53).
+record of the Sandbox, and that record keeps what read grants need, the Sandbox's history reader
+tags. Recipient tags go with the CR, since they do "not make sense to archive" (2026-10-20 00:21).
+The reader tags stay editable, since freezing them "would be a bit inconvenient" (10:24): once the
+CR is gone History's copy is the only one. Editing them can wait, but a mistaken tag must stay
+fixable, from the app (10:43), so no importer is needed. Until History has that write path, two
+things keep it possible: the tags live once per archived Sandbox, never copied into each Session's
+rows, and grants match them at read time, not at archive time. Retired Sandboxes, which can resume,
+stay CRs and stay few. It is D2 with an explicit archive step. It needs no restore: the operator
+would not ask for "given just history records and no Sandbox or PVC anymore, make a new Sandbox and
+make it restore and continue that history" (09:53).
 
 What each operation leaves:
 
@@ -261,7 +262,7 @@ What each operation leaves:
 | State and workspace PVCs                                                    | Kept; the workspace can be dropped | Gone            | Gone   |
 | Dispatcher queue rows                                                       | Kept                               | Gone            | Gone   |
 | History transcript and app Thread                                           | Kept                               | Kept, read-only | Gone   |
-| History's record of the Sandbox (namespace, name, UID, tags)                | Kept                               | Kept            | Purged |
+| History's record of the Sandbox (namespace, name, UID, reader tags)         | Kept                               | Kept            | Purged |
 | Can run again                                                               | Yes                                | No              | No     |
 
 Deleting a Sandbox today is an archive without History's record of the Sandbox. The operator
@@ -271,30 +272,28 @@ controller should be involved". It need not be: History already records each Ses
 namespace and name on the first push ([History
 README](../history_service/README.md#which-sandbox-wrote-a-session)) and lacks only the UID and
 tags, and a purge can be a History call the app makes after removing the CR; the operator deferred
-purging (23:33). The tags are the one bridge. They stay on the CR, since "history should not be
-required for the tags feature": sending is checked against them with no History involved (23:27).
-History needs them only for read grants, and "never routes to, reads or manages Sandboxes" ([service
-boundaries](../docs/service_boundaries.md)). It could watch Sandboxes' tags and keep the last ones
-it saw once the CR goes, with no finalizer; the only gap is a tag edit made while History is down
-just before a delete, which an app retag fixes. The operator agreed to that (23:29), which relaxes
-the rule to reading Sandbox tags; the rule changes with the change that adds the watch.
+purging (23:33). The operator keeps two kinds of tag apart (2026-10-20 00:21): "recipient tags" and
+"history reader tags" are "permission gates for different services". Recipient tags stay on the CR,
+since "history should not be required for the tags feature": sending is checked against them with no
+History involved (23:27), and History never looks at them. Reader tags are History's own gate. Where
+they are set while the Sandbox is live is open. A second, separately named set on the CR lets git
+and the app set both when they create a Sandbox; History watches that set and keeps the last values
+it saw once the CR goes, with no finalizer. The only gap is a reader-tag edit made while History is
+down just before a delete, which an app retag fixes. The operator agreed History may read Sandbox
+tags (23:29), which relaxes "never routes to, reads or manages Sandboxes" ([service
+boundaries](../docs/service_boundaries.md)) to reading them; the rule changes with the change that
+adds the watch. Setting reader tags only through History keeps the rule as it is, but git then has
+no way to set them.
 
-The operator raised two variants (23:48), neither needed for tags on the CR. One splits the tag into
-a "sandbox sendability tag" for sending and a "sandbox readability tag" for History. Grants already
-separate the verbs (`append_inbox` against `list_sessions` and `read_transcript`), so the split pays
-only if readability tags live in History's record from the start: History then never watches
-Sandboxes, the boundary rule stands unchanged and the gap at delete closes, but a new Sandbox is
-written in two places and git has no way into History. The other makes "a sandbox's historical
-record" "a separate k8s object with its own finalizer that might do purging". It costs far less than
-keeping Sandboxes: no PVCs, about 1 KB each (estimated, about 37 MB a year at 100 a day), watched
-only by History and the app. Git can set readability tags on it even for a Sandbox the app created,
-as it could on a membership CR, and the finalizer is the Kubernetes form of the deferred purge.
-Against it, records grow in etcd again, which reopens where they are stored (D3), and History takes
-on a CRD and a reconcile loop. One tag set on the CR splits later without loss: the tags History has
-mirrored become the readability tags. The operator leans away from the record object (2026-10-20
-00:12): "since history manages all the historical bulk in the database, it should probably not split
-its storage", so History keeps "its own records and a reconciler if needed between those and live
-sandboxes", which the tag watch above is.
+The operator also raised (23:48) making "a sandbox's historical record" "a separate k8s object with
+its own finalizer that might do purging". It costs far less than keeping Sandboxes: no PVCs, about
+1 KB each (estimated, about 37 MB a year at 100 a day), watched only by History and the app. Git
+could set reader tags on it even for a Sandbox the app created, as it could on a membership CR, and
+the finalizer is the Kubernetes form of the deferred purge. Against it, records grow in etcd again,
+which reopens where they are stored (D3), and History takes on a CRD and a reconcile loop. The
+operator leans away from it (2026-10-20 00:12): "since history manages all the historical bulk in
+the database, it should probably not split its storage", so History keeps "its own records and a
+reconciler if needed between those and live sandboxes", which the reader-tag watch above is.
 
 ## Right under every direction
 
@@ -303,14 +302,15 @@ Candidates; each still needs the operator's go.
 - **Record the writing Sandbox's UID in History and check it on every push.** D1 deletes by it, D2
   keys grants by it, and D3 and D4 still identify a Sandbox by an ID History must record. The re-key
   is not part of this; only D2's reads might need it (`HISTORY_SESSION_KEY_DESIGN`). History is
-  being ported to Go with its schema unchanged, so this, History's record of the Sandbox and the tag
-  watch land in Go after the port.
-- **Collections as tags on the Sandbox.** The operator (09:58): a collection as "something like a
-  tag on one or more Sandboxes that's just a string, without a UID identity or a k8s object backing
-  it, no Membership objects". A tag lives and dies with its Sandbox, an archive takes it along,
-  and a rule matches it the same way in every direction, as it does direct and `allSandboxes`
-  targets; membership then picks no direction, and a recreated Sandbox has only the tags its
-  manifest or preset gives it. Against the membership CRs, git cannot cleanly tag a Sandbox the app
+  being ported to Go with its schema unchanged, so this, History's record of the Sandbox and the
+  reader-tag watch land in Go after the port.
+- **Recipient tags on the Sandbox.** The operator (09:58): a collection as "something like a tag
+  on one or more Sandboxes that's just a string, without a UID identity or a k8s object backing it,
+  no Membership objects"; recipient tags and history reader tags are separate (2026-10-20 00:21). A
+  recipient tag lives and dies with its Sandbox, and a rule matches it the same way in every
+  direction, as it does direct and `allSandboxes` targets; membership then picks no direction, and a
+  recreated Sandbox has only the tags its manifest or preset gives it. Reader tags set on the CR
+  follow the same rules below. Against the membership CRs, git cannot cleanly tag a Sandbox the app
   created: Flux would own the whole object, delete it when the entry leaves git, and try to recreate
   it from a partial manifest after an archive (not tried). On a Sandbox git creates, git and the app
   can each own different tags, since server-side apply tracks each label key separately and Flux
@@ -345,8 +345,8 @@ Candidates; each still needs the operator's go.
   owner reference. D3 then becomes a deployment setting that testing can try first.
 - **Whether history outlives its Sandbox.** The delete cascade can be a setting, per Sandbox or per
   environment. Membership and grants are the catch: Sandbox-owned CRs work only when history dies
-  with the Sandbox, while rows keyed by Sandbox UID, or tags that History copies when a Sandbox is
-  archived or deleted, work under both settings.
+  with the Sandbox, while rows keyed by Sandbox UID, or reader tags that History keeps once a
+  Sandbox is archived, work under both settings.
 - **Not a setting: database-backed records (D4).** It is a second backend for every record; offering
   both means building both.
 
@@ -435,7 +435,8 @@ Held until one is chosen:
   recommends rows in History's database keyed by Sandbox UID, with git-authored sets reconciled in one
   way. Operator: collections must keep covering Sandboxes "no longer alive" (2026-10-18 23:33); a
   database is "okay, we could still have some kind of reconciler" (2026-10-19 01:10); a collection
-  could be a tag on Sandboxes with "no Membership objects" (09:58).
+  could be a tag on Sandboxes with "no Membership objects" (09:58), with recipient tags and history
+  reader tags kept apart (2026-10-20 00:21).
 - **Session-access grants** (who may send to, or read, which Sandbox's Sessions). History's
   configured `reader_accounts` are the only gate on reads, and the Dispatcher trusts the app and
   Notification to authorize their users. Proposed: `session_access` rules in `PolicySet`s, assigned by
@@ -466,11 +467,12 @@ Held until one is chosen:
 | 2026-10-19 10:24 | Freezing an archived Sandbox's collections "would be a bit inconvenient"                                                      | Archived Sandboxes' tags stay editable                        |
 | 2026-10-19 10:43 | Retagging an archived Sandbox can wait, but must stay possible, from the app                                                  | No importer; tags stored once, matched at read time           |
 | 2026-10-19 23:27 | Tags must not need History: sending checks them without it                                                                    | Tags stay on the Sandbox CR                                   |
-| 2026-10-19 23:29 | History may read Sandbox tags                                                                                                 | History mirrors tags for read grants                          |
+| 2026-10-19 23:29 | History may read Sandbox tags                                                                                                 | History mirrors reader tags for read grants                   |
 | 2026-10-19 23:32 | The workspace drop "can be deferred, not needed for this plan"                                                                | Deferred                                                      |
 | 2026-10-19 23:33 | No history purge operation yet                                                                                                | Purge deferred; history outlives its Sandbox as documented    |
-| 2026-10-19 23:48 | Tags could split into sendability and readability tags; a Sandbox's record could be its own k8s object whose finalizer purges | Variants; not needed for tags on the CR                       |
+| 2026-10-19 23:48 | Tags could split into sendability and readability tags; a Sandbox's record could be its own k8s object whose finalizer purges | Split adopted at 00:21; record object declined at 00:12       |
 | 2026-10-20 00:12 | History keeps its own records in its database, with a reconciler against live Sandboxes if needed                             | No Kubernetes record object; the tag watch is that reconciler |
+| 2026-10-20 00:21 | Recipient tags and history reader tags are separate gates for different services; recipient tags are not archived             | Two tag sets; only reader tags outlive the CR                 |
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control
