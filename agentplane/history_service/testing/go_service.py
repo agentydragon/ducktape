@@ -110,7 +110,9 @@ class GoHistoryService:
             acknowledged = 0
             while acknowledged < max((entry.cursor for entry in entries), default=0):
                 acknowledgement = await call.read()
-                assert acknowledgement is not grpc.aio.EOF, f"the ingress closed the call at cursor {acknowledged}"
+                assert isinstance(acknowledgement, runner_ingress_pb2.Acknowledgement), (
+                    f"the ingress closed the call at cursor {acknowledged}"
+                )
                 acknowledged = acknowledgement.cursor
             await call.done_writing()
             assert await call.code() == grpc.StatusCode.OK, await call.details()
