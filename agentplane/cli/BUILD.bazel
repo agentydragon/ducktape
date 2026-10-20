@@ -1,0 +1,46 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "cli",
+    srcs = [
+        "actions.go",
+        "app.go",
+        "client.go",
+        "egress.go",
+        "errors.go",
+        "main.go",
+        "notifications.go",
+        "output.go",
+        "paging.go",
+        "text.go",
+        "wait.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/cli",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_google_uuid//:uuid",
+        "@com_github_sethvargo_go_retry//:go-retry",
+        "@com_github_spf13_cobra//:cobra",
+    ],
+)
+
+go_binary(
+    name = "agentplane",
+    embed = [":cli"],
+    pure = "on",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "cli_test",
+    size = "small",
+    srcs = [
+        "actions_test.go",
+        "errors_test.go",
+        "helpers_test.go",
+        "notifications_test.go",
+        "submit_test.go",
+        "wait_test.go",
+    ],
+    embed = [":cli"],
+)
