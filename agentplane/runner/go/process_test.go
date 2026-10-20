@@ -250,8 +250,9 @@ func TestImmediateStopFencesChildAndReleasesOwner(t *testing.T) {
 
 func testProcessParentDeathFixture(t *testing.T) {
 	owner := acquireStateOwnerForFixture(t)
+	ignoringTerm := os.Getenv(processTestPIDEnv) + ".ignoring-term"
 	process, err := NewProcess(ProcessConfig{
-		Command:      []string{"/bin/sh", "-c", "trap '' TERM; exec /bin/sleep 60"},
+		Command:      []string{"/bin/sh", "-c", `trap '' TERM; : > "$1"; exec /bin/sleep 60`, "native", ignoringTerm},
 		StateOwnerFD: owner,
 	})
 	if err != nil {
@@ -262,6 +263,15 @@ func testProcessParentDeathFixture(t *testing.T) {
 	}
 	if err := owner.Close(); err != nil {
 		t.Fatal(err)
+	}
+	// Start reports the PID before the shell runs its trap, and a TERM before that kills it.
+	for deadline := time.Now().Add(8 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, err := os.Stat(ignoringTerm); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("native process did not start ignoring TERM")
+		}
 	}
 	if err := os.WriteFile(os.Getenv(processTestPIDEnv), []byte(strconv.Itoa(process.PID())), 0o600); err != nil {
 		t.Fatal(err)
