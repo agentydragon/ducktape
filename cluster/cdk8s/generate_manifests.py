@@ -76,7 +76,6 @@ from cluster.cdk8s.agentplane import (
     staging,
     testing,
 )
-from cluster.cdk8s.agentplane_index import workers as agentplane_index_workers
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations, namespaces as agents_namespaces
 from cluster.cdk8s.artifact_generators import (
     artifact,
@@ -1198,22 +1197,6 @@ def generate_manifests(root: Path) -> None:
         ),
         external_secrets_operator_kustomization,
     )
-    agentplane_index_artifact = artifact(
-        "agentplane-index", agentplane_index_workers.OUTPUT_DIR, agentplane_index_workers.PINS_DIR
-    )
-    agentplane_index_kustomization = agentplane_index_workers.agentplane_index(
-        flux_chart,
-        write_directory(
-            root,
-            agentplane_index_artifact,
-            agentplane_index_workers.chart,
-            components=[posixpath.relpath(agentplane_index_workers.PINS_DIR, agentplane_index_workers.OUTPUT_DIR)],
-            config_map_generator=[agentplane_index_workers.CONFIG_MAP],
-        ),
-        cnpg_kustomization,
-        external_secrets_operator_kustomization,
-        kyverno_kustomization,
-    )
     airlock_artifact = artifact("airlock", airlock.OUTPUT_DIR, airlock.PINS_DIR)
     airlock_directory = write_directory(
         root,
@@ -1685,7 +1668,6 @@ def generate_manifests(root: Path) -> None:
     namespace_dependencies = {
         "activitywatch": activitywatch_kustomization,
         "agent-sandbox-system": agent_sandbox_controller_kustomization,
-        "agentplane-index": agentplane_index_kustomization,
         "agentplane-testing": agentplane_testing_kustomization,
         "airlock": airlock_kustomization,
         "authentik": authentik_kustomization,
@@ -1770,7 +1752,6 @@ def generate_manifests(root: Path) -> None:
             agent_sandbox_controller_artifact,
             grafana_helmrepository_artifact,
             kubevirt_artifact,
-            agentplane_index_artifact,
             clickhouse_artifact,
             github_secrets_sync_secrets_artifact,
             grafana_instance_artifact,

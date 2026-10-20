@@ -6943,7 +6943,6 @@ spec:
   rules:
     - namespaces:
         - activitywatch
-        - agentplane-index
         - agentplane-staging
         - agentplane-testing
         - airlock
@@ -6981,7 +6980,6 @@ spec:
     - namespaces:
         - activitywatch
         - agent-sandbox-system
-        - agentplane-index
         - agentplane-staging
         - agentplane-testing
         - airlock

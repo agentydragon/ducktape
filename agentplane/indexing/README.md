@@ -62,6 +62,7 @@ ducktape (`devel` on GitHub) and haku-state (`main` on the in-cluster Forgejo, w
 credentials from a Secret). The workers share a ConfigMap for the embedding endpoint
 (in-cluster Ollama), checkout path, and CA bundle, and clone into an `emptyDir`. The image tag
 there is a placeholder that Flux image automation overrides.
+It is not currently deployed ([parked](../../cluster/cdk8s/agentplane_index/README.md)).
 
 ## Read API
 

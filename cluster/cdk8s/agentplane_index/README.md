@@ -1,5 +1,11 @@
 # Agentplane repository index
 
+**Parked (2026-10-20):** not deployed; its namespace and database were deleted. Revive by
+calling `workers.agentplane_index` from `generate_manifests.py` again (Kustomization, artifact,
+`namespace_dependencies`) and restoring the `agentplane-index` entries in `namespace_access.py`,
+`loki_read_proxy.py`, the `kubernetes-forgejo-images-secret-store` namespaces
+(`external_secrets/config.py`) and the `haku-forgejo-git` mirror (`haku/workspaces.py`).
+
 `workers.py` deploys one single-repository index worker
 ([service contract](../../../agentplane/indexing/SPEC.md)) per indexed branch into namespace
 `agentplane-index`:

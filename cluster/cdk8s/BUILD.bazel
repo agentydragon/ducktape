@@ -1494,7 +1494,6 @@ py_library(
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:staging_grants",
         "//cluster/cdk8s/agentplane:testing",
-        "//cluster/cdk8s/agentplane_index:workers",
         "//cluster/cdk8s/agents:flux_kustomizations",
         "//cluster/cdk8s/agents:namespaces",
         "//cluster/cdk8s/att_gateway_exporter:access_code",

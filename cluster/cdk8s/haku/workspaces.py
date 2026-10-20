@@ -82,7 +82,7 @@ def _external_secrets(chart: Chart) -> None:
         chart,
         "haku-forgejo-git",
         reader=reader,
-        mirror_namespaces=["haku-egress-proxy", "flux-system", "agentplane-index"],
+        mirror_namespaces=["haku-egress-proxy", "flux-system"],
     )
     secret_copy.secret_copy(
         chart, "haku-forgejo-registry-pull", reader=reader, secret_type="kubernetes.io/dockerconfigjson"

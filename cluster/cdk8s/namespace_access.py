@@ -19,7 +19,6 @@ class AgentReadable(StrEnum):
 NAMESPACE_DIAGNOSTICS = {
     "activitywatch": AgentReadable.LOGS,
     "agent-sandbox-system": AgentReadable.METADATA,
-    "agentplane-index": AgentReadable.LOGS,
     "agentplane-staging": AgentReadable.LOGS,
     "agentplane-testing": AgentReadable.LOGS,
     "airlock": AgentReadable.LOGS,

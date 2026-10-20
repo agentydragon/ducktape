@@ -132,7 +132,6 @@ spec:
   conditions:
     - namespaces:
         - activitywatch
-        - agentplane-index
         - agentplane-staging
         - agentplane-testing
         - agents-infra

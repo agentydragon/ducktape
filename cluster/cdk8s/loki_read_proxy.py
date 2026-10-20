@@ -39,7 +39,6 @@ SERVICE = ServiceRef(
 NAMESPACE_ALLOWLIST = (
     # keep-sorted start
     "activitywatch",
-    "agentplane-index",
     "agentplane-staging",
     "agentplane-testing",
     "airlock",

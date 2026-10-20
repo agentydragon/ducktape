@@ -2743,48 +2743,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  annotations:
-    description: "Complete Agentplane repository-index service: namespace, ESO credentials, CNPG databases, and both index workers."
-  name: agentplane-index
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: kyverno
-      namespace: ducktape-flux
-  healthCheckExprs:
-    - apiVersion: postgresql.cnpg.io/v1
-      current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation && has(status.extensions) && status.extensions.exists(e, e.name == 'vector' && e.applied)
-      kind: Database
-  healthChecks:
-    - apiVersion: v1
-      kind: Namespace
-      name: agentplane-index
-    - apiVersion: postgresql.cnpg.io/v1
-      kind: Cluster
-      name: agentplane-index-db
-      namespace: agentplane-index
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: ducktape
-      namespace: agentplane-index
-  interval: 10m
-  path: ./cluster/generated/agentplane-index
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: agentplane-index
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: false
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: airlock
   namespace: ducktape-flux
 spec:
@@ -4176,27 +4134,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed RoleBinding reconciliation in agentplane-index.
-  name: agentplane-staging-binding-delegation-agentplane-index
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: agentplane-index
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/agentplane-index
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     description: Delegates managed RoleBinding reconciliation in agentplane-testing.
   name: agentplane-staging-binding-delegation-agentplane-testing
   namespace: ducktape-flux
@@ -4935,27 +4872,6 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/agent-sandbox-system
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    description: Static agent diagnostics in agentplane-index; policy shared with managed agents.
-  name: agent-namespace-rbac-agentplane-index
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: claude-rbac
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/agents/namespace-rbac/agentplane-index
   prune: true
   retryInterval: 1m
   sourceRef:

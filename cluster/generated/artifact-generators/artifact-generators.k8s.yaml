@@ -199,13 +199,6 @@ spec:
       name: kubevirt
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/agentplane-index/**"
-          to: "@artifact/cluster/generated/agentplane-index/"
-        - from: "@repo/cluster/k8s/agentplane-index-image-pins/**"
-          to: "@artifact/cluster/k8s/agentplane-index-image-pins/"
-      name: agentplane-index
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/clickhouse/cluster/**"
           to: "@artifact/cluster/k8s/clickhouse/cluster/"
       name: clickhouse

@@ -136,9 +136,9 @@ spec:
       metadata:
         annotations:
           reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-egress-proxy,flux-system,agentplane-index
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-egress-proxy,flux-system
           reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-egress-proxy,flux-system,agentplane-index
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-egress-proxy,flux-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

@@ -379,6 +379,10 @@ applications").
   second consumer (`haku-ci`'s KEDA scaler via Reflector) unrelated to the worker
   itself, so it was split into its own small active Kustomization at
   `cluster/k8s/haku/forgejo-tea/` rather than parked with the rest.
+- **Agentplane repository index**: `cluster/cdk8s/agentplane_index/` — removed from the
+  active bundle 2026-10-20 and its namespace and CNPG data deleted (disposable: it rebuilds
+  from Git and Ollama). The cdk8s module, image build and image pins stay for revival; see
+  its README.
 - **Paperless**: `cluster/parked/paperless/` — decommissioned; third-party
   (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source.
 - **Firecrawl**: `cluster/parked/firecrawl/` — its namespace, database, and app
