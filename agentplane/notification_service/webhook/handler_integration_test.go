@@ -310,6 +310,18 @@ func TestPingIsAcceptedUnparsedAndStoresNothing(t *testing.T) {
 	d.post(t, r.URL).expect(t, http.StatusUnauthorized, refusal{Detail: "invalid GitHub signature"})
 }
 
+// The example of GitHub's "Validating webhook deliveries" documentation, which the other tests' own signing cannot
+// stand in for.
+func TestSignatureIsTheHMACGitHubDocuments(t *testing.T) {
+	settings := testSettings()
+	settings.WebhookSecret = "It's a Secret to Everybody"
+	handler := New(settings, nil)
+
+	if !handler.signed([]byte("Hello, World!"), "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17") {
+		t.Error("the documented signature was refused")
+	}
+}
+
 func TestSignatureMustBeTheBodysExactHMAC(t *testing.T) {
 	r := newRoute(t, nil)
 	valid := sign(issueComment(7, "signed"))
